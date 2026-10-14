@@ -1,0 +1,43 @@
+{
+  "gates": {
+    "own-tests: python3 plugins/audit/tests/test_require_plan.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__config.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_audit_doctor.py --selftest": "fail",
+    "python3 tools/sweep-selftests.py --jobs 6": "fail",
+    "ruff check plugins/audit tools": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-14T05:59:16Z",
+    "basis": "`python3 plugins/audit/tests/test_require_plan.py --selftest` in a throwaway tree at HEAD exited 1 with 4 of 234 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - k2 (house FAIL), np2 (house FAIL), np3 (house FAIL), np5 (house FAIL): SELFTEST FAILED: 230/234 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "DESIGN: the step lives in the tier computation. hooks/_config.py: manifest_state() now returns hasPhases (any phase dict in the assembled manifest, set before the running-phase early return); new PLAN_GATE_LADDER table ((no-manifest, observe), (no-phase, warn), (nothing-running, deny), (phase-running, deny)); new plan_gate_step(cfg, state) -> 'planGate' | 'enforce' | a ladder step (a hand-built state without hasPhases reads as no-phase, so old callers keep their tier; never raises); plan_gate_mode now reads its tier off the ladder through plan_gate_step (pin and enforce still win first); new plan_gate_cause(cfg, state, manifest_rel), the single copy of the deny cause sentence, with a nothing-running sentence ('The plan in <manifest> holds phases, but no phase is in_progress, so an edit past this session's free file is refused before it lands.'). Docstrings updated (ladder table, enforce key reference). hooks/require-plan.py: the deny branch takes its cause from _config.plan_gate_cause; on the nothing-running step the orchestrator-facing refusal names '/audit:phase add \"<title>\" --outcome \"<what success is>\"' then '/audit:phase <the id add printed>' (plus /audit:next, the human bypass, exempt list); the subagent refusal is unchanged apart from the correct cause; warn-branch comment rewritten (warn now only for a manifest with no phase, or a pin). Step 5 (free file) runs before the tier, so it is untouched; a non-edit tool returns 'unknown tool' before any of this. An oversized FIRST file is also refused on this step (it is not the free file - the free file is the first SMALL one, as on every deny tier). README.md: the tier table gains the row, the 'Installing arms global hooks' paragraph states the consequence (a plan with nothing running now gets refusals past its free file; pin planGate:'warn' for the old behaviour), and the require-plan bullet, the guard table row and the planGate config row name the step. TESTS: test_require_plan.py np1-np10 + k2b, k2 flipped to block, i5/u-warn fixtures moved to a no-phase manifest (234/234 pass, exit 0); test__config.py f2b f4b f4c f4d f6b f19b f19c, f1/f3/f14 shape gains hasPhases, f4/f9d/sg2 now assert the step (343/343, exit 0); test_audit_doctor.py's 'no running phase' case now asserts the row names the deny step (red, 168/169 - see below). OUT OF SCOPE, NOT DONE: the plan gate REFUSED my Edit of plugins/audit/scripts/status/_doctor_setup.py verbatim: '[require-plan] plugins/audit/scripts/status/_doctor_setup.py is outside task P125.40-0h5, the task this worktree is bound to ... Only that task's files are open here.' The doctor row lives there (audit-doctor.py only aliases check_plan_gate, identity pinned by test__doctor_setup/test__doctor_report), so until it changes doctor prints the FALSE row 'deny - phase ? has work in progress' on this step. The exact patch, verified in a scratch copy (test_audit_doctor 169/169 there), is at <outside-repo> a 'warn and not hasPhases' branch, and the old warn branch becomes 'plan_gate_step == nothing-running' worded 'deny past the free file - ... none is in_progress ... Start a phase: /audit:phase add ..., then /audit:phase <id>'. Because the tier is one resolver, shell writes follow it too (one file, one verdict), which reddens suites outside files: sweep 'python3 tools/sweep-selftests.py --jobs 6' exit 1, '328/334 files ok, 153 migrated to tests/, 13628 cases'; red: test__doctor_setup (ds14 ds14b ds14c ds14e ds14f ds15s ds15t - need the _doctor_setup patch and fixture rewording), test_audit_doctor (the doctor case above), test_audit_task (sd4 expects warn after a manifest is written), test_guard_bash_writes (c2 non-source ext now graded at deny), test_guard_secrets_read (tt1 tt2 s5b we2 expect warn/allow on a done-phase manifest), test_hooks (hk1/hk2/hk4 rows b17h b17n b17o b17w q13 q14 q18 r02 record allow at the warn tier on a done-phase fixture). All five pass on a git archive HEAD export (105/105, 237/237, 702/702, 232/232; doctor 169/169), so the red is this change. Also owed outside files: hooks/guard-secrets-read.py _plan_gate_cause still prints 'Phase ? is in_progress' on this step - it should call _config.plan_gate_cause (now the single copy); scripts/config/_help.py's gate table row 'A manifest, nothing running' is now true only of a manifest holding no phase and needs a nothing-running row; scripts/panel/_panel_runstate.py's source text 'manifest present, nothing running' should name the step. ruff exit 0; vermin on the five changed .py exit 0.",
+    "descriptive": "With a plan holding phases and none running, the edit past a session's free file is now refused before it lands with the commands to add and start a phase; doctor, guard-secrets-read's cause text and five out-of-scope suites still owe follow-up edits"
+  },
+  "testsAdded": [
+    "test_require_plan.py np1",
+    "test_require_plan.py np1b",
+    "test_require_plan.py np2",
+    "test_require_plan.py np3",
+    "test_require_plan.py np4",
+    "test_require_plan.py np5",
+    "test_require_plan.py np5b",
+    "test_require_plan.py np7",
+    "test_require_plan.py np8",
+    "test_require_plan.py np9",
+    "test_require_plan.py np9b",
+    "test_require_plan.py np10",
+    "test_require_plan.py k2b",
+    "test__config.py f2b",
+    "test__config.py f4b",
+    "test__config.py f4c",
+    "test__config.py f4d",
+    "test__config.py f6b",
+    "test__config.py f19b",
+    "test__config.py f19c",
+    "test_audit_doctor.py phases with none running is reported as the deny step that names itself"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:cdbf4ae3a7bc9fa10015fb126729e1f042ed04a5b53891840e4718a6a8fe2afb\",\"dirtyDigest\":\"sha256:75e4cacf5f93c23c1a0f87b6cf4f41e5f628ae64999770278fc21a0ee93a29d9\",\"dirtyPaths\":{\"plugins/audit/README.md\":\"0479e402730bffcc\",\"plugins/audit/hooks/_config.py\":\"5312f933702de3aa\",\"plugins/audit/hooks/require-plan.py\":\"309bacc5b2e5e134\",\"plugins/audit/tests/test__config.py\":\"08dd5c46f3fbd36e\",\"plugins/audit/tests/test_audit_doctor.py\":\"7cb888fdd87c67b3\",\"plugins/audit/tests/test_require_plan.py\":\"7e3c2c8ed3b50250\"},\"head\":\"a7d1b5c4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/README.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/require-plan.py\",\"plugins/audit/scripts/status/audit-doctor.py\",\"plugins/audit/tests/test__config.py\",\"plugins/audit/tests/test_audit_doctor.py\",\"plugins/audit/tests/test_require_plan.py\"],\"scopeDigest\":\"sha256:825fdbac69a81802273e93f7418c94dc04e02e5137485b73bbab8fd52e0a4ef2\",\"v\":2}"
+}

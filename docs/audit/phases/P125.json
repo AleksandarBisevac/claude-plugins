@@ -1393,7 +1393,7 @@
     {
       "id": "P125.29-0h5",
       "title": "Submit refuses a return whose outcome is a placeholder or whose testsAdded is empty while tests.add is not",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F643. drive-phase.py submit checks the return's shape and then files it once per start. Two executors in P125 filed outcome.technical == outcome.descriptive == 'placeholder' with testsAdded [] (returns/P125.1/20261013T125847Z, returns/P125.2/20261013T141945Z), the second despite an explicit instruction, and the record could not be corrected. An instruction does not hold this; the filing must. Before running the helper and before writing anything, refuse: (a) outcome texts that are identical to each other, shorter than a floor stated beside the check with its reason, or a template word (placeholder, TODO, TBD, <...>); (b) testsAdded empty while the task's tests.mode is tdd or regression and tests.add is non-empty. The refusal names the field and says nothing was filed, so the agent resubmits in the same start. The check lives in the one function every return passes through (_filed_returns), not in drive-phase alone, so a reviewer return and a /audit:run filing are held to it too.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -1426,14 +1426,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-14T02:29:18Z",
+      "startedAt": "2026-10-14T05:29:41Z",
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "phase",
@@ -2027,7 +2027,7 @@
     {
       "id": "P125.39-0h5",
       "title": "A new session says once, without the network, when its model has no price or the last session's CLI cost disagrees with the plugin's, and is silent otherwise",
-      "status": "in_progress",
+      "status": "done",
       "description": "Owner request, 2026-10-13: check model prices when a new orchestrator session starts, and prove it works, what it finds and what it costs. Design: no network (hooks are stdlib and fail-open, and no official per-token price API is known; a fetch stays an explicit command if ever). A SessionStart hook (a new mode of meter-usage.py rather than a new file, unless the measurement argues otherwise) checks (1) whether the session's model resolves in the price table (P125.2's rates_for; unpriced -> one line naming the model and the config remedy) and (2) whether the previous session's CLI cost-state (P125.4's read_cost_state / cli_cost_compare) diverges from the plugin's figure beyond CLI_COST_TOLERANCE_USD, printing both figures with their basis and the table's pricingAsOf. Silent when both pass: a quiet start costs zero context tokens. MEASUREMENT IS PART OF DONE, reported in the return with the commands that produce each number: (a) start latency of the new mode with tools/bench-hooks.py, against the hook budget (--gate must stay green); (b) bytes added to context when it fires, and that a quiet start adds none; (c) benefit: run the check (offline, read-only) over every recorded session transcript under <home>/.claude/projects for this repo and for the danuvia testbed, and report how many sessions it would fire on, split by cause (unpriced model / divergence), and for each divergence whether the cause is a stale price or something else (compaction trimming the transcript, subagent spend outside it). If divergence fires mostly for causes other than price, ship only check (1), keep (2) out, and say so with the numbers. Never write a measured number into README or code prose; the return carries it.",
       "files": [
         "plugins/audit/hooks/hooks.json",
@@ -2069,25 +2069,46 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a7d1b5c47750",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added a SessionStart mode to the existing meter-usage.py hook (no new hook file): hooks.json now also wires meter-usage.py (open mode) on SessionStart. New function session_start_check(data, ul=None, cfg=None, root=None) finds the previous session's own transcript via a new usage_ledger.previous_session_transcript(data) helper (most-recently-modified sibling .jsonl beside the SessionStart payload's own transcript_path, excluded by session_id not by mtime/existence), reads that session's last assistant turn's model via the existing current_context_size, and checks usage_ledger.rates_for(model, table) - if the model has no price row, prints exactly one line naming the model and the usage.pricing remedy; otherwise silent. The message rides hookSpecificOutput.additionalContext (not systemMessage), which is the one channel of this hook's output the model itself reads, routed in main() before meter() since a SessionStart payload's own transcript has no assistant turn yet to meter. Fails open (try/except returning None) on any missing/unreadable previous transcript, disabled config, or missing manifest.\n\nA second check was implemented and then DROPPED before shipping, per the task's explicit measurement requirement: whether the previous session's CLI-reported cost-state (usage_ledger.read_cost_state, pre-existing from P125.4) disagrees with the ledger's own re-priced figure for that session (usage_ledger.cli_cost_divergences, also pre-existing), beyond CLI_COST_TOLERANCE_USD ($0.01). This was measured OFFLINE and READ-ONLY over every main-session transcript recorded under <home>/.claude/projects for this repo's own project directory and for the danuvia-software testbed project (neither transcript nor ledger directory was written to - only read.py/glob calls). Measurement commands (ad hoc, scratchpad-only, not committed): a short script loading usage_ledger.py by path, calling project_pricing(), current_context_size(), read_cost_state(), rates_for() and cli_cost_divergences() over every *.jsonl under each project's own <outside-repo><slug>/ directory, against each project's own real ledger (read via usage_ledger.read_ledger on the ledgerDir each project's own .claude/audit.config.json names).\n\nNumbers (every one reproducible by re-running the commands named beside it):\n- (a) start latency, `python3 tools/bench-hooks.py` after adding a 'sessionstart' LANES entry for meter-usage.py (the quiet/no-previous-session path, the common case): meter-usage.py/sessionstart measured at 50.49ms median of 9 (ratio 2.64x a bare interpreter start of 19.22ms) on this run - in the same range as the other 9 existing hook lanes (36-55ms, ratio 1.90x-2.87x on this run); this is NOT a gate per bench-hooks.py's own design (wall clock swings between repeats). `python3 tools/bench-hooks.py --gate` (the actual gate, the import-weight budget) stays green: exit 0, '10 hook(s) within budget' on all 6 interpreters found on this machine (3.8.20, 3.9.24, 3.10.19, 3.12.12, 3.13.12, 3.14.7) - meter-usage.py's module-level imports are unchanged, since the new code is a branch inside the same already-counted file.\n- (b) bytes added to context: piping a real SessionStart JSON payload into `python3 plugins/audit/hooks/meter-usage.py` and measuring stdout with `wc -c`: a quiet start (previous session's model priced, or no previous session at all) writes 0 bytes to stdout; a firing start (previous session's model unpriced) writes 334 bytes, all of it the hookSpecificOutput.additionalContext JSON carrying one sentence.\n- (c) offline benefit, read-only over recorded transcripts: this repo's own project directory held 13 main-session transcripts, the danuvia-software testbed held 18 (31 total). The SHIPPED check (unpriced model) would have fired on 2 of the 31 (one per project) - both were sessions whose last assistant turn named model '<synthetic>' (a test/eval artifact, not a real model the price table was ever expected to carry), silent on the other 29. The DROPPED check (cost-state divergence) was also measured on the same 31 transcripts against each project's real ledger: divergent (model, session) pairs existed in both projects; grouping them by model and looking at the CLI/plugin cost RATIO across every session that model diverged in - the test a single static mispriced rate would have to pass (a constant ratio) - only one model (2 sessions, in danuvia-software) held a near-constant ratio; every other model measured (7 distinct models across both projects, session counts of 1-11) scattered across a wide range session to session, and a meaningful share of the divergent pairs had no ledger row recorded for that session/model at all (metering gap, not a priced disagreement). A scattered ratio is not explained by one wrong rate, and matches the shape usage_ledger.read_cost_state's own pre-existing docstring documents on this repo's own transcripts (conversation compaction trimming the retained .jsonl while the CLI's cumulative total does not shrink, or a subagent spending outside what got scanned). Per the orchestrator's explicit instruction ('If divergence fires mostly for causes other than a stale price, ship only the unpriced-model check... that outcome is a success, not a failure'), the divergence check was left unwired; session_start_check's own docstring records this reasoning (with no numbers in it, per the house rule) and points to this return for the measurement.\n\nFiles touched: plugins/audit/hooks/hooks.json (new SessionStart entry wiring meter-usage.py open), plugins/audit/hooks/meter-usage.py (session_start_check + main() routing + docstring updates), plugins/audit/scripts/usage/usage_ledger.py (new previous_session_transcript(data) helper), plugins/audit/tests/test_meter_usage.py (new (ss) case group: ss1/ss2 cover tests.add item 1, ss3a/ss3b cover tests.add item 2 - proving the fixture genuinely diverges via cli_cost_divergences as a positive control, then proving session_start_check stays silent on it by design - ss4/ss5 cover tests.add item 3, no-previous-session and unreadable-previous-transcript fail-open), plugins/audit/tests/test_usage_ledger.py (new prv1/prv2/prv3 cases for previous_session_transcript), tools/bench-hooks.py (new 'sessionstart' LANES entry + payload kind for meter-usage.py, used for measurement (a) above).\n\nOne file outside this task's declared files was touched: SECURITY.md. tools/sweep-selftests.py's tools/gate-parity.py suite (case fm0) failed after wiring SessionStart in hooks.json: 'meter-usage / SessionStart is wired (open) and no row of the table describes it'. This is SECURITY.md's fail-mode table, which gate-parity.py checks stays in sync with hooks.json by name - a direct, mechanical consequence of this task's own hooks.json change, not an unrelated file I judged 'small enough'. The plan gate (require-plan.py) allowed the one-line edit (widening the existing 'meter-usage | Stop / SubagentStop / SessionEnd' row to add '/ SessionStart', fail mode unchanged at silent/no-op) without refusing it. Re-ran python3 tools/gate-parity.py after: pass (24/23/21/19 gates named consistently across verify.sh/ci.yml/CONTRIBUTING.md/CLAUDE.md, all checked families agree). Full sweep re-run clean afterward: python3 tools/sweep-selftests.py --jobs 6 -> 334/334 files ok, 16061 cases, exit 0.\n\nTest counts: plugins/audit/tests/test_meter_usage.py 55/55 cases passed (was 49/50 red before the fix, see redFirst). plugins/audit/tests/test_usage_ledger.py 120/120 cases passed. ruff check plugins/audit tools: all checks passed (full tree, touched files included). vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests: minimum required versions 3.7, no incompatible versions.",
+        "descriptive": "A new session now says, once and with no network call, when its previous session's model has no price in this project's table - silent otherwise; a second check (CLI-vs-plugin cost divergence) was built, measured offline against two real projects' recorded history, found to disagree mostly for reasons other than a stale price, and deliberately left unshipped."
       },
       "startedAt": "2026-10-14T03:40:54Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T05:29:40Z",
+      "verifiedBy": [
+        "ss1",
+        "ss2",
+        "ss3a",
+        "ss3b",
+        "ss4",
+        "ss5",
+        "prv1",
+        "prv2",
+        "prv3"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T05:29:25Z.585dcb",
         "status": "passed",
         "at": "2026-10-14T05:29:25Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "a7d1b5c47750",
+        "at": "2026-10-14T05:29:40Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T04:30:24Z",
+        "basis": "`python3 plugins/audit/tests/test_meter_usage.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module 'meter_usage' has no attribute 'session_start_check'\" (read as python), and the task introduces 'session_start_check': absent from HEAD's plugins/audit/hooks/hooks.json, plugins/audit/hooks/meter-usage.py, plugins/audit/scripts/usage/usage_ledger.py, tools/bench-hooks.py, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md and present in the working tree's plugins/audit/hooks/meter-usage.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.40-0h5",
       "title": "With a plan that holds phases and no phase running, an edit past the session's free file is denied before it lands, naming how to start a phase",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F651, owner-requested behaviour change (danuvia-software testbed, 2026-10-13, plugin 3.3.0): with a plan holding phases and no phase in_progress, every file past the session's free one was only reported after the edit (PostToolUse 'the plan gate is advisory until a phase is running'); several hundred lines across three files changed before any phase existed. The owner expects a hard stop and a forced phase creation. Change the graded ladder, not a special case: the warn tier gains a deny step when the manifest holds at least one phase, none is in_progress, and this session's free file is already spent - PreToolUse denies with the no-plan warning and the exact commands (/audit:phase add ..., then run it). The free file stays. No manifest, and a manifest with no phases, keep their tiers; planGate still pins any tier by hand and wins; doctor's plan-gate row names the new step when it is the one in force. The README's ladder paragraph says the new step and the consequence (a project with a plan but nothing running now gets refusals past its free file); the CHANGELOG line is written at release. This is the plan gate's edit-path reading, not command reading.",
       "files": [
         "plugins/audit/hooks/require-plan.py",
@@ -2096,7 +2117,17 @@
         "plugins/audit/tests/test__config.py",
         "plugins/audit/README.md",
         "plugins/audit/scripts/status/audit-doctor.py",
-        "plugins/audit/tests/test_audit_doctor.py"
+        "plugins/audit/tests/test_audit_doctor.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/tests/test__doctor_setup.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/scripts/config/_help.py",
+        "plugins/audit/tests/test__help.py",
+        "plugins/audit/scripts/panel/_panel_runstate.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "plugins/audit/tests/test_hooks.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -2123,21 +2154,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T05:29:45Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.41-0h5",
       "title": "add, add-phase and retarget take --parent-branch, so start's 'set the phase's parentBranch' remedy is a verb",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F652 (owner, danuvia-software testbed, 2026-10-13, plugin 3.3.0): after /audit:phase add on a feature branch, audit-task start refused 'phase ... forks from main ... git switch main, or set the phase's parentBranch, then start again', but no verb sets parentBranch; the only route was a hand edit of the manifest, which the auto-mode classifier denied as audit tampering. Add --parent-branch <name> to add (the batch's phase key parentBranch too), add-phase and retarget: validated as an existing local branch, written and journaled through the verb; retarget refuses it once the phase has a branch (the same reason --rename is refused: the branch name and the fork point are already recorded). start's refusal names the flag. commands/phase.md is at its byte ceiling (measure-context): take bytes out of it for any word added.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -2171,16 +2203,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T05:29:48Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.42-0h5",
