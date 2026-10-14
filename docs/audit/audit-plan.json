@@ -4003,7 +4003,8 @@
       "P125.44-0h5",
       "P128.14-0h5",
       "P125.53-0h5",
-      "P125.60-0h5"
+      "P125.60-0h5",
+      "P125.65-0h5"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -5868,7 +5869,8 @@
       "P125.40-0h5",
       "P125.53-0h5",
       "P125.60-0h5",
-      "P125.51-0h5"
+      "P125.51-0h5",
+      "P125.65-0h5"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
