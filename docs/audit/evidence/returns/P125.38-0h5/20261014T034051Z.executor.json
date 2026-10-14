@@ -1,0 +1,35 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test__locks.py --selftest": "pass",
+    "selftests (python3 tools/sweep-selftests.py --jobs 6)": "pass",
+    "lint (ruff check plugins/audit tools && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-14T04:21:09Z",
+    "basis": "`python3 plugins/audit/tests/test__locks.py --selftest` in a throwaway tree at HEAD exited 1 with 4 of 132 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sd1 (house FAIL), sd2 (house FAIL), sd3 (house FAIL), sd5 (house FAIL): SELFTEST FAILED: 128/132 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added _output.sharing_denied(exc) (OSError with errno EACCES; EPERM is not one) and _output.while_shared(op, deadline=None, clock=time.monotonic): retries a sharing denial every SHARING_PAUSE_SECONDS until the deadline (SHARING_WAIT_SECONDS=2.0 from now when none is given), raises any other error at once and raises the denial once the deadline passes. Routed through it: _locks (new _claim_shared wraps _claim inside acquire's existing deadline and in _take_over; _claim re-raises a sharing denial instead of answering error; a denial still there at the deadline becomes the error answer E_ERR; release's unlink, _take_over's unlink and _write_lock's os.replace), _journal_io (_acquire's O_EXCL create inside LOCK_WAIT_SECONDS on time.time, _release's unlink, the .lock.break predicate now _output.sharing_denied, write_merged's os.replace), _manifest_io.atomic_write_text's os.replace, and _panel_write.restore's os.replace. Tests: test__locks.py sd-block sd1-sd6 (claim denied twice then taken; release unlink denied twice then removed; denial past wait=0.2 refused at the deadline as E_ERR; ENOSPC tried once; atomic_write_text replace denied twice then lands; replace denied past a patched bound raises EACCES with the old file intact and no temp file); test__journal_io.py sl11-sl13 (_acquire create denied twice; _release unlink denied twice; sl4's race with each writer's first two creates of .lock and .lock.break denied, through a new optional deny argument to _RACE_WRITER/_race_trial); test_panel_server.py hr3 (two concurrent POST /api/proposal drops with the index lock's release unlink and claim each denied once both land); test__output.py ws1-ws5 (fake clock, sleep recorded rather than slept: retry then answer; non-EACCES raises at once with no pause; denial at deadline raises after exactly the allowed attempts; default bound; predicate readings). ws1-ws5 were written after the helper existed, so they were not seen red against HEAD. Results after the fix: test__locks 132/132, test__journal_io 262/262, test__output 264/264, test_panel_server 103/103, test__manifest_io 189/189; python3 tools/sweep-selftests.py --jobs 6 exit 0, '334/334 files ok, 153 migrated to tests/, 16067 cases', no file red; ruff exit 0; vermin exit 0; tools/bench-hooks.py --gate exit 0 (3.12 and 3.13 within budget, 3.11 not measured, no interpreter here). Process note: the first _output.py Edit was refused by the plan gate before the scope was widened; a sed sent in the same batch had added two import lines, which I removed (empty diff) before stopping. A heredoc edit of _locks.py was refused by the plan gate after the widening; the same changes were made with the Edit tool. Follow-ups, not edited as instructed: usage/usage_ledger.py _replace_retrying is now redundant with atomic_write_text's retry; stamp-verification.py's throwaway-tree removal retry could use _output.while_shared.",
+    "descriptive": "A Windows sharing denial on a lock, breaker, unlink or atomic replace is now waited out inside the operation's deadline by one shared helper, so concurrent journal appends, panel drops and plan writes no longer lose a write to it."
+  },
+  "testsAdded": [
+    "test__locks.py sd1",
+    "test__locks.py sd2",
+    "test__locks.py sd3",
+    "test__locks.py sd4",
+    "test__locks.py sd5",
+    "test__locks.py sd6",
+    "test__journal_io.py sl11",
+    "test__journal_io.py sl12",
+    "test__journal_io.py sl13",
+    "test_panel_server.py hr3",
+    "test__output.py ws1",
+    "test__output.py ws2",
+    "test__output.py ws3",
+    "test__output.py ws4",
+    "test__output.py ws5"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:97f19de21658826e3bf3713c35eea9948b932796c3c8df03c6ac90e1c7bd4a15\",\"dirtyDigest\":\"sha256:64728857144bef99fed403eda6b1454fae53b07191709cf6734a6f5280b741f5\",\"dirtyPaths\":{\"plugins/audit/scripts/_output.py\":\"660ec45d4c148667\",\"plugins/audit/scripts/governance/_journal_io.py\":\"dbe06c26b4e82140\",\"plugins/audit/scripts/governance/_locks.py\":\"4cc51c8bc81a8ecc\",\"plugins/audit/scripts/manifest/_manifest_io.py\":\"affab510ac59ecce\",\"plugins/audit/scripts/panel/_panel_write.py\":\"da28b9805b9f5812\",\"plugins/audit/tests/test__journal_io.py\":\"71965bdfe0fc0dde\",\"plugins/audit/tests/test__locks.py\":\"0fe147532c974a25\",\"plugins/audit/tests/test__output.py\":\"175b0f133231be5d\",\"plugins/audit/tests/test_panel_server.py\":\"89d5bf2a0e87bded\"},\"head\":\"20c86798\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/_output.py\",\"plugins/audit/scripts/governance/_journal_io.py\",\"plugins/audit/scripts/governance/_locks.py\",\"plugins/audit/scripts/manifest/_manifest_io.py\",\"plugins/audit/scripts/panel/_panel_write.py\",\"plugins/audit/tests/test__journal_io.py\",\"plugins/audit/tests/test__locks.py\",\"plugins/audit/tests/test__output.py\",\"plugins/audit/tests/test_panel_server.py\"],\"scopeDigest\":\"sha256:6a772982363378a364c3a29a3981ab38c6d6bcedf3d501441cb0571aed5a82e4\",\"v\":2}"
+}
