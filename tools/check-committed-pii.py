@@ -681,11 +681,6 @@ BASELINE = (
     # the lines after it, while only an edit to the matched line itself can
     # change what was decided - and that edit kills the row out loud, as DEAD
     # BASELINE beside a FOUND. `baseline_key` says why the rows above differ.
-    ("docs/audit/audit-plan.json", "line-sha256:c3abd5e92b28bfdb",
-     "windows-user-path",
-     "a bug row's text giving an example of what a dirname call returns on "
-     "Windows: a drive-letter scratch path under a temp folder, spelled with "
-     "escaped backslashes. It names no user directory and no machine."),
     ("docs/audit/phases/P34.json", "line-sha256:871064e665529ce3",
      "unexpanded-home",
      "a task outcome naming where the lock file lives: the documented config "
@@ -706,11 +701,6 @@ BASELINE = (
      "a task's text listing the checkout layouts that make two absolute paths "
      "collide, one of them the hosted CI runner's standard work directory. That "
      "is the runner image's fixed layout, identical everywhere, not an operator."),
-    ("docs/audit/phases/P82.json", "line-sha256:8dc84fcac7058bd0",
-     "windows-user-path",
-     "a task's text describing how a CRLF file is rewritten on Windows, with the "
-     "carriage-return and newline escapes spelled out as escaped backslash "
-     "sequences. The detector reads the escapes as path separators; no path."),
     ("docs/audit/phases/P82.json", "line-sha256:6a79a0c4d37badc3",
      "windows-user-path",
      "a task's text quoting how git prints a non-ASCII test file name under its "
@@ -1605,6 +1595,15 @@ def _cases(check):
     _bad = reasonless_baseline()
     check("q9 ...and every BASELINE entry carries a reason a reader can disagree "
           "with, not a label: %r" % (_bad,), _bad == [])
+    # A baseline row per copy of an escape sequence read as a path is the patch;
+    # the shape is the cure, so no row may stand for that reading any more.
+    _escape_rows = [row[:3] for row in BASELINE
+                    if row[2] == "windows-user-path" and "escapes" in row[3]
+                    and "path separators" in row[3]]
+    check("every committed artifact is clean with no baseline row standing for "
+          "an escape sequence read as a path (%d live finding(s), rows %r)"
+          % (len(_live), _escape_rows),
+          _escape_rows == [] and unbaselined(_live, _anchors) == [])
 
     # BEFORE the cases that print a synthetic row: a missing headline is a
     # KeyError inside `main`, and this is the case that names it rather than a

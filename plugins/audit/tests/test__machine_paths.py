@@ -314,8 +314,39 @@ def _spaced_root_cases(check, proj):
               and not [r for r in known if r[0] in ("proj/sub", "rel dir")])
 
 
+def _escape_cases(check):
+    bs = chr(92)
+    dbl = bs + bs
+    # A CRLF described as backslash-r backslash-n, then doubled for JSON: every
+    # segment between two separators is ONE character, which no server, share
+    # or user name is. Several spellings so one lucky length cannot pass.
+    quiet = [dbl + "r" + dbl + "r" + dbl + "n",
+             "text " + dbl + "r" + dbl + "n" + dbl + "r" + dbl + "n done",
+             dbl + dbl + "r" + dbl + dbl + "n" + dbl + dbl + "t" + dbl,
+             "a" + dbl + "t" + dbl + "b" + dbl + "n" + dbl]
+    got = [(s, M.machine_path_shape(s)) for s in quiet]
+    check("escaped control characters written as backslash sequences (a CRLF "
+          "described as backslash-r backslash-n, doubled for JSON) are not a "
+          "Windows user path, while an escaped C:/Users/<name> home and an "
+          "escaped UNC server/share path still are (quiet side, %d strings, "
+          "found %r)" % (len(quiet), [g for g in got if g[1] is not None]),
+          all(g[1] is None for g in got))
+    # The other direction, for the mutation that makes the shape never fire.
+    home = "C:" + dbl + "Users" + dbl + "someone" + dbl + "x"
+    unc = dbl + dbl + "server" + dbl + "share" + dbl + "f"
+    short = dbl + dbl + "ab" + dbl + "cd" + dbl + "f"
+    kept = [(label, M.machine_path_shape("probe at %s here" % (s,)))
+            for label, s in (("home", home), ("unc", unc), ("two-char", short))]
+    check("escaped control characters written as backslash sequences are not a "
+          "Windows user path, while an escaped C:/Users/<name> home and an "
+          "escaped UNC server/share path still are (found side: an escaped "
+          "home, an escaped UNC path and a two-character server/share, %r)"
+          % (kept,),
+          all(k[1] == "windows-user-path" for k in kept))
+
+
 def _selftest():
-    return _harness.run(_cases)
+    return _harness.run(lambda check: (_cases(check), _escape_cases(check)))
 
 
 if __name__ == "__main__":

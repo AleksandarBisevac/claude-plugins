@@ -241,8 +241,12 @@ _SLUG_LONE_LEAD = r"(?<![^\n/\\\"'=:(])"
 _MACHINE_PATH_SHAPES = (
     ("posix-home", re.compile(MACHINE_PATH_TOKEN_START
                               + r"[/\\]?(?:Users|home)/[A-Za-z0-9._-]+")),
+    # The UNC arm needs a server and a share of two characters or more: a
+    # JSON-escaped `\r\n` is a run of one-character segments between doubled
+    # backslashes, and no server or share is named by a single character.
     ("windows-user-path", re.compile(
-        r"[A-Za-z]:\\{1,2}Users\\|\\{2,4}[A-Za-z0-9._-]+\\{1,2}[A-Za-z0-9._$-]+\\")),
+        r"[A-Za-z]:\\{1,2}Users\\"
+        r"|\\{2,4}[A-Za-z0-9._-]{2,}\\{1,2}[A-Za-z0-9._$-]{2,}\\")),
     # A home directory flattened into one directory NAME, the way the
     # harness names a project's scratch and session directories. The slug is
     # a whole path segment, so its leading dash stands at a token start - or
