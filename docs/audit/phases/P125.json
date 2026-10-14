@@ -2958,7 +2958,12 @@
       "description": "Phase-review finding (med, CLASS - recurred on two P125 tasks): agents split path literals (e.g. \"plugins/au\" \"dit/x.py\") so `_refs`' dangling-reference lints do not see a fixture path that does not exist in the tree. A patch per instance is how this class keeps coming back. Invariant: a fixture path is DECLARED as a fixture, through one marker the lint reads (one spelling, documented in the lint's docstring), and the lint then accepts it; a path assembled from adjacent or concatenated string literals is reported by name, so splitting is never needed and no longer hides anything. Convert the splits that exist today to the marker (widen scope through the drive for the files that hold them). Read the before-you-claim and no-silent-pass skills first; prove the new lint red both ways (a split path reported, a declared fixture accepted).",
       "files": [
         "plugins/audit/scripts/_refs.py",
-        "plugins/audit/tests/test__refs.py"
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "tools/capture-demo-gif.py",
+        "tools/prove-gates.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -3044,7 +3049,13 @@
       "startedAt": "2026-10-14T14:56:12Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-14T15:05:18Z",
+          "text": "Red-first proved by the orchestrator over the wave base (git archive of the task tree's HEAD, the three new test files copied in, __pycache__ purged, no CLAUDE_PROJECT_DIR): test_usage_ledger exit 1 (AttributeError is_model_id), test_meter_usage exit 1 55/56 (FAIL ss1b), test__doctor_trail exit 1 149/150 (FAIL dt-up2b); with usage_ledger.py, meter-usage.py and _doctor_trail.py from the tree: 122/122, 56/56, 150/150, all exit 0. Scope widened with usage_ledger.py (the existing home of the not-a-model rule) and its suite."
+        }
+      ]
     },
     {
       "id": "P125.53-0h5",

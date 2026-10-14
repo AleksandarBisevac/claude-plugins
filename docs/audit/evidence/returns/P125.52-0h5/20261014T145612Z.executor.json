@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "selftests": "pass",
+    "lint": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-14T15:04:41Z",
+    "basis": "`python3 plugins/audit/tests/test_meter_usage.py --selftest` in a throwaway tree at HEAD: the command could not start: [Errno 2] No such file or directory: 'python3 plugins/audit/tests/test_meter_usage.py --selftest'; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added usage_ledger.is_model_id(model) (non-empty string not starting with '<'); the transcript scanner now skips non-model ids through it; meter-usage session_start_check and _doctor_trail.unpriced_model_tokens call ul.is_model_id so <synthetic> is never named while an unknown real id still is. Full sweep: 335/335 files ok, exit 0. ruff clean. Selftests: usage_ledger 122/122, meter_usage 56/56, doctor_trail 150/150. vermin not run.",
+    "descriptive": "The unpriced-model notice and doctor row no longer name Claude Code's <synthetic> turn as a model."
+  },
+  "testsAdded": [
+    "a previous session whose last model id is <synthetic> prints no unpriced-model notice, and one whose id is an unknown real model still does",
+    "ledger rows with model <synthetic> are not named by the unpriced-models row, and rows of an unknown real model are, with their token count",
+    "is_model_id: a real model id is one, the synthetic turn, an empty id and a non-string are not"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:6c74391e3a881ee320d15762bd825c7cecfc81505a531751f92065e0e903a00e\",\"dirtyDigest\":\"sha256:77c636352e6b88b2d591746c3ae590eead07f5e9e11cf0d04649a0123f2dc6ca\",\"dirtyPaths\":{\"plugins/audit/hooks/meter-usage.py\":\"d78cf91c11cb1717\",\"plugins/audit/scripts/status/_doctor_trail.py\":\"81d859f3afe7fb96\",\"plugins/audit/scripts/usage/usage_ledger.py\":\"470eb6774133cdaa\",\"plugins/audit/tests/test__doctor_trail.py\":\"901fb04912fda409\",\"plugins/audit/tests/test_meter_usage.py\":\"3a54a81f717a7741\",\"plugins/audit/tests/test_usage_ledger.py\":\"ca0dc3cf64eb4e6a\"},\"head\":\"d24a04ad\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/hooks/meter-usage.py\",\"plugins/audit/scripts/status/_doctor_trail.py\",\"plugins/audit/scripts/usage/usage_ledger.py\",\"plugins/audit/tests/test__doctor_trail.py\",\"plugins/audit/tests/test_meter_usage.py\",\"plugins/audit/tests/test_usage_ledger.py\"],\"scopeDigest\":\"sha256:f66373f93b8536566eac2f32ff23e69f07693cfee9d6fd9a08da90ebb02b6095\",\"v\":2}"
+}
