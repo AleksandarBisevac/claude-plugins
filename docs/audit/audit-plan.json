@@ -4745,7 +4745,8 @@
       "P125.4",
       "P125.18",
       "P125.39-0h5",
-      "P125.46-0h5"
+      "P125.46-0h5",
+      "P125.52-0h5"
     ],
     "plugins/audit/templates/audit-plan.starter.json": [
       "P1.5"
@@ -6453,7 +6454,8 @@
       "P125.4",
       "P125.18",
       "P125.39-0h5",
-      "P125.46-0h5"
+      "P125.46-0h5",
+      "P125.52-0h5"
     ],
     "plugins/audit/tests/test_validate_config.py": [
       "P47.1",
