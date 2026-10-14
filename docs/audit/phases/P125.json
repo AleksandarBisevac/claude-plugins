@@ -807,59 +807,6 @@
       ]
     },
     {
-      "id": "P125.13",
-      "title": "Every plugin agent carries a measured maxTurns cap and a capped run stops loudly",
-      "status": "pending",
-      "description": "N12. Add maxTurns to audit-executor, audit-reviewer and audit-explorer frontmatter, each set from a measurement written beside it (see openChoices for the rule). A _refs lint requires the field on every agent under plugins/audit/agents/ (guide.md included or exempted with a reason) and gets its prove-gates row. drive-phase already treats a dispatch with no filed return as stopped; its stop line now says the agent may have reached its maxTurns cap and names the cap, so a runaway is a named stop rather than a silent one.",
-      "files": [
-        "plugins/audit/agents/audit-executor.md",
-        "plugins/audit/agents/audit-reviewer.md",
-        "plugins/audit/agents/audit-explorer.md",
-        "plugins/audit/agents/guide.md",
-        "plugins/audit/scripts/_refs.py",
-        "plugins/audit/scripts/governance/drive-phase.py",
-        "tools/prove-gates.py",
-        "plugins/audit/tests/test__refs.py",
-        "plugins/audit/tests/test_drive_phase.py"
-      ],
-      "tests": {
-        "mode": "tdd",
-        "add": [
-          "plugins/audit/tests/test__refs.py: an agent file without maxTurns is named by the lint; one with a non-integer value is named",
-          "plugins/audit/tests/test_drive_phase.py: an executor dispatch that returns with nothing filed stops naming the agent's maxTurns cap"
-        ],
-        "expectRedFirst": true,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "phase-no-spelling"
-      },
-      "model": "sonnet",
-      "skills": [],
-      "risk": "low",
-      "blockedBy": [],
-      "dependsOn": [
-        "P128.3-0h5"
-      ],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
-    },
-    {
       "id": "P125.18",
       "title": "A phase boundary is a context boundary: a chained run starts each phase fresh and status shows the carried context",
       "status": "pending",
