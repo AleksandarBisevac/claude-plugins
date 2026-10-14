@@ -16,16 +16,20 @@ to `derive()` directly.
 `dp`-prefixed cases.
 """
 
+import importlib.util
 import json
 import os
+import re
 import shlex
 import stat
 import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402  (REPO_ROOT: where this repository's listing runs)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
+import _affected_tests                             # noqa: E402  (select, entries_for: a task gate's narrowing)
 
 M = _loader.load_script("derive-phase-gate.py", modname="derive_phase_gate")
 
@@ -586,6 +590,91 @@ def _cases(check):
     check("dp-usage an unknown phase id is a usage error, not a silent no-op: "
           "%r" % (out7,),
           code7 == M.E_USAGE and "no phase" in out7)
+
+    _repo_listing_cases(check)
+
+
+# --- this repository's own recorded listing ------------------------------------
+# The four values `audit-task.py record-listing` writes into this repository's
+# plan, as CONTRIBUTING.md lists them - read off that list, so the case and the
+# document cannot name two different listings.
+_RECORDED = re.compile(r"`--(listing-all|listing-related|spelling|verified-on) "
+                       r"'([^']+)'`")
+_RECORDED_KEYS = ("listing-all", "listing-related", "spelling", "verified-on")
+
+
+def _recorded_here():
+    """`{flag: command}` CONTRIBUTING.md lists, or `{}` unless each of the four
+    is there exactly once."""
+    with open(os.path.join(_output.REPO_ROOT, "CONTRIBUTING.md"),
+              encoding="utf-8") as fh:
+        found = _RECORDED.findall(fh.read())
+    keys = sorted(flag for flag, _command in found)
+    return dict(found) if keys == sorted(_RECORDED_KEYS) else {}
+
+
+def _on_this_interpreter(command):
+    """`command` with a leading `python3` spelled as the interpreter running this
+    case. The plan names `python3` as every other command in it does, and the
+    Windows leg has no such name on PATH; the listing it runs is the same one."""
+    return PY + command[len("python3"):] if command.startswith("python3 ") else command
+
+
+def _sweep_module():
+    """`tools/sweep-selftests.py`, loaded by path: its own reading of a named
+    list is what a derived step is handed to."""
+    path = os.path.join(_output.REPO_ROOT, "tools", "sweep-selftests.py")
+    spec = importlib.util.spec_from_file_location("sweep_selftests", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _repo_listing_cases(check):
+    title = ("with this repo's recorded listing and spelling, a task touching "
+             "only tools/affected.py derives a gate naming its own suites, not "
+             "the whole sweep")
+    recorded = _recorded_here()
+    if not recorded:
+        check("%s: CONTRIBUTING.md does not list each of %r once"
+              % (title, _RECORDED_KEYS), False)
+        return
+    cmd = dict((k, _on_this_interpreter(v)) for k, v in recorded.items())
+    repo = _output.REPO_ROOT
+    answer = M._spawn(cmd["verified-on"], repo, 60)
+    meta = {"phaseGate": {"derived": {
+        "listing": {"all": cmd["listing-all"], "related": cmd["listing-related"]},
+        "spelling": cmd["spelling"],
+        "verifiedOn": {"command": cmd["verified-on"],
+                       "answer": answer["output"].strip()}}}}
+    gate_runner = _loader.load_script("run-test-gate.py", modname="run_test_gate")
+    changed = ["tools/affected.py"]
+    facts = gate_runner._affected_facts(repo, meta, changed)
+    info = _affected_tests.select(changed, meta, facts)
+    steps, why = _affected_tests.entries_for(info["suites"], {}, meta, repo)
+    full = M._spawn(cmd["listing-all"], repo, 120)
+    every = set(ln.strip() for ln in full["output"].splitlines() if ln.strip())
+    sweep = _sweep_module()
+    swept = sweep.sweep_files()
+    head = shlex.split(cmd["spelling"].split("{paths}")[0])
+    named, readings = [], []
+    for _name, entry in steps:
+        words = shlex.split(entry)
+        paths = words[len(head):] if words[:len(head)] == head else None
+        readings.append(sweep.named_suites(paths or [], swept))
+        named.extend(paths or [None])
+    related = ((facts.get("related") or {}).get("paths")) or []
+    check("%s: widen %r / %r; steps %r; related listing %r; %d of the %d "
+          "listed suites" % (title, info["widen"], why,
+                             [e for _n, e in steps], related,
+                             len(set(p for p in named if p)), len(every)),
+          answer["exit"] == 0 and full["exit"] == 0
+          and info["widen"] is None and why is None and steps != []
+          and None not in named and related != []
+          and set(related) <= set(named)
+          and set(named) < every
+          and all(r == (sorted(set(r[0] or [])), None) and r[0]
+                  for r in readings))
 
 
 def _selftest():

@@ -2353,7 +2353,7 @@
     {
       "id": "P125.43-0h5",
       "title": "The panel's refused-save check waits for the refusal banner instead of reading the page at a fixed moment",
-      "status": "in_progress",
+      "status": "done",
       "description": "F653: P125.27's gate went red on shots with 'settings: a refused save drew null - expected a bold title, the findings body and a dismiss button'; the same check passed three times in the task tree (two with a gap) and on the phase tree, and the change under test did not touch the panel. The check reads the DOM before the banner is drawn. Wait on the banner's own element (or the save response) with a bounded timeout, and when it never appears, say what the save request returned. Do not raise a global timeout.",
       "files": [
         "tools/capture-screenshots.mjs"
@@ -2383,14 +2383,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6b66b0abca49",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/capture-screenshots.mjs: assertSaveNoteLifecycle's refused-save and landed-save checks read the findings-slot on a fixed page.waitForTimeout(700) before the save's own PUT /api/config had necessarily resolved and rendered, which is the F653 race. Added awaitSaveCard(page, scope, kind, resBody, timeout) that page.waitForSelector()s the outcome card with a bounded per-call timeout and, when it never paints, reports what the save itself returned (captured via page.waitForResponse on the PUT). The refused-save round now also delays the server's PUT /api/config response by 1.2s on purpose via page.route(CONFIG_URL, ...), so the wait-for-paint behaviour is exercised on every run instead of relying on the race recurring by chance; the landed-save round uses the same helper. Verified: node --check tools/capture-screenshots.mjs (syntax ok); node tools/capture-screenshots.mjs --check --only panel run twice with a gap, both exit 0 and both print 'settings: a refused save, with its own response delayed 1.2s, still drew the refusal card — the wait tracks the paint' plus the existing 'refusal card up, still up 5.6s later, closed by its ×' and '\"saved\" card present after the save, gone on its 5s clock' lines; python3 tools/sweep-selftests.py --jobs 6 exit 0, 334/334 files ok, 16115 cases.",
+        "descriptive": "The panel's refused-save screenshot check now waits for the refusal banner's own paint (bounded, with the save's own response named on timeout) instead of racing a fixed clock, and exercises that wait against a deliberately delayed save response on every run."
       },
       "startedAt": "2026-10-14T08:30:03Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T11:11:35Z",
+      "verifiedBy": [
+        "tools/capture-screenshots.mjs: with the refusal banner's render delayed in the fixture, the refused-save check waits for it and passes; a save that is not refused is still reported, naming what the save returned"
+      ],
       "reviewPerTask": "phase",
       "notes": [
         {
@@ -2402,6 +2404,17 @@
         "runId": "2026-10-14T11:11:34Z.4b7446",
         "status": "passed",
         "at": "2026-10-14T11:11:34Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "6b66b0abca49",
+        "at": "2026-10-14T11:11:35Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T08:44:57Z",
+        "basis": "`node tools/capture-screenshots.mjs --check` in a throwaway tree at HEAD: inline suite tools/capture-screenshots.mjs (its test file is its implementation file): it is not Python, and an inline suite's test hunks are read from Python definitions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2458,9 +2471,9 @@
       "verifiedBy": [],
       "reviewPerTask": "phase",
       "testEvidence": {
-        "runId": "2026-10-14T09:51:00Z.40ada5",
-        "status": "failed",
-        "at": "2026-10-14T09:51:00Z"
+        "runId": "2026-10-14T11:21:02Z.a5d539",
+        "status": "passed",
+        "at": "2026-10-14T11:21:02Z"
       }
     },
     {

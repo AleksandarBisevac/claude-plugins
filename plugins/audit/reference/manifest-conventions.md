@@ -529,6 +529,14 @@ The journal's **completion-record actions**:
   `until`, reason)
 - `test.unmuted` — `audit-task.py unmute` removed one `meta.muted` entry (details: field = the test
   path, from = the `until` the removed entry carried)
+- `listing.recorded` — `audit-task.py record-listing` wrote `meta.phaseGate.derived`'s
+  `listing.all`, `listing.related`, `spelling` and `verifiedOn` (details: field =
+  `meta.phaseGate.derived`, from = which of those keys it held before, null when none, to = the
+  keys written). The commands themselves stay out of the row, as every command does: the summary
+  names the version answer the listing was verified on, and the plan holds the rest. The verb runs
+  `--verified-on` and stores what it printed, and it refuses, rolling every file back, a shape the
+  validator warns about on that field - a `spelling` or `listing.related` with no `{paths}`, an
+  `all` carrying one - since it is the field's only writer
 - `phase.gateDerived` — `derive-phase-gate.py` computed a phase's derived sign-off gate (details:
   phaseId, mode, changes — which of `testGateDerived`/`testGateBasis`/`testGate` this run wrote,
   `testGate` only in `enforce` mode — and basis, `phase.testGateBasis`'s own word). Written **only
@@ -582,7 +590,7 @@ by design:** a sign-off of a branchless phase (`mergedAt` is null, which cannot 
 from another), and a completion that was never recorded anywhere. Both cost a repeated row, never
 a lost one.
 `task.start`, `task.move`, `task.block`, `task.unblock`, `task.note`, `coupling.learned`, `coupling.dropped`, `coupling.caught`,
-`bug.add`, `bug.close`, `test.muted` and `test.unmuted` are written **in process** by `audit-task.py`, the same way its `task.done`, `task.reopen`, `plan.settle` and `plan.reindex` rows
+`bug.add`, `bug.close`, `test.muted`, `test.unmuted` and `listing.recorded` are written **in process** by `audit-task.py`, the same way its `task.done`, `task.reopen`, `plan.settle` and `plan.reindex` rows
 are. `phase.gateDerived` is written **in process** by `derive-phase-gate.py`, its own entry point,
 for the identical reason. `phase.merged` and `phase.mergedHead.recorded` are written **in process** by
 `close-phase.py`, for the same reason again: it writes the plan with `os.replace` from a script

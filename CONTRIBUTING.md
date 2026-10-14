@@ -478,6 +478,26 @@ node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.htm
 node tools/capture-screenshots.mjs --check
 ```
 
+### A task gate that runs what the change can break
+
+A task's measured run adds the suites its change can break (`_affected_tests`), and it can name
+them only through what the plan records in `meta.phaseGate.derived`: a listing of the suites
+related to a set of paths, a listing of every suite, and the spelling that runs a named list.
+Without them every task gate here widened to the whole phase gate.
+`audit-task.py record-listing` is the field's one writer — a hand edit of the plan is refused —
+and it runs the version command and stores its answer, so a machine that answers differently
+widens to the phase gate rather than trusting a listing verified somewhere else. This repository records exactly
+these, and `plugins/audit/tests/test_derive_phase_gate.py` reads them off this list:
+
+- `--listing-all 'python3 tools/affected.py --list-all'`
+- `--listing-related 'python3 tools/affected.py --list-related {paths}'`
+- `--spelling 'python3 tools/sweep-selftests.py {paths}'`
+- `--verified-on 'python3 --version'`
+
+`tools/sweep-selftests.py` takes the named list as repo-relative paths after its flags, grades
+each file by the rules a whole sweep applies, and refuses a path it does not sweep, naming it — so
+a listing that drifts from the sweep fails by name instead of quietly running something else.
+
 CI (`.github/workflows/ci.yml`) runs the selftest suite on ubuntu + windows —
 the windows leg proves the `python3` → `python` → `py` interpreter fallback
 (the manifest-validation and plugin-validate jobs run on ubuntu).

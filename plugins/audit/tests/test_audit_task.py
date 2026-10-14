@@ -4345,7 +4345,10 @@ def _flag_cases(check):
                    # `file-return` with its one flag; the misplaced-flag check
                    # fires before the door reads stdin.
                    "file-return": ["file-return", "P2.9", "--role",
-                                   "executor"]}
+                                   "executor"],
+                   # `record-listing` takes no id, and the misplaced-flag
+                   # check fires before its body asks for its four flags.
+                   "record-listing": ["record-listing"]}
         _vf_leaks = []
         for _vfv in sorted(M.VERB_FLAGS):
             _vfknown = set(M.VERB_FLAGS[_vfv]) | set(M.UNIVERSAL_FLAGS)
@@ -4511,6 +4514,12 @@ def _flag_cases(check):
         _vf_ok["unblock/--reason"] = run(
             ["unblock", "P2.3", "--reason", "the human says again", "--json",
              "--project-dir", _vf_ub_proj])[0]
+        _vf_rl_proj, _vf_rl_mp = mk("vf-listing", base_manifest())
+        _vf_ok["record-listing/--verified-on"] = run(
+            ["record-listing", "--listing-all", "lister", "--listing-related",
+             "lister {paths}", "--spelling", "runner {paths}",
+             "--verified-on", "echo v-vf", "--json",
+             "--project-dir", _vf_rl_proj])[0]
         check("vf4 SECOND-DIRECTION CASE: every flag a verb DOES read still "
               "works, and `--json` / `--project-dir` reach every verb - a guard "
               "that fires on a correct call is a guard somebody routes around "
@@ -7630,6 +7639,10 @@ def _close_cases(check):
             ("reindex", ["reindex"]),
             # ...and `unblock`, on a pair whose task has spent its attempts.
             ("unblock", ["unblock", "P2.3", "--reason", "try again"]),
+            ("record-listing", ["record-listing", "--listing-all", "lister",
+                                "--listing-related", "lister {paths}",
+                                "--spelling", "runner {paths}",
+                                "--verified-on", "echo v-tw"]),
         )
         # `signoff` gets its own pair too: by its row every other row has left P2
         # with open work, which it rightly refuses.
@@ -17211,6 +17224,90 @@ def _crossfile_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _record_listing_cases(check):
+    """`record-listing`: the one writer of `meta.phaseGate.derived`'s listing,
+    spelling and the version answer they were verified on."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, _run_on_stdin, base_manifest, mk, _mk_empty, _task_in, _pin, _unpin,
+     _PD_SHA, _pd_fixture, _pd_repo, _git) = _at_kit(tmp)
+    try:
+        def rl_bytes(path):
+            with open(path, "rb") as fh:
+                return fh.read()
+
+        def rl_rows(project):
+            jmod = _panel_write._journalmod()
+            return [r for r in (jmod.read_all(project) if jmod else [])
+                    if r.get("action") == "listing.recorded"]
+
+        def rl_derived(mpath):
+            gate = (_mio.load_manifest(mpath).get("meta") or {}).get("phaseGate")
+            return gate if isinstance(gate, dict) else {}
+
+        # Plain words a POSIX shell runs on every runner this suite meets, so
+        # the version command is real and no interpreter path - a machine path
+        # the verb refuses to store - has to be spelled in it.
+        rl_flags = {"all": "lister --all", "related": "lister --related {paths}",
+                    "spelling": "runner {paths}", "verify": "echo v-rl"}
+
+        def rl_argv(proj, **over):
+            vals = dict(rl_flags, **over)
+            argv = ["record-listing"]
+            for flag, key in (("--listing-all", "all"),
+                              ("--listing-related", "related"),
+                              ("--spelling", "spelling"),
+                              ("--verified-on", "verify")):
+                if vals.get(key) is not None:
+                    argv += [flag, vals[key]]
+            return argv + ["--project-dir", proj]
+
+        fx = base_manifest()
+        fx["meta"]["phaseGate"] = {"always": ["test"]}
+        proj, mpath = mk("rl-write", fx)
+        code, txt = run(rl_argv(proj))
+        got = rl_derived(mpath)
+        rows = rl_rows(proj)
+        written = rl_bytes(mpath)
+        refused = {}
+        for what, over in (("spelling", {"spelling": "runner --all"}),
+                           ("related", {"related": "lister --related"})):
+            r_code, r_txt = run(rl_argv(proj, **over))
+            refused[what] = (r_code, "REFUSED" in r_txt, "{paths}" in r_txt,
+                             rl_bytes(mpath) == written)
+        for what, over in (("no spelling", {"spelling": None}),
+                           ("version fails", {"verify": "exit 3"})):
+            r_code, r_txt = run(rl_argv(proj, **over))
+            refused[what] = (r_code, r_txt.split("\n")[-1][:200],
+                             rl_bytes(mpath) == written)
+        check("the verb that records meta.phaseGate.derived (listing.all, "
+              "listing.related, spelling) writes it through the manifest "
+              "writer, revalidates, journals one row, and refuses a spelling "
+              "without the {paths} placeholder: exit %r %r; phaseGate %r; "
+              "rows %r; refused %r"
+              % (code, txt[-200:], got,
+                 [(r.get("details") or {}).get("field") for r in rows],
+                 refused),
+              code == 0
+              and got == {"always": ["test"], "derived": {
+                  "listing": {"all": "lister --all",
+                              "related": "lister --related {paths}"},
+                  "spelling": "runner {paths}",
+                  "verifiedOn": {"command": "echo v-rl", "answer": "v-rl"}}}
+              and len(rl_rows(proj)) == 1
+              and (rows[0].get("details") or {}).get("field")
+              == "meta.phaseGate.derived"
+              and refused["spelling"] == (1, True, True, True)
+              and refused["related"] == (1, True, True, True)
+              and refused["no spelling"][0] == 2
+              and "--spelling" in refused["no spelling"][1]
+              and refused["no spelling"][2]
+              and refused["version fails"][0] == 2
+              and "exit" in refused["version fails"][1]
+              and refused["version fails"][2])
+    finally:
+        _harness.remove_tree(tmp)
+
+
 STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("at3-block", "_flag_cases"), ("at4-block", "_start_cases"),
           ("at5-block", "_close_cases"), ("at6-block", "_group_cases"),
@@ -17229,6 +17326,7 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("of-block", "_open_finding_shape_cases"),
           ("fp-block", "_first_plan_cases"),
           ("bx-block", "_batch_fix_cases"),
+          ("rl-block", "_record_listing_cases"),
           ("xf-block", "_crossfile_cases"))
 
 
