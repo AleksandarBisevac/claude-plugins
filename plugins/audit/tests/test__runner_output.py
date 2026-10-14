@@ -210,6 +210,27 @@ def _colour_cases(check):
           and " FAIL  ./d.test.js" in plain)
 
 
+def _playwright_line_cases(check):
+    # The entries sit BELOW a header line, so a `^` that anchors only the whole
+    # string (the pattern with no re.M) finds none of them. Two entries, so a
+    # reader that stops at the first is told apart from one that reads all.
+    text = ("Running 4 tests using 1 worker\n\n"
+            "  tests/a.spec.ts:4:7 \u203a math \u203a adds numbers\n"
+            "  tests/a.spec.ts:9:7 \u203a math \u203a subtracts\n\n"
+            "  2 failed\n  2 passed (1s)\n")
+    found = M._FAILURE_READERS["playwright"].findall(text)
+    tally = M.read_run_tally(text)
+    cases = M.run_failing_cases(text, "playwright")
+    check("ru15 a Playwright list-reporter output whose failing entries start "
+          "mid-text (not at offset 0) is read as red with each failing test "
+          "named, through _FAILURE_READERS['playwright']: %r / %r"
+          % (found, tally),
+          len(found) == 2 and tally is not None
+          and tally["runner"] == "playwright" and tally["failed"] == 2
+          and tally["assertions"] == 2
+          and [c["id"] for c in cases] == ["adds numbers", "subtracts"])
+
+
 def _layer_cases(check):
     with open(M.__file__, encoding="utf-8") as fh:
         tree = ast.parse(fh.read())
@@ -231,6 +252,7 @@ def _cases(check):
     _vitest_cases(check)
     _node_assert_cases(check)
     _colour_cases(check)
+    _playwright_line_cases(check)
     _layer_cases(check)
 
 

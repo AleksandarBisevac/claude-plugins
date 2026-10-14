@@ -22,10 +22,13 @@ and pytest's is not the summary row the gate counts by; jest and vitest are
 read through this module's own summary and failure readers, each case carrying
 the per-case `assertion` flag. Mocha and playwright have no
 row there: what each prints under a failure has not been recorded, so which
-of their failures is an assertion cannot be read.
+of their failures is an assertion cannot be read. Playwright's own reporters
+and vitest's JSON one are read in the last section, `read_run_tally` and
+`run_failing_cases` being the pair `red` calls.
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
+import json
 import os
 import re
 import sys
@@ -201,8 +204,11 @@ _FAILURE_READERS = {
     # dashes. This is the ENTRY line; which block it sits under is
     # `playwright_listed`'s question, because a flaky test and a failed one are
     # spelled identically and only the heading above tells them apart.
+    # MULTILINE, so `^`/`$` anchor each line of a whole run's text and not only
+    # its first and last; run-test-gate's per-line `.match` is unaffected.
     "playwright": re.compile(
-        "^[ \t]+((?:\\[[^\\]]+\\] › )?\\S+:\\d+:\\d+ › .+?)(?:[ \t]+─+)?[ \t]*$"),
+        r"^[ \t]+((?:\[[^\]]+\][ \t]*›[ \t]*)?\S+:\d+:\d+[ \t]*›[ \t]*.+?)"
+        r"(?:[ \t]+─+)?[ \t]*$", re.M),
 }
 
 
@@ -574,6 +580,233 @@ def read_tally(text, cmd=None):
         return named[0]
     return {"runner": None, "mixed": [t["runner"] for t in tallies],
             "collected": 0, "failed": 0, "assertions": 0}
+
+
+# --- playwright's JSON and line reporters, vitest's JSON reporter -----------
+# A Playwright run's own output carries no `Tests` line `read_tally` knows, and
+# a vitest run under `--reporter=json` prints none of the one its vitest reader
+# looks for: two reporters, not one runner, read here beside the line readers.
+def _json_blob(text):
+    """The LARGEST `{...}` document `text` parses whole as JSON, or None.
+
+    A wrapper (`npm test`, a package script) prints banner lines before and
+    after the reporter's own document, so every `{` is tried as a start and
+    the biggest span that parses whole is kept - a small unrelated object (a
+    lockfile notice, a config echo) printed beside the real one is not read
+    as it."""
+    text = text or ""
+    decoder, idx, found = json.JSONDecoder(), 0, None
+    while True:
+        start = text.find("{", idx)
+        if start == -1:
+            return found[2] if found else None
+        try:
+            obj, end = decoder.raw_decode(text, start)
+        except ValueError:
+            idx = start + 1
+            continue
+        if found is None or (end - start) > (found[1] - found[0]):
+            found = (start, end, obj)
+        idx = end
+
+
+def _pw_specs(suites, path=()):
+    """`[(chain, file, test)]` - every test playwright's JSON reporter nests
+    under `suites`, the chain its own title and every enclosing suite's,
+    walked depth first the way the reporter nests them."""
+    out = []
+    for suite in suites or []:
+        title = suite.get("title") or ""
+        sub = path + ((title,) if title else ())
+        for spec in suite.get("specs") or []:
+            chain = sub + (spec.get("title") or "",)
+            for test in spec.get("tests") or []:
+                out.append((chain, spec.get("file"), test))
+        out.extend(_pw_specs(suite.get("suites") or [], sub))
+    return out
+
+
+# An `expect()` or a `node:assert` failure prints `AssertionError`, or the
+# matcher's own line, in its error's message; anything else - a timeout, a
+# thrown value with no assertion in it - is read `assertion: False`.
+_PW_ASSERTION = re.compile(r"\bexpect[.(]|AssertionError\b")
+
+
+def _pw_error_text(test):
+    results = test.get("results") or []
+    if not results:
+        return ""
+    last = results[-1]
+    errors = last.get("errors") or ([last["error"]] if last.get("error") else [])
+    return "\n".join((e or {}).get("message") or "" for e in errors).strip()
+
+
+def playwright_json_cases(obj):
+    """`[{"id", "label", "assertion", "why", "suite", "chain"}]` from a
+    playwright JSON reporter document (`--reporter=json`), or None when `obj`
+    carries neither `suites` nor `stats` - the two keys the reporter always
+    writes, a passing run included, so their absence means this is not one."""
+    if not isinstance(obj, dict) or "stats" not in obj or "suites" not in obj:
+        return None
+    out = []
+    for chain, file_rel, test in _pw_specs(obj.get("suites") or []):
+        if test.get("status") != "unexpected":
+            continue
+        error = _pw_error_text(test)
+        case = {"id": chain[-1] if chain else None, "label": " > ".join(chain),
+                "assertion": bool(_PW_ASSERTION.search(error)),
+                "why": error or "playwright: unexpected", "suite": file_rel,
+                "chain": list(chain)}
+        if case not in out:
+            out.append(case)
+    return out
+
+
+def playwright_json_tally(obj):
+    """The tally of a playwright JSON reporter document, or None (see
+    `playwright_json_cases`). `collected` is every test that ran at least
+    once - `expected`, `unexpected` and `flaky` are playwright's own words for
+    that - `skipped` left out exactly as the summary table leaves it out for
+    every other runner."""
+    cases = playwright_json_cases(obj)
+    if cases is None:
+        return None
+    stats = obj.get("stats") or {}
+    collected = sum(int(stats.get(k) or 0) for k in ("expected", "unexpected", "flaky"))
+    failed = int(stats.get("unexpected") or 0)
+    return {"runner": "playwright", "collected": collected, "failed": failed,
+            "assertions": len([c for c in cases if c["assertion"]])}
+
+
+def playwright_line_cases(text):
+    """`playwright_json_cases`'s shape, read off playwright's line/list
+    reporter instead of its JSON one: each entry `_FAILURE_READERS["playwright"]`
+    locates (`<file>:<line>:<col> › <chain>`, a project prefix allowed), its
+    chain split on playwright's own `' › '`. That reporter prints no
+    per-failure detail an assertion can be told from a timeout by, so every
+    entry here is `assertion: True`: playwright itself already decided the
+    test failed, and that is the claim this `why` carries, not a stronger one
+    about its cause."""
+    out = []
+    for hit in _FAILURE_READERS["playwright"].finditer(plain_text(text)):
+        entry = re.sub(r"^\[[^\]]+\][ \t]*›[ \t]*", "", hit.group(1))
+        loc, sep, rest = entry.partition(" › ")
+        if not sep:
+            continue
+        chain = [c.strip() for c in rest.split(" › ")]
+        case = {"id": chain[-1] if chain else None, "label": entry,
+                "assertion": True, "why": "playwright: failed",
+                "suite": loc.split(":")[0], "chain": chain}
+        if case not in out:
+            out.append(case)
+    return out
+
+
+def playwright_line_tally(text):
+    """The tally of playwright's line/list reporter, or None - `collected` and
+    `failed` off its own summary line (`summary_readers`, already carrying a
+    `playwright` row), `assertions` the entries `playwright_line_cases` names
+    (all of them, per that function's own limit)."""
+    rows = [(joined, words) for name, joined, words in
+            summary_readers(plain_text(text)) if name == "playwright"]
+    if not rows:
+        return None
+    joined, words = rows[0]
+    counts = {}
+    for n, word in _SUMMARY_PAIR.findall(joined):
+        counts[word] = counts.get(word, 0) + int(n)
+    cases = playwright_line_cases(text)
+    return {"runner": "playwright",
+            "collected": sum(counts.get(w, 0) for w in words),
+            "failed": counts.get("failed", 0) + counts.get("flaky", 0),
+            "assertions": len(cases)}
+
+
+def playwright_cases(text):
+    """Every failing case a playwright run named: its JSON reporter first,
+    its line/list reporter otherwise - the pair `playwright_json_tally` and
+    `playwright_line_tally` read from the same text."""
+    obj = _json_blob(text)
+    cases = playwright_json_cases(obj) if obj is not None else None
+    return cases if cases is not None else playwright_line_cases(text)
+
+
+# vitest's `--reporter=json` writes jest's own schema (`testResults`, each
+# holding `assertionResults`), so only that shape is walked.
+_VITEST_JSON_ASSERTION = re.compile(r"^AssertionError\b", re.M)
+
+
+def vitest_json_cases(obj):
+    """`playwright_json_cases`'s shape, read off a vitest (or jest) JSON
+    reporter document - `None` when `obj` carries no `testResults`, the key
+    this schema always writes."""
+    if not isinstance(obj, dict) or "testResults" not in obj:
+        return None
+    out = []
+    for file_result in obj.get("testResults") or []:
+        file_rel = file_result.get("name")
+        for assertion in file_result.get("assertionResults") or []:
+            if assertion.get("status") != "failed":
+                continue
+            chain = list(assertion.get("ancestorTitles") or []) + [
+                assertion.get("title") or ""]
+            why = "\n".join(assertion.get("failureMessages") or [])
+            case = {"id": chain[-1], "label": " > ".join(chain),
+                    "assertion": bool(_VITEST_JSON_ASSERTION.search(why)),
+                    "why": why.strip() or "vitest: failed", "suite": file_rel,
+                    "chain": chain}
+            if case not in out:
+                out.append(case)
+    return out
+
+
+def vitest_json_tally(obj):
+    """The tally of a vitest (or jest) JSON reporter document, or None.
+
+    A suite that never ran a test - a crashed import, a syntax error - is a
+    `testResults` entry with no `assertionResults` at all; it is counted as
+    one failure with no case, the same convention `_summary_tally` uses for a
+    jest or vitest suite the line reporter names with no chain."""
+    cases = vitest_json_cases(obj)
+    if cases is None:
+        return None
+    crashed = len([r for r in obj.get("testResults") or []
+                  if r.get("status") == "failed" and not r.get("assertionResults")])
+    return {"runner": "vitest",
+            "collected": int(obj.get("numTotalTests") or 0) + crashed,
+            "failed": int(obj.get("numFailedTests") or 0) + crashed,
+            "assertions": len([c for c in cases if c["assertion"]])}
+
+
+def read_run_tally(text, cmd=None):
+    """The tally `red` reads for one run: `read_tally` first - house, pytest,
+    unittest, jest, vitest's line reporter - then the two reporters it carries
+    no row for, playwright (its JSON reporter, else its line one) and vitest's
+    JSON reporter."""
+    tally = read_tally(text, cmd)
+    if tally is not None:
+        return tally
+    obj = _json_blob(text)
+    if obj is not None:
+        for reader in (playwright_json_tally, vitest_json_tally):
+            got = reader(obj)
+            if got is not None:
+                return got
+    return playwright_line_tally(text)
+
+
+def run_failing_cases(text, runner):
+    """`failing_cases`'s shape for a run `red` graded, widened to the two
+    reporters `read_run_tally` reads and `failing_cases` cannot: playwright
+    (either reporter) and vitest's JSON one."""
+    if runner == "playwright":
+        return playwright_cases(text)
+    if runner == "vitest":
+        obj = _json_blob(text)
+        got = vitest_json_cases(obj) if obj is not None else None
+        if got is not None:
+            return got
+    return failing_cases(text, runner)
 
 
 if __name__ == "__main__":

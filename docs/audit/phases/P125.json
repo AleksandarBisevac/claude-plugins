@@ -2572,7 +2572,7 @@
     {
       "id": "P125.45-0h5",
       "title": "The affected-test selection reads no meta.coupling: the arm P125.8 added is removed, as the owner's freeze on third-place readers requires",
-      "status": "in_progress",
+      "status": "done",
       "description": "Owner decision D1 (2026-10-14, quality-gates-internal reports/2026-10-14-cost-code-ci-analysis/DECISIONS.md): freeze the third place, mutes and coupling now - no new reader of those keys, the coupling arm of P125.8 named explicitly - and decide after the orchestration study. P125.8 (3321ac71) landed before the decision with a coupling arm in _affected_tests.py, raising the files that read third-place keys from 23 to 24 (code study, studies/K-code-study.md). Remove the arm and its cases; the remaining arms (related listing, import graph, e2e listing, all-e2e on app source) and the widen-to-phase-gate fallbacks stay. Documentation stops naming coupling as a selection source. Net code must go down.",
       "files": [
         "plugins/audit/scripts/governance/_affected_tests.py",
@@ -2605,19 +2605,32 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "354c968e06a4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Removed the coupling arm from _affected_tests.py: the select() loop, _coupled_sources, the ARMS entry, the _gate_derive comment and the module docstring mention. Replaced the old coupling case (af15) with one asserting a manifest carrying meta.coupling selects exactly what the same one without it selects, and that no coupling arm is in ARMS or the basis; the entries_for fixture now uses the python arm. README line naming meta.coupling as a selection source dropped. reference/execute-task.md needed no change (its only hit was the word 'decoupled'). _gate_derive._coupling_arm stays: the phase-gate derivation uses it, outside this task's scope. Sweep: 335/335 files ok, 16168 cases. Net: 23 insertions, 29 deletions across 3 files.",
+        "descriptive": "The task-gate affected-test selection no longer reads meta.coupling."
       },
       "startedAt": "2026-10-14T14:07:07Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T14:37:23Z",
+      "verifiedBy": [
+        "af15 a manifest carrying meta.coupling selects exactly what the same manifest without it selects; no arm named coupling appears in the selection's basis"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T14:37:21Z.f41c69",
         "status": "passed",
         "at": "2026-10-14T14:37:21Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "354c968e06a4",
+        "at": "2026-10-14T14:37:23Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T14:23:14Z",
+        "basis": "`python3 plugins/audit/tests/test__affected_tests.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 21 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - af15 (house FAIL): SELFTEST FAILED: 20/21 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2801,7 +2814,12 @@
       "startedAt": "2026-10-14T14:07:09Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-14T14:46:44Z.82b499",
+        "status": "passed",
+        "at": "2026-10-14T14:46:44Z"
+      }
     },
     {
       "id": "P125.49-0h5",

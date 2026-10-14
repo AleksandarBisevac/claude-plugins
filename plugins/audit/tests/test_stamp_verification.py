@@ -4683,6 +4683,27 @@ def _playwright_credit_cases(check):
           "names is read as one: exit=%r %r" % (code_line, basis_line[-220:]),
           code_line == M.E_PROVED and "adds numbers" in basis_line)
 
+    # Mutating the shared reader must change the helper's verdict, and the
+    # module must hold no reading of its own to fall back on.
+    mid = "Running 1 test\n\n  tests/example.spec.ts:4:7 \u203a math \u203a adds numbers\n\n  1 failed\n"
+    shared = _runner_output._FAILURE_READERS["playwright"]
+    before = M.classify_run(1, mid, None)[0]
+    _runner_output._FAILURE_READERS["playwright"] = _runner_output.re.compile(
+        r"^\Z(?!x)x")
+    try:
+        mutated = M.classify_run(1, mid, None)[0]
+    finally:
+        _runner_output._FAILURE_READERS["playwright"] = shared
+    own = [n for n in ("_PW_LINE_ENTRY", "_VITEST_JSON_ASSERTION", "_PW_ASSERTION",
+                       "red_read_tally", "red_failing_cases", "_json_blob",
+                       "playwright_line_cases", "vitest_json_cases")
+           if hasattr(M, n)]
+    check("sp3 stamp-verification defines no Playwright or vitest pattern of "
+          "its own - its red reading is the _runner_output reader's answer (a "
+          "mutation of the shared reader changes the helper's verdict): "
+          "before=%r mutated=%r own=%r" % (before, mutated, own),
+          before == M.V_RED and mutated != M.V_RED and not own)
+
 
 _VITEST_JSON_SPEC_NEW = "\n".join([
     "import { describe, it, expect } from 'vitest';",
