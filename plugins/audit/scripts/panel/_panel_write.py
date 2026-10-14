@@ -374,7 +374,7 @@ def restore(snap):
         try:
             with os.fdopen(fd, "wb") as fh:
                 fh.write(data)
-            os.replace(tmp, path)
+            _output.while_shared(lambda: os.replace(tmp, path))
         finally:
             if os.path.exists(tmp):
                 os.remove(tmp)

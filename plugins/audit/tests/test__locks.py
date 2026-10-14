@@ -613,6 +613,159 @@ def _cases(check):
     _harness.stage(check, "rk-block", _token_cases)
     _harness.stage(check, "hg-block", _gone_cases)
     _harness.stage(check, "rf-block", _refresh_cases)
+    _harness.stage(check, "sd-block", _sharing_cases)
+
+
+# --- a name another process holds open ------------------------------------------
+# Windows refuses a create, unlink, rename or replace of a name another process
+# holds open with a permission error, where POSIX would have let it through. The
+# denial is simulated here on any platform by a seam that refuses the name a set
+# number of times and then lets go, which is what a holder closing its handle
+# looks like from the writer's side.
+def _denied(real, times, refusal=None):
+    """`real`, refused `times` times first; `calls` counts every attempt."""
+    calls = {"n": 0}
+
+    def seam(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] <= times:
+            raise refusal or PermissionError(errno.EACCES, "Permission denied")
+        return real(*args, **kwargs)
+    return seam, calls
+
+
+def _sharing_cases(check):
+    if not shutil.which("git"):
+        _harness.skip(check, "sd1 a denied claim is measured against a real lock",
+                      "git provides the shared directory a lock lives in", True)
+        return
+    import _manifest_io
+    proj = tempfile.mkdtemp(prefix="audit-locks-share-")
+    quiet = lambda *_a, **_k: None                          # noqa: E731
+    real_link, real_unlink, real_replace = M._link_into_place, os.unlink, os.replace
+    try:
+        subprocess.call(["git", "init", "-q", proj])
+        path = os.path.join(M.lock_dir(proj), "index.lock")
+
+        M._link_into_place, calls = _denied(real_link, 2)
+        try:
+            code = M.acquire(proj, "index", session="s-SD", pid=os.getpid(),
+                             wait=2.0, out=quiet)
+        finally:
+            M._link_into_place = real_link
+        check("sd1 an acquire whose claim meets a sharing denial on the lock name "
+              "retries inside its deadline and takes the lock once the holder "
+              "lets go, rather than reading the denial as a refusal: %r"
+              % ((code, calls["n"], os.path.exists(path)),),
+              code == 0 and calls["n"] == 3 and os.path.exists(path))
+
+        def unlink_of(target, times):
+            seam, calls = _denied(real_unlink, times)
+
+            def picky(p, *a, **k):
+                if os.fspath(p) == target:
+                    return seam(p, *a, **k)
+                return real_unlink(p, *a, **k)
+            return picky, calls
+        if not os.path.exists(path):
+            # sd2 stands on its own: a red sd1 must not decide it.
+            M.acquire(proj, "index", session="s-SD", pid=os.getpid(), out=quiet)
+        os.unlink, calls = unlink_of(path, 2)
+        try:
+            code = M.release(proj, "index", session="s-SD", pid=os.getpid(),
+                             out=quiet)
+        finally:
+            os.unlink = real_unlink
+        check("sd2 ...and a release whose unlink is denied while a waiter has the "
+              "claim open still gives the lock back once the reader closes it, "
+              "so the waiter is not left behind a lock nobody holds: %r"
+              % ((code, calls["n"], os.path.exists(path)),),
+              code == 0 and calls["n"] == 3 and not os.path.exists(path))
+
+        _unlink_quietly(path)           # sd3 and sd4 each start from a free name
+        M._link_into_place, calls = _denied(real_link, 10 ** 6)
+        started = time.monotonic()
+        try:
+            code = M.acquire(proj, "index", session="s-SD", pid=os.getpid(),
+                             wait=0.2, out=quiet)
+        finally:
+            M._link_into_place = real_link
+        spent = time.monotonic() - started
+        check("sd3 a denial that outlives the deadline is refused AT the deadline "
+              "and as an answer, not before it and not as an exception: %r"
+              % ((code, calls["n"], round(spent, 3)),),
+              code == M.E_ERR and calls["n"] > 1 and 0.15 <= spent < 2.0
+              and not os.path.exists(path))
+
+        _unlink_quietly(path)
+        M._link_into_place, calls = _denied(
+            real_link, 10 ** 6, OSError(errno.ENOSPC, "No space left on device"))
+        started = time.monotonic()
+        try:
+            code = M.acquire(proj, "index", session="s-SD", pid=os.getpid(),
+                             wait=2.0, out=quiet)
+        finally:
+            M._link_into_place = real_link
+        spent = time.monotonic() - started
+        check("sd4 ...while a refusal that is NOT a sharing denial is not "
+              "retried: one attempt, refused at once: %r"
+              % ((code, calls["n"], round(spent, 3)),),
+              code == M.E_ERR and calls["n"] == 1 and spent < 1.0)
+
+        target = os.path.join(proj, "plan.json")
+        _manifest_io.atomic_write_text(target, "old\n")
+
+        def replace_onto(times):
+            seam, calls = _denied(real_replace, times)
+
+            def picky(src, dst, *a, **k):
+                if os.fspath(dst) == target:
+                    return seam(src, dst, *a, **k)
+                return real_replace(src, dst, *a, **k)
+            return picky, calls
+        os.replace, calls = replace_onto(2)
+        try:
+            _manifest_io.atomic_write_text(target, "new\n")
+            raised = None
+        except OSError as exc:
+            raised = exc.errno
+        finally:
+            os.replace = real_replace
+        with open(target, encoding="utf-8") as fh:
+            landed = fh.read()
+        litter = [n for n in os.listdir(proj) if n.endswith(".tmp")]
+        check("sd5 an atomic replace whose target is held open by a reader "
+              "retries and lands once the reader lets go, leaving no temp file: "
+              "%r" % ((raised, calls["n"], landed, litter),),
+              raised is None and calls["n"] == 3 and landed == "new\n"
+              and litter == [])
+
+        with open(target, encoding="utf-8") as fh:
+            before = fh.read()
+        had = getattr(_output, "SHARING_WAIT_SECONDS", None)
+        _output.SHARING_WAIT_SECONDS = 0.1
+        os.replace, calls = replace_onto(10 ** 6)
+        try:
+            _manifest_io.atomic_write_text(target, "never\n")
+            raised = None
+        except OSError as exc:
+            raised = exc.errno
+        finally:
+            os.replace = real_replace
+            if had is None:
+                del _output.SHARING_WAIT_SECONDS
+            else:
+                _output.SHARING_WAIT_SECONDS = had
+        with open(target, encoding="utf-8") as fh:
+            kept = fh.read()
+        litter = [n for n in os.listdir(proj) if n.endswith(".tmp")]
+        check("sd6 ...and one held past the bound is raised as the denial it is, "
+              "the old file standing and no temp file beside it: %r"
+              % ((raised, kept, litter),),
+              raised == errno.EACCES and kept == before and litter == [])
+    finally:
+        M._link_into_place, os.unlink, os.replace = real_link, real_unlink, real_replace
+        shutil.rmtree(proj, ignore_errors=True)
 
 
 # --- one predicate for "the holder is gone" -----------------------------------

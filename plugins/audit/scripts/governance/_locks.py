@@ -644,7 +644,7 @@ def _write_lock(path, info):
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(info, fh)
-        os.replace(tmp, path)
+        _output.while_shared(lambda: os.replace(tmp, path))
     except Exception:
         try:
             os.unlink(tmp)
@@ -728,6 +728,8 @@ def _claim(path, info, link=os.link):
     except FileExistsError:
         return {"taken": False, "exists": True, "error": None}
     except OSError as exc:
+        if _output.sharing_denied(exc):
+            raise               # contention, for `_claim_shared` to wait out
         return {"taken": False, "exists": False, "error": "%s" % (exc,)}
     finally:
         if tmp is not None:
@@ -737,6 +739,19 @@ def _claim(path, info, link=os.link):
                 pass            # a sibling left behind is litter, not a lock:
                                 # `collect` reads `.lock` names and nothing else
     return {"taken": True, "exists": False, "error": None}
+
+
+def _claim_shared(path, info, deadline=None, link=os.link):
+    """`_claim`, with a name another process holds open waited out until
+    `deadline` (a `time.monotonic()` moment) -> `_claim`'s three answers.
+
+    A denial still there at the deadline is the `error` answer, naming it: the
+    claim could not be written, which is not a report that anybody holds it."""
+    try:
+        return _output.while_shared(lambda: _claim(path, info, link=link),
+                                    deadline)
+    except OSError as exc:
+        return {"taken": False, "exists": False, "error": "%s" % (exc,)}
 
 
 def _claim_stamp(path):
@@ -775,7 +790,7 @@ def _take_over(path, info, stamp, record, link=os.link):
     displaced = False
     if stamp is not None and _claim_stamp(path) == stamp:
         try:
-            os.unlink(path)
+            _output.while_shared(lambda: os.unlink(path))
             displaced = True
         except FileNotFoundError:
             pass                # the holder let go in that instant: the name is
@@ -786,7 +801,7 @@ def _take_over(path, info, stamp, record, link=os.link):
     if displaced:
         info = dict(info)
         info.update(record)
-    res = _claim(path, info, link=link)
+    res = _claim_shared(path, info, link=link)
     res["displaced"] = bool(displaced and res["taken"])
     return res
 
@@ -1155,7 +1170,7 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
         # field, and a wait that pre-aged its own claim would shorten the
         # threshold by however long the caller spent waiting.
         info["startedAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        claim = _claim(path, info)
+        claim = _claim_shared(path, info, deadline)
         if claim["taken"]:
             if not per_call:
                 _carry(info["token"], True)
@@ -1359,7 +1374,7 @@ def release(project, name, session=None, pid=None, force=False, out=print):
             out("             (this lock records taking over from you)")
         return E_LIVE
     try:
-        os.unlink(path)
+        _output.while_shared(lambda: os.unlink(path))
     except OSError as exc:
         out("[audit-lock] cannot remove %s: %s" % (path, exc))
         return E_ERR

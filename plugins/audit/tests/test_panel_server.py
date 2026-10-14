@@ -43,6 +43,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import ast
+import errno
 import fnmatch
 import io
 import json
@@ -765,6 +766,7 @@ def _handler_race_cases(check):
     proj = os.path.join(tmp, "proj")
     os.makedirs(os.path.join(proj, ".claude"), exist_ok=True)
     real_write, real_save = _panel_write._atomic_write_json, _panel_write._proposals._save
+    real_unlink, real_link = os.unlink, _panel_write._locks._link_into_place
     httpd = None
     try:
         subprocess.run(["git", "init", "-q", proj], check=True,
@@ -859,7 +861,60 @@ def _handler_race_cases(check):
                                                         for k, v in got.items())),),
               props == {"PROP-1": "dropped", "PROP-2": "dropped"}
               and len(got) == 2 and all(v.get("ok") for v in got.values()))
+
+        # The same two drops, with the index lock meeting the denial Windows gives
+        # a name another process holds open: the first holder's release is refused
+        # once while the waiter has the claim open, and a create of the claim is
+        # refused once. Both are contention; neither may cost a drop.
+        real_write(mpath, {"meta": {"version": 2},
+                           "phases": [{"id": "P1", "title": "P", "status": "pending",
+                                       "tasks": []}],
+                           "fileIndex": {}, "bugs": [],
+                           "proposals": [parked("PROP-3", "P9"),
+                                         parked("PROP-4", "P10")]})
+        lock_path = os.path.join(_panel_write._locks.lock_dir(proj),
+                                 _panel_write.LOCK_NAME + ".lock")
+        denials = {"unlink": 0, "claim": 0}
+
+        def denied_unlink(path, *a, **k):
+            if os.fspath(path) == lock_path and denials["unlink"] < 1:
+                denials["unlink"] += 1
+                raise PermissionError(errno.EACCES, "Permission denied")
+            return real_unlink(path, *a, **k)
+
+        def denied_claim(*a, **k):
+            if denials["claim"] < 1:
+                denials["claim"] += 1
+                raise PermissionError(errno.EACCES, "Permission denied")
+            return real_link(*a, **k)
+        started, got, threads = race(
+            lambda: send("POST", "/api/proposal",
+                         {"action": "drop", "id": "PROP-3", "reason": "r3"}),
+            lambda: send("POST", "/api/proposal",
+                         {"action": "drop", "id": "PROP-4", "reason": "r4"}))
+        _panel_write._proposals._save = slowed(real_save, started)
+        os.unlink, _panel_write._locks._link_into_place = denied_unlink, denied_claim
+        try:
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(30)
+        finally:
+            os.unlink, _panel_write._locks._link_into_place = real_unlink, real_link
+            _panel_write._proposals._save = real_save
+        with open(mpath, "r", encoding="utf-8") as fh:
+            props = dict((p["id"], p.get("status"))
+                         for p in json.load(fh).get("proposals") or [])
+        check("hr3 two POST /api/proposal drops at once BOTH land when the index "
+              "lock meets a simulated sharing denial on its release and on its "
+              "claim: %r" % ((props, sorted((k, v.get("ok"), v.get("findings"))
+                                            for k, v in got.items()), denials),),
+              props == {"PROP-3": "dropped", "PROP-4": "dropped"}
+              and len(got) == 2 and all(v.get("ok") for v in got.values())
+              and denials == {"unlink": 1, "claim": 1}
+              and not os.path.exists(lock_path))
     finally:
+        os.unlink, _panel_write._locks._link_into_place = real_unlink, real_link
         _panel_write._atomic_write_json = real_write
         _panel_write._proposals._save = real_save
         if httpd is not None:

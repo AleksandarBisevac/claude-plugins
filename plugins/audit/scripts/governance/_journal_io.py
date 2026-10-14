@@ -1044,7 +1044,12 @@ def _acquire(path, record="journal"):
     deadline = time.time() + LOCK_WAIT_SECONDS
     while True:
         try:
-            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            # A name another process still holds open is refused with a
+            # permission error on Windows; that is contention, waited out inside
+            # this append's deadline, and raised only once the deadline passes.
+            fd = _output.while_shared(
+                lambda: os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644),
+                deadline, clock=time.time)
             os.close(fd)
             return lock
         except OSError as exc:
@@ -1124,8 +1129,7 @@ def _break_stale(lock):
         # with a permission error instead of "exists": the name is being
         # released by another waiter, which is the same refusal, and the caller
         # retries within its deadline rather than failing the append.
-        if exc.errno not in (errno.EEXIST, errno.EACCES) \
-                and not isinstance(exc, PermissionError):
+        if exc.errno != errno.EEXIST and not _output.sharing_denied(exc):
             raise
         if exc.errno == errno.EEXIST and _is_stale(breaker):
             _clear_stale_breaker(breaker)
@@ -1171,8 +1175,11 @@ def _restore(name):
 
 
 def _release(lock):
+    """Remove `lock`, waiting out a reader that holds it open: a lock left behind
+    is one every later writer waits out until it reads as stale."""
     try:
-        os.unlink(lock)
+        _output.while_shared(lambda: os.unlink(lock),
+                             time.time() + LOCK_WAIT_SECONDS, clock=time.time)
     except OSError:
         pass
 
@@ -2271,7 +2278,7 @@ def write_merged(path, text, grade=None, dry_run=False):
                 fh.write(text)
             if os.path.isfile(dest):
                 os.chmod(tmp, stat.S_IMODE(os.stat(dest).st_mode))
-            os.replace(tmp, dest)
+            _output.while_shared(lambda: os.replace(tmp, dest))
         except Exception:
             # The half-written temporary goes, and the exception does not:
             # `journal_files` matches `.jsonl` so it would never be READ, but it

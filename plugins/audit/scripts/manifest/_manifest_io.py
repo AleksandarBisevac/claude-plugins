@@ -1215,7 +1215,9 @@ def atomic_write_text(path, text):
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
-        os.replace(tmp, path)
+        # A reader holding `path` open makes Windows refuse the replace;
+        # `while_shared` waits that reader out and raises only past its bound.
+        _output.while_shared(lambda: os.replace(tmp, path))
     finally:
         if os.path.exists(tmp):
             os.remove(tmp)

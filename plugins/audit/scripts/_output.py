@@ -55,6 +55,7 @@ and is what CI's sweep skips by, so it keeps working with no suite here at all.
 
 import ast
 import contextlib
+import errno
 import functools
 import hashlib
 import io
@@ -62,6 +63,7 @@ import json
 import os
 import shutil
 import sys
+import time
 
 # --- the anchors ----------------------------------------------------------------
 # THIS FILE IS THE MARKER, WHICH IS WHY IT IS THE ONE THAT NEVER MOVES. Every other
@@ -418,6 +420,53 @@ def remove_tree(path):
                 pass
     shutil.rmtree(path, ignore_errors=True)
     return not os.path.lexists(path)
+
+
+# --- a name another process holds open -----------------------------------------
+# Windows refuses a create, unlink, rename or replace of a name another process
+# still has open - a reader of a lock, a breaker on its way out, a plan a reader is
+# parsing - with a permission error, where POSIX lets the operation through. That
+# refusal is CONTENTION: the holder lets go in milliseconds, and a writer that reads
+# it as a refusal loses its write. So every concurrent writer's lock, breaker and
+# replace goes through `while_shared`, which waits the denial out inside the
+# deadline the operation already has; only the deadline passing makes it a
+# refusal, and then the denial itself is raised, naming the file.
+#
+# THE ONE HOME OF THIS RULE, and it lives in the anchor because its callers are
+# layer-mates that may not import each other: the plan writer (`_manifest_io`),
+# the lock library (`_locks`) and the journal (`_journal_io`).
+#
+# What it cannot tell apart: a directory this process may not write answers with
+# the same errno, so a real permission problem is refused at the deadline rather
+# than at once. The cost of that is the bound, never a write.
+SHARING_WAIT_SECONDS = 2.0      # the bound for a caller with no deadline of its own
+SHARING_PAUSE_SECONDS = 0.02
+
+
+def sharing_denied(exc):
+    """True when `exc` is the refusal a name held open by another process gets.
+
+    `EACCES` is the errno Windows maps its sharing and pending-delete refusals
+    to. `EPERM` is deliberately not one: it is what a filesystem lacking the
+    operation answers, and waiting cannot change that."""
+    return isinstance(exc, OSError) and exc.errno == errno.EACCES
+
+
+def while_shared(op, deadline=None, clock=time.monotonic):
+    """`op()`'s answer, with a sharing denial retried until `deadline`.
+
+    `deadline` is a moment on `clock`; None gives the operation
+    SHARING_WAIT_SECONDS from now. Any other error propagates at once, and the
+    denial propagates once the deadline has passed."""
+    if deadline is None:
+        deadline = clock() + SHARING_WAIT_SECONDS
+    while True:
+        try:
+            return op()
+        except OSError as exc:
+            if not sharing_denied(exc) or clock() >= deadline:
+                raise
+        time.sleep(SHARING_PAUSE_SECONDS)
 
 
 # --- naming a bounded set without hiding the rest -------------------------------

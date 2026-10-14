@@ -3015,9 +3015,100 @@ def _cases(check):
           not _lk_bad and len(_lk_callers) >= _lk_floor)
 
     _remove_tree_cases(check)
+    _sharing_cases(check)
     _finding_code_cases(check)
     _selftest_flag_cases(check)
     _success_line_cases(check)
+
+
+# --- a name another process holds open -----------------------------------------
+# The clock is a counter and the pause is recorded rather than slept, so a case
+# that waits out a deadline costs no wall time at all.
+def _ticking(start=0.0, step=1.0):
+    now = {"t": start - step}
+
+    def clock():
+        now["t"] += step
+        return now["t"]
+    return clock
+
+
+def _refusing(refusals, answer="landed"):
+    """An operation raising each of `refusals` in turn, then answering."""
+    calls = {"n": 0}
+
+    def op():
+        calls["n"] += 1
+        if calls["n"] <= len(refusals):
+            raise refusals[calls["n"] - 1]
+        return answer
+    return op, calls
+
+
+def _sharing_cases(check):
+    import errno
+    denial = PermissionError(errno.EACCES, "Permission denied")
+    pauses = []
+    real_sleep = M.time.sleep
+    M.time.sleep = pauses.append
+    try:
+        op, calls = _refusing([denial, OSError(errno.EACCES, "denied")])
+        got = M.while_shared(op, deadline=10.0, clock=_ticking())
+        check("ws1 a sharing denial is waited out: the operation is tried again "
+              "after a pause until the holder lets go, and its answer comes back: "
+              "%r" % ((got, calls["n"], len(pauses)),),
+              got == "landed" and calls["n"] == 3 and len(pauses) == 2)
+
+        del pauses[:]
+        op, calls = _refusing([OSError(errno.ENOSPC, "No space left")] * 9)
+        try:
+            M.while_shared(op, deadline=10.0, clock=_ticking())
+            raised = None
+        except OSError as exc:
+            raised = exc.errno
+        check("ws2 ALLOW side: an error that is not a sharing denial is raised at "
+              "once - one attempt, no pause: %r" % ((raised, calls["n"], pauses),),
+              raised == errno.ENOSPC and calls["n"] == 1 and pauses == [])
+
+        del pauses[:]
+        op, calls = _refusing([denial] * 99)
+        try:
+            M.while_shared(op, deadline=2.5, clock=_ticking())
+            raised = None
+        except OSError as exc:
+            raised = exc.errno
+        check("ws3 a denial still there at the deadline is raised as the denial, "
+              "after the attempts the deadline allowed and no more: %r"
+              % ((raised, calls["n"]),),
+              raised == errno.EACCES and calls["n"] == 4)
+
+        del pauses[:]
+        had = M.SHARING_WAIT_SECONDS
+        M.SHARING_WAIT_SECONDS = 3.0
+        op, calls = _refusing([denial] * 99)
+        try:
+            M.while_shared(op, clock=_ticking(start=100.0))
+            raised = None
+        except OSError as exc:
+            raised = exc.errno
+        finally:
+            M.SHARING_WAIT_SECONDS = had
+        check("ws4 no deadline given means SHARING_WAIT_SECONDS from the first "
+              "reading of the clock, not an unbounded wait: %r"
+              % ((raised, calls["n"]),),
+              raised == errno.EACCES and calls["n"] == 3)
+    finally:
+        M.time.sleep = real_sleep
+
+    readings = [(name, M.sharing_denied(exc)) for name, exc in (
+        ("PermissionError EACCES", denial),
+        ("OSError EACCES", OSError(errno.EACCES, "denied")),
+        ("PermissionError EPERM", PermissionError(errno.EPERM, "not permitted")),
+        ("FileExistsError", FileExistsError(errno.EEXIST, "exists")),
+        ("ValueError", ValueError("x")))]
+    check("ws5 EACCES in either spelling is a sharing denial; EPERM, a taken name "
+          "and a non-OS error are not: %r" % (readings,),
+          [r[1] for r in readings] == [True, True, False, False, False])
 
 
 # --- the success line ---------------------------------------------------------

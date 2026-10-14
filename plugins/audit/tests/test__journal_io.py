@@ -3263,14 +3263,28 @@ def _overtaken_breaker_clear(tmp, name="breaker", putback_errno=None,
 # longer wait never hides a lost lock: a double break still forks the chain, which
 # `verify` and the row count both see.
 _RACE_WRITER = r"""
-import os, random, sys, time
+import errno, os, random, sys, time
 sys.dont_write_bytecode = True
 scripts, project, ready, go, out, k = sys.argv[1:7]
+deny = sys.argv[7:8] == ["deny"]
 sys.path.insert(0, scripts)
 import _output
 _output.install_path()
 import _journal_io as M
 M.LOCK_WAIT_SECONDS = 60
+real_open = os.open
+denied = {}
+def exclusive_open(path, flags, *args, **kwargs):
+    # The first two exclusive creates of the lock and of its breaker are refused
+    # as Windows refuses a name another process still holds open.
+    name = os.fspath(path)
+    if (deny and flags & os.O_EXCL
+            and (name.endswith(".lock") or name.endswith(".lock.break"))):
+        denied[name] = denied.get(name, 0) + 1
+        if denied[name] <= 2:
+            raise PermissionError(errno.EACCES, "Permission denied", name)
+    return real_open(path, flags, *args, **kwargs)
+os.open = exclusive_open
 real_stat = os.stat
 def stat(target, *args, **kwargs):
     st = real_stat(target, *args, **kwargs)
@@ -3315,23 +3329,27 @@ def _wait_for(paths, seconds):
     return False
 
 
-def _race_trial(tmp, n):
+def _race_trial(tmp, n, deny=False):
     """One trial: a seed row, a stale lock planted on its file, then every writer
-    released at once. Returns what was observed, never a verdict."""
-    root = _anchor_project(tmp, "race-%d" % n)
+    released at once. Returns what was observed, never a verdict. `deny` has each
+    writer's first creates of the lock and the breaker refused as a sharing
+    denial."""
+    root = _anchor_project(tmp, "race-%s%d" % ("deny-" if deny else "", n))
     seed_path = M.append(root, {"action": "probe.seed", "summary": "seed",
                                 "actor": {"sessionId": "S-RACE", "via": "fixture"}})
     if not seed_path:
         return {"seeded": False}
     _plant_lock(seed_path + ".lock", _STALE_AGE)
-    gate = os.path.join(tmp, "race-%d-go" % n)
-    ready = [os.path.join(tmp, "race-%d-ready-%d" % (n, k))
+    tag = "%s%d" % ("deny-" if deny else "", n)
+    gate = os.path.join(tmp, "race-%s-go" % tag)
+    ready = [os.path.join(tmp, "race-%s-ready-%d" % (tag, k))
              for k in range(_RACE_WRITERS)]
-    outs = [os.path.join(tmp, "race-%d-out-%d" % (n, k))
+    outs = [os.path.join(tmp, "race-%s-out-%d" % (tag, k))
             for k in range(_RACE_WRITERS)]
     procs = [subprocess.Popen([sys.executable, "-c", _RACE_WRITER,
                                _output.SCRIPTS_DIR, root, ready[k], gate,
-                               outs[k], str(k)], env=_race_env())
+                               outs[k], str(k)] + (["deny"] if deny else []),
+                              env=_race_env())
              for k in range(_RACE_WRITERS)]
     all_ready = _wait_for(ready, 60)
     open(gate, "w").close()
@@ -3487,6 +3505,54 @@ def _stale_lock_cases(check):
         check("sl10 ...and a breaker create refused for any other reason is "
               "still raised, not swallowed as a lost race: %r" % (_other,),
               _other == errno.ENOSPC)
+
+        # A create or an unlink of the lock itself refused as Windows refuses a
+        # name another process still holds open, twice and then let through.
+        def _refused_twice(real, suffix):
+            calls = {"n": 0}
+
+            def seam(path, *args, **kwargs):
+                if os.fspath(path).endswith(suffix):
+                    calls["n"] += 1
+                    if calls["n"] <= 2:
+                        raise PermissionError(errno.EACCES, "Permission denied")
+                return real(path, *args, **kwargs)
+            return seam, calls
+        _held = os.path.join(tmp, "held.jsonl")
+        os.open, _calls = _refused_twice(_real_open, "held.jsonl.lock")
+        try:
+            _took = M._acquire(_held)
+        except OSError as exc:
+            _took = "raised %s" % (exc,)
+        finally:
+            os.open = _real_open
+        check("sl11 a lock create refused as a sharing denial is contention, "
+              "retried inside the deadline until the holder lets go, and the "
+              "append takes the lock: %r" % ((_took, _calls["n"]),),
+              _took == _held + ".lock" and _calls["n"] == 3
+              and os.path.exists(_held + ".lock"))
+        if not os.path.exists(_held + ".lock"):
+            open(_held + ".lock", "w").close()      # sl12 stands on its own
+        _real_unlink = os.unlink
+        os.unlink, _calls = _refused_twice(_real_unlink, "held.jsonl.lock")
+        try:
+            M._release(_held + ".lock")
+        finally:
+            os.unlink = _real_unlink
+        check("sl12 ...and a release whose unlink meets the same denial gives the "
+              "lock back once the reader closes it, rather than leaving a lock "
+              "nobody holds for every later writer to wait out: %r"
+              % ((_calls["n"], os.path.exists(_held + ".lock")),),
+              _calls["n"] == 3 and not os.path.exists(_held + ".lock"))
+
+        _denied_trial = _race_trial(tmp, 0, deny=True)
+        check("sl13 sl4's race with every writer's first creates of the lock AND "
+              "of its breaker refused as a sharing denial still writes every row, "
+              "with no refused append, no chain break and no breaker left: %r"
+              % ((_denied_trial.get("said"), _denied_trial.get("rows"),
+                  _denied_trial.get("verifyOk"), _denied_trial.get("lockLeft"),
+                  _denied_trial.get("breakersLeft")),),
+              _race_landed(_denied_trial))
     finally:
         _harness.remove_tree(tmp)
 
