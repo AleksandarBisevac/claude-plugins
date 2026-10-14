@@ -448,6 +448,12 @@ import _worktrees             # noqa: E402  (which worktree the caller is standi
 #                                            `manage-worktrees.py` already read rather than
 #                                            a second `git worktree list` walk of this
 #                                            command's own)
+import _refs                  # noqa: E402  (moved_file_target: the one reading of
+#                                            "did this `.py` path move elsewhere in the
+#                                            plugin" -- the same question
+#                                            `manifest_moved_files` asks of the whole
+#                                            plan, asked here of one `--files` entry
+#                                            before it is written)
 
 E_INVALID, E_USAGE, E_LIVE, E_STALE = 1, 2, 3, 4
 
@@ -536,14 +542,31 @@ def _path_problems(values):
     return bad
 
 
-def _files_refusal(values):
+def _files_refusal(values, project=None):
     """The refusal for a `--files` entry that cannot be a path, or None.
 
     ONE MESSAGE FOR EVERY BAD ENTRY IN THE CALL, not one per entry: a caller who
     typed the delta spelling typed it on both sides, and two refusals for one
     mistake is the shape an operator learns to skip.
+
+    A `.py` ENTRY THAT MOVED IS THE SAME REFUSAL, asked through
+    `_refs.moved_file_target` — the one reading `manifest_moved_files` (`q1`,
+    `test__refs.py`) already gives the whole plan, asked here of one entry
+    before it reaches `files` or `fileIndex` at all. `project` is None only
+    from the one caller (`_path_problems`'s own doc comment) that has no
+    project root yet to check against; every verb that writes `files` passes
+    its own. A path that EXISTS NOWHERE and whose BASENAME exists nowhere
+    either is not a move — it is a file the task is about to create, and
+    `manifest_moved_files` would file it as `gone` rather than `moved` for the
+    same reason.
     """
     bad = _path_problems(values)
+    if not bad and project:
+        for value in values or []:
+            target = _refs.moved_file_target(value, project)
+            if target is not None:
+                bad.append("%r: moved to %s -- scope the new path instead"
+                           % (value, target))
     if not bad:
         return None
     return ("[audit-task] --files takes the REPLACEMENT list of "
@@ -3434,7 +3457,7 @@ def _locked_add(args, project, config, mpath, title, out):
     # on `scope`, but this verb writes the same field into the same index off the
     # same flag, so the refusal belongs to the FLAG rather than to the verb that
     # met the defect.
-    refusal = _files_refusal(_split_csv(args.files))
+    refusal = _files_refusal(_split_csv(args.files), project)
     if refusal:
         out(refusal)
         return E_USAGE
@@ -8420,7 +8443,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
     # `_gate_contradiction`'s position: a string that cannot be a path must
     # never reach `files`, `fileIndex` or a journal row, and a refusal is worth
     # more than a rollback.
-    refusal = _files_refusal(files)
+    refusal = _files_refusal(files, project)
     if refusal:
         out(refusal)
         return E_USAGE

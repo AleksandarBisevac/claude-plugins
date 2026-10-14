@@ -88,7 +88,9 @@ _STAGE_PREFIX = "audit-task-stages-"
 # owning phase's blockedBy, the readiness term this file's own copy never
 # carried), eb (the brief a shell had already eaten, and the stdin route out),
 # fg (the `tests.gate` a STARTED task could not change, and the two refusals
-# beside it that must stay), pr (the `start` verb: the promotion the plan gate
+# beside it that must stay), mvf (a `.py` entry whose file moved elsewhere in
+# the plugin, the same reading `_refs.manifest_moved_files` gives the whole
+# plan), pr (the `start` verb: the promotion the plan gate
 # reads), pc (the phase claim `start` takes on the sharded layout),
 # pd (the `done` verb: the close, and the SHA that makes it a record),
 # tw (the tree the caller stands in against the tree the verb writes),
@@ -2066,6 +2068,48 @@ def _reshape_cases(check):
         check("sc7 an unknown id writes nothing - the manifest is byte identical, "
               "which is the assertion rather than the exit code",
               code == 2 and _sc_after == _sc_before)
+
+        # ---- (mv) a `.py` entry whose file moved elsewhere in the plugin --
+        # A caller widening a task's scope with a path that had since moved
+        # used to write the stale path into `files` and `fileIndex` silently,
+        # and only the next sweep over the whole plan found it stale. `add`
+        # and `scope` now ask `_refs.moved_file_target` the SAME question
+        # `manifest_moved_files` (`q1`, test__refs.py) already asks of the
+        # whole plan, of one `--files` entry before it is written at all.
+        #
+        # THE PATHS ARE BUILT FROM PARTS, not written whole: a literal
+        # `"plugins/audit/scripts/<name>.py"` in this file's own text is a
+        # reference `missing_references()` (`c5`, test__refs.py) would walk
+        # looking for a file that does not exist in the real tree, since this
+        # fixture's project root is a scratch directory and not this repo.
+        _mv_root = "plugins/" + "audit/"
+        _mv_scripts = _mv_root + "scripts/"
+        _mv_old = _mv_scripts + "_moved" + "_thing.py"
+        _mv_new_dir = _mv_scripts + "new_home/"
+        _mv_new = _mv_new_dir + "_moved" + "_thing.py"
+        _mv_gone = _mv_scripts + "_brand" + "_new_thing.py"
+        os.makedirs(os.path.join(sc_proj, *_mv_new_dir.split("/")),
+                    exist_ok=True)
+        with open(os.path.join(sc_proj, *_mv_new.split("/")), "w") as _fh:
+            _fh.write("# moved\n")
+        with open(sc_mp, "rb") as _fh:
+            _mv_before = _fh.read()
+        code, txt = run(["scope", "P2.3", "--project-dir", sc_proj,
+                         "--files", _mv_old])
+        with open(sc_mp, "rb") as _fh:
+            _mv_after = _fh.read()
+        check("mvf1 scope refuses a `.py` entry whose file moved elsewhere in "
+              "the plugin tree, naming the path it moved to, and writes "
+              "nothing: %r" % (txt[:300],),
+              code == 2 and _mv_new in txt and _mv_after == _mv_before)
+        code, txt = run(["add", "Py file not written yet", "--phase", "P2",
+                         "--project-dir", sc_proj,
+                         "--files", _mv_gone])
+        check("mvf2 ...and a `.py` path that exists nowhere, whose basename "
+              "exists nowhere either, is still accepted - a file the task is "
+              "about to create, which `manifest_moved_files` would file as "
+              "`gone` rather than `moved`: %r" % (txt[:300],),
+              code == 0)
 
         # ---- (sc8/sc9) P59.6: the SAME repair, on `scope`'s own stat --------
         # `add` and `scope` build `missing` the same way and used to pass the

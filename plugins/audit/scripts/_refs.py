@@ -434,6 +434,41 @@ def _recorded_paths(repo_root):
     return recorded, unreadable
 
 
+def is_plugin_py_path(path):
+    """Whether `path` is a `.py` path under `plugins/audit/` at all — the one
+    reading of "is this this lint's business" `manifest_moved_files` and
+    `moved_file_target` share, so a caller outside this module asking the
+    SAME question (`audit-task.py`'s `add`/`scope`) never writes a second one.
+    """
+    prefix = PLUGIN_REL + "/"
+    return isinstance(path, str) and path.endswith(".py") and path.startswith(prefix)
+
+
+def moved_file_target(path, repo_root=None, index=None):
+    """The new home `path` moved to, or None.
+
+    None covers every reading that is NOT a move: `path` still exists there, it
+    is not a plugin `.py` path (`is_plugin_py_path`), or no `.py` anywhere in
+    the plugin shares its basename — a deletion, not a move, and
+    `manifest_moved_files` files that as `gone` rather than here.
+
+    THE ONE READER OF THE QUESTION. `manifest_moved_files` asks this once per
+    recorded path and `audit-task.py`'s `add`/`scope` ask it once per `--files`
+    entry about to be written — both read the same basename map so a file that
+    moved is reported the same way whether the plan already recorded it or an
+    operator is about to. `index`, when given, is `_py_index`'s map, so a caller
+    asking about many paths at once builds it a single time.
+    """
+    if not is_plugin_py_path(path):
+        return None
+    root = repo_root if repo_root is not None else REPO_ROOT
+    if os.path.isfile(os.path.join(root, path.replace("/", os.sep))):
+        return None
+    idx = index if index is not None else _py_index(root)
+    elsewhere = [p for p in idx.get(os.path.basename(path), ()) if p != path]
+    return ", ".join(elsewhere) if elsewhere else None
+
+
 def manifest_moved_files(repo_root=None):
     """{"moved": [...], "gone": [...], "unreadable": [...], "checked": n}.
 
@@ -451,7 +486,6 @@ def manifest_moved_files(repo_root=None):
     root = repo_root if repo_root is not None else REPO_ROOT
     recorded, unreadable = _recorded_paths(root)
     index = _py_index(root)
-    prefix = PLUGIN_REL + "/"
     moved = []
     gone = []
     checked = 0
@@ -470,15 +504,14 @@ def manifest_moved_files(repo_root=None):
         # `checked` — an UNDER-COUNT, not a false positive: nothing is
         # reported wrongly about it, a real move or deletion just goes
         # unexamined.
-        if not isinstance(path, str) or not path.endswith(".py") \
-                or not path.startswith(prefix):
+        if not is_plugin_py_path(path):
             continue
         checked += 1
         if os.path.isfile(os.path.join(root, path.replace("/", os.sep))):
             continue
-        elsewhere = [p for p in index.get(os.path.basename(path), ()) if p != path]
-        if elsewhere:
-            moved.append((source, path, ", ".join(elsewhere)))
+        target = moved_file_target(path, root, index)
+        if target is not None:
+            moved.append((source, path, target))
         else:
             gone.append((source, path))
     return {"moved": moved, "gone": gone, "unreadable": unreadable, "checked": checked}

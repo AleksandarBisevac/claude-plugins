@@ -844,7 +844,7 @@
     {
       "id": "P125.18",
       "title": "A phase boundary is a context boundary: a chained run starts each phase fresh and status shows the carried context",
-      "status": "in_progress",
+      "status": "done",
       "description": "F630, measured on the testbed: P2-P10 ran back to back in one never-cleared orchestrator context, mean context per request grew from 136k to 589k, and the orchestrator's share of phase cost from about half to over three quarters - an estimated 18.7 of 33.66 USD-equivalent bought nothing, because everything a phase needs is on disk (manifest, journal, evidence, drive state, briefs). (1) When the drive prints `done` and the phase command continues to a next phase, the command body (commands/phase.md and the run/drive reference) directs a fresh context per phase: clear and re-enter with `/audit:phase <next>`, stated as the step, not a tip. (2) The drive's entry line and `/audit:status` read the orchestrator's current context size from the transcript the usage meter already scans, and past a stated threshold say what each further request costs at the dated price (the basis named, or 'unknown' when the transcript cannot be read - never a default). Micro-test: two trivial phases driven back to back as the command directs; the second phase's first orchestrator request carries no more context than a fresh entry within a stated margin (an offline fixture over recorded transcript rows, no paid call). Faults: F630.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -887,19 +887,47 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "21fd876ec935",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Implemented both halves of F630's two-part fix. (1) drive-phase.py: finish() now calls a new _next_chain_phase(ctx), which re-reads the manifest fresh (after sign-off's own write) and asks _status_facts.ready_by_phase for the first phase beyond the one that just closed; when one exists, the 'done' instruction gains a new STEPS['done-chain-next'] line: 'chain: clear context, then re-enter with /audit:phase <next> for a fresh start'. This rides the existing 'do what it prints' instruction the command body (commands/phase.md step 2) already states as a hard rule, so the directive is the step, not a tip, without adding any prose to commands/phase.md itself - measure-context.py --gate showed the '/audit:phase run form, before sign-off' entry already at 3985/4000 bytes at this task's base commit, with zero slack for new prose; an earlier version of this change that added a sentence to phase.md's step 4 pushed that entry to 4118/4000 and was reverted once tools/measure-context.py --gate caught the breach (confirmed at base commit via --ref, then again on the reverted tree: GATE OK). reference/orchestrator.md (not read by the pipeline, per its own first line) documents the behaviour under a new ### subsection nested inside the existing '## Progress output' section (not a new top-level '##', which test__areas.py's anchor-coverage lint requires either an anchor or an UNANCHORED_SECTIONS row for - folding it in as a subsection avoided a scope decision on a file outside this task's files). (2) usage_ledger.py gained two new functions: main_transcript_path(session_id, home=None) - globs <home>/projects/*/<sessionId>.jsonl, no project-slug derivation needed since a session id is a UUID - and current_context_size(transcript_path) -> (tokens, model, reason), a SNAPSHOT of the most recent assistant turn's own usage (never a sum), with reason naming why when tokens is None (unreadable file, or no assistant usage yet). audit-status.py gained orchestrator_context(manifest, manifest_path, project_dir=None), which reads $CLAUDE_CODE_SESSION_ID, resolves the transcript, calls current_context_size, and - past usage_ledger.LONG_PROMPT_THRESHOLD_TOKENS - prices one more request this size as a fresh 'in' read at the resolved pricing table (an honest no-cache upper bound) via _context_line's render. Both render_status (full) and render_short (the entry view the step driver's loop echoes) now print 'orchestrator context: <tok> tok (<model>)' or 'orchestrator context: unknown (<reason>)'; the line is entirely absent when there is no $CLAUDE_CODE_SESSION_ID at all (ordinary runs outside a live session stay exactly as quiet as before - this is what kept the three byte-pinned sl1/sl2/sl3 cases in test_audit_status.py green, since those run through an ACTUAL live session's env in this sandbox and would otherwise have diverged between the in-process and subprocess-stripped-env paths the test compares). Tests added: test_usage_ledger.py cctx1-cctx5 (current_context_size: last-turn snapshot not a sum, unreadable file, no-usage-yet, main_transcript_path glob-by-session-id, no-match/no-session); test_audit_status.py ocx1-ocx8 (no-session is silent, unknown-with-reason when a session id resolves to no transcript, a real reading names tokens+model, render_status/render_short carry or omit the line correctly); test_drive_phase.py cn0-cn2, a new staged block registered in STAGES (cn-block) building a two-phase manifest fixture and calling M.finish() directly with release_lock/drop_state stubbed out, proving the chain line appears naming the next ready phase and is absent when nothing is ready. Verified: env -i PATH=\"$PATH\" HOME=\"$HOME\" python3 plugins/audit/tests/test_usage_ledger.py --selftest -> ALL PASS: 117/117; same for test_audit_status.py -> ALL PASS: 391/391; python3 plugins/audit/tests/test_drive_phase.py --selftest --stage cn-block -> ALL PASS: 3/3; full python3 plugins/audit/tests/test_drive_phase.py --selftest (all 29 stages, unsharded) -> ALL PASS: 256/256 (background run, exit 0). Full-tree python3 tools/sweep-selftests.py --jobs 6 -> 334/334 files ok, 153 migrated to tests/, 16035 cases, exit code 0 (this run also surfaced and fixed a real regression this task introduced: adding reference/orchestrator.md's new section as a top-level '## A phase boundary is a context boundary' heading tripped test__areas.py's anchor-coverage lint (oa1/oa5 failing, 121/123) because the lint requires every '## ' section to be anchored or listed in UNANCHORED_SECTIONS; fixed by nesting it as '### ...' under the existing '## Progress output' section instead, re-verified test__areas.py -> ALL PASS: 123/123, and test_audit_task.py -> ALL PASS: 1027/1027 confirming that file's earlier red under load was unrelated to this task, not reproducible standalone). I did NOT edit commands/phase.md, PLUGIN-BUILD-GUIDE.md, or usage_ledger.py's re-export lists beyond what is shown - phase.md has no byte slack for new prose under its own measured ceiling (see above), and PLUGIN-BUILD-GUIDE.md's 'new .py + tree line + section' rule only applies to a newly added .py file, which this task did not add.",
+        "descriptive": "A phase chain now tells the orchestrator to clear context before the next phase, and /audit:status names the orchestrator's own current context size and, past a long prompt, what one more request would cost."
       },
       "startedAt": "2026-10-14T01:08:28Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T02:09:54Z",
+      "verifiedBy": [
+        "test_usage_ledger.py::cctx1",
+        "test_usage_ledger.py::cctx2",
+        "test_usage_ledger.py::cctx3",
+        "test_usage_ledger.py::cctx4",
+        "test_usage_ledger.py::cctx5",
+        "test_audit_status.py::ocx1",
+        "test_audit_status.py::ocx2",
+        "test_audit_status.py::ocx3",
+        "test_audit_status.py::ocx4",
+        "test_audit_status.py::ocx5",
+        "test_audit_status.py::ocx6",
+        "test_audit_status.py::ocx7",
+        "test_audit_status.py::ocx8",
+        "test_drive_phase.py::cn0",
+        "test_drive_phase.py::cn1",
+        "test_drive_phase.py::cn2"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T02:09:52Z.0c93f4",
         "status": "passed",
         "at": "2026-10-14T02:09:52Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "21fd876ec935",
+        "at": "2026-10-14T02:09:54Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T02:00:02Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage cn-block` in a throwaway tree at HEAD exited 1 with 1 of 3 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests on HEAD's code failing only the unknown-stage check for `cn-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - cn1 (house FAIL): SELFTEST FAILED: 2/3 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1503,7 +1531,12 @@
       "startedAt": "2026-10-14T01:08:32Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-14T02:19:34Z.7e9e63",
+        "status": "passed",
+        "at": "2026-10-14T02:19:34Z"
+      }
     },
     {
       "id": "P125.32-0h5",
