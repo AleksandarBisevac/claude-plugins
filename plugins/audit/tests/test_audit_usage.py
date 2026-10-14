@@ -25,6 +25,7 @@ import sys
 import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import usage_ledger as _ul                         # noqa: E402  (the rate basis every surface prints)
@@ -1223,27 +1224,44 @@ def _bw_append_across_replace(ledger, sid, probe):
     return wrapper, fired
 
 
-def _bw_append_at_refused_retry(ledger, sid, probe):
-    """An `os.replace` seam that refuses the month's first replace the way
-    Windows refuses to replace a file a handle holds open, then, at the retry,
-    has another thread append a row through `append_rows` - the metering hook
-    landing after the rewrite's last read of the old file and before the swap.
-    An append not held off until the swap writes into the file the swap
-    erases. -> (wrapper, state); `state["thread"]` is joined by the caller."""
+def _bw_append_at_refused_replace(ledger, sid, probe):
+    """Seams that refuse a replace of the month the way Windows does, on every
+    platform: while any descriptor the rewrite opened through `open_month` is
+    still open (a refusal against itself, counted in `state["own"]`), and once
+    more at the first call as if another process held the file. At the replace
+    that goes through, another thread appends a row through `append_rows` - the
+    metering hook landing after the rewrite's last read of the old file and
+    before the swap; an append not held off until the swap writes into the file
+    the swap erases. -> (open_wrapper, replace_wrapper, state);
+    `state["thread"]` is joined by the caller."""
+    import errno
     import threading
-    state = {"calls": 0, "thread": None}
+    state = {"calls": 0, "own": 0, "tails": [], "thread": None}
     target = os.path.join(ledger, "%s.jsonl" % _BW_MONTH)
 
     def append():
         M.ul.append_rows(ledger, [_bw_probe(sid, probe)])
 
-    def wrapper(original):
+    def open_wrapper(original):
+        def open_month(*a, **kw):
+            rows, tail = original(*a, **kw)
+            if os.path.abspath(tail["path"]) == os.path.abspath(target):
+                state["tails"].append(tail)
+            return rows, tail
+        return open_month
+
+    def replace_wrapper(original):
         def replace(src, dst, *a, **kw):
             if os.path.abspath(dst) != os.path.abspath(target):
                 return original(src, dst, *a, **kw)
             state["calls"] += 1
+            if any(t.get("fh") is not None for t in state["tails"]):
+                state["own"] += 1
+                raise PermissionError(errno.EACCES, "Access is denied: the "
+                                      "rewrite's own handle (emulated)", dst)
             if state["calls"] == 1:
-                raise PermissionError(13, "Access is denied (emulated)", dst)
+                raise PermissionError(errno.EACCES, "Access is denied: another "
+                                      "holder (emulated)", dst)
             if state["thread"] is None:
                 state["thread"] = threading.Thread(target=append)
                 state["thread"].start()
@@ -1251,7 +1269,28 @@ def _bw_append_at_refused_retry(ledger, sid, probe):
                 state["thread"].join(0.5)
             return original(src, dst, *a, **kw)
         return replace
-    return wrapper, state
+    return open_wrapper, replace_wrapper, state
+
+
+def _bw_refused_backfill(root, name, passes_open):
+    """Backfill under `_bw_append_at_refused_replace`, with the rewrite told the
+    platform does (`passes_open`) or does not replace an open file. ->
+    (code, state, ledger)."""
+    rd = os.path.join(root, name)
+    os.makedirs(rd)
+    project, ledger, args = _bw_fixture(rd, 20)
+    open_wrapper, replace_wrapper, state = _bw_append_at_refused_replace(
+        ledger, "S-OTHER", "retry-row")
+    code, _msg = _bw_with_seam(
+        M.ul, "REPLACE_PASSES_OPEN_FILE", lambda _orig: passes_open,
+        lambda: _bw_with_seam(
+            M.ul, "open_month", open_wrapper,
+            lambda: _bw_with_seam(
+                os, "replace", replace_wrapper,
+                lambda: M.backfill(args, project, ledger, None, None))))
+    if state["thread"] is not None:
+        state["thread"].join(30)
+    return code, state, ledger
 
 
 _BW_APPENDER = r"""
@@ -1333,18 +1372,27 @@ def _backfill_window_cases(check):
           code == 0 and fired == [1]
           and _bw_probes(ledger).count("window-row") == 1)
 
-    # The same row, written through a descriptor opened before the replace.
-    r2 = os.path.join(root, "bw2")
-    os.makedirs(r2)
-    project, ledger, args = _bw_fixture(r2, 20)
-    wrapper, fired = _bw_append_across_replace(ledger, "S-OTHER", "late-row")
-    code, _msg = _bw_with_seam(os, "replace", wrapper,
-                               lambda: M.backfill(args, project, ledger, None, None))
-    check("bw2 a row written to the month file through a descriptor opened "
-          "before the replace survives the replace: fired=%r count=%d"
-          % (fired, _bw_probes(ledger).count("late-row")),
-          code == 0 and fired == [1]
-          and _bw_probes(ledger).count("late-row") == 1)
+    # The same row, written through a descriptor opened before the replace by
+    # a writer that does not take the lock - carried only where the rewrite can
+    # hold its own descriptor across the replace.
+    if not M.ul.REPLACE_PASSES_OPEN_FILE:
+        _harness.skip(check, "bw2 a lock-free writer's row across the replace",
+                      "this platform refuses to replace an open file, so the "
+                      "rewrite lets go of the file before the replace and "
+                      "nothing is carried after it", True)
+    else:
+        r2 = os.path.join(root, "bw2")
+        os.makedirs(r2)
+        project, ledger, args = _bw_fixture(r2, 20)
+        wrapper, fired = _bw_append_across_replace(ledger, "S-OTHER", "late-row")
+        code, _msg = _bw_with_seam(
+            os, "replace", wrapper,
+            lambda: M.backfill(args, project, ledger, None, None))
+        check("bw2 a row written to the month file through a descriptor opened "
+              "before the replace survives the replace: fired=%r count=%d"
+              % (fired, _bw_probes(ledger).count("late-row")),
+              code == 0 and fired == [1]
+              and _bw_probes(ledger).count("late-row") == 1)
 
     # Concurrent appender processes for foreign sessions, over repeated trials.
     totals = {"appended": 0, "lost": 0, "codes": []}
@@ -1394,21 +1442,20 @@ def _backfill_window_cases(check):
           % (len(before), len(_snapshot(ledger))),
           code2 == 0 and _snapshot(ledger) == before)
 
-    # Where the platform refuses to replace an open file, the rewrite retries
-    # after its last read of the old file; an append between that read and the
-    # swap must wait for the swap rather than land in the file it erases.
-    r14 = os.path.join(root, "bw14")
-    os.makedirs(r14)
-    project, ledger, args = _bw_fixture(r14, 20)
-    wrapper, state = _bw_append_at_refused_retry(ledger, "S-OTHER", "retry-row")
-    code, _msg = _bw_with_seam(os, "replace", wrapper,
-                               lambda: M.backfill(args, project, ledger, None, None))
-    if state["thread"] is not None:
-        state["thread"].join(30)
-    check("bw14 a row appended while a refused replace is retried survives the "
-          "replace: calls=%d count=%d code=%r"
-          % (state["calls"], _bw_probes(ledger).count("retry-row"), code),
-          code == 0 and state["calls"] == 2 and state["thread"] is not None
+    # Where the platform refuses to replace an open file, the rewrite lets go
+    # of its own descriptor first, so the one refusal its replace meets is
+    # another holder's, waited out by the shared helper - two attempts, not a
+    # spin against itself. An append between the last read and the swap must
+    # wait for the swap rather than land in the file it erases.
+    code, state, ledger = _bw_refused_backfill(root, "bw14", False)
+    check("bw14 holds on both platforms - a row appended while the replace is "
+          "refused survives it, and the replace is attempted a bounded small "
+          "number of times (no spin against the rewrite's own handle): "
+          "calls=%d own=%d watched=%d count=%d code=%r"
+          % (state["calls"], state["own"], len(state["tails"]),
+             _bw_probes(ledger).count("retry-row"), code),
+          code == 0 and state["calls"] == 2 and state["own"] == 0
+          and len(state["tails"]) == 1 and state["thread"] is not None
           and not state["thread"].is_alive()
           and _bw_probes(ledger).count("retry-row") == 1)
     # The lock a rewrite takes is given back: one left held would stall every
@@ -1418,6 +1465,20 @@ def _backfill_window_cases(check):
     M.ul.unlock_month(held)
     check("bw15 after the backfill the month's lock is free again: %r"
           % (held is not None,), held is not None)
+
+    # TWIN: where the platform does replace an open file the rewrite still
+    # holds its descriptor across the replace - the carry bw2 relies on - and
+    # the seam bw14 reads sees it held and refuses it. Red under a rewrite
+    # that closes unconditionally, and under a seam whose `own` cannot fire,
+    # which would leave bw14 green over a replace that met the rewrite itself.
+    # The shared wait is shortened: the spin is the expected outcome here.
+    code, state, ledger = _bw_with_seam(
+        _output, "SHARING_WAIT_SECONDS", lambda _orig: 0.2,
+        lambda: _bw_refused_backfill(root, "bw16", True))
+    check("bw16 with the descriptor held across the replace, the same seam "
+          "sees the rewrite's own handle and refuses it: calls=%d own=%d "
+          "code=%r" % (state["calls"], state["own"], code),
+          code != 0 and state["own"] >= 1 and state["own"] == state["calls"])
 
     _bw_settle_cases(check, root)
     _bw_failed_rewrite_cases(check, root)

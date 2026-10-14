@@ -946,19 +946,28 @@ def _cases(check):
                     fh.write(M._row_line(_nm_hook))
                 _nm_fired.append(1)
             return _nm_real(path, rows)
-        M._replace_rows = _nm_replace
-        try:
-            _nm_ok = M.rewrite_month(_nm, "2026-09", _nm_keep + [_nm_rebuilt],
-                                     tail=_nm_tail)
-        finally:
-            M._replace_rows = _nm_real
-        _nm_rows = M.read_ledger(_nm)
-        check("nm1 a row a writer appends to a month file created during a "
-              "backfill of a month that had no file survives the rewrite: "
-              "ok=%r fired=%r rows=%r" % (_nm_ok, _nm_fired, _nm_rows),
-              _nm_ok is True and _nm_fired == [1]
-              and _nm_rows.count(_nm_hook) == 1
-              and _nm_rows.count(_nm_rebuilt) == 1 and len(_nm_rows) == 2)
+        if not M.REPLACE_PASSES_OPEN_FILE:
+            # The writer appends after the rewrite's last drain, which is the
+            # window `rewrite_month` names for a lock-free writer there.
+            _harness.skip(check, "nm1 a lock-free writer's row in a created "
+                          "month", "this platform refuses to replace an open "
+                          "file, so the rewrite lets go of the file before the "
+                          "replace and nothing is carried after it", True)
+        else:
+            M._replace_rows = _nm_replace
+            try:
+                _nm_ok = M.rewrite_month(_nm, "2026-09",
+                                         _nm_keep + [_nm_rebuilt], tail=_nm_tail)
+            finally:
+                M._replace_rows = _nm_real
+            _nm_rows = M.read_ledger(_nm)
+            check("nm1 a row a writer appends to a month file created during a "
+                  "backfill of a month that had no file survives the rewrite: "
+                  "ok=%r fired=%r rows=%r" % (_nm_ok, _nm_fired, _nm_rows),
+                  _nm_ok is True and _nm_fired == [1]
+                  and _nm_rows.count(_nm_hook) == 1
+                  and _nm_rows.count(_nm_rebuilt) == 1 and len(_nm_rows) == 2)
+        M._close_tail(_nm_tail)
         # ALLOW TWIN: with no writer in the window, the created month holds
         # exactly the rows handed over - the mutation it catches is a carry
         # that re-reads the rebuilt file and doubles its own rows.
@@ -974,6 +983,89 @@ def _cases(check):
               and os.path.isfile(os.path.join(_nm2, "2026-09.jsonl")))
     finally:
         shutil.rmtree(_nm_tmp, ignore_errors=True)
+
+    # --- rs: a refused replace is the shared helper's to wait out -----------
+    # The rewrite has no retry of its own: a sharing denial raised by someone
+    # else holding the month open is waited out by `_output.while_shared` inside
+    # the atomic write, and past that wait the rewrite reports failure with the
+    # old file standing. The Windows reading is pinned, so the rewrite has let
+    # go of its own descriptor and the emulated holder is the only one.
+    import errno as _rs_errno
+    _rs_tmp = tempfile.mkdtemp(prefix="ledger-refused-")
+    _rs_real_replace = os.replace
+    _rs_passes = M.REPLACE_PASSES_OPEN_FILE
+    _rs_wait = _output.SHARING_WAIT_SECONDS
+    try:
+        def _rs_month(name):
+            led = os.path.join(_rs_tmp, name)
+            os.makedirs(led)
+            path = os.path.join(led, "2026-09.jsonl")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(M._row_line({"ts": "2026-09-01T08", "sessionId": "S-BF",
+                                      "probeId": "rs-old"}))
+            with open(path, "rb") as fh:
+                before = fh.read()
+            return led, path, before
+
+        def _rs_rewrite(led, path, refusals):
+            """Rewrite with `os.replace` onto the month refused `refusals`
+            times by a holder that is not the rewrite -> (ok, calls, own),
+            where `own` counts the calls made while the rewrite's own
+            descriptor was still open."""
+            keep, tail = M.open_month(led, "2026-09", {"S-BF"})
+            state = {"calls": 0, "own": 0}
+
+            def replace(src, dst, *a, **kw):
+                if os.path.abspath(dst) != os.path.abspath(path):
+                    return _rs_real_replace(src, dst, *a, **kw)
+                state["calls"] += 1
+                if tail.get("fh") is not None:
+                    state["own"] += 1
+                if state["calls"] <= refusals:
+                    raise PermissionError(_rs_errno.EACCES,
+                                          "Access is denied (emulated)", dst)
+                return _rs_real_replace(src, dst, *a, **kw)
+            os.replace = replace
+            try:
+                ok = M.rewrite_month(led, "2026-09", keep + [
+                    {"ts": "2026-09-01T09", "sessionId": "S-BF",
+                     "probeId": "rs-new"}], tail=tail)
+            finally:
+                os.replace = _rs_real_replace
+            return ok, state["calls"], state["own"]
+
+        def _rs_probes(led):
+            return sorted(r.get("probeId") for r in M.read_ledger(led))
+
+        M.REPLACE_PASSES_OPEN_FILE = False
+        _rs_led, _rs_path, _rs_unused = _rs_month("rs1")
+        _rs_ok, _rs_calls, _rs_own = _rs_rewrite(_rs_led, _rs_path, 3)
+        _rs_landed = _rs_probes(_rs_led)
+
+        # The deadline is shortened so the case costs a fraction of a second;
+        # what it pins is the answer past it, not the length of the wait.
+        _output.SHARING_WAIT_SECONDS = 0.2
+        _rs2_led, _rs2_path, _rs2_before = _rs_month("rs2")
+        _rs2_ok, _rs2_calls, _rs2_own = _rs_rewrite(_rs2_led, _rs2_path, 10 ** 6)
+        with open(_rs2_path, "rb") as fh:
+            _rs2_intact = fh.read() == _rs2_before
+        _rs2_left = sorted(n for n in os.listdir(_rs2_led) if n.endswith(".tmp"))
+        check("rs1 a month rewrite whose only holder is another process waits "
+              "through the shared helper and lands; one whose replace stays "
+              "refused past the deadline returns False with the old file "
+              "intact: landed ok=%r calls=%d own=%d probes=%r; refused ok=%r "
+              "calls=%d own=%d intact=%r temp=%r"
+              % (_rs_ok, _rs_calls, _rs_own, _rs_landed, _rs2_ok, _rs2_calls,
+                 _rs2_own, _rs2_intact, _rs2_left),
+              _rs_ok is True and _rs_calls == 4 and _rs_own == 0
+              and _rs_landed == ["rs-new"]
+              and _rs2_ok is False and _rs2_calls > 1 and _rs2_own == 0
+              and _rs2_intact and _rs2_left == [])
+    finally:
+        os.replace = _rs_real_replace
+        M.REPLACE_PASSES_OPEN_FILE = _rs_passes
+        _output.SHARING_WAIT_SECONDS = _rs_wait
+        shutil.rmtree(_rs_tmp, ignore_errors=True)
 
     # --- lk: an append waits for the month's lock, and never for ever -------
     # A rewrite holds the month's lock across its replace; an append made then
@@ -1160,8 +1252,9 @@ def _cases(check):
               _lf_given == M.LOCK_UNAVAILABLE and _lf_rew is True)
 
         # The wait's basis, read off the code rather than restated: above the
-        # longest a rewrite holds the lock through its replace retries, and
-        # well under the timeout that kills the metering hook.
+        # longest a rewrite holds the lock through its replace - the shared
+        # sharing-denial wait, its one retry - and well under the timeout that
+        # kills the metering hook.
         with open(os.path.join(_output.HOOKS_DIR, "hooks.json"),
                   encoding="utf-8") as fh:
             _lf_hooks = json.load(fh)
@@ -1169,7 +1262,7 @@ def _cases(check):
                         for groups in _lf_hooks.get("hooks", {}).values()
                         for group in groups for h in group.get("hooks", [])
                         if "meter-usage.py" in h.get("command", "")]
-        _lf_retry = M.REPLACE_RETRIES * M.REPLACE_RETRY_S
+        _lf_retry = _output.SHARING_WAIT_SECONDS
         check("lf6 the lock wait outlasts a rewrite's replace retries and stays "
               "under half of every metering hook timeout: wait=%r retries=%r "
               "timeouts=%r" % (M.MONTH_LOCK_WAIT_S, _lf_retry, _lf_timeouts),

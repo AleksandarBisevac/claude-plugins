@@ -2346,7 +2346,7 @@
     {
       "id": "P125.42-0h5",
       "title": "A standing high-risk approval, armed and revoked only by the owner's own prompt, lets a high-risk task commit without a mid-run question; a per-phase approval stays available",
-      "status": "in_progress",
+      "status": "done",
       "description": "Owner decision D5 (2026-10-14): both a standing high-risk approval and the existing per-phase one, the standing one the default way of working. Today record-risk-confirmation.py takes the owner's words on a command line, which the auto-mode classifier rightly refused when the model ran it (self-modification), and a mid-run high-risk question cost 72 minutes of waiting in P125. Mechanism, mirroring the release bypass: a UserPromptSubmit hook (extend detect-plan-skip.py, the plugin's prompt hook, rather than a new file unless measured otherwise) recognises an arming and a revoking keyword in the OWNER'S OWN PROMPT only - nothing the model writes can arm it - and records the standing approval with the prompt's words verbatim in the journal. drive-phase's high-risk decision consults it: armed -> the commit proceeds and one journal row records the task id, its scope digest and the approval used; not armed -> asks as today. The per-phase record-risk-confirmation keeps working unchanged. Doctor and status show that a standing approval is armed and how many commits went through it. Keywords and their wording go in README and commands/phase.md (phase.md is at its byte ceiling: take bytes out for any added).",
       "files": [
         "plugins/audit/hooks/hooks.json",
@@ -2391,19 +2391,35 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "75083e4ddcbd",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Standing high-risk approval, armed and revoked only by the owner's own prompt. hooks/_config.py gains a section (STANDING_ARM_KEYWORD '#approve-high-risk', STANDING_REVOKE_KEYWORD '#revoke-high-risk', actions risk.standing.armed / revoked / used, STANDING_VIA 'owner-prompt'): owner_prompt(data) returns the `prompt` of a payload whose hook_event_name is UserPromptSubmit and that names no agent_id, and nothing else (not user_prompt, message, tool_response or a transcript_path file); keyword_typed (whole word, case-insensitive); standing_prompt_act (revoke wins over arm in one prompt); standing_entry / standing_use_entry (journal entry builders); standing_approval(rows) (the last owner-written arm/revoke row decides; uses = use rows whose details.reason cites THIS arming row's hash prefix); journal_lib(). detect-plan-skip.py main() calls _record_standing, which appends the row through _journal_io.append_why with the prompt verbatim in details.reason, claims the append for the session (record_plugin_write) and prints ARMED/REVOKED or 'NOT armed' when the row did not land. drive-phase.py: the high-risk step still checks confirmed_in_advance first (unchanged); for a task it does not cover, new standing_use() reads the trail through _loader.load_hooks_config's standing_approval, takes _tree_stamp.scope_digest of the task's files (excluding _evio.recorded_paths), appends one risk.standing.used row (taskId, phaseId, basis 'scope digest sha256:...', reason citing the arming row) through append_from_cli_why, and only then marks the task confirmed; not armed, an untakeable digest or an unwritten row returns None and the decide-high-risk decision is asked as before. Doctor: _doctor_trail.check_standing_approval (OK 'ARMED since <ts> ... (row <hash>); N commit(s) went through it' or 'not armed ...; last revoked <ts>'; WARNING when the reader or journal cannot be read), wired into audit-doctor.diagnose after check_journal. record-risk-confirmation.py: docstring paragraph only, saying how the standing approval sits beside it; its behaviour is unchanged. README: hook list entry, a new guarantees row (saying what is NOT held: `audit-journal.py append --via owner-prompt` can forge a row and nothing tells it apart), the decide-high-risk invariant row, and the /audit:phase row. commands/phase.md: step 1 now names the two keywords, and the file is 3 bytes smaller than HEAD (5226 -> 5223); measure-context --gate prints run form 3986/4000; the RENDER_POINTER 'in your own reply' and the bold VERBATIM pointer _refs requires are both kept. Tests: test_detect_plan_skip sa1a-sa1d, sa1, sa2a-sa2c, sa2 (42/42); test_drive_phase sh-block sh1a-sh1d, sh1 (5/5 via --stage sh-block); test_audit_doctor sx1a-sx1c, sx1 (173/173). Red on HEAD code, all as assertion failures: detect_plan_skip 35/42, drive sh-block 2/5, doctor 169/173. Mutations, run in a scratch copy of plugins/audit (the shared tree untouched): owner_prompt also reading user_prompt/message -> sa1a, sa1b, sa1c, sa1 red; owner_prompt always '' (over-fire the other way) -> sa1c, sa1d, sa1, sa2a red; _owner_written always True -> sa1b, sa1 red; arm checked before revoke -> sa2c red; uses counting every use row -> sx1b, sx1 red. Full sweep: 334/334 files ok, 16156 cases, exit 0 (the first sweep went red on test__refs rt1 because an earlier phase.md edit had dropped 'in your own reply'; that was fixed and both runs went green). ruff: All checks passed; vermin: minimum 3.7. bench-hooks --gate within budget on 3.14.7 only, no other interpreter found. No new import, so the _deps module map did not change. Out of scope and left alone: audit-status.py does not show the approval (the description asks for doctor and status, but status is not in this task's files); hooks.json and test_record_risk_confirmation.py needed no change; PLUGIN-BUILD-GUIDE.md's detect-plan-skip section does not describe the keywords; the existing plan bypass's _prompt_text still reads user_prompt and message, the same kind of gap this task closes for the standing approval.",
+        "descriptive": "The owner can type #approve-high-risk once and high-risk commits then go through without a mid-run question, each one journaled with its task and scope digest; #revoke-high-risk turns it off, doctor shows whether it is armed and how many commits used it, and the per-phase confirmation works as before."
       },
       "startedAt": "2026-10-14T10:32:21Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T13:26:09Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_detect_plan_skip.py: sa1 a prompt carrying the arming keyword writes the standing approval (journaled, with the prompt's words verbatim); the same keyword in a tool result, a file the model wrote, or an assistant message arms nothing",
+        "plugins/audit/tests/test_detect_plan_skip.py: sa2 the revoking keyword in the owner's prompt disarms it; the per-phase approval (record-risk-confirmation) still covers exactly the tasks it named",
+        "plugins/audit/tests/test_drive_phase.py: sh1 with a standing approval armed, a high-risk task's commit proceeds with no decision, and one journal row names the task, its scope digest and the approval it used; with none armed, the decision is asked as today",
+        "plugins/audit/tests/test_audit_doctor.py: sx1 doctor reports whether a standing approval is armed, since when, and how many commits used it"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T13:26:08Z.f13044",
         "status": "passed",
         "at": "2026-10-14T13:26:08Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "75083e4ddcbd",
+        "at": "2026-10-14T13:26:09Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T13:15:54Z",
+        "basis": "`python3 plugins/audit/tests/test_detect_plan_skip.py --selftest` in a throwaway tree at HEAD exited 1 with 7 of 42 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sa1 (house FAIL): SELFTEST FAILED: 35/42 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2642,7 +2658,12 @@
       "startedAt": "2026-10-14T10:32:21Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-14T13:48:56Z.1c0729",
+        "status": "passed",
+        "at": "2026-10-14T13:48:56Z"
+      }
     },
     {
       "id": "P125.47-0h5",
@@ -3139,6 +3160,95 @@
         "add": [
           "tools/release.py: a failing case over the fake runner prints a bounded message (at most a few KB), and wait_ci over the fake returns without waiting for its timeout",
           "plugins/audit/tests/test_stamp_verification.py: _remove_throwaway retries a shared-file removal through _output.while_shared (a mutation of while_shared changes its behaviour)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.58-0h5",
+      "title": "Every keyword the owner types is read through one owner-prompt reader, the plan-first bypass included",
+      "status": "pending",
+      "description": "Found while landing the standing high-risk approval: `_config.owner_prompt` reads only the `prompt` field of a UserPromptSubmit payload with no `agent_id`, but the same hook's older `_prompt_text` (detect-plan-skip.py) - which arms the plan-first bypass - also accepts `user_prompt` and `message`. Two readers of one boundary, one weaker. Invariant: every keyword a human arms by typing it is read through `_config.owner_prompt`; delete `_prompt_text`. A selftest that a payload carrying the bypass keyword only in `user_prompt` or `message`, or carrying an `agent_id`, arms nothing, beside the allow case where the owner's own prompt does.",
+      "files": [
+        "plugins/audit/hooks/detect-plan-skip.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_detect_plan_skip.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_detect_plan_skip.py: the plan-first bypass keyword carried only in user_prompt or message, or in a payload with an agent_id, arms nothing, and the same keyword in the owner's prompt still arms it",
+          "plugins/audit/tests/test_detect_plan_skip.py: detect-plan-skip reads prompt text in exactly one place, _config.owner_prompt (a second reader of the payload's prompt fields is reported by name)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.59-0h5",
+      "title": "/audit:status shows whether a standing high-risk approval is armed, since when, and how many commits used it",
+      "status": "pending",
+      "description": "The standing high-risk approval task asked for doctor AND status to show the approval; doctor does (`_doctor_trail.check_standing_approval`, read from `_config.standing_approval`), status does not, because audit-status.py was outside that task's files. Add the same reading to status - through `_config.standing_approval`, not a second parse of the journal - in text and in --json, and say nothing when none was ever armed.",
+      "files": [
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_status.py: with a standing approval armed, status names it, the time it was armed and the number of commits that used it, in text and in --json; revoked, it says revoked; never armed, it prints nothing about it",
+          "plugins/audit/tests/test_audit_status.py: status's standing-approval facts are _config.standing_approval's answer (a mutation of that reader changes what status prints)"
         ],
         "expectRedFirst": true,
         "gate": [

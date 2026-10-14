@@ -1174,14 +1174,16 @@ def read_ledger(ledger_dir, since=None, until=None):
 # taken as final, and how many quiet-checks a busy writer may extend it by.
 TAIL_SETTLE_S = 0.02
 TAIL_MAX_POLLS = 50
-# How often a replace refused while the month's lock is held is retried, and
-# how far apart; how long that lock is waited for, polled at what interval.
-# The wait sits between two bounds a case reads off the code: above the longest
-# a rewrite can hold the lock through its retries, so an append outlasts one;
-# and well under the metering hook's own `timeout` in hooks.json, which kills
-# the hook - and every row it had not yet written - when it runs out.
-REPLACE_RETRIES = 50
-REPLACE_RETRY_S = 0.02
+# Whether a replace goes through while a handle holds the file open. Windows
+# refuses it, so there a rewrite lets go of its own descriptor before the replace
+# rather than spinning the shared sharing-denial wait against itself.
+REPLACE_PASSES_OPEN_FILE = os.name != "nt"
+# How long the month's lock is waited for, polled at what interval. The wait
+# sits between two bounds a case reads off the code: above the longest a rewrite
+# can hold the lock through its replace (`_output.SHARING_WAIT_SECONDS`), so an
+# append outlasts one; and well under the metering hook's own `timeout` in
+# hooks.json, which kills the hook - and every row it had not yet written - when
+# it runs out.
 MONTH_LOCK_WAIT_S = 3.0
 MONTH_LOCK_POLL_S = 0.005
 # What `lock_month` answers for a lock file the filesystem will not lock at
@@ -1394,11 +1396,13 @@ def rewrite_month(ledger_dir, month, rows, tail=None):
     that then fails leaves that empty file behind - it holds no row, so every
     reader sees the month as it was.
 
-    Where the platform refuses to replace a file that is open, the descriptor is
-    drained and closed and the replace retried, still under the lock, until a
-    reader holding the file lets it go or the retries run out. There a writer
-    that does not take the lock can still lose a row written between the last
-    drain and the replace; one that takes it cannot.
+    Where the platform refuses to replace a file that is open
+    (`REPLACE_PASSES_OPEN_FILE` false), the descriptor is drained to its end and
+    closed BEFORE the replace, so the replace never meets the rewrite's own
+    handle; a refusal it does meet is someone else's, and is waited out by the
+    one retry every atomic write has (`_output.while_shared`), still under the
+    lock. There a writer that does not take the lock can lose a row written
+    between that last drain and the replace; one that takes it cannot.
 
     On a filesystem that refuses to lock at all (`LOCK_UNAVAILABLE`) the rewrite
     goes on without it, as every appender there does: the carry is then the
@@ -1419,14 +1423,12 @@ def rewrite_month(ledger_dir, month, rows, tail=None):
         lock = lock_month(path)
         if lock is None:
             return False
-        rows = list(rows) + (_drain(tail)[0] if tail is not None else [])
-        try:
-            _replace_rows(path, rows)
-        except PermissionError:
-            if tail is not None:
-                rows += _drain(tail, final=True)[0]
-                _close_tail(tail)
-            _replace_retrying(path, rows)
+        held = tail is not None and REPLACE_PASSES_OPEN_FILE
+        rows = list(rows) + (_drain(tail, final=not held)[0]
+                             if tail is not None else [])
+        if not held:
+            _close_tail(tail)
+        _replace_rows(path, rows)
         unlock_month(lock)
         lock = None
         if tail is not None and tail.get("fh") is not None:
@@ -1439,18 +1441,6 @@ def rewrite_month(ledger_dir, month, rows, tail=None):
     finally:
         unlock_month(lock)
         _close_tail(tail)
-
-
-def _replace_retrying(path, rows):
-    """`_replace_rows`, retried while the platform refuses it - a reader holding
-    the file open is the one left to wait for once the lock is held. The last
-    refusal propagates."""
-    for _ in range(REPLACE_RETRIES - 1):
-        try:
-            return _replace_rows(path, rows)
-        except PermissionError:
-            time.sleep(REPLACE_RETRY_S)
-    return _replace_rows(path, rows)
 
 
 def _replace_rows(path, rows):
