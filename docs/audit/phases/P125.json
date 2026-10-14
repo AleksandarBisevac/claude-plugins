@@ -3866,7 +3866,7 @@
     {
       "id": "P125.62-0h5",
       "title": "A filed return's digest is taken over the bytes on disk, so a Windows close does not read every return as changed",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Regression in this phase, CI run 38604025090 (windows-latest plain 1 and cp1252 1, ci/p125 at 28449751): test__filed_returns rj8 - a return whose bytes match its row was reported 'has changed since the journal recorded it filed' (row sha256:d769a8..., file sha256:0c1436...). Every other leg is green. The shape points at a newline translation between the bytes the digest is taken over and the bytes on disk (CRLF on Windows). First establish whether the PRODUCT path has it - submit's `task.return.filed` row (drive-phase.py, `_journal_io` append with the filed bytes' sha256) against `_filed_returns` writing the return (`newline=\"\"` at its write) and `read_filed_return_checked` hashing the file - or only the test fixture writes in text mode. If the product has it, every Windows close of a filed task is refused: fix it so the digest is always over the exact bytes written and read (one function both sides call). If only the fixture, fix the fixture and add a case that writes with CRLF translation deliberately and proves the product path is immune. Either way a case that would go red on POSIX too (simulate the translation), since this machine and ubuntu cannot see it natively.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -3898,16 +3898,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T21:09:19Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-14T21:30:04Z.5d1dfe",
+        "status": "passed",
+        "at": "2026-10-14T21:30:04Z"
+      }
     },
     {
       "id": "P125.63-0h5",
@@ -4038,7 +4044,7 @@
     {
       "id": "P125.65-0h5",
       "title": "The /audit:phase run form carries no flag reference, so adding a flag no longer trims the run form",
-      "status": "in_progress",
+      "status": "done",
       "description": "Completes the phase-review finding the signal form only half closed: after the drive's one-line signal landed, `python3 tools/measure-context.py --gate` prints the run form at 3973 / 3980 - the ceiling was lowered with it, so the run form is still at its ceiling and the next flag still trims unrelated prose that other gates pin. The finding's structural answer: move the flag reference out of the run form. The run form keeps only what a run needs every time (the seven verbs, the numbered steps the pinning cases read, the approval keywords line); the flag reference moves to where it is read on demand (the command's own --help, or the in-product help the plugin already serves per key), never to a reference file the gated command reads. Set the ceiling with headroom stated beside it and its basis. Also move commands/next.md, resume.md, review.md and run.md to the signal form (`next --signal`, `brief <id>`), so no command still teaches the old 'Read your brief at <path>' block. Every sentence another gate pins must survive or move with its pin.",
       "files": [
         "plugins/audit/commands/phase.md",
@@ -4078,19 +4084,37 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "80cebbe7391a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The flag-to-key map left the /audit:phase run form. audit-task.py: PHASE_KEY_DESTS (each batch `phase` key beside the add-phase dest that writes it; BATCH_PHASE_KEYS is now derived from it), PHASE_FLAGS_NO_KEY (gate_clear, park), phase_flag_map() spelling each flag off the parser via option_dests(), phase_flag_help(), and main() answering `add-phase --help` with that map (exit 0). commands/phase.md's add section points at `audit-task.py add-phase --help` instead of carrying the map. test_audit_task.py: fb11 now requires the pointer, and requires every BATCH_PHASE_KEYS key and every add-hint flag in the --help output; new fb11b holds the map to the parser, to VERB_FLAGS['add-phase'] and to _phase_fields' dests. tools/measure-context.py: flag_references() (a `--flag` code span followed by a quoted key's) makes a gated entry breach; brief_path_teachers() names any commands/*.md still carrying `Read your brief at` / `brief=<path>`, and gate_breaches includes it; RUN_FORM_BASIS=3794 + RUN_FORM_HEADROOM=186 = the run-form ceiling 3980, with the basis in the comment beside it (measured 2026-10-14; the headroom is under the smallest numbered run step, 223 bytes that day). New cases mc36, mc36b (red twin), mc36c (allow), mc37, mc37b (red twin + allow). next.md, resume.md, review.md and run.md moved to the signal form (`next ... --signal`, `--explain`, the `Follow the brief this prints: ... brief --role <role> <id>` prompt); so4/sn4/vb1 stay green. measure-context --gate, run form: before 3973 / 3980, after 3794 / 3980. Commands: `python3 tools/measure-context.py --selftest` -> ALL PASS 40/40; `python3 plugins/audit/tests/test_audit_task.py --selftest --stage fb-block` -> 18/18; `python3 tools/sweep-selftests.py` -> exit 0, 335/335 files ok; `python3 tools/measure-context.py --gate` -> exit 0 GATE OK; `ruff check plugins/audit tools` -> exit 0; vermin -> exit 0. fb11/fb11b were proved red against HEAD 8651fd11 with stamp-verification.py red (status proved, 2026-10-14T20:18:19Z). Mutations by monkeypatch: widening the flag-map regex to any flag turns mc36 and mc36c red, a never-matching one turns mc36b red; never-matching brief regex turns mc37b red, any-'brief' turns mc37 and mc37b red. _help.py and test__help.py are unchanged: the payload is served only to the panel (/api/help) and measured 199987 of p5's <200000 bound.",
+        "descriptive": "Adding a flag to /audit:phase add no longer grows the run form, because the flag-to-key map is printed by `audit-task.py add-phase --help`; no command teaches the old brief-path dispatch any more."
       },
       "startedAt": "2026-10-14T20:03:54Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T21:09:18Z",
+      "verifiedBy": [
+        "mc36 the /audit:phase run form holds no flag reference and is under its ceiling with the stated headroom",
+        "mc36b",
+        "mc36c",
+        "mc37 no command under commands/ teaches the brief-path block the signal form replaced",
+        "mc37b",
+        "fb11b (test_audit_task.py)"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T21:09:17Z.62a655",
         "status": "passed",
         "at": "2026-10-14T21:09:17Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "80cebbe7391a",
+        "at": "2026-10-14T21:09:18Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T20:30:13Z",
+        "basis": "`python3 tools/measure-context.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 37 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code, the task's run with its inline suite tools/measure-context.py laid over as HEAD's copy plus its 2 test hunk(s), 12 other hunk(s) held at HEAD), each passing with the working tree's implementation - mc36 (house FAIL), mc37 (house FAIL): SELFTEST FAILED: 35/37 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],

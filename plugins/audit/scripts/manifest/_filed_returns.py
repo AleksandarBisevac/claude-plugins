@@ -598,6 +598,50 @@ def return_digest(path):
         return None
 
 
+def _opens_for_reading(call):
+    """True when `call` is `open(...)`, or `<x>.open(...)`, in a reading mode:
+    no mode at all, or one with no write, append, create or update in it."""
+    func = call.func
+    if getattr(func, "id", None) != "open" and getattr(func, "attr", None) != "open":
+        return False
+    modes = [kw.value for kw in call.keywords if kw.arg == "mode"]
+    mode = call.args[1] if len(call.args) > 1 else (modes[0] if modes else None)
+    if mode is None:
+        return True
+    if not (isinstance(mode, ast.Constant) and isinstance(mode.value, str)):
+        return True
+    return not set(mode.value) & set("wax+")
+
+
+def _calls_sha256(call):
+    func = call.func
+    return (getattr(func, "attr", None) == "sha256"
+            and getattr(getattr(func, "value", None), "id", None) == "hashlib")
+
+
+def file_digest_sites(source):
+    """The names of every function in `source` that opens a file to read and
+    takes a sha256 in the same body, sorted - each one a place a file's digest
+    is computed.
+
+    A filing row's digest and the checked read's must come from one reading of
+    the bytes on disk. The row's is `_journal_io.file_hash`, taken at the
+    append, and the read's is `return_digest`; a third site - most dangerously
+    one hashing what a text-mode read hands back, which on Windows is the text
+    after newline translation rather than the bytes - would disagree with the
+    row on every CRLF file while agreeing with it on this platform. Hashing text
+    a caller handed over is not a site: no file is opened there."""
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        calls = [c for c in ast.walk(node) if isinstance(c, ast.Call)]
+        if (any(_opens_for_reading(c) for c in calls)
+                and any(_calls_sha256(c) for c in calls)):
+            found.append(node.name)
+    return sorted(found)
+
+
 def filed_return_row(path, checkout, task_id, role, red_status):
     """The journal entry `drive-phase.py submit` appends right after `path` is
     written: `action` names the row kind, and `target` is `path` spelled the

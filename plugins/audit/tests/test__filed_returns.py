@@ -18,6 +18,8 @@ WHAT IS PINNED, and why each one is here rather than trusted:
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
+import ast
+import hashlib
 import json
 import os
 import sys
@@ -811,6 +813,8 @@ def _selftest():
         _harness.stage(check, "rd-block", _read_set_cases)
         _harness.stage(check, "rj-block", _journaled_cases)
         _harness.stage(check, "pr-block", _plain_read_cases)
+        _harness.stage(check, "rc-block", _crlf_cases)
+        _harness.stage(check, "ds-block", _digest_site_cases)
     return _harness.run(body)
 
 
@@ -931,7 +935,9 @@ def _journaled_cases(check):
     intact = M.filed_digest_problem(path, row)
     check("rj3 a return whose bytes still match the row's recorded digest "
           "reads clean at the close: %r" % (intact,), intact is None)
-    with open(path, "w", encoding="utf-8") as fh:
+    # `newline=""`, as `file_once` writes: a text-mode write on Windows turns
+    # every "\n" into CRLF, which is a change of bytes the row is right to refuse.
+    with open(path, "w", encoding="utf-8", newline="") as fh:
         fh.write(json.dumps(_executor(claims="claims:\n1 a tampered edit")) + "\n")
     changed = M.filed_digest_problem(path, row)
     check("rj4 a return whose bytes changed after filing is refused at the "
@@ -974,7 +980,7 @@ def _journaled_cases(check):
           and "returns/P1.8/" in unchecked
           and unread[0] == old_text and unread[3] is not None
           and M.UNCHECKED_LEAD in unread[3])
-    with open(path, "w", encoding="utf-8") as fh:
+    with open(path, "w", encoding="utf-8", newline="") as fh:
         fh.write(first)
     text, body, problem, unchecked = M.read_filed_return_checked(
         path, [row], root)
@@ -1002,6 +1008,141 @@ def _journaled_cases(check):
           "rather than left to drift apart in silence: %r"
           % (M.return_digest(pin_path),),
           M.return_digest(pin_path) == _journal_io.file_hash(pin_path))
+
+
+def _crlf_cases(check):
+    """A return whose bytes carry CRLF, as a text-mode write on Windows leaves
+    them, written by hand here so a POSIX run sees the bytes that platform
+    does. The row is appended through `_journal_io` for real, so its digest is
+    the one a filing records, not one this case computed."""
+    root = _harness.fixture_root("filed-returns-crlf-")
+    try:
+        task = {"id": "P1.9", "startedAt": _START}
+        path = M.return_path(root, task, "executor")
+        crlf = json.dumps(_executor(), indent=2).replace("\n", "\r\n") + "\r\n"
+        M.file_once(path, crlf)
+        with open(path, "rb") as fh:
+            on_disk = fh.read()
+        row = M.filed_return_row(path, root, task["id"], "executor", "proved")
+        written, why = _journal_io.append_from_cli_why(root, row)
+        rows = _journal_io.read_all(root)
+        filed = [r for r in rows if r.get("action") == M.RETURN_FILED_ACTION]
+        recorded = filed[0].get("stateHash") if len(filed) == 1 else None
+        # The digest a reading over the TRANSLATED text would take: what the
+        # fixture value must tell apart from the bytes, or the case proves
+        # nothing about line endings.
+        lf_bytes = crlf.replace("\r\n", "\n").encode("utf-8")
+        untranslated = "sha256:" + hashlib.sha256(lf_bytes).hexdigest()
+        text, _body, problem, unchecked = M.read_filed_return_checked(
+            path, rows, root)
+        with open(path, "wb") as fh:
+            fh.write(lf_bytes)
+        gone = M.read_filed_return_checked(path, rows, root)
+        check("rc1 a return written with CRLF line endings and its filing row "
+              "agree on one digest, and a return whose bytes changed after "
+              "filing is still refused (row %r, untranslated %r, read %r, "
+              "after the CRLF became LF %r, append %r)"
+              % (recorded, untranslated, (problem, unchecked), gone[2],
+                 (written, why)),
+              bool(written) and on_disk == crlf.encode("utf-8")
+              and on_disk.count(b"\r\n") > 1
+              and recorded is not None and recorded != untranslated
+              and text == crlf and problem is None and unchecked is None
+              and gone[0] is None and gone[2] is not None
+              and recorded in gone[2] and untranslated in gone[2])
+    finally:
+        _harness.remove_tree(root)
+
+
+def _digest_function(source, name):
+    """`ast.dump` of the `try` body of `name` in `source`, or None."""
+    for node in ast.walk(ast.parse(source)):
+        if (isinstance(node, ast.FunctionDef) and node.name == name
+                and node.body and isinstance(node.body[-1], ast.Try)):
+            return ast.dump(ast.Module(body=node.body[-1].body,
+                                       type_ignores=[]))
+    return None
+
+
+def _state_hash_sources(source):
+    """The names called on the right of every `<x>["stateHash"] = <call>`."""
+    names = []
+    for node in ast.walk(ast.parse(source)):
+        if not (isinstance(node, ast.Assign) and len(node.targets) == 1):
+            continue
+        tgt = node.targets[0]
+        key = getattr(tgt, "slice", None)
+        if key.__class__.__name__ == "Index":       # the 3.8 wrapper
+            key = key.value
+        if not (isinstance(tgt, ast.Subscript)
+                and isinstance(key, ast.Constant) and key.value == "stateHash"):
+            continue
+        call = node.value
+        names.append(getattr(getattr(call, "func", None), "id", None)
+                     if isinstance(call, ast.Call) else repr(
+                         getattr(call, "value", call)))
+    return names
+
+
+def _calls(source, function):
+    """Every bare or attribute name `function` in `source` calls."""
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.FunctionDef) and node.name == function:
+            return sorted(set(
+                getattr(c.func, "id", None) or getattr(c.func, "attr", None)
+                for c in ast.walk(node) if isinstance(c, ast.Call)))
+    return None
+
+
+def _digest_site_cases(check):
+    """The filing row's digest is `_journal_io.file_hash`'s, taken at the
+    append; the checked read's is `return_digest`'s. The two modules are
+    layer-mates and may not import each other, so the one function is held
+    as one body in two places, and any other site that hashes a file a
+    reading opened is reported by name."""
+    def source(rel):
+        with open(os.path.join(_output.SCRIPTS_DIR, rel), "r",
+                  encoding="utf-8") as fh:
+            return fh.read()
+    filed_src = source(os.path.join("manifest", "_filed_returns.py"))
+    journal_src = source(os.path.join("governance", "_journal_io.py"))
+    drive_src = source(os.path.join("governance", "drive-phase.py"))
+    # With no reader there is no way to report a second site, so its absence
+    # fails these cases rather than raising past them.
+    read_sites = getattr(M, "file_digest_sites", lambda _src: None)
+    sites = (read_sites(filed_src), read_sites(journal_src),
+             read_sites(drive_src))
+    bodies = (_digest_function(filed_src, "return_digest"),
+              _digest_function(journal_src, "file_hash"))
+    hashes = _state_hash_sources(journal_src)
+    compared = _calls(filed_src, "filed_digest_problem")
+    check("ds1 the digest a filing row records and the digest the checked "
+          "read compares are computed by the same function over the same "
+          "bytes (sites %r, row's stateHash from %r, the comparison calls %r, "
+          "one body: %r)" % (sites, hashes, compared,
+                             bodies[0] is not None and bodies[0] == bodies[1]),
+          sites[0] == ["return_digest"] and "file_hash" in (sites[1] or [])
+          and sites[2] == []
+          and bodies[0] is not None and bodies[0] == bodies[1]
+          and "file_hash" in hashes
+          and set(hashes) <= set(["file_hash", "None"])
+          and compared is not None and "return_digest" in compared
+          and "sha256" not in compared)
+    second = (filed_src + "\n\ndef _text_digest(path):\n"
+              "    with open(path, encoding=\"utf-8\") as fh:\n"
+              "        return hashlib.sha256(fh.read().encode()).hexdigest()\n")
+    check("ds2 a second hashing site - one over the text a text-mode read "
+          "hands back, which is the shape that sees translated bytes - is "
+          "reported by name: %r" % (read_sites(second),),
+          read_sites(second) == ["_text_digest", "return_digest"])
+    handed = ("import hashlib\n\ndef sig(text):\n"
+              "    return hashlib.sha256(text.encode()).hexdigest()\n\n"
+              "def peek(path):\n    with open(path, \"rb\") as fh:\n"
+              "        return fh.read()\n")
+    check("ds2a THE ALLOW TWIN: hashing text a caller handed over, and opening "
+          "a file without hashing it, are neither a site: %r"
+          % (read_sites(handed),),
+          read_sites(handed) == [])
 
 
 def _drive_mark_cases(check):
