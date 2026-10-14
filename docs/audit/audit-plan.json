@@ -4566,7 +4566,8 @@
       "P125.19",
       "P125.6",
       "P125.50-0h5",
-      "P125.55-0h5"
+      "P125.55-0h5",
+      "P125.66-0h5"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -5684,7 +5685,8 @@
       "P125.19",
       "P125.6",
       "P125.50-0h5",
-      "P125.55-0h5"
+      "P125.55-0h5",
+      "P125.66-0h5"
     ],
     "plugins/audit/tests/test_audit_status.py": [
       "P25.2",
@@ -5871,7 +5873,8 @@
       "P125.53-0h5",
       "P125.60-0h5",
       "P125.51-0h5",
-      "P125.65-0h5"
+      "P125.65-0h5",
+      "P125.66-0h5"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -8227,7 +8230,8 @@
       "P125.55-0h5",
       "P125.60-0h5",
       "P125.61-0h5",
-      "P125.62-0h5"
+      "P125.62-0h5",
+      "P125.66-0h5"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -8306,7 +8310,8 @@
       "P125.55-0h5",
       "P125.60-0h5",
       "P125.61-0h5",
-      "P125.62-0h5"
+      "P125.62-0h5",
+      "P125.66-0h5"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6",
