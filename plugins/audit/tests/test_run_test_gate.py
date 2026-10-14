@@ -9991,9 +9991,83 @@ def _shared_facts_cases(check):
           and pick(sa) == pick(sb) == ("SENTINEL", ["SENTINEL"]))
 
 
+def _follower_cases(check):
+    """A step that owes a follower prints one line; the run records it on the row
+    as `followersOwed`, the record the drive regenerates or widens from."""
+    import _deps
+    repo = _mini_repo("rtg-follow-")
+    scripts = os.path.join(repo, "scripts")
+    guide = os.path.join(repo, "PLUGIN-BUILD-GUIDE.md")
+    ids, identity = {"taskId": "P1.1", "phaseId": "P1"}, {"runId": "r-follow"}
+
+    def _row(text, code=1):
+        res = M.run_gate(repo, [("selftests", "python3 tools/sweep-selftests.py")],
+                         runner=lambda _p, _c, _t=None: (code, text, {}))
+        return _ev_io.row_for(repo, res, "task", ids, identity)
+
+    try:
+        os.makedirs(scripts)
+        _write(os.path.join(scripts, "_a.py"), '"""a module."""\n')
+        _write(guide, "# guide\n\n%s\n\n```\n%s```\n\nprose after the map\n"
+               % (_deps._GUIDE_HEADING, _deps.render(scripts, (("_a",),))))
+        current = _deps.map_follower(guide, scripts, (("_a",),))
+        # The task's change: a new module under scripts/ importing the old one.
+        _write(os.path.join(scripts, "_b.py"), '"""b module."""\nimport _a  # noqa\n')
+        layers = (("_a",), ("_b",))
+        owed = _deps.map_follower(guide, scripts, layers)
+        row = _row("FAIL g1 the guide's module map is stale\n"
+                   + _ev_io.follower_line(owed["path"], owed["recipe"], owed["owner"])
+                   + "\n") if owed else {}
+        check("a fixture task adding a .py under scripts/ gets an evidence row whose "
+              "followersOwed names the module map with its recipe: %r"
+              % ((current, row.get("followersOwed")),),
+              current is None
+              and row.get("followersOwed") == [
+                  {"path": "PLUGIN-BUILD-GUIDE.md", "recipe": _deps.MAP_RECIPE,
+                   "owner": "_deps.map_drift"}]
+              and "followersUnread" not in row)
+
+        cra = _loader.load(os.path.join(_output.REPO_ROOT, "tools",
+                                        "check-rendered-artifacts.py"), "cra_follow")
+        stale = ["examples/acme-store/acme-store-audit.html", "docs/demo-large.html"]
+        lines, code = cra.arm_verdict((cra.FRESH_ARM,), drift=lambda: [
+            (rel, "differs from a fresh render") for rel in stale])
+        row = _row("\n".join(lines) + "\n", code)
+        printed = "\n".join(lines)
+        check("a STALE rendered artifact is recorded in followersOwed with the "
+              "refresh command check-rendered-artifacts printed: %r"
+              % (row.get("followersOwed"),),
+              code == 1
+              and row.get("followersOwed") == [
+                  {"path": rel, "recipe": cra.refresh_for(rel),
+                   "owner": "check-rendered-artifacts"} for rel in stale]
+              and all(cra.refresh_for(rel).split("\n")[0] in printed for rel in stale))
+
+        # THE TWIN, for the over-firing direction: a step that names no follower
+        # leaves the key off the row, and a marked line that is not a record is
+        # counted rather than read as nothing owed.
+        quiet = _row("all good\n", 0)
+        broken = _row("FOLLOWER-OWED {not json\nFOLLOWER-OWED {\"path\": \"x\"}\n")
+        check("fow1 a run whose steps name no follower writes no followersOwed, and "
+              "a marked line that is not a follower record is counted as unread: "
+              "%r" % ((quiet.get("followersOwed"), broken.get("followersUnread"),
+                       broken.get("followersOwed")),),
+              "followersOwed" not in quiet and "followersUnread" not in quiet
+              and broken.get("followersUnread") == 2
+              and "followersOwed" not in broken)
+    finally:
+        _harness.remove_tree(repo)
+
+
+def _write(path, text):
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+
+
 def _selftest():
     def body(check):
         _shared_facts_cases(check)
+        _harness.stage(check, "fo-block", _follower_cases)
         _cases(check)
         _harness.stage(check, "tr-block", _tree_cases)
         _harness.stage(check, "sl-block", _success_line_cases)

@@ -2355,7 +2355,14 @@ def _fenced_block_after(text, heading):
     return after_open[:fence_end]
 
 
-def map_drift(guide_path=None):
+# The command that rewrites the guide's fence from `render()`, run from the repo
+# root - the recipe `map_follower` names, so the drive can regenerate the map.
+MAP_RECIPE = "python3 plugins/audit/scripts/_deps.py --write-map"
+_MAP_STALE = ("the guide's module map fence does not match `_deps.py --render` "
+              "output byte-for-byte (stale - regenerate with `%s`)" % (MAP_RECIPE,))
+
+
+def map_drift(guide_path=None, script_dir=None, layers=None):
     """[(guide-relative-path, problem), ...] - the guide's module map against
     the REAL `render()` output, the same "a doc block must match the code's own
     statement" pattern `_areas.rule_drift()` uses for the reviewSkill rule.
@@ -2364,9 +2371,10 @@ def map_drift(guide_path=None):
     section was renamed or deleted), the heading survives but nothing under it
     is a fenced block any more, or a fence is there but its content is stale -
     one byte different from what `render()` says right now is still drift.
+    `script_dir` and `layers` are `render()`'s, for a fixture tree.
     """
     path = _guide_path(guide_path)
-    rel = "PLUGIN-BUILD-GUIDE.md" if guide_path is None else path
+    rel = _GUIDE_REL_PATH if guide_path is None else path
     try:
         with open(path, "r", encoding="utf-8") as fh:
             text = fh.read()
@@ -2381,13 +2389,38 @@ def map_drift(guide_path=None):
         return [(rel, "heading %r found but no fenced code block follows it"
                   % _GUIDE_HEADING)]
 
-    expected = render()
+    expected = render(script_dir, layers)
     if block != expected:
-        return [(rel, "the guide's module map fence does not match "
-                  "`_deps.py --render` output byte-for-byte (stale - "
-                  "regenerate with "
-                  "`python3 plugins/audit/scripts/_deps.py --render`)")]
+        return [(rel, _MAP_STALE)]
     return []
+
+
+def map_follower(guide_path=None, script_dir=None, layers=None):
+    """The follower record a stale module map owes - `{path, recipe, owner}`
+    for `_evidence_io.follower_line` - or None. None too for a missing heading,
+    a missing fence or an unreadable guide: `MAP_RECIPE` repairs none of
+    those, and `map_drift` names each."""
+    drift = map_drift(guide_path, script_dir, layers)
+    if [problem for _rel, problem in drift] != [_MAP_STALE]:
+        return None
+    return {"path": drift[0][0], "recipe": MAP_RECIPE, "owner": "_deps.map_drift"}
+
+
+def write_map(guide_path=None):
+    """Rewrite the fence under the guide's module-map heading with `render()`.
+    True when the guide holds the fresh map afterwards; False when there is no
+    fence to rewrite, which `map_drift` names."""
+    path = _guide_path(guide_path)
+    with open(path, "r", encoding="utf-8") as fh:
+        text = fh.read()
+    block = _fenced_block_after(text, _GUIDE_HEADING)
+    if block is None:
+        return False
+    fence = text.index("```", text.find(_GUIDE_HEADING) + len(_GUIDE_HEADING))
+    start = text.index("\n", fence) + 1
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text[:start] + render() + text[start + len(block):])
+    return True
 
 
 # The hooks rule, as the guide has to state it. Two halves, and the second is the
@@ -6378,6 +6411,11 @@ if __name__ == "__main__":
     if "--render" in sys.argv[1:]:
         sys.stdout.write(render())
         raise SystemExit(0)
+    if "--write-map" in sys.argv[1:]:
+        if not write_map():
+            sys.stderr.write("_deps.py: %s\n" % (map_drift()[0][1],))
+            raise SystemExit(1)
+        raise SystemExit(0)
     if "--contracts" in sys.argv[1:]:
         # THE EDGE OF THE DICT-KEY RULE, PRINTED. `dict_key_violations()` is the
         # verdict and says nothing about what it declined to answer; this is the
@@ -6399,5 +6437,5 @@ if __name__ == "__main__":
             _lines.append("")
         _output.write_lf_lines(_lines)
         raise SystemExit(0)
-    sys.stderr.write("usage: _deps.py --selftest | --render | --contracts\n")
+    sys.stderr.write("usage: _deps.py --selftest | --render | --write-map | --contracts\n")
     raise SystemExit(2)

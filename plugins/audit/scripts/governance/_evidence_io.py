@@ -54,6 +54,7 @@ This module carries no `--selftest` of its own; its cases live in
 import binascii
 import calendar
 import hashlib
+import json
 import math
 import os
 import re
@@ -709,6 +710,61 @@ def _miss_row(project, miss):
     return out
 
 
+# --- a follower a gate step owes ---------------------------------------------
+# A file a change cannot avoid editing although no task names it: the module map
+# a new import moves, a committed page a fresh render no longer matches. The step
+# whose check finds it stale prints ONE line - the mark, then a JSON object - and
+# the gate runner reads that line, never the check's prose, into `followersOwed`.
+# Both halves live here, so the line a producer prints and the reader that parses
+# it cannot drift apart: a producer prints `follower_line`.
+#
+# A `recipe` of None is a follower only a hand can repair (a published pin);
+# `needsBrowser` marks a recipe the drive prints as an instruction rather than
+# runs. A marked line that does not parse is counted (`followersUnread`), so a
+# malformed line is never read as "nothing owed".
+FOLLOWERS_KEY = "followersOwed"
+FOLLOWER_MARK = "FOLLOWER-OWED"
+_FOLLOWER_LINE = re.compile(r"^\s*%s (.*?)\s*$" % (FOLLOWER_MARK,), re.M)
+
+
+def follower_line(path, recipe, owner, needs_browser=False):
+    """The one line a step prints for a follower it owes."""
+    record = {"path": path, "recipe": recipe, "owner": owner}
+    if needs_browser:
+        record["needsBrowser"] = True
+    return "%s %s" % (FOLLOWER_MARK, json.dumps(record, sort_keys=True))
+
+
+def _follower(record):
+    """`record` as a row keeps it, or None when it is not a follower record."""
+    if not isinstance(record, dict):
+        return None
+    path, recipe, owner = (record.get(k) for k in ("path", "recipe", "owner"))
+    if not (isinstance(path, str) and path and isinstance(owner, str) and owner
+            and (recipe is None or isinstance(recipe, str) and recipe)):
+        return None
+    out = {"path": path, "recipe": recipe, "owner": owner}
+    if record.get("needsBrowser") is True:
+        out["needsBrowser"] = True
+    return out
+
+
+def followers_in(text):
+    """`(records, unread)` - every follower line in `text`, distinct, in the
+    order printed, and how many marked lines were not a follower record."""
+    records, unread = [], 0
+    for found in _FOLLOWER_LINE.finditer(text or ""):
+        try:
+            record = _follower(json.loads(found.group(1)))
+        except ValueError:
+            record = None
+        if record is None:
+            unread += 1
+        elif record not in records:
+            records.append(record)
+    return records, unread
+
+
 def row_for(project, result, scope, ids, identity, published=None):
     """One evidence row: what ran, what it answered, whose run it was, and which
     declaration the run was measured against.
@@ -804,6 +860,18 @@ def row_for(project, result, scope, ids, identity, published=None):
     # when there is something to write, like the key above it.
     if result.get("attributionBasis") is not None:
         row["attributionBasis"] = str(result["attributionBasis"])
+    # THE FOLLOWERS A STEP SAID IT OWES (`followers_in`), the one record the drive
+    # regenerates or widens from. Both strings went through a runner's output, so
+    # both are redacted as a basis is; written only when a step named one.
+    owed = [f for f in (_follower(f) for f in result.get(FOLLOWERS_KEY) or [])
+            if f is not None][:MAX_PATHS]
+    if owed:
+        row[FOLLOWERS_KEY] = [dict(f, path=redacted_paths(project, f["path"]),
+                                   recipe=None if f["recipe"] is None
+                                   else redacted_paths(project, f["recipe"]))
+                              for f in owed]
+    if result.get("followersUnread"):
+        row["followersUnread"] = int(result["followersUnread"])
     # THE MUTES THAT EXCUSED A FAILING STEP. The step itself keeps its exit and
     # its failing names, so without this a `passed` beside a red step would be
     # a verdict the row cannot be read back for. Allow-listed to the suite,

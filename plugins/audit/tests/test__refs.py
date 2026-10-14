@@ -42,6 +42,7 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _refs as M                                  # noqa: E402
 import _loader                                     # noqa: E402  (the reference resolver)
+import _evidence_io as _ev                         # noqa: E402  (follower_line)
 # The one home for which files a surface's pictures are OF, asked here the way
 # `tools/capture-screenshots.mjs` asks it. Seeding a fixture's sidecar from it is
 # what a capture does and is not circular: every RED case below then edits a source
@@ -1702,9 +1703,21 @@ def _cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
     # --- published fetch instructions -----------------------------------------
+    _pins = M.raw_url_pin_drift()
+    # The line the gate runner records as a follower this step owes.
+    for _owed in M.pin_followers(_pins):
+        print(_ev.follower_line(_owed["path"], _owed["recipe"], _owed["owner"]))
     check("p1 the tree publishes no runnable fetch from a moving ref, and no stale "
-          "pin in the plugin README", M.raw_url_pin_drift() == [],
-          repr(M.raw_url_pin_drift()))
+          "pin in the plugin README", _pins == [], repr(_pins))
+    _pin_rows = [("plugins/audit/README.md", 9, "pinned to v1 but plugin.json says v2"),
+                 ("plugins/audit/README.md", 12, "fetches from the moving ref 'main'"),
+                 (".gitignore", 0, "unreadable")]
+    check("p1a a stale pin owes its document once, by hand (no recipe), and an "
+          "unreadable file owes nothing: %r" % (M.pin_followers(_pin_rows),),
+          M.pin_followers(_pin_rows) == [
+              {"path": "plugins/audit/README.md", "recipe": None,
+               "owner": "_refs.raw_url_pin_drift"}]
+          and M.pin_followers([]) == [])
     with open(os.path.join(M.REPO_ROOT, "plugins", "audit", ".claude-plugin",
                            "plugin.json"), "r", encoding="utf-8") as fh:
         _pv = json.load(fh)["version"]

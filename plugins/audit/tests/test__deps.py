@@ -53,6 +53,7 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _output                                     # noqa: E402  (as _deps imports it)
 import _deps as M                                  # noqa: E402
+import _evidence_io as _ev                         # noqa: E402  (follower_line)
 
 
 # --- cases --------------------------------------------------------------------
@@ -478,10 +479,15 @@ def _cases(check):
           M._guide_path("/nowhere/x.md") == "/nowhere/x.md")
 
     # --------------------------------------------------- map_drift: guide vs --render output
+    _map = M.map_drift()
+    _owed = M.map_follower()
+    if _owed:
+        # The line the gate runner records as the follower this step owes.
+        print(_ev.follower_line(_owed["path"], _owed["recipe"], _owed["owner"]))
     check("g1 the shipped guide's module map fence matches `_deps.py --render` "
           "byte-for-byte right now - the house 'a doc block must match the code's own "
           "statement' pattern `_areas.rule_drift()` uses, applied to this generated "
-          "block: %r" % (M.map_drift(),), not M.map_drift())
+          "block: %r" % (_map,), not _map)
 
     # ---------------------------------------------- hooks_rule_drift: guide vs the rule
     # The generated map has a byte lint; the SENTENCE beside it had nothing, and that is
@@ -1276,6 +1282,22 @@ def _cases(check):
         check("g7 mutation proof: the real, unweakened map_drift() still catches it - "
               "nothing was left mutated behind",
               real_stale_hits and "does not match" in real_stale_hits[0][1])
+        _followers = [M.map_follower(p) for p in (stale_path, no_heading_path,
+                                                  no_fence_path, missing_path)]
+        check("g8 a stale fence owes the guide as a follower with the recipe that "
+              "rewrites it; a missing heading, fence or file owes none, since the "
+              "recipe repairs none of them: %r" % (_followers,),
+              _followers == [{"path": stale_path, "recipe": M.MAP_RECIPE,
+                              "owner": "_deps.map_drift"}, None, None, None])
+        _wrote = (M.write_map(stale_path), M.write_map(no_fence_path))
+        with open(stale_path, "r", encoding="utf-8") as fh:
+            _rewritten = fh.read()
+        check("g9 write_map rewrites the stale fence in place - the guide then "
+              "matches `render()` and the prose around the fence is kept - and "
+              "refuses a guide with no fence: %r" % ((_wrote, M.map_drift(stale_path)),),
+              _wrote == (True, False) and M.map_drift(stale_path) == []
+              and _rewritten.startswith("intro\n\n" + M._GUIDE_HEADING + "\n\nsome text")
+              and _rewritten.endswith("```\n\nmore text\n"))
     finally:
         shutil.rmtree(guide_tmp, ignore_errors=True)
 

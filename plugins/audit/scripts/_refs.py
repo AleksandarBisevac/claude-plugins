@@ -3214,6 +3214,16 @@ def raw_url_pin_drift(repo_root=None):
     return out
 
 
+def pin_followers(drift):
+    """The follower records `raw_url_pin_drift()`'s findings owe, one per
+    document: a finding AT A LINE is a pin in that document, which only a hand
+    can repair, so its recipe is None. A finding at line 0 is a document or a
+    `.gitignore` that could not be read, and no edit of it is owed."""
+    rels = sorted(set(rel for rel, line, _problem in drift if line > 0))
+    return [{"path": rel, "recipe": None, "owner": "_refs.raw_url_pin_drift"}
+            for rel in rels]
+
+
 # --- the version a committed artifact stamps ----------------------------------
 # A rendered report stamps the plugin version that produced it, so a COMMITTED report
 # is a published claim about which release the reader is looking at. The scale demo

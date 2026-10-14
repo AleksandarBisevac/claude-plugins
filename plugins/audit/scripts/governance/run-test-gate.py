@@ -3552,6 +3552,7 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     # the length of the run.
     step_text = [] if keep_text else None
     cancelled_by = None
+    followers, followers_unread = [], 0
     try:
         for name, command in commands:
             step_started = time.monotonic()
@@ -3655,6 +3656,11 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
             # text below, because which STEP printed a path is the whole
             # question here and the join throws that away.
             step_named.append(named_now)
+            # A follower is owed by whatever step printed its line, answered or
+            # not: the drive regenerates it from the row this run writes.
+            owed, unread = _ev.followers_in(text)
+            followers.extend(f for f in owed if f not in followers)
+            followers_unread += unread
     except KeyboardInterrupt as exc:
         # THE ONE THING THE INTERRUPT PATH DOES IS LET THE ROW BE WRITTEN. The
         # child's group is already gone - `_shell`'s own `except BaseException`
@@ -3776,6 +3782,7 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
             # run with no mute to honour measured that, it did not skip it.
             "muted": _distinct_records(m for st in steps
                                        for m in (st.get("muted") or ())),
+            "followersOwed": followers, "followersUnread": followers_unread,
             "failed": failed}
 
 

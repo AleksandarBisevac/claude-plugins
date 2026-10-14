@@ -914,9 +914,19 @@ def arm_verdict(arms, root=None, subjects=None, drift=None):
     lines, code = [], 0
     if FRESH_ARM in arms:
         bad = drifted() if drift is None else drift()
+        if bad:
+            # Deferred for the reason `tools/_suite.py` gives: only a stale page
+            # pays for the plugin's path, and it needs `follower_line` from it.
+            if os.path.join(REPO, "tools") not in sys.path:
+                sys.path.insert(0, os.path.join(REPO, "tools"))
+            import _suite  # noqa: F401
+            import _evidence_io
         for rel, detail in bad:
             lines.append("STALE %s - %s" % (rel, detail))
             lines.extend(_recipe_lines(rel))
+            # The record the gate runner keeps, recipe and all, for the drive.
+            lines.append(_evidence_io.follower_line(
+                rel, refresh_for(rel), "check-rendered-artifacts"))
         if bad:
             lines.append("%d committed artifact(s) no longer match their source. "
                          "Re-render with the command printed under each, and commit "

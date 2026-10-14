@@ -4305,6 +4305,121 @@ def _wave_width_cases(check):
           and os.path.isfile(os.path.join(root, "notes.txt")))
 
 
+# --- a follower a red gate owes: regenerated, or widened, from its row ----------
+# The gate a follower case declares: green while `path` holds `want`, else red
+# with the one line a step prints for the follower it owes - spelled here from
+# the format, not by `_evidence_io.follower_line`, so the reader is held to the
+# line as documented rather than to whatever its own writer emits.
+_FOLLOWER_GATE = ("import sys\n"
+                  "with open(%r) as fh:\n"
+                  "    ok = fh.read().strip() == %r\n"
+                  "if not ok:\n"
+                  "    print(%r)\n"
+                  "sys.exit(0 if ok else 1)\n")
+
+
+def _follower_repo(prefix, rel, recipe, owner, wave=False, browser=False):
+    """A one-task fixture (two in a wave) whose last task's gate owes `rel` while
+    it does not read `current`; `rel` is committed `stale`, and `map.fresh`
+    holds what a recipe copies in."""
+    root, mpath = (_wave_repo(prefix, 2) if wave
+                   else _repo(prefix, task_ids=TASKS[:1]))
+    os.makedirs(os.path.join(root, "docs"), exist_ok=True)
+    _write_lf(os.path.join(root, *rel.split("/")), "stale\n")
+    _write_lf(os.path.join(root, "map.fresh"), "current\n")
+    record = dict({"path": rel, "recipe": recipe, "owner": owner},
+                  **({"needsBrowser": True} if browser else {}))
+    _write_lf(os.path.join(root, "check_follower.py"), _FOLLOWER_GATE % (
+        rel, "current", "FOLLOWER-OWED " + json.dumps(record)))
+    with open(mpath) as fh:
+        plan = json.load(fh)
+    plan["phases"][0]["tasks"][-1]["tests"]["gate"] = [
+        '"%s" check_follower.py' % (sys.executable,)]
+    with open(mpath, "w") as fh:
+        json.dump(plan, fh, indent=2)
+    for argv in (["add", "-A"], ["commit", "-qm", "follower fixture"]):
+        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
+                       timeout=60)
+    return root, mpath
+
+
+def _follower_cases(check):
+    M, why = _load("drive_phase_follower")
+    if M is None:
+        check("fw0 the driver loads", False, why)
+        return
+    root, mpath = _follower_repo("follow", "docs/map.txt",
+                                 "git show HEAD:map.fresh > docs/map.txt", "check_map")
+    run = drive(M, root, mpath, cap=8)
+    task = tasks_of(mpath)["P1.1"]
+    sha = task.get("commit") or "HEAD"
+    carried = _git_out(root, "show", "--name-only", "--format=", sha).split()
+    held = _git_out(root, "show", "%s:docs/map.txt" % (sha,)).strip()
+    said = "\n".join(t for _c, t in run["prints"])
+    gates = [r.get("status") for r in _rows_of(root, mpath, "P1.1")]
+    check("the drive regenerates that follower by its recipe in the task tree, the "
+          "task commit carries it, and the second gate is green with no decision "
+          "printed: %r" % ((run["steps"], carried, held, gates),),
+          run["steps"] == expected_sequence(["P1.1"])
+          and task.get("status") == "done" and "docs/map.txt" in carried
+          and held == "current" and gates == ["failed", "passed"]
+          and "docs/map.txt" in (task.get("files") or [])
+          and "decide gate-red" not in said and "docs/map.txt regenerated" in said)
+
+    recipe = "git show HEAD:map.fresh > docs/map.txt"
+    root, mpath = _follower_repo("followshot", "docs/map.txt", recipe, "shots",
+                                 browser=True)
+    run = drive(M, root, mpath, cap=2)
+    left = _read(os.path.join(root, "docs", "map.txt"))
+    told = run["prints"][-1][1]
+    subprocess.run(recipe, shell=True, cwd=root, check=True, timeout=60)
+    after = drive(M, root, mpath, cap=1)
+    check("fw2 a recipe that needs a browser is never run by the drive: it prints "
+          "the orchestrator one instruction naming it, and the next drive after "
+          "the orchestrator ran it gates green and goes on: %r"
+          % ((told, left, after["steps"]),),
+          "follow P1.1: run `%s`" % (recipe,) in told and left == b"stale\n"
+          and "docs/map.txt" in (tasks_of(mpath)["P1.1"].get("files") or [])
+          and after["steps"] == [("dispatch", "reviewer", "P1.1")])
+
+
+def _follower_wave_cases(check):
+    M, why = _load("drive_phase_follower_wave")
+    if M is None:
+        check("fh0 the driver loads", False, why)
+        return
+    root, mpath = _follower_repo("followhand", "notes.txt", None, "check_notes",
+                                 wave=True)
+    _code, first = _next_wave(M, root, mpath)
+    for t in _dispatched(first):
+        _file_wave_executor(root, mpath, t)
+    prints, reply = [], []
+    for _ in range(6):
+        said = []
+        with _Env(root):
+            M.main(["next", PHASE, mpath, "--project-dir", root] + reply,
+                   out=said.append)
+        text = "\n".join(said)
+        prints.append(text)
+        reply = []
+        if instruction(text) == ("decide", "gate-red", None) and "P1.2" in text:
+            # The hand the lint asked for, in the member's own tree.
+            _write_lf(os.path.join(_tree_of(root, "P1.2"), "notes.txt"), "current\n")
+            reply = ["--answer", "rerun"]
+        elif all(t.get("status") == "done" for t in tasks_of(mpath).values()):
+            break
+    task = tasks_of(mpath)["P1.2"]
+    notes = " ".join(str(n) for n in task.get("notes") or [])
+    said = "\n".join(prints)
+    check("a hand-edited follower owed by a lint is widened with the lint's record "
+          "as its basis, and no undeclared-change decision is printed: %r"
+          % ((task.get("status"), task.get("files"), notes, prints),),
+          task.get("status") == "done" and "notes.txt" in (task.get("files") or [])
+          and "owed by check_notes on run" in notes
+          and "undeclared-change" not in said
+          and _read(os.path.join(root, "notes.txt")) == b"current\n")
+
+
 # --- a wave member's tree outlives a crash, a failed setup and a block ----------
 # The setup every case below declares: it appends the directory it ran in to a
 # log outside the fixture, so the log is the evidence a tree was provisioned -
@@ -5119,6 +5234,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("wqm-block", "_wave_record_mutant_cases"),
           ("wc-block", "_wave_crash_cases"), ("w1-block", "_width_one_cases"),
           ("wz-block", "_wave_width_cases"),
+          ("fw-block", "_follower_cases"), ("fh-block", "_follower_wave_cases"),
           ("wt-block", "_wave_resume_cases"), ("wt5-block", "_wave_adopt_cases"),
           ("wt7-block", "_wave_review_discard_cases"),
           ("wd-block", "_wave_redo_cases"), ("wg-block", "_wave_regate_cases"),
