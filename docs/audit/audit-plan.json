@@ -2307,7 +2307,8 @@
       "P125.6",
       "P128.3-0h5",
       "P125.40-0h5",
-      "P125.42-0h5"
+      "P125.42-0h5",
+      "P128.15-0h5"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -2343,7 +2344,8 @@
       "P123.58-64p",
       "P123.59-64p",
       "P123.64-64p",
-      "P123.72-64p"
+      "P123.72-64p",
+      "P128.15-0h5"
     ],
     "plugins/audit/hooks/guard-capabilities.py": [
       "P15.4",
@@ -5988,7 +5990,8 @@
       "P123.59-64p",
       "P123.64-64p",
       "P123.72-64p",
-      "P125.40-0h5"
+      "P125.40-0h5",
+      "P128.15-0h5"
     ],
     "plugins/audit/tests/test_guard_capabilities.py": [
       "P72.1"
