@@ -6,6 +6,12 @@ Which checks a change actually needs — and, when it cannot tell, all of them.
     tools/affected.py --base HEAD~3   # ...against another commit
     tools/affected.py <path> <path>   # ...or an explicit list
     tools/affected.py --json          # machine-readable, for verify.sh
+    tools/affected.py --list-related <path> <path>   # one suite path per
+                                       # line, nothing executed -- the shape
+                                       # meta.phaseGate.derived.listing.related
+                                       # records, {paths} filled in
+    tools/affected.py --list-all      # every suite file, one per line,
+                                       # nothing executed -- .listing.all
 
 WHY THE BROWSER GATES ARE THE POINT. The whole Python selftest sweep now runs in
 parallel and the panel browser gate is by far the longest leg, so narrowing the
@@ -30,6 +36,8 @@ version pins. Editing one file can turn those red without touching them, so any
 `.py` change selects them too. That is not caution, it is a measured fact: this
 repo has gone red exactly that way.
 """
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -242,6 +250,38 @@ def _suite_for(module_basename):
 
 
 # --- the selection rules ------------------------------------------------------
+def _suite_path(name):
+    """A suite's repo-relative POSIX path -- what a listing mode prints,
+    rather than the bare basename `select()` works in internally."""
+    return TESTS.replace(os.sep, "/") + "/" + name
+
+
+def _all_suite_paths():
+    """Every suite file the runner would collect under `plugins/audit/tests`,
+    one per line and never executed -- the FULL listing
+    `meta.phaseGate.derived.listing.all` records. Read off `_output.py_files`
+    (the same recursive walk `sweep-selftests.py` trusts) rather than a
+    second, hand-kept glob, and narrowed to `test*` so a helper module
+    (`_harness.py`, `_suite.py`) is never printed as a suite."""
+    names = sorted(relname for relname, _path in
+                   _output.py_files(os.path.join(REPO, TESTS))
+                   if os.path.basename(relname).startswith("test"))
+    return [_suite_path(name) for name in names]
+
+
+def _related_suite_paths(paths):
+    """The suite paths `--list-related` prints for `paths` -- the SAME
+    selection `select()` already derives (importers' suites, every
+    TREE_SCANNERS suite once any `.py` changed), widened to the full listing
+    the moment `select()` cannot narrow (an unrecognised path, or any other
+    `full` trigger). One path per line, never executed -- the contract
+    `meta.phaseGate.derived.listing.related` holds."""
+    suites, _gates, _reasons, full = select(paths)
+    if full:
+        return _all_suite_paths()
+    return sorted(_suite_path(s) for s in suites)
+
+
 def _once(gates):
     """`gates` with repeats removed, first occurrence kept.
 
@@ -453,7 +493,23 @@ def select(paths):
     return sorted(suites), _once(gates), reasons, full
 
 
+# --- the CLI entry point -------------------------------------------------------
 def main(argv):
+    # THE TWO LISTING MODES FIRST, and returned from before anything below
+    # touches git or the `--json`/`--base` flags: both are the contract
+    # `derive-phase-gate.py`'s `meta.phaseGate.derived.listing` reads --
+    # one suite path per line, nothing executed -- and neither asks what
+    # changed, so neither needs `changed_files()` or a git repo at all.
+    if "--list-all" in argv:
+        for path in _all_suite_paths():
+            print(path)
+        return 0
+    if "--list-related" in argv:
+        i = argv.index("--list-related")
+        for path in _related_suite_paths(argv[i + 1:]):
+            print(path)
+        return 0
+
     base = "HEAD"
     as_json = "--json" in argv
     argv = [a for a in argv if a != "--json"]
@@ -723,6 +779,40 @@ def _cases(check):
           "and the mutation table, every one of which talks about counts, and "
           "its branch used to end in 'a tool no suite covers': %r" % (tool,),
           "test__output.py" in tool["suites"] and not tool["full"])
+
+    def _run_lines(argv):
+        """stdout from `main(argv)`, split into non-blank lines -- what a
+        caller of `--list-related`/`--list-all` actually reads, captured
+        rather than read off an internal return value."""
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            exit_code = main(argv)
+        lines = [ln for ln in buf.getvalue().splitlines() if ln.strip()]
+        return lines, exit_code
+
+    related_lines, related_exit = _run_lines(
+        ["--list-related", "plugins/audit/scripts/_output.py"])
+    expected_related = sorted(_suite_path(s) for s in
+                              select(["plugins/audit/scripts/_output.py"])[0])
+    check("a16 `--list-related` with a scripts/ module prints its importers' "
+          "suites plus every TREE_SCANNERS suite, one path per line, and runs "
+          "no suite -- the EXIT CODE is 0 and nothing but paths came out: %r"
+          % (related_lines,),
+          related_exit == 0
+          and sorted(related_lines) == expected_related
+          and all(s in related_lines for s in
+                  (_suite_path(t) for t in TREE_SCANNERS))
+          and _suite_path("test__output.py") in related_lines)
+
+    unknown_lines, unknown_exit = _run_lines(
+        ["--list-related", "some/unknown/place.xyz"])
+    check("a17 `--list-related` with a path it does not recognise prints the "
+          "FULL suite list -- the same widening `select()` already carries "
+          "for an unrecognised path, never an empty or a narrowed one: %r"
+          % (unknown_lines,),
+          unknown_exit == 0
+          and sorted(unknown_lines) == _all_suite_paths()
+          and len(unknown_lines) > len(related_lines))
 
 
 def _selftest():

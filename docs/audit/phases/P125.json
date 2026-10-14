@@ -670,7 +670,12 @@
       "startedAt": "2026-10-13T23:36:09Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-14T00:49:02Z.bacb2c",
+        "status": "passed",
+        "at": "2026-10-14T00:49:02Z"
+      }
     },
     {
       "id": "P125.11",
