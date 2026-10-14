@@ -2420,7 +2420,8 @@
       "P123.35",
       "P123.37",
       "P123.59-64p",
-      "P123.64-64p"
+      "P123.64-64p",
+      "P125.40-0h5"
     ],
     "plugins/audit/hooks/hooks.json": [
       "P1.2",
@@ -2997,7 +2998,8 @@
       "P118.9",
       "P122.8-z4y",
       "P123.65-64p",
-      "P125.6"
+      "P125.6",
+      "P125.40-0h5"
     ],
     "plugins/audit/scripts/config/validate-config.py": [
       "P15.4",
@@ -4068,7 +4070,8 @@
       "P115.4-4yc",
       "P122.8-z4y",
       "P123.46-64p",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P125.40-0h5"
     ],
     "plugins/audit/scripts/panel/_panel_settings.py": [
       "P12.1",
@@ -4366,7 +4369,8 @@
       "P123.33",
       "P123.38",
       "P123.65-64p",
-      "P125.12"
+      "P125.12",
+      "P125.40-0h5"
     ],
     "plugins/audit/scripts/status/_doctor_trail.py": [
       "P36.9",
@@ -4879,7 +4883,8 @@
       "P124.6",
       "P123.23",
       "P123.38",
-      "P125.12"
+      "P125.12",
+      "P125.40-0h5"
     ],
     "plugins/audit/tests/test__doctor_trail.py": [
       "P20.6",
@@ -4990,7 +4995,8 @@
       "P26.2",
       "P106.2",
       "P118.9",
-      "P125.6"
+      "P125.6",
+      "P125.40-0h5"
     ],
     "plugins/audit/tests/test__id_refs.py": [
       "P61.7",
@@ -5783,7 +5789,8 @@
       "P125.31-0h5",
       "P125.41-0h5",
       "P125.44-0h5",
-      "P128.14-0h5"
+      "P128.14-0h5",
+      "P125.40-0h5"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -5977,7 +5984,8 @@
       "P123.58-64p",
       "P123.59-64p",
       "P123.64-64p",
-      "P123.72-64p"
+      "P123.72-64p",
+      "P125.40-0h5"
     ],
     "plugins/audit/tests/test_guard_capabilities.py": [
       "P72.1"
@@ -6057,7 +6065,8 @@
       "P123.37",
       "P123.59-64p",
       "P123.64-64p",
-      "P123.72-64p"
+      "P123.72-64p",
+      "P125.40-0h5"
     ],
     "plugins/audit/tests/test_harvest_worktree.py": [
       "P43.3"
@@ -7753,7 +7762,8 @@
       "P108.16-4gh",
       "P108.18-4gh",
       "P108.20-4gh",
-      "P123.34"
+      "P123.34",
+      "P125.40-0h5"
     ],
     "tools/ui-tests/capture-provenance.test.mjs": [
       "P103.8",
