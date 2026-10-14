@@ -3635,7 +3635,8 @@
       "P125.23",
       "P125.36-0h5",
       "P125.48-0h5",
-      "P125.57-0h5"
+      "P125.57-0h5",
+      "P125.63-0h5"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -5956,7 +5957,8 @@
       "P73.6-9h1",
       "P73.7-9h1",
       "P118.8",
-      "P118.14-v7t"
+      "P118.14-v7t",
+      "P125.64-0h5"
     ],
     "plugins/audit/tests/test_commit_manifest_index.py": [
       "P29.5",
@@ -5971,7 +5973,8 @@
       "P73.5-9h1",
       "P73.6-9h1",
       "P73.7-9h1",
-      "P123.21"
+      "P123.21",
+      "P125.64-0h5"
     ],
     "plugins/audit/tests/test_commit_task_work.py": [
       "P71.1",
@@ -5994,7 +5997,8 @@
       "P127.1",
       "P125.28",
       "P125.34-0h5",
-      "P125.53-0h5"
+      "P125.53-0h5",
+      "P125.64-0h5"
     ],
     "plugins/audit/tests/test_detect_plan_skip.py": [
       "P72.1",
@@ -6445,7 +6449,8 @@
       "P125.23",
       "P125.36-0h5",
       "P125.48-0h5",
-      "P125.57-0h5"
+      "P125.57-0h5",
+      "P125.63-0h5"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
@@ -8209,7 +8214,8 @@
       "P125.54-0h5",
       "P125.55-0h5",
       "P125.60-0h5",
-      "P125.61-0h5"
+      "P125.61-0h5",
+      "P125.62-0h5"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -8287,7 +8293,8 @@
       "P125.54-0h5",
       "P125.55-0h5",
       "P125.60-0h5",
-      "P125.61-0h5"
+      "P125.61-0h5",
+      "P125.62-0h5"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6",
@@ -8317,7 +8324,8 @@
       "P125.29-0h5",
       "P125.33-0h5",
       "P125.53-0h5",
-      "P125.60-0h5"
+      "P125.60-0h5",
+      "P125.62-0h5"
     ],
     "plugins/audit/tests/test__filed_returns.py": [
       "P118.3",
@@ -8341,7 +8349,8 @@
       "P125.29-0h5",
       "P125.33-0h5",
       "P125.53-0h5",
-      "P125.60-0h5"
+      "P125.60-0h5",
+      "P125.62-0h5"
     ],
     "plugins/audit/agents/guide.md": [
       "P118.9",
