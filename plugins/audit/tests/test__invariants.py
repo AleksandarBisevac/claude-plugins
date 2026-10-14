@@ -245,6 +245,18 @@ def _index_row(root, sha):
         "details": {"phaseId": "P1", "commit": sha}})
 
 
+def _index_write_row(root, ts, action, via):
+    """A journal row recording that `action` (via `via`) wrote the index at
+    `ts` - through the REAL appender, `_index_row`'s reason: the claim is
+    that a row `_journal_io.append` produced is one `read_all` finds with the
+    `ts` and `target` asked for it, not a dict shaped to look like one."""
+    return _journal_io.append(root, {
+        "ts": ts, "action": action, "actor": {"via": via},
+        "target": "docs/audit/audit-plan.json",
+        "summary": "fixture wrote the index",
+        "details": {"phaseId": "P1"}})
+
+
 def _index_commit(root, index_path, kind):
     """Give the repo a manifest-index commit of `kind`, plus the row naming it.
 
@@ -285,7 +297,8 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
           journal_in_commit=False, journal_real=False,
           evidence_in_commit=False, evidence_near_miss=False,
           audit_state=None, evidence_outside=False, journal_off=False,
-          leave_dirty=False, evidence_pointer=None, index_commit=None):
+          leave_dirty=False, evidence_pointer=None, index_commit=None,
+          index_writes=None):
     """A repo with one finished phase, broken in exactly the way the flags say.
 
     ONE BUILDER RATHER THAN ONE PER CASE, because the clean path has to be the
@@ -540,6 +553,13 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
                 "summary": "Edit wrote it",
                 "stateHash": "sha256:%064d" % (i,)}))
         _write(os.path.join(d, "2026-08-rows.jsonl"), "\n".join(rows) + "\n")
+
+    if index_writes:
+        # `(ts, action, via)` tuples, written through the real appender AFTER
+        # the task commits above, so the row's own ts - not when the fixture
+        # runs - is what the breach is graded against.
+        for ts, action, via in index_writes:
+            _index_write_row(root, ts, action, via)
 
     return {"root": root, "manifest": index_path, "shard": shard_path,
             "base": base, "sha1": sha1, "sha2": sha2, "stateSha": state_sha,
@@ -980,6 +1000,32 @@ def _cases(check):
               "%r" % (valid["breaches"],),
               len(valid["breaches"]) == 1
               and broken["sha2"][:12] in valid["breaches"][0])
+
+        written = repos.get(invalid_state=True, index_writes=[
+            ("2000-01-01T00:00:00Z", "manifest.edit", "cli"),
+            ("2010-06-01T00:00:00Z", "audit.task.scope", "orchestrator"),
+            ("2099-01-01T00:00:00Z", "manifest.edit", "cli-future")])
+        valid = _check(_phase_answer(written), "manifest-revalidated")
+        check("iv18g an index-validity breach names the NEWEST journal row "
+              "that wrote the index before the commit's committer time - not "
+              "the oldest one, and not the one written AFTER it: %r"
+              % (valid["breaches"],),
+              len(valid["breaches"]) == 1
+              and "last written by audit.task.scope via orchestrator at "
+                  "2010-06-01T00:00:00Z" in valid["breaches"][0]
+              and "cli-future" not in valid["breaches"][0]
+              and "2000-01-01" not in valid["breaches"][0])
+
+        unwritten = repos.get(invalid_state=True, index_writes=[
+            ("2099-01-01T00:00:00Z", "manifest.edit", "cli-future")])
+        valid = _check(_phase_answer(unwritten), "manifest-revalidated")
+        check("iv18h ...and when no journal row targets the index AT OR "
+              "BEFORE the commit, the breach says the write is not in the "
+              "journal rather than naming the nearest row it could find: %r"
+              % (valid["breaches"],),
+              len(valid["breaches"]) == 1
+              and "the write is not in the journal" in valid["breaches"][0]
+              and "cli-future" not in valid["breaches"][0])
 
         # `task.files` lives in the phase shard and `fileIndex` lives in the
         # index, and step 4c forbids a task commit from staging the index - so a

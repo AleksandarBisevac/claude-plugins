@@ -1438,6 +1438,85 @@ def _validator_subject(line):
     return "validator %s" % (_rules.finding_subject(line),)
 
 
+def _commit_committer_moment(git_root, sha):
+    """`sha`'s committer time, as `row_moment` reads one - epoch seconds, or
+    None when git would not say.
+
+    `%cI` is the same ISO-8601 shape (with an offset) `_usage_core.parse_ts`
+    reads, so a commit's moment and a journal row's moment compare on the same
+    scale without a second parser for either side.
+    """
+    code, out = _git(git_root, ["log", "-1", "--format=%cI", sha])
+    if code is None or code != 0 or not out.strip():
+        return None
+    return usage_ledger.parse_ts(out.strip())
+
+
+def _index_journal_target(git_root, index_rel, project):
+    """`index_rel` (relative to `git_root`) restated the way a journal row's
+    `target` names the index - relative to `project`, since `_normalised_target`
+    resolves what a writer records against the PROJECT directory, and `project`
+    need not equal `git_root` (`meta.gitRoot`). None when it cannot be resolved.
+    """
+    try:
+        return _output.posix_rel(
+            os.path.abspath(os.path.join(git_root, index_rel.replace("/", os.sep))),
+            os.path.abspath(project))
+    except Exception:
+        return None
+
+
+def _last_index_write(project, target, before):
+    """`(action, via, ts)` of the newest journal row targeting `target` at or
+    before `before` (epoch seconds) - or None when none does.
+
+    READ THROUGH `_journal_io.read_all`, THE ONE JOURNAL READER - never a
+    second parser over its files. `target`/`before` being falsy answers None
+    rather than scanning everything: an unresolved index path or an unreadable
+    commit moment cannot be compared against anything, and a guess here is
+    worse than the "not in the journal" sentence the caller falls back to.
+    """
+    if not target or before is None:
+        return None
+    try:
+        rows = _journal_io.read_all(project)
+    except Exception:
+        return None
+    best = None
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if _journal_io.row_target(row) != target:
+            continue
+        moment = _journal_io.row_moment(row)
+        if moment is None or moment > before:
+            continue
+        if best is None or moment >= best[0]:
+            best = (moment, row)
+    if best is None:
+        return None
+    row = best[1]
+    actor = row.get("actor") if isinstance(row.get("actor"), dict) else {}
+    return (str(row.get("action") or ""), str(actor.get("via") or "unknown"),
+            str(row.get("ts") or ""))
+
+
+def _index_write_clause(project, git_root, index_rel, sha):
+    """' (last written by <action> via <via> at <ts>)' or ' (the write is not
+    in the journal)' for the newest journal row targeting the index at or
+    before commit `sha`'s committer time - the verb an index-validity breach
+    is otherwise silent about, naming which command left the index in the
+    state this commit recorded.
+    """
+    target = _index_journal_target(git_root, index_rel, project)
+    before = _commit_committer_moment(git_root, sha)
+    writer = _last_index_write(project, target, before)
+    if writer:
+        action, via, ts = writer
+        return " (last written by %s via %s at %s)" % (action, via, ts)
+    return " (the write is not in the journal)"
+
+
 def manifest_revalidated(phase, git_root, project, index_rel, phase_file_rel,
                          phase_file_abs):
     """Every manifest state this phase COMMITTED still validates.
@@ -1520,6 +1599,7 @@ def manifest_revalidated(phase, git_root, project, index_rel, phase_file_rel,
             # product wearing the name of a backlog. What matters here is only
             # whether THIS commit carried the deferral at all.
             commit_deferred_pairing = False
+            write_note = None
             for line in findings:
                 # THE ONE FINDING A TASK COMMIT CANNOT AVOID. `task.files`
                 # lives in the phase shard and `fileIndex` lives in the index, and
@@ -1539,9 +1619,13 @@ def manifest_revalidated(phase, git_root, project, index_rel, phase_file_rel,
                 if _crossrefs.FILEINDEX_PAIRING in line:
                     commit_deferred_pairing = True
                     continue
+                if write_note is None:
+                    write_note = _index_write_clause(project, git_root,
+                                                      index_rel, full)
                 breaches.append(found(
-                    "%s: the manifest this commit recorded does NOT validate - %s"
-                    % (sha[:12], line), _validator_subject(line), full))
+                    "%s: the manifest this commit recorded does NOT validate - "
+                    "%s%s" % (sha[:12], line, write_note),
+                    _validator_subject(line), full))
             if commit_deferred_pairing:
                 pairing_deferred_commits += 1
     finally:
