@@ -2838,7 +2838,7 @@
     {
       "id": "P125.49-0h5",
       "title": "The affected-test arm's trust checks and listing facts are one helper in _gate_derive, read by run-test-gate and derive-phase-gate",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase-review finding (med, DRY) on the affected-test gates: `_affected_tests._untrusted` repeats the two version checks of `_gate_derive._importers_arm`, and `run-test-gate._affected_facts` repeats `derive-phase-gate._gather_facts`' listing and version runs. Move each into one helper in `_gate_derive.py` and have the three callers use it; delete the copies. The derived gates of the existing cases must be byte-identical before and after.",
       "files": [
         "plugins/audit/scripts/governance/_gate_derive.py",
@@ -2874,21 +2874,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T14:56:09Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.50-0h5",
       "title": "The executor brief tells the agent to reuse each tests.add clause verbatim as its case title, or to file a tests.addMap entry",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase-review finding (med, noise): `_filed_returns.tests_add_gaps` matches a declared tests.add case only by its verbatim clause or by a `tests.addMap` entry, so a return whose case titles paraphrase the plan is flagged even when every declared case is covered (seen on two cases of an earlier P125 task). The rule is right; the brief never states it. Make the brief's Tests section (audit-lookup.py brief) and agents/audit-executor.md say it in one sentence, next to the tests.add list, naming the two ways a case is matched. No change to the matching itself.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -2921,25 +2922,39 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d24a04ad51cd",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added TITLE_RULE in audit-lookup.py, printed in the executor brief's Tests section right after the tests.add list (only when tests.add is non-empty), and a two-line sentence in agents/audit-executor.md after the test-discipline bullet. Two cases added whose labels are the tests.add clauses verbatim; the second derives acceptance from _filed_returns.tests_add_gaps (verbatim clause and addMap entry accepted, paraphrase a gap) before checking the sentence. audit-lookup selftest 97/97. measure-context --gate OK, executor 8227/9000. Full sweep: 334/335 files ok; the one failure is plugins/audit/tests/test__proc_group.py (PermissionError from os.killpg in this sandbox), a file outside my files, left alone.",
+        "descriptive": "The executor brief and agent doc now tell the executor to title each case with its tests.add clause verbatim or file a tests.addMap entry."
       },
       "startedAt": "2026-10-14T14:07:11Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T14:56:08Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_lookup.py: an executor brief for a task with tests.add states, beside the list, that each case title is the clause verbatim or a tests.addMap entry, and a brief for a task with no tests.add does not",
+        "plugins/audit/tests/test_audit_lookup.py: the sentence the brief prints names the same two matches tests_add_gaps accepts (verbatim clause, addMap entry) - read off the function's behaviour, not a second copy of the wording"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T14:56:06Z.10c38c",
         "status": "passed",
         "at": "2026-10-14T14:56:06Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "d24a04ad51cd",
+        "at": "2026-10-14T14:56:08Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T14:20:05Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_lookup.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 97 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - plugins/audit/tests/test_audit_lookup.py: an executor brief for a task with tests.add states, beside the list, that each case title is the clause verbatim or a tests.addMap entry, and a brief for a task with no tests.add does not (house FAIL): SELFTEST FAILED: 95/97 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.51-0h5",
       "title": "A fixture path is declared as one, and a path literal split across string literals to dodge the reference lints is reported",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase-review finding (med, CLASS - recurred on two P125 tasks): agents split path literals (e.g. \"plugins/au\" \"dit/x.py\") so `_refs`' dangling-reference lints do not see a fixture path that does not exist in the tree. A patch per instance is how this class keeps coming back. Invariant: a fixture path is DECLARED as a fixture, through one marker the lint reads (one spelling, documented in the lint's docstring), and the lint then accepts it; a path assembled from adjacent or concatenated string literals is reported by name, so splitting is never needed and no longer hides anything. Convert the splits that exist today to the marker (widen scope through the drive for the files that hold them). Read the before-you-claim and no-silent-pass skills first; prove the new lint red both ways (a split path reported, a declared fixture accepted).",
       "files": [
         "plugins/audit/scripts/_refs.py",
@@ -2970,27 +2985,30 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T14:56:11Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.52-0h5",
       "title": "The unpriced-model check ignores ids that are not models, starting with Claude Code's <synthetic> turn",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase-review finding (med, false fire), measured: over the recorded sessions the shipped unpriced-model check fired on two, both on the model id `<synthetic>` - Claude Code's synthetic turn, not a model with a price - and on no real unpriced model. Exclude `<synthetic>` and any id that is not a model id (one predicate, shared by the session-start notice in meter-usage.py and doctor's unpriced-models row in _doctor_trail.py) so neither names it. A real unknown model id is still named.",
       "files": [
         "plugins/audit/hooks/meter-usage.py",
         "plugins/audit/scripts/status/_doctor_trail.py",
         "plugins/audit/tests/test_meter_usage.py",
-        "plugins/audit/tests/test__doctor_trail.py"
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/tests/test_usage_ledger.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -3016,16 +3034,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T14:56:12Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.53-0h5",
