@@ -8630,6 +8630,9 @@
     ],
     "tools/check-plan-gate-e2e.py": [
       "P125.47-0h5"
+    ],
+    "examples/panel.sh tools/verify.sh tools/check-report-interactive.mjs tools/ui-checks/csv.mjs tools/ui-checks/layout-baseline.mjs tools/ui-checks/liveness.mjs tools/ui-checks/responsive.mjs tools/ui-checks/stage-tabs.mjs tools/ui-tests/ado-panel.test.mjs tools/ui-tests/armed-reason.test.mjs tools/ui-tests/capture-provenance.test.mjs tools/ui-tests/evidence-badge.test.mjs tools/ui-tests/gate-reasons.test.mjs tools/ui-tests/layout-baseline.test.mjs tools/ui-tests/parse.test.mjs tools/ui-tests/proposals-cell.test.mjs tools/ui-tests/refresh-deferral.test.mjs tools/ui-tests/sandbox.mjs tools/ui-tests/version-banner.test.mjs plugins/audit/scripts/ui/panel/ado-connector.js plugins/audit/scripts/ui/panel/appearance-view.js plugins/audit/scripts/ui/panel/boot.js plugins/audit/scripts/ui/panel/branch-convention.js plugins/audit/scripts/ui/panel/composition.js plugins/audit/scripts/ui/panel/core.js plugins/audit/scripts/ui/panel/help-drawer.js plugins/audit/scripts/ui/panel/overview.js plugins/audit/scripts/ui/panel/proposals-view.js plugins/audit/scripts/ui/panel/run-status.js plugins/audit/scripts/ui/panel/version-banner.js plugins/audit/scripts/ui/panel/write-confirmation.js": [
+      "P125.56-0h5"
     ]
   },
   "bugs": [
