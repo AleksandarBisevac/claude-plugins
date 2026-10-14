@@ -479,17 +479,162 @@ def return_body(text, label):
         return None, "%s cannot be read as JSON (%s)" % (label, exc)
 
 
-def claims_from_return(evidence_dir, task):
+def claims_from_return(evidence_dir, task, journal_rows=None, checkout=None):
     """`(claims, problem)` - the `claims` text of `task`'s executor return for its
     current start, verbatim, or None when there is none to carry: no start, no
     return filed, or a return that carries no `claims`. A filed return that will
-    not parse is the problem, not an absence."""
-    _text, body, problem = read_filed_return(
-        return_path(evidence_dir, task, "executor"))
+    not parse is the problem, not an absence. With `journal_rows` and `checkout`
+    both given, the read goes through `read_filed_return_checked` instead, so a
+    return edited after it was filed is the same kind of problem; every caller
+    that cannot supply them keeps the plain read, unchanged."""
+    path = return_path(evidence_dir, task, "executor")
+    if journal_rows is not None and checkout is not None:
+        _text, body, problem = read_filed_return_checked(path, journal_rows,
+                                                          checkout)
+    else:
+        _text, body, problem = read_filed_return(path)
     if problem:
         return None, problem
     claims = (body or {}).get("claims")
     return (claims if isinstance(claims, str) and claims.strip() else None), None
+
+
+# --- the filed-return journal row --------------------------------------------------
+# A FILED RETURN'S "ONCE" USED TO REST ON THE FILE ALONE. `file_once`'s exclusive
+# create refuses a second write to a path that still exists, but an executor once
+# filed a placeholder return, DELETED it, and filed again - and nothing recorded
+# either filing, because nothing but the file's own presence ever asked the
+# question. `RETURN_FILED_ACTION` is the journal row kind this adds: once a
+# return is written, the caller that can also reach `_journal_io` appends one, and
+# a later filing is refused by that ROW even with the first file gone.
+#
+# WHY THE APPEND AND THE REFUSAL LIVE HERE AND THE WRITE DOES NOT. `_journal_io`
+# sits in this module's OWN LAYER (`_deps.LAYERS`), and a layer-mate may not
+# import another - the same rule that keeps `_manifest_io` and `_journal_io`
+# apart. So this module owns the row's SHAPE (what a filing puts in it, what a
+# later filing's own path must match to be refused, what a changed file's digest
+# must match to read clean) and never calls `_journal_io` itself: `drive-phase.py
+# submit` is the one caller that writes the file (through `audit-task.py
+# file-return`) AND can reach the journal, so it is the one that reads the rows
+# in, calls `refiling_refusal` before asking the filing verb to write, and
+# appends `filed_return_row`'s entry once that write succeeds.
+RETURN_FILED_ACTION = "task.return.filed"
+
+
+def return_target(path, checkout):
+    """`path` spelled repo-relative to `checkout`, posix-separated - the same
+    spelling `_journal_io.append`'s `_normalised_target` leaves an already
+    relative target at, so a row this module reads back compares like with
+    like. None when `path` names no checkout, or sits outside it, or the two
+    paths cannot be compared at all (a different drive on Windows)."""
+    if not (path and checkout):
+        return None
+    try:
+        rel = os.path.relpath(os.path.realpath(str(path)),
+                              os.path.realpath(str(checkout)))
+    except ValueError:
+        return None
+    if rel == os.pardir or rel.startswith(os.pardir + os.sep):
+        return None
+    return rel.replace(os.sep, "/")
+
+
+def return_digest(path):
+    """sha256:<hex> of `path`'s bytes, spelled exactly as `_journal_io.file_hash`
+    spells a row's `stateHash` - duplicated rather than imported, for the layer
+    reason `RETURN_FILED_ACTION`'s note states, and pinned equal to it by a case
+    in `plugins/audit/tests/test__filed_returns.py` so the two spellings cannot
+    drift apart in silence. None when `path` cannot be read."""
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(65536), b""):
+                h.update(chunk)
+        return "sha256:" + h.hexdigest()
+    except OSError:
+        return None
+
+
+def filed_return_row(path, checkout, task_id, role, red_status):
+    """The journal entry `drive-phase.py submit` appends right after `path` is
+    written: `action` names the row kind, and `target` is `path` spelled the
+    way a later filing's own target is compared against (`already_filed_row`).
+    The task, the start and the role all travel in it already - `return_rel`
+    already spells them into the path `target` carries - and `summary` restates
+    the task, the role and the red-first verdict for a human reading the trail
+    without parsing it. `details.taskId` repeats the task id as a STRUCTURED
+    field besides: it is already one of `_journal_io.DETAILS_KEYS`, so carrying
+    it there asks for no new allow-listed key. None when `path` names no target
+    at all - nothing this module can file a row about."""
+    target = return_target(path, checkout)
+    if target is None:
+        return None
+    return {"action": RETURN_FILED_ACTION, "target": target,
+            "summary": "%s %s return filed (redFirst: %s)"
+                      % (task_id, role, red_status or "n/a"),
+            "details": {"taskId": str(task_id)}}
+
+
+def already_filed_row(rows, path, checkout):
+    """The `RETURN_FILED_ACTION` row among `rows` (a journal's full read,
+    oldest first - `_journal_io.read_all`'s list) that already names `path`'s
+    own target, else None: the signal a retry is refused by even once the
+    first filing's FILE has been deleted."""
+    target = return_target(path, checkout)
+    if target is None:
+        return None
+    for row in rows or []:
+        if (isinstance(row, dict) and row.get("action") == RETURN_FILED_ACTION
+                and row.get("target") == target):
+            return row
+    return None
+
+
+def refiling_refusal(rows, path, checkout):
+    """Why `path` may not be filed again, naming the earlier filing's own
+    journal row, or None: the row is what makes a filing stay "once" even
+    after its file is deleted, which the exclusive create alone cannot do."""
+    row = already_filed_row(rows, path, checkout)
+    if row is None:
+        return None
+    return ("a %s row already filed this return, at %s (stateHash %s) - "
+            "deleting the file does not undo that filing"
+            % (RETURN_FILED_ACTION, row.get("ts") or "an unknown time",
+               row.get("stateHash") or "none recorded"))
+
+
+def filed_digest_problem(path, row):
+    """None, or why `path` is refused against the `RETURN_FILED_ACTION` row
+    that named it: the row's own recorded `stateHash` and what `path` hashes to
+    NOW, stated together, when the two disagree - a return edited after it was
+    filed, never read silently as it now stands. None too when `row` carries
+    no `stateHash` to compare against (a row from before this field, or none
+    at all)."""
+    recorded = row.get("stateHash") if isinstance(row, dict) else None
+    if not recorded:
+        return None
+    present = return_digest(path)
+    if present == recorded:
+        return None
+    return ("%s has changed since the journal recorded it filed: the row "
+            "carries %s and it now hashes to %s" % (path, recorded, present))
+
+
+def read_filed_return_checked(path, rows, checkout):
+    """`read_filed_return`, refused when `path`'s current bytes disagree with
+    the `RETURN_FILED_ACTION` row the journal already carries for it: this is
+    the close's reading - a return edited after it was filed is a problem
+    here too, never read as it now stands with nothing to say so."""
+    text, body, problem = read_filed_return(path)
+    if text is None:
+        return text, body, problem
+    row = already_filed_row(rows, path, checkout)
+    if row is None:
+        return text, body, problem
+    mismatch = filed_digest_problem(path, row)
+    if mismatch:
+        return None, None, mismatch
+    return text, body, problem
 
 
 # --- the per-task review's key, and the property a landing asks ---------------
