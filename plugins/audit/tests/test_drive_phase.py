@@ -5181,6 +5181,336 @@ def _scope_change_cases(check):
           and _attempts(mpath, "P1.1") == before + 1)
 
 
+# --- the signal: one line per step, the full text behind --explain ----------
+# Spelled here rather than read off the driver, so a verb added to or dropped
+# from the driver's table is a red case and not a table agreeing with itself.
+SIGNAL_VERB_WORDS = ("dispatch", "wait", "ask", "judge", "review", "done", "stop")
+SIGNAL_BYTES = 200
+EXPLAIN_BYTES = 2048
+_SIGNAL = re.compile(r"^audit (\S+) (%s) (\S+)(?: (.*?))? \| (.*) \| next: (\S.*)$"
+                     % ("|".join(SIGNAL_VERB_WORDS),))
+# The lines a step prints beside another rather than alone: each folds into the
+# signal of the step it follows, so the corpus never prints one by itself.
+_FOLDED_STEPS = ("ado-echo", "done-chain-next", "handback-filed",
+                 "handback-refused")
+
+
+def _signal_ok(line):
+    """None when `line` is one signal inside the bound, else what is wrong."""
+    if "\n" in line:
+        return "more than one line"
+    if len(line.encode("utf-8")) > SIGNAL_BYTES:
+        return "%d bytes" % (len(line.encode("utf-8")),)
+    return None if _SIGNAL.match(line) else "not the signal's shape"
+
+
+def _corpus_ctx(mpath):
+    """A context whose did-line carries several clauses, the shape a `next`
+    that closes one task and starts the next prints - long enough, with ids
+    past the line's bound, that a line cut by bytes cuts an id."""
+    return {"phase": "P125", "only": None, "manifest": mpath, "verbose": False,
+            "log": [], "did": ["closed P125.54-0h5 at 4cd8900",
+                               "started P125.55-0h5", "gate P125.55-0h5 green",
+                               "stamp current",
+                               "fix task P125.60-0h5 added for P125-R1",
+                               "closed P125.55-0h5 at ef37f58",
+                               "started P125.56-0h5", "closed P125.56-0h5 at 21d7ea5",
+                               "started P125.57-0h5"]}
+
+
+def _corpus_findings(count, severity="med"):
+    return [{"id": "P125-R%d" % (n,), "severity": severity,
+             "file": "plugins/audit/scripts/governance/drive-phase.py",
+             "issue": "the step prints a rule that sits past its bound " * 4}
+            for n in range(count)]
+
+
+def _signal_corpus(M, mpath):
+    """`[(step, said, ctx_extra)]` - every decision the drive can wait on, and
+    every other step it prints, built through the driver's own constructors
+    with text long enough that an unbounded line overflows: a why past the
+    bound, a triage of many findings with answers waiting, a wave of many
+    members and a recipe longer than the line."""
+    why = "the recorded gate went red on " + "a very long step name " * 12
+    ctx = _corpus_ctx(mpath)
+    out = []
+    for name in sorted(M.DECISIONS):
+        phase_level = name in M.PHASE_DECISIONS
+        pending = {"decision": name, "why": why,
+                   "task": None if phase_level else "P125.55-0h5",
+                   "start": None if phase_level else "20261014T182420Z"}
+        if name in ("triage", "round-cap"):
+            pending.update(findings=_corpus_findings(9) + _corpus_findings(3, "low"),
+                           answers=[{"who": "P125.3", "what": "diverges",
+                                     "note": "a note " * 30}],
+                           fixesAfter=["P125.60-0h5", "P125.61-0h5"],
+                           head="ef37f58e", cost=["  rounds cost " + "x" * 200])
+        out.append(("decide-%s" % (name,), M.render_decision(ctx, pending), {}))
+    clean = {"decision": "triage", "why": "clean review", "findings": [],
+             "answers": [], "fixesAfter": [], "head": "ef37f58e"}
+    out.append(("decide-triage", M.render_decision(ctx, clean), {}))
+    brief = ".claude/state/briefs/P125.55-0h5/20261014T182420Z.executor.md"
+    for role, agent in (("executor", M.EXECUTOR_AGENT), ("reviewer", M.REVIEWER_AGENT)):
+        out.append(("dispatch-%s" % (role,), M.dispatch_said(
+            ctx, role, "P125.55-0h5", agent, "opus", brief), {}))
+    out.append(("dispatch-phase-review", M.dispatch_said(
+        ctx, "phase", "P125", M.REVIEWER_AGENT, "opus", brief), {}))
+    members = [M.dispatch_said(ctx, "executor", "P125.%d-0h5" % (n,),
+                               M.EXECUTOR_AGENT, "sonnet", brief)
+               for n in range(40, 52)]
+    out.append(("dispatch-wave", M.wave_said(ctx, members), {}))
+    out.append(("follow-browser", M.follow_said(
+        ctx, "P125.55-0h5", ["node tools/capture-screenshots.mjs --update " + "a" * 150],
+        "../trees/P125.55-0h5"), {}))
+    out.append(("resume-executor", M.resume_said(ctx, "P125.55-0h5"), {}))
+    out.append(("done", M.done_said(ctx, "landed (" + "merged into main " * 10 + ")",
+                                    "P126"), {}))
+    out.append(("done", M.done_said(ctx, "landed", None), {}))
+    out.append(("done-task", M.done_task_said(ctx, "P125.55-0h5", "done at 4cd8900"), {}))
+    out.append(("decide-stalled", M.stalled_said(
+        ctx, [{"id": "P125.%d" % (n,), "status": "blocked", "attempts": 3,
+               "maxAttempts": 3} for n in range(5)], why), {}))
+    stop = ("[drive-phase] P125: stopped - audit-lock.py refused (exit 3); its own "
+            "words follow\n" + "[audit-lock] held by a live run " * 20)
+    for kind in ("stopped", "stop-lock", "stop-index-lock", "stop-blocked"):
+        out.append((kind, stop, {"stop": kind}))
+    return out
+
+
+def _signal_cases(check):
+    """The signal: one line per step, inside its bound, with a verb from the
+    seven; a table that maps every step to one of them; and the dispatch
+    prompts, which differ only by the id they end in."""
+    M, why = _load("signal_mod")
+    check("sn0 the driver loads: %r" % (why,), M is not None)
+    if M is None:
+        return
+    scratch = _harness.fixture_root("drive-signal-corpus-")
+    try:
+        mpath = os.path.join(scratch, "plan.json")
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(_plan(TASKS[:1], ("true",)), fh)
+        try:
+            corpus = _signal_corpus(M, mpath)
+            lines = [(step, M.signal(dict(_corpus_ctx(mpath), **extra),
+                                     0 if isinstance(said, dict) else 1,
+                                     said)["line"])
+                     for step, said, extra in corpus]
+        except Exception as exc:                               # noqa: BLE001
+            corpus, lines = [], [("raised", "%s: %s" % (type(exc).__name__, exc))]
+    finally:
+        _harness.remove_tree(scratch)
+    bad = [(step, _signal_ok(line), line) for step, line in lines if _signal_ok(line)]
+    table = getattr(M, "SIGNAL_VERBS", {})
+    reached = set(step for step, _said, _extra in corpus)
+    unreached = sorted(set(M.STEPS) - set(_FOLDED_STEPS) - reached)
+    check("sn1 every line next --signal prints over the recorded decision corpus "
+          "is at most 200 bytes and uses one of the seven verbs: %r"
+          % ((bad[:3], unreached),),
+          lines and not bad and not unreached
+          and tuple(getattr(M, "VERBS", ())) == SIGNAL_VERB_WORDS
+          and set(table) == set(M.STEPS)
+          and set(table.values()) <= set(SIGNAL_VERB_WORDS)
+          and M.signal_verb_gaps() == [])
+    read_back = [(step, M.did_tasks(line)) for step, line in lines]
+    named = {"P125.54-0h5", "P125.55-0h5", "P125.56-0h5", "P125.57-0h5"}
+    wrong = [(s, d) for s, d in read_back
+             if not set(d["started"] + d["closed"]) <= named]
+    kept = [d for _s, d in read_back if d["closed"][:1] == ["P125.54-0h5"]]
+    check("sn8 a did-clause is carried whole or not at all, so every id read back "
+          "off a signal is one the drive named, and the close survives the bound "
+          "on most lines: %r" % ((wrong[:2], len(kept), len(read_back)),),
+          read_back and not wrong and len(kept) * 2 > len(read_back))
+    # THE RED TWIN of the table half: a step added with no verb is named.
+    mutant, _why = _load("signal_mod_gap")
+    if mutant is not None:
+        mutant.STEPS = dict(mutant.STEPS, **{"decide-new-thing": {
+            "line": "decide new-thing %(task)s", "rule": ()}})
+        gaps = mutant.signal_verb_gaps()
+    else:
+        gaps = None
+    check("sn1m RED TWIN: a step the table gives no verb is named by "
+          "signal_verb_gaps, so a step that prints no signal cannot ship: %r"
+          % (gaps,), gaps == ["decide-new-thing: no verb"])
+    first = M.dispatch_prompt("executor", "P125.55-0h5")
+    second = M.dispatch_prompt("executor", "P3.1")
+    check("sn2u the dispatch prompt is one fixed sentence and the id, last: %r"
+          % ((first, second),),
+          first.endswith(" P125.55-0h5") and second.endswith(" P3.1")
+          and first[:-len("P125.55-0h5")] == second[:-len("P3.1")]
+          and "\n" not in first)
+    with open(os.path.join(_output.PLUGIN_ROOT, "commands", "phase.md"), "r",
+              encoding="utf-8") as fh:
+        phase_md = fh.read()
+    template = M.DISPATCH_PROMPT % {"script": "S/governance/drive-phase.py",
+                                    "role": "<role>"}
+    said = template.replace('python3 "S/', 'S/')
+    missing = [w for w in SIGNAL_VERB_WORDS if "`%s`" % (w,) not in phase_md]
+    check("sn4 commands/phase.md states the dispatch prompt in the driver's own "
+          "words and names each verb the signal uses: %r" % ((said, missing),),
+          said in phase_md and not missing and "--signal" in phase_md)
+
+
+def _explain_cases(check):
+    """--explain prints the text a signal stands for: the pending decision in
+    full, bounded, with every option it takes, read without the lock."""
+    M, why = _load("explain_mod")
+    check("sn3a the driver loads: %r" % (why,), M is not None)
+    if M is None:
+        return
+    root, mpath = _repo("explain", task_ids=TASKS[:2])
+    try:
+        with open(mpath, "r", encoding="utf-8") as fh:
+            plan = json.load(fh)
+        plan["phases"][0]["tasks"][0].update(status="in_progress",
+                                             startedAt="2026-01-01T00:00:00Z")
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(plan, fh)
+        spath = _fr.drive_state_path(os.path.join(root, ".claude", "state"), PHASE)
+        os.makedirs(os.path.dirname(spath), exist_ok=True)
+        lows = [dict(f, id="P1-L%d" % (n,), severity="low")
+                for n, f in enumerate(_corpus_findings(6))]
+        cases = []
+        for name, (options, _needs) in sorted(M.DECISIONS.items()):
+            if not options:
+                continue
+            phase_level = name in M.PHASE_DECISIONS
+            subject = PHASE if phase_level else ("P1.2" if name == "scope-gap"
+                                                 else "P1.1")
+            pending = {"decision": name, "why": "w " * 200,
+                       "task": None if phase_level else subject,
+                       "start": None if phase_level else "20260101T000000Z"}
+            offered = set(options)
+            if name in ("triage", "round-cap"):
+                pending.update(findings=_corpus_findings(30) + lows, answers=[],
+                               fixesAfter=["P1.2"], head="abc1234",
+                               cost=["  rounds cost " + "y" * 150])
+            if name == "triage":
+                offered -= {"accept", "decline"}
+            cases.append((name, subject, pending, offered))
+        cases.append(("triage+answers", PHASE, {
+            "decision": "triage", "why": "w", "task": None, "start": None,
+            "findings": _corpus_findings(30) + lows, "fixesAfter": ["P1.2"],
+            "head": "abc1234", "answers": [{"who": "P1.1", "what": "diverges",
+                                            "note": "n " * 40}]},
+            {"carry", "fix", "re-review", "accept", "decline"}))
+        results = []
+        for name, subject, pending, offered in cases:
+            with open(spath, "w", encoding="utf-8") as fh:
+                json.dump({"pending": pending}, fh)
+            with open(spath, "rb") as fh:
+                before = fh.read()
+            said = []
+            with _Env(root):
+                code = M.main(["next", PHASE, mpath, "--project-dir", root,
+                               "--explain", subject], out=said.append)
+            text = "\n".join(said)
+            answers = " ".join(ln for ln in text.splitlines()
+                               if ln.startswith("answer:"))
+            with open(spath, "rb") as fh:
+                after = fh.read()
+            results.append((name, code, len(text.encode("utf-8")),
+                            sorted(o for o in offered if o not in answers),
+                            before == after))
+        bad = [r for r in results if r[1] != 0 or r[2] > EXPLAIN_BYTES or r[3]
+               or not r[4]]
+        check("sn3 --explain for a pending decision prints at most 2048 bytes "
+              "and names the options the decision takes: %r" % (bad or results,),
+              len(results) == len(cases) and not bad
+              and any(r[0] == "triage" for r in results))
+        stray = []
+        with _Env(root):
+            code = M.main(["next", PHASE, mpath, "--project-dir", root,
+                           "--explain", "P1.9"], out=stray.append)
+        check("sn3b THE MISS: --explain for an id nothing waits on and no signal "
+              "named says so, exit 2, rather than printing another step's text: %r"
+              % (stray,), code == 2 and "P1.9" in "\n".join(stray))
+    finally:
+        _harness.remove_tree(root)
+
+
+def _signal_drive_cases(check):
+    """A real drive under --signal: one line per step from the first dispatch
+    to `done`, each agent briefed by `brief --role <role> <id>`, the dispatch prompts
+    differing only by the id, and the did-words still read off the lines."""
+    M, why = _load("signal_drive_mod")
+    check("sn5a the driver loads: %r" % (why,), M is not None)
+    if M is None:
+        return
+    root, mpath = _repo("signal", task_ids=TASKS[:2])
+    try:
+        printed, prompts, briefs = [], {}, []
+        reply = []
+        with _Env(root):
+            for _ in range(30):
+                said = []
+                code = M.main(["next", PHASE, mpath, "--project-dir", root,
+                               "--signal"] + reply, out=said.append)
+                reply = []
+                text = "\n".join(said)
+                printed.append(text)
+                hit = _SIGNAL.match(text)
+                if code != 0 or not hit or hit.group(2) == "done":
+                    break
+                verb, subject = hit.group(2), hit.group(3)
+                explain = []
+                M.main(["next", PHASE, mpath, "--project-dir", root, "--explain",
+                        subject], out=explain.append)
+                explain = "\n".join(explain)
+                if verb == "review":
+                    reply = ["--answer", "sign-off", "--reason", SUMMARY]
+                    continue
+                role = re.search(r"\bbrief --role (executor|reviewer|phase) ",
+                                 hit.group(6))
+                if verb != "dispatch" or role is None:
+                    break
+                role = role.group(1)
+                prompts[(role, subject)] = [ln[len("prompt: "):] for ln in
+                                            explain.splitlines()
+                                            if ln.startswith("prompt: ")]
+                shown = []
+                M.main(["brief", subject, mpath, "--role", role,
+                        "--project-dir", root], out=shown.append)
+                briefs.append((role, subject, "\n".join(shown)))
+                if role == "executor":
+                    _file_executor(root, mpath, subject)
+                elif role == "phase":
+                    _file_phase_review(root, mpath, explain)
+                else:
+                    _file_reviewer(root, mpath, subject)
+        bad = [(t, _signal_ok(t)) for t in printed if _signal_ok(t)]
+        verbs = [_SIGNAL.match(t).group(2) for t in printed if _SIGNAL.match(t)]
+        check("sn5 a two-task drive under --signal prints one signal per step, each "
+              "inside the bound, dispatch to done: %r" % ((bad, verbs),),
+              not bad and verbs == ["dispatch"] * 4 + ["review", "done"])
+        one = prompts.get(("executor", "P1.1")) or []
+        two = prompts.get(("executor", "P1.2")) or []
+        check("sn2 two executor dispatch prompts for different tasks are identical "
+              "up to the task id, and the id comes last: %r" % ((one, two),),
+              len(one) == 1 and len(two) == 1
+              and one[0].endswith(" P1.1") and two[0].endswith(" P1.2")
+              and one[0][:-len("P1.1")] == two[0][:-len("P1.2")]
+              and "P1.1" not in one[0][:-len("P1.1")])
+        written = []
+        for role, subject, shown in briefs:
+            folder = os.path.join(root, ".claude", "state", "briefs", subject)
+            names = sorted(n for n in os.listdir(folder)
+                           if n.endswith(".%s.md" % (role,)) or
+                           (role == "phase" and n == "phase.md"))
+            with open(os.path.join(folder, names[-1]), "r", encoding="utf-8") as fh:
+                written.append(fh.read().rstrip("\n") == shown.rstrip("\n"))
+        check("sn6 `brief <id> --role <role>` prints the brief the drive wrote for that "
+              "dispatch, byte for byte, for every agent of the drive: %r"
+              % ((len(briefs), written),),
+              len(briefs) == 4 and all(written))
+        did = M.did_tasks("\n".join(printed))
+        check("sn7 the did-words a session's stream is read from are still read "
+              "off the signal lines: %r" % (did,),
+              did["started"] == ["P1.1", "P1.2"] and did["closed"] == ["P1.1", "P1.2"])
+    finally:
+        _harness.remove_tree(root)
+
+
 _TALLY = "%s: %d/%d cases " + "passed"
 
 
@@ -5241,6 +5571,8 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("wh-block", "_wave_hooks_cases"),
           ("pf-block", "_preflight_cases"),
           ("tx-block", "_text_cases"),
+          ("sn-block", "_signal_cases"), ("sn3-block", "_explain_cases"),
+          ("sn5-block", "_signal_drive_cases"),
           ("ce-block", "_close_evidence_cases"),
           ("bs-block", "_brief_scope_cases"),
           ("sc-block", "_scope_change_cases"), ("fv-block", "_falsifier_cases"),

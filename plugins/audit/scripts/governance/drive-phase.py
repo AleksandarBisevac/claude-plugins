@@ -6,13 +6,13 @@ them were a script's job done by the model: run a verb, read its output, type th
 next command. The main loop is the dearest place in the pipeline to spend a round
 trip, because every request re-reads everything the session has said. So one
 entry point now does every step that is due and needs no judgement, and prints
-exactly one instruction for the model:
-
-  * `dispatch` - an agent type, the task, the model, and the brief file
-    `audit-lookup.py brief` wrote;
-  * `decide`   - a named decision with its options, answered with
-    `next <phase> --answer <option>`;
-  * `done`     - the phase is signed off, committed and landed.
+exactly one instruction for the model. Under `--signal` it is one line of at
+most `SIGNAL_BYTES`, `audit <phase> <verb> <subject> [did] | <basis> | next:
+<command>`, its verb one of `VERBS`, and `next <phase> --explain <subject>`
+prints the block the line stands for: the dispatch with its brief and prompt,
+a decision with its options (answered with `--answer <option>`), a stop's own
+words. An agent is dispatched with `DISPATCH_PROMPT` and its id, and the
+command it names, `brief --role <role> <id>`, prints the brief written for it.
 
 The command body is the loop: run `next`, do what it prints, run `next` again.
 A task then costs four requests - dispatch the executor, `next` (the recorded
@@ -137,7 +137,9 @@ its siblings and the phase's sign-off alone - the run `/audit:run` and
 Usage:
   drive-phase.py next <phaseId|taskId> [manifest] [--project-dir DIR]
                  [--answer OPTION] [--reason TEXT] [--fix FINDING[,FINDING]]
-                 [--verbose]
+                 [--verbose] [--signal | --explain ID]
+  drive-phase.py brief <id> --role executor|reviewer|phase [manifest]
+                 [--project-dir DIR]
   drive-phase.py submit <taskId|phaseId> --role executor|reviewer [manifest]
                  [--head SHA] [--project-dir DIR] [--case ID ...]
                  [--introduces SYMBOL ...] [--deps-from DIR] [--verbose]
@@ -145,13 +147,15 @@ Usage:
 
 Exit codes:
   0  an instruction was printed - dispatch, decide or done; or, for `submit`,
-     the return was filed
+     the return was filed; for `brief` and `--explain`, the text was printed
   1  a verb refused, or a filed return will not read: the drive stopped and the
      words that stopped it are printed; for `submit`, the return was refused and
      nothing was written
   2  usage error - no manifest, no such phase, an answer no pending decision
      offers, or an option that needs --reason given none; for `submit`, no such
-     task or phase, or red-first options with no test command
+     task or phase, or red-first options with no test command; for `brief`, no
+     brief written for the id's current start; for `--explain`, nothing to
+     explain for the id
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test_drive_phase.py`.
@@ -343,9 +347,6 @@ STEPS = {
     "decide-stalled": {
         "line": "decide stalled %(phase)s: no task is ready - %(why)s",
         "rule": (UNBLOCK_RULE,)},
-    "answer": {
-        "line": "answer: next %(phase)s --answer %(options)s%(reason)s",
-        "rule": ()},
     "dispatch-phase-review": {
         "line": "dispatch %(agent)s %(phase)s model=%(model)s brief=%(brief)s",
         "rule": (DISPATCH_RULE,)},
@@ -474,6 +475,50 @@ DECISIONS = {
 PHASE_DECISIONS = ("triage", "round-cap", "no-phase-review-return",
                    "invariant-breach", "gate-coverage", "runtime-boot",
                    "not-fast-forward")
+# A decision's own answer line, printed under it: not a step, since it is never
+# printed alone.
+ANSWER_LINE = "answer: next %(phase)s --answer %(options)s%(reason)s"
+
+# --- the signal: one line per step -------------------------------------------------
+# `next --signal` prints each step as ONE line,
+#   audit <phase> <verb> <subject> [what it did] | <basis> | next: <command or wait>
+# so the main loop reads a line where it read a block, and the block is printed by
+# `next <phase> --explain <subject>`. Every step maps to one verb of `VERBS`;
+# `signal_verb_gaps()` names a step that maps to none, and `sn1` in
+# `test_drive_phase.py` fails on it, so a step cannot ship without a signal.
+# `judge` is a decision the orchestrator answers itself, `ask` one it puts to the
+# human first, `review` the phase review's triage, `wait` a step something outside
+# the drive must finish before the next `next`.
+SIGNAL_BYTES = 200
+EXPLAIN_BYTES = 2048
+VERBS = ("dispatch", "wait", "ask", "judge", "review", "done", "stop")
+SIGNAL_VERBS = {
+    "dispatch-executor": "dispatch", "dispatch-reviewer": "dispatch",
+    "dispatch-wave": "dispatch", "dispatch-phase-review": "dispatch",
+    "resume-executor": "dispatch",
+    "decide-integration-refused": "judge", "decide-undeclared-change": "judge",
+    "decide-scope-gap": "judge", "decide-gate-red": "judge",
+    "decide-no-executor-return": "judge", "decide-scope-changed": "judge",
+    "decide-no-reviewer-return": "judge", "decide-no-change": "judge",
+    "decide-no-phase-review-return": "judge", "decide-runtime-boot": "judge",
+    "decide-high-risk": "ask", "decide-review-answer": "ask",
+    "decide-stalled": "ask", "decide-round-cap": "ask",
+    "decide-invariant-breach": "ask", "decide-not-fast-forward": "ask",
+    "decide-gate-coverage": "ask",
+    "decide-triage": "review",
+    "follow-browser": "wait", "stop-index-lock": "wait",
+    "done": "done", "done-chain-next": "done", "done-task": "done",
+    "ado-echo": "done", "handback-filed": "done",
+    "stop-blocked": "stop", "stop-lock": "stop", "stopped": "stop",
+    "handback-refused": "stop",
+}
+SIGNAL_HEAD = "audit "
+# The prompt every dispatch sends: one fixed sentence, the role and the id last,
+# so two prompts differ by nothing but the id. `commands/phase.md` states it in
+# these words, and `sn4` holds the two together.
+DISPATCH_PROMPT = ('Follow the brief this prints: python3 "%(script)s" brief '
+                   '--role %(role)s ')
+EXPLAIN_SUFFIX = ".explain"
 
 # --- sign-off's constants -------------------------------------------------------
 # The triage print holds one line per open finding, so it is bounded per line
@@ -529,15 +574,28 @@ def step_text(name, **fields):
     return [entry["line"] % fields] + list(entry["rule"])
 
 
+def did_bodies(text):
+    """The clauses part of every did-line in a driver's printed text: after
+    `[drive-phase] <phase>: ` on a plain line, and the what-it-did words of a
+    signal line, between its subject and its first ` | `."""
+    out = []
+    for line in (text or "").splitlines():
+        if line.startswith(PREFIX):
+            out.append(line.partition(": ")[2])
+        elif line.startswith(SIGNAL_HEAD) and " | " in line:
+            words = line.split(" | ", 1)[0].split(" ", 4)
+            if len(words) == 5:
+                out.append(words[4])
+    return out
+
+
 def did_tasks(text):
     """`{"started": [...], "closed": [...]}` - the tasks a driver's printed text
     says it started and closed, in order, read off its did-lines only."""
     found = {STARTED: [], CLOSED: []}
     pattern = re.compile(r"\b(%s|%s) (\S+?)(?=[;,\s]|$)" % (STARTED, CLOSED))
-    for line in (text or "").splitlines():
-        if not line.startswith(PREFIX):
-            continue
-        for word, task in pattern.findall(line):
+    for body in did_bodies(text):
+        for word, task in pattern.findall(body):
             found[word].append(task)
     return found
 
@@ -548,10 +606,8 @@ def did_events(text):
     one `; `-separated clause at a time."""
     found = dict(did_tasks(text), added=[], signedOff=False, landed=False,
                  released=False)
-    for line in (text or "").splitlines():
-        if not line.startswith(PREFIX):
-            continue
-        for clause in line.partition(": ")[2].split("; "):
+    for body in did_bodies(text):
+        for clause in body.split("; "):
             words = clause.split(" ")
             if clause.startswith(FIX_ADDED + " ") and words[3:5] == ["added", "for"]:
                 found["added"].append(words[2])
@@ -591,6 +647,7 @@ def relay_refusal(ctx, script, code, text):
         kind = "stop-index-lock"
     else:
         kind = "stopped"
+    ctx["stop"] = kind
     rule = STEPS[kind]["rule"]
     return E_STOPPED, "\n".join([head, (text or "").rstrip("\n")] + list(rule))
 
@@ -743,8 +800,124 @@ def reviewer_due(key, executor):
 
 
 # --- the steps ---------------------------------------------------------------------
-def instruction(kind, lines):
-    return {"kind": kind, "lines": list(lines)}
+def instruction(kind, lines, signal_fields=None):
+    """One print: its kind, its lines, and the fields its `--signal` line is
+    built from (`signal_of`)."""
+    out = {"kind": kind, "lines": list(lines)}
+    if signal_fields is not None:
+        out["signal"] = signal_fields
+    return out
+
+
+def signal_of(step, subject, basis, nxt, prompts=(), subjects=()):
+    """The fields of one signal line: the step (its verb is `SIGNAL_VERBS`'),
+    what it is about, the basis, the one command to run next, the prompts a
+    dispatch sends and every other id `--explain` answers for it."""
+    return {"step": step, "subject": subject, "basis": basis, "next": nxt,
+            "prompts": list(prompts), "subjects": list(subjects)}
+
+
+def drive_target(ctx):
+    """What `next` is driving: the one task a task-scoped drive names, else the
+    phase."""
+    return ctx.get("only") or ctx["phase"]
+
+
+def explain_command(ctx, subject):
+    return "next %s --explain %s" % (drive_target(ctx), subject)
+
+
+def answer_command(ctx, options, needs):
+    return "next %s --signal --answer %s%s" % (
+        drive_target(ctx), "|".join(options),
+        " --reason (%s)" % ("/".join(needs),) if needs else "")
+
+
+def dispatch_prompt(role, node_id):
+    """The prompt an agent is dispatched with: `DISPATCH_PROMPT`, then the id."""
+    return DISPATCH_PROMPT % {"script": _loader.script_path("drive-phase.py"),
+                              "role": role} + node_id
+
+
+def dispatch_said(ctx, role, node_id, agent, model, brief):
+    """The dispatch of `role` for `node_id` - a task's executor or reviewer, or
+    the phase reviewer for `phase` - with the brief it was written."""
+    if role == "phase":
+        step = "dispatch-phase-review"
+        lines = step_text(step, agent=agent, phase=node_id, model=model,
+                          brief=brief)
+        lines = lines[:1] + [ADVANCE_LINE % {"phase": ctx["phase"]}] + lines[1:]
+        basis = ("%s model=%s; once it files: --answer sign-off --reason <the "
+                 "summary>" % (agent, model))
+    else:
+        step = "dispatch-%s" % (role,)
+        lines = step_text(step, agent=agent, task=node_id, model=model,
+                          brief=brief)
+        basis = "%s model=%s" % (agent, model)
+    return instruction("dispatch", lines, signal_of(
+        step, node_id, basis, "Agent: brief --role %s %s" % (role, node_id),
+        prompts=[dispatch_prompt(role, node_id)]))
+
+
+def wave_said(ctx, members):
+    """One print of every member dispatch that is due, sent together."""
+    ids = [m["signal"]["subject"] for m in members]
+    subject = ",".join(ids)
+    if len(subject.encode("utf-8")) > 60:
+        subject = "%s+%d" % (ids[0], len(ids) - 1)
+    basis = "wave of %d: %s" % (len(ids), "; ".join(sorted(set(
+        m["signal"]["basis"] for m in members))))
+    return instruction(
+        "dispatch", [m["lines"][0] for m in members]
+        + list(STEPS["dispatch-wave"]["rule"]),
+        signal_of("dispatch-wave", subject, basis,
+                  "one Agent per member, in one message: brief --role <role> <id>",
+                  prompts=[p for m in members for p in m["signal"]["prompts"]],
+                  subjects=ids))
+
+
+def follow_said(ctx, task_id, recipes, tree):
+    """The browser recipes a task's gate owes, which the orchestrator runs."""
+    lines = [STEPS["follow-browser"]["line"] % {
+        "task": task_id, "recipe": recipe, "tree": tree, "phase": ctx["phase"]}
+        for recipe in recipes]
+    nxt = ("%s in %s, then next %s --signal" % (recipes[0], tree, drive_target(ctx))
+           if len(recipes) == 1 else explain_command(ctx, task_id))
+    return instruction("follow", lines + list(STEPS["follow-browser"]["rule"]),
+                       signal_of("follow-browser", task_id, "browser recipe owed "
+                                 "in %s" % (tree,), nxt))
+
+
+def resume_said(ctx, task_id):
+    return instruction("resume", step_text("resume-executor", task=task_id),
+                       signal_of("resume-executor", task_id, "the executor "
+                                 "dispatched for it filed no return",
+                                 "SendMessage to that executor: run your "
+                                 "submit block"))
+
+
+def done_said(ctx, why, next_phase):
+    lines = step_text("done", phase=ctx["phase"], why=why)
+    if next_phase:
+        lines = lines + step_text("done-chain-next", phase=next_phase)
+    return instruction("done", lines, signal_of(
+        "done", ctx["phase"], why,
+        "/clear, then /audit:phase %s" % (next_phase,) if next_phase else "wait"))
+
+
+def done_task_said(ctx, task_id, why):
+    return instruction("done", step_text("done-task", task=task_id, why=why),
+                       signal_of("done-task", task_id, why, "wait"))
+
+
+def stalled_said(ctx, tasks, why):
+    """No task is ready: the open tasks' remedies, put to the human."""
+    lines = blocked_stop("decide-stalled", tasks, phase=ctx["phase"], why=why)
+    remedy = blocked_remedy(tasks)
+    return instruction("decide", lines, signal_of(
+        "decide-stalled", ctx["phase"], "stalled: %s%s" % (
+            why, "; %s" % (remedy[0],) if remedy else ""),
+        explain_command(ctx, ctx["phase"])))
 
 
 def decision(ctx, state, name, task, why, extra=None):
@@ -767,10 +940,14 @@ def render_decision(ctx, pending):
     lines = step_text("decide-%s" % (name,), task=pending.get("task"),
                       phase=ctx["phase"], why=pending.get("why") or "")
     if options:
-        lines += step_text(
-            "answer", phase=ctx["phase"], options="|".join(options),
-            reason=(" (%s needs --reason)" % ("/".join(needs),)) if needs else "")
-    return instruction("decide", lines)
+        lines.append(ANSWER_LINE % {
+            "phase": ctx["phase"], "options": "|".join(options),
+            "reason": (" (%s needs --reason)" % ("/".join(needs),)) if needs else ""})
+    subject = pending.get("task") or ctx["phase"]
+    return instruction("decide", lines, signal_of(
+        "decide-%s" % (name,), subject, "%s: %s" % (name, pending.get("why") or ""),
+        answer_command(ctx, options, needs) if options
+        else explain_command(ctx, subject)))
 
 
 def scope_gap(ctx, state, task):
@@ -853,9 +1030,8 @@ def dispatch(ctx, state, phase, task, role):
     model = (task.get("model") if role == "executor"
              else (phase.get("review") or {}).get("model")) or "unset"
     agent = EXECUTOR_AGENT if role == "executor" else REVIEWER_AGENT
-    return instruction("dispatch", step_text(
-        "dispatch-%s" % (role,), agent=agent, task=task["id"], model=model,
-        brief=project_relative(ctx, found.group(1).strip())))
+    return dispatch_said(ctx, role, task["id"], agent, model,
+                         project_relative(ctx, found.group(1).strip()))
 
 
 def brief_scope(task):
@@ -1010,11 +1186,8 @@ def follow_red_gate(ctx, state, phase, task, text, tree=None):
         ctx["did"].append("%s regenerated by its recipe" % (follower["path"],))
     browser = [f for f in owed if f.get("recipe") and f.get("needsBrowser")]
     if browser:
-        lines = [STEPS["follow-browser"]["line"] % {
-            "task": task["id"], "recipe": f["recipe"],
-            "tree": project_relative(ctx, where),
-            "phase": ctx["phase"]} for f in browser]
-        return instruction("follow", lines + list(STEPS["follow-browser"]["rule"])), None
+        return follow_said(ctx, task["id"], [f["recipe"] for f in browser],
+                           project_relative(ctx, where)), None
     if not made:
         return None, None
     return None, task_gate(ctx, state, phase, task, tree)
@@ -1875,9 +2048,9 @@ def walk_wave(ctx, state):
         if kind == "stop":
             return said
         if kind == "dispatch":
-            sent.append(said["lines"][0])
+            sent.append(said)
     if sent:
-        return instruction("dispatch", sent + list(STEPS["dispatch-wave"]["rule"]))
+        return wave_said(ctx, sent)
     manifest, _phase = load_phase(ctx)
     by_id = _mio.tasks_by_id(manifest)
     parked = state["wave"].get("parked") or {}
@@ -2057,8 +2230,7 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
     if answer == "resume":
         # The dispatch mark stays, so a return still unfiled is asked about
         # again on the next `next`; no attempt is spent.
-        return instruction("resume", step_text("resume-executor",
-                                               task=task["id"]))
+        return resume_said(ctx, task["id"])
     if answer == "rerun":
         # The gate is not marked as run for this start, so the drive measures
         # again - with `--no-reuse`, through the mark `task_gate` spends - and
@@ -2204,11 +2376,7 @@ def finish(ctx, state, why):
     if stop is not None:
         return stop
     drop_state(ctx)
-    lines = step_text("done", phase=ctx["phase"], why=why)
-    next_phase = _next_chain_phase(ctx)
-    if next_phase:
-        lines = lines + step_text("done-chain-next", phase=next_phase)
-    return instruction("done", lines)
+    return done_said(ctx, why, _next_chain_phase(ctx))
 
 
 # --- sign-off --------------------------------------------------------------------
@@ -2344,12 +2512,9 @@ def dispatch_phase_review(ctx, state, phase):
                              "this)" % (out,))
     state["phaseReview"] = {"head": head.group(1)}
     write_state(ctx, state)
-    lines = step_text(
-        "dispatch-phase-review", agent=REVIEWER_AGENT, phase=phase["id"],
-        model=(phase.get("review") or {}).get("model") or "unset",
-        brief=project_relative(ctx, brief))
-    return instruction("dispatch", lines[:1] + [ADVANCE_LINE % {
-        "phase": ctx["phase"]}] + lines[1:])
+    return dispatch_said(ctx, "phase", phase["id"], REVIEWER_AGENT,
+                         (phase.get("review") or {}).get("model") or "unset",
+                         project_relative(ctx, brief))
 
 
 def filed_at_head(ctx, state, phase):
@@ -2503,8 +2668,17 @@ def render_triage(ctx, pending):
     else:
         lines.append("answer: next %s --answer sign-off --reason <the summary>%s" % (
             ctx["phase"], " (a finding left is kept as recorded)" if found else ""))
+    parts = (["%d finding(s) open" % (len(found),)] if found else ["no finding open"])
+    if answers:
+        parts.append("%d answer(s) a human settles" % (len(answers),))
+    if after:
+        parts.append("%s closed after the review's head" % (", ".join(after),))
+    clean = not (found or answers or after)
     return instruction("decide", lines + head[1:]
-                       + ([ANSWERS_RULE] if answers else []))
+                       + ([ANSWERS_RULE] if answers else []), signal_of(
+        "decide-triage", ctx["phase"], "triage: %s" % ("; ".join(parts),),
+        "next %s --signal --answer sign-off --reason <the summary>"
+        % (ctx["phase"],) if clean else explain_command(ctx, ctx["phase"])))
 
 
 def finding_lines(found, pending, offer=True):
@@ -2549,7 +2723,9 @@ def render_round_cap(ctx, pending):
     lines.append("answer: next %s --answer carry --to <task or bug id> --reason "
                  "<the summary> | one-more-round | sign-off --reason <the "
                  "summary>" % (ctx["phase"],))
-    return instruction("decide", lines + head[1:])
+    return instruction("decide", lines + head[1:], signal_of(
+        "decide-round-cap", ctx["phase"], "round-cap: %s" % (pending.get("why") or "",),
+        explain_command(ctx, ctx["phase"])))
 
 
 def filed_review_rounds(ctx, phase):
@@ -3269,7 +3445,7 @@ def finish_task(ctx, state, task):
     why = "%s%s" % ("" if closed else "already ", task.get("status") or "?")
     if task.get("commit"):
         why = "%s at %s" % (why, str(task["commit"])[:7])
-    return instruction("done", step_text("done-task", task=task["id"], why=why))
+    return done_task_said(ctx, task["id"], why)
 
 
 def drive_task(ctx, state):
@@ -3281,6 +3457,7 @@ def drive_task(ctx, state):
         if task.get("status") in _mio.TERMINAL:
             return _as_result(finish_task(ctx, state, task))
         if task.get("status") == "blocked":
+            ctx["stop"] = "stop-blocked"
             return E_STOPPED, "\n".join(blocked_stop(
                 "stop-blocked", [task], phase=ctx["phase"], task=task["id"],
                 why=_clip(str(task.get("blockedReason") or "no reason recorded"), 120)))
@@ -3470,10 +3647,10 @@ def drive_phase(ctx, state, phase):
         if task is None:
             if all(t.get("status") in _mio.TERMINAL for t in _tasks(phase)):
                 return _as_result(sign_off(ctx, state, manifest, phase))
-            return E_OK, instruction("decide", blocked_stop(
-                "decide-stalled", [t for t in _tasks(phase)
-                                   if t.get("status") not in _mio.TERMINAL],
-                phase=ctx["phase"], why=stalled_why(manifest, phase)))
+            return E_OK, stalled_said(
+                ctx, [t for t in _tasks(phase)
+                      if t.get("status") not in _mio.TERMINAL],
+                stalled_why(manifest, phase))
         if how == "ready":
             stop = scope_gap(ctx, state, task) or start_task(ctx, task)
             if stop is not None:
@@ -3501,6 +3678,7 @@ _FILLED_LATER = {"stamp": "filled by submit",
 
 
 def _stopped(ctx, why):
+    ctx["stop"] = "stopped"
     return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], why)
 
 
@@ -3852,12 +4030,217 @@ def render(ctx, code, said):
     return "\n".join(lines)
 
 
+# --- the signal and its explain ----------------------------------------------------
+def _width(text):
+    return len(text.encode("utf-8"))
+
+
+def _flat(text):
+    """One line, its ` | ` separators taken by the signal itself."""
+    return " ".join(str(text or "").replace(" | ", " / ").split())
+
+
+def _fit(text, width):
+    """`text` inside `width` bytes, cut with `...`; nothing when no room is left
+    for a cut that says it was cut."""
+    if _width(text) <= width:
+        return text
+    return _clip(text, width) if width >= 4 else ""
+
+
+def signal_verb_gaps():
+    """Every step `SIGNAL_VERBS` gives no verb of `VERBS`, and every entry of it
+    naming no step. Empty is the one answer that holds."""
+    out = ["%s: no verb" % (s,) for s in sorted(STEPS) if s not in SIGNAL_VERBS]
+    out += ["%s: verb %r is not one of VERBS" % (s, v)
+            for s, v in sorted(SIGNAL_VERBS.items()) if v not in VERBS]
+    out += ["%s: has a verb and is no step" % (s,)
+            for s in sorted(SIGNAL_VERBS) if s not in STEPS]
+    return out
+
+
+def did_word_clause(clause):
+    """A did-line clause as the signal carries it: the words `did_events` reads
+    and no more - a start or a close and its id, a fix task's added-for words,
+    a landing - and any other clause whole."""
+    words = _flat(clause).split(" ")
+    if clause.startswith(FIX_ADDED + " "):
+        return " ".join(words[:6])
+    if words[0] in (STARTED, CLOSED):
+        return " ".join(words[:2])
+    return LANDED if words[0] == LANDED else " ".join(words)
+
+
+def fit_clauses(clauses, width):
+    """The did-line clauses inside `width` bytes, whole or not at all: the ones
+    `did_events` reads first, then the rest in order while they fit, and `+N`
+    for the ones left out. A clause is never cut, since a cut id would be read
+    back as another task's."""
+    said = [did_word_clause(c) for c in clauses if _flat(c)]
+    read = [i for i, c in enumerate(said) if c.split(" ")[0] in (
+        STARTED, CLOSED, LANDED) or c.startswith(FIX_ADDED + " ")
+        or c in (SIGNED, RELEASED)]
+
+    def text(keep):
+        left = len(said) - len(keep)
+        return "; ".join([said[i] for i in sorted(keep)]
+                         + (["+%d" % (left,)] if left else []))
+    keep = list(read)
+    while keep and _width(text(keep)) > width:
+        keep.pop()
+    for i in range(len(said)):
+        if i not in keep and _width(text(keep + [i])) <= width:
+            keep.append(i)
+    return text(keep) if _width(text(keep)) <= width else ""
+
+
+def signal_line(ctx, verb, subject, clauses, basis, nxt):
+    """The one line, inside `SIGNAL_BYTES`: the next command whole or, when it
+    cannot fit beside the rest, the `--explain` that prints it; then the
+    did-clauses, whole, with room kept for the start of the basis; then the
+    basis."""
+    subject = _fit(_flat(subject) or ctx["phase"], 60)
+    head = "audit %s %s %s" % (ctx["phase"], verb, subject)
+    fixed = _width(head) + _width(" |  | next: ")
+    nxt = _flat(nxt) or "wait"
+    if fixed + _width(nxt) > SIGNAL_BYTES - 40:
+        nxt = explain_command(ctx, subject)
+    room = SIGNAL_BYTES - fixed - _width(nxt)
+    basis = _flat(basis)
+    auto = fit_clauses(clauses, room - min(_width(basis), 40) - 1)
+    if auto:
+        room -= _width(auto) + 1
+    return "%s%s | %s | next: %s" % (head, " " + auto if auto else "",
+                                     _fit(basis, room), nxt)
+
+
+def stop_basis(text):
+    """A stop's first two lines, the driver's prefix dropped."""
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    if not lines:
+        return "the drive stopped and printed nothing"
+    if lines[0].startswith(PREFIX):
+        lines[0] = lines[0].partition(": ")[2]
+    return " / ".join(lines[:2])
+
+
+def signal(ctx, code, said):
+    """`{"line", "subjects", "explain"}` for one `next --signal`: the line, the
+    ids `--explain` answers for it, and the whole text the line stands for."""
+    fields = said.get("signal") if isinstance(said, dict) else None
+    target = drive_target(ctx)
+    if fields is not None:
+        step, subject = fields["step"], fields["subject"]
+        basis, nxt = fields["basis"], fields["next"]
+    elif isinstance(said, dict):
+        step, subject, nxt = "stopped", target, explain_command(ctx, target)
+        basis = "the drive printed a %s step that carries no signal" % (
+            said.get("kind"),)
+    else:
+        step, subject = ctx.get("stop") or "stopped", target
+        basis = stop_basis(said)
+        nxt = ("wait" if SIGNAL_VERBS.get(step) == "wait"
+               else explain_command(ctx, target))
+    full = render(ctx, code, said)
+    echo = ado_echo_lines(ctx)
+    if echo:
+        basis = "%s; %s" % (basis, echo[0])
+    prompts = list((fields or {}).get("prompts") or [])
+    return {"line": signal_line(ctx, SIGNAL_VERBS.get(step, "stop"), subject,
+                                ctx["did"], basis, nxt),
+            "subjects": [subject] + list((fields or {}).get("subjects") or []),
+            "explain": "\n".join([full] + ["prompt: %s" % (p,) for p in prompts])}
+
+
+def explain_text(lines):
+    """`lines` inside `EXPLAIN_BYTES`: the first line and every `answer:` line
+    are kept, so the options always print; the others in order while they fit,
+    and a last line says how many were cut."""
+    text = "\n".join(lines)
+    if _width(text) <= EXPLAIN_BYTES:
+        return text
+    must = set([0] + [i for i, ln in enumerate(lines) if ln.startswith("answer:")])
+    shown = dict((i, _fit(lines[i], 300)) for i in must)
+    budget = EXPLAIN_BYTES - 80 - sum(_width(v) + 1 for v in shown.values())
+    for i, line in enumerate(lines):
+        if i not in shown and _width(line) + 1 <= budget:
+            shown[i] = line
+            budget -= _width(line) + 1
+    return "\n".join([shown[i] for i in sorted(shown)] + [
+        "... %d line(s) cut to stay inside %d bytes" % (
+            len(lines) - len(shown), EXPLAIN_BYTES)])
+
+
+def explain_path(ctx):
+    return state_path(ctx)[:-len(".json")] + EXPLAIN_SUFFIX
+
+
+def write_explain(ctx, said):
+    """Keep the text the last signal stands for; None, or why it was not kept."""
+    path = explain_path(ctx)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            json.dump({"subjects": said["subjects"], "text": said["explain"]}, fh)
+    except OSError as exc:
+        return "the text --explain prints was not kept at %s (%s)" % (path, exc)
+    return None
+
+
+def read_explain(ctx):
+    try:
+        with open(explain_path(ctx), "r", encoding="utf-8") as fh:
+            body = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    return body if isinstance(body, dict) else None
+
+
+def explain(ctx, subject):
+    """`(code, text)` - the step a signal about `subject` stands for: a decision
+    waiting on it, rendered from the plan now, else the text the last signal
+    kept. Read only: no lock is taken and nothing is written."""
+    state = read_state(ctx)
+    manifest = _mio.load_manifest(ctx["manifest"])
+    parked = ((state.get("wave") or {}).get("parked") or {}).values()
+    for pending in [state.get("pending")] + list(parked):
+        if (isinstance(pending, dict)
+                and subject == (pending.get("task") or ctx["phase"])
+                and pending_still_applies(manifest, pending)):
+            return E_OK, explain_text(render_decision(ctx, pending)["lines"])
+    kept = read_explain(ctx)
+    if kept and subject in (kept.get("subjects") or []):
+        return E_OK, explain_text(str(kept.get("text") or "").splitlines())
+    return E_USAGE, ("%s %s: nothing to explain for %s - no decision waits on "
+                     "it and the last signal named %s" % (
+                         PREFIX, ctx["phase"], subject,
+                         ", ".join((kept or {}).get("subjects") or ["nothing"])))
+
+
+def run_brief(args, out):
+    """`brief <id> --role <role>`: print the brief the drive wrote for that dispatch,
+    as `audit-lookup.py brief --read` reads it for the id's current start."""
+    try:
+        _manifest, ctx = project_context(args)
+    except Exception as exc:                                   # noqa: BLE001
+        out("drive-phase.py: %s" % (exc,))
+        return E_USAGE
+    code, said, err = run_verb(ctx, "audit-lookup.py", [
+        ctx["manifest"], "brief", args.id, "--role", args.role, "--read",
+        "--project", ctx["project"]])
+    if code != 0:
+        out("drive-phase.py: no brief to print - %s" % ((err or said).strip(),))
+        return E_USAGE
+    out(said.rstrip("\n"))
+    return E_OK
+
+
 # --- the command line -------------------------------------------------------------
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="drive-phase.py", add_help=True, allow_abbrev=False,
         description="Run every step of a phase that needs no judgement and print "
-                    "one instruction: dispatch, decide or done.")
+                    "one instruction; --signal prints it as one line.")
     sub = parser.add_subparsers(dest="action")
     sub.required = True
     nxt = sub.add_parser("next", help="perform the due steps, print one instruction")
@@ -3883,6 +4266,21 @@ def build_parser():
                           "the bug, that now holds the carried findings")
     nxt.add_argument("--verbose", action="store_true",
                      help="print each verb's run above the instruction")
+    nxt.add_argument("--signal", action="store_true",
+                     help="print the step as one line of at most %d bytes; "
+                          "--explain prints the text it stands for" % (SIGNAL_BYTES,))
+    nxt.add_argument("--explain", default=None, metavar="ID",
+                     help="print, within %d bytes, the step the last signal "
+                          "about ID stands for, or the decision waiting on it; "
+                          "drives nothing" % (EXPLAIN_BYTES,))
+    brf = sub.add_parser("brief", help="print the brief written for an agent's "
+                         "dispatch: the dispatch prompt runs this")
+    brf.add_argument("id", help="the task id, or the phase id for `--role phase`")
+    brf.add_argument("--role", required=True, choices=("executor", "reviewer", "phase"))
+    brf.add_argument("manifest", nargs="?", default=None,
+                     help="the manifest (default: the project's configured one)")
+    brf.add_argument("--project-dir", dest="project_dir", default=None)
+    brf.add_argument("--verbose", action="store_true")
     sbm = sub.add_parser("submit", help="file an agent's return, read on stdin: "
                          "the stamp taken, the red-first helper run, then filed once")
     sbm.add_argument("id", help="the task id, or the phase id of a phase review")
@@ -4022,6 +4420,8 @@ def main(argv, out=print, stdin=None):
         return E_USAGE if exc.code else E_OK
     if args.action == "submit":
         return run_submit(args, cmd, out, stdin)
+    if args.action == "brief" and cmd is None:
+        return run_brief(args, out)
     if cmd is not None:
         sys.stderr.write("drive-phase.py: only `submit` takes a command after "
                          "`--`\n")
@@ -4031,6 +4431,18 @@ def main(argv, out=print, stdin=None):
     except Exception as exc:                                   # noqa: BLE001
         sys.stderr.write("drive-phase.py: %s\n" % (exc,))
         return E_USAGE
+    if args.explain:
+        if args.answer is not None or args.signal:
+            out("drive-phase.py: --explain only reads; it takes no --answer "
+                "and no --signal")
+            return E_USAGE
+        try:
+            code, text = explain(ctx, args.explain)
+        except (ValueError, OSError) as exc:
+            code, text = E_USAGE, "%s %s: nothing explained - %s" % (
+                PREFIX, ctx["phase"], exc)
+        out(text)
+        return code
     ctx["carryTo"] = args.carry_to
     try:
         fixes = [f.strip() for given in args.fix for f in given.split(",")
@@ -4039,7 +4451,14 @@ def main(argv, out=print, stdin=None):
                            fixes=fixes)
     except ValueError as exc:
         code, said = E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], exc)
-    out(render(ctx, code, said))
+    if not args.signal:
+        out(render(ctx, code, said))
+        return code
+    said = signal(ctx, code, said)
+    problem = write_explain(ctx, said)
+    if problem:
+        sys.stderr.write("drive-phase.py: %s\n" % (problem,))
+    out(said["line"])
     return code
 
 

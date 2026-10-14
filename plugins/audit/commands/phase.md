@@ -15,7 +15,7 @@ phase id to run. A phase whose id is that word: ask (AskUserQuestion) which one.
 
 ## Run a phase — `<phaseId> [--dry-run] [--confirm-high-risk "<your words>"]`
 
-0. `--dry-run`: `S/status/audit-status.py" --phase <phaseId>` (tasks, READY first),
+0. `--dry-run`: `S/status/audit-status.py" --phase <phaseId>`,
    `S/manifest/resolve-branch.py" <manifest> --phase <phaseId>` and `S/git/close-phase.py"
    <manifest> <phaseId> --project <dir> --dry-run`, whose `no branch is recorded` exit 1 reads
    `not started yet`, never a refusal - print the plan, stop.
@@ -23,19 +23,20 @@ phase id to run. A phase whose id is that word: ask (AskUserQuestion) which one.
    <manifest> <phaseId> --confirm-high-risk "<your words>"` first; print the ids it covers
    verbatim in your own reply - a task off it asks unless the owner typed `#approve-high-risk`
    (`#revoke-high-risk` disarms). **The operator's words go in VERBATIM**.
-2. Run `S/governance/drive-phase.py" next <phaseId>`, do what it prints, repeat until it
-   prints `done` - a closed task is not a stop:
-   `dispatch <agent> <id> model=<m> brief=<path>` → one Agent call with that `subagent_type` and
-   `model`, the prompt `Read your brief at <path> and follow it.`, and the rule printed under it.
-3. `decide <name> ...` → `next <phaseId> --answer <option> [--to <id>] [--reason "<words>"]`,
-   put to the human first (AskUserQuestion); a `stopped` print → relay it as printed.
+2. Run `S/governance/drive-phase.py" next <phaseId> --signal` and do what its line says until
+   `done`: `audit <phase> <verb> <subject> ... | <basis> | next: <command>`, whole under
+   `next <phaseId> --explain <subject>`.
+3. `dispatch` → an Agent per subject (`subagent_type`, `model`: basis), prompt
+   `Follow the brief this prints: S/governance/drive-phase.py" brief --role <role> <id>`; `judge`,
+   `wait` → do `next:`; `ask` → the human first (AskUserQuestion); `review` → read it whole,
+   answer; `stop` → relay it whole.
 4. `done` → report what landed and where. **Phase sign-off** (orchestrator) is the drive's last
    step: a fix task comes first, because its edits invalidate a gate taken before them. Nothing measures whether you held the order when a gate
    is run by hand.
 
 ## Subcommand: `add "<title>" --outcome "<what success looks like>"`
 
-Gather the missing details, run `S/manifest/audit-task.py" add --from-file - <<'PLAN'`
+Ask what is missing, run `S/manifest/audit-task.py" add --from-file - <<'PLAN'`
 with this shape as its body, then a line `PLAN`, and print its line: `{"request": "<as typed>",
 "openChoices": [<each choice it left open>], "phase": {"title", "desiredOutcome", "description"},
 "tasks": [{"key", "title", "description", "files", "tests": {"mode", "add": ["<path>: <what it
@@ -61,8 +62,8 @@ holder of tier 1 is refused by name - offer clearing before `--force`.
 
 ## Subcommand: `signoff <phaseId> --verdict passed|skipped --summary TEXT`
 
-`S/manifest/audit-task.py" signoff <phaseId> --verdict ... --summary "<..>"`. Drive runs it at
-sign-off; relay a refusal.
+`S/manifest/audit-task.py" signoff <phaseId> --verdict ... --summary "<..>"`, as the drive
+does; relay a refusal.
 
 ## Subcommand: `settle`
 

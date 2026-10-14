@@ -2,8 +2,9 @@
 
 **The pipeline commands do not read this file.** `/audit:run`, `/audit:next`, `/audit:phase`,
 `/audit:resume` and `/audit:review` run through the step driver, `scripts/governance/drive-phase.py`,
-which performs every step that needs no judgement as the existing verbs and prints the rule a
-step needs at that step; the agents carry their own rules in their prompts.
+which performs every step that needs no judgement as the existing verbs and prints each step that
+does as one signal line, with the rule it applies behind `--explain` (**Progress output** below);
+the agents carry their own rules in their prompts.
 `tools/measure-context.py --gate` holds that no pipeline command reads a reference file first,
 and `_refs.followed_anchor_drift()` that every followed rule in the README names the step or the
 prompt that states it. What stays here is the shared logic as documentation - config
@@ -247,11 +248,6 @@ never hardcode branch names, package ids, skills, or build tools here:
   status; the verb is what records why, and a blocked task with no reason cannot say when it may
   run again.
 
-- **An executor that returned without filing** (`decide no-executor-return`): answer `resume`, the
-  recommended option and one that spends no attempt — resume the dispatched executor by the id your
-  dispatch returned and have it run its submit block. `retry` spends an attempt and recuts work that
-  may be finished; `block` needs a reason.
-
 ## Readiness rule
 
 Which tasks are ready is computed, not followed: `_status_facts.ready_tasks()` lists them under
@@ -281,8 +277,8 @@ it was.
 **Concurrency is `executor.waveWidth`, and only the driver decides it.** Absent means 1: one task at
 a time, in id order, in the phase tree. Above 1 the driver picks the ready tasks whose `files` are
 disjoint and whose `dependsOn` are satisfied, gives each a worktree of its own (the `tree:` and
-`base:` lines of its brief), prints their dispatches together (step `dispatch-wave`), and
-integrates each green tree into the phase tree serially. You dispatch only what `next` printed;
+`base:` lines of its brief), prints one `dispatch` naming them all, and integrates each green
+tree into the phase tree serially. You dispatch only what `next` printed;
 a task you chose to run beside it is not a wave, and it edits the tree the others are measured in.
 
 **That rule is about the FILE SYSTEM and says nothing about the machine, which is the larger
@@ -560,13 +556,9 @@ recorded <runId>` line named, or with `run latest --phase <id>` / `run latest --
 that id was not kept. **Never read a background gate's verdict off a truncated terminal** — the
 ledger row is what the recording already made durable, and it is a lookup rather than a search.
 
-**`brief` is the one of these you do not wait to be asked.** `cancel`/`bug`/`file` answer a
-question a human or a reviewing agent puts to you; `brief` answers the question an EXECUTOR
-would otherwise grep the manifest or the journal for at the start of its own task, so it is run
-by you and folded into the spawn prompt before that agent's first turn —
-`reference/execute-task.md`'s step 3 says where. Exploring the tree for a fact the plan already
-carries is then a deliberate step the executor justifies in its outcome, not its default first
-move.
+**`brief` is the one of these you do not run.** It answers what an EXECUTOR would otherwise grep
+the manifest or the journal for; the drive writes it at each `dispatch` with `--role`, and the
+agent prints it with `drive-phase.py brief --role <role> <id>`, which its dispatch prompt names.
 
 This is a narrower tool than the **Resume after interruption** procedure below, which asks a
 different question — *which phase is resumable* — and still needs the manifest read in full for
@@ -738,21 +730,17 @@ green without a tracked bug behind it.
 
 ## Progress output
 
-A phase can run many tasks, gates, and a merge — don't go silent. Emit a short **progress line as each
-step happens** so a long run stays legible (not one dump at the end):
-
-- **Phase entry:** `> PHASE <id> "<title>" — branch <branch> — N tasks ready`.
-- **Each task, at start:** `  > <taskId> "<title>" (model, tests.mode) — running`; for a wave, print the group
-  first (`  > parallel: <id>, <id>`).
-- **Each task, on return:** `  [OK] <taskId> — gates green, committed <shortSHA>` /
-  `  [FAIL] <taskId> — <gate> failed (attempt k/max)` / `  [BLOCKED] <taskId> — attempts exhausted` /
-  `  [INFRA] <taskId> — <gate> could not run (human action item)` /
-  `  [NO-VERDICT] <taskId> — classifier gave no verdict (unavailable, no retry spent)`.
-- **Sign-off:** one line per gate — `  - review: <passed|skipped|N findings>`, `  - testGate: <green|red>`,
-  `  - runtimeBoot: <green|skipped|manual>` — then `[SIGNED OFF] PHASE <id> — merged into <branch>` (or
-  `[MERGE] ff failed — <no-ff|stopped>`).
-
-Use simple ASCII markers (`>` `[OK]` `[FAIL]` `-`) so it reads in any terminal. Keep each line to one sentence.
+`next <phase> --signal` prints the run's progress, one line per step:
+`audit <phase> <verb> <subject> [what it did] | <basis> | next: <command or wait>`. The verb is one
+of `dispatch` (an agent to send, its prompt naming `drive-phase.py brief --role`), `judge` (a
+decision you answer), `ask` (one the human answers first), `review` (the phase review's triage),
+`wait` (something outside the drive finishes first), `done` and `stop`. `drive-phase.py`'s
+`SIGNAL_VERBS` maps every step to one, and `test_drive_phase.py` fails a step that has none.
+`next <phase> --explain <subject>` prints the step whole: the decision with its options, the
+rule, a stop's own words. Relay the line and lay no other progress out by hand; nothing checks
+either, so the run's transcript is the only record of it. One line is yours,
+since no step prints it: a refusal of your own tool call by the classifier is
+`[NO-VERDICT] <taskId> — classifier gave no verdict (unavailable, no retry spent)`.
 
 **A phase run is not finished while its lock is held and a task is ready.** Between waves that is the
 only thing that decides whether you are done: re-read the ready list before ending a turn, and if it
@@ -762,28 +750,20 @@ run that stopped here. This is written down because it happened: a run with twen
 committed wave 1 of eight, reported which four came next, and sat idle for a day with its lock still
 held and nothing refusing anything.
 
-**What NOT to lay out by hand.** The *entry view* is already rendered:
+**The entry view is rendered too**:
 `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath> --short` carries
-the overall line, the usage line, the ready list — each entry with the command that runs it —
-and the open-bug count, closing with the command that shows the full table — so re-tabulating
-any of that costs tokens for a worse-aligned copy. It is no longer printed as a long block at
-the start of a run: `/audit:next` reads its first READY NOW entry and shows that short list,
-`/audit:resume` reads the phase it flags, and `/audit:phase` prints none - the step driver's
-one-line instructions are the run's progress. `/audit:status` still renders the whole table,
-typed. The lines above are the ones a script genuinely cannot produce, because they report
-events as they happen; those stay yours.
+the overall line, the usage line, the ready list and the open-bug count. `/audit:next` reads its
+first READY NOW entry, `/audit:resume` the phase it flags, and `/audit:phase` prints none.
 
 ### A phase boundary is a context boundary
 
 Driving several phases back to back in one never-cleared context buys nothing: everything a phase
 needs is on disk (manifest, journal, evidence, drive state, briefs), and a long-lived orchestrator
 context pays to re-read all of it on every further request without reading anything a fresh entry
-could not also read. `next`'s own `done` print states this as the step, not a tip - "do what it
-prints" already covers it: once `done` carries a `chain: clear context, then re-enter with
-/audit:phase <next>` line - meaning the plan's own readiness names a phase beyond the one that
+could not also read. `next`'s own `done` states this as the step: once its `next:` reads
+`/clear, then /audit:phase <next>` - the plan's own readiness names a phase beyond the one that
 just finished - report where the finished phase landed, then clear context and type
-`/audit:phase <next>` as a fresh entry, rather than continuing the same conversation into the
-next phase.
+`/audit:phase <next>` as a fresh entry.
 
 `/audit:status`'s short and full renders, and the entry view the step driver's own loop echoes,
 both name the orchestrator's OWN current context size - read from its live transcript via

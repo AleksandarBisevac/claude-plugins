@@ -606,16 +606,24 @@ TITLE_RULE = ("Title each case you file with its tests.add clause (the text afte
 
 def compose_executor_brief(manifest, phase, task, ctx, files, gate):
     """The executor's whole brief, as lines. `files` is `brief_lookup`'s payload
-    and `gate` the `executor.runsGate` reading with its basis."""
+    and `gate` the `executor.runsGate` reading with its basis.
+
+    THE PART EVERY TASK SHARES COMES FIRST: the rules line and the return
+    contract, then the task's own sections. Two briefs then open on the same
+    bytes up to the task's id, which is the prefix a prompt cache can reuse;
+    the time and the task's record vary, so they come after it."""
     tid, pid = str(task.get("id")), str(phase.get("id"))
     attempts = task.get("attempts") or 0
-    lines = ["# Brief for %s (executor)" % (tid,), "",
-             "Computed by audit-lookup.py brief from %s at %s, plugin copy %s."
-             % (ctx["manifest"], ctx["at"], ctx["plugin"]),
-             "Task %s %r, attempt %s, started %s; phase %s %r."
-             % (tid, task.get("title"), attempts, task.get("startedAt"), pid,
-                phase.get("title")),
+    lines = ["# Executor brief", "",
              "The rules and the return shape are agents/audit-executor.md's."]
+    lines += _section("Your return", executor_return_lines(
+        manifest, phase, task, ctx))
+    lines += _section("Brief for %s" % (tid,), [
+        "Computed by audit-lookup.py brief from %s at %s, plugin copy %s."
+        % (ctx["manifest"], ctx["at"], ctx["plugin"]),
+        "Task %s %r, attempt %s, started %s; phase %s %r."
+        % (tid, task.get("title"), attempts, task.get("startedAt"), pid,
+           phase.get("title"))])
     tree_lines = wave_tree_lines(ctx, phase, task)
     if tree_lines:
         lines += _section("Tree", tree_lines)
@@ -687,8 +695,6 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
                               if prior_red_first else "none recorded")]
             + red_step_lines(ctx, manifest, phase, task, evidence)
             + ["The working tree is the last attempt; this is what it answered."])
-    lines += _section("Your return", executor_return_lines(
-        manifest, phase, task, ctx))
     return lines
 
 
@@ -1435,6 +1441,26 @@ def write_brief(manifest, manifest_path, project_arg, node_id, role):
     return E_OK, path
 
 
+def read_brief(manifest, manifest_path, project_arg, node_id, role):
+    """`(code, text)` - the brief `write_brief` wrote for `node_id`'s current
+    start, read back unchanged, or why there is none. It composes nothing, so
+    an agent reads the brief the drive dispatched it with."""
+    if role is None:
+        return E_USAGE, "--read reads one role's brief: give --role"
+    target = brief_target(manifest, node_id, role)
+    if target is None:
+        return E_NOMATCH, ("no %s %r in this manifest"
+                           % ("phase" if role == "phase" else "task", node_id))
+    ctx = _brief_context(manifest_path, project_arg)
+    path = brief_file(ctx, node_id, role, (target[1] or {}).get("startedAt"))
+    try:
+        with open(path, "r", encoding="utf-8", newline="") as fh:
+            return E_OK, fh.read()
+    except OSError as exc:
+        return E_NOMATCH, ("no %s brief is written for %s's current start (%s: "
+                           "%s)" % (role, node_id, path, exc.strerror or exc))
+
+
 # --- run ---------------------------------------------------------------------
 # The step fields `run_lookup` reports, in the order the row already carries
 # them - `_evio.STEP_KEYS` minus `ran`, `measured`, `timeoutSeconds`,
@@ -1651,6 +1677,10 @@ def build_parser():
         help="write the whole spawn brief for this role to a file under "
              "stateDir and print its path: executor or reviewer for a task, "
              "phase for a phase")
+    brief_p.add_argument(
+        "--read", dest="read", action="store_true",
+        help="with --role: print the brief already written for the current "
+             "start, byte for byte, and write nothing")
     run_p = sub.add_parser(
         "run", parents=[common],
         help="the evidence ledger row a background gate is read from")
@@ -1697,6 +1727,14 @@ def main(argv):
     elif args.question == "bug":
         found, payload = bug_lookup(manifest, args.id)
         node_id = args.id
+    elif args.question == "brief" and args.read:
+        code, said = read_brief(manifest, args.manifest, args.project, args.id,
+                                args.role)
+        if code == E_OK:
+            sys.stdout.write(said)
+        else:
+            sys.stderr.write("audit-lookup.py: %s\n" % (said,))
+        return code
     elif args.question == "brief" and args.role:
         code, said = write_brief(manifest, args.manifest, args.project, args.id,
                                  args.role)

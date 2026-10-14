@@ -1583,6 +1583,58 @@ def _brief_cases(check):
           " submit P1.1 --role executor docs/audit/audit-plan.json --project-dir "
           in plain_text and "Run this command from the project" not in plain_text)
 
+    # ---- the order: the stable part first, the task's own part last -------
+    # The headings that belong to one task. A brief must carry several of
+    # them, or an order check over it would be read over nothing.
+    task_heads = ("## Tree", "## Skills", "## Description (verbatim)",
+                  "## Phase desired outcome", "## Files", "## Docs", "## Tests",
+                  "## What you run", "## Retry")
+    rules_line = "The rules and the return shape are agents/audit-executor.md's."
+
+    def order(body):
+        lines = body.splitlines()
+        heads = [i for i, ln in enumerate(lines) if ln.startswith(task_heads)]
+        rules = lines.index(rules_line) if rules_line in lines else None
+        ret = lines.index("## Your return") if "## Your return" in lines else None
+        return {"rules": rules, "return": ret, "firstTask": min(heads or [None]),
+                "taskHeads": len(heads)}
+
+    orders = [order(t) for t in (text, text3, wave_text) if t]
+    bad_order = [o for o in orders
+                 if o["rules"] is None or o["return"] is None
+                 or o["taskHeads"] < 6
+                 or not o["rules"] < o["return"] < o["firstTask"]]
+    check("bo1 every executor brief places the rules and return contract before "
+          "the task-specific sections: %r" % (orders,),
+          len(orders) == 3 and not bad_order)
+    proj_e = os.path.join(root, "bf-exec")
+    mpath_e = os.path.join(proj_e, "docs", "audit", "audit-plan.json")
+    out_r, err_r = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out_r), contextlib.redirect_stderr(err_r):
+        try:
+            read_code = M.main([mpath_e, "brief", "P1.1", "--role", "executor",
+                                "--read", "--project", proj_e])
+        except SystemExit as exc:
+            read_code = exc.code
+    read_said = out_r.getvalue()
+    on_disk = read(path) or ""
+    proj_n, mpath_n = project("bf-unread", _bf_manifest())
+    out_n, err_n = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out_n), contextlib.redirect_stderr(err_n):
+        try:
+            none_code = M.main([mpath_n, "brief", "P1.1", "--role", "executor",
+                                "--read", "--project", proj_n])
+        except SystemExit as exc:
+            none_code = exc.code
+    check("bo2 `brief --role executor --read` prints the brief written for the "
+          "task's current start byte for byte and writes nothing; with none "
+          "written it is a miss that says so: %r"
+          % ((read_code, none_code, err_n.getvalue()[:160]),),
+          read_code == M.E_OK and on_disk != "" and read_said == on_disk
+          and none_code == M.E_NOMATCH and "no executor brief" in err_n.getvalue()
+          and not os.path.exists(brief_file(proj_n, "P1.1",
+                                            "20260101T000000Z.executor.md")))
+
     code6, said6 = brief(proj, mpath, "P1", "executor")
     check("bf11 a phase id asked for a task's role, or a task id for the "
           "phase's, is a miss rather than a brief about the wrong thing: %r"

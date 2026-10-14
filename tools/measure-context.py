@@ -56,7 +56,7 @@ that does not resolve.
 THE GATE. `--gate` holds `ENTRY_CEILINGS` - the pipeline-cost design's ceilings on
 what each pipeline entry loads before any work - and `AGENT_CEILINGS`, reading the
 same `total` line the report prints, so the gate and the measurement cannot measure
-two different things. A gated command that reads a file under `reference/` first, or
+two different things; `DOC_CEILINGS` bounds a document no entry loads by its size. A gated command that reads a file under `reference/` first, or
 names one anywhere in its body (a `see reference/...` pointer), breaches whatever its
 size: no pipeline command makes the main loop read reference prose, and this is the
 check that holds it. A command outside the pipeline is not gated and may point there.
@@ -119,7 +119,7 @@ AGENT_CEILINGS = {"executor": 9000, "reviewer": 7000}
 # its size, since that read is the cost this ceiling exists to keep out; `--gate` exits 1 on any breach, and
 # `mc24` holds the shipped tree under it in the sweep.
 ENTRY_CEILINGS = (
-    ("/audit:phase run form, before sign-off", 4000),
+    ("/audit:phase run form, before sign-off", 3980),
     ("/audit:phase add", 8000),
     ("/audit:task add", 8000),
     ("/audit:run", 4000),
@@ -127,6 +127,21 @@ ENTRY_CEILINGS = (
     ("/audit:resume", 4000),
     ("sign-off (/audit:review)", 6000),
 )
+# The most bytes a document no pipeline entry loads may hold. `orchestrator.md` is
+# read by the guide agent and by the commands outside the pipeline, and it grew by
+# restating what the step driver now prints at each step; the ceiling keeps a
+# sentence the driver already says from coming back. A gated document that is
+# missing is a breach, never a zero.
+DOC_CEILINGS = (
+    ("reference/orchestrator.md", 62000),
+)
+# What each ceiling lowered on 2026-10-14 replaced: the run form's earlier ceiling,
+# and for orchestrator.md, which had none, its size that day. `mc34` holds every
+# lowered ceiling under the value it replaced, so one raised back is red.
+CEILINGS_REPLACED = {
+    "/audit:phase run form, before sign-off": 4000,
+    "reference/orchestrator.md": 63180,
+}
 REFERENCE_DIR = "reference/"
 # The entries that run work.
 RUN_ENTRIES = ("/audit:run", "/audit:next", "/audit:resume", "/audit:phase",
@@ -447,8 +462,12 @@ def measure(source, claude_md=None):
         entries.append({"entry": label, "rows": rows, "bytes": sum(known),
                         "missing": [r["path"] for r in rows if r["bytes"] is None],
                         "pointers": pointers})
+    docs = []
+    for rel, _ceiling in DOC_CEILINGS:
+        data = source["read"](rel)
+        docs.append({"path": rel, "bytes": None if data is None else len(data)})
     return {"label": source["label"], "entries": entries, "listing": listing(source),
-            "claudeMd": claude_md}
+            "claudeMd": claude_md, "docs": docs}
 
 
 def ceiling_breaches(measured):
@@ -499,7 +518,22 @@ def gate_breaches(measured):
     agents = [(name, size, ceiling, "the agent's start is %s bytes, over %d"
                % ("missing" if size is None else size, ceiling))
               for name, size, ceiling in ceiling_breaches(measured)]
-    return entry_ceiling_breaches(measured) + agents
+    return entry_ceiling_breaches(measured) + agents + doc_ceiling_breaches(measured)
+
+
+def doc_ceiling_breaches(measured):
+    """`[(doc, bytes, ceiling, why), ...]` - every `DOC_CEILINGS` document past its
+    ceiling, or missing. Empty is the one answer that holds."""
+    sizes = dict((d["path"], d["bytes"]) for d in measured.get("docs") or [])
+    out = []
+    for rel, ceiling in DOC_CEILINGS:
+        size = sizes.get(rel)
+        if size is None:
+            out.append((rel, None, ceiling, "missing, so not measured"))
+        elif size > ceiling:
+            out.append((rel, size, ceiling, "%d bytes, over a ceiling of %d"
+                        % (size, ceiling)))
+    return out
 
 
 def render_gate(measured, breaches):
@@ -512,6 +546,10 @@ def render_gate(measured, breaches):
         entry = found.get(name)
         lines.append("  %-42s %8s / %d" % (name, "-" if entry is None
                                             else entry["bytes"], ceiling))
+    sizes = dict((d["path"], d["bytes"]) for d in measured.get("docs") or [])
+    for rel, ceiling in DOC_CEILINGS:
+        size = sizes.get(rel)
+        lines.append("  %-42s %8s / %d" % (rel, "-" if size is None else size, ceiling))
     if not breaches:
         lines.append("GATE OK: every entry within its ceiling, and no gated command "
                      "reads or names a reference file")
@@ -1133,6 +1171,7 @@ def _fx_lean(root):
                 "commands/review.md", "commands/task.md", "commands/resume.md"):
         _fx_write(root, rel, "---\ndescription: x\n---\nRun `drive-phase.py next`, "
                   "do what it prints, and run it again.\n")
+    _fx_write(root, "reference/orchestrator.md", "# Audit orchestrator\n")
 
 
 def _gate_run(scratch):
@@ -1232,6 +1271,36 @@ def _gate_cases(check, shipped):
           % ([(e["entry"], e["bytes"]) for e in shipped["entries"]
               if e["entry"] in gated] + breaches,),
           gated and breaches == [])
+    replaced = globals().get("CEILINGS_REPLACED") or {}
+    docs = dict(globals().get("DOC_CEILINGS") or ())
+    lowered = [(name, (gated if name in gated else docs).get(name), was)
+               for name, was in sorted(replaced.items())]
+    check("mc34 the run form of /audit:phase and orchestrator.md are held to "
+          "ceilings lower than the ones they replace, and --gate is green: %r"
+          % ((lowered, breaches),),
+          sorted(n for n, _c, _w in lowered)
+          == ["/audit:phase run form, before sign-off", "reference/orchestrator.md"]
+          and all(c is not None and c < was for _n, c, was in lowered)
+          and breaches == [])
+    scratch = tempfile.mkdtemp(prefix="measure-context-doc-")
+    try:
+        _fx_lean(scratch)
+        doc_lean, doc_lean_code, _p = _gate_run(scratch)
+        _fx_write(scratch, "reference/orchestrator.md",
+                  "O" * (docs.get("reference/orchestrator.md", 0) + 1))
+        doc_fat, doc_fat_code, doc_fat_printed = _gate_run(scratch)
+        os.remove(os.path.join(scratch, "reference", "orchestrator.md"))
+        doc_gone, _c, _p = _gate_run(scratch)
+    finally:
+        remove_tree(scratch)
+    check("mc35 THE RED TWIN: orchestrator.md one byte past its ceiling is named "
+          "with its size and --gate exits 1, a missing one is a breach rather "
+          "than a zero, and the lean tree breaches nothing: %r"
+          % ((doc_lean, doc_fat, doc_gone),),
+          doc_lean == [] and doc_lean_code == 0 and doc_fat_code == 1
+          and [b[0] for b in doc_fat] == ["reference/orchestrator.md"]
+          and "reference/orchestrator.md" in doc_fat_printed
+          and [b[0] for b in doc_gone] == ["reference/orchestrator.md"])
 
     head, problem = git_source("HEAD")
     if problem:
