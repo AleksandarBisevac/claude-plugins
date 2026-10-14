@@ -1788,7 +1788,7 @@
     {
       "id": "P125.35-0h5",
       "title": "Every record a wave member's gate reads is the phase tree's",
-      "status": "pending",
+      "status": "blocked",
       "description": "F648, the second instance of F619's class (a wave member reads its own tree's stale plan). Wave 1 was cut at c51a9ef5; record-only commits then landed on the phase tree, and every member's gate ran validate and check-example-ledgers against the member tree's docs/audit, i.e. stale records: red twice for nothing the members did, fixed only by checking out the phase HEAD's docs/audit in each member. Integration already defines the record paths (integrate-task.record_paths: manifest pair, journal dir, evidence dir) as the phase tree's. One invariant through that one definition: before each member gate (and any verb run in a member tree that reads records) the drive brings the member's record paths to the phase tree's committed records, never touching work paths. No per-check special case.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1831,7 +1831,8 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "blockedReason": "paused by the owner on 2026-10-14 to move development to another computer; unblock there and continue the drive"
     },
     {
       "id": "P125.36-0h5",
@@ -1906,7 +1907,7 @@
     {
       "id": "P125.37-0h5",
       "title": "A scope change after a filed return makes the drive decide rather than close",
-      "status": "pending",
+      "status": "blocked",
       "description": "F650. P125.19's executor filed a half-delivered return naming the files the rest needed; the orchestrator widened its files with audit-task scope and the next drive step closed it anyway ('stamp current; closed P125.19 at 19836db'), because the close compares the stamp with the tree, not with the task's scope as it now stands. The close compares the scope the filing was made under (the stamp's scope / scopeDigest) with the task's current files; a difference is a decision with the two lists, not a close.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1945,7 +1946,8 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "blockedReason": "paused by the owner on 2026-10-14 to move development to another computer; unblock there and continue the drive"
     },
     {
       "id": "P125.38-0h5",
@@ -2273,7 +2275,7 @@
     {
       "id": "P125.42-0h5",
       "title": "A standing high-risk approval, armed and revoked only by the owner's own prompt, lets a high-risk task commit without a mid-run question; a per-phase approval stays available",
-      "status": "pending",
+      "status": "blocked",
       "description": "Owner decision D5 (2026-10-14): both a standing high-risk approval and the existing per-phase one, the standing one the default way of working. Today record-risk-confirmation.py takes the owner's words on a command line, which the auto-mode classifier rightly refused when the model ran it (self-modification), and a mid-run high-risk question cost 72 minutes of waiting in P125. Mechanism, mirroring the release bypass: a UserPromptSubmit hook (extend detect-plan-skip.py, the plugin's prompt hook, rather than a new file unless measured otherwise) recognises an arming and a revoking keyword in the OWNER'S OWN PROMPT only - nothing the model writes can arm it - and records the standing approval with the prompt's words verbatim in the journal. drive-phase's high-risk decision consults it: armed -> the commit proceeds and one journal row records the task id, its scope digest and the approval used; not armed -> asks as today. The per-phase record-risk-confirmation keeps working unchanged. Doctor and status show that a standing approval is armed and how many commits went through it. Keywords and their wording go in README and commands/phase.md (phase.md is at its byte ceiling: take bytes out for any added).",
       "files": [
         "plugins/audit/hooks/hooks.json",
@@ -2325,7 +2327,8 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "blockedReason": "paused by the owner on 2026-10-14 to move development to another computer; unblock there and continue the drive"
     },
     {
       "id": "P125.43-0h5",
@@ -2388,7 +2391,8 @@
         "plugins/audit/scripts/governance/derive-phase-gate.py",
         "plugins/audit/tests/test_derive_phase_gate.py",
         "plugins/audit/reference/manifest-conventions.md",
-        "CONTRIBUTING.md"
+        "CONTRIBUTING.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -2477,7 +2481,7 @@
     {
       "id": "P125.46-0h5",
       "title": "A usage-ledger month rewrite never waits on its own open handle: it lets go of the tail before the replace, and the shared sharing-denial retry is its only retry",
-      "status": "pending",
+      "status": "blocked",
       "description": "Regression introduced in this phase, caught by CI run 38517006899 (ci/p125 at a7d1b5c4, windows-latest plain and cp1252): test_audit_usage bw14 'a row appended while a refused replace is retried survives the replace' got calls=66/70 instead of 2 (count=1, code=0). P125.38 made _manifest_io.atomic_write_text retry a sharing denial (_output.while_shared, up to SHARING_WAIT_SECONDS); usage_ledger's month rewrite keeps its OWN tail handle open while it calls _replace_rows, so on Windows the first replace now spins ~2 s against itself before raising, and only then does the old except-branch drain and close the tail and call _replace_retrying. Structural fix: drain and close the rewrite's own tail handle before the replace (the lock already excludes appenders), so the only holder a retry can meet is someone else, and delete _replace_retrying (the shared helper is the one retry). Keep bw14's guarantee: an append between the last read and the swap waits for the swap and survives. Net code down.",
       "files": [
         "plugins/audit/scripts/usage/usage_ledger.py",
@@ -2517,7 +2521,8 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "blockedReason": "paused by the owner on 2026-10-14 to move development to another computer; unblock there and continue the drive"
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
