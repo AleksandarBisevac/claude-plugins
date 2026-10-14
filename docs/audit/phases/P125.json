@@ -2176,7 +2176,8 @@
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/commands/phase.md",
         "plugins/audit/commands/task.md",
-        "plugins/audit/reference/manifest-conventions.md"
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/README.md"
       ],
       "tests": {
         "mode": "tdd",
