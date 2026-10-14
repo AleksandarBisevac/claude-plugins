@@ -3142,7 +3142,9 @@
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/tests/test_commit_task_work.py",
         "plugins/audit/tests/test_drive_phase.py",
-        "plugins/audit/tests/test__filed_returns.py"
+        "plugins/audit/tests/test__filed_returns.py",
+        "tools/prove-gates.py",
+        "tools/gate-parity.py"
       ],
       "tests": {
         "mode": "tdd",
