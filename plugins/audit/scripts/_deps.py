@@ -2385,8 +2385,8 @@ def map_drift(guide_path=None):
     if block != expected:
         return [(rel, "the guide's module map fence does not match "
                   "`_deps.py --render` output byte-for-byte (stale - "
-                  "regenerate with `python3 plugins/audit/scripts/"
-                  "_deps.py --render`)")]
+                  "regenerate with "
+                  "`python3 plugins/audit/scripts/_deps.py --render`)")]
     return []
 
 

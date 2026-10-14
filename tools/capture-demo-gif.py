@@ -2220,8 +2220,9 @@ def _prompt_cases(check):
     finished = refused + u"\u273b Worked for 7s \u00b7 done 3:08 AM\n" + box
     # The last frame of the first take that got this far: a turn still running
     # under an input box that is empty because Claude, not the user, has the turn.
-    running = refused + (u"\u23fa Bash(python3 \"/tmp/acme-store-demo-kit/audit/scripts/"
-                         u"manifest/audit-task.py\" add ...)\n\u273b Jitterbugging\u2026 "
+    running = refused + (u"\u23fa Bash(python3 "
+                         u"\"/tmp/acme-store-demo-kit/audit/scripts/manifest/audit-task.py\""
+                         u" add ...)\n\u273b Jitterbugging\u2026 "
                          u"(30s \u00b7 thinking)\n") + box
     check("pr9 the tape's end Wait proves a finished end state - interrupted, or the "
           "turn done - with the box empty, and NOT a turn still running under an "

@@ -2838,7 +2838,7 @@
     {
       "id": "P125.49-0h5",
       "title": "The affected-test arm's trust checks and listing facts are one helper in _gate_derive, read by run-test-gate and derive-phase-gate",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase-review finding (med, DRY) on the affected-test gates: `_affected_tests._untrusted` repeats the two version checks of `_gate_derive._importers_arm`, and `run-test-gate._affected_facts` repeats `derive-phase-gate._gather_facts`' listing and version runs. Move each into one helper in `_gate_derive.py` and have the three callers use it; delete the copies. The derived gates of the existing cases must be byte-identical before and after.",
       "files": [
         "plugins/audit/scripts/governance/_gate_derive.py",
@@ -2877,19 +2877,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0e549bc4467f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added to _gate_derive.py: version_distrust (one verdict for the two version checks), version_facts, listing_command, listing_fact, output_lines. _importers_arm and _affected_tests._untrusted now use version_distrust (each keeps its own wording, so messages are byte-identical). derive-phase-gate._gather_facts and run-test-gate._affected_facts use version_facts/listing_command/listing_fact; derive-phase-gate._lines_of deleted. run-test-gate imports _gate_derive, so the generated module map in PLUGIN-BUILD-GUIDE.md (outside declared files; an .md edit the gate allowed) gained _gate_derive on the run-test-gate line, else test__deps g1 went red. Cases: 'the version-trust verdict ...' plus vt3, vt4 in test__gate_derive.py (47/47); 'run-test-gate's affected facts ...' in test_run_test_gate.py. Full sweep: 335/335 files ok, 16176 cases, exit 0. Coupling arm not reintroduced. The red-first test command is test__gate_derive.py only (one command allowed); the run-test-gate case was not red-proven.",
+        "descriptive": "The affected-test and phase-gate derivations share one version-trust verdict and one listing/version run helper; the copies are gone."
       },
       "startedAt": "2026-10-14T14:56:09Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T15:28:16Z",
+      "verifiedBy": [
+        "the version-trust verdict _affected_tests uses and the one _importers_arm uses are the same function's answer (a mutation of the helper changes both)",
+        "run-test-gate's affected facts and derive-phase-gate's gathered facts come from the one _gate_derive helper and agree over the same tree and changed paths"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T15:28:15Z.925df4",
         "status": "passed",
         "at": "2026-10-14T15:28:15Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "0e549bc4467f",
+        "at": "2026-10-14T15:28:16Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T15:12:21Z",
+        "basis": "`python3 plugins/audit/tests/test__gate_derive.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_gate_derive' has no attribute 'version_distrust'\" (read as python), and the task introduces 'version_distrust': absent from HEAD's plugins/audit/scripts/governance/_gate_derive.py, plugins/audit/scripts/governance/_affected_tests.py, plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/scripts/governance/derive-phase-gate.py and present in the working tree's plugins/audit/scripts/governance/_gate_derive.py, plugins/audit/scripts/governance/_affected_tests.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -3012,7 +3026,12 @@
           "at": "2026-10-14T15:18:52Z",
           "text": "Red-first proved by the orchestrator in a scratch copy of the wave base: with only the new test__refs.py copied in -> exit 1, 16/17, KeyError fixtures (the key this task introduces); with the work copied in and the path half of split_literal_violations disabled (the one line asserted mutated) -> exit 1, 343/345, FAIL on the first tests.add case and sl2; unmutated work 345/345. prove-gates --only split_literal refuses on a dirty tree; it runs at sign-off over the committed tree."
         }
-      ]
+      ],
+      "testEvidence": {
+        "runId": "2026-10-14T15:47:00Z.1f725c",
+        "status": "passed",
+        "at": "2026-10-14T15:47:00Z"
+      }
     },
     {
       "id": "P125.52-0h5",

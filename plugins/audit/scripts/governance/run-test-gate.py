@@ -3903,8 +3903,9 @@ def _render_verdict(res, out):
                 # a plan that does not exist. `shlex.quote` leaves a plain word
                 # as it was, so the ordinary line reads unchanged.
                 for name in grp["names"][1:]:
-                    out('  remedy: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/'
-                        'manifest/audit-task.py" retarget %s --gate-drop %s '
+                    out('  remedy: python3 '
+                        '"${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py"'
+                        ' retarget %s --gate-drop %s '
                         '%s' % (shlex.quote(str(phase_id)), shlex.quote(name),
                                 shlex.quote(manifest_path)))
         else:

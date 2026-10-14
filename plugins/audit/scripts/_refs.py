@@ -63,11 +63,29 @@ what the code had stopped doing and stay green. It is not a byte comparison and 
 not want to be - what it asks is whether the verbs, options and schema paths the page
 tells a reader to type are still there, and whether its own internal links land.
 
-KNOWN LIMIT, STATED RATHER THAN HIDDEN. Matching is per line, so a path split across two
-adjacent string literals is invisible — `_deps.py` spells one as `"...plugins/audit/
-scripts/" "_deps.py --render..."` and this module does not see it. Joining the file first
-would not help: the break is inside the token either way. A path written on one line is
-the shape everything else in the tree uses.
+A PATH SPLIT ACROSS STRING LITERALS IS REPORTED, BECAUSE THE PER-LINE SCAN CANNOT SEE IT.
+Matching is per line, so a path assembled from two adjacent literals - or two literals
+with a plus between them - names a file no scan above ever stats, and that blind spot
+was being used on purpose: a fixture path that does not exist was split so the
+reference lints would not report it. `split_literal_violations()` closes it from the
+other side. It tokenizes every `.py` the surfaces hold, joins each run of string
+literals, and reports - file, line, joined path - every path match that crosses a
+boundary between two pieces. A split is reported whether or not its file exists and
+whether or not the line carries the marker below: splitting is never the way to say
+anything, so no reading of it is accepted.
+
+A FIXTURE PATH IS DECLARED, NOT HIDDEN. A line that carries `FIXTURE_MARKER` - the
+comment text `# refs: fixture`, written on the same line as the path, and that is the
+only spelling - declares every reference on that line a fixture: `missing_references()`
+puts a declared path whose file is absent under `fixtures` rather than `missing`. The
+declaration is itself checked, as `TOOL_FIXTURE_BASENAMES` is: a marked line naming a
+file that IS there goes under `staleFixtures`, because it would hide a real reference
+from the day that file is deleted.
+
+WHAT THE SPLIT RULE DOES NOT SEE, SAID RATHER THAN IMPLIED: a path assembled from a NAME
+and a literal (`PLUGIN_REL + ...`, a `%` format, a `join`) is not a run of literals and
+is not read; nor is any file that is not Python. Those spellings stay outside every
+lint here, so a green run says no LITERAL split hides a path, and nothing more.
 
 This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__refs.py`, byte-identical labels and all — see
@@ -82,11 +100,13 @@ fixture path over there is built from `PLUGIN_REL`; the surface changed name
 import ast
 import hashlib
 import html
+import io
 import json
 import os
 import posixpath
 import re
 import sys
+import tokenize
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -241,6 +261,11 @@ def _match_rel(match):
     return "%s/scripts/%s" % (PLUGIN_REL, match.group(2))
 
 
+# The one spelling that declares a fixture path; see the module docstring. Read per
+# LINE, as every reference here is, so it sits on the line the path is written on.
+FIXTURE_MARKER = "# refs: fixture"
+
+
 def is_placeholder(rel):
     """True for a documented shape rather than a file: `scripts/<name>.py`, `*.py`.
 
@@ -291,6 +316,12 @@ def referenced_paths(surface_root=None):
     that assert a floor — a skip would lower the floor's meaning without lowering the
     floor.
     """
+    return [hit[:4] for hit in _scanned_hits(surface_root)]
+
+
+def _scanned_hits(surface_root):
+    """`referenced_paths()`'s tuples with a fifth field: whether the line declares
+    its references fixtures by carrying `FIXTURE_MARKER`."""
     root = surface_root if surface_root is not None else REPO_ROOT
     hits = []
     for surface, mode in SURFACES:
@@ -300,8 +331,10 @@ def referenced_paths(surface_root=None):
             with open(path, "r", encoding="utf-8", errors="replace") as fh:
                 lines = fh.readlines()
             for lineno, line in enumerate(lines, 1):
+                marked = FIXTURE_MARKER in line
                 for match in pattern.finditer(line):
-                    hits.append((rel_file, lineno, match.group(0), _match_rel(match)))
+                    hits.append((rel_file, lineno, match.group(0), _match_rel(match),
+                                 marked))
     return hits
 
 
@@ -327,7 +360,7 @@ def counts_by_surface(hits=None, surface_root=None):
 
 # --- existence ----------------------------------------------------------------
 def missing_references(repo_root=None, surface_root=None):
-    """{"missing": [...], "placeholders": [...], "checked": n, "total": n}.
+    """{"missing", "placeholders", "fixtures", "staleFixtures": [...], "checked", "total": n}.
 
     `missing` is every reference whose file is not there; `placeholders` is every
     `<name>`/`*` shape, kept and counted rather than dropped, because a placeholder is
@@ -340,20 +373,136 @@ def missing_references(repo_root=None, surface_root=None):
     directory with the first left alone and every concrete reference must come back
     missing; that case is the only proof that the existence test is a real stat rather
     than something that short-circuits to "fine".
+
+    A line carrying `FIXTURE_MARKER` is still stat'd, and the answer is filed apart:
+    an absent file there is a declared fixture (`fixtures`), a present one is a
+    declaration hiding a real reference (`staleFixtures`). Both stay in `checked`.
     """
     root = repo_root if repo_root is not None else REPO_ROOT
-    hits = referenced_paths(surface_root)
+    hits = _scanned_hits(surface_root)
     missing = []
     placeholders = []
+    fixtures = []
+    stale = []
     for hit in hits:
-        rel = hit[3]
+        rel, marked = hit[3], hit[4]
         if is_placeholder(rel):
-            placeholders.append(hit)
+            placeholders.append(hit[:4])
             continue
-        if not os.path.isfile(os.path.join(root, rel.replace("/", os.sep))):
-            missing.append(hit)
-    return {"missing": missing, "placeholders": placeholders,
+        present = os.path.isfile(os.path.join(root, rel.replace("/", os.sep)))
+        if marked:
+            (stale if present else fixtures).append(hit[:4])
+        elif not present:
+            missing.append(hit[:4])
+    return {"missing": missing, "placeholders": placeholders, "fixtures": fixtures,
+            "staleFixtures": stale,
             "checked": len(hits) - len(placeholders), "total": len(hits)}
+
+
+# --- paths assembled from string literals ----------------------------------------
+def _literal_value(token_text):
+    """The str a STRING token evaluates to, or None for bytes and anything that is
+    not a plain literal (an f-string on an interpreter that tokenizes it whole)."""
+    try:
+        value = ast.literal_eval(token_text)
+    except (ValueError, SyntaxError):
+        return None
+    return value if isinstance(value, str) else None
+
+
+def _literal_runs(text):
+    """[[(value, lineno), ...], ...] - every run of TWO OR MORE string literals that
+    Python joins: adjacent, or with a plus between them, across line breaks and
+    comments. A run is broken by any other token, and a bytes literal breaks it."""
+    runs = []
+    run = []
+    after_plus = False
+    readline = io.StringIO(text).readline
+    for tok in tokenize.generate_tokens(readline):
+        kind, string = tok[0], tok[1]
+        if kind in (tokenize.NL, tokenize.COMMENT):
+            continue
+        value = _literal_value(string) if kind == tokenize.STRING else None
+        if value is not None:
+            # A non-empty run means the last token that counted was a literal or
+            # a plus after one - both are joins, so the piece always continues it.
+            run.append((value, tok[2][0]))
+            after_plus = False
+            continue
+        if kind == tokenize.OP and string == "+" and run and not after_plus:
+            after_plus = True
+            continue
+        if len(run) > 1:
+            runs.append(run)
+        run = []
+        after_plus = False
+    if len(run) > 1:
+        runs.append(run)
+    return runs
+
+
+# The anchor on its own. A run that splits the ANCHOR is reported even when no whole
+# path follows it in the run, because the path is then finished through a name -
+# which no rule here can follow - and an anchor has no other reason to be split.
+_ANCHOR_RE = re.compile(_ROOT_ANCHOR)
+
+
+def _split_matches(run, pattern):
+    """[(lineno, joined text), ...] for every path match in the joined run, and every
+    bare anchor, that crosses a boundary between two of its pieces. An anchor inside
+    a path already reported is not reported a second time."""
+    starts = []
+    offset = 0
+    for value, lineno in run:
+        starts.append((offset, lineno))
+        offset += len(value)
+    joined = "".join(value for value, _lineno in run)
+
+    def crosses(match):
+        return any(match.start() < start < match.end() for start, _ln in starts)
+
+    def line_of(match):
+        return [ln for start, ln in starts if start <= match.start()][-1]
+
+    paths = [m for m in pattern.finditer(joined) if crosses(m)]
+    anchors = [m for m in _ANCHOR_RE.finditer(joined) if crosses(m)
+               and not any(p.start() <= m.start() < p.end() for p in paths)]
+    return sorted((line_of(m), m.group(0)) for m in paths + anchors)
+
+
+def split_literal_violations(repo_root=None):
+    """{"violations": [(rel, lineno, joined path)], "checked": n, "files": n}.
+
+    Every `.py` the SURFACES hold, in the mode its surface is scanned in, so a split
+    is judged by the same pattern that would have seen the path written whole. See
+    the module docstring for the rule and for what it does not read.
+
+    `checked` is the number of literal runs examined and `files` the number of files
+    tokenized: an empty `violations` over zero runs is a tokenizer that read nothing,
+    not a clean tree. A file that will not tokenize is NAMED, never skipped."""
+    root = repo_root if repo_root is not None else REPO_ROOT
+    violations = []
+    checked = 0
+    files = 0
+    for surface, mode in SURFACES:
+        pattern = _ANCHORED_RE if mode == ANCHORED else _BARE_RE
+        for rel_file in _surface_files(root, surface, mode):
+            if not rel_file.endswith(".py"):
+                continue
+            path = os.path.join(root, rel_file.replace("/", os.sep))
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+            try:
+                runs = _literal_runs(text)
+            except (tokenize.TokenError, SyntaxError) as exc:
+                violations.append((rel_file, 0, "<untokenizable: %s>" % (exc,)))
+                continue
+            files += 1
+            checked += len(runs)
+            for run in runs:
+                for lineno, joined in _split_matches(run, pattern):
+                    violations.append((rel_file, lineno, joined))
+    return {"violations": violations, "checked": checked, "files": files}
 
 
 # --- the plan's own file lists ------------------------------------------------

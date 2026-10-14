@@ -2077,17 +2077,14 @@ def _reshape_cases(check):
         # `manifest_moved_files` (`q1`, test__refs.py) already asks of the
         # whole plan, of one `--files` entry before it is written at all.
         #
-        # THE PATHS ARE BUILT FROM PARTS, not written whole: a literal
-        # `"plugins/audit/scripts/<name>.py"` in this file's own text is a
-        # reference `missing_references()` (`c5`, test__refs.py) would walk
-        # looking for a file that does not exist in the real tree, since this
-        # fixture's project root is a scratch directory and not this repo.
-        _mv_root = "plugins/" + "audit/"
-        _mv_scripts = _mv_root + "scripts/"
-        _mv_old = _mv_scripts + "_moved" + "_thing.py"
-        _mv_new_dir = _mv_scripts + "new_home/"
-        _mv_new = _mv_new_dir + "_moved" + "_thing.py"
-        _mv_gone = _mv_scripts + "_brand" + "_new_thing.py"
+        # THE PATHS ARE DECLARED FIXTURES: each names a file that exists only
+        # in this case's scratch project, never in this repo, so each line
+        # carries `_refs.FIXTURE_MARKER` and `missing_references()` files it
+        # under `fixtures` instead of reporting it missing.
+        _mv_old = "plugins/audit/scripts/_moved_thing.py"  # refs: fixture
+        _mv_new_dir = "plugins/audit/scripts/new_home/"
+        _mv_new = "plugins/audit/scripts/new_home/_moved_thing.py"  # refs: fixture
+        _mv_gone = "plugins/audit/scripts/_brand_new_thing.py"  # refs: fixture
         os.makedirs(os.path.join(sc_proj, *_mv_new_dir.split("/")),
                     exist_ok=True)
         with open(os.path.join(sc_proj, *_mv_new.split("/")), "w") as _fh:

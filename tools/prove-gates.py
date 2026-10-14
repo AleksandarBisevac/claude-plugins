@@ -706,6 +706,16 @@ TABLE = (
  # violation it exists to prove. Written spelled out first, and it turned the real
  # tree red: `ar1` then failed on this file for every row in the table.
  ("absolute_reach_violations", S + "_fmt.py", "after", INSTALL, None, REF, "ar1"),
+ # A path assembled from string literals has two halves to report: a whole path
+ # that crosses a piece boundary, and the anchor alone split with the rest finished
+ # through a name. Each is switched off on its own, so neither row can stay green
+ # on the strength of the other.
+ ("split_literal_violations", S + "_refs.py", "replace",
+  "    paths = [m for m in pattern.finditer(joined) if crosses(m)]",
+  "    paths = [m for m in pattern.finditer(joined) if False]", REF, "sl2"),
+ ("split_literal_violations", S + "_refs.py", "replace",
+  "    anchors = [m for m in _ANCHOR_RE.finditer(joined) if crosses(m)",
+  "    anchors = [m for m in _ANCHOR_RE.finditer(joined) if False", REF, "sl2b"),
  # BOTH ROWS BELOW USED TO NAME NO CASE, and the coarse verdict was the only
  # thing available to them - not because their suite could not be named, but
  # because nobody had looked. The names here were read off a live run of each
@@ -1795,6 +1805,12 @@ ALLOW = (
  ("tool_basename_drift", S + "_refs.py", "replace",
   "                if name not in known:", "                if name not in fixtures:",
   REF, "tb5"),
+ # A run of literals is a split only where a path crosses a boundary between
+ # pieces. Call every match a crossing and each long message that merely wraps
+ # beside a whole path is reported.
+ ("split_literal_violations", S + "_refs.py", "replace",
+  "        return any(match.start() < start < match.end() for start, _ln in starts)",
+  "        return True", REF, "sl3"),
  # The README row is where a declared flag has to appear. Read no row at all and
  # every command that documents its flags correctly is reported for omitting them.
  ("command_flag_drift", S + "_refs.py", "replace",

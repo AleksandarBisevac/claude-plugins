@@ -557,12 +557,16 @@ def _cases(check):
     tmp = tempfile.mkdtemp()
     try:
         res = M.missing_references(tmp, M.REPO_ROOT)
+        # A declared fixture is the one concrete reference that is not called
+        # missing when its file is absent, so it is counted beside the misses.
+        _absent = len(res["missing"]) + len(res["fixtures"])
         check("v1 with the tree pointed at an EMPTY directory every concrete reference "
-              "comes back missing (%d of %d checked) - the existence test is a real "
-              "stat, not something that short-circuits to fine"
-              % (len(res["missing"]), res["checked"]),
-              res["checked"] >= 120 and len(res["missing"]) == res["checked"],
-              repr((len(res["missing"]), res["checked"])))
+              "comes back missing or a declared fixture (%d of %d checked) - the "
+              "existence test is a real stat, not something that short-circuits to fine"
+              % (_absent, res["checked"]),
+              res["checked"] >= 120 and _absent == res["checked"]
+              and res["staleFixtures"] == [],
+              repr((len(res["missing"]), len(res["fixtures"]), res["checked"])))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -4407,11 +4411,132 @@ def _followed_anchor_cases(check):
           and len(out["no-rows"]["problems"]) == 1 and out["no-rows"]["rows"] == 0)
 
 
+def _split_fixture(tmp, line):
+    """A minimal tree whose one test file carries `line`, plus one real script."""
+    _write(tmp, _FX_SCRIPTS + "real.py", "# a real file\n")
+    _write(tmp, _FX_TESTS + "test_fx_split.py", "# a fixture suite\n" + line + "\n")
+    return tmp
+
+
+def _split_literal_cases(check):
+    """A path is declared a fixture by one marker, and a path assembled from
+    string literals is reported rather than hidden.
+
+    Every fixture line below is BUILT: the joined path, the split between its
+    two pieces and the marker are each a separate token here, so this file
+    carries neither a split path nor a declared fixture of its own - which is
+    what lets the tree-wide case run over it."""
+    gone = _FX_SCRIPTS + "gone.py"
+    fx_file = _FX_TESTS + "test_fx_split.py"
+    # Two adjacent literals, the second on the line after the first: the
+    # shape that hid a path from the per-line reference scan.
+    split = 'GONE = ("' + _FX_SCRIPTS + '"\n        "gone.py")'
+    tmp = tempfile.mkdtemp()
+    try:
+        _split_fixture(tmp, split)
+        res = M.split_literal_violations(tmp)
+        check("a test file whose fixture path is assembled from two adjacent "
+              "string literals is reported, naming the file, the line and the "
+              "joined path",
+              res["violations"] == [(fx_file, 2, gone)], repr(res))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # The same path with a plus between its pieces: one rule for both ways of
+    # assembling a literal, so neither is the spelling that still hides.
+    tmp = tempfile.mkdtemp()
+    try:
+        _split_fixture(tmp, 'GONE = "' + _FX_SCRIPTS + '" + "gone.py"')
+        res = M.split_literal_violations(tmp)
+        check("sl2 ...and so is the same path joined with a plus between two "
+              "literals", res["violations"] == [(fx_file, 2, gone)], repr(res))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # The anchor split on its own, the path then finished through a name: no
+    # whole path is in the run, so only the anchor rule can see it.
+    _a, _b = M.PLUGIN_REL.split("/")
+    tmp = tempfile.mkdtemp()
+    try:
+        _split_fixture(tmp, 'ROOT = "%s/" + "%s/"' % (_a, _b))
+        res = M.split_literal_violations(tmp)
+        check("sl2b ...and so is the anchor alone, split across two literals with "
+              "no file name after it",
+              res["violations"] == [(fx_file, 2, M.PLUGIN_REL + "/")], repr(res))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # The allow half, there for the always-fires mutation. A run of literals
+    # whose path sits whole inside one piece is ordinary wrapped prose and must
+    # stay quiet, or every long message in the tree is reported.
+    tmp = tempfile.mkdtemp()
+    try:
+        _split_fixture(tmp, 'MSG = ("see ' + gone + ' for "\n       "the rest")')
+        res = M.split_literal_violations(tmp)
+        check("sl3 a wrapped literal whose path sits whole inside one piece is not "
+              "a split, and the run is still counted as examined",
+              res["violations"] == [] and res["checked"] == 1, repr(res))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    tmp = tempfile.mkdtemp()
+    try:
+        _split_fixture(tmp, 'GONE = "%s"  %s' % (gone, M.FIXTURE_MARKER))
+        res = M.split_literal_violations(tmp)
+        missing = M.missing_references(tmp, tmp)
+        check("the same fixture path carrying the declared fixture marker is "
+              "accepted by the dangling-reference lint and by the split-literal "
+              "lint",
+              missing["missing"] == [] and res["violations"] == []
+              and [h[3] for h in missing["fixtures"]] == [gone]
+              and missing["staleFixtures"] == [],
+              repr((missing, res)))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # The same line without the marker: proves the acceptance above is the
+    # marker and not something about the fixture that would pass anyway.
+    tmp = tempfile.mkdtemp()
+    try:
+        _split_fixture(tmp, 'GONE = "%s"' % (gone,))
+        missing = M.missing_references(tmp, tmp)
+        check("sl5 ...and without the marker that same line is a missing reference",
+              [h[3] for h in missing["missing"]] == [gone]
+              and missing["fixtures"] == [], repr(missing))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # The marker is not a blanket: on a line whose file IS there it would hide
+    # a real reference from the day that file is deleted, so it is reported.
+    tmp = tempfile.mkdtemp()
+    try:
+        _split_fixture(tmp, 'REAL = "%s"  %s'
+                       % (_FX_SCRIPTS + "real.py", M.FIXTURE_MARKER))
+        missing = M.missing_references(tmp, tmp)
+        check("sl6 a fixture marker on a line naming a file that exists is "
+              "reported as a stale declaration, not accepted",
+              [h[3] for h in missing["staleFixtures"]] == [_FX_SCRIPTS + "real.py"]
+              and missing["fixtures"] == [] and missing["missing"] == [],
+              repr(missing))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    live = M.split_literal_violations()
+    check("over this repository's tree the split-literal lint reports nothing",
+          live["violations"] == [] and live["files"] >= 100 and live["checked"] > 0,
+          "%r files=%d checked=%d"
+          % (live["violations"], live["files"], live["checked"]))
+    stale = M.missing_references()["staleFixtures"]
+    check("sl8 no fixture marker in the real tree sits on a line naming a file "
+          "that exists", stale == [], repr(stale))
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _harness.stage(check, "prk-block", _phase_key_cases)
         _harness.stage(check, "fa-block", _followed_anchor_cases)
+        _harness.stage(check, "sl-block", _split_literal_cases)
     return _harness.run(body)
 
 
