@@ -102,6 +102,9 @@ Usage:
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py unmute --test <path> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py record-listing --listing-all CMD --listing-related CMD
+                --spelling CMD --verified-on CMD [manifest]
+                [--project-dir DIR] [--takeover] [--json]
   audit-task.py finding <phaseId> (--severity low|med|high --file <path>
                 --issue TEXT|- --resolution TEXT|- | --findings-file PATH|-)
                 [manifest] [--project-dir DIR] [--takeover] [--json]
@@ -455,6 +458,9 @@ import _refs                  # noqa: E402  (moved_file_target: the one reading 
 #                                            `manifest_moved_files` asks of the whole
 #                                            plan, asked here of one `--files` entry
 #                                            before it is written)
+import _proc_group            # noqa: E402  (shell_invocation: `record-listing` runs
+#                                            its version command under the shell a
+#                                            plan command runs under)
 
 E_INVALID, E_USAGE, E_LIVE, E_STALE = 1, 2, 3, 4
 
@@ -12627,6 +12633,143 @@ def _locked_unmute(args, project, config, mpath, out):
     return 0
 
 
+# --- record-listing: meta.phaseGate.derived, an index-only write ----------------
+# THE LISTING A NARROWED GATE IS BUILT FROM, written by a verb. `_affected_tests`
+# reads `listing.related` and `spelling` for a task's gate, `derive-phase-gate.py`
+# reads `listing.all` and `listing.related` for a phase's, and a hand edit of the
+# plan is refused - so without this the fields could not be set at all.
+#
+# THE SHAPE IS GRADED BY THE VALIDATOR, NOT HERE. `_check_phase_gate_derived` is
+# the one reading of a `{paths}` placeholder owed or forbidden, and it files its
+# lines as WARNINGS, which `_write_plan` keeps. This verb is the field's only
+# writer, so a warning the validator raises about the field is a refusal here:
+# every file is rolled back and the validator's own sentence is printed.
+#
+# THE VERSION ANSWER IS MEASURED, never typed. Both readers compare it with what
+# the machine answers when they run, and an answer copied from somewhere else
+# would be a listing trusted on a guess - so `--verified-on` is run here, through
+# the same shell a plan command runs under, and its output is what is stored.
+#
+# THE COMMANDS STAY OUT OF THE JOURNAL ROW: `command` is off `_journal_io`'s
+# details allow-list so that no writer puts command text in a committed row, and
+# the row names the fields that moved instead.
+RECORD_LISTING_TIMEOUT_SECONDS = 60
+_DERIVED_WARNING = "phases.phase_gate_derived."
+
+
+def cmd_record_listing(args, out):
+    _manifest_from_positional(args)
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_record_listing(
+                           args, project, config, mpath, out))
+
+
+def _version_answer(command, project):
+    """`(answer, why)` - what `command` printed in `project`, or why it gave no
+    answer a reader could compare with its own."""
+    argv, env, refusal = _proc_group.shell_invocation(command)
+    if argv is None:
+        return None, refusal
+    try:
+        done = subprocess.run(argv, cwd=project, env=env, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT,
+                              timeout=RECORD_LISTING_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        return None, "did not finish within %ds" % (RECORD_LISTING_TIMEOUT_SECONDS,)
+    except OSError as exc:
+        return None, "could not be started: %s" % (exc,)
+    answer = done.stdout.decode("utf-8", "replace").strip()
+    if done.returncode != 0:
+        return None, "exited %d" % (done.returncode,)
+    if not answer:
+        return None, ("printed nothing, and an empty answer cannot tell one "
+                      "machine from another")
+    return answer, None
+
+
+def _locked_record_listing(args, project, config, mpath, out):
+    """Write `meta.phaseGate.derived`'s listing, spelling and `verifiedOn`,
+    under lock, keeping every other key of `meta.phaseGate` and of `derived`."""
+    values = (("--listing-all", "listing.all", (args.listing_all or "").strip()),
+              ("--listing-related", "listing.related",
+               (args.listing_related or "").strip()),
+              ("--spelling", "spelling", (args.spelling or "").strip()),
+              ("--verified-on", "verifiedOn.command",
+               (args.verified_on or "").strip()))
+    missing = [flag for flag, _field, value in values if not value]
+    if missing:
+        out("[audit-task] record-listing needs %s -- the listing a narrowed gate "
+            "is built from is recorded whole or not at all; nothing written"
+            % (", ".join(missing),))
+        return E_USAGE
+    for flag, field, value in values:
+        machine = _machine_paths.executed_value_refusal(
+            project, "meta.phaseGate.derived.%s (%s)" % (field, flag), value)
+        if machine:
+            out("[audit-task] " + machine)
+            return E_USAGE
+    every, related, spelling, verify = [value for _f, _w, value in values]
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    answer, why = _version_answer(verify, project)
+    if why:
+        out("[audit-task] --verified-on `%s` %s -- nothing written, because a "
+            "listing whose version was never answered is one every reader "
+            "would trust on a guess" % (verify, why))
+        return E_USAGE
+    meta = dict(assembled.get("meta") or {})
+    gate = dict(meta["phaseGate"]) if isinstance(meta.get("phaseGate"), dict) else {}
+    derived = dict(gate["derived"]) if isinstance(gate.get("derived"), dict) else {}
+    was = sorted(k for k in ("listing", "spelling", "verifiedOn") if k in derived)
+    listing = dict(derived["listing"]) if isinstance(derived.get("listing"),
+                                                     dict) else {}
+    listing.update({"all": every, "related": related})
+    derived.update({"listing": listing, "spelling": spelling,
+                    "verifiedOn": {"command": verify, "answer": answer}})
+    gate["derived"] = derived
+    meta["phaseGate"] = gate
+    assembled["meta"] = meta
+
+    snap = _snapshot([mpath])
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [],
+                        "the listing", out, index_fields=("meta",))
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    owned = [w for w in warnings
+             if (_output.finding_code(w) or "").startswith(_DERIVED_WARNING)]
+    if owned:
+        _restore(snap)
+        out("[audit-task] REFUSED: the listing would leave meta.phaseGate.derived "
+            "in a shape its readers cannot use -- every written file rolled "
+            "back, nothing kept:")
+        for line in owned:
+            out("FINDING: " + line)
+        return E_INVALID
+    moved = "listing.all, listing.related, spelling, verifiedOn"
+    summary = ("meta.phaseGate.derived recorded: %s, verified on %s"
+               % (moved, answer))
+    jres = _journal_row(project, config, mpath, "listing.recorded", summary,
+                        {"field": "meta.phaseGate.derived",
+                         "from": ", ".join(was) or None, "to": moved})
+    index_note = _index_dirty_note(written, mpath, project, None)
+    if args.as_json:
+        result = {"ok": True, "derived": derived, "written": written}
+        out(_json_tail(result, args, jres, warnings, written_manifest,
+                       index_note))
+        return 0
+    out("[audit-task] %s" % (summary,))
+    _report_tail(out, jres, "listing.recorded", warnings, written_manifest,
+                 written, index_note)
+    return 0
+
+
 # --- next-id: the id a hand-written record takes ---------------------------------
 # A bug, a parked proposal and a bug's fix task are the records the model still
 # writes by hand (`commands/bug.md`, `init.md`), so they were also the ids the model
@@ -13036,6 +13179,11 @@ VERB_FLAGS = {
     # drops one by the test alone, `uncouple`'s shape.
     "mute": ("test", "reason", "owner", "until", "bug"),
     "unmute": ("test",),
+    # `record-listing` writes `meta.phaseGate.derived`'s listing pair, the
+    # spelling a narrowed gate runs under, and the command whose answer the
+    # pair is trusted on - all four required, one flag per field.
+    "record-listing": ("listing_all", "listing_related", "spelling",
+                       "verified_on"),
 }
 
 
@@ -13070,7 +13218,7 @@ def build_parser():
                             "unblock", "note", "couple", "uncouple", "finding",
                             "resolve-finding", "correct", "bug-add",
                             "bug-close", "reindex", "mute", "unmute",
-                            "file-return"])
+                            "record-listing", "file-return"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -13361,6 +13509,21 @@ def build_parser():
     p.add_argument("--bug", default=None, metavar="BUGID",
                    help="mute: the bugs[] id tracking the failure it hides; "
                         "add: the open bug this task fixes")
+    # `record-listing` only: the four commands `meta.phaseGate.derived` keeps.
+    p.add_argument("--listing-all", dest="listing_all", default=None,
+                   metavar="CMD",
+                   help="record-listing: lists every suite, one path per line, "
+                        "with no {paths} placeholder")
+    p.add_argument("--listing-related", dest="listing_related", default=None,
+                   metavar="CMD",
+                   help="record-listing: lists the suites related to {paths}, "
+                        "one per line")
+    p.add_argument("--spelling", default=None, metavar="CMD",
+                   help="record-listing: runs the suites named by {paths}")
+    p.add_argument("--verified-on", dest="verified_on", default=None,
+                   metavar="CMD",
+                   help="record-listing: run now, and its answer stored as the "
+                        "version the listing is trusted on")
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--json", action="store_true", dest="as_json")
     return _claude_home.attach_usage_hint(p)
@@ -13640,6 +13803,7 @@ def _dispatch(args, argv, out):
              "correct": cmd_correct, "bug-add": cmd_bug_add,
              "bug-close": cmd_bug_close, "reindex": cmd_reindex,
              "mute": cmd_mute, "unmute": cmd_unmute,
+             "record-listing": cmd_record_listing,
              "file-return": cmd_file_return}
     try:
         return doors[args.command](args, out)

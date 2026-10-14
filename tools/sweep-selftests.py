@@ -4,6 +4,7 @@ Run every `--selftest` in the tree, in parallel, under the STRICTEST of the thre
 sweeps that used to exist.
 
     tools/sweep-selftests.py                     # the sweep, all cores but two (every core under CI=true)
+    tools/sweep-selftests.py PATH [PATH ...]     # only these suites, repo-relative; any other path is refused
     tools/sweep-selftests.py --shard 2/3         # the second of three cost-balanced parts
     tools/sweep-selftests.py --record-costs .github/sweep-costs.json   # write per-file timings
     tools/sweep-selftests.py --costs-from-log LOG --platform win32 --record-costs .github/sweep-costs.json
@@ -1241,6 +1242,47 @@ def _flag_value(argv, name, fallback):
     return fallback
 
 
+# The flags that take a value, so the word after one is that value and never a
+# suite path. A flag missing here would have its value read as a path and be
+# refused by name, which is the loud direction to fail in.
+VALUE_FLAGS = ("--encoding", "--timeout", "--jobs", "--shard", "--record-costs",
+               "--costs-from-log", "--platform", "--workers")
+
+
+def named_suites(argv, swept):
+    """`(paths, refusal)` - the suites `argv` names, sorted and once each, `[]`
+    when it names none (the whole tree runs), or `(None, why)`.
+
+    ONE SPELLING: a repo-relative POSIX path, as `sweep_files()` prints it and as
+    a listing's `{paths}` is filled. A path the sweep does not cover is REFUSED,
+    every such path named - a name dropped and the rest run would report green
+    over a suite that never ran, and the whole tree run in its place would be
+    the silence this replaced, where every word after the flags was ignored.
+    `--shard` splits the whole tree by cost, so with a list it has no meaning.
+    """
+    named, skip = [], False
+    for arg in argv:
+        if skip:
+            skip = False
+        elif arg in VALUE_FLAGS:
+            skip = True
+        elif not arg.startswith("-"):
+            named.append(arg)
+    known = set(swept)
+    unknown = [p for p in named if p not in known]
+    if unknown:
+        return None, ("sweep-selftests: %s %s not a suite this sweep covers - "
+                      "name a repo-relative path under %s, as `sweep_files()` "
+                      "lists it; nothing was run"
+                      % (", ".join(unknown), "is" if len(unknown) == 1 else "are",
+                         ", ".join(d.replace(os.sep, "/") for d in SWEEP_DIRS)))
+    if named and _flag_value(argv, "--shard", None) is not None:
+        return None, ("sweep-selftests: --shard splits the whole tree and a "
+                      "named list is already the part to run - pass one or the "
+                      "other; nothing was run")
+    return sorted(set(named)), None
+
+
 def marker_gate(git_dir, out, err):
     """Exit code 2 when a mutating gate sweep holds the tree, else None.
 
@@ -1369,8 +1411,14 @@ def main(argv):
                          "migrated-file rules below would assert nothing. Run "
                          "`_output.py --covered` and find out why.\n")
         return 2
+    named, refusal = named_suites(argv, paths)
+    if refusal:
+        sys.stderr.write(refusal + "\n")
+        return 2
     costs, cost_problem = load_costs(COSTS_PATH)
     swept = set(paths)
+    if named:
+        paths = named
     for note in table_notes(costs, paths):
         sys.stdout.write("note: %s\n" % (note,))
     if shard is not None:
@@ -2522,6 +2570,86 @@ def _cases(check):
               and str(mk_dead.pid) in mk_out.getvalue())
     finally:
         remove_tree(mk_box)
+
+    # --- a named list of suites: exactly those, under the same grading -------
+    # Three halves, because each fails alone. The reading of argv (a flag's
+    # VALUE is not a path; an unknown path is refused by name, never dropped);
+    # the run (the named files and no other, each graded by the rule a whole
+    # sweep applies - the contract and the scratch-directory watch included);
+    # and the wiring through `main`, which a correct reader and a correct
+    # sweep would both pass with `main` still running the whole tree.
+    nl_title = ("a sweep given suite paths runs exactly those (graded by the "
+                "same rules, contract and debris included) and refuses a path "
+                "that is not a suite in the tree, naming it")
+    # Fixture names carry no extension: the interpreter runs a path whatever it
+    # is called, and a name ending in the Python one would read as a reference.
+    nl_swept = ["plugins/audit/tests/test_a", "tools/b", "tools/c",
+                "tools/d"]
+    nl_read = named_suites(["--jobs", "3", "tools/c", "--quiet",
+                            "plugins/audit/tests/test_a", "--timeout=9",
+                            "--encoding", "cp1252", "tools/c"], nl_swept)
+    nl_whole = named_suites(["--jobs", "3", "--record-costs", "tools/b",
+                             "--quiet"], nl_swept)
+    nl_unknown = named_suites(["tools/b", "README.md", "tools/gone"],
+                              nl_swept)
+    nl_shard = named_suites(["--shard", "1/3", "tools/b"], nl_swept)
+    nl_box = tempfile.mkdtemp(prefix="sweep-named-")
+    try:
+        nl_bodies = {
+            "ok": "print('ALL PASS: 2/2 cases passed')\n",
+            "silent": "print('ran some things')\n",
+            "leaky": ("open('left-here.txt', 'w').write('x')\n"
+                      "print('ALL PASS: 1/1 cases passed')\n"),
+            "unnamed": "print('ALL PASS: 1/1 cases passed')\n",
+        }
+        for nl_name, nl_body in nl_bodies.items():
+            with io.open(os.path.join(nl_box, nl_name), "w",
+                         encoding="utf-8") as nl_fh:
+                nl_fh.write(nl_body)
+        nl_named, nl_why = named_suites(["leaky", "silent", "ok"],
+                                        sorted(nl_bodies))
+        nl_rows = dict((r["path"], r) for r in sweep(
+            nl_named or [], set(), jobs=2, repo=nl_box, timeout=30))
+    finally:
+        remove_tree(nl_box)
+    nl_refused = subprocess.run(
+        [sys.executable, os.path.abspath(__file__), "--jobs", "2",
+         "tools/not-a-suite"], stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, timeout=120)
+    nl_real = "plugins/audit/tests/test__cli_fmt.py"
+    nl_ran = subprocess.run(
+        [sys.executable, os.path.abspath(__file__), "--jobs", "2", nl_real],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=300)
+    nl_text = nl_ran.stdout.decode("utf-8", "replace")
+    nl_err = nl_refused.stderr.decode("utf-8", "replace")
+    nl_rowlines = [ln.split()[1] for ln in nl_text.splitlines()
+                   if ln.startswith("  ok ") or ln.startswith("  FAILED ")]
+    check("%s: read %r, whole %r, unknown %r, shard %r; rows %r; refused exit "
+          "%r %r / out %r; real exit %r rows %r tail %r"
+          % (nl_title, nl_read, nl_whole, nl_unknown, nl_shard,
+             dict((p, (r["ok"], r["why"])) for p, r in nl_rows.items()),
+             nl_refused.returncode, nl_err[-200:],
+             nl_refused.stdout.decode("utf-8", "replace")[-120:],
+             nl_ran.returncode, nl_rowlines, nl_text[-160:]),
+          nl_read == (["plugins/audit/tests/test_a", "tools/c"], None)
+          and nl_whole == ([], None)
+          and nl_unknown[0] is None
+          and "README.md" in (nl_unknown[1] or "")
+          and "tools/gone" in (nl_unknown[1] or "")
+          and "tools/b" not in (nl_unknown[1] or "")
+          and nl_shard[0] is None and "--shard" in (nl_shard[1] or "")
+          and nl_why is None
+          and sorted(nl_rows) == ["leaky", "ok", "silent"]
+          and nl_rows["ok"]["ok"] and nl_rows["ok"]["cases"] == 2
+          and not nl_rows["silent"]["ok"]
+          and "no --selftest" in (nl_rows["silent"]["why"] or "")
+          and not nl_rows["leaky"]["ok"]
+          and "left-here.txt" in (nl_rows["leaky"]["why"] or "")
+          and nl_refused.returncode == 2
+          and "tools/not-a-suite" in nl_err
+          and b"sweep:" not in nl_refused.stdout
+          and nl_ran.returncode == 0 and nl_rowlines == [nl_real]
+          and "1/1 files ok" in nl_text)
 
 
 def _selftest():
