@@ -661,6 +661,90 @@
         "phase": "P125",
         "at": "2026-10-14T00:05:31Z"
       }
+    },
+    {
+      "id": "P128.12-0h5",
+      "title": "verify.sh cleans its temporary directory on every exit under any POSIX sh",
+      "status": "pending",
+      "description": "F655: trap RETURN is a bash extension; under dash the temp directory stays. Use an EXIT trap or explicit removal on every return path, with a check that runs under dash.",
+      "files": [
+        "tools/verify.sh"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/verify.sh: the case named in the description"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P128.13-0h5",
+      "title": "check-git-pipeline names an unusable python3 instead of failing obscurely or passing",
+      "status": "pending",
+      "description": "F656 (suspected, simulation only): reproduce with a faithful broken-interpreter fake; the check must report the interpreter as unusable and never pass. Close with evidence if it does not reproduce.",
+      "files": [
+        "tools/check-git-pipeline.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/check-git-pipeline.py: the case named in the description"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }
