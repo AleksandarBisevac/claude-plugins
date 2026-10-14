@@ -193,7 +193,7 @@
     {
       "id": "P128.4-0h5",
       "title": "A task's scope gains the follower files its changes owe, derived from the lints",
-      "status": "pending",
+      "status": "cancelled",
       "description": "Sketch section 0: declared scope is exact-path and append-only, so tasks widened for followers mid-run. Each lint that requires a companion edit exposes its rule as data next to its own check, built from the constants it already reads: _deps (a new .py under scripts/ or hooks/ owes _deps.py's LAYERS, PLUGIN-BUILD-GUIDE.md's tree line and section, tests/test__output.py; an import change owes the guide's module-map fence), _output (a new scripts/ .py owes the path preamble - in-file, so no follower), _refs (a version bump owes the README pins), tools/prove-gates.py and tools/gate-parity.py (a new lint owes their rows). tools/followers.py collects these rules and prints them as JSON lines for a path set. The product side: a pure _followers module reads rules from the project's meta.followers.command plus the generic companions in openChoices, and audit-task add, scope and add --fixes append the followers to files with a printed basis per added path (never silently). Each repo rule is proven true rather than claimed: a selftest builds a fixture where the follower is omitted and asserts the owning lint goes red.",
       "files": [
         "plugins/audit/scripts/manifest/_followers.py",
@@ -244,10 +244,10 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: superseded by P125.54-0h5 (consolidated plan F2.3, which rewrites this task: no tools/followers.py, no _followers module, no meta.followers.command); the owner moved the fix before the 3.4.0 sign-off on 2026-10-14"
       },
       "startedAt": null,
-      "completedAt": null,
+      "completedAt": "2026-10-14T11:34:05Z",
       "verifiedBy": [],
       "movedFrom": {
         "id": "P125.10",
@@ -258,7 +258,7 @@
     {
       "id": "P128.5-0h5",
       "title": "Dispatch prompts and briefs put the stable text first and the task-specific text last",
-      "status": "pending",
+      "status": "cancelled",
       "description": "Sketch section 3. A subagent's cached prefix ends where its task message starts to differ, and today the main loop composes each dispatch prompt itself from the driver's one-line instruction. drive-phase prints the exact prompt to send for each role, as one fixed sentence per role followed by the variable part (task id, brief path) last, and the orchestrator reference says to send it verbatim; audit-lookup orders each brief file's sections stable-first (the role's rules and return contract before the task's description, files and diff). Measure, do not claim: tools/stream-cost.py's dispatches reading (startRead/startWritten) on a recorded session is the basis for any figure, and measure-context's INSTRUCTION_BYTES and AGENT_CEILINGS must still hold.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -301,10 +301,10 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: superseded by P125.55-0h5 (consolidated plan F2.5, which rewrites this task and carries its stable-first brief and dispatch-prompt cases); the owner moved the fix before the 3.4.0 sign-off on 2026-10-14"
       },
       "startedAt": null,
-      "completedAt": null,
+      "completedAt": "2026-10-14T11:34:06Z",
       "verifiedBy": [],
       "movedFrom": {
         "id": "P125.14",
