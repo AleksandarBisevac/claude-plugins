@@ -599,6 +599,11 @@ WIDEN_RULE = ("When you widen a runner's include, widen it for the repo's test "
               "layout, not for the one directory in front of you.")
 
 
+TITLE_RULE = ("Title each case you file with its tests.add clause (the text after "
+              "the path) verbatim, or have the task carry a tests.addMap entry for "
+              "it; any other wording is reported as a gap.")
+
+
 def compose_executor_brief(manifest, phase, task, ctx, files, gate):
     """The executor's whole brief, as lines. `files` is `brief_lookup`'s payload
     and `gate` the `executor.runsGate` reading with its basis."""
@@ -645,6 +650,7 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
                                           json.dumps(tests.get("expectRedFirst"))),
         "tests.add:"] + (["- %s" % (a,) for a in (tests.get("add") or [])]
                          or ["- none"])
+        + ([TITLE_RULE] if tests.get("add") else [])
         + ["gate, %s:" % (whose,)] + gate_lines(manifest, entries)
         + ([WIDEN_RULE] if tests.get("add") else []))
     reading = gate["reading"]

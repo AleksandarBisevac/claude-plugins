@@ -23,6 +23,8 @@ Hard rules (non-negotiable):
   does rather than probe what the task asked for — then run them and see them FAIL on
   current code, then implement until green; `regression` → implement, then add test(s)
   locking the corrected behaviour; `gate-only` → no new tests, keep the gates green.
+  Title each case you file with its `tests.add` clause verbatim (the text after the path),
+  or have the task carry a `tests.addMap` entry for it; any other wording is a reported gap.
 - **Run the reading of `executor.runsGate` the brief names — no more, no less.** `full`:
   every gate command given. `own-tests` (the default): the command the brief's *What you
   run* prints, either `run-test-gate.py ... --own --quiet` or the command the brief

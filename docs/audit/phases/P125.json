@@ -2772,7 +2772,7 @@
     {
       "id": "P125.48-0h5",
       "title": "One home for reading a Playwright or vitest run: stamp-verification reads failures through _runner_output, not a private regex",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase-review finding (med, DRY) on the red-first helper work: stamp-verification.py carries its own `_PW_LINE_ENTRY` regex and `red_read_tally` / `red_failing_cases` wrappers, while `_runner_output._FAILURE_READERS[\"playwright\"]` - the shared reader every other surface uses - lacks re.M and so misses line-anchored entries. Fix the shared reader (re.M, plus the Playwright line and vitest JSON readers the helper needed) and make stamp-verification call it; delete the private regex and wrappers. One runner's reading lives in one place. Behaviour seen by stamp-verification's existing cases must not change.",
       "files": [
         "plugins/audit/scripts/governance/_runner_output.py",
@@ -2806,19 +2806,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1f9e6efc0648",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Shared _FAILURE_READERS['playwright'] now carries re.M and the tolerant entry shape. The Playwright JSON/line readers, vitest JSON reader and the wide tally/cases pair moved into _runner_output (read_run_tally, run_failing_cases); stamp-verification deleted _PW_LINE_ENTRY, _PW_ASSERTION, _VITEST_JSON_ASSERTION and the red_* wrappers and calls the shared pair at four sites. Added ru15 (test__runner_output.py) and sp3 (test_stamp_verification.py, mutates the shared reader and ssees the verdict change). python3 tools/sweep-selftests.py in the task tree: exit 0, 335/335 files ok, 16170 cases; ruff check exit 0. run-test-gate's per-line .match on the playwright pattern is unaffected by re.M. Pointer: the gate's other entries (vermin, plugin-validate etc.) were not run.",
+        "descriptive": "One home for reading Playwright and vitest-JSON runs; the shared Playwright reader now finds entries anywhere in the text."
       },
       "startedAt": "2026-10-14T14:07:09Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T14:46:46Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__runner_output.py: ru15 a Playwright list-reporter output whose failing entries start mid-text (not at offset 0) is read as red with each failing test named, through _FAILURE_READERS['playwright']",
+        "plugins/audit/tests/test_stamp_verification.py: sp3 stamp-verification defines no Playwright or vitest pattern of its own - its red reading is the _runner_output reader's answer (a mutation of the shared reader changes the helper's verdict)"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T14:46:44Z.82b499",
         "status": "passed",
         "at": "2026-10-14T14:46:44Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "1f9e6efc0648",
+        "at": "2026-10-14T14:46:46Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T14:27:37Z",
+        "basis": "`python3 plugins/audit/tests/test__runner_output.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_runner_output' has no attribute 'read_run_tally'. Did you mean: 'read_tally'?\" (read as python), and the task introduces 'read_run_tally': absent from HEAD's plugins/audit/scripts/governance/_runner_output.py, plugins/audit/scripts/governance/stamp-verification.py and present in the working tree's plugins/audit/scripts/governance/_runner_output.py, plugins/audit/scripts/governance/stamp-verification.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2915,7 +2929,12 @@
       "startedAt": "2026-10-14T14:07:11Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-14T14:56:06Z.10c38c",
+        "status": "passed",
+        "at": "2026-10-14T14:56:06Z"
+      }
     },
     {
       "id": "P125.51-0h5",
