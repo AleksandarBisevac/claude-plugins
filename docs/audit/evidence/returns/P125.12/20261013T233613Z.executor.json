@@ -1,0 +1,15 @@
+{
+  "gates": {},
+  "redFirst": {
+    "at": "2026-10-14T00:03:03Z",
+    "basis": "`python3 plugins/audit/tests/test__doctor_setup.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_doctor_setup' has no attribute 'check_git_instructions'\" (read as python), and the task introduces 'check_git_instructions': absent from HEAD's plugins/audit/scripts/status/_doctor_setup.py, plugins/audit/scripts/status/_doctor_trail.py, plugins/audit/scripts/status/_claude_home.py, plugins/audit/scripts/status/audit-doctor.py, plugins/audit/commands/doctor.md, plugins/audit/README.md and present in the working tree's plugins/audit/scripts/status/_doctor_setup.py, plugins/audit/scripts/status/audit-doctor.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "placeholder",
+    "descriptive": "placeholder"
+  },
+  "testsAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:f168db2ad2f8fe151444212428df982e16b734b05c46f640f257cf796c9eb8e4\",\"dirtyDigest\":\"sha256:09210a5d88255a8eeb13386988c54d9738363a2ad67380cbedd7b3b3bb4070d1\",\"dirtyPaths\":{\"plugins/audit/README.md\":\"e5589d17d5da6723\",\"plugins/audit/commands/doctor.md\":\"ed337eb77162cb6e\",\"plugins/audit/scripts/status/_doctor_setup.py\":\"a013c229be6924c1\",\"plugins/audit/scripts/status/_doctor_trail.py\":\"ab41e421c9746b77\",\"plugins/audit/scripts/status/audit-doctor.py\":\"57622027444fd68c\",\"plugins/audit/tests/test__doctor_setup.py\":\"1675ab09a070c7ef\",\"plugins/audit/tests/test__doctor_trail.py\":\"c544b764d38eb2ba\"},\"head\":\"35265c5f\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/README.md\",\"plugins/audit/commands/doctor.md\",\"plugins/audit/scripts/status/_claude_home.py\",\"plugins/audit/scripts/status/_doctor_setup.py\",\"plugins/audit/scripts/status/_doctor_trail.py\",\"plugins/audit/scripts/status/audit-doctor.py\",\"plugins/audit/tests/test__doctor_setup.py\",\"plugins/audit/tests/test__doctor_trail.py\"],\"scopeDigest\":\"sha256:838ac2b2b07c31f2ff7e0a78c5c63ba127e5db14a1e44cf32d74f185fe904da9\",\"v\":2}"
+}

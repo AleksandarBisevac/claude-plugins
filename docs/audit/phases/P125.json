@@ -798,7 +798,13 @@
       "startedAt": "2026-10-13T23:36:13Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-14T00:05:18Z",
+          "text": "Outcome (the filed return carries placeholder text and testsAdded []; this note is the record): _doctor_setup.check_git_instructions reports the effective includeGitInstructions (env, then settings.local.json, settings.json, user settings), documentation-only OK; _doctor_trail.check_dispatch_cache reports, for a named transcript, whether each later subagent dispatch's start read cache or rewrote it; both wired into audit-doctor.diagnose; doctor.md and README document them (project-level includeGitInstructions:false). Tests dgi1-dgi3 (test__doctor_setup), dt70-dt73 (test__doctor_trail), red before (AttributeError) and green after; test_audit_doctor 169/169; sweep 334/334 on a quiet run. The helper's proof covers test__doctor_setup only."
+        }
+      ]
     },
     {
       "id": "P125.13",
