@@ -12697,6 +12697,124 @@ def _record_cases(check):
               all(_mo_order.values()) and len(_mo_order) == 5
               and _mo_src.count("args.manifest = args.title") == 1)
 
+        # ---- (pab) --parent-branch: the verb that was missing ------------------
+        # `add-phase` on a feature branch, then `start` refused "phase ...
+        # forks from main ... set the phase's parentBranch, then start again"
+        # with no verb that set it - the only route left was a hand edit the
+        # plan gate rightly denies. `add-phase --parent-branch` is that verb;
+        # `start` forks from the parent it names.
+        pab_proj, pab_mpath = mk("pb-fork", base_manifest(), git=True)
+        git(pab_proj, "checkout", "-q", "-b", "main")
+        git(pab_proj, "add", "-A")
+        git(pab_proj, "commit", "-q", "-m", "seed")
+        git(pab_proj, "branch", "feature/x")
+        git(pab_proj, "checkout", "-q", "feature/x")
+        pab_head = subprocess.run(
+            ["git", "-C", pab_proj, "rev-parse", "HEAD"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+        ).stdout.decode("utf-8", "replace").strip()
+        code, txt = run(["add-phase", "Side work", "--outcome", "it ships",
+                         "--parent-branch", "feature/x", "--project-dir",
+                         pab_proj, "--json"])
+        try:
+            pab_added = json.loads(txt)
+        except ValueError:
+            pab_added = {}
+        pab_pid = pab_added.get("id")
+        check("pab1 `add-phase --parent-branch feature/x` writes the phase "
+              "carrying it, with no branch cut yet: %r" % (txt[-200:],),
+              code == 0 and pab_pid
+              and pab_added.get("phase", {}).get("parentBranch") == "feature/x"
+              and pab_added.get("phase", {}).get("branch") is None)
+        code, txt = run(["add", "Do the work", "--phase", pab_pid, "--files",
+                         "src/pb.ts", "--tests-mode", "gate-only",
+                         "--project-dir", pab_proj])
+        check("pab2 ...a ready task lands in it", code == 0)
+        code, txt = run(["start", "%s.1" % pab_pid, "--project-dir", pab_proj])
+        pab_after = [p for p in _mio.load_manifest(pab_mpath)["phases"]
+                   if p.get("id") == pab_pid][0]
+        check("pab3 ...and `start`, run from `feature/x`, forks the phase branch "
+              "FROM `feature/x` rather than refusing - the branch cut, "
+              "`baseRef` recorded there, and `parentBranch` unchanged: %r"
+              % ((txt[-220:], pab_after.get("branch"), pab_after.get("baseRef"),
+                  pab_after.get("parentBranch")),),
+              code == 0 and "cut from feature/x" in txt
+              and pab_after.get("branch") and pab_after.get("baseRef") == pab_head
+              and pab_after.get("parentBranch") == "feature/x")
+
+        # ---- a name naming no local branch, refused before any write ----------
+        pab_bad_proj, pab_bad_mpath = mk("pb-no-branch", base_manifest(), git=True)
+        git(pab_bad_proj, "checkout", "-q", "-b", "main")
+        git(pab_bad_proj, "add", "-A")
+        git(pab_bad_proj, "commit", "-q", "-m", "seed")
+        with open(pab_bad_mpath, "rb") as _fh:
+            pab_bad_before = _fh.read()
+        code, txt = run(["add-phase", "Nope", "--outcome", "o",
+                         "--parent-branch", "no-such-branch",
+                         "--project-dir", pab_bad_proj])
+        check("pab4 `--parent-branch` naming no local branch is refused, and "
+              "nothing is written: %r" % (txt,),
+              code == M.E_USAGE and "no-such-branch" in txt
+              and "nothing written" in txt
+              and open(pab_bad_mpath, "rb").read() == pab_bad_before)
+
+        # ---- retarget --parent-branch, once the phase has a branch ------------
+        pab_rt_has_branch = base_manifest()
+        pab_rt_has_branch["phases"][2].update(
+            status="pending", branch="audit/p3-already-cut",
+            parentBranch="main")
+        pab_rt_proj, pab_rt_mpath = mk("pb-retarget-oncut", pab_rt_has_branch)
+        code, txt = run(["retarget", "P3", "--parent-branch", "release/1",
+                         "--project-dir", pab_rt_proj])
+        check("pab5 `retarget --parent-branch` on a phase already on a branch is "
+              "refused like `--rename` - the fork point it would describe is "
+              "already recorded, and the field is untouched: %r" % (txt,),
+              code == M.E_USAGE and "audit/p3-already-cut" in txt
+              and _mio.load_manifest(pab_rt_mpath)["phases"][2].get(
+                  "parentBranch") == "main")
+        pab_rt_open = base_manifest()
+        pab_rt_open["phases"][2].update(status="pending", branch=None)
+        pab_rt_open_proj, pab_rt_open_mpath = mk("pb-retarget-open", pab_rt_open,
+                                               git=True)
+        git(pab_rt_open_proj, "checkout", "-q", "-b", "main")
+        git(pab_rt_open_proj, "add", "-A")
+        git(pab_rt_open_proj, "commit", "-q", "-m", "seed")
+        git(pab_rt_open_proj, "branch", "release/next")
+        code, txt = run(["retarget", "P3", "--parent-branch", "release/next",
+                         "--project-dir", pab_rt_open_proj])
+        check("pab6 ALLOW: retarget writes `parentBranch` onto a phase with no "
+              "branch yet, journaled as a `phase.retarget` field move: %r"
+              % (txt,),
+              code == 0
+              and _mio.load_manifest(pab_rt_open_mpath)["phases"][2].get(
+                  "parentBranch") == "release/next")
+
+        # ---- start's refusal names the flag ------------------------------------
+        pab_cut_fixture = base_manifest()
+        pab_cut_fixture["phases"][2].update(
+            status="pending", branch=None, parentBranch="release/next",
+            tasks=[{"id": "P3.1", "title": "claimable", "status": "pending",
+                   "description": "", "files": ["src/claim.ts"],
+                   "tests": {"mode": "gate-only", "add": [],
+                             "expectRedFirst": False, "gate": ["test"]},
+                   "model": "sonnet", "skills": [], "risk": "low",
+                   "blockedBy": [], "dependsOn": [], "attempts": 0,
+                   "maxAttempts": 3, "commit": None,
+                   "outcome": {"technical": None, "descriptive": None},
+                   "startedAt": None, "completedAt": None, "verifiedBy": []}])
+        pab_cut_fixture["fileIndex"]["src/claim.ts"] = ["P3.1"]
+        pab_cut_proj, _pb_cut_mpath = mk("pb-start-refusal", pab_cut_fixture,
+                                        git=True)
+        git(pab_cut_proj, "checkout", "-q", "-b", "main")
+        git(pab_cut_proj, "add", "-A")
+        git(pab_cut_proj, "commit", "-q", "-m", "seed")
+        code, txt = run(["start", "P3.1", "--project-dir", pab_cut_proj])
+        check("pab7 `start`, on `main` while the phase's parent is `release/next`, "
+              "refuses NAMING `--parent-branch` - the flag that sets it, rather "
+              "than leaving the operator to find no verb at all: %r" % (txt,),
+              code == M.E_USAGE and "forks from release/next" in txt
+              and "--parent-branch" in txt)
+
     finally:
         _harness.remove_tree(tmp)
 

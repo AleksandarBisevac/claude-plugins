@@ -186,9 +186,14 @@ A newly created phase MUST be initialized with: `status: "pending"`,
 `summary: null`, a one-line `desiredOutcome` (what success looks like — `/audit:status`
 shows it, task subagents receive it, and sign-off must address it), and a
 `testGate` derived from `meta.buildCommands` keys. Optionally `reviewSkill` (a phase-specific
-sign-off reviewer, overriding `meta.reviewSkill`) and `area` — a label, or a **list** of
+sign-off reviewer, overriding `meta.reviewSkill`), `area` — a label, or a **list** of
 labels for cross-cutting concerns (`"backend"` or `["backend","security"]`; any vocabulary —
-devops/security/embedded/data/ml/…) — for grouping/filtering in status/report/panel. Both default to absent.
+devops/security/embedded/data/ml/…) — for grouping/filtering in status/report/panel, and
+`parentBranch` (`_branch.parent_branch`'s chain: `phase.parentBranch ?? meta.developmentBranch
+?? "main"`). All three default to absent. `parentBranch` is written through `add-phase` or
+`retarget --parent-branch <name>`, validated there as an existing local branch — never by hand,
+which is the route `start`'s own refusal used to leave with no verb at the other end of it;
+`retarget` refuses the flag once the phase already has a `branch`, for `--rename`'s own reason.
 
 `review.readReturns` is never initialized. `audit-task.py signoff` writes it with the verdict: one
 `{return, sha256}` row per filed phase return that sign-off read, so `close-phase.py` can refuse a

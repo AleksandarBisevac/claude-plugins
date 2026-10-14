@@ -2115,7 +2115,7 @@
     {
       "id": "P125.40-0h5",
       "title": "With a plan that holds phases and no phase running, an edit past the session's free file is denied before it lands, naming how to start a phase",
-      "status": "in_progress",
+      "status": "done",
       "description": "F651, owner-requested behaviour change (danuvia-software testbed, 2026-10-13, plugin 3.3.0): with a plan holding phases and no phase in_progress, every file past the session's free one was only reported after the edit (PostToolUse 'the plan gate is advisory until a phase is running'); several hundred lines across three files changed before any phase existed. The owner expects a hard stop and a forced phase creation. Change the graded ladder, not a special case: the warn tier gains a deny step when the manifest holds at least one phase, none is in_progress, and this session's free file is already spent - PreToolUse denies with the no-plan warning and the exact commands (/audit:phase add ..., then run it). The free file stays. No manifest, and a manifest with no phases, keep their tiers; planGate still pins any tier by hand and wins; doctor's plan-gate row names the new step when it is the one in force. The README's ladder paragraph says the new step and the consequence (a project with a plan but nothing running now gets refusals past its free file); the CHANGELOG line is written at release. This is the plan gate's edit-path reading, not command reading.",
       "files": [
         "plugins/audit/hooks/require-plan.py",
@@ -2163,19 +2163,36 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "13263a4dd8f6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Ladder (attempt 1, kept): _config.PLAN_GATE_LADDER (no-manifest observe, no-phase warn, nothing-running deny, phase-running deny), plan_gate_step(), manifest_state hasPhases, plan_gate_cause(); require-plan.py denies at PreToolUse past the free file when the plan holds phases and none is in_progress, naming /audit:phase add then /audit:phase <id>; README ladder paragraph. Attempt 2: guard-secrets-read._plan_gate_cause now delegates to _config.plan_gate_cause (one copy of the cause text; message only, no command reading touched). _doctor_setup.check_plan_gate: prepared patch applied (warn row only for a manifest holding no phase; nothing-running step reported as 'deny past the free file' with the add/run commands), sign-off head reworded to 'no phase has work in flight'. _help._gate_topic: the 'manifest, nothing running' row split into 'A manifest holding no phase' (warn) and 'Phases, none running' (deny, free file stays, /audit:phase add); a historical sentence about the interpreter form dropped to offset the bytes - payload measured 199987 before and after (bound 200000). _panel_runstate._gate_block source text reads plan_gate_step and names the nothing-running and no-phase steps apart. Fixtures: test_guard_secrets_read tt1/tt2, s5b, we2 moved to a no-phase manifest (labels say so) plus new s5b2, s5b3, we2b for the nothing-running step; test__doctor_setup new ds14n, ds14/ds14b/ds15s/ds15t now expect the deny-past-free-file step, ds14d label; test__help t2 expects six rows, new t2c; test_audit_task sd4 now expects deny on the nothing-running step because seed writes a phase that is not running (label says why); test_guard_bash_writes plant_plan writes a no-phase manifest so the warn-rung cases (c2 among them) stay on warn; test_hooks gains a fourth fixture tier 'idle' (phases, none running) beside warn (now a no-phase manifest), large-new-undeclared-file and write-past-handed-bound deny at idle, history-rewrite-recorded allows at warn (no phase records no commit, said in its basis), r02's today extended. Suite results: test_require_plan 234/234, test__config 343/343, test__doctor_setup 106/106, test_audit_doctor 169/169, test_guard_secrets_read 705/705, test__help 105/105, test_audit_task 1029/1029, test_guard_bash_writes 237/237, test_hooks 232/232. Sweep `python3 tools/sweep-selftests.py --jobs 6` in the worktree: first run 333/334 (test_panel_server ps1d, a file outside this task, JSON read race; passed 103/103 three times alone), second run exit 0, 334/334 files ok, 153 migrated to tests/, 16107 cases. Gap observed, not fixed (command reading): `patch -p0 < file` wrote a source file with no plan-gate verdict while a python3 heredoc writing the same file was refused.",
+        "descriptive": "A plan that holds phases with none running now refuses edits past the session's free file before they land, and every reader of the tier (doctor, help drawer, panel, shell-write guard) names that step the same way."
       },
       "startedAt": "2026-10-14T06:44:25Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T07:19:21Z",
+      "verifiedBy": [
+        "test_require_plan np1, np1b, np2, np3, np4, np5, np5b, np7, np8, np9, np9b, np10",
+        "test__config f2b, f4, f4b, f4c, f4d, f6b, f9d, sg2, f19b, f19c",
+        "test_guard_secrets_read s5b2, s5b3, we2b",
+        "test__doctor_setup ds14n",
+        "test__help t2c"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T07:19:18Z.0d3824",
         "status": "passed",
         "at": "2026-10-14T07:19:18Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "13263a4dd8f6",
+        "at": "2026-10-14T07:19:21Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T07:09:03Z",
+        "basis": "`python3 plugins/audit/tests/test_require_plan.py --selftest` in a throwaway tree at HEAD exited 1 with 4 of 234 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - k2 (house FAIL), np2 (house FAIL), np3 (house FAIL), np5 (house FAIL): SELFTEST FAILED: 230/234 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2216,21 +2233,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-14T05:29:48Z",
+      "startedAt": "2026-10-14T07:29:47Z",
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "phase",
       "testEvidence": {
-        "runId": "2026-10-14T06:44:03Z.6c512b",
-        "status": "failed",
-        "at": "2026-10-14T06:44:03Z"
+        "runId": "2026-10-14T08:29:58Z.3b91de",
+        "status": "passed",
+        "at": "2026-10-14T08:29:58Z"
       }
     },
     {

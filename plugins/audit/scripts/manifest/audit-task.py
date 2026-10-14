@@ -26,6 +26,7 @@ Usage:
                 [--park] [--id P7] [--description TEXT|-] [--area a,b]
                 [--gate CMD ... | --gate-clear]
                 [--blocked-by id,id] [--review-skill NAME]
+                [--parent-branch NAME]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py next-id bug|prop [manifest] | next-id task --phase <id> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
@@ -70,7 +71,7 @@ Usage:
                 [--gate CMD ... | --gate-clear | --gate-set entry ...
                  | --gate-drop entry ...]
                 [--area a,b] [--outcome TEXT|-]
-                [--rename TITLE|-]
+                [--rename TITLE|-] [--parent-branch NAME]
                 [--description TEXT|-] [--project-dir DIR] [--takeover] [--json]
   audit-task.py seed ["<phase title>"] [manifest]
                 [--gate CMD ... | --gate-clear] [--no-task]
@@ -2408,7 +2409,7 @@ def _journal_retarget(project, config, mpath, phase_id, changes):
 
 
 def _journal_phase_add(project, config, mpath, phase_id, title, outcome,
-                       branch=None):
+                       branch=None, parent_branch=None):
     """The `phase.add` row.
 
     The DESIRED OUTCOME rides the SUMMARY, not `details`. It belongs in the row
@@ -2417,13 +2418,19 @@ def _journal_phase_add(project, config, mpath, phase_id, title, outcome,
     a month later -- but `_journal_io.DETAILS_KEYS` is an allow-list and drops
     an unlisted key in silence, so a `details.desiredOutcome` would have been a
     field written, dropped, and believed. `details` therefore carries only the
-    allow-listed `phaseId`, which is the same join `task.add` writes."""
+    allow-listed `phaseId`, which is the same join `task.add` writes.
+
+    `parent_branch` rides `details.parent` -- already on `DETAILS_KEYS` for
+    this join, and the one other branch name a `phase.add` row can carry
+    beside the side-branch suffix `branch` names."""
     summary = "%s added: %s" % (phase_id, title)
     if outcome:
         summary += " -- %s" % outcome
     details = {"phaseId": phase_id}
     if branch:
         details["branch"] = branch
+    if parent_branch:
+        details["parent"] = parent_branch
     return _journal_row(project, config, mpath, "phase.add", summary, details)
 
 
@@ -4624,6 +4631,29 @@ def _git_answer(git_root, *argv):
     return r.returncode, r.stdout.decode("utf-8", "replace").strip()
 
 
+def _parent_branch_refusal(project, config, value):
+    """Why `--parent-branch value` cannot be written, or None.
+
+    VALIDATED AS AN EXISTING LOCAL BRANCH, and nothing weaker: a parent
+    nothing can fork from would write a phase `start` can only refuse once
+    work on it begins (`_phase_entry`'s own "forks from" refusal), by which
+    point the only route left to correct it was a hand edit of the manifest
+    -- the plan gate rightly denies that as tampering. Checking it here,
+    before the write, is what makes `parentBranch` a value the writer can
+    stand behind rather than a string copied in from the caller.
+    """
+    if not value:
+        return None
+    git_root = os.path.abspath(os.path.join(project,
+                                            (config or {}).get("gitRoot") or "."))
+    code, _sha = _git_answer(git_root, "rev-parse", "--verify", "-q",
+                             "refs/heads/" + value)
+    if code != 0:
+        return ("[audit-task] --parent-branch %r names no local branch in %s "
+                "-- nothing written" % (value, git_root))
+    return None
+
+
 def _phase_entry(git_root, meta, phase):
     """What starting work in `phase` does to its branch, decided before any write.
 
@@ -4678,9 +4708,10 @@ def _phase_entry(git_root, meta, phase):
     if here != parent:
         return {"state": "refused", "refusal": (
             "[audit-task] phase %s forks from %s (%s), and HEAD is on %s -- a phase "
-            "branch is cut from its parent. `git switch %s`, or set the phase's "
-            "parentBranch, then start again" % (pid, parent, answer["parentBasis"],
-                                                here, parent))}
+            "branch is cut from its parent. `git switch %s`, or `audit-task.py "
+            "retarget %s --parent-branch <branch>` to set the phase's parentBranch, "
+            "then start again" % (pid, parent, answer["parentBasis"], here, parent,
+                                  pid))}
     code, _sha = _git_answer(git_root, "rev-parse", "--verify", "-q",
                              "refs/heads/" + name)
     if code == 0:
@@ -7344,7 +7375,8 @@ def _phase_fields(args):
             "outcome": args.outcome or "",
             "blocked_by": _split_csv(args.blocked_by),
             "area": _split_csv(args.area),
-            "review_skill": args.review_skill}
+            "review_skill": args.review_skill,
+            "parent_branch": args.parent_branch}
 
 
 def _build_phase(pid, title, fields, gate):
@@ -7354,7 +7386,11 @@ def _build_phase(pid, title, fields, gate):
 
     `gate` arrives as an ARGUMENT rather than being derived here, because the
     caller has to print the BASIS for it and deriving it twice is two chances
-    for the value written and the value explained to stop being the same one."""
+    for the value written and the value explained to stop being the same one.
+
+    `fields["parent_branch"]`, validated by the caller as an existing local
+    branch before this is reached -- `_branch.parent_branch` is what reads it
+    back (`phase.parentBranch ?? meta.developmentBranch ?? "main"`)."""
     phase = {
         "id": pid,
         "title": title,
@@ -7380,6 +7416,8 @@ def _build_phase(pid, title, fields, gate):
         phase["area"] = areas[0] if len(areas) == 1 else areas
     if fields["review_skill"]:
         phase["reviewSkill"] = fields["review_skill"]
+    if fields.get("parent_branch"):
+        phase["parentBranch"] = fields["parent_branch"]
     return phase
 
 
@@ -7419,6 +7457,11 @@ def _locked_phase_add(args, project, config, mpath, title, out, seed=None):
     contradiction = _gate_contradiction(args)
     if contradiction:
         out(contradiction)
+        return E_USAGE
+
+    refusal = _parent_branch_refusal(project, config, args.parent_branch)
+    if refusal:
+        out(refusal)
         return E_USAGE
 
     # ABSENT and BLANK are different answers. `--id ""` falling through to the
@@ -7468,7 +7511,8 @@ def _locked_phase_add(args, project, config, mpath, title, out, seed=None):
 
     jres = _journal_phase_add(project, config, mpath, pid, title,
                               phase["desiredOutcome"],
-                              side["branch"] if side["suffix"] else None)
+                              side["branch"] if side["suffix"] else None,
+                              phase.get("parentBranch"))
     index_note = _index_dirty_note(written, mpath, project, pid)
     # ALWAYS None HERE, and not asked for: `_build_phase` seeds `branch: None`
     # (manifest-conventions -> New phase template), so a phase this write just
@@ -7505,6 +7549,8 @@ def _locked_phase_add(args, project, config, mpath, title, out, seed=None):
         out("  area: %s" % json.dumps(phase["area"]))
     if phase.get("reviewSkill"):
         out("  reviewSkill: %s" % phase["reviewSkill"])
+    if phase.get("parentBranch"):
+        out("  parentBranch: %s" % phase["parentBranch"])
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
@@ -7539,7 +7585,7 @@ def _locked_phase_add(args, project, config, mpath, title, out, seed=None):
 
 BATCH_KEYS = ("request", "openChoices", "phase", "tasks")
 BATCH_PHASE_KEYS = ("id", "title", "desiredOutcome", "description", "testGate",
-                    "blockedBy", "area", "reviewSkill")
+                    "blockedBy", "area", "reviewSkill", "parentBranch")
 BATCH_TASK_KEYS = ("key", "title", "description", "files", "outputs", "risk",
                    "model", "skills", "tests", "dependsOn", "blockedBy",
                    "fixes")
@@ -7574,7 +7620,7 @@ def _batch_phase_problems(phase):
     for key in ("title", "desiredOutcome"):
         if not _is_text(phase.get(key)):
             out.append("`phase.%s` must be a non-empty string" % (key,))
-    for key in ("id", "reviewSkill"):
+    for key in ("id", "reviewSkill", "parentBranch"):
         if key in phase and not _is_text(phase[key]):
             out.append("`phase.%s`, when present, must be a non-empty string"
                        % (key,))
@@ -7864,6 +7910,10 @@ def _locked_batch_add(args, project, config, mpath, doc, out, seed=None):
         if refusal:
             out(refusal)
             return E_USAGE
+        refusal = _parent_branch_refusal(project, config, spec.get("parentBranch"))
+        if refusal:
+            out(refusal)
+            return E_USAGE
         gate, gate_basis = _batch_phase_gate(spec, assembled)
         area = spec.get("area")
         phase = _build_phase(pid, spec["title"].strip(), {
@@ -7871,7 +7921,8 @@ def _locked_batch_add(args, project, config, mpath, doc, out, seed=None):
             "outcome": spec["desiredOutcome"],
             "blocked_by": spec.get("blockedBy") or [],
             "area": [area] if isinstance(area, str) else (area or []),
-            "review_skill": spec.get("reviewSkill")}, gate)
+            "review_skill": spec.get("reviewSkill"),
+            "parent_branch": spec.get("parentBranch")}, gate)
         phase["request"] = doc["request"]
         phase["openChoices"] = list(doc["openChoices"])
         side = _side_branch(mpath, assembled)
@@ -7940,7 +7991,8 @@ def _locked_batch_add(args, project, config, mpath, doc, out, seed=None):
 
     jrows = [] if appends else [_journal_phase_add(
         project, config, mpath, pid, phase["title"], phase["desiredOutcome"],
-        side["branch"] if side["suffix"] else None)]
+        side["branch"] if side["suffix"] else None,
+        phase.get("parentBranch"))]
     jrows.extend(_journal_add(project, config, mpath, task["id"], pid,
                               task["title"], [], basis)
                  for task, basis in zip(phase["tasks"][first:], bases))
@@ -9068,17 +9120,38 @@ def _locked_retarget(args, project, config, mpath, pid, out):
             "of what this branch was cut for." % (pid, node.get("branch")))
         return E_USAGE
 
+    # THE SAME REASON `--rename` IS REFUSED THERE: a phase already on a branch
+    # has its fork point recorded in `baseRef`, taken off the parent this field
+    # named at `start` time. Moving `parentBranch` afterwards would leave the
+    # branch forked from one parent and the record naming another, which is a
+    # disagreement rather than a correction -- the record is only correctable
+    # before the fork it describes has happened.
+    if args.parent_branch and node.get("branch"):
+        out("[audit-task] %s is already on branch %r -- its parentBranch is "
+            "where that branch forked from, and changing it now would leave "
+            "the branch and the record disagreeing about where %s came from. "
+            "Retarget before phase entry, or leave parentBranch as the record "
+            "of what this branch was cut for." % (pid, node.get("branch"),
+                                                  node.get("branch")))
+        return E_USAGE
+    if args.parent_branch:
+        refusal = _parent_branch_refusal(project, config, args.parent_branch)
+        if refusal:
+            out(refusal)
+            return E_USAGE
+
     contradiction = _retarget_gate_contradiction(args)
     if contradiction:
         out(contradiction)
         return E_USAGE
     if not (args.gate or args.gate_clear or args.gate_set is not None
             or args.gate_drop or args.area is not None
-            or args.outcome or args.description or args.rename):
+            or args.outcome or args.description or args.rename
+            or args.parent_branch):
         out("[audit-task] retarget needs one of --gate / --gate-clear / "
             "--gate-set / --gate-drop / --area / --outcome / --description / "
-            "--rename -- a call that changes nothing is a lock taken for no "
-            "reason")
+            "--rename / --parent-branch -- a call that changes nothing is a "
+            "lock taken for no reason")
         return E_USAGE
 
     changes = []
@@ -9124,6 +9197,9 @@ def _locked_retarget(args, project, config, mpath, pid, out):
         # this reaches for first.
         _moved("title", node.get("title") or "", args.rename)
         node["title"] = args.rename
+    if args.parent_branch:
+        _moved("parentBranch", node.get("parentBranch"), args.parent_branch)
+        node["parentBranch"] = args.parent_branch
     if args.outcome:
         _moved("desiredOutcome", node.get("desiredOutcome") or "", args.outcome)
         node["desiredOutcome"] = args.outcome
@@ -12872,7 +12948,7 @@ VERB_FLAGS = {
             "tests_add", "gate", "gate_clear", "dry_run", "failing_from",
             "from_file", "fixes", "bug", "introduces"),
     "add-phase": ("phase_id", "outcome", "description", "area", "review_skill",
-                  "blocked_by", "gate", "gate_clear", "park"),
+                  "blocked_by", "gate", "gate_clear", "park", "parent_branch"),
     "cancel": ("reason",),
     # `start` takes an id and writes the three fields `reference/orchestrator.md`
     # prescribes; its two flags are the exception to the readiness refusal, and
@@ -12893,7 +12969,7 @@ VERB_FLAGS = {
     "scope": ("files", "tests_mode", "tests_add", "gate", "gate_clear",
               "gate_set", "gate_drop", "description", "risk", "blocked_by", "depends_on", "introduces"),
     "retarget": ("gate", "gate_clear", "gate_drop", "gate_set", "area",
-                 "outcome", "description", "rename"),
+                 "outcome", "description", "rename", "parent_branch"),
     # `seed` writes where nothing exists yet, so it has no target to describe,
     # tag or rename -- only the one pair every gate-bearing verb offers, for a
     # caller who already knows the real command.
@@ -13037,6 +13113,18 @@ def build_parser():
     # it into the branch's `{slug}` - which is why it is corrected through a verb
     # that can refuse rather than by hand.
     p.add_argument("--rename", default="", metavar="TITLE", help=_PROSE_HELP)
+    # `add-phase` and `retarget`, for `_branch.parent_branch`'s own chain:
+    # `phase.parentBranch ?? meta.developmentBranch ?? "main"`. Validated as
+    # an existing local branch before it is written - a parent nothing can
+    # fork from writes a phase `start` can only refuse once work on it
+    # begins, by name (`_phase_entry`'s own "forks from" refusal). `retarget`
+    # refuses it once the phase has a branch, `--rename`'s own reason: the
+    # fork point it would describe is already recorded.
+    p.add_argument("--parent-branch", dest="parent_branch", default=None,
+                   metavar="NAME",
+                   help="add-phase, retarget: the branch this phase forks "
+                        "from, instead of meta.developmentBranch - an "
+                        "existing local branch, or refused")
     p.add_argument("--tests-mode", dest="tests_mode",
                    choices=["tdd", "regression", "gate-only"], default=None)
     p.add_argument("--tests-add", dest="tests_add", action="append",

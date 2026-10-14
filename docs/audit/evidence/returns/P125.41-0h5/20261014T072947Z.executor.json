@@ -1,0 +1,25 @@
+{
+  "gates": {
+    "selftests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-14T08:10:39Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage at7-block` in a throwaway tree at HEAD exited 1 with 1 of 227 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pab1 (house FAIL): SELFTEST FAILED: 225/227 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "add-phase, add-phase --from-file batch, and retarget now take --parent-branch <name>, validated in _parent_branch_refusal as an existing local branch before any write; add-phase writes phase.parentBranch and journals it under phase.add's details.parent, the batch path validates the key on phase.parentBranch the same way, and retarget writes it through _locked_retarget while refusing the flag once the phase already carries a branch (same reason --rename is refused there). _phase_entry's start-time fork refusal now names audit-task.py retarget <id> --parent-branch <branch> instead of the old dead-end sentence. Restored commands/phase.md step 4's removed sentence (Nothing measures whether you held the order when a gate is run by hand, needed by test__refs.py so3) and trimmed unrelated prose elsewhere in the file to stay at 3989/4000 bytes under tools/measure-context.py --gate's run-form ceiling, taking care not to touch substrings pinned by tools/prove-gates.py's phase_id_doc_drift row, test__proposals.py's ap5/ap6, or test__refs.py's rt1/so1-so4 (all re-verified green after each trim). plugins/audit/tests/test_audit_task.py gained pab1-pab7 in _record_cases (stage at7-block): add-phase --parent-branch writes the phase with no branch cut yet and a ready task lands in it (pab1-pab2); start run from that branch forks the phase branch from it, recording baseRef, with parentBranch unchanged (pab3); a --parent-branch naming no local branch is refused with nothing written (pab4); retarget --parent-branch on a phase already on a branch is refused like --rename, field untouched (pab5); retarget writes parentBranch onto a branchless phase, journaled as a phase.retarget field move (pab6, the allow case); start's refusal on the wrong branch names --parent-branch by name (pab7). README.md's /audit:phase row and reference/manifest-conventions.md's phase-field list document the new flag and field. Ran python3 plugins/audit/tests/test_audit_task.py --selftest --stage at7-block: 231/231 cases passed. Ran python3 plugins/audit/tests/test__refs.py --selftest: 336/336 (so3 restored). Ran python3 plugins/audit/tests/test__proposals.py --selftest: 62/62 (ap5/ap6 fixed after reverting an over-aggressive trim of the Omit id sentence). Ran python3 tools/prove-gates.py --selftest: 37/37 (phase_id_doc_drift anchor intact). Ran python3 tools/measure-context.py --gate: GATE OK, run form 3989/4000. Ran python3 tools/sweep-selftests.py --jobs 6 twice: first run (before the phase.md fix) showed 332/334 files ok with FAIL on test__proposals.py and tools/prove-gates.py, both caused by my own over-trimming of a pinned sentence; second run after the fix: 334/334 files ok, 16087 cases, exit 0.",
+    "descriptive": "add-phase, its batch form, and retarget can now set a phase's parentBranch through a validated flag instead of a hand edit the plan gate used to refuse, and start's old dead-end refusal now names the verb that fixes it."
+  },
+  "testsAdded": [
+    "pab1",
+    "pab2",
+    "pab3",
+    "pab4",
+    "pab5",
+    "pab6",
+    "pab7"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:e1239aaa57b8ab3a2277f15eed461b29686ae234519695f057ccf5abfa80290b\",\"dirtyDigest\":\"sha256:b2395b71774b36e026ec3b711aaa6d75d62a0af8f26178ed16563f842d152e9e\",\"dirtyPaths\":{\"plugins/audit/README.md\":\"0d7446bb89260d63\",\"plugins/audit/commands/phase.md\":\"9e21523e25761446\",\"plugins/audit/reference/manifest-conventions.md\":\"14f51a72aac5e60b\",\"plugins/audit/scripts/manifest/audit-task.py\":\"d50a71156821f880\",\"plugins/audit/tests/test_audit_task.py\":\"22712d852439b67c\"},\"head\":\"a7d1b5c4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/README.md\",\"plugins/audit/commands/phase.md\",\"plugins/audit/commands/task.md\",\"plugins/audit/reference/manifest-conventions.md\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:e201057b6ec063522b313468f8710d479e15cb7017a4501e56dcb266bf3711e5\",\"v\":2}"
+}
