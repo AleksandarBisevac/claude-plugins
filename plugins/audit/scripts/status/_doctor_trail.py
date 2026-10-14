@@ -427,6 +427,105 @@ def check_ttl_trade(rep, transcript_path, pricing=None):
               trade["atOneHourUSD"], five_min, floor, implication))
 
 
+def _dispatch_first_usage(path):
+    """The FIRST usage block in a subagent transcript at `path`, or None when
+    the file cannot be read or carries none - the one request that answers
+    whether THIS dispatch's start was served from a predecessor's cache."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            lines = fh.readlines()
+    except OSError:
+        return None
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue                     # a malformed line must never abort the read
+        if not isinstance(entry, dict) or entry.get("type") != "assistant":
+            continue
+        message = entry.get("message")
+        if not isinstance(message, dict):
+            continue
+        usage = message.get("usage")
+        if not isinstance(usage, dict):
+            continue
+        detail = usage.get("cache_creation")
+        w5m = w1h = 0
+        if isinstance(detail, dict):
+            w5m = _nonneg_int(detail.get("ephemeral_5m_input_tokens"))
+            w1h = _nonneg_int(detail.get("ephemeral_1h_input_tokens"))
+        return {"cacheRead": _nonneg_int(usage.get("cache_read_input_tokens")),
+               "cacheW1h": w1h, "cacheW5m": w5m}
+    return None
+
+
+def dispatch_starts(sub_dir, ul):
+    """One entry per subagent dispatch under `sub_dir`, in DISPATCH order -
+    by file mtime, which is the order a session actually spawned them in;
+    nothing INSIDE a subagent transcript carries that across files -
+    `[{"agent", "cacheRead", "cacheW1h", "cacheW5m"}, ...]`, or `[]` when the
+    directory cannot be listed or holds nothing readable.
+
+    Only the FIRST usage block of each file is read: that is the dispatch's
+    own start, which is the question this check is about. Everything the
+    agent does afterwards is its own work and answers `check_ttl_trade`'s
+    question, not this one. `ul` is the loaded `usage_ledger` module, for
+    `agent_id_of` - the one place a transcript's basename is turned into the
+    name a reader would recognise."""
+    try:
+        names = sorted(
+            (n for n in os.listdir(sub_dir) if n.endswith(".jsonl")),
+            key=lambda n: os.path.getmtime(os.path.join(sub_dir, n)))
+    except OSError:
+        return []
+    out = []
+    for name in names:
+        usage = _dispatch_first_usage(os.path.join(sub_dir, name))
+        if usage is None:
+            continue
+        out.append(dict(usage, agent=ul.agent_id_of(name)))
+    return out
+
+
+def check_dispatch_cache(rep, transcript_path):
+    """Whether each later subagent dispatch in this session started served
+    from a predecessor's cache, or had to rewrite it - documentation only,
+    the same decision 5 `check_ttl_trade` already names beside it: the
+    setting stays the user's, and this prints no figure until a transcript
+    is named. Reads EVERY subagent transcript beside the named session's own
+    (`usage_ledger.subagent_dir`), never the main session's own entries -
+    `check_ttl_trade`'s main-loop question is answered there instead."""
+    if not transcript_path:
+        rep.ok("dispatch cache",
+               "no recorded session was named, so there is nothing to "
+               "measure - pass --transcript <path to a session's own "
+               "transcript .jsonl>; this is documentation only and prints no "
+               "figure until one is named")
+        return
+    ul = _load("usage_ledger", "usage_ledger.py")
+    sub_dir = ul.subagent_dir(transcript_path)
+    starts = dispatch_starts(sub_dir, ul)
+    if len(starts) < 2:
+        rep.ok("dispatch cache",
+               "%s carries fewer than two subagent dispatches, so no later "
+               "start can be compared against its predecessor" % (sub_dir,))
+        return
+    for prev, cur in zip(starts, starts[1:]):
+        if cur["cacheRead"] > 0:
+            rep.ok("dispatch cache",
+                   "dispatch %s read %d cached token(s) at its start, served "
+                   "from %s's" % (cur["agent"], cur["cacheRead"], prev["agent"]))
+        else:
+            wrote = cur["cacheW1h"] + cur["cacheW5m"]
+            rep.ok("dispatch cache",
+                   "dispatch %s was NOT served from %s's start - it wrote %d "
+                   "token(s) at its own instead" % (cur["agent"], prev["agent"],
+                                                    wrote))
+
+
 # --- checks: which copy of the plugin ran them ----------------------------------
 # WHAT EACH SIDE CAN HONESTLY KNOW, established before anything was designed
 # around it. This command knows the copy it is ITSELF running from, off

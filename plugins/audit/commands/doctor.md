@@ -46,6 +46,26 @@ five-minute TTL instead. Once a gap reaches five minutes that price is a floor, 
 least`: it leaves out the re-writes the expired cache forces. Documentation only — it recommends nothing the gaps do not
 support, and the setting stays yours.
 
+## The `git instructions` line — read-only, same as `sandbox`
+
+Always printed, in every run. A plugin cannot set `includeGitInstructions` or
+`CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS` for its users — `plugin.json` carries only
+`agent` and `subagentStatusLine` — so this row only reads the effective value and
+names where it came from: the env var first, then `.claude/settings.local.json`,
+`.claude/settings.json`, then the user's own `settings.json`, the same precedence
+`sandbox` already reads. `off (env)` / `off (<scope> settings)` / `on (default)` are
+the three shapes; the README's cost section names the setting and recommends it at
+project level, and this row never recommends anything itself.
+
+## `--transcript` also drives `dispatch cache`
+
+Printed beside `ttl trade`, from the same session named with `--transcript`. Where
+`ttl trade` reads the main loop's own requests, `dispatch cache` reads every
+subagent transcript beside it (`<session>/subagents/agent-*.jsonl`) and asks, for
+each dispatch after the first, whether its own first request was served from a
+predecessor's cache or had to write it again. Documentation only, like `ttl trade` —
+it prints no figure without `--transcript` and recommends nothing.
+
 ## The `evidence` line — the plan's pointers against the ledger, both ways
 
 In every run, no flag. A `testEvidence` block is a *cache*: it names a `runId`, and the run

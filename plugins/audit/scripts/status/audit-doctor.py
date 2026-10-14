@@ -131,6 +131,7 @@ RECENT_DAYS = _base.RECENT_DAYS
 
 check_interpreter = _setup.check_interpreter
 check_sandbox = _setup.check_sandbox
+check_git_instructions = _setup.check_git_instructions
 plugin_integrity = _setup.plugin_integrity
 check_plugin_files = _setup.check_plugin_files
 settings_sources = _setup.settings_sources
@@ -163,6 +164,7 @@ check_running_plugin = _trail.check_running_plugin
 check_ledger = _trail.check_ledger
 check_unpriced_models = _trail.check_unpriced_models
 check_ttl_trade = _trail.check_ttl_trade
+check_dispatch_cache = _trail.check_dispatch_cache
 _journal_never_committed = _trail._journal_never_committed
 _anchor_row = _trail._anchor_row
 check_journal = _trail.check_journal
@@ -198,6 +200,10 @@ def diagnose(project, deep=False, transcript_path=None):
     # asks whether the guards can run at all, and this asks whether the layer they
     # lean on is there. Neither takes the cfg/git/manifest trio, so both precede it.
     check_sandbox(rep, project)
+    # Beside it: the same settings files answer a second question this
+    # command cannot set either way - where includeGitInstructions is coming
+    # from. Read-only and documentation-only, like `check_ttl_trade` below.
+    check_git_instructions(rep, project)
     # ...and the layer BELOW that one: the plugin's own files. This product ships
     # hooks that run on every tool call, so whether those files are the published
     # ones is the first question a careful operator asks, and it is asked before
@@ -263,6 +269,10 @@ def diagnose(project, deep=False, transcript_path=None):
         except Exception:
             cost_state = None
     check_ttl_trade(rep, transcript_path, pricing)
+    # Directly after: the same transcript's subagent dispatches, read for a
+    # different question - whether a LATER dispatch's own start was served
+    # from a predecessor's cache. Documentation only, like the row above.
+    check_dispatch_cache(rep, transcript_path)
     check_unpriced_models(rep, project, cfg, manifest_rel, pricing, cost_state)
     check_journal(rep, project, cfg, cfg_mod, git_root)
     # Directly after: `check_journal` asks whether the trail still HOLDS, and

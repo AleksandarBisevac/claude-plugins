@@ -2051,6 +2051,80 @@ def _ttl_trade_cases(check):
         _harness.remove_tree(tmp)
 
 
+# --- check_dispatch_cache --------------------------------------------------------
+def _dispatch_line(mid, cache_read=0, cache_w1h=0, cache_w5m=0,
+                   model="claude-sonnet-5"):
+    return json.dumps({
+        "type": "assistant",
+        "timestamp": _ttl_iso(_TTL_BASE_TS),
+        "message": {
+            "id": mid, "model": model,
+            "usage": {"input_tokens": 10, "output_tokens": 5,
+                     "cache_read_input_tokens": cache_read,
+                     "cache_creation": {"ephemeral_5m_input_tokens": cache_w5m,
+                                       "ephemeral_1h_input_tokens": cache_w1h}}}})
+
+
+def _dispatch_cache_cases(check):
+    ul = _loader.load_script("usage_ledger.py", modname="dt_dispatch_ledger")
+    tmp = _harness.fixture_root("doctor-trail-dispatch-")
+    try:
+        rep = base.Report()
+        M.check_dispatch_cache(rep, None)
+        check("dt70 no transcript named is a documentation-only OK that names "
+              "the flag: %r" % (_detail(rep, "dispatch cache"),),
+              _levels(rep, "dispatch cache") == ["OK"]
+              and "--transcript" in _detail(rep, "dispatch cache"))
+
+        session = os.path.join(tmp, "s1.jsonl")
+        with open(session, "w", encoding="utf-8") as fh:
+            fh.write("")
+        sub_dir = ul.subagent_dir(session)
+        os.makedirs(sub_dir)
+
+        rep = base.Report()
+        M.check_dispatch_cache(rep, session)
+        check("dt71 no subagent transcripts at all is OK, naming that fewer "
+              "than two dispatches were found: %r"
+              % (_detail(rep, "dispatch cache"),),
+              _levels(rep, "dispatch cache") == ["OK"]
+              and "fewer than two" in _detail(rep, "dispatch cache"))
+
+        first = os.path.join(sub_dir, "agent-a1.jsonl")
+        with open(first, "w", encoding="utf-8") as fh:
+            fh.write(_dispatch_line("m1", cache_w1h=4000) + "\n")
+        os.utime(first, (_TTL_BASE_TS, _TTL_BASE_TS))
+
+        cached = os.path.join(sub_dir, "agent-b2.jsonl")
+        with open(cached, "w", encoding="utf-8") as fh:
+            fh.write(_dispatch_line("m2", cache_read=3000) + "\n")
+        os.utime(cached, (_TTL_BASE_TS + 10, _TTL_BASE_TS + 10))
+
+        rep = base.Report()
+        M.check_dispatch_cache(rep, session)
+        detail = _detail(rep, "dispatch cache")
+        check("dt72 a later dispatch whose start reads cache names the tokens "
+              "read and the predecessor it was served from: %r" % (detail,),
+              "read 3000 cached token(s)" in detail and "a1" in detail
+              and "b2" in detail)
+
+        rewritten = os.path.join(sub_dir, "agent-c3.jsonl")
+        with open(rewritten, "w", encoding="utf-8") as fh:
+            fh.write(_dispatch_line("m3", cache_w1h=1500) + "\n")
+        os.utime(rewritten, (_TTL_BASE_TS + 20, _TTL_BASE_TS + 20))
+
+        rep = base.Report()
+        M.check_dispatch_cache(rep, session)
+        detail2 = _detail(rep, "dispatch cache")
+        check("dt73 ...while one that rewrites it instead of reading names "
+              "the tokens it wrote, and says it was not served from cache: %r"
+              % (detail2,),
+              "wrote 1500 token(s)" in detail2 and "c3" in detail2
+              and "NOT served" in detail2)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _coupling_cases(check):
     """`check_couplings` - a learned coupling that points at a file git no
     longer tracks is NAMED with the command that drops it, and one that has
@@ -2564,6 +2638,7 @@ def _selftest():
         _cases(check)
         _ledger_failure_cases(check)
         _ttl_trade_cases(check)
+        _dispatch_cache_cases(check)
         _coupling_cases(check)
     return _harness.run(body)
 

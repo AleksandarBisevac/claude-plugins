@@ -285,6 +285,58 @@ def _cases(check):
           _levels(rep, "settings") == ["WARNING"]
           and "not applying" in _detail(rep, "settings"))
 
+    # -------------------------------------------------- check_git_instructions
+    # N4. A plugin cannot set includeGitInstructions or
+    # CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS for its users (plugin.json carries
+    # only `agent` and `subagentStatusLine`), so this is read-only: it reads
+    # the effective value the same way `check_sandbox` already reads a scalar
+    # - env var, then project local, then project, then user settings - and
+    # names which one decided.
+    def gitinst_rep(env=None, local=None, proj=None, user=None):
+        box = tempfile.mkdtemp(prefix="doctor-gitinst-")
+        home = os.path.join(box, "home")
+        proj_dir = os.path.join(box, "proj")
+        for base_dir, obj, name in (
+                (proj_dir, local, "settings.local.json"),
+                (proj_dir, proj, "settings.json"),
+                (home, user, "settings.json")):
+            if obj is None:
+                continue
+            os.makedirs(os.path.join(base_dir, ".claude"), exist_ok=True)
+            with open(os.path.join(base_dir, ".claude", name), "w",
+                      encoding="utf-8") as fh:
+                fh.write(json.dumps(obj))
+        rep = base.Report()
+        saved = os.environ.get("CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS")
+        if env is None:
+            os.environ.pop("CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS", None)
+        else:
+            os.environ["CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS"] = env
+        try:
+            M.check_git_instructions(rep, proj_dir, home=home)
+        finally:
+            if saved is None:
+                os.environ.pop("CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS", None)
+            else:
+                os.environ["CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS"] = saved
+        _harness.remove_tree(box)
+        return rep
+
+    rep = gitinst_rep(env="1")
+    check("dgi1 the env var set reports 'off (env)', outranking any settings "
+          "file: %r" % (_detail(rep, "git instructions"),),
+          "off (env)" in _detail(rep, "git instructions"))
+
+    rep = gitinst_rep(proj={"includeGitInstructions": False})
+    check("dgi2 a project settings.json includeGitInstructions false reports "
+          "'off (project settings)': %r" % (_detail(rep, "git instructions"),),
+          "off (project settings)" in _detail(rep, "git instructions"))
+
+    rep = gitinst_rep()
+    check("dgi3 neither the env var nor any settings file declares it, so it "
+          "reports 'on (default)': %r" % (_detail(rep, "git instructions"),),
+          "on (default)" in _detail(rep, "git instructions"))
+
     # -------------------------------------------------------------- check_git
     have_git = bool(shutil.which("git"))
     if not have_git:

@@ -294,6 +294,46 @@ def check_sandbox(rep, project, home=None):
                  fix)
 
 
+def check_git_instructions(rep, project, home=None):
+    """Where the effective `includeGitInstructions` setting comes from.
+
+    A plugin cannot set this for its users - `plugin.json` carries only `agent`
+    and `subagentStatusLine` - so this is read-only, the same contract
+    `check_sandbox` already keeps for a scalar setting: the env var outranks
+    every settings file, and among the files the highest-precedence one that
+    DEFINES the key decides (`settings_sources`'s own order). Reported as OK
+    in every branch - this is documentation, not a posture this plugin can
+    grade - and the README's cost section names the setting and the
+    recommendation; this row only says what is actually in effect, and where
+    that reading came from."""
+    env = os.environ.get("CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS")
+    if env is not None and env.strip().lower() not in ("", "0", "false", "no"):
+        rep.ok("git instructions",
+               "off (env) - CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS is set, so "
+               "Claude Code's built-in git instructions are left out of "
+               "every session's context")
+        return
+    sources, _broken = read_settings(project, home=home)
+    for scope, obj in sources:
+        if "includeGitInstructions" in obj:
+            if obj["includeGitInstructions"] is False:
+                rep.ok("git instructions",
+                       "off (%s settings) - includeGitInstructions is false, "
+                       "so Claude Code's built-in git instructions are left "
+                       "out of every session's context" % (scope,))
+            else:
+                rep.ok("git instructions",
+                       "on (%s settings) - includeGitInstructions is set and "
+                       "not false, so Claude Code's built-in git instructions "
+                       "are present" % (scope,))
+            return
+    rep.ok("git instructions",
+           "on (default) - neither CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS nor "
+           "includeGitInstructions is declared anywhere this command can "
+           "read, so Claude Code's built-in git instructions are present in "
+           "every session")
+
+
 # --- the plugin's own files -------------------------------------------------------
 # WHY THIS PRODUCT OWES THE CHECK MORE THAN MOST. It installs hooks that run on
 # every tool call, so "are those files the ones that were published" is the first
