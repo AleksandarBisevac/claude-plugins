@@ -1808,7 +1808,7 @@
     {
       "id": "P125.35-0h5",
       "title": "Every record a wave member's gate reads is the phase tree's",
-      "status": "in_progress",
+      "status": "done",
       "description": "F648, the second instance of F619's class (a wave member reads its own tree's stale plan). Wave 1 was cut at c51a9ef5; record-only commits then landed on the phase tree, and every member's gate ran validate and check-example-ledgers against the member tree's docs/audit, i.e. stale records: red twice for nothing the members did, fixed only by checking out the phase HEAD's docs/audit in each member. Integration already defines the record paths (integrate-task.record_paths: manifest pair, journal dir, evidence dir) as the phase tree's. One invariant through that one definition: before each member gate (and any verb run in a member tree that reads records) the drive brings the member's record paths to the phase tree's committed records, never touching work paths. No per-check special case.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1845,14 +1845,22 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "af29d83c75ea",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: new refresh_member_records(ctx, state, task, tree), called in advance() before every member gate. It runs integrate-task.py <manifest> <task> --project <p> --refresh-records --json and relays a refusal as a stop. The record set it gets back is stored on state.wave.records. tree_holds_only_integrated(ctx, tree, records=()) now skips paths under those records, so a closed member's tree whose only difference is its refreshed records is still taken down (before this, such a tree was kept). integrate-task.py (NOT in the task's files; the plan gate let the edit through without a refusal): new refresh_records() and a --refresh-records flag. It works through record_paths, the one definition. Every record file the phase HEAD holds is checked out into the task tree, a tracked or untracked record file the HEAD lacks is removed, and `git reset -q -- <records>` puts the index back at the tree's base. Work paths are never named. run-test-gate.py: task_changed_paths/affected_steps take records; with --tree, paths under _evidence_io.recorded_paths are left out of the member's changed set, so refreshed records do not feed the affected selection. Tests: test_drive_phase.py has new blocks wq-block (wq1, wq2, wq3) and wqm-block (wq1m: a no-op refresh gets no green row; wq2m: a refresh that also checks out src changes the work bytes). In the fixture, P1.1's gate gains check_records.py, which compares the member tree's docs/audit with the main worktree's HEAD; P1.2's gate is red so its tree survives to be read. After the wave is cut, the phase tree commits a task add plus a recorded gate row: manifest, evidence and journal. wt7's mutant lambda was updated for the new signature. test_run_test_gate.py has new rp-block (rp1 records excluded, rp2 the second direction). Separate mutation probe (scratch, module-level mutant): with the records skip removed from tree_holds_only_integrated, P1.1's tree was kept, so wq3 reads it. Runs: test_drive_phase wq/wqm 5/5; test_run_test_gate.py --selftest ALL PASS 533/533; tools/sweep-selftests.py exit 0, 334/334 files ok, 16133 cases; ruff all checks passed; vermin exit 0.",
+        "descriptive": "Before each wave member's gate, the drive now brings that member's record paths (manifest pair, journal, evidence) to the phase tree's committed records, through record_paths. Record-only commits on the phase tree no longer turn member gates red, and work files are untouched."
       },
       "startedAt": "2026-10-14T10:32:19Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T12:11:39Z",
+      "verifiedBy": [
+        "wq1 a wave is cut, the phase tree then commits a record-only commit (a task add), and the member's gate is green: its record checks see the phase tree's manifest pair, journal and evidence",
+        "wq2 the refresh touches record paths only - a member's work files are byte-identical before and after it",
+        "wq3 a closed member's tree whose only difference from the phase tree is its refreshed records is still taken down",
+        "wq1m RED TWIN: a driver that does not refresh a member's records records no green row",
+        "wq2m RED TWIN: a refresh that also checks out work paths leaves a member's work files changed",
+        "rp1 a member tree's changed paths leave out every path at or under a record path",
+        "rp2 with no record paths named, the records are listed like any change"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T12:09:52Z.e3083e",
@@ -1864,7 +1872,18 @@
           "at": "2026-10-14T12:11:38Z",
           "text": "Red-first proved by the orchestrator (the helper ran the fix without integrate-task.py, then outside the files): throwaway tree at 573bc13c with only the two new test files copied in, __pycache__ purged -> test_drive_phase.py --stage wq-block --stage wqm-block exit 1, 1/5 (FAIL wq1, wq2, wq3, wq2m); test_run_test_gate.py exit 1, 531/532 (rp-block raised: task_changed_paths takes no records). With integrate-task.py, drive-phase.py and run-test-gate.py from the work copied in: 5/5 and 533/533, exit 0. Scope widened with integrate-task.py (record_paths lives there) and the task gate re-recorded green."
         }
-      ]
+      ],
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "af29d83c75ea",
+        "at": "2026-10-14T12:11:39Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T11:48:13Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases wq1 (house FAIL), wq2 (house FAIL), wq3 (house FAIL), wq2m (house FAIL), but with the working tree's implementation the task's tests do not all pass (SELFTEST FAILED: 239/264 cases passed), so the red is not one the fix turns green - SELFTEST FAILED: 260/264 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
+      }
     },
     {
       "id": "P125.36-0h5",
@@ -1943,7 +1962,8 @@
       "description": "F650. P125.19's executor filed a half-delivered return naming the files the rest needed; the orchestrator widened its files with audit-task scope and the next drive step closed it anyway ('stamp current; closed P125.19 at 19836db'), because the close compares the stamp with the tree, not with the task's scope as it now stands. The close compares the scope the filing was made under (the stamp's scope / scopeDigest) with the task's current files; a difference is a decision with the two lists, not a close.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/tests/test_drive_phase.py"
+        "plugins/audit/tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1979,7 +1999,12 @@
       "startedAt": "2026-10-14T10:32:20Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-14T12:52:40Z.e98912",
+        "status": "passed",
+        "at": "2026-10-14T12:52:40Z"
+      }
     },
     {
       "id": "P125.38-0h5",

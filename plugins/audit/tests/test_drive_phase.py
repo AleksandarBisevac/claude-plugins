@@ -4922,6 +4922,67 @@ def _brief_scope_cases(check):
           % (third,), instruction(third)[1] == "no-executor-return")
 
 
+def _scope_change_cases(check):
+    """A scope widened after the executor filed is a decision naming both lists,
+    never a close; with the scope as filed the close goes on."""
+    M, why = _load("drive_phase_scope_change")
+    if M is None:
+        check("sc1 the driver loads", False, why)
+        return
+    root, mpath = _repo("scope-change", task_ids=TASKS[:1], per_task="phase")
+    _next(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    with _Env(root):
+        scode, sout = _verb(root, "audit-task.py", [
+            "scope", "P1.1", mpath, "--project-dir", root,
+            "--files", "src/f1.txt,src/f2.txt"])
+    code, text = _next(M, root, mpath)
+    task = tasks_of(mpath).get("P1.1", {})
+    check("sc1 an executor files, the task's files are then widened by scope, and "
+          "the next drive step prints a decision (dispatch again under the new "
+          "scope, or close with a recorded reason), never a close: %r"
+          % ((scode, sout[-200:], code, task.get("status"), text[:500]),),
+          scode == 0 and instruction(text)[1] == "scope-changed"
+          and task.get("status") == "in_progress" and M.CLOSED not in text
+          and "src/f2.txt" in text and "added" in text and "dropped" in text)
+    code, again = _next(M, root, mpath)
+    check("sc1b the decision is held, not re-derived into a close, until it is "
+          "answered: %r" % (again[:300],),
+          instruction(again)[1] == "scope-changed"
+          and tasks_of(mpath).get("P1.1", {}).get("status") == "in_progress")
+    code, closed = _next(M, root, mpath, "--answer", "close", "--reason",
+                         "the widened file is context only")
+    task = tasks_of(mpath).get("P1.1", {})
+    check("sc2 `close` with a reason goes on to the close under the widened scope: "
+          "%r" % ((code, task.get("status"), closed[:400]),),
+          task.get("status") == "done" and "%s P1.1" % (M.CLOSED,) in closed)
+
+    root, mpath = _repo("scope-same", task_ids=TASKS[:1], per_task="phase")
+    _next(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    code, text = _next(M, root, mpath)
+    task = tasks_of(mpath).get("P1.1", {})
+    check("sc3 with no scope change after the filing the close proceeds as today: "
+          "%r" % ((code, task.get("status"), text[:400]),),
+          task.get("status") == "done" and "%s P1.1" % (M.CLOSED,) in text
+          and "scope-changed" not in text)
+
+    root, mpath = _repo("scope-retry", task_ids=TASKS[:1], per_task="phase")
+    _next(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    with _Env(root):
+        _verb(root, "audit-task.py", ["scope", "P1.1", mpath, "--project-dir",
+                                      root, "--files", "src/f1.txt,src/f2.txt"])
+    _next(M, root, mpath)
+    before = _attempts(mpath, "P1.1")
+    code, again = _next(M, root, mpath, "--answer", "retry")
+    check("sc4 `retry` dispatches the executor again under the new scope and "
+          "spends one attempt: %r" % ((code, before, _attempts(mpath, "P1.1"),
+                                       again[:300]),),
+          instruction(again) == ("dispatch", "executor", "P1.1")
+          and _attempts(mpath, "P1.1") == before + 1)
+
+
 _TALLY = "%s: %d/%d cases " + "passed"
 
 
@@ -4981,7 +5042,8 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("pf-block", "_preflight_cases"),
           ("tx-block", "_text_cases"),
           ("ce-block", "_close_evidence_cases"),
-          ("bs-block", "_brief_scope_cases"), ("fv-block", "_falsifier_cases"),
+          ("bs-block", "_brief_scope_cases"),
+          ("sc-block", "_scope_change_cases"), ("fv-block", "_falsifier_cases"),
           ("sb-block", "_stage_cases"))
 
 

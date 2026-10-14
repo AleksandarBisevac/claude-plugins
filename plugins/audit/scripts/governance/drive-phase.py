@@ -213,6 +213,7 @@ import _wave  # noqa: E402  (select: which ready tasks may run together)
 import _doctor_setup  # noqa: E402  (hooks_task_binding: whether the loaded hooks bind a task tree)
 import _runner_collects  # noqa: E402  (collects: whether a runner takes a test path)
 import _gate_derive  # noqa: E402  (entry_runner: which runner a gate entry invokes)
+import _tree_stamp  # noqa: E402  (parse_stamp, declared_scope: the scope a filing was made under)
 import _scope_companions  # noqa: E402  (derive: the runner config a widen declares)
 
 E_OK, E_STOPPED, E_USAGE = 0, 1, 2
@@ -310,6 +311,12 @@ STEPS = {
                 "and filed no return for this start",
         "rule": ("recommended: resume - it spends no attempt; retry spends one "
                  "and recuts work that may be finished.",)},
+    "decide-scope-changed": {
+        "line": "decide scope-changed %(task)s: the filing was made under a "
+                "different file list: %(why)s",
+        "rule": ("retry dispatches the executor again under the scope the task "
+                 "holds now and spends an attempt; close goes on with --reason "
+                 "recorded; block needs a reason.",)},
     "resume-executor": {
         "line": "resume the executor dispatched for %(task)s (the agent id your "
                 "dispatch returned) and have it run its submit block",
@@ -423,6 +430,10 @@ DECISIONS = {
     "gate-red": (("retry", "rerun", "block"), ("block",)),
     "no-executor-return": (("resume", "retry", "block"), ("block",)),
     "no-reviewer-return": (("redispatch", "not-asked"), ("not-asked",)),
+    # A filed executor return whose stamp holds a file list other than the one
+    # the task declares now: `retry` dispatches again under the new scope (an
+    # attempt spent), `close` goes on with the reason recorded.
+    "scope-changed": (("retry", "close", "block"), ("close", "block")),
     "high-risk": (("confirm", "block"), ("block",)),
     "no-change": (("no-change", "retry"), ("no-change",)),
     # A wave member's integration onto the phase tree: refused by name (a
@@ -857,6 +868,36 @@ def stale_brief(state, task):
     return isinstance(held, dict) and held.get("scope") != brief_scope(task)
 
 
+def scope_change(executor, task):
+    """`(was, now)` when the stamp on `executor`'s filing holds a file list other
+    than the one `task` declares now, else None. A filing with no readable stamp
+    says nothing about the scope it was made under, so it is no change."""
+    stamp, problem = _tree_stamp.parse_stamp((executor or {}).get("stamp"))
+    if problem is not None:
+        return None
+    was = list(stamp.get("scope") or [])
+    now = _tree_stamp.declared_scope(task.get("files"))
+    return None if was == now else (was, now)
+
+
+def scope_change_why(was, now):
+    """The two lists a scope change is between, as the decision's one clause."""
+    added = [f for f in now if f not in was]
+    dropped = [f for f in was if f not in now]
+    return _clip("filed under %d files, now %d; added [%s]; dropped [%s]" % (
+        len(was), len(now), ", ".join(added), ", ".join(dropped)), 180)
+
+
+def accept_scope(ctx, state, task, why):
+    """Record that the scope `task` holds now is the one its filing is closed
+    under, so the drive does not ask about it again within this start."""
+    manifest, _phase = load_phase(ctx)
+    held = _mio.tasks_by_id(manifest).get(task["id"]) or task
+    _mark(state, "scopeAccepted", held, {
+        "scope": _tree_stamp.declared_scope(held.get("files")), "why": why})
+    write_state(ctx, state)
+
+
 def project_relative(ctx, path):
     """`path` from the project root when it lies inside it, else as given. The
     agent works from the project root, and a print whose size grew with where
@@ -1066,6 +1107,16 @@ def advance(ctx, state, manifest, phase, task, tree=None):
         if _marked(state, "dispatched-executor", task):
             return decision(ctx, state, "no-executor-return", task, "")
         return dispatch(ctx, state, phase, task, "executor")
+    changed = scope_change(executor, task)
+    if changed is not None:
+        # Before the gate mark is read: a gate recorded under the old scope does
+        # not make the new one decided, and the close refuses a changed list
+        # three steps later with a sentence about digests.
+        accepted = _marked(state, "scopeAccepted", task)
+        if not (isinstance(accepted, dict) and accepted.get("scope") == changed[1]):
+            return decision(ctx, state, "scope-changed", task,
+                            scope_change_why(*changed),
+                            extra={"was": changed[0], "now": changed[1]})
     key, problem = review_key(ctx, phase, task)
     if problem:
         return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], problem)
@@ -1382,6 +1433,7 @@ def integrate_member(ctx, state, phase, task):
                 ctx, "scope", task["id"], "--files", ",".join(files)))
             if stop is not None:
                 return stop
+            accept_scope(ctx, state, task, "widened by the integration answer")
             ctx["did"].append("%s widened by %d path(s)" % (
                 task["id"], len(word.get("paths") or [])))
         args = [ctx["manifest"], task["id"], "--project", ctx["project"], "--json"]
@@ -1859,6 +1911,11 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
             return stop
         ctx["did"].append("blocked %s" % (task["id"],))
         return keep_record(ctx, phase)
+    if answer == "close":
+        accept_scope(ctx, state, task, reason)
+        ctx["did"].append("%s: scope change accepted (%s)" % (
+            task["id"], _clip(reason, 80)))
+        return None
     if answer == "resume":
         # The dispatch mark stays, so a return still unfiled is asked about
         # again on the next `next`; no attempt is spent.
