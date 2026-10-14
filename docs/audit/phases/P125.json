@@ -1710,7 +1710,12 @@
       "startedAt": "2026-10-14T08:30:00Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-14T09:34:51Z.78ecb4",
+        "status": "failed",
+        "at": "2026-10-14T09:34:51Z"
+      }
     },
     {
       "id": "P125.34-0h5",
@@ -2377,7 +2382,12 @@
           "at": "2026-10-14T08:48:41Z",
           "text": "Red-first proved by the orchestrator (the helper cannot prove an .mjs check): in the task tree, the refused-save round's awaitSaveCard call replaced by HEAD's fixed 700 ms read with the new 1.2 s response delay kept -> node tools/capture-screenshots.mjs --check --only panel exit 1, 'FAIL settings: a refused save drew no card'; restored (cmp equal); the executor's two runs with the change exit 0."
         }
-      ]
+      ],
+      "testEvidence": {
+        "runId": "2026-10-14T09:42:58Z.8d1f1f",
+        "status": "failed",
+        "at": "2026-10-14T09:42:58Z"
+      }
     },
     {
       "id": "P125.44-0h5",
@@ -2431,7 +2441,12 @@
       "startedAt": "2026-10-14T08:30:07Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-14T09:51:00Z.40ada5",
+        "status": "failed",
+        "at": "2026-10-14T09:51:00Z"
+      }
     },
     {
       "id": "P125.45-0h5",
