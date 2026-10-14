@@ -162,7 +162,7 @@ def read_provenance(tree_path, run=None, expect_branch=None, expect_task=None):
                 "basis": "no %s in %s - this worktree was not created by the plugin"
                          % (PROVENANCE_FILE, admin)}
     try:
-        with open(path, "r") as fh:
+        with open(path, "r", encoding="utf-8") as fh:
             rec = json.load(fh)
     except Exception as exc:
         return {"ours": None, "record": None,

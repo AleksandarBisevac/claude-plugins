@@ -700,7 +700,8 @@ def _worktree_key_uncached(where):
     try:
         out = subprocess.run(["git", "-C", where, "rev-parse", "--git-dir",
                               "--git-common-dir"], capture_output=True,
-                             text=True, timeout=5)
+                             text=True, encoding="utf-8",
+                             errors="surrogateescape", timeout=5)
     except Exception:
         return None
     lines = [ln.strip() for ln in out.stdout.splitlines()] \

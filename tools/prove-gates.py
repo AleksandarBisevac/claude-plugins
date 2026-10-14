@@ -527,6 +527,14 @@ TABLE = (
   "def text_write_newline_violations(dirs=None, pending=None):\n"
   "    return []",
   OUT, "nw1"),
+ # The encoding rule, crippled. It is what keeps a text handle or a text-mode
+ # subprocess from decoding in the locale's encoding, and a version reporting
+ # nothing reads exactly like a tree whose every text I/O names UTF-8.
+ ("text_encoding_violations", S + "_output.py", "replace",
+  "def text_encoding_violations(dirs=None, pending=None):",
+  "def text_encoding_violations(dirs=None, pending=None):\n"
+  "    return []",
+  OUT, substr("with no encoding anywhere under scripts/ or hooks/")),
  # The shell-script rule, crippled. It is what keeps a script from finding its
  # own directory in a way a backslash-only $0 defeats.
  ("sh_self_dir_violations", S + "_output.py", "replace",
@@ -1624,6 +1632,23 @@ ALLOW = (
   "                if True:\n"
   "                    violations.append((name, node.lineno, _NEWLINE_WRITE))",
   OUT, "nw3"),
+ # The encoding rule, widened to binary handles: a `rb` handle decodes nothing,
+ # and convicting it would teach authors to name an encoding on bytes.
+ ("text_encoding_violations", S + "_output.py", "replace",
+  "        return \"b\" not in mode.value",
+  "        return True", OUT, "en2"),
+ # ...and widened past the encoding a subprocess names: the fix itself, a
+ # `text=True` beside `encoding="utf-8"`, would be convicted.
+ ("text_encoding_violations", S + "_output.py", "replace",
+  "    if name in _TEXT_RUNNERS and _text_switched(call) \\\n"
+  "            and _keyword(call, \"encoding\") is None:",
+  "    if name in _TEXT_RUNNERS and _text_switched(call):",
+  OUT, "en2"),
+ # ...and its pending table ignored: a file the table names while it still
+ # holds such a site would be convicted anyway.
+ ("text_encoding_violations", S + "_output.py", "replace",
+  "            if name in pending:\n                continue\n",
+  "", OUT, "en3"),
  # The shell-script rule, widened to comments: a comment may name the pattern
  # it explains, and convicting it would make the explanation unwritable.
  ("sh_self_dir_violations", S + "_output.py", "replace",

@@ -145,7 +145,10 @@ def _nul_list(raw):
 def state_file(git_root):
     """The state file's path: in the phase tree's git directory, so no `git status`
     sees it and no commit can carry it."""
-    rel = _git_ok(git_root, ["rev-parse", "--git-path", STATE_NAME]).decode().strip()
+    # A path: a byte that is not UTF-8 stays the same byte rather than naming
+    # another file.
+    rel = _git_ok(git_root, ["rev-parse", "--git-path", STATE_NAME]).decode(
+        "utf-8", "surrogateescape").strip()
     return rel if os.path.isabs(rel) else os.path.join(git_root, rel)
 
 
@@ -385,7 +388,7 @@ def _integrate(manifest, phase, task, manifest_path, project, git_root, undeclar
     if not base:
         return _refuse(answer, "no-task-tree", [], [task_id],
                        "the marker of %s records no base commit" % (tree,))
-    head = _git_ok(git_root, ["rev-parse", "HEAD"]).decode().strip()
+    head = _git_ok(git_root, ["rev-parse", "HEAD"]).decode("utf-8", "replace").strip()
     answer = dict(answer, tree=tree, base=base, headBefore=head)
     sfile = state_file(git_root)
     entries = _load_state(sfile)
@@ -557,7 +560,8 @@ def refresh_records(manifest, phase, task, manifest_path, project, git_root):
             return E_REFUSED, dict(answer, error=tree, sentence=(
                 "records not refreshed: %s" % (tree,)))
         records = record_paths(manifest, phase, manifest_path, project, git_root)
-        head = _git_ok(git_root, ["rev-parse", "HEAD"]).decode().strip()
+        head = _git_ok(git_root, ["rev-parse", "HEAD"]).decode(
+            "utf-8", "replace").strip()
         answer = dict(answer, tree=tree, head=head, records=records)
         if not records:
             return E_OK, dict(answer, sentence="task %s: no record path lies "

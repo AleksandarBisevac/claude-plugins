@@ -4203,7 +4203,7 @@
     {
       "id": "P125.67-0h5",
       "title": "The Windows user-path shape does not read escaped control characters as path segments",
-      "status": "in_progress",
+      "status": "done",
       "description": "CI run 38645130027 (every leg running tools/check-committed-pii.py, ci/p125 at c317df64): the P125.66 return's text describing CRLF bytes as `<outside-repo>` (JSON-escaped) was reported as `windows-user-path` at two columns, and q26/q27/q27b/q7 went red with it. This is the SECOND instance of the class: check-committed-pii's BASELINE already carries rows for P82 text 'with the carriage-return and newline escapes spelled out as escaped backslash sequences. The detector reads the escapes as path separators; no path.' A baseline per instance is the patch; the invariant is in the shape: `_machine_paths._MACHINE_PATH_SHAPES` 'windows-user-path' second alternative (`\\\\{2,4}[A-Za-z0-9._-]+\\\\{1,2}[A-Za-z0-9._$-]+\\\\`) accepts one-character segments, which is exactly an escape sequence. Require a segment shape no escape sequence has (at least two characters, and not a lone escape letter), keep every real UNC and escaped Windows home path found, remove the BASELINE rows the change makes stale (the check reports a dead baseline itself), and prove both directions: the escape text is quiet, a real escaped `<outside-repo><name>\\\\` and a `<outside-repo>` path are still found. The write scrub uses the same predicate, so the filed-return scrub inherits the fix.",
       "files": [
         "plugins/audit/scripts/_machine_paths.py",
@@ -4236,19 +4236,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "bb48485f779e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "windows-user-path UNC arm now requires server and share of 2+ chars in _machine_paths.py; added two cases to test__machine_paths.py (quiet side and found side: escaped home, escaped UNC, two-char server/share) and one case to tools/check-committed-pii.py selftest; removed two BASELINE rows made dead (P82 CRLF row and the audit-plan.json dirname example row). check-committed-pii.py exit 0 (32 findings all baselined), its --selftest 46/46, test__machine_paths 21/21, full sweep 335/335 files ok, 16273 cases.",
+        "descriptive": "Escaped control-character text no longer reads as a Windows user path; real escaped homes and UNC paths still are, and two stale baseline rows are gone."
       },
       "startedAt": "2026-10-14T22:20:16Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T23:09:21Z",
+      "verifiedBy": [
+        "escaped control characters written as backslash sequences (a CRLF described as backslash-r backslash-n, doubled for JSON) are not a Windows user path, while an escaped C:/Users/<name> home and an escaped UNC server/share path still are",
+        "every committed artifact is clean with no baseline row standing for an escape sequence read as a path"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T23:09:19Z.7aaae8",
         "status": "passed",
         "at": "2026-10-14T23:09:19Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "bb48485f779e",
+        "at": "2026-10-14T23:09:21Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T22:28:35Z",
+        "basis": "`python3 plugins/audit/tests/test__machine_paths.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 21 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, the task's run with its inline suite tools/check-committed-pii.py laid over as HEAD's copy plus its 1 test hunk(s), 2 other hunk(s) held at HEAD), each passing with the working tree's implementation - escaped control characters written as backslash sequences (a CRLF described as backslash-r backslash-n, doubled for JSON) are not a Windows user path, while an escaped C:/Users/<name> home and an escaped UNC server/share path still are (quiet side, 4 strings, found [('\\\\\\\\r\\\\\\\\r\\\\\\\\n', 'windows-user-path'), ('text \\\\\\\\r\\\\\\\\n\\\\\\\\r\\\\\\\\n done', 'windows-user-path'), ('a\\\\\\\\t\\\\\\\\b\\\\\\\\n\\\\\\\\', 'windows-user-path')]) (house FAIL): SELFTEST FAILED: 20/21 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -4314,7 +4328,12 @@
       "startedAt": "2026-10-14T22:20:18Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-14T23:29:55Z.b1ace5",
+        "status": "passed",
+        "at": "2026-10-14T23:29:55Z"
+      }
     },
     {
       "id": "P125.69-0h5",

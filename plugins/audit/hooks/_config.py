@@ -649,7 +649,8 @@ def _git_rev_parse(cwd, fields):
     import subprocess
     try:
         out = subprocess.run(["git", "-C", str(cwd), "rev-parse"] + list(fields),
-                             capture_output=True, timeout=5, text=True)
+                             capture_output=True, timeout=5, text=True,
+                             encoding="utf-8", errors="surrogateescape")
     except Exception:
         return None
     if out.returncode != 0:

@@ -1471,7 +1471,8 @@ def _git_dirty(root):
     try:
         out = subprocess.run(
             GIT_STATUS_ARGV, cwd=str(root),
-            capture_output=True, timeout=5, text=True)
+            capture_output=True, timeout=5, text=True, encoding="utf-8",
+            errors="surrogateescape")
         if out.returncode != 0:
             return (None, "no-repo")
         files = []
@@ -1696,7 +1697,9 @@ def _fresh_refs(git_root, since):
         argv += ["--git-path", ref]
     try:
         out = subprocess.run(argv, cwd=str(git_root), capture_output=True,
-                             text=True, timeout=_GIT_TIMEOUT_SECONDS)
+                             text=True, encoding="utf-8",
+                             errors="surrogateescape",
+                             timeout=_GIT_TIMEOUT_SECONDS)
     except Exception:
         return ()
     paths = out.stdout.splitlines() if out.returncode == 0 else []

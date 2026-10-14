@@ -517,7 +517,8 @@ def check_local_artifacts(rep, project, cfg, cfg_mod, manifest, git_root):
             ["git", "ls-files", "--"]
             + [_ls_files_spec(row[0], row[4]) for row in panel]
             + sorted(dirs.values()),
-            cwd=project, capture_output=True, text=True, timeout=30)
+            cwd=project, capture_output=True, text=True, encoding="utf-8",
+            errors="surrogateescape", timeout=30)
         tracked = [ln for ln in (out.stdout or "").splitlines() if ln.strip()]
     except Exception:
         rep.ok("hygiene", "git unavailable for the tracked-files check")

@@ -43,7 +43,6 @@ that each block runs in exactly one stage, since a cut half-made runs cases
 twice or never and a green run looks the same either way.
 """
 import argparse
-import ast
 import contextlib
 import io
 import json
@@ -671,7 +670,8 @@ def _decide_cases(check):
           and bad == M.E_USAGE and unreasoned == M.E_USAGE
           and blocked == 0 and status == "blocked")
     dirty = subprocess.run(["git", "status", "--porcelain", "--", "docs/audit"],
-                           cwd=root, capture_output=True, text=True).stdout
+                           cwd=root, capture_output=True, encoding="utf-8",
+                           errors="replace").stdout
     check("dd4 a task blocked over its red gate keeps the record of that gate: the "
           "rows the gate wrote and the block are committed through the audit-state "
           "verb, since no task commit is coming to carry them: %r" % (dirty,),
@@ -1289,7 +1289,8 @@ def _submit(M, root, mpath, task_id, body, role="executor", tail=()):
 
 def _head(root):
     return subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True,
-                          capture_output=True, text=True).stdout.strip()
+                          capture_output=True, encoding="utf-8",
+                          errors="replace").stdout.strip()
 
 
 def _stamp_head(line):
@@ -1745,8 +1746,11 @@ def _signoff_steps(run):
 
 
 def _git_out(root, *args):
+    # git writes UTF-8 whatever the locale: decoded in the locale's, a file
+    # carrying an arrow raises in the reader thread, and on Windows the run
+    # then hands back no output at all rather than an error.
     return subprocess.run(_GIT + list(args), cwd=root, capture_output=True,
-                          text=True).stdout
+                          encoding="utf-8", errors="replace").stdout
 
 
 def _counting(module):
@@ -5735,6 +5739,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("wz-block", "_wave_width_cases"),
           ("fw-block", "_follower_cases"), ("fh-block", "_follower_wave_cases"),
           ("fm-block", "_follower_map_cases"),
+          ("al-block", "_ascii_locale_cases"),
           ("wt-block", "_wave_resume_cases"), ("wt5-block", "_wave_adopt_cases"),
           ("wt7-block", "_wave_review_discard_cases"),
           ("wd-block", "_wave_redo_cases"), ("wg-block", "_wave_regate_cases"),
@@ -5868,36 +5873,70 @@ def _falsifier_cases(check):
         _harness.remove_tree(root)
 
 
-def _opens_text_without_encoding(call):
-    """True when `call` is `open(...)` or `io.open(...)` in a text mode with no
-    `encoding=`: such a file is read or written in the locale's encoding,
-    which on Windows is cp1252 and cannot spell what the drive writes. A mode
-    that is not a literal is read as text, since nothing says it is binary."""
-    func = call.func
-    named = (getattr(func, "id", None) == "open"
-             or (getattr(func, "attr", None) == "open"
-                 and getattr(getattr(func, "value", None), "id", None) == "io"))
-    if not named or any(kw.arg == "encoding" for kw in call.keywords):
-        return False
-    modes = [kw.value for kw in call.keywords if kw.arg == "mode"]
-    mode = call.args[1] if len(call.args) > 1 else (modes[0] if modes else None)
-    if isinstance(mode, ast.Constant) and isinstance(mode.value, str):
-        return "b" not in mode.value
-    return True
-
-
 def unencoded_text_opens(source):
-    """The line of every text-mode `open` in `source` that names no encoding,
-    sorted."""
-    return sorted(node.lineno for node in ast.walk(ast.parse(source))
-                  if isinstance(node, ast.Call)
-                  and _opens_text_without_encoding(node))
+    """The line of every text-mode open or subprocess call in `source` that
+    names no encoding, sorted - `_output`'s walker, the one the tree-wide lint
+    runs over scripts/ and hooks/, asked of this suite's own source too."""
+    return [line for line, _what in _output.unencoded_text_io(source)]
+
+
+# The block re-run under a locale that cannot spell UTF-8: it drives a wave
+# whose member regenerates a document full of non-ASCII text, integrates it as
+# a follower and closes, so every decode between the verbs and this suite is
+# on its path.
+ASCII_BLOCK = "fm-block"
+# What makes a locale's preferred encoding ASCII on POSIX; on Windows the
+# variables are ignored and the ANSI code page stands in, which spells no more.
+ASCII_ENV = {"LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0"}
+_UTF8_NAMES = ("utf-8", "utf8", "cp65001")
+
+
+def _ascii_locale_cases(check):
+    """`ASCII_BLOCK` run again as a child whose locale's preferred encoding is
+    not UTF-8: every case it reports passes there, as it does in this suite's
+    own run of that block."""
+    probe = subprocess.run(
+        [sys.executable, "-c",
+         "import locale; print(locale.getpreferredencoding(False))"],
+        env=dict(os.environ, **ASCII_ENV), capture_output=True,
+        encoding="utf-8", errors="replace", timeout=60)
+    preferred = probe.stdout.strip()
+    if preferred.lower().replace("_", "-") in _UTF8_NAMES or not preferred:
+        check("plugins/audit/tests/test_drive_phase.py: under a locale whose "
+              "preferred encoding is ASCII, a drive whose verbs print non-ASCII "
+              "text integrates and closes as it does under UTF-8 (COULD NOT "
+              "SET UP: the child's preferred encoding under %r is %r, so this "
+              "run would prove nothing)" % (ASCII_ENV, preferred), False)
+        return
+    out_dir = _harness.fixture_root("drive-ascii-")
+    held = dict((k, os.environ.get(k)) for k in ASCII_ENV)
+    try:
+        os.environ.update(ASCII_ENV)
+        res = _harness.run_stage(os.path.abspath(__file__), ASCII_BLOCK, out_dir)
+    finally:
+        for k, v in held.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        _harness.remove_tree(out_dir)
+    cases = (res["report"] or {}).get("cases") or []
+    failed = [label[:120] for label, ok, _detail in cases if not ok]
+    check("plugins/audit/tests/test_drive_phase.py: under a locale whose "
+          "preferred encoding is ASCII, a drive whose verbs print non-ASCII "
+          "text integrates and closes as it does under UTF-8 (%s re-run with "
+          "%r, preferred encoding %r: it reports its cases, and every one "
+          "passes): %r"
+          % (ASCII_BLOCK, ASCII_ENV, preferred,
+             (len(cases), failed, res["why"],
+              _output.clip_bytes(res["err"], 600))),
+          res["report"] is not None and bool(cases) and not failed)
 
 
 def _stage_cases(check):
     """The stages cover every block once, the fixture's hand-written identity
-    is one git reads, and every file the drive and this suite open as text
-    names its encoding."""
+    is one git reads, and every file the drive and this suite open as text,
+    or read a subprocess's text from, names its encoding."""
     scanned = {}
     for rel, path in (("governance/%s" % (DRIVER,), _loader.script_path(DRIVER)),
                       ("tests/test_drive_phase.py", os.path.abspath(__file__))):

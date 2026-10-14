@@ -3878,11 +3878,117 @@ def _ts_order_cases(check):
           and not [h for h in real if "_evidence_io" in h[0]])
 
 
+_ENCODING_REPORTED = (
+    "import io, os, subprocess\n"
+    "a = open(p, 'w')\n"
+    "b = open(p)\n"
+    "c = io.open(p, mode='r')\n"
+    "d = os.fdopen(fd, 'w')\n"
+    "e = path.read_text()\n"
+    "f = path.write_text(s)\n"
+    "g = subprocess.run(cmd, capture_output=True, text=True)\n"
+    "h = subprocess.Popen(cmd, stdout=PIPE, universal_newlines=True)\n"
+    "i = subprocess.check_output(cmd, errors='replace')\n"
+    "j = subprocess.run(cmd, capture_output=True).stdout.decode()\n"
+    "k = open(p, m)\n"
+    "q = subprocess.run(cmd, text=flag)\n")
+# Every line here names its encoding: a lint reporting any of them convicts
+# the fix itself.
+_ENCODING_NAMED = (
+    "import io, os, subprocess\n"
+    "a = open(p, 'w', encoding='utf-8')\n"
+    "b = open(p, 'r', -1, 'utf-8')\n"
+    "c = io.open(p, mode='r', encoding='utf-8', errors='replace')\n"
+    "d = os.fdopen(fd, 'w', encoding='utf-8')\n"
+    "e = path.read_text('utf-8')\n"
+    "f = path.write_text(s, encoding='utf-8')\n"
+    "g = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8',\n"
+    "                   errors='replace')\n"
+    "h = subprocess.Popen(cmd, stdout=PIPE, encoding='utf-8')\n"
+    "i = subprocess.run(cmd, capture_output=True).stdout.decode('utf-8', 'replace')\n")
+# ...and nothing here is text at all, or the lint cannot read what it forwards.
+_ENCODING_BINARY = (
+    "import os, subprocess\n"
+    "a = open(p, 'rb')\n"
+    "b = os.open(p, os.O_RDONLY)\n"
+    "c = subprocess.run(cmd, capture_output=True)\n"
+    "d = subprocess.run(cmd, text=False)\n"
+    "e = open(p, **kw)\n"
+    "f = subprocess.run(cmd, **kw)\n"
+    "g = os.fdopen(fd, 'rb')\n")
+
+
+def _encoding_cases(check):
+    """`text_encoding_violations`: a text-mode open or subprocess call that
+    names no encoding is reported by file and line, and one that names it, or
+    is not text, is not."""
+    import shutil
+    import tempfile
+    en = tempfile.mkdtemp(prefix="audit-encoding-")
+    try:
+        scripts = os.path.join(en, "scripts")
+        hooks = os.path.join(en, "hooks")
+        for d, name, text in ((scripts, "sub/report.py", _ENCODING_REPORTED),
+                              (scripts, "named.py", _ENCODING_NAMED),
+                              (scripts, "binary.py", _ENCODING_BINARY),
+                              (hooks, "hook.py", "x = open(p, 'a')\n"
+                                                 "y = open(p, 'a', encoding='utf-8')\n")):
+            full = os.path.join(d, *name.split("/"))
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(text)
+        found = M.text_encoding_violations((scripts, hooks), ())
+        by_file = {}
+        for name, line, _what in found:
+            by_file.setdefault(name, []).append(line)
+        check("plugins/audit/tests/test__output.py: a text-mode open or a "
+              "text-mode subprocess call with no encoding anywhere under "
+              "scripts/ or hooks/ is reported by file and line, and one that "
+              "names its encoding is not (open, io.open, os.fdopen, "
+              "read_text, write_text, text=, universal_newlines=, errors= and "
+              "a bare .decode() each reported once at its own line; every "
+              "encoding-naming twin silent): %r" % (by_file,),
+              by_file == {"scripts/sub/report.py": list(range(2, 14)),
+                          "hooks/hook.py": [1]})
+        check("en2 ALLOW: a handle or a capture that is not text - a binary "
+              "mode, os.open, a bytes capture, text=False - and a **kwargs "
+              "forward the lint cannot read are silent; a rule convicting any "
+              "of them teaches an author to name an encoding on bytes: %r"
+              % (sorted(by_file),),
+              "scripts/binary.py" not in by_file
+              and "scripts/named.py" not in by_file)
+        held = M.text_encoding_violations((scripts,), ("scripts/sub/report.py",
+                                                       "scripts/named.py"))
+        check("en3 a pending row silences its file, and a row naming a file "
+              "that holds no unencoded text I/O is itself reported, so the "
+              "table can only shrink: %r" % (held,),
+              [h[:2] for h in held] == [("scripts/named.py", 0)])
+        per_source = M.unencoded_text_io(_ENCODING_REPORTED)
+        check("en4 the per-source walker is the one the tree-wide lint uses: "
+              "the same lines, each with what it is: %r" % (per_source,),
+              [line for line, _what in per_source] == by_file.get(
+                  "scripts/sub/report.py")
+              and all(what for _line, what in per_source))
+    finally:
+        shutil.rmtree(en, ignore_errors=True)
+    real = M.text_encoding_violations()
+    project_hooks = os.path.join(M.REPO_ROOT, ".claude", "hooks")
+    check("en5 ...and the pending table holds no row, the default walk is the "
+          "plugin's scripts/ and hooks/ plus the project's .claude/hooks "
+          "whenever that directory exists, and the real tree opens no text "
+          "handle and decodes no subprocess output without naming its "
+          "encoding: %r pending, %r found" % (M.ENCODING_PENDING, real),
+          not M.ENCODING_PENDING and real == []
+          and M.ENCODING_DIRS[:2] == (M.SCRIPTS_DIR, M.HOOKS_DIR)
+          and (project_hooks in M.ENCODING_DIRS) == os.path.isdir(project_hooks))
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _project_of_manifest_cases(check)
         _ts_order_cases(check)
+        _encoding_cases(check)
     return _harness.run(body)
 
 

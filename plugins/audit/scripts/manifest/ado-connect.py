@@ -145,7 +145,8 @@ def az_extensions():
         return extension_reading(False, None, None)
     try:
         out = subprocess.run(["az", "extension", "list", "--output", "json"],
-                             capture_output=True, text=True, timeout=20)
+                             capture_output=True, text=True, encoding="utf-8",
+                             errors="replace", timeout=20)
     except Exception as exc:
         return extension_reading(True, None, exc)
     return extension_reading(True, out, None)
@@ -161,7 +162,8 @@ def azure_signin():
         return None
     try:
         out = subprocess.run(["az", "account", "show", "--output", "json"],
-                             capture_output=True, text=True, timeout=20)
+                             capture_output=True, text=True, encoding="utf-8",
+                             errors="replace", timeout=20)
     except Exception:
         return None
     if out.returncode != 0:

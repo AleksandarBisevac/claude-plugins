@@ -156,7 +156,8 @@ def _stream_subprocess(cmd, out):
     """
     import subprocess
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, text=True, bufsize=1)
+                            stderr=subprocess.STDOUT, text=True,
+                            encoding="utf-8", errors="replace", bufsize=1)
     try:
         for line in proc.stdout:
             out(line.rstrip("\n"))

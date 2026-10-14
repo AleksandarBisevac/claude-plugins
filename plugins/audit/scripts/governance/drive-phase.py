@@ -1282,8 +1282,11 @@ def run_falsifier(cmd, tree, mutation):
         with open(target, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(original.replace(mutation["find"], mutation["replace"], 1))
         try:
+            # The test command's words are quoted, never parsed: a byte that is
+            # not UTF-8 is replaced rather than allowed to end the run.
             done = subprocess.run(cmd, cwd=copied, capture_output=True,
-                                  text=True, timeout=120)
+                                  text=True, encoding="utf-8", errors="replace",
+                                  timeout=120)
         except (OSError, subprocess.SubprocessError) as exc:
             return "could-not-run", "the command could not run: %s" % (exc,)
         if done.returncode == 0:
@@ -1670,9 +1673,12 @@ def reopen_integration(ctx, task_id):
     paths stay, so the bytes the last integration placed are still read as
     this task's, not as a stray change in the phase tree."""
     try:
+        # A path, so a byte that is not UTF-8 is kept as the same byte
+        # (surrogateescape) rather than replaced by one that names another file.
         done = subprocess.run(["git", "-C", ctx["gitRoot"], "rev-parse",
                                "--git-path", INTEGRATION_STATE],
-                              capture_output=True, text=True, timeout=60)
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="surrogateescape", timeout=60)
     except (OSError, subprocess.SubprocessError):
         return
     rel = done.stdout.strip()
@@ -2403,7 +2409,8 @@ def git_head(ctx):
     """The commit HEAD names in the project's repository, or None."""
     try:
         done = subprocess.run(["git", "-C", ctx["gitRoot"], "rev-parse", "HEAD"],
-                              capture_output=True, text=True, timeout=60)
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=60)
     except (OSError, subprocess.SubprocessError):
         return None
     return done.stdout.strip() if done.returncode == 0 else None
@@ -2450,7 +2457,8 @@ def is_ancestor(ctx, commit, head):
     try:
         done = subprocess.run(["git", "-C", ctx["gitRoot"], "merge-base",
                                "--is-ancestor", str(commit), str(head)],
-                              capture_output=True, text=True, timeout=60)
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=60)
     except (OSError, subprocess.SubprocessError):
         return None
     return {0: True, 1: False}.get(done.returncode)
@@ -3872,7 +3880,8 @@ def whole_head(ctx, head):
     try:
         done = subprocess.run(
             ["git", "-C", ctx["gitRoot"], "rev-parse", "--verify", "--quiet",
-             head + "^{commit}"], capture_output=True, text=True, timeout=60)
+             head + "^{commit}"], capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=60)
     except (OSError, subprocess.SubprocessError):
         return head
     found = done.stdout.strip()

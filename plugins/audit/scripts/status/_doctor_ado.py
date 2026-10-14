@@ -204,6 +204,7 @@ def check_ado(rep, project, manifest):
         try:
             out = subprocess.run(["az", "extension", "list", "--output",
                                   "json"], capture_output=True, text=True,
+                                 encoding="utf-8", errors="replace",
                                  timeout=AZ_PROBE_SECONDS)
             names = [e.get("name") for e in json.loads(out.stdout or "[]")
                      if isinstance(e, dict)]

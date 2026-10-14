@@ -1344,7 +1344,11 @@ the lint reads, and its docstring says so.
 names its `newline`, so a committed file is the same bytes on every platform. Its default walk
 (`NEWLINE_DIRS`) is the plugin's `scripts/` and `hooks/` plus the repository's own
 `.claude/hooks/` whenever that directory exists; an installed copy of the plugin has no such
-sibling and walks the first two alone.
+sibling and walks the first two alone. **`text_encoding_violations()` holds the encoding rule
+over the same walk** (`ENCODING_DIRS` is `NEWLINE_DIRS`): a text-mode `open`, a Path text read
+or write, a subprocess run with `text=`, `universal_newlines=` or `errors=`, and a `.decode()`
+each name their encoding, because the locale's is cp1252 on Windows and ASCII under
+`LC_ALL=C`, and neither spells what this plugin writes.
 
 It is also **the anchor**, and that is why it is the one file that never moves.
 `SCRIPTS_DIR`, `PLUGIN_ROOT`, `HOOKS_DIR`, `TESTS_DIR` and `REPO_ROOT` are the single

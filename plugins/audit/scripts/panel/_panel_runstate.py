@@ -76,7 +76,8 @@ def _audit_lock_dir(project, config):
     lockdir = None
     try:
         out = subprocess.run(["git", "-C", git_root, "rev-parse", "--git-common-dir"],
-                             capture_output=True, text=True, timeout=5)
+                             capture_output=True, text=True, encoding="utf-8",
+                             errors="surrogateescape", timeout=5)
         if out.returncode == 0 and out.stdout.strip():
             gd = out.stdout.strip()
             if not os.path.isabs(gd):

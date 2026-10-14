@@ -2323,6 +2323,182 @@ def text_write_newline_violations(dirs=None, pending=None):
     return sorted(violations)
 
 
+# --- text I/O names its encoding --------------------------------------------------
+# A text handle or a text-mode subprocess that names no encoding reads and writes
+# in the locale's, which is cp1252 on a Windows runner and ASCII under LC_ALL=C:
+# neither spells what this plugin writes, so a reader thread raises on the first
+# arrow a verb prints, or a file comes back as different text than went in. The
+# fix at each site is to say UTF-8 and how to treat a byte that is not.
+# Where each opener takes `encoding` positionally.
+_ENCODING_POSITION = {"open": 3, "fdopen": 3, "read_text": 0, "write_text": 1}
+# The subprocess entry points that decode their output when told to.
+_TEXT_RUNNERS = frozenset(("run", "Popen", "check_output", "check_call", "call"))
+# The keywords that put one of them in text mode.
+_TEXT_SWITCHES = ("text", "universal_newlines", "errors")
+# Files that still read or write text without naming the encoding: a row is a
+# debt and not a permission, reported once its file holds no such site, so the
+# table can only shrink.
+ENCODING_PENDING = ()
+# The newline rule's walk: scripts, the plugin's hooks, and the repository's
+# own project hooks when that directory exists.
+ENCODING_DIRS = NEWLINE_DIRS
+_UNENCODED = {
+    "open": "a text-mode open that names no encoding - it reads and writes in the "
+            "locale's (cp1252 on Windows); pass encoding=\"utf-8\"",
+    "path": "a Path text read or write that names no encoding - pass "
+            "encoding=\"utf-8\"",
+    "subprocess": "a text-mode subprocess that names no encoding - its output is "
+                  "decoded in the locale's, and a reader thread raises on a byte "
+                  "it cannot spell; pass encoding=\"utf-8\" and an errors policy",
+    "decode": "a .decode() that names no codec - say which one, and how a byte "
+              "that is not in it is treated",
+}
+
+
+def _keyword(call, name):
+    for kw in call.keywords:
+        if kw.arg == name:
+            return kw
+    return None
+
+
+def _forwards_kwargs(call):
+    return any(kw.arg is None for kw in call.keywords)
+
+
+def _names_encoding(call, position):
+    kw = _keyword(call, "encoding")
+    if kw is not None:
+        return not (isinstance(kw.value, ast.Constant) and kw.value.value is None)
+    return len(call.args) > position
+
+
+def _text_open_mode(call, opener):
+    """True when `open` / `io.open` / `os.fdopen` is in text mode: a literal mode
+    with no `b`, no mode at all, or one the lint cannot read - nothing says it
+    is binary."""
+    mode = call.args[1] if len(call.args) > 1 else None
+    kw = _keyword(call, "mode")
+    if kw is not None:
+        mode = kw.value
+    if isinstance(mode, ast.Constant) and isinstance(mode.value, str):
+        return "b" not in mode.value
+    return True
+
+
+def _is_text_opener(call):
+    """`open` / `fdopen` for the builtin, `io.open` and `os.fdopen`; '' for
+    `os.open` and any other object's `.open`, which return no text handle this
+    lint can judge."""
+    func = call.func
+    if isinstance(func, ast.Name) and func.id == "open":
+        return "open"
+    if not isinstance(func, ast.Attribute) or not isinstance(func.value, ast.Name):
+        return ""
+    if func.attr == "open" and func.value.id == "io":
+        return "open"
+    if func.attr == "fdopen" and func.value.id == "os":
+        return "fdopen"
+    return ""
+
+
+def _text_switched(call):
+    """True when a subprocess call names a text switch whose value is not the
+    constant False or None."""
+    for name in _TEXT_SWITCHES:
+        kw = _keyword(call, name)
+        if kw is None:
+            continue
+        if isinstance(kw.value, ast.Constant) and kw.value.value in (False, None):
+            continue
+        return True
+    return False
+
+
+def _unencoded_kind(call):
+    """Which `_UNENCODED` shape `call` is, or ''."""
+    if _forwards_kwargs(call):
+        return ""
+    opener = _is_text_opener(call)
+    if opener:
+        if _text_open_mode(call, opener) \
+                and not _names_encoding(call, _ENCODING_POSITION[opener]):
+            return "open"
+        return ""
+    name = _call_name(call)
+    if name in ("read_text", "write_text") and isinstance(call.func, ast.Attribute):
+        return "" if _names_encoding(call, _ENCODING_POSITION[name]) else "path"
+    if name in _TEXT_RUNNERS and _text_switched(call) \
+            and _keyword(call, "encoding") is None:
+        return "subprocess"
+    if name == "decode" and isinstance(call.func, ast.Attribute) \
+            and not call.args and _keyword(call, "encoding") is None:
+        return "decode"
+    return ""
+
+
+def unencoded_text_io(source, filename="<source>"):
+    """Sorted `(line, what)` for every text I/O in `source` that names no
+    encoding - the one walker both `text_encoding_violations` and any suite
+    asking it of its own source run."""
+    tree = ast.parse(source, filename=filename)
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            kind = _unencoded_kind(node)
+            if kind:
+                found.append((node.lineno, _UNENCODED[kind]))
+    return sorted(found)
+
+
+def text_encoding_violations(dirs=None, pending=None):
+    """(filename, line, what) for a text-mode open or subprocess call, or a
+    decode, that names no encoding. `filename` is the walked directory's own
+    name and the path under it - `scripts/git/integrate-task.py`, and
+    `.claude/hooks/<file>` for the project hooks, which would otherwise read as
+    the plugin's own `hooks/`.
+
+    THE SHAPE: the builtin `open`, `io.open` or `os.fdopen` in a text mode (a
+    literal with no `b`, no mode, or a mode it cannot read) without an
+    `encoding` by keyword or position; a `.read_text()` / `.write_text()` without
+    one; `run` / `Popen` / `check_output` / `check_call` / `call` given
+    `text=`, `universal_newlines=` or `errors=` (any value but the constant
+    False or None) without `encoding=`; and a `.decode()` with no codec, which
+    is strict UTF-8 whatever the author meant. Files in `pending` are the debt.
+
+    WHAT IT CANNOT SEE: a `**kwargs` forward (read as naming one), a
+    `pathlib.Path.open` or any other object's `.open` (indistinguishable by
+    name from an archive's or a browser's), `tempfile` handles opened in text
+    mode, `os.popen`, an `.encode()` with no codec, a runner reached under
+    another name, and any file outside `dirs`, which defaults to
+    `ENCODING_DIRS`. So a clean result means "none of this shape here", not
+    "every byte this plugin reads is decoded as UTF-8".
+    """
+    dirs = dirs if dirs is not None else ENCODING_DIRS
+    pending = set(ENCODING_PENDING if pending is None else pending)
+    violations, holding = [], set()
+    for d in dirs:
+        top = os.path.basename(os.path.normpath(d))
+        if os.path.normpath(d) == os.path.normpath(_PROJECT_HOOKS_DIR):
+            top = ".claude/hooks"
+        for rel, path in lint_py_files(d):
+            name = "%s/%s" % (top, rel)
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    found = unencoded_text_io(fh.read(), filename=rel)
+            except (OSError, SyntaxError, UnicodeDecodeError):
+                continue
+            if found:
+                holding.add(name)
+            if name in pending:
+                continue
+            violations.extend((name, line, what) for line, what in found)
+    violations.extend((name, 0, "ENCODING_PENDING names a file that holds no "
+                       "unencoded text I/O any more - delete the row")
+                      for name in sorted(pending) if name not in holding)
+    return sorted(violations)
+
+
 # --- a shell script finds its own directory on any spelling of $0 -------------
 # `case "$0" in */*)` reads a Windows caller's backslash-only `$0` as "no
 # directory", and `dirname "$0"` is handed the same string unchecked. The one

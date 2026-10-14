@@ -341,7 +341,8 @@ def _selftest():
         proc = subprocess.run(
             [sys.executable, os.path.abspath(__file__)],
             input=json.dumps({"prompt": KEYWORD, "session_id": "s9"}),
-            capture_output=True, text=True, cwd=tmp, env=env, timeout=120)
+            capture_output=True, text=True, encoding="utf-8", cwd=tmp,
+            env=env, timeout=120)
         try:
             said = json.loads(proc.stdout).get("systemMessage") or ""
         except Exception:

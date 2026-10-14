@@ -3208,7 +3208,7 @@ def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
         dst = os.path.join(path, *rel.split("/"))
         if not os.path.isdir(os.path.dirname(dst)):
             os.makedirs(os.path.dirname(dst))
-        open(dst, "w", newline="\n").close()
+        open(dst, "w", encoding="utf-8", newline="\n").close()
     problem = link_dependencies(path, deps)
     if problem is not None:
         return {"code": None, "text": "", "problem": problem, "seconds": 0.0}, copied

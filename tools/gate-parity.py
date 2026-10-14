@@ -2566,6 +2566,11 @@ NOT_AN_EXEMPTION = {
                            "excusing anything",
     "_EVAL_SHAPE":"the two spellings of an inline eval, used to name the form the "
                    "operator actually typed in a refusal",
+    "_UNENCODED": "a RULE table, and the opposite of an exemption: each row is a "
+                  "shape of text I/O that may NOT leave its encoding unnamed, "
+                  "with the sentence `text_encoding_violations` prints to say "
+                  "what to pass instead - a row adds a refusal rather than "
+                  "excusing a site",
     "_FILE_REFUSALS": "a RULE table, and the opposite of an exemption: each row is "
                       "a prefix a `--files` entry may NOT open with, and the "
                       "sentence beside it is the clause the refusal prints to say "

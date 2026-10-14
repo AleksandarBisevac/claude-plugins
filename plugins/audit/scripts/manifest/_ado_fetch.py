@@ -341,7 +341,8 @@ def run_chunk(organization, project, ids, timeout=DEFAULT_TIMEOUT_S,
 def _run_subprocess(argv, timeout):
     """`az`, with stdin closed so a credential prompt becomes an error, not a wait."""
     return subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True,
-                          text=True, timeout=timeout)
+                          text=True, encoding="utf-8", errors="replace",
+                          timeout=timeout)
 
 
 def as_items(rows):
