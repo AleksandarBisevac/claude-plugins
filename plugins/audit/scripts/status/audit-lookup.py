@@ -437,6 +437,57 @@ def filed_return(ctx, task, role):
         return rel, None
 
 
+def previous_filed_return(ctx, task, role):
+    """`(rel, body)` of the latest `role` return filed for `task` under a start
+    STRICTLY BEFORE its current one - the attempt a retry left behind - or
+    `(None, None)` when none exists. Read by scanning the task's own returns
+    directory rather than by a start this caller is handed, because the only
+    fact in front of a caller composing THIS attempt's brief is the CURRENT
+    `startedAt`; the filed return the Retry section quotes is the one the
+    attempt before it left, and `task.outcome`/`task.redFirst` are no
+    substitute - those fields move only at `done`, so a retried, never-closed
+    attempt leaves them exactly as they were before it ran."""
+    tid = str(task.get("id"))
+    current_key = _fr.return_start_key(task.get("startedAt"))
+    base = os.path.join(ctx["evidence"], _fr.RETURNS_DIRNAME, tid)
+    suffix = ".%s.json" % (role,)
+    try:
+        names = sorted(n for n in os.listdir(base) if n.endswith(suffix))
+    except OSError:
+        return None, None
+    prior = [n for n in names if n[:-len(suffix)] < current_key]
+    if not prior:
+        return None, None
+    rel = "%s/%s/%s" % (_fr.RETURNS_DIRNAME, tid, prior[-1])
+    path = os.path.join(ctx["evidence"], *rel.split("/"))
+    try:
+        with open(path, "r", encoding="utf-8", newline="") as fh:
+            text = fh.read()
+    except OSError:
+        return rel, None
+    try:
+        body = json.loads(text)
+    except ValueError:
+        return rel, None
+    return rel, body if isinstance(body, dict) else None
+
+
+def retry_reason(ctx, phase, task):
+    """The operator's own `--reason` beside the `--answer retry` that started
+    this attempt, as `drive-phase.py` recorded it in the driver's state - or
+    None when the driver recorded none (no reason was given, or this attempt
+    was never reached through a retry). Keyed to THIS attempt's own start, so
+    an earlier retry's reason is never read as this one's."""
+    body, _problem = _fr.drive_state(ctx["state"], str(phase.get("id")))
+    entry = (body.get("retryReason") or {}).get(str(task.get("id"))) or {}
+    if not isinstance(entry, dict):
+        return None
+    if entry.get("start") != _fr.return_start_key(task.get("startedAt")):
+        return None
+    value = entry.get("value")
+    return value if isinstance(value, str) and value.strip() else None
+
+
 def gate_lines(manifest, entries):
     """One line per gate entry, the entry kept as written and its command beside
     it - or what stops it resolving, said rather than dropped."""
@@ -606,18 +657,28 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
         "executor.runsGate: %s (%s)" % (reading, gate["basis"]),
         runs.get(reading, "The reading %r has no command here." % (reading,))])
     if attempts > 1:
-        outcome = task.get("outcome") or {}
         evidence = task.get("testEvidence") or {}
+        _prior_rel, prior_body = previous_filed_return(ctx, task, "executor")
+        prior_outcome = (prior_body or {}).get("outcome") or {}
+        prior_red_first = (prior_body or {}).get("redFirst")
+        # The filed return, never `task.outcome`/`task.redFirst` - those two
+        # only move onto the task at `done` (`close_task`'s `red_first`/
+        # `outcome` params), so a retried attempt that was never closed leaves
+        # them exactly as an EARLIER attempt left them, which reads as "none
+        # recorded" over a return that proved its red-first.
+        reason = retry_reason(ctx, phase, task)
         lines += _section("Retry - what attempt %d left on the record"
                           % (attempts - 1,), [
+            "operator's reason for --answer retry: %s"
+            % (reason or "none recorded"),
             "outcome.technical (verbatim):",
-            outcome.get("technical") or "none recorded",
+            prior_outcome.get("technical") or "none recorded",
             "testEvidence: runId %s, status %s, at %s"
             % (evidence.get("runId"), evidence.get("status"),
                evidence.get("at")) if evidence else
             "testEvidence: none recorded",
-            "redFirst: %s" % (json.dumps(task.get("redFirst"), sort_keys=True)
-                              if task.get("redFirst") else "none recorded")]
+            "redFirst: %s" % (json.dumps(prior_red_first, sort_keys=True)
+                              if prior_red_first else "none recorded")]
             + red_step_lines(ctx, manifest, phase, task, evidence)
             + ["The working tree is the last attempt; this is what it answered."])
     lines += _section("Your return", executor_return_lines(
@@ -652,11 +713,21 @@ def red_step_lines(ctx, manifest, phase, task, evidence):
         name = step.get("name")
         command = (step.get("command") or resolved.get(name)
                    or "%s (command not stored)" % (step.get("program") or "?",))
-        printed = _excerpt.reason_of(
-            "\n".join(str(x) for x in step.get("failing") or []),
-            step.get("outcomeBasis") or "")
-        out += ["red step %s: %s" % (name, command),
-                "  printed: %s" % (printed or "nothing recorded for this step")]
+        out.append("red step %s: %s" % (name, command))
+        failing = [str(x) for x in step.get("failing") or []]
+        if failing:
+            # EACH RECORDED LINE, VERBATIM - `_evio`/`run-test-gate.py` already
+            # bound this list (`MAX_FAILING`) before it ever reached the row,
+            # so joining it back into one string and excerpting it a SECOND
+            # time (as this used to) cuts an already-bounded record down
+            # further and can drop a failing file's own name entirely behind
+            # a bare "(+N more)" count. Printing every line this step named is
+            # no wider than what the row already carries.
+            out += ["  - %s" % (line,) for line in failing]
+        else:
+            printed = _excerpt.reason_of(step.get("outcomeBasis") or "")
+            out.append("  printed: %s"
+                       % (printed or "nothing recorded for this step"))
     return out
 
 

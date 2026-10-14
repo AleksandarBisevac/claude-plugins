@@ -1834,7 +1834,19 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         # the gate is measured again over the new tree.
         return recut_tree(ctx, state, task)
     if answer == "retry":
-        return start_task(ctx, task)
+        stop = start_task(ctx, task)
+        # The human's own words beside `--answer retry` are what the NEXT
+        # attempt's brief quotes - `_mark` keys them to the start that is
+        # ABOUT TO BEGIN (read after `start_task` re-stamps it), never to the
+        # one that just ended, so the brief for the new attempt finds them
+        # and an unrelated later retry cannot be read as belonging to this one.
+        if stop is None and (reason or "").strip():
+            manifest2, _phase2 = load_phase(ctx)
+            task2 = _mio.tasks_by_id(manifest2).get(task["id"])
+            if task2 is not None:
+                _mark(state, "retryReason", task2, reason)
+                write_state(ctx, state)
+        return stop
     if pending["decision"] == "scope-gap":
         # Declared before the start: the selection runs again, because the
         # config may belong to a sibling's files, and the preflight now sees

@@ -1503,7 +1503,12 @@
           "at": "2026-10-14T04:14:55Z",
           "text": "Red-first proved by the orchestrator (the helper answered could-not-prove: no --case on the submit line): in the task tree drive-phase.py and audit-lookup.py set to HEAD's bytes -> test_audit_lookup.py --selftest 90/95, FAIL bf3 bf53 bf53a bf54 bf55; restored (cmp equal) -> 95/95."
         }
-      ]
+      ],
+      "testEvidence": {
+        "runId": "2026-10-14T05:11:00Z.f3ac0f",
+        "status": "passed",
+        "at": "2026-10-14T05:11:00Z"
+      }
     },
     {
       "id": "P125.31-0h5",
@@ -1970,7 +1975,12 @@
       "startedAt": "2026-10-14T03:40:51Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-14T04:50:52Z.2f521d",
+        "status": "failed",
+        "at": "2026-10-14T04:50:52Z"
+      }
     },
     {
       "id": "P125.39-0h5",
@@ -2025,7 +2035,12 @@
       "startedAt": "2026-10-14T03:40:54Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-14T05:01:36Z.c49819",
+        "status": "failed",
+        "at": "2026-10-14T05:01:36Z"
+      }
     },
     {
       "id": "P125.40-0h5",

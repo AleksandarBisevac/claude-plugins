@@ -868,11 +868,21 @@ def _brief_cases(check):
     check("bf2 a first attempt's brief carries no retry section: %r"
           % (text[-200:],), "Retry" not in text)
     retry = _bf_manifest(attempts=2)
-    retry["phases"][0]["tasks"][0]["outcome"] = {
-        "technical": "attempt 1: gate red on bf_case"}
     retry["phases"][0]["tasks"][0]["testEvidence"] = {
         "runId": "run-red", "status": "failed", "at": "z"}
     proj2, mpath2 = project("bf-retry", retry)
+    # The PRODUCTION shape: `outcome.technical` only ever moves onto the task
+    # at `done` (`audit-task.py close_task`), so a retried attempt that never
+    # closed leaves nothing there - what the Retry section quotes is the
+    # FILED return the retried attempt actually left, at its own (earlier)
+    # start.
+    file_exec(proj2, start="20251231T000000Z",
+             text='{"gates": {}, '
+                  '"outcome": {"technical": "attempt 1: gate red on bf_case", '
+                  '"descriptive": "d"},\n'
+                  ' "testsAdded": ["bf_case"], "stamp": "audit-stamp: v2 x",\n'
+                  ' "redFirst": {"status": "could-not-prove", '
+                  '"basis": "no command given", "at": "z"}}\n')
     brief(proj2, mpath2, "P1.1", "executor")
     text2 = read(brief_file(proj2, "P1.1",
                             "20260101T000000Z.executor.md")) or ""
@@ -915,6 +925,98 @@ def _brief_cases(check):
           cut.startswith("```sh\n") and "submit P1.1 --role executor" in cut
           .split("```", 2)[1]
           and cut.index("Your last act files") > cut.index("AUDIT_RETURN"))
+
+    # ---- the retry section quotes the operator's own `--reason` -------------
+    # `drive-phase.py` keys the reason it recorded to the attempt it belongs
+    # to - the driver's state file, written the same way the wave tree's
+    # state is (bf40) - so the brief reads it rather than inventing a second
+    # place to carry it.
+    projr, mpathr = project("bf-retry-reason", retry)
+    reason_state = os.path.join(projr, ".claude", "state", "drive", "P1.json")
+    os.makedirs(os.path.dirname(reason_state))
+    with open(reason_state, "w", encoding="utf-8") as fh:
+        json.dump({"retryReason": {"P1.1": {
+            "start": "20260101T000000Z",
+            "value": "flaky infra the first time; rerun as-is"}}}, fh)
+    brief(projr, mpathr, "P1.1", "executor")
+    textr = read(brief_file(projr, "P1.1", "20260101T000000Z.executor.md")) or ""
+    check("bf53 a retry brief over an attempt whose answer carried --reason "
+          "prints that reason verbatim in the Retry section: %r"
+          % (textr[textr.find("Retry"):][:300],),
+          "operator's reason for --answer retry: flaky infra the first time; "
+          "rerun as-is" in textr)
+    check("bf53a RED TWIN: an attempt with nothing recorded for this start says "
+          "so plainly, never inventing a reason or leaving the line out: %r"
+          % (text2[text2.find("Retry"):][:300],),
+          "operator's reason for --answer retry: none recorded" in text2)
+
+    # ---- the retry section names EVERY failing line a red sweep step -------
+    # recorded, not just the ones a further, SECOND excerpt-cut would have
+    # left inside its kept head/tail - `run-test-gate.py` already bounds a
+    # step's `failing` to `MAX_FAILING` lines before it ever reaches the row,
+    # so re-excerpting that bounded list drops names the row still carries.
+    pad_before = ["FAIL  plugins/audit/tests/test_pad%02d.py: exited 1 - a long "
+                  "padding reason so the joined text crosses the excerpt's "
+                  "own head and tail bound before the real target is reached"
+                  % (i,) for i in range(1, 4)]
+    target_line = "FAIL  plugins/audit/tests/test__deps.py: exited 1 (rc16)"
+    pad_after = ["FAIL  plugins/audit/tests/test_pad%02d.py: exited 1 - more "
+                 "trailing padding so the target sits well inside the middle "
+                 "a single excerpt call would have elided, not its kept tail"
+                 % (i,) for i in range(4, 8)]
+    sweep_failing = pad_before + [target_line] + pad_after
+    sweep_cmd = "python3 tools/sweep-selftests.py"
+    sweep_row = {"status": "failed", "durationMs": 10, "failed": ["selftests"],
+                 "ranTotal": 2, "coverageBasis": None, "treeBasis": "b",
+                 "treeMutated": [], "overlap": None,
+                 "steps": [{"name": "selftests", "command": sweep_cmd,
+                            "exit": 1, "failing": sweep_failing}]}
+    sweep_task = retry["phases"][0]["tasks"][0]
+    sweep_task["testEvidence"] = {"runId": "run-sweep", "status": "failed",
+                                  "at": "z"}
+    projs, mpaths = project("bf-retry-sweep", retry)
+    _evio.append_row(projs, _evio.row_for(
+        projs, sweep_row, "task", {"taskId": "P1.1"},
+        {"runId": "run-sweep", "ts": "2026-01-01T00:00:00Z", "attempt": 1,
+         "via": "cli"}, published=[sweep_cmd]))
+    brief(projs, mpaths, "P1.1", "executor")
+    texts = read(brief_file(projs, "P1.1", "20260101T000000Z.executor.md")) or ""
+    retry_section_s = texts[texts.find("Retry"):]
+    check("bf54 a retry brief over a red sweep step names each failing file's "
+          "own FAIL <case> line it recorded, including one far enough into "
+          "the step's output that a single excerpt call over the whole list "
+          "would have dropped it behind a bare count: %r"
+          % (retry_section_s[:900],),
+          target_line in retry_section_s
+          and all(p.split(":", 1)[0] in retry_section_s
+                  for p in pad_before + pad_after))
+
+    # ---- the retry section reads the FILED return, not the task's own -----
+    # fields - `task.outcome`/`task.redFirst` move only at `done`
+    # (`audit-task.py`'s `close_task`), so a retried attempt that was never
+    # closed leaves them exactly as an earlier attempt left them. The Retry
+    # section must read what attempt N-1 actually FILED instead.
+    retry_fresh = _bf_manifest(attempts=2)
+    projf, mpathf = project("bf-retry-filed", retry_fresh)
+    file_exec(projf, start="20251231T000000Z",
+             text='{"gates": {}, '
+                  '"outcome": {"technical": "prior attempt: fixed the off-by-one", '
+                  '"descriptive": "d"},\n'
+                  ' "testsAdded": ["bf_case"], "stamp": "audit-stamp: v2 x",\n'
+                  ' "redFirst": {"status": "proved", '
+                  '"basis": "exit 1 before the fix, exit 0 after", "at": "z"}}\n')
+    brief(projf, mpathf, "P1.1", "executor")
+    textf = read(brief_file(projf, "P1.1", "20260101T000000Z.executor.md")) or ""
+    retry_section_f = textf[textf.find("Retry"):]
+    check("bf55 a retry brief over an attempt whose filed return carried a "
+          "proved redFirst prints it, never 'none recorded' - reading the "
+          "FILED return rather than `task.redFirst`, which this never-closed "
+          "retry never set: %r" % (retry_section_f[:500],),
+          "prior attempt: fixed the off-by-one" in retry_section_f
+          and "proved" in retry_section_f
+          and "exit 1 before the fix, exit 0 after" in retry_section_f
+          and "redFirst: none recorded" not in retry_section_f
+          and "outcome.technical (verbatim):\nnone recorded" not in retry_section_f)
 
     # ---- the reviewer's brief waits for the executor's filed return --------
     proj, mpath = project("bf-review", _bf_manifest())
