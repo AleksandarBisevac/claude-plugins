@@ -2326,12 +2326,14 @@ def _git_text(tree, args):
     return proc.stdout.decode("utf-8", "replace") if proc.returncode == 0 else None
 
 
-def task_changed_paths(tree, declared, own_tree):
+def task_changed_paths(tree, declared, own_tree, records=()):
     """`(paths, why)` - what the task changed against the head its tree is at:
     `git diff -M HEAD` (a rename both paths, a deletion its old one) plus the
     untracked files. In the SHARED project tree a sibling's edits are there
     too, so only the task's declared `files` are kept; its own worktree holds
-    nothing else."""
+    nothing else of anybody's - but it does hold the phase tree's records,
+    which the drive brings in before the gate, so a path at or under one of
+    `records` is left out there: it is the plan's bytes, not the task's work."""
     diff = _git_text(tree, ["diff", "--relative", "--name-status", "-z", "-M",
                             "HEAD"])
     others = _git_text(tree, ["ls-files", "-z", "--others", "--exclude-standard"])
@@ -2342,6 +2344,9 @@ def task_changed_paths(tree, declared, own_tree):
     if not own_tree:
         keep = set(_declared_files(declared))
         paths = [p for p in paths if p in keep]
+    else:
+        paths = [p for p in paths if not any(
+            p == r or p.startswith(r.rstrip("/") + "/") for r in records or ())]
     return paths, None
 
 
@@ -2388,11 +2393,13 @@ def _affected_facts(tree, meta, changed):
     return facts
 
 
-def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands):
+def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands,
+                   records=()):
     """`(steps, published, info)` - the steps that join a task's measured run,
     the manifest-published commands among them, and `{lines, suites, widen}`
     saying why. Nothing joins a gate that already carries the phase's wide one.
-    """
+    `records` is the recorder's own paths, left out of what a task's own tree
+    changed."""
     meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
     phase = _phase_by_id(manifest, phase_id) or {}
     task = ([t for t in (phase.get("tasks") or [])
@@ -2405,7 +2412,8 @@ def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands):
         return [], [], {"lines": [], "suites": [], "widen": None,
                         "basis": "this task's gate already runs the phase's "
                                  "wide gate - nothing to add"}
-    changed, why = task_changed_paths(tree, task.get("files"), own_tree)
+    changed, why = task_changed_paths(tree, task.get("files"), own_tree,
+                                      records=records)
     if changed is None:
         info = {"suites": [], "lines": [],
                 "widen": "%s - the task's gate widens to the phase gate" % (why,)}
@@ -5031,7 +5039,8 @@ def main(argv, out=print):
     if args.task is not None and not args.own and source == "task":
         extra, published_extra, affected_info = affected_steps(
             tree or project, tree is not None, manifest, args.phase, args.task,
-            commands)
+            commands, records=_ev.recorded_paths(project, args.manifest)[0]
+            if tree is not None else ())
         commands = commands + extra
         if not args.as_json:
             for line in affected_lines(affected_info):

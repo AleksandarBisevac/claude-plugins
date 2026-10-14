@@ -1081,6 +1081,10 @@ def advance(ctx, state, manifest, phase, task, tree=None):
     # whatever the key: a task whose review is carried to the phase still owes
     # the measurement its close and its commit are bound to.
     if (reviewer is None or not due) and not _marked(state, "gated", task):
+        if tree:
+            stop = refresh_member_records(ctx, state, task, tree)
+            if stop is not None:
+                return stop
         code, out, err = task_gate(ctx, state, phase, task, tree)
         if code == 1:
             said = [ln for ln in (out + err).splitlines() if "GATE" in ln]
@@ -1324,6 +1328,42 @@ def reopen_integration(ctx, task_id):
     _mio.atomic_write_text(path, json.dumps(body, indent=2, sort_keys=True) + "\n")
 
 
+def refresh_member_records(ctx, state, task, tree):
+    """Bring a member tree's record paths to the phase tree's committed records
+    before anything reads them there. None, or the stop.
+
+    The tree was cut at the wave's base, and the phase tree goes on committing
+    records after that, so a check the member's gate runs over the plan, the
+    journal or the evidence would read a plan the phase tree no longer holds -
+    red for nothing the member did. `integrate-task.py --refresh-records` does
+    it over `record_paths`, the one set the integration already treats as
+    record, so a refreshed record is never carried back as the member's work.
+    The set it names is kept on the wave: retiring a tree reads it too."""
+    code, out, err = run_verb(ctx, "integrate-task.py", [
+        ctx["manifest"], task["id"], "--project", ctx["project"],
+        "--refresh-records", "--json"])
+    try:
+        answer = json.loads(out)
+    except ValueError:
+        answer = None
+    if code != 0 or not isinstance(answer, dict):
+        return relay_refusal(ctx, "integrate-task.py", code, out + err)
+    records = [p for p in answer.get("records") or [] if isinstance(p, str)]
+    wave = state.get("wave")
+    if isinstance(wave, dict) and wave.get("records") != records:
+        wave["records"] = records
+        write_state(ctx, state)
+    ctx["did"].append("records of %s at %s" % (
+        task["id"], (answer.get("head") or "?")[:7]))
+    return None
+
+
+def _is_record(path, records):
+    """True for a path at or under one of `records` (git-root relative)."""
+    return any(path == r or path.startswith(r.rstrip("/") + "/")
+               for r in records or ())
+
+
 def integrate_member(ctx, state, phase, task):
     """Carry a wave member's tree into the phase tree once per start, and
     re-gate on the phase tree where the integration overlapped a sibling or
@@ -1408,10 +1448,12 @@ def integrate_member(ctx, state, phase, task):
     return None
 
 
-def tree_holds_only_integrated(ctx, tree):
+def tree_holds_only_integrated(ctx, tree, records=()):
     """True when every path the tree changed holds the bytes the phase tree
     holds - nothing in it would be lost with it; False when one differs; None
-    when git could not say."""
+    when git could not say. A path under `records` is left out: those bytes
+    are the phase tree's own committed records, put there by the refresh, and
+    the phase tree's working copy of them moves on with every row it writes."""
     try:
         done = subprocess.run(["git", "-C", tree, "status", "--porcelain", "-z",
                                "--untracked-files=all", "--no-renames"],
@@ -1422,7 +1464,7 @@ def tree_holds_only_integrated(ctx, tree):
         return None
     for item in done.stdout.split(b"\0"):
         rel = item[3:].decode("utf-8", "replace")
-        if not rel:
+        if not rel or _is_record(rel, records):
             continue
         sides = []
         for root in (tree, ctx["gitRoot"]):
@@ -1447,7 +1489,8 @@ def retire_member(ctx, state, task):
     if task.get("status") not in _mio.TERMINAL:
         return None
     wave.setdefault("retired", []).append(task["id"])
-    clean = tree_holds_only_integrated(ctx, tree) if os.path.isdir(tree) else True
+    clean = tree_holds_only_integrated(ctx, tree, wave.get("records")) \
+        if os.path.isdir(tree) else True
     if clean is not True:
         write_state(ctx, state)
         ctx["did"].append("tree of %s kept at %s (%s)" % (

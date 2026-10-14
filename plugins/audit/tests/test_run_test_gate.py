@@ -9818,6 +9818,49 @@ def _affected_cases(check):
                   for ln in failed_lines))
 
 
+def _member_records_cases(check):
+    """A wave member's tree holds the phase tree's records once the drive has
+    refreshed them, and those bytes are the plan's, not the task's change: the
+    affected selection must not read them as work the task did."""
+    root = _mini_repo("run-test-gate-records-")
+    try:
+        for rel in ("docs/audit/audit-plan.json", "docs/audit/journal/a.jsonl",
+                    "src/a.py"):
+            os.makedirs(os.path.dirname(os.path.join(root, rel)), exist_ok=True)
+            with open(os.path.join(root, rel), "w") as fh:
+                fh.write("v0\n")
+        for arg in (["add", "--", "."],
+                    ["-c", "user.email=fixture@example.com",
+                     "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                     "commit", "-qm", "fixture"]):
+            subprocess.run(["git", "-C", root] + arg, check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for rel in ("docs/audit/audit-plan.json", "docs/audit/journal/a.jsonl",
+                    "src/a.py"):
+            with open(os.path.join(root, rel), "w") as fh:
+                fh.write("v1\n")
+        with open(os.path.join(root, "docs", "audit", "journal", "b.jsonl"),
+                  "w") as fh:
+            fh.write("new\n")
+        records = ["docs/audit/audit-plan.json", "docs/audit/journal"]
+        own, own_why = M.task_changed_paths(root, ["src/a.py"], True,
+                                            records=records)
+        bare, _w = M.task_changed_paths(root, ["src/a.py"], True)
+        check("rp1 a member tree's changed paths leave out every path at or "
+              "under a record path - modified and untracked alike - and keep "
+              "the work: %r" % ((own, own_why),),
+              own == ["src/a.py"] and own_why is None)
+        # The second direction: with no record paths named nothing is left out,
+        # so an exclusion that dropped everything outside `src/` reads red here.
+        check("rp2 ...and with no record paths named, the records are listed "
+              "like any change: %r" % (sorted(bare),),
+              sorted(bare) == ["docs/audit/audit-plan.json",
+                               "docs/audit/journal/a.jsonl",
+                               "docs/audit/journal/b.jsonl", "src/a.py"])
+    finally:
+        _harness.remove_tree(root)
+
+
 def _tree_cases(check):
     """`--tree DIR`: the commands, the tree bracket and the digests are taken over
     DIR, while the row, the pointer and the boundary land in the project the
@@ -9912,6 +9955,7 @@ def _selftest():
         _harness.stage(check, "tr-block", _tree_cases)
         _harness.stage(check, "sl-block", _success_line_cases)
         _harness.stage(check, "ag-block", _affected_cases)
+        _harness.stage(check, "rp-block", _member_records_cases)
         _group_cases(check)
         _crowd_cases(check)
         _full_scope_cases(check)

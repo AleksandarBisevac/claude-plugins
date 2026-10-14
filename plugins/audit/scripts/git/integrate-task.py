@@ -41,6 +41,12 @@ accounts for them).
 Usage:
   integrate-task.py <manifest> <taskId> [--project DIR] [--json]
                     [--undeclared widen|discard|block]
+  integrate-task.py <manifest> <taskId> --refresh-records [--project DIR] [--json]
+
+`--refresh-records` writes into the TASK tree instead: it brings that tree's
+record paths - the same `record_paths` the integration leaves out - to the phase
+tree's committed records, so a member's checks read the plan the phase tree
+holds. Work paths are not touched, and the task tree's index is left at its base.
 
 Exit codes:
   0  integrated, or already integrated, or there was nothing to integrate
@@ -461,6 +467,57 @@ def _place(git_root, tree, path, content):
 
 
 # --- the command -----------------------------------------------------------------------
+# --- the member tree's records, brought to the phase tree's ----------------------
+def refresh_records(manifest, phase, task, manifest_path, project, git_root):
+    """`(exitCode, answer)` - bring the task tree's record paths to the phase
+    tree's COMMITTED records, and touch nothing else in it. Prints nothing.
+
+    A task tree is cut at the wave's base and the phase tree goes on committing
+    records after that (a task added, a state commit), so every check a member
+    runs over the plan, the journal or the evidence would otherwise read a plan
+    the phase tree no longer holds. The set is `record_paths` - the same set the
+    integration leaves out of what a task changed - so a refreshed record can
+    never be carried back as the task's work. Each record file the phase HEAD
+    holds is checked out from it, a record file the tree has and the phase HEAD
+    does not is removed, and the tree's index is put back at its own base for
+    those paths: the refreshed bytes stay working-tree changes, never staged."""
+    task_id, phase_id = str(task.get("id")), str((phase or {}).get("id"))
+    answer = {"task": task_id, "phaseId": phase_id, "tree": None, "head": None,
+              "records": [], "refreshed": [], "removed": [], "error": None,
+              "sentence": ""}
+    try:
+        marker, tree = task_tree(git_root, task_id)
+        if marker is None:
+            return E_REFUSED, dict(answer, error=tree, sentence=(
+                "records not refreshed: %s" % (tree,)))
+        records = record_paths(manifest, phase, manifest_path, project, git_root)
+        head = _git_ok(git_root, ["rev-parse", "HEAD"]).decode().strip()
+        answer = dict(answer, tree=tree, head=head, records=records)
+        if not records:
+            return E_OK, dict(answer, sentence="task %s: no record path lies "
+                              "inside the git root, so nothing to refresh"
+                              % (task_id,))
+        wanted = _nul_list(_git_ok(git_root, ["ls-tree", "-r", "-z", "--name-only",
+                                              head, "--"] + records))
+        held = set(_nul_list(_git_ok(tree, ["ls-files", "-z", "--"] + records)))
+        held |= set(_nul_list(_git_ok(tree, ["ls-files", "-o", "--exclude-standard",
+                                             "-z", "--"] + records)))
+        if wanted:
+            _git_ok(tree, ["checkout", head, "--"] + wanted)
+        gone = sorted(p for p in held - set(wanted)
+                      if os.path.lexists(os.path.join(tree, p)))
+        for rel in gone:
+            os.remove(os.path.join(tree, rel))
+        _git_ok(tree, ["reset", "-q", "--"] + records)
+    except (GitUnavailable, OSError) as exc:
+        return E_NO_BASIS, dict(answer, error=str(exc),
+                                sentence="could not be asked: %s" % (exc,))
+    return E_OK, dict(answer, refreshed=sorted(wanted), removed=gone,
+                      sentence="task %s: %d record file(s) brought to the phase "
+                               "tree's HEAD %s, %d removed" % (
+                                   task_id, len(wanted), head[:12], len(gone)))
+
+
 def build_parser():
     """The argument parser, separated so a case can read the option table."""
     parser = argparse.ArgumentParser(
@@ -475,6 +532,10 @@ def build_parser():
     parser.add_argument("--undeclared", choices=CHOICES, default=None,
                         help="what to do with changed paths the task does not "
                              "declare; without it they are a decision (exit 3)")
+    parser.add_argument("--refresh-records", action="store_true",
+                        dest="refresh_records",
+                        help="bring the task tree's record paths to the phase "
+                             "tree's committed records instead of integrating")
     parser.add_argument("--json", action="store_true", dest="as_json")
     return _claude_home.attach_usage_hint(parser)
 
@@ -516,8 +577,12 @@ def main(argv, out=print):
         return E_USAGE
     project = os.path.abspath(args.project)
     git_root = _invariants.git_root_for(manifest, project)
-    code, answer = integrate(manifest, phase, task, args.manifest, project, git_root,
-                             undeclared=args.undeclared)
+    if args.refresh_records:
+        code, answer = refresh_records(manifest, phase, task, args.manifest,
+                                       project, git_root)
+    else:
+        code, answer = integrate(manifest, phase, task, args.manifest, project,
+                                 git_root, undeclared=args.undeclared)
     if args.as_json:
         out(json.dumps(answer, indent=2, sort_keys=True))
     else:

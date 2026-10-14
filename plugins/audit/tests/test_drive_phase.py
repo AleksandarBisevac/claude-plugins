@@ -3840,6 +3840,176 @@ def _wave_red_sibling_cases(check):
           code == 0 and instruction(again) == ("decide", "gate-red", None))
 
 
+# A member's record check, run as a gate entry in the member's tree: every
+# record file the phase tree has committed is, in this tree, the phase tree's
+# committed bytes, and no record file the phase tree no longer has is left over.
+# The phase tree is the repository's main worktree, read off git's own list -
+# a path written into the gate would be scrubbed from the recorded row, and the
+# commit would then refuse a verdict measured under a different gate. Line
+# endings are folded on both sides, since a checkout may convert them.
+_RECORDS_MATCH = (
+    "import os, subprocess, sys\n"
+    "def git(cwd, *args):\n"
+    "    return subprocess.run(['git', '-C', cwd] + list(args),\n"
+    "                          capture_output=True).stdout\n"
+    "root = git('.', 'worktree', 'list', '--porcelain').decode('utf-8')\\\n"
+    "    .splitlines()[0][len('worktree '):]\n"
+    "def names(raw):\n"
+    "    return [p for p in raw.decode('utf-8').split('\\0') if p]\n"
+    "def mine(rel):\n"
+    "    try:\n"
+    "        with open(rel, 'rb') as fh:\n"
+    "            return fh.read().replace(b'\\r\\n', b'\\n')\n"
+    "    except OSError:\n"
+    "        return None\n"
+    "want = names(git(root, 'ls-tree', '-r', '-z', '--name-only', 'HEAD', '--',\n"
+    "                 'docs/audit'))\n"
+    "bad = [p for p in want\n"
+    "       if mine(p) != git(root, 'show', 'HEAD:' + p).replace(b'\\r\\n', b'\\n')]\n"
+    "bad += [p for p in names(git('.', 'ls-files', '-z', '--', 'docs/audit'))\n"
+    "        if p not in want and os.path.exists(p)]\n"
+    "sys.stdout.write('records %d, differ %r\\n' % (len(want), bad))\n"
+    "sys.exit(0 if want and not bad else 1)\n")
+
+
+def _wave_records_repo(prefix):
+    """The two-task wave fixture, P1.1's gate adding the record check against
+    the phase tree and P1.2's gate red, so P1.2's tree is still there to read
+    once the drive has gated it."""
+    root, mpath = _wave_repo(prefix, 2, red=("P1.2",))
+    with open(os.path.join(root, "check_records.py"), "w") as fh:
+        fh.write(_RECORDS_MATCH)
+    with open(mpath) as fh:
+        plan = json.load(fh)
+    first = plan["phases"][0]["tasks"][0]
+    first["tests"]["gate"].append('"%s" check_records.py' % (sys.executable,))
+    with open(mpath, "w") as fh:
+        json.dump(plan, fh, indent=2)
+    for argv in (["add", "-A"], ["commit", "-qm", "the record check"]):
+        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
+                       timeout=60)
+    return root, mpath
+
+
+def _work_bytes(tree):
+    """`{path: bytes}` of every file in a tree outside its git link and the
+    record directory - the member's work as it stands."""
+    found = {}
+    for here, dirs, files in os.walk(tree):
+        rel_dir = os.path.relpath(here, tree).replace(os.sep, "/")
+        dirs[:] = [d for d in dirs if d != ".git"
+                   and (rel_dir + "/" + d).lstrip("./") != "docs/audit"]
+        for name in files:
+            rel = (rel_dir + "/" + name) if rel_dir != "." else name
+            if rel == ".git":
+                continue
+            with open(os.path.join(here, name), "rb") as fh:
+                found[rel] = fh.read()
+    return found
+
+
+def _records_wave(M, prefix):
+    """Drive a records wave to its second `next`: the wave is cut, the phase
+    tree then commits a task add, both executors file, and the drive gates.
+    -> {root, mpath, added, committed, tree2, before, after, second}"""
+    root, mpath = _wave_records_repo(prefix)
+    _code, first = _next_wave(M, root, mpath)
+    sent = _dispatched(first)
+    added = _add_task(root, mpath)
+    # The added task's own gate, recorded on the phase tree, so the record-only
+    # commit carries an evidence row beside the manifest and the journal.
+    with _Env(root):
+        gated = _verb(root, "run-test-gate.py", [mpath, PHASE, "--task", added,
+                                                 "--record", "--project-dir", root])
+    for argv in (["add", "--", "docs/audit"],
+                 ["commit", "-qm", "record-only: a task add"]):
+        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
+                       timeout=60)
+    committed = [p for p in _git_out(root, "show", "--name-only", "--format=",
+                                     "HEAD").splitlines() if p.strip()]
+    for t in sent:
+        _file_wave_executor(root, mpath, t)
+    tree2 = _tree_of(root, "P1.2")
+    before = _work_bytes(tree2) if tree2 else {}
+    _code, second = _next_wave(M, root, mpath)
+    after = _work_bytes(tree2) if tree2 and os.path.isdir(tree2) else {}
+    return {"root": root, "mpath": mpath, "added": added, "sent": sent,
+            "committed": committed, "tree2": tree2, "before": before,
+            "after": after, "second": second, "gated": gated}
+
+
+def _tree_plan_ids(tree):
+    """The task ids the plan IN a member's tree holds, or None unreadable."""
+    try:
+        return sorted(_mio.tasks_by_id(_mio.load_manifest(os.path.join(
+            tree, "docs", "audit", "audit-plan.json"))))
+    except Exception:                                          # noqa: BLE001
+        return None
+
+
+def _wave_record_cases(check):
+    M, why = _load("drive_phase_wave_records")
+    if M is None:
+        check("wq1 the driver loads", False, why)
+        return
+    run = _records_wave(M, "waverec")
+    root, mpath = run["root"], run["mpath"]
+    rows = [r.get("status") for r in _rows_of(root, mpath, "P1.1")]
+    tasks = tasks_of(mpath)
+    kinds = sorted(set(p.split("/")[2] if p.count("/") > 2 else "manifest"
+                       for p in run["committed"] if p.startswith("docs/audit/")))
+    check("wq1 a wave is cut, the phase tree then commits a record-only commit "
+          "(a task add), and the member's gate is green: its record checks see "
+          "the phase tree's manifest pair, journal and evidence: rows=%r "
+          "status=%r committed=%r gated=%r %r" % (rows, (tasks.get("P1.1") or {}).get(
+              "status"), run["committed"], run["gated"][0], run["second"][-300:]),
+          run["sent"] == ["P1.1", "P1.2"] and run["added"] in tasks
+          and kinds == ["evidence", "journal", "manifest"]
+          and rows == ["passed"]
+          and (tasks.get("P1.1") or {}).get("status") == "done")
+    tree2 = run["tree2"]
+    listed = _git_out(tree2, "diff", "--cached", "--name-only") if tree2 else "?"
+    ids = _tree_plan_ids(tree2) if tree2 else None
+    check("wq2 the refresh touches record paths only - a member's work files are "
+          "byte-identical before and after it: work=%r plan-ids=%r staged=%r"
+          % (sorted(set(run["before"]) ^ set(run["after"]))
+             or [p for p in run["before"] if run["before"][p] != run["after"].get(p)],
+             ids, listed),
+          tree2 and run["before"] and run["before"] == run["after"]
+          and run["before"].get("src/f2.txt") == b"changed by P1.2\n"
+          and ids is not None and run["added"] in ids and listed == "")
+    kept = [t for t in (_tree_of(root, "P1.1"),) if t and os.path.isdir(t)]
+    check("wq3 a closed member's tree whose only difference from the phase tree "
+          "is its refreshed records is still taken down: %r" % (kept,),
+          not kept and (tasks.get("P1.1") or {}).get("status") == "done")
+
+
+def _wave_record_mutant_cases(check):
+    # RED TWINS, one per direction: a refresh that does nothing leaves the
+    # member's record check red, and a refresh that also rewrites work paths
+    # fails wq2's byte comparison - so both predicates are seen to read.
+    idle, _w = _load("drive_phase_wave_records_idle")
+    idle.refresh_member_records = lambda ctx, state, task, tree: None
+    run = _records_wave(idle, "waverecm")
+    rows = [r.get("status") for r in _rows_of(run["root"], run["mpath"], "P1.1")]
+    check("wq1m RED TWIN: a driver that does not refresh a member's records "
+          "records no green row for the member whose gate reads them: %r"
+          % (rows,), "passed" not in rows)
+    wide, _w = _load("drive_phase_wave_records_wide")
+    real = getattr(wide, "refresh_member_records", None)
+
+    def over_work(ctx, state, task, tree):
+        said = real(ctx, state, task, tree) if real is not None else None
+        subprocess.run(["git", "-C", tree, "checkout", "-q", "HEAD", "--", "src"],
+                       capture_output=True, timeout=60)
+        return said
+    wide.refresh_member_records = over_work
+    run = _records_wave(wide, "waverecw")
+    check("wq2m RED TWIN: a refresh that also checks out work paths leaves a "
+          "member's work files changed: %r" % (run["after"].get("src/f2.txt"),),
+          run["tree2"] and run["before"] != run["after"])
+
+
 def _wave_crash_cases(check):
     M, why = _load("drive_phase_wave_crash")
     if M is None:
@@ -4287,7 +4457,7 @@ def _wave_review_discard_cases(check):
     # RED TWIN for `tree_holds_only_integrated`: a guard that never reports a
     # difference takes the tree down with the discarded bytes in it.
     mutant, _w = _load("drive_phase_wave_discard_mutant")
-    mutant.tree_holds_only_integrated = lambda ctx, tree: True
+    mutant.tree_holds_only_integrated = lambda ctx, tree, records=(): True
     _r, mpath_m, tree_m, _a, answered_m, _s = _discard_run(mutant, "wavediscardm")
     check("wt8m RED TWIN: a driver whose guard never sees a difference removes "
           "the discarded change's tree, so wt8's predicate fails for it: %r"
@@ -4800,6 +4970,8 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("nf-block", "_landing_cases"), ("bk-block", "_blocked_cases"),
           ("cn-block", "_chain_next_cases"),
           ("wv-block", "_wave_cases"), ("wr-block", "_wave_red_sibling_cases"),
+          ("wq-block", "_wave_record_cases"),
+          ("wqm-block", "_wave_record_mutant_cases"),
           ("wc-block", "_wave_crash_cases"), ("w1-block", "_width_one_cases"),
           ("wz-block", "_wave_width_cases"),
           ("wt-block", "_wave_resume_cases"), ("wt5-block", "_wave_adopt_cases"),

@@ -1814,7 +1814,8 @@
         "plugins/audit/scripts/governance/drive-phase.py",
         "plugins/audit/scripts/governance/run-test-gate.py",
         "plugins/audit/tests/test_drive_phase.py",
-        "plugins/audit/tests/test_run_test_gate.py"
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/git/integrate-task.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1852,7 +1853,18 @@
       "startedAt": "2026-10-14T10:32:19Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-14T12:09:52Z.e3083e",
+        "status": "passed",
+        "at": "2026-10-14T12:09:52Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-14T12:11:38Z",
+          "text": "Red-first proved by the orchestrator (the helper ran the fix without integrate-task.py, then outside the files): throwaway tree at 573bc13c with only the two new test files copied in, __pycache__ purged -> test_drive_phase.py --stage wq-block --stage wqm-block exit 1, 1/5 (FAIL wq1, wq2, wq3, wq2m); test_run_test_gate.py exit 1, 531/532 (rp-block raised: task_changed_paths takes no records). With integrate-task.py, drive-phase.py and run-test-gate.py from the work copied in: 5/5 and 533/533, exit 0. Scope widened with integrate-task.py (record_paths lives there) and the task gate re-recorded green."
+        }
+      ]
     },
     {
       "id": "P125.36-0h5",
@@ -2420,7 +2432,7 @@
     {
       "id": "P125.44-0h5",
       "title": "This repo's task gates actually narrow: the sweep runs a named list of suites, and a verb records the phase gate's derived listing and spelling in meta",
-      "status": "in_progress",
+      "status": "done",
       "description": "Owner's cost target: P125.8 (affected-test task gates) and P125.9 (tools/affected.py --list-all / --list-related) landed, but this repo's task gates still run the full ~505 s phase gate, because two primitives are missing: (1) tools/sweep-selftests.py takes no list of suites, so a path-scoped spelling has nothing to call; (2) no verb writes meta.phaseGate.derived (the plan's listing/spelling the deriver reads), and a hand edit of the plan is refused. Add a suite-path list to the sweep (positional paths or one flag; same grading, same isolation), and a manifest verb that records meta.phaseGate.derived {listing: {all, related}, spelling} with validation (spelling must carry {paths}) and a journal row. Then record this repo's values through it (the orchestrator runs the verb after landing) and measure one real task gate before and after, with the commands in the return. Keep it small; one way to spell a suite list, shared with verify.sh's later --only if the CI study asks for one.",
       "files": [
         "tools/sweep-selftests.py",
@@ -2461,20 +2473,41 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "62e7e07dde96",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(a) tools/sweep-selftests.py: new VALUE_FLAGS + named_suites(argv, swept) -> (paths, refusal). main() runs exactly the named repo-relative paths (sorted, once each) through the same sweep()/grade()/isolation; a path not in sweep_files() is refused exit 2 naming every such path, before anything runs; --shard with a named list is refused; no names = whole tree as before. Usage line added to the docstring. Case added (title verbatim): pure argv reading (flag values not read as paths, --x=V form, dedupe), a fixture sweep over named files only (contract-less file red 'no --selftest', debris file red naming left-here.txt, unnamed fixture not run), and the real main via subprocess (refusal exit 2 naming tools/not-a-suite with no 'sweep:' line; a named run of plugins/audit/tests/test__cli_fmt.py printing exactly that one row and 1/1 files ok). Fixture names carry no extension (tool_basename_drift / c5). (b) plugins/audit/scripts/manifest/audit-task.py: new verb `record-listing --listing-all CMD --listing-related CMD --spelling CMD --verified-on CMD [manifest]` (VERB_FLAGS row, parser choice + four flags, doors entry, Usage block). All four required (exit 2 naming the missing flag); each passes _machine_paths.executed_value_refusal; --verified-on is RUN via _proc_group.shell_invocation in the project and its output stored as verifiedOn.answer (a failing or silent command is refused exit 2). Writes meta.phaseGate.derived {listing:{all,related}, spelling, verifiedOn} through _write_plan (index-only, revalidated), keeping other phaseGate/derived keys; any validator warning coded phases.phase_gate_derived.* after the write rolls the file back, exit 1, FINDING printed - so a spelling or listing.related without {paths} is refused in the validator's own words. One journal row `listing.recorded` (details field/from/to name the keys, never command text). New import _proc_group in audit-task. Tests in plugins/audit/tests/test_audit_task.py: new stage rl-block (_record_listing_cases, title verbatim) plus rows for the new verb in the vf misplaced-flag grid, vf4 second-direction map and tw5 tree-naming list. (c) plugins/audit/tests/test_derive_phase_gate.py: case (title verbatim) reads this repo's four values off CONTRIBUTING.md, runs them (python3 -> this interpreter for the Windows leg), feeds run-test-gate._affected_facts + _affected_tests.select/entries_for for changed=[tools/affected.py], and asserts no widen, every step is the sweep spelling with a non-empty path list its own named_suites accepts, the related listing's suites included, and fewer than --list-all (observed: test__output.py, test__refs.py of 155). Docs: CONTRIBUTING.md new subsection 'A task gate that runs what the change can break' listing this repo's values; manifest-conventions.md journal action listing.recorded + in-process writer list; PLUGIN-BUILD-GUIDE.md (adjacent file, NOT in task files - needed because e1 requires the verb in the audit-task section and g1 requires the _deps --render module map to include _proc_group; the plan gate allowed the Edit tool write) paragraph + module-map line. Runs: `python3 tools/sweep-selftests.py --jobs 4 --quiet` exit 0, 334/334 files ok, 153 migrated, 16118 cases, 7:11 wall; `python3 tools/sweep-selftests.py --selftest` 95/95; `ruff check plugins/audit tools` exit 0; vermin exit 0. Measurement in a scratch copy (tar of the worktree's tracked+untracked files, git init+commit, a comment appended to tools/affected.py, scratch task P125.47 added with --files tools/affected.py): before = the gate this repo's tasks actually carry for such a change (P125.9's tests.gate starts with `selftests` = `python3 tools/sweep-selftests.py`, the whole sweep; measured in this tree: 6:56 wall at --jobs 6, 7:11 at --jobs 4) and with no listing recorded the affected arm adds nothing ('related: no meta.phaseGate.derived.listing.related is recorded'); then `python3 plugins/audit/scripts/manifest/audit-task.py record-listing --listing-all 'python3 tools/affected.py --list-all' --listing-related 'python3 tools/affected.py --list-related {paths}' --spelling 'python3 tools/sweep-selftests.py {paths}' --verified-on 'python3 --version' docs/audit/audit-plan.json --project-dir <scratch>` exit 0; after = `python3 plugins/audit/scripts/governance/run-test-gate.py docs/audit/audit-plan.json P125 --task P125.47 --quiet --project-dir <scratch>` with tests.gate [lint] exit 0, GATE GREEN: lint + `affected/related: plugins/audit/tests/test__output.py, plugins/audit/tests/test__refs.py` run as `python3 tools/sweep-selftests.py <those>`, 51.7 s wall. FOUND, NOT FIXED (outside files, for the orchestrator to file): when any task in the phase has a path-scoped gate entry, _gate_derive.resolve_shape prefers that sibling over meta.phaseGate.derived.spelling and repointed() replaces EVERY path token including the runner: a sibling gate `python3 tools/sweep-selftests.py tools/affected.py` became `python3 plugins/audit/tests/test__deps.py plugins/audit/tests/test__output.py plugins/audit/tests/test__refs.py`, and `python3 tools/affected.py --selftest` became `python3 <three suites> --selftest` - both run only the first suite. So in this repo a task should not spell its own gate path-scoped until that is fixed; the narrowing above holds when no sibling carries a path-scoped entry. ORCHESTRATOR RUNS AFTER LANDING (from the project dir): python3 plugins/audit/scripts/manifest/audit-task.py record-listing --listing-all 'python3 tools/affected.py --list-all' --listing-related 'python3 tools/affected.py --list-related {paths}' --spelling 'python3 tools/sweep-selftests.py {paths}' --verified-on 'python3 --version' docs/audit/audit-plan.json . No meta.coupling reader added; docs/audit/evidence untouched; live plan not written.",
+        "descriptive": "The sweep now runs exactly a named list of suites and refuses unknown paths, and a new record-listing verb writes the listing and spelling a task gate narrows through; in a scratch copy a tools/affected.py task gate dropped from the whole sweep (~7 min) to lint plus two suites (52 s)."
       },
       "startedAt": "2026-10-14T08:30:07Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T11:21:03Z",
+      "verifiedBy": [
+        "tools/sweep-selftests.py: a sweep given suite paths runs exactly those (graded by the same rules, contract and debris included) and refuses a path that is not a suite in the tree, naming it",
+        "plugins/audit/tests/test_audit_task.py: the verb that records meta.phaseGate.derived (listing.all, listing.related, spelling) writes it through the manifest writer, revalidates, journals one row, and refuses a spelling without the {paths} placeholder",
+        "plugins/audit/tests/test_derive_phase_gate.py: with this repo's recorded listing and spelling, a task touching only tools/affected.py derives a gate naming its own suites, not the whole sweep"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T11:21:02Z.a5d539",
         "status": "passed",
         "at": "2026-10-14T11:21:02Z"
-      }
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "62e7e07dde96",
+        "at": "2026-10-14T11:21:03Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T09:24:09Z",
+        "basis": "`python3 plugins/audit/tests/test_derive_phase_gate.py --selftest` in a throwaway tree at HEAD exited 1, but no case --case names failed an assertion as the task's own: with this repo's recorded listing and spelling, a task touching only tools/affected.py derives a gate naming its own suites, not the whole sweep: CONTRIBUTING.md does not list each of ('listing-all', 'listing-related', 'spelling', 'verified-on') once (house FAIL) - SELFTEST FAILED: 31/32 cases passed; --case with this repo's recorded listing and spelling, a task touching only tools/affected.py derives a gate naming its own suites, not the whole sweep names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
+      },
+      "notes": [
+        {
+          "at": "2026-10-14T11:25:46Z",
+          "text": "Red-first proved by the orchestrator over the landed commit 62e7e07d, in a throwaway tree, each mutation asserted applied, __pycache__ purged between runs, tree diff-clean after each restore: (1) named_suites' unknown-path refusal disabled -> tools/sweep-selftests.py --selftest exit 1, 94/95, FAIL 'a sweep given suite paths runs exactly those ...'; (2) audit-task.py at 62e7e07d^ -> test_audit_task.py --selftest exit 1, 1034/1037, FAIL 'the verb that records meta.phaseGate.derived ...' (plus vf4, tw5 over the verb table); (3a) named_suites refusing every list -> test_derive_phase_gate.py --selftest exit 1, 31/32, FAIL 'with this repo's recorded listing and spelling ...' on its assertion; (3b) tools/sweep-selftests.py at 62e7e07d^ -> exit 1, AttributeError named_suites. Baselines at 62e7e07d: all three exit 0."
+        }
+      ]
     },
     {
       "id": "P125.45-0h5",
@@ -2608,6 +2641,489 @@
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "phase"
+    },
+    {
+      "id": "P125.48-0h5",
+      "title": "One home for reading a Playwright or vitest run: stamp-verification reads failures through _runner_output, not a private regex",
+      "status": "pending",
+      "description": "Phase-review finding (med, DRY) on the red-first helper work: stamp-verification.py carries its own `_PW_LINE_ENTRY` regex and `red_read_tally` / `red_failing_cases` wrappers, while `_runner_output._FAILURE_READERS[\"playwright\"]` - the shared reader every other surface uses - lacks re.M and so misses line-anchored entries. Fix the shared reader (re.M, plus the Playwright line and vitest JSON readers the helper needed) and make stamp-verification call it; delete the private regex and wrappers. One runner's reading lives in one place. Behaviour seen by stamp-verification's existing cases must not change.",
+      "files": [
+        "plugins/audit/scripts/governance/_runner_output.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test__runner_output.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__runner_output.py: a Playwright list-reporter output whose failing entries start mid-text (not at offset 0) is read as red with each failing test named, through _FAILURE_READERS['playwright']",
+          "plugins/audit/tests/test_stamp_verification.py: stamp-verification defines no Playwright or vitest pattern of its own - its red reading is the _runner_output reader's answer (a mutation of the shared reader changes the helper's verdict)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.49-0h5",
+      "title": "The affected-test arm's trust checks and listing facts are one helper in _gate_derive, read by run-test-gate and derive-phase-gate",
+      "status": "pending",
+      "description": "Phase-review finding (med, DRY) on the affected-test gates: `_affected_tests._untrusted` repeats the two version checks of `_gate_derive._importers_arm`, and `run-test-gate._affected_facts` repeats `derive-phase-gate._gather_facts`' listing and version runs. Move each into one helper in `_gate_derive.py` and have the three callers use it; delete the copies. The derived gates of the existing cases must be byte-identical before and after.",
+      "files": [
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/scripts/governance/_affected_tests.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/tests/test__gate_derive.py",
+        "plugins/audit/tests/test__affected_tests.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test_derive_phase_gate.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__gate_derive.py: the version-trust verdict _affected_tests uses and the one _importers_arm uses are the same function's answer (a mutation of the helper changes both)",
+          "plugins/audit/tests/test_run_test_gate.py: run-test-gate's affected facts and derive-phase-gate's gathered facts come from the one _gate_derive helper and agree over the same tree and changed paths"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.50-0h5",
+      "title": "The executor brief tells the agent to reuse each tests.add clause verbatim as its case title, or to file a tests.addMap entry",
+      "status": "pending",
+      "description": "Phase-review finding (med, noise): `_filed_returns.tests_add_gaps` matches a declared tests.add case only by its verbatim clause or by a `tests.addMap` entry, so a return whose case titles paraphrase the plan is flagged even when every declared case is covered (seen on two cases of an earlier P125 task). The rule is right; the brief never states it. Make the brief's Tests section (audit-lookup.py brief) and agents/audit-executor.md say it in one sentence, next to the tests.add list, naming the two ways a case is matched. No change to the matching itself.",
+      "files": [
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/agents/audit-executor.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_lookup.py: an executor brief for a task with tests.add states, beside the list, that each case title is the clause verbatim or a tests.addMap entry, and a brief for a task with no tests.add does not",
+          "plugins/audit/tests/test_audit_lookup.py: the sentence the brief prints names the same two matches tests_add_gaps accepts (verbatim clause, addMap entry) - read off the function's behaviour, not a second copy of the wording"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.51-0h5",
+      "title": "A fixture path is declared as one, and a path literal split across string literals to dodge the reference lints is reported",
+      "status": "pending",
+      "description": "Phase-review finding (med, CLASS - recurred on two P125 tasks): agents split path literals (e.g. \"plugins/au\" \"dit/x.py\") so `_refs`' dangling-reference lints do not see a fixture path that does not exist in the tree. A patch per instance is how this class keeps coming back. Invariant: a fixture path is DECLARED as a fixture, through one marker the lint reads (one spelling, documented in the lint's docstring), and the lint then accepts it; a path assembled from adjacent or concatenated string literals is reported by name, so splitting is never needed and no longer hides anything. Convert the splits that exist today to the marker (widen scope through the drive for the files that hold them). Read the before-you-claim and no-silent-pass skills first; prove the new lint red both ways (a split path reported, a declared fixture accepted).",
+      "files": [
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__refs.py: a test file whose fixture path is assembled from two adjacent string literals is reported, naming the file, the line and the joined path",
+          "plugins/audit/tests/test__refs.py: the same fixture path carrying the declared fixture marker is accepted by the dangling-reference lint and by the split-literal lint",
+          "plugins/audit/tests/test__refs.py: over this repository's tree the split-literal lint reports nothing"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.52-0h5",
+      "title": "The unpriced-model check ignores ids that are not models, starting with Claude Code's <synthetic> turn",
+      "status": "pending",
+      "description": "Phase-review finding (med, false fire), measured: over the recorded sessions the shipped unpriced-model check fired on two, both on the model id `<synthetic>` - Claude Code's synthetic turn, not a model with a price - and on no real unpriced model. Exclude `<synthetic>` and any id that is not a model id (one predicate, shared by the session-start notice in meter-usage.py and doctor's unpriced-models row in _doctor_trail.py) so neither names it. A real unknown model id is still named.",
+      "files": [
+        "plugins/audit/hooks/meter-usage.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/tests/test_meter_usage.py",
+        "plugins/audit/tests/test__doctor_trail.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_meter_usage.py: a previous session whose last model id is <synthetic> prints no unpriced-model notice, and one whose id is an unknown real model still does",
+          "plugins/audit/tests/test__doctor_trail.py: ledger rows with model <synthetic> are not named by the unpriced-models row, and rows of an unknown real model are, with their token count"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.53-0h5",
+      "title": "Every closer reads a filed return through the journal row that recorded it, so a return changed or deleted after filing cannot close a task",
+      "status": "pending",
+      "description": "Phase-review finding (med, half delivered): an earlier P125 task bound a filed return to a `task.return.filed` journal row carrying its digest and added `_filed_returns.read_filed_return_checked`, but no closer calls it - `audit-task.py done`, `commit-task-work.py` (claims_from_return and its own read) and the drive's own return reads still use the plain `read_filed_return`, so a return edited after filing still closes its task. Make the checked read the one every closer uses (pass the journal rows and checkout), and make the plain read unreachable from a closer: one invariant, not one call site at a time. A return with no filing row (filed before the row existed) is read as today and says so, never refused silently and never treated as checked.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test__filed_returns.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: done over a task whose filed return was edited after its filing row is refused, naming the recorded and the present digest, and writes nothing",
+          "plugins/audit/tests/test_commit_task_work.py: the task commit's claims come from the checked read - a return edited after filing refuses the commit, naming both digests",
+          "plugins/audit/tests/test__filed_returns.py: every module that closes a task reads returns only through read_filed_return_checked (a closer calling the plain read is reported by name)",
+          "plugins/audit/tests/test_audit_task.py: a return filed before filing rows existed closes as before and its close says the return was not checked against a row"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.54-0h5",
+      "title": "A follower a gate step owes is a record with a recipe, and the drive regenerates a generated follower in the task's own commit",
+      "status": "pending",
+      "description": "Phase-review finding (med, CLASS - recurred on two P125 tasks): any task that adds an import regenerates PLUGIN-BUILD-GUIDE.md's module map outside its files, so every such task ends in an undeclared-change decision. Implement consolidated plan F2.3 (approved 2026-10-14), which rewrites P128.4. (1) A gate step that owes a follower prints one structured line naming the path and the recipe that regenerates it; run-test-gate records it in the evidence row as `followersOwed`. Owners today: _deps' module map (`python3 plugins/audit/scripts/_deps.py --render`), check-rendered-artifacts' STALE lines with their refresh command, _refs' README pins. (2) The drive regenerates a generated follower by its recipe in the task's tree and commits it with the task. A hand-edited follower becomes a widening whose basis is the lint's own record, so it needs no judgement. (3) Screenshot capture as a recipe is run by the orchestrator's drive, never by an agent. NOT built (the plan deletes them): tools/followers.py, a product `_followers` module, `meta.followers.command` - the product already has one planning-time deriver of companion files, `scripts/manifest/_scope_companions.py`, and `followersOwed` is the only run-time record. Prefer removals to additions (owner decision D9: net code lines in scripts+hooks must not grow past the 3.4.0 count).",
+      "files": [
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/scripts/_refs.py",
+        "tools/check-rendered-artifacts.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__deps.py",
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: a fixture task adding a .py under scripts/ gets an evidence row whose followersOwed names the module map with its recipe",
+          "plugins/audit/tests/test_drive_phase.py: the drive regenerates that follower by its recipe in the task tree, the task commit carries it, and the second gate is green with no decision printed",
+          "plugins/audit/tests/test_drive_phase.py: a hand-edited follower owed by a lint is widened with the lint's record as its basis, and no undeclared-change decision is printed",
+          "plugins/audit/tests/test_run_test_gate.py: a STALE rendered artifact is recorded in followersOwed with the refresh command check-rendered-artifacts printed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.55-0h5",
+      "title": "The drive speaks in one-line signals, a brief per task and an explain on demand; phase.md and orchestrator.md are rewritten to the seven verbs",
+      "status": "pending",
+      "description": "Phase-review finding (med, CLASS - recurred on three P125 tasks): commands/phase.md sits at its byte ceiling in tools/measure-context.py, so every flag added to the run form trims unrelated prose, and the trims hit sentences other gates pin. Implement consolidated plan F2.5 (approved 2026-10-14), which rewrites P128.5. `drive-phase.py next --signal` prints one line of at most 200 bytes in the form `audit <phase> <verb> <subject> [auto...] | <basis> | next: <one command or wait>`, with the verbs dispatch, wait, ask, judge, review, done and stop. `brief <id>` prints the executor brief with the stable text first and the task-specific part last. `--explain <id>` gives at most 2 KB. The dispatch prompt is one fixed sentence plus the id, so two dispatch prompts are identical up to the id. Rewrite reference/orchestrator.md and commands/phase.md to the seven verbs, and LOWER measure-context's ceilings for them. The multi-line `decide-*` prompts in STEPS stop being the main channel and stay only behind --explain. Prefer removals (owner decision D9).",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/commands/phase.md",
+        "tools/measure-context.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_audit_lookup.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: every line next --signal prints over the recorded decision corpus is at most 200 bytes and uses one of the seven verbs",
+          "plugins/audit/tests/test_drive_phase.py: two executor dispatch prompts for different tasks are identical up to the task id, and the id comes last",
+          "plugins/audit/tests/test_audit_lookup.py: every executor brief places the rules and return contract before the task-specific sections",
+          "plugins/audit/tests/test_drive_phase.py: --explain for a pending decision prints at most 2048 bytes and names the options the decision takes",
+          "tools/measure-context.py: the run form of /audit:phase and orchestrator.md are held to ceilings lower than the ones they replace, and --gate is green"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.56-0h5",
+      "title": "The register-citation lint reads every source kind this repo ships, not only Python",
+      "status": "pending",
+      "description": "Phase-review finding (low, house rule): the lint that keeps private register ids (F/P/BUG numbers) out of code comments and docstrings - `_deps`' `_py_comment_citations` / `_py_docstring_citations`, held by case rc16 over the real tree - reads .py files only, so a .mjs, .js or .sh comment citing a register id escapes it (tools/capture-screenshots.mjs's awaitSaveCard docstring does today). Widen the lint to the comment syntax of every source kind the tree ships (.mjs/.js line and block comments, .sh # comments), through one table of comment syntaxes rather than one function per language, and fix the citations it then finds by stating the constraint instead of the id.",
+      "files": [
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/tests/test__deps.py",
+        "tools/capture-screenshots.mjs"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__deps.py: a register id cited in a .mjs block comment, a .js line comment and a .sh comment is reported with file and line, and the same id inside a string literal of those files is not",
+          "plugins/audit/tests/test__deps.py: over this repository's tree no source kind carries a register citation in a comment"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.57-0h5",
+      "title": "Three small review findings: a miscounted comment, an unbounded failure message, and a retry loop that duplicates _output.while_shared",
+      "status": "pending",
+      "description": "Phase-review findings (low, each small). (1) plugins/audit/scripts/_refs.py: the comment above TOOL_NAME_TREES calls `.claude/hooks` 'a fourth' tree while the tuple holds five; restate it without an ordinal. (2) tools/release.py: case rl8, and any case asserting on the fake runner's call list, prints the whole call list on failure; with wait_ci polling the fake for its whole timeout the message has reached more than 64 MB. Clip the message, and let the fake end wait_ci's loop so the case cannot poll for its timeout. (3) plugins/audit/scripts/governance/stamp-verification.py: `_remove_throwaway` carries its own retry loop for a shared-file removal; use `_output.while_shared`, the one retry helper for that.",
+      "files": [
+        "plugins/audit/scripts/_refs.py",
+        "tools/release.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/release.py: a failing case over the fake runner prints a bounded message (at most a few KB), and wait_ci over the fake returns without waiting for its timeout",
+          "plugins/audit/tests/test_stamp_verification.py: _remove_throwaway retries a shared-file removal through _output.while_shared (a mutation of while_shared changes its behaviour)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
