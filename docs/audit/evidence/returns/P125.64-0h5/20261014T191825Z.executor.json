@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "sweep-selftests (full, in the task tree)": "fail",
+    "ruff (three files)": "pass",
+    "own suite: test_commit_task_work.py --stage fg-block": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "mode regression, expectRedFirst false: no red owed. The helper was run and could not show one because the fix (_git_checked) lives in the test files it copies over HEAD. Before the change _clone_at used subprocess.run(check=True), whose CalledProcessError text names only the command and exit status.",
+    "at": "not run"
+  },
+  "outcome": {
+    "technical": "Added _git_checked(args) beside _clone_at in test_commit_task_work.py, test_commit_manifest_index.py and test_commit_audit_state.py (each keeps its own copy; no shared module is among the declared files): runs git with stderr merged into stdout and raises RuntimeError carrying git's output on non-zero exit. _clone_at uses it for clone and checkout. New stage fg-block in test_commit_task_work.py with ctw-fg1 (failing checkout of a missing commit raises with 'fatal:' text) and ctw-fg2 (allow case: success returns the clone dir); 2/2 pass. Reproduction attempts, cause NOT found: ir-block run 25 times under PYTHONIOENCODING=cp1252, all green; 10 more under TMPDIR set to a symlink to a spaced path, all green; sweep-selftests --spaced on test_commit_task_work.py green (117 cases). Reading of the code: every scratch target (ir-after, ir-mid, ir-other, ...) is named once per case inside a fresh per-stage Repos tmp, so a pre-existing clone target is not possible. The next CI failure will now carry git's own stderr. Full sweep in the tree: 334/335 files ok, 16221 cases; the one failure is test__proc_group.py PermissionError (sandbox os.killpg), not mine. ruff clean on the three files. Process note: the three _clone_at edits were made with a python heredoc, not the Edit tool.",
+    "descriptive": "Commit-suite fixture clones now fail with git's own message; the CI exit-128 flake was not reproduced in 35 loop runs."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_commit_task_work.py: a fixture git command that fails raises an error carrying git's own stderr text"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:a2d2f3362402d7b5b7c1c9d31ef54eb4839bd17ee0d88f180c441dca5d95ef5a\",\"dirtyDigest\":\"sha256:2475ad9a8062c8744d1fe299f613f90e6a45e0c791accf948ac869cd178c0667\",\"dirtyPaths\":{\"plugins/audit/tests/test_commit_audit_state.py\":\"b89055c02254584d\",\"plugins/audit/tests/test_commit_manifest_index.py\":\"d2090b8348c43746\",\"plugins/audit/tests/test_commit_task_work.py\":\"8622e8acf943e0b3\"},\"head\":\"38acc6d6\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/test_commit_audit_state.py\",\"plugins/audit/tests/test_commit_manifest_index.py\",\"plugins/audit/tests/test_commit_task_work.py\"],\"scopeDigest\":\"sha256:efcefb3a5917d8bb7d0f5d28ecd4e1e318bf2f27d81fea3bcfb752f69b16ad4f\",\"v\":2}"
+}

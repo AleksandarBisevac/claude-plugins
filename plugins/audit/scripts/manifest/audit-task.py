@@ -4036,6 +4036,12 @@ def _start_task(task, now):
     prescription, and answering it differently here in silence is how one field
     comes to mean two things.
 
+    THE STAMP IS `_filed_returns.next_start_at`'s, not `now` as read: a start's
+    `startedAt` is its identity to every place that keys by start, at
+    one-second resolution, so a re-start inside the second of the start it
+    replaces is moved to the second after it rather than taking that start's
+    key - and with it that start's filed return, drive marks and brief.
+
     THE PRIOR VALUES ARE READ BEFORE THE WRITE, for `_locked_cancel`'s reason one
     verb over: afterwards every one of them says `in_progress`, and the `from`
     half of the journal row is gone from the manifest as well as from the row.
@@ -4045,7 +4051,7 @@ def _start_task(task, now):
            "startedAt": task.get("startedAt"),
            "blockedReason": task.get("blockedReason")}
     task["status"] = "in_progress"
-    task["startedAt"] = now
+    task["startedAt"] = _fr.next_start_at(was["startedAt"], now)
     task["attempts"] = (was["attempts"] or 0) + 1
     # A running task is not waiting, so the reason `block` recorded goes with the
     # status it explained; the task.start row keeps it as the `from` half.
@@ -4060,9 +4066,10 @@ def _start_changes(tid, was, task):
     `_journal_io.DETAILS_KEYS` carries `changes` and drops anything unlisted in
     silence, which `_journal_phase_add` records the cost of. All three rows are
     written even when a value did not move -- a re-start that kept `pending` is
-    not a thing, but a `startedAt` that happens to equal the old one is, and a
-    row list built by filtering equality would make a reader work out which
-    fields the verb even touches.
+    not a thing, and a `startedAt` equal to the old one is not either once
+    `_start_task` stamps through `_filed_returns.next_start_at`, but a row list
+    built by filtering equality would make a reader work out which fields the
+    verb even touches.
     """
     rows = [{"id": tid, "field": "status",
              "from": was["status"], "to": task.get("status")},

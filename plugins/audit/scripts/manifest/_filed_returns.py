@@ -13,9 +13,11 @@ Those are entry points at one layer, which may not import each other, so the
 three facts they share live here, once:
 
   * the path - `<evidence dir>/returns/<taskId>/<start>.<role>.json`, where
-    `<start>` is the task's current `startedAt`. A re-start re-stamps it, so a
-    retry's return lands beside the earlier attempt's and never over it, and a
-    return from an earlier start is never read as this one's;
+    `<start>` is the task's current `startedAt`. A re-start re-stamps it
+    through `next_start_at`, which keeps a task's starts strictly increasing
+    even inside one second, so a retry's return lands beside the earlier
+    attempt's and never over it, and a return from an earlier start is never
+    read as this one's;
   * the shape each role's agent definition declares, as a list of sentences
     naming what is missing - empty is the one answer that files;
   * the write: an exclusive create, so a second filing for one task, role and
@@ -59,6 +61,7 @@ This module carries no `--selftest` of its own; its cases live in
 Stdlib only, Python 3.8 compatible.
 """
 import ast
+import calendar
 import hashlib
 import json
 import os
@@ -67,6 +70,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -121,6 +125,45 @@ def return_start_key(started_at):
     """`startedAt` as a file-name part: letters and digits only, so no colon a
     file name on Windows refuses."""
     return re.sub(r"[^0-9A-Za-z]", "", str(started_at or ""))
+
+
+START_AT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+
+
+def _start_epoch(stamp):
+    """`stamp` as epoch seconds, or None when it is not a `START_AT_FORMAT`
+    stamp."""
+    try:
+        return calendar.timegm(time.strptime(str(stamp), START_AT_FORMAT))
+    except (TypeError, ValueError):
+        return None
+
+
+def next_start_at(previous, now):
+    """The `startedAt` a start of a task stamps, given the task's `previous`
+    one and the clock's `now`, both `START_AT_FORMAT`.
+
+    Every place that keys by start - the return path above, the driver's
+    per-start marks, the brief file, the retry reason - reads
+    `return_start_key(startedAt)`, and the stamp has one-second resolution, so a
+    restart inside the second of the start it replaces would share that start's
+    key and read its return, marks and brief as its own. The identity is made
+    here instead, once, at the one place a start is stamped: a `now` at or
+    before `previous` becomes the second after `previous`, so a task's starts
+    are strictly increasing and no two share a key. The key's spelling is left
+    as it was, which is what keeps every return already filed under it found
+    for the start it answers. A `now` in a later second is returned as read,
+    so `startedAt` is the wall clock except in that one case, where it runs
+    ahead of it by the restarts that shared a second.
+
+    A `previous` that is not a stamp of this format bounds nothing and `now`
+    is returned; a hand-written `startedAt` the format does not read is the
+    one start this cannot order."""
+    last = _start_epoch(previous)
+    read = _start_epoch(now)
+    if last is None or read is None or read > last:
+        return now
+    return time.strftime(START_AT_FORMAT, time.gmtime(last + 1))
 
 
 def return_rel(task_id, started_at, role):

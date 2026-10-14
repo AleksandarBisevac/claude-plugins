@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-14T19:35:11Z",
+    "basis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 281 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sr220 (house FAIL): SELFTEST FAILED: 279/281 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "stamp-verification.py: removed REMOVE_WAIT_S; _remove_throwaway(wait=None) now reads _output.SHARING_WAIT_SECONDS at the call (the caller passes no wait, so the default is what runs). test_stamp_verification.py: _remove_retry_cases gains sr220 (fake rmtree denies until a fake clock passes 0.6 s, between 0.25 and the shared bound; removed) and sr221 (deadline asked of while_shared tracks the shared bound at 3.0 and 7.0); run helper omits wait when None. sr215-sr219 green. Full sweep: 335/335 files ok, 16245 cases.",
+    "descriptive": "A timed-out run's throwaway is removed within the shared sharing wait instead of a private quarter second."
+  },
+  "testsAdded": [
+    "a throwaway whose holder releases its files after more than a quarter second, within the shared sharing wait, is removed after a timed-out run",
+    "the throwaway removal's wait is the shared helper's bound, not a constant of its own (a change to the shared bound changes it)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:8a1f165b8443bc6281fcca12879603798f95230b54d3d7cd65e4887809deda2b\",\"dirtyDigest\":\"sha256:78d8b94c5176b8b484a07c83764e4c9a9f88869de9c95ff4579791404f5b7eb8\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/stamp-verification.py\":\"c30a606eaa6721c6\",\"plugins/audit/tests/test_stamp_verification.py\":\"09f551b0e2dfaf7e\"},\"head\":\"38acc6d6\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:f8738c698a6a056eedaae886b4c6c7566598ead013a5969435a3d330514b5919\",\"v\":2}"
+}

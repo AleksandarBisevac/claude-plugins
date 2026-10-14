@@ -50,6 +50,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 import _output                                     # noqa: E402  (PLUGIN_ROOT)
@@ -190,6 +191,38 @@ class _Env(object):
 
 def _script(name):
     return [sys.executable, _loader.script_path(name)]
+
+
+# A `sitecustomize` every child interpreter imports before its script runs: it
+# answers an argument-less `time.gmtime()` - the stamp a verb writes - with one
+# fixed second, and leaves every other clock reading alone. A child, because the
+# verbs the driver calls are processes of their own and an in-process patch
+# would never reach them.
+_PINNED_GMTIME = (
+    "import time as _time\n"
+    "_real_gmtime = _time.gmtime\n"
+    "def _pinned_gmtime(secs=None):\n"
+    "    return _real_gmtime(%d if secs is None else secs)\n"
+    "_time.gmtime = _pinned_gmtime\n")
+
+
+@contextlib.contextmanager
+def _pinned_clock(at):
+    """Every Python child started inside the block reads `time.gmtime()` as the
+    epoch second `at`."""
+    where = os.path.realpath(_harness.fixture_root("drive-clock-"))
+    with open(os.path.join(where, "sitecustomize.py"), "w") as fh:
+        fh.write(_PINNED_GMTIME % (at,))
+    held = os.environ.get("PYTHONPATH")
+    os.environ["PYTHONPATH"] = where + (os.pathsep + held if held else "")
+    try:
+        yield where
+    finally:
+        if held is None:
+            os.environ.pop("PYTHONPATH", None)
+        else:
+            os.environ["PYTHONPATH"] = held
+        _harness.remove_tree(where)
 
 
 def _verb(root, name, args, stdin=None):
@@ -5165,20 +5198,40 @@ def _scope_change_cases(check):
           task.get("status") == "done" and "%s P1.1" % (M.CLOSED,) in text
           and "scope-changed" not in text)
 
+    # Both starts run under one pinned second, which is what a fast runner
+    # does by accident: left to the real clock the retry usually lands a
+    # second later and the case passes whatever the start's identity is.
     root, mpath = _repo("scope-retry", task_ids=TASKS[:1], per_task="phase")
-    _next(M, root, mpath)
+    pin = int(time.time())
+    with _pinned_clock(pin):
+        _code, first = _next(M, root, mpath)
+    started = tasks_of(mpath).get("P1.1", {}).get("startedAt")
     _file_executor(root, mpath, "P1.1")
+    old_return = _filed_path(mpath, "P1.1")
     with _Env(root):
         _verb(root, "audit-task.py", ["scope", "P1.1", mpath, "--project-dir",
                                       root, "--files", "src/f1.txt,src/f2.txt"])
     _next(M, root, mpath)
     before = _attempts(mpath, "P1.1")
-    code, again = _next(M, root, mpath, "--answer", "retry")
-    check("sc4 `retry` dispatches the executor again under the new scope and "
-          "spends one attempt: %r" % ((code, before, _attempts(mpath, "P1.1"),
-                                       again[:300]),),
-          instruction(again) == ("dispatch", "executor", "P1.1")
-          and _attempts(mpath, "P1.1") == before + 1)
+    with _pinned_clock(pin):
+        code, again = _next(M, root, mpath, "--answer", "retry")
+    restarted = tasks_of(mpath).get("P1.1", {}).get("startedAt")
+    new_return = _filed_path(mpath, "P1.1")
+    briefs = [_BRIEF.search(text) for text in (first, again)]
+    briefs = [b.group(1) if b else None for b in briefs]
+    check("sc4 a retry whose new start falls in the same second as the start it "
+          "replaces dispatches the executor again and does not read the "
+          "previous start's return, marks or brief: %r"
+          % ((code, started, restarted, before, _attempts(mpath, "P1.1"),
+              old_return, new_return, briefs, again[:300]),),
+          started == time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(pin))
+          and instruction(again) == ("dispatch", "executor", "P1.1")
+          and _attempts(mpath, "P1.1") == before + 1
+          and _fr.return_start_key(restarted) != _fr.return_start_key(started)
+          and old_return is not None and os.path.isfile(old_return)
+          and new_return is not None and new_return != old_return
+          and not os.path.exists(new_return)
+          and None not in briefs and briefs[0] != briefs[1])
 
 
 # --- the signal: one line per step, the full text behind --explain ----------

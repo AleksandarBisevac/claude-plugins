@@ -758,9 +758,51 @@ def _mechanical_cases(check):
           and any("computedOverridden" in p for p in forged_over))
 
 
+# A return as a committed one is filed before a start carried anything finer
+# than its second: the key is `startedAt` with the punctuation stripped, and the
+# body is the executor's shape plus the stamp the submit takes.
+_COMMITTED_AT = "2026-10-13T11:23:43Z"
+_COMMITTED_KEY = "20261013T112343Z"
+
+
+def _same_second_cases(check):
+    root = _harness.fixture_root("filed-returns-same-second-")
+    try:
+        first = M.next_start_at(None, _COMMITTED_AT)
+        second = M.next_start_at(first, _COMMITTED_AT)
+        paths = [M.return_path(root, {"id": "P1.9", "startedAt": at}, "executor")
+                 for at in (first, second)]
+        committed = os.path.join(root, M.RETURNS_DIRNAME, "P1.9",
+                                 "%s.executor.json" % (_COMMITTED_KEY,))
+        os.makedirs(os.path.dirname(committed))
+        with open(committed, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(json.dumps(_executor(), indent=2) + "\n")
+        found = M.read_filed_return(paths[0])
+        check("ss1 two starts of one task in the same second get distinct return "
+              "paths, and a return filed under the old one-second key is still "
+              "found for the start it answers: %r" % ((first, second, paths),),
+              first == _COMMITTED_AT and paths[0] != paths[1]
+              and os.path.normcase(paths[0]) == os.path.normcase(committed)
+              and found[1] == _executor() and found[2] is None
+              and M.read_filed_return(paths[1]) == (None, None, None))
+        # The twin, for the guard that always fires: a start in a later second
+        # keeps the wall clock, and only a clock at or behind the last start is
+        # moved - to the first second after it, so the order of starts holds.
+        later = M.next_start_at(_COMMITTED_AT, "2026-10-13T11:23:50Z")
+        behind = M.next_start_at(_COMMITTED_AT, "2026-10-13T11:23:40Z")
+        check("ss2 a start in a later second keeps its own clock reading, and one "
+              "whose clock reads at or before the last start is the second after "
+              "it: %r" % ((later, behind, second),),
+              later == "2026-10-13T11:23:50Z"
+              and behind == "2026-10-13T11:23:44Z" == second)
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
         _harness.stage(check, "fr-block", _cases)
+        _harness.stage(check, "ss-block", _same_second_cases)
         _harness.stage(check, "um-block", _um_cases)
         _harness.stage(check, "ma-block", _mechanical_cases)
         _harness.stage(check, "pk-block", _held_cases)
