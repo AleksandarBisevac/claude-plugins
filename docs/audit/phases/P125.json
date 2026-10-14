@@ -1665,7 +1665,7 @@
     {
       "id": "P125.33-0h5",
       "title": "A filed return is bound to a journal row carrying its digest, and the close reads it through that row",
-      "status": "in_progress",
+      "status": "done",
       "description": "F646. drive-phase.py submit files a return once per start, but the only thing holding 'once' is that the file exists: it writes no journal row. The P125.3 executor filed a placeholder return, deleted docs/audit/evidence/returns/P125.3/20261013T144608Z.executor.json, and filed again; nothing recorded either filing. Submit appends a task.return.filed journal row (sha256 of the filed bytes, the task, the start timestamp, role, the red-first verdict) through the existing journal writer; a second filing for a start is refused by that row, not by the file; the close (and any reader that closes on a return) reads the return through the row and refuses one whose digest the row does not carry.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -1702,19 +1702,34 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9876195274ca",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_filed_returns.py gains the row vocabulary as pure functions (RETURN_FILED_ACTION, return_target, return_digest, filed_return_row, already_filed_row, refiling_refusal, filed_digest_problem, read_filed_return_checked; claims_from_return takes optional journal_rows/checkout). _journal_io is a layer-mate and may not be imported there, so drive-phase.py submit does the I/O: already_filed also consults the journal rows (a deleted file no longer reopens a start), and after audit-task.py file-return writes an executor return it appends one task.return.filed row (target = return path, stateHash = sha256 of filed bytes via the existing append, details.taskId, summary with role and red-first verdict) through _journal_io.append_from_cli_why. One new row kind, no new DETAILS_KEYS; start and role ride in the target path. Added stage rj-block (rj1-rj6) and case ds2j; updated PINNED_320_ACTIONS for the new row and made ds7f/ds9x reset via _unjournal_return since they relied on delete-and-refile. Sweep with --jobs 4: 334/334 files ok, 16123 cases. NOT wired: audit-task.py done and other closers do not yet call read_filed_return_checked (audit-task.py is outside this task's files); only claims_from_return can, via optional args.",
+        "descriptive": "A deleted-and-refiled executor return is now refused by a journal row, and a return edited after filing has a reading that names the recorded and present digests; the close wiring in audit-task.py remains to do."
       },
       "startedAt": "2026-10-14T08:30:00Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T11:02:08Z",
+      "verifiedBy": [
+        "filing, deleting the file and filing again for the same start is refused, naming the journal row of the first filing",
+        "a return whose bytes changed after filing is refused at close, naming the recorded and the present digest",
+        "a submit appends exactly one task.return.filed row carrying the return's sha256 and the start it answers"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T11:02:07Z.ad43f5",
         "status": "passed",
         "at": "2026-10-14T11:02:07Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "9876195274ca",
+        "at": "2026-10-14T11:02:08Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T09:20:54Z",
+        "basis": "`python3 plugins/audit/tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_filed_returns' has no attribute 'filed_return_row'\" (read as python), and the task introduces 'filed_return_row': absent from HEAD's plugins/audit/scripts/manifest/_filed_returns.py, plugins/audit/scripts/governance/drive-phase.py and present in the working tree's plugins/audit/scripts/manifest/_filed_returns.py, plugins/audit/scripts/governance/drive-phase.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2384,9 +2399,9 @@
         }
       ],
       "testEvidence": {
-        "runId": "2026-10-14T09:42:58Z.8d1f1f",
-        "status": "failed",
-        "at": "2026-10-14T09:42:58Z"
+        "runId": "2026-10-14T11:11:34Z.4b7446",
+        "status": "passed",
+        "at": "2026-10-14T11:11:34Z"
       }
     },
     {

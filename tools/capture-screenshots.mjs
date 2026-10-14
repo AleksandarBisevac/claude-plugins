@@ -167,6 +167,9 @@ const DEMO_AUTHOR = 'dev@example.com';
 /** The endpoint the panel's run-status poll reads. Fixtures for it go HERE. */
 const RUNSTATUS_URL = '**/api/runstatus';
 
+/** The endpoint a settings/config Save PUTs to. Fixtures for it go HERE. */
+const CONFIG_URL = '**/api/config';
+
 const problems = [];
 
 /**
@@ -4171,12 +4174,51 @@ async function assertPhaseWhyNote(page) {
   await page.waitForTimeout(300);
 }
 
+/**
+ * Wait for a save-outcome card under `#<scope> .findings-slot`, tolerating a
+ * render that only runs after the PUT resolves — rather than racing it on a
+ * fixed clock — and, when it never paints within `timeout`, say what the
+ * save itself returned instead of reporting the card alone as absent.
+ *
+ * F653: a fixed 700ms sleep read the DOM before the save's own render had
+ * necessarily run. The same check passed on every re-run because the real
+ * render usually lands well inside 700ms; it is a race, not a missing
+ * feature, so the fix is to wait for the paint rather than guess its clock.
+ *
+ * @param {import('playwright').Page} page
+ * @param {string} scope - the view id the savebar lives under, e.g. 'guards'
+ * @param {'err'|'ok'} kind - which findings leaf to wait for
+ * @param {Promise<Object>} resBody - the save PUT's parsed body, once it answers
+ * @param {number} timeout - bound in ms; a per-call choice, never a global one
+ * @returns {Promise<{painted: boolean, title: string, body: string,
+ *   close: boolean, text: string, saveReturned: (Object|undefined)}>}
+ */
+async function awaitSaveCard(page, scope, kind, resBody, timeout) {
+  const sel = '#' + scope + ' .findings-slot .findings.' + kind;
+  const handle = await page.waitForSelector(sel, { timeout }).catch(() => null);
+  if (!handle) {
+    const saveReturned = await resBody.catch((e) => ({ requestFailed: String(e).split('\n')[0] }));
+    return { painted: false, title: '', body: '', close: false, text: '', saveReturned };
+  }
+  const read = await page.evaluate((c) => ({
+    title: (c.querySelector('b') || {}).textContent || '',
+    body: (c.querySelector('.fbody') || {}).textContent || '',
+    close: !!c.querySelector('[data-notex]'),
+    text: c.textContent || '',
+  }), handle);
+  return Object.assign({ painted: true }, read);
+}
+
 /* ---- v0.34 C3 (sv): the save-result card's lifecycle ------------------------
  *
  * Success card up after a landed save and GONE after its 5s clock; refusal
  * card up after a refused save, still there past that same deadline, and
  * dismissed by its own ×. The bad regex is decided by the SERVER's engine —
  * '(' fails Python's re, which is the one the hook uses.
+ *
+ * The refusal round also delays the save's own response on purpose (1.2s),
+ * so this check exercises the real race on every run instead of hoping the
+ * fixed-clock version of this bug recurs on its own.
  */
 async function assertSaveNoteLifecycle(page) {
   await tabTo(page, 'guards');
@@ -4187,19 +4229,29 @@ async function assertSaveNoteLifecycle(page) {
   await rex.fill('(');
   await page.keyboard.press('Enter');
   await page.waitForTimeout(200);
+  // Delay the server's own answer on purpose: the refusal card is only drawn
+  // after this PUT resolves, so a render slower than a guessed clock must
+  // still be caught rather than read as "no card".
+  await page.route(CONFIG_URL, async (route) => {
+    await new Promise((res) => setTimeout(res, 1200));
+    await route.continue();
+  }, { times: 1 });
+  const refusedSave = page.waitForResponse((r) => r.request().method() === 'PUT'
+    && new URL(r.url()).pathname === '/api/config').then((r) => r.json());
   await page.locator('#guards').getByRole('button', { name: 'Save settings' }).click();
   await awaitConfirmDialog(page);
   await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(700);
-  const err = await page.evaluate(() => {
-    const c = document.querySelector('#guards .findings-slot .findings.err');
-    return c ? { title: (c.querySelector('b') || {}).textContent || '',
-                 body: (c.querySelector('.fbody') || {}).textContent || '',
-                 close: !!c.querySelector('[data-notex]') } : null;
-  });
-  if (!err || !/nothing was written/.test(err.title) || !err.close || !err.body) {
+  const err = await awaitSaveCard(page, 'guards', 'err', refusedSave, 8000);
+  await page.unroute(CONFIG_URL);
+  if (!err.painted) {
+    fail(`settings: a refused save drew no card within 8s — the save itself `
+       + `returned ${JSON.stringify(err.saveReturned)}`);
+  } else if (!/nothing was written/.test(err.title) || !err.close || !err.body) {
     fail(`settings: a refused save drew ${JSON.stringify(err)} — expected a `
        + `bold title, the findings body and a dismiss button`);
+  } else {
+    note('settings: a refused save, with its own response delayed 1.2s, '
+       + 'still drew the refusal card — the wait tracks the paint');
   }
   // The refusal must outlive the success card's own deadline — that is the
   // "no timer on this branch" half of the design.
@@ -4229,16 +4281,19 @@ async function assertSaveNoteLifecycle(page) {
   const box = page.locator('#guards input[type=checkbox]').first();
   await box.click();
   await page.waitForTimeout(200);
+  const landedSave = page.waitForResponse((r) => r.request().method() === 'PUT'
+    && new URL(r.url()).pathname === '/api/config').then((r) => r.json());
   await page.locator('#guards').getByRole('button', { name: 'Save settings' }).click();
   await awaitConfirmDialog(page);
   await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(700);
-  const okUp = await page.evaluate(() => {
-    const c = document.querySelector('#guards .findings-slot .findings.ok');
-    return c ? c.textContent : null;
-  });
+  const okCard = await awaitSaveCard(page, 'guards', 'ok', landedSave, 8000);
+  const okUp = okCard.painted ? okCard.text : null;
   if (!okUp || !okUp.includes('saved')) {
-    fail(`settings: a landed save drew no success card (${JSON.stringify(okUp)})`);
+    // Not painted within the bound, or painted but not the expected text —
+    // either way, name what the save itself returned rather than the card
+    // alone: a save that was not refused must still be accounted for.
+    fail(`settings: a landed save drew no success card (${JSON.stringify(okUp)}`
+       + (okCard.painted ? ')' : `, the save returned ${JSON.stringify(okCard.saveReturned)})`));
   }
   await page.waitForTimeout(5600);
   const okGone = await page.evaluate(() =>
