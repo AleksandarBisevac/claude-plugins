@@ -27,6 +27,7 @@ from _output import safe_stdio                     # noqa: E402
 import _output                                     # noqa: E402  (PLUGIN_ROOT, the agent briefs)
 import _refs                                       # noqa: E402  (the brief's return block, the schema enum)
 import _filed_returns as M                         # noqa: E402
+import _journal_io                                 # noqa: E402  (pins `M.return_digest` to `file_hash`)
 
 _START = "2026-01-01T00:00:00Z"
 
@@ -765,7 +766,73 @@ def _selftest():
         _harness.stage(check, "hn-block", _human_cases)
         _harness.stage(check, "dm-block", _drive_mark_cases)
         _harness.stage(check, "rd-block", _read_set_cases)
+        _harness.stage(check, "rj-block", _journaled_cases)
     return _harness.run(body)
+
+
+def _journaled_cases(check):
+    """A filed return's "once" used to rest on the file alone - delete
+    it and a second filing went unrecorded. This module's own layer may not
+    import `_journal_io` (`_deps.LAYERS`), so `drive-phase.py submit` is the
+    caller that reads and appends the real journal; these drive the same
+    scenario directly through the row shape this module owns."""
+    root = _harness.fixture_root("filed-returns-journal-")
+    task = {"id": "P1.9", "startedAt": _START}
+    path = M.return_path(root, task, "executor")
+    first = json.dumps(_executor()) + "\n"
+    M.file_once(path, first)
+    row = M.filed_return_row(path, root, task["id"], "executor", "proved")
+    row = dict(row, ts="2026-01-01T00:00:01Z", stateHash=M.return_digest(path))
+    check("rj1 the row a filing builds names the task, the role and the "
+          "red-first verdict, and its target is the return's own path: %r"
+          % (row,),
+          row["action"] == M.RETURN_FILED_ACTION
+          and row["target"] == "returns/P1.9/20260101T000000Z.executor.json"
+          and row["details"]["taskId"] == "P1.9"
+          and "executor" in row["summary"] and "proved" in row["summary"])
+
+    os.remove(path)
+    refused = M.refiling_refusal([row], path, root)
+    check("rj2 filing, deleting the file and filing again for the same start "
+          "is refused - the FILE is gone, and the refusal is still made, "
+          "naming the journal row of the first filing: %r" % (refused,),
+          not os.path.exists(path) and refused is not None
+          and row["stateHash"] in refused)
+    allowed = M.refiling_refusal([], path, root)
+    check("rj2a THE ALLOW TWIN: with no such row in the journal, this check "
+          "refuses nothing", allowed is None)
+
+    M.file_once(path, first)
+    intact = M.filed_digest_problem(path, row)
+    check("rj3 a return whose bytes still match the row's recorded digest "
+          "reads clean at the close: %r" % (intact,), intact is None)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(_executor(claims="claims:\n1 a tampered edit")) + "\n")
+    changed = M.filed_digest_problem(path, row)
+    check("rj4 a return whose bytes changed after filing is refused at the "
+          "close, naming both the recorded and the present digest: %r"
+          % (changed,),
+          changed is not None and row["stateHash"] in changed
+          and M.return_digest(path) in changed
+          and row["stateHash"] != M.return_digest(path))
+
+    text, body, problem = M.read_filed_return_checked(path, [row], root)
+    check("rj5 `read_filed_return_checked` is the close's reading: it "
+          "refuses the same edited return through the row, rather than "
+          "reading its current bytes silently: %r"
+          % ((text, body, problem),),
+          text is None and body is None and problem is not None
+          and row["stateHash"] in problem)
+
+    pin_path = os.path.join(root, "pin.txt")
+    with open(pin_path, "w", encoding="utf-8") as fh:
+        fh.write("pin\n")
+    check("rj6 `return_digest` spells a file's sha256 exactly as "
+          "`_journal_io.file_hash` would - duplicated because that module is "
+          "this one's own layer-mate, so the two are pinned equal here "
+          "rather than left to drift apart in silence: %r"
+          % (M.return_digest(pin_path),),
+          M.return_digest(pin_path) == _journal_io.file_hash(pin_path))
 
 
 def _drive_mark_cases(check):

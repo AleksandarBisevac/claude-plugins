@@ -3294,11 +3294,40 @@ def submitted_shape(role, body, fills, task=None):
 
 def already_filed(ctx, task):
     """The project-relative path of `task`'s executor return for its current
-    start when one is filed, else None. The filing verb refuses a second
-    filing on its own; asking first is what keeps a refused one from costing a
+    start when one is filed - on disk, or when a `task.return.filed` journal
+    row already names it, EVEN WITH THE FILE DELETED (an executor once
+    filed a placeholder, deleted it, and filed again, and nothing recorded
+    either filing) - else None. The filing verb refuses a second
+    filing on its own; asking first is what keeps a refusal from costing a
     red run and a stamp."""
     path = _fr.return_path(ctx["evidence"], task, "executor")
-    return project_relative(ctx, path) if path and os.path.exists(path) else None
+    if not path:
+        return None
+    if os.path.exists(path):
+        return project_relative(ctx, path)
+    try:
+        rows = _journal_io.read_all(ctx["project"], ctx["config"])
+    except Exception:                                          # noqa: BLE001
+        return None
+    return (project_relative(ctx, path)
+           if _fr.already_filed_row(rows, path, ctx["project"]) else None)
+
+
+def _journal_filed_return(ctx, task, role, path, red_status):
+    """Append `_fr.filed_return_row`'s entry for the return just written at
+    `path` - the one thing that lets a filing stay "once" even after
+    its file is deleted, which the exclusive create alone cannot do. Fail-soft
+    like every journal append here: reported on the did-line, never raised."""
+    row = _fr.filed_return_row(path, ctx["project"], task["id"], role,
+                               red_status)
+    if row is None:
+        return
+    row["actor"] = {"sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID"),
+                    "via": "cli"}
+    written, why = _journal_io.append_from_cli_why(ctx["project"], row)
+    if not written:
+        ctx["did"].append("journal row %s not written (%s)"
+                          % (_fr.RETURN_FILED_ACTION, why))
 
 
 def _utc_stamp():
@@ -3513,6 +3542,11 @@ def submit(ctx, manifest, args, cmd, text):
     if stop is not None:
         return stop
     written = re.search(r"written: (.+)$", out.strip())
+    if executor and written:
+        path = _fr.return_path(ctx["evidence"], task, "executor")
+        if path:
+            _journal_filed_return(ctx, task, args.role, path,
+                                  (body.get("redFirst") or {}).get("status"))
     ctx["did"].insert(0, "%s %s return filed%s" % (
         args.id, args.role, (" at %s" % (written.group(1).strip(),))
         if written else ""))

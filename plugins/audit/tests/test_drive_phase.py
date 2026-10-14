@@ -1188,6 +1188,38 @@ def _filed_path(mpath, task_id, role="executor"):
                            tasks_of(mpath).get(task_id), role)
 
 
+def _unjournal_return(root, path):
+    """Test-only reset: forget `path` as filed, both the file and the
+    `task.return.filed` row the real fix now makes refuse a refiling
+    on its own - two sub-cases below reuse ONE start across tries and used to
+    rely on the file alone being the whole guard. A real retry gets a new
+    start and a new path instead; nothing production runs calls this."""
+    if os.path.exists(path):
+        os.remove(path)
+    import _journal_io
+    rel = _output.posix_rel(path, root)
+    directory = _journal_io.journal_dir(root)
+    for jpath in _journal_io.journal_files(directory):
+        with open(jpath, "r", encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+        kept, changed = [], False
+        for line in lines:
+            try:
+                row = json.loads(line)
+            except ValueError:
+                kept.append(line)
+                continue
+            if (isinstance(row, dict)
+                    and row.get("action") == _fr.RETURN_FILED_ACTION
+                    and row.get("target") == rel):
+                changed = True
+                continue
+            kept.append(line)
+        if changed:
+            with open(jpath, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write("".join(ln + "\n" for ln in kept))
+
+
 def _started(M, prefix):
     """A one-task repository whose task the driver has started and dispatched."""
     root, mpath = _repo(prefix, task_ids=TASKS[:1])
@@ -1270,6 +1302,15 @@ def _submit_cases(check):
           and "filed" in text.splitlines()[0]
           and str(filed.get("stamp", "")).startswith("audit-stamp:")
           and _head(root).startswith(_stamp_head(filed.get("stamp")) or "-"))
+    import _journal_io
+    rel = _output.posix_rel(path, root)
+    journaled = [r for r in _journal_io.read_all(root)
+                if isinstance(r, dict) and r.get("action") == _fr.RETURN_FILED_ACTION]
+    check("ds2j a submit appends exactly one task.return.filed row, carrying "
+          "the return's own sha256 and the start it answers: %r" % (journaled,),
+          len(journaled) == 1 and journaled[0].get("target") == rel
+          and journaled[0].get("stateHash") == _journal_io.file_hash(path)
+          and (journaled[0].get("details") or {}).get("taskId") == "P1.1")
     first = _read(path) if os.path.exists(path) else None
     code, text = _submit(None, root, mpath, "P1.1", _executor_body(
         "P1.1", {"outcome": {"technical": "resubmitted the same claim a second time",
@@ -1356,8 +1397,7 @@ def _submit_cases(check):
           and "red-first proved" in text)
     # A stub that read `--selftest` off the whole of argv answered the
     # forwarded command's flag with its own pointer and exit 0.
-    if os.path.exists(path):
-        os.remove(path)
+    _unjournal_return(root, path)
     code, text = _submit(None, root, mpath, "P1.1", body,
                          tail=["--", sys.executable, "tests/test_mine.py",
                                "--selftest"])
@@ -1441,8 +1481,9 @@ def _submit_cases(check):
                               "never from the task tree the shell stands in", decoy, True),
                              ("ds9x THE ALLOW TWIN: the shell standing in the "
                               "project itself files the same way", root, True)):
-        if os.path.exists(_filed_path(mpath, "P1.1") or "-"):
-            os.remove(_filed_path(mpath, "P1.1"))
+        held_path = _filed_path(mpath, "P1.1")
+        if held_path:
+            _unjournal_return(root, held_path)
         with _Env(root):
             done_w = subprocess.run(
                 _script(DRIVER) + ["submit", "P1.1", "--role", "executor", rel,
@@ -4272,13 +4313,18 @@ PINNED_320_DID = [
 # The files are read apart because `read_all` orders rows by a one-second stamp
 # and then by file NAME, and a name carries a worktree key that differs per
 # fixture path: two runs of one drive interleave the writers differently.
+#
+# `task.return.filed` is the row `drive-phase.py submit` appends
+# right after the executor's return is written, so it sits beside every
+# `task.start` here - the row that lets a filing stay "once" even once its
+# file is deleted, which the exclusive create alone could not do.
 PINNED_320_ACTIONS = sorted([
     ("audit.state.committed", "phase.merged", "audit.state.committed"),
-    ("task.start", "test.evidence.recorded", "task.testEvidence",
-     "meta.evidenceSince", "audit.task.committed", "task.done", "task.start",
-     "test.evidence.recorded", "task.testEvidence", "audit.task.committed",
-     "task.done", "test.evidence.recorded", "phase.testEvidence",
-     "phase.verdict"),
+    ("task.start", "task.return.filed", "test.evidence.recorded",
+     "task.testEvidence", "meta.evidenceSince", "audit.task.committed",
+     "task.done", "task.start", "task.return.filed", "test.evidence.recorded",
+     "task.testEvidence", "audit.task.committed", "task.done",
+     "test.evidence.recorded", "phase.testEvidence", "phase.verdict"),
 ])
 
 
