@@ -1925,7 +1925,9 @@
         "plugins/audit/scripts/manifest/_manifest_io.py",
         "plugins/audit/tests/test__journal_io.py",
         "plugins/audit/tests/test_panel_server.py",
-        "plugins/audit/tests/test__locks.py"
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__output.py"
       ],
       "tests": {
         "mode": "tdd",
