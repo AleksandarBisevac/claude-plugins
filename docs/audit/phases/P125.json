@@ -3332,7 +3332,25 @@
         "plugins/audit/scripts/ui/panel/proposals-view.js",
         "plugins/audit/scripts/ui/panel/run-status.js",
         "plugins/audit/scripts/ui/panel/version-banner.js",
-        "plugins/audit/scripts/ui/panel/write-confirmation.js"
+        "plugins/audit/scripts/ui/panel/write-confirmation.js",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png",
+        "docs/screenshots/captured-at.json"
       ],
       "tests": {
         "mode": "tdd",
@@ -3415,7 +3433,13 @@
       "startedAt": "2026-10-14T15:56:28Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-14T16:34:20Z",
+          "text": "Red-first proved by the orchestrator: wave base plus the new test_stamp_verification.py -> exit 1, 274/275 (sr-remove-retry block raised: _remove_throwaway's wait/clock form absent); with the task's stamp-verification.py -> 279/279. The executor's scratch runs: sr215/216/218/219 red with while_shared removed; rl8b red with call_limit disabled (60 s, 9.9M calls), green 21/21. File length checked equal to base after the restore and redo."
+        }
+      ]
     },
     {
       "id": "P125.58-0h5",

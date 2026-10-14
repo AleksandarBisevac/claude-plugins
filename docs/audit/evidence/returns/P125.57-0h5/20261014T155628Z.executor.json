@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "test_stamp_verification --selftest": "pass",
+    "release.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-14T16:30:57Z",
+    "basis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 274/275 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'REMOVE_WAIT_S': TypeError: _remove_throwaway() got an unexpected keyword argument 'wait'; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "_refs.py: TOOL_NAME_TREES comment drops the ordinal. tools/release.py: FakeRunner gains call_limit (default 200) returning (1, ...) past it so wait_ci ends; rl8 message goes through excerpt(repr(calls)); new inline case rl8b. stamp-verification.py: REMOVE_RETRIES/REMOVE_RETRY_S replaced by REMOVE_WAIT_S; _remove_throwaway(root, holder, path, wait, clock) removes via _output.while_shared with a deadline, OSError swallowed so the later exists/listed check reports left-behind. test_stamp_verification.py: _remove_retry_cases rewritten as sr215-sr219. Full sweep: 335/335 files ok, exit 0. An earlier edit of mine with an interpreter-stdin script duplicated a region of stamp-verification.py; the owner restored that file to base and I redid it with Edit-tool edits only.",
+    "descriptive": "Three review findings closed: a miscounted comment, a bounded failure message with a self-ending fake, and one shared-file retry helper instead of a private loop."
+  },
+  "testsAdded": [
+    "tools/release.py: a failing case over the fake runner prints a bounded message (at most a few KB), and wait_ci over the fake returns without waiting for its timeout",
+    "plugins/audit/tests/test_stamp_verification.py: _remove_throwaway retries a shared-file removal through _output.while_shared (a mutation of while_shared changes its behaviour)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:f78cfc1752e25a021f9d1dd2af3a74914ab39c99a8b0e506ea433da21a1dc31c\",\"dirtyDigest\":\"sha256:ad753c52e7519e24304638b30bf9ba517013bf312bb428bfffda76cf16999f56\",\"dirtyPaths\":{\"plugins/audit/scripts/_refs.py\":\"04cd8380acac6a47\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"70d904e0422dc702\",\"plugins/audit/tests/test_stamp_verification.py\":\"2b6543d5118a4a23\",\"tools/release.py\":\"3efeb008c90e0f68\"},\"head\":\"8f5d7255\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/_refs.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/tests/test_stamp_verification.py\",\"tools/release.py\"],\"scopeDigest\":\"sha256:347ba969fe2a251ea2e837dbc1117587237ad170661fc24c871ed9c0af556654\",\"v\":2}"
+}
