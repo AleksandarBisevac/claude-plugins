@@ -2617,7 +2617,7 @@
     {
       "id": "P125.46-0h5",
       "title": "A usage-ledger month rewrite never waits on its own open handle: it lets go of the tail before the replace, and the shared sharing-denial retry is its only retry",
-      "status": "in_progress",
+      "status": "done",
       "description": "Regression introduced in this phase, caught by CI run 38517006899 (ci/p125 at a7d1b5c4, windows-latest plain and cp1252): test_audit_usage bw14 'a row appended while a refused replace is retried survives the replace' got calls=66/70 instead of 2 (count=1, code=0). P125.38 made _manifest_io.atomic_write_text retry a sharing denial (_output.while_shared, up to SHARING_WAIT_SECONDS); usage_ledger's month rewrite keeps its OWN tail handle open while it calls _replace_rows, so on Windows the first replace now spins ~2 s against itself before raising, and only then does the old except-branch drain and close the tail and call _replace_retrying. Structural fix: drain and close the rewrite's own tail handle before the replace (the lock already excludes appenders), so the only holder a retry can meet is someone else, and delete _replace_retrying (the shared helper is the one retry). Keep bw14's guarantee: an append between the last read and the swap waits for the swap and survives. Net code down.",
       "files": [
         "plugins/audit/scripts/usage/usage_ledger.py",
@@ -2650,19 +2650,34 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ac4aa2f964ce",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/usage/usage_ledger.py: deleted _replace_retrying and REPLACE_RETRIES/REPLACE_RETRY_S; added REPLACE_PASSES_OPEN_FILE = os.name != 'nt'. rewrite_month now decides before the replace: where the platform replaces an open file the descriptor stays held across it (the lock-free-writer carry and _settle that bw2/bw8/bw9/nm1/lf2/lf3 pin on POSIX); where it does not, the tail is drained to its end and closed BEFORE the one _replace_rows call, so the replace never meets the rewrite's own handle and any refusal is another holder's, waited out by _output.while_shared inside _manifest_io.atomic_write_text. The except-PermissionError fallback is gone. Docstring and the lock-wait constant comment restated against SHARING_WAIT_SECONDS. Deviation from an unconditional close, with the reason: a close before the replace on POSIX too drops the held-descriptor carry - mutation M2 below turns bw2, bw8, bw9, bw16, nm1, lf2, lf3 red. tests/test_audit_usage.py: _bw_append_at_refused_retry replaced by _bw_append_at_refused_replace + _bw_refused_backfill - the os.replace seam emulates Windows on every platform (refuses EACCES while any tail open_month returned for the month is still open, counted as own; refuses call 1 as another holder; appends from a thread at the replace that goes through). bw14 pins REPLACE_PASSES_OPEN_FILE=False and asserts code 0, calls==2, own==0, one tail watched, the row survives. New twin bw16 pins True with SHARING_WAIT_SECONDS 0.2 and asserts the seam sees and refuses the held handle (own>=1, own==calls, code!=0). bw2 now skips via _harness.skip where REPLACE_PASSES_OPEN_FILE is false (it was passing on Windows only because the self-spin gave an extra drain - the window rewrite_month's docstring already names). Added import _output. tests/test_usage_ledger.py: new rs1 (one case, the full tests.add clause as its title): Windows reading pinned; 3 emulated foreign refusals -> rewrite True, calls 4, own 0, new rows land; refusals forever with SHARING_WAIT_SECONDS 0.2 -> False, old bytes identical, no .tmp left. nm1 skips where the descriptor is not held; lf6 now reads _output.SHARING_WAIT_SECONDS. Runs: test_audit_usage.py --selftest exit 0 'ALL PASS: 176/176 cases passed'; test_usage_ledger.py --selftest exit 0 '121/121 cases passed'; python3 tools/sweep-selftests.py exit 0 '334/334 files ok, 153 migrated to tests/, 16158 cases'; ruff exit 0; vermin exit 0. Mutations in scratch copies of plugins/audit (scratchpad/mut/M1..M4), both suites run each: M1 close moved back after the replace (try replace; except PermissionError: drain, close, replace) -> bw14 FAIL 'calls=78 own=77 watched=1 count=1 code=0' (the CI shape), bw16 FAIL, rs1 FAIL; M2 close unconditionally (held=False) -> bw2, bw8, bw9, bw16, nm1, lf2, lf3 FAIL; M3 seam's own-handle detector disabled -> bw16 FAIL alone; M4 predicate ignored (always held) -> bw14 FAIL 'calls=75 own=75 count=0 code=1', rs1 FAIL. Line delta, git diff --numstat -- plugins/audit: usage_ledger.py +23 -33 (product net -10), test_audit_usage.py +99 -38, test_usage_ledger.py +109 -16; total 231 insertions, 87 deletions. No file outside the declared files changed.",
+        "descriptive": "A usage-ledger month rewrite on Windows lets go of its own handle before the replace, so it no longer spins the shared sharing-denial wait against itself; the shared helper is its only retry."
       },
       "startedAt": "2026-10-14T10:32:21Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T13:48:57Z",
+      "verifiedBy": [
+        "bw14 holds on both platforms - a row appended while the replace is refused survives it, and the replace is attempted a bounded small number of times (no spin against the rewrite's own handle)",
+        "bw16 with the descriptor held across the replace, the same seam sees the rewrite's own handle and refuses it",
+        "rs1 a month rewrite whose only holder is another process waits through the shared helper and lands; one whose replace stays refused past the deadline returns False with the old file intact"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T13:48:56Z.1c0729",
         "status": "passed",
         "at": "2026-10-14T13:48:56Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "ac4aa2f964ce",
+        "at": "2026-10-14T13:48:57Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T13:39:04Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_usage.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module 'usage_ledger' has no attribute 'REPLACE_PASSES_OPEN_FILE'\" (read as python), and the task introduces 'REPLACE_PASSES_OPEN_FILE': absent from HEAD's plugins/audit/scripts/usage/usage_ledger.py and present in the working tree's plugins/audit/scripts/usage/usage_ledger.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2672,7 +2687,11 @@
       "description": "Both e2e legs (ubuntu and windows) went red at 3943f6d7 (run 38535638721) in 'Plan gate grades on evidence, end to end through the launcher': step 2 (a manifest whose only phase is done, a FRESH session, one 120-line Edit) now gets require-plan's deny ('change magnitude 120 (> 80) ... no phase is in_progress'). P125.40 made a no-phase edit past the session's free file deny; this is the session's FIRST edit, so decide which is right before touching either side: (a) the large first edit is meant to be denied too, and the CI step's step-2 assertion and its comment are stale; or (b) the free file must cover the first edit whatever its magnitude, and require-plan is wrong. The local gates never ran this shell step, so also make the step's assertion reachable locally (or name it in gate-parity's exemptions with its reason). Holds the release: CI must be green on the release commit. Found by the orchestrator reading the last ci/p125 run before the machine move.",
       "files": [
         ".github/workflows/ci.yml",
-        "plugins/audit/hooks/require-plan.py"
+        "plugins/audit/hooks/require-plan.py",
+        "tools/check-plan-gate-e2e.py",
+        "tools/gate-parity.py",
+        "tools/verify.sh",
+        "CONTRIBUTING.md"
       ],
       "tests": {
         "mode": "regression",
