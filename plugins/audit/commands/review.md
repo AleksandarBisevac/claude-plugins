@@ -11,21 +11,24 @@ recovery path after fixes. The step driver runs sign-off; run it, do exactly wha
 run it again:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" next <phaseId>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" next <phaseId> --signal
 ```
 
-- `dispatch <agent> <id> model=<m> brief=<path>` → one Agent call with that `subagent_type`
-  and `model`, the prompt `Read your brief at <path> and follow it.`, and the rule printed under
-  it. Wait for its one-line hand-back.
-- `decide <name> ...` → answer with one printed option:
-  `next <phaseId> --answer <option> [--reason "<words>"]`. A decision the printed rule gives to
-  a human goes to the human first (AskUserQuestion). **The operator's words go in VERBATIM**:
-  a `--reason` is theirs, unparaphrased, and reaches the hash-chained journal.
-- `done <phaseId>: ...` → report the verdict and where the phase landed, and stop.
-- a `stopped` print → relay it to the human as printed, with the rule under it.
+Its one line is `audit <phase> <verb> <subject> ... | <basis> | next: <command>`; the whole
+step is `next <phaseId> --explain <subject>`.
+
+- `dispatch` → an Agent per subject (`subagent_type`, `model`: the basis), the prompt
+  `Follow the brief this prints: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" brief --role <role> <id>`.
+  Wait for its one-line hand-back, then `next <phaseId> --signal`.
+- `judge`, `wait` → do `next:`; `ask` → the human first (AskUserQuestion), then `next:` with
+  their option; `review` → read the triage whole under `--explain`, and answer.
+  **The operator's words go in VERBATIM**: a `--reason` is theirs, unparaphrased, and reaches the
+  hash-chained journal.
+- `done` → report the verdict and where the phase landed, and stop.
+- `stop` → relay it to the human whole, as `--explain` prints it.
 
 Once every task is closed it dispatches the phase reviewer, records the review's findings in one
-write and prints one `decide triage`; `sign-off` with the summary then runs the phase gate, the
+write and prints one `review` step, the triage; `sign-off` with the summary then runs the phase gate, the
 invariants check, the verdict, the commit, the landing and the lock release as one step, and
 stops before the verdict when the phase gate is red. A phase already signed off goes straight to
 its commit and landing, which are safe to re-run: a branch already in its parent reports

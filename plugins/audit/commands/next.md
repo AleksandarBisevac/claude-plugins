@@ -18,17 +18,17 @@ Otherwise run that one task through the step driver, exactly as `/audit:run` doe
 <taskId>` drives that task alone, and the two commands differ only in how the task is chosen:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" next <taskId>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" next <taskId> --signal
 ```
 
-Do exactly what each print says and run it again:
+Do what its one line says, `audit <phase> <verb> <subject> ... | <basis> | next: <command>`,
+until `done`; the whole step is `next <taskId> --explain <subject>`.
 
-- `dispatch <agent> <id> model=<m> brief=<path>` → one Agent call with that `subagent_type`
-  and `model`, the prompt `Read your brief at <path> and follow it.`, and the rule printed under
-  it. Wait for its one-line hand-back.
-- `decide <name> ...` → answer with one printed option:
-  `next <taskId> --answer <option> [--reason "<words>"]`. A decision the printed rule gives to a
-  human goes to the human first (AskUserQuestion). **The operator's words go in VERBATIM**: a
-  `--reason` is theirs, unparaphrased, and reaches the hash-chained journal.
-- `done <taskId>: ...` → report the outcome and what is ready next, and stop.
-- a `stopped` print → relay it to the human as printed, with the rule under it.
+- `dispatch` → an Agent per subject (`subagent_type`, `model`: the basis), the prompt
+  `Follow the brief this prints: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" brief --role <role> <id>`.
+  Wait for its one-line hand-back, then `next <taskId> --signal`.
+- `judge`, `wait` → do `next:`; `ask` → the human first (AskUserQuestion), then `next:` with
+  their option. **The operator's words go in VERBATIM**: a `--reason` is theirs, unparaphrased,
+  and reaches the hash-chained journal.
+- `done` → report the outcome and what is ready next, and stop.
+- `stop` → relay it to the human whole, as `--explain` prints it.

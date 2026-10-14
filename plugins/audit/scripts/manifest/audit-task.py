@@ -7626,8 +7626,23 @@ def _locked_phase_add(args, project, config, mpath, title, out, seed=None):
 # not saved cannot be asked about.
 
 BATCH_KEYS = ("request", "openChoices", "phase", "tasks")
-BATCH_PHASE_KEYS = ("id", "title", "desiredOutcome", "description", "testGate",
-                    "blockedBy", "area", "reviewSkill", "parentBranch")
+# Each `phase` key of the batch file, beside the dest of the `add-phase` flag
+# that writes the same field - `title` is the positional. `add-phase --help`
+# prints this map with each flag spelled off the parser (`phase_flag_map`), so
+# `commands/phase.md` points at the command instead of loading a copy on every
+# run. `fb11b` in test_audit_task.py holds the map to the parser, to `VERB_FLAGS`
+# and to the dests `_phase_fields` reads; the batch writer's own reading of
+# these keys, in `_locked_batch_add`, is not compared by any case.
+PHASE_KEY_DESTS = (("id", "phase_id"), ("title", "title"),
+                   ("desiredOutcome", "outcome"), ("description", "description"),
+                   ("testGate", "gate"), ("blockedBy", "blocked_by"),
+                   ("area", "area"), ("reviewSkill", "review_skill"),
+                   ("parentBranch", "parent_branch"))
+# The `add-phase` flags that write no key of their own, and what each writes:
+# labels the help prints, not reasons.
+PHASE_FLAGS_NO_KEY = (("gate_clear", '"testGate": []'),
+                      ("park", "no key: a parked proposal"))
+BATCH_PHASE_KEYS = tuple(key for key, _dest in PHASE_KEY_DESTS)
 BATCH_TASK_KEYS = ("key", "title", "description", "files", "outputs", "risk",
                    "model", "skills", "tests", "dependsOn", "blockedBy",
                    "fixes")
@@ -13583,6 +13598,29 @@ def option_dests(parser=None):
     return out
 
 
+def phase_flag_map(parser=None):
+    """`[(key, spelling), ...]` - each `PHASE_KEY_DESTS` key with its flag as the
+    parser spells it, or `<dest>` for the positional, in `BATCH_PHASE_KEYS`
+    order."""
+    spelled = option_dests(parser)
+    return [(key, spelled.get(dest, "<%s>" % (dest,)))
+            for key, dest in PHASE_KEY_DESTS]
+
+
+def phase_flag_help(parser=None):
+    """The lines `add-phase --help` prints: the flag-to-key map, then the flags
+    that write no key."""
+    parser = parser or build_parser()
+    spelled = option_dests(parser)
+    lines = ["add-phase: the `phase` key of an `add --from-file` body each flag "
+             "sets"]
+    lines += ['  %-18s "%s"' % (flag, key) for key, flag in phase_flag_map(parser)]
+    lines += ["  %-18s %s" % (spelled.get(dest, dest), what)
+              for dest, what in PHASE_FLAGS_NO_KEY]
+    lines.append("Every flag of every verb: audit-task.py --help")
+    return lines
+
+
 def supplied_flags(argv):
     """The dests actually PRESENT in `argv`, or None if argparse could not say.
 
@@ -13754,6 +13792,13 @@ def success_line(lines):
 
 def main(argv, out=print):
     p = build_parser()
+    # `add-phase --help` answers with the flag-to-key map: argparse's own help is
+    # one flat list over every verb and says which key no flag sets.
+    verb = next((a for a in argv if not a.startswith("-")), None)
+    if verb == "add-phase" and ("--help" in argv or "-h" in argv):
+        for line in phase_flag_help(p):
+            out(line)
+        return 0
     # INTERMIXED, BECAUSE THE DOCUMENTED ORDER PUTS THE MANIFEST LAST. On some
     # interpreters this project still supports (3.9 measured), plain
     # `parse_args` stops filling positionals at the first option, so

@@ -21,19 +21,21 @@ above 1 and one at a time otherwise. Relay that line; never choose a task for th
 Run it, do exactly what it prints, and run it again:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" next <taskId> --task
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" next <taskId> --task --signal
 ```
 
-- `dispatch <agent> <id> model=<m> brief=<path>` → one Agent call with that `subagent_type`
-  and `model`, the prompt `Read your brief at <path> and follow it.`, and the rule printed under
-  it. Wait for its one-line hand-back.
-- `decide <name> ...` → answer with one printed option:
-  `next <taskId> --task --answer <option> [--reason "<words>"]`. A decision the printed rule gives to a
-  human goes to the human first (AskUserQuestion).
-- `done <taskId>: ...` → report the outcome and what is ready next (`/audit:status`), and stop.
-- a `stopped` print → relay it to the human as printed, with the rule under it.
+Its one line is `audit <phase> <verb> <subject> ... | <basis> | next: <command>`; the whole
+step is `next <taskId> --explain <subject>`.
 
-**Guards the driver hands back.** `done <taskId>: already done` means the task was closed before
+- `dispatch` → an Agent (`subagent_type`, `model`: the basis), the prompt
+  `Follow the brief this prints: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" brief --role <role> <id>`.
+  Wait for its one-line hand-back, then `next <taskId> --task --signal`.
+- `judge`, `wait` → do `next:`; `ask` → the human first (AskUserQuestion), then `next:` with
+  their option.
+- `done` → report the outcome and what is ready next (`/audit:status`), and stop.
+- `stop` → relay it to the human whole, as `--explain` prints it.
+
+**Guards the driver hands back.** A `done` whose basis reads `already done` means the task was closed before
 this run: report its commit and offer (AskUserQuestion) a re-open, never a silent re-run. On a yes:
 
 ```bash
@@ -42,6 +44,6 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" reopen <taskId> -
 
 **The operator's words go in VERBATIM**, unparaphrased: `--reason` reaches the hash-chained
 journal (`-` reads it off stdin). A task with an `ado` link then owes its board card the move back to the pending state,
-with the comment `reopened by /audit:run`. Then run `next <taskId> --task` again. A blocked task stops
+with the comment `reopened by /audit:run`. Then run `next <taskId> --task --signal` again. A blocked task stops
 the drive with its recorded reason
 and the rule for it; an `in_progress` one resumes from where its last run stopped.

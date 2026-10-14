@@ -14471,9 +14471,17 @@ def _phase_section(text, lead):
     return text[start:end if end > start else len(text)] if start >= 0 else ""
 
 
-def _phase_add_gaps(text):
+def _phase_flag_help():
+    """`(code, text)` of `audit-task.py add-phase --help`, run through `main`."""
+    lines = []
+    code = M.main(["add-phase", "--help"], out=lines.append)
+    return code, "\n".join(str(x) for x in lines)
+
+
+def _phase_add_gaps(text, help_text):
     """What the `add` section of commands/phase.md fails to name, as sentences:
-    a `phase` key the batch file takes, a flag the hint gives `add`, or
+    the `add-phase --help` that prints the flag-to-key map, a `phase` key the
+    batch file takes or a flag the hint gives `add` that the map leaves out, or
     `add-phase` beside `--park`. Empty is the one answer that passes."""
     import re
     section = _phase_section(text, "Subcommand: `add")
@@ -14483,11 +14491,14 @@ def _phase_add_gaps(text):
     add = [part for part in (hint.group(1) if hint else "").split(" | ")
            if part.startswith("add ")]
     gaps = ([] if add else ["the hint gives no `add` form"])
-    gaps += ["the `phase` key %r" % (key,) for key in M.BATCH_PHASE_KEYS
-             if '"%s"' % (key,) not in section]
-    gaps += ["the flag %s" % (flag,) for flag in
+    if "add-phase --help" not in section:
+        gaps.append("the pointer `add-phase --help`")
+    gaps += ["the `phase` key %r in the help" % (key,)
+             for key in M.BATCH_PHASE_KEYS if '"%s"' % (key,) not in help_text]
+    gaps += ["the flag %s in the help" % (flag,) for flag in
              sorted(set(re.findall(r"--[a-z][a-z-]*", add[0] if add else "")))
-             if flag not in section]
+             if not re.search(r"(?<![\w-])%s(?![\w-])" % (re.escape(flag),),
+                              help_text)]
     park = section.find("--park")
     if park < 0 or "add-phase" not in section[park:park + 160]:
         gaps.append("`add-phase` beside `--park`")
@@ -14696,12 +14707,34 @@ def _batch_cases(check):
           and "allowed-tools:" in head
           and "Bash" in head.split("allowed-tools:", 1)[1].splitlines()[0]
           and 0 < len(section.encode("utf-8")) <= 8000)
-    gaps = _phase_add_gaps(doc_text)
-    check("fb11 the `add` section of commands/phase.md names every `phase` key "
-          "the batch file takes, every flag the hint gives `add`, and "
-          "`add-phase` beside `--park` - the main loop reads no other text "
-          "before writing the file: %r" % (gaps,),
-          gaps == [])
+    help_code, help_text = _phase_flag_help()
+    gaps = _phase_add_gaps(doc_text, help_text)
+    check("fb11 the `add` section of commands/phase.md names `add-phase --help`, "
+          "which prints every `phase` key the batch file takes beside every flag "
+          "the hint gives `add`, and names `add-phase` beside `--park` - the map "
+          "is read on demand, off the parser, instead of loaded with every run: "
+          "%r" % ((help_code, gaps),),
+          help_code == 0 and gaps == [])
+    pairs = getattr(M, "phase_flag_map", lambda: None)()
+    parser = M.build_parser()
+    spelled = dict((a.dest, a.option_strings[0]) for a in parser._actions
+                   if a.option_strings)
+    dests = dict(getattr(M, "PHASE_KEY_DESTS", ()))
+    no_key = [d for d, _why in getattr(M, "PHASE_FLAGS_NO_KEY", ())]
+    fields = set(M._phase_fields(parser.parse_args(["add-phase", "t"])))
+    check("fb11b the map `add-phase --help` prints is the parser's: its keys are "
+          "BATCH_PHASE_KEYS in order, each flag is the option string of the dest "
+          "that writes the key, every flag the verb reads is a key's or named as "
+          "setting none, and the dests the flag writer reads are the map's: %r"
+          % ((pairs, sorted(fields)),),
+          pairs is not None
+          and [k for k, _s in pairs] == list(M.BATCH_PHASE_KEYS)
+          and all(s == spelled.get(dests[k], "<%s>" % (dests[k],))
+                  for k, s in pairs)
+          and sorted(set(dests.values()) | set(no_key))
+          == sorted(set(M.VERB_FLAGS["add-phase"]) | {"title"})
+          and fields == set(dests.values()) - {"phase_id", "title", "gate"}
+          and all(s in help_text for _k, s in pairs))
     gaps = _phase_run_gaps(doc_text)
     check("fb12 the run section of commands/phase.md names the preview's "
           "`audit-status.py --phase` and reads a phase with no branch as `not "

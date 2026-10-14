@@ -25,20 +25,21 @@ resumes at the step it stopped on - an agent that filed nothing becomes a named 
 than a silent second dispatch:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" next <phaseId>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" next <phaseId> --signal
 ```
 
-Do exactly what each print says and run it again:
+Do what its one line says, `audit <phase> <verb> <subject> ... | <basis> | next: <command>`,
+until `done`; the whole step is `next <phaseId> --explain <subject>`.
 
-- `dispatch <agent> <id> model=<m> brief=<path>` → one Agent call with that `subagent_type`
-  and `model`, the prompt `Read your brief at <path> and follow it.`, and the rule printed under
-  it. Wait for its one-line hand-back.
-- `decide <name> ...` → answer with one printed option:
-  `next <phaseId> --answer <option> [--reason "<words>"]`. A decision the printed rule gives to
-  a human goes to the human first (AskUserQuestion). **The operator's words go in VERBATIM**:
-  a `--reason` is theirs, unparaphrased, and reaches the hash-chained journal.
-- `done <phaseId>: ...` → report the outcome, and stop.
-- a `stopped` print → relay it to the human as printed, with the rule under it.
+- `dispatch` → an Agent per subject (`subagent_type`, `model`: the basis), the prompt
+  `Follow the brief this prints: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" brief --role <role> <id>`.
+  Wait for each one-line hand-back, then `next <phaseId> --signal`.
+- `judge`, `wait` → do `next:`; `ask` → the human first (AskUserQuestion), then `next:` with
+  their option; `review` → read it whole under `--explain`, and answer.
+  **The operator's words go in VERBATIM**: a `--reason` is theirs, unparaphrased, and reaches the
+  hash-chained journal.
+- `done` → report the outcome, and stop.
+- `stop` → relay it to the human whole, as `--explain` prints it.
 
 **An interrupted task's uncommitted edits are untrusted.** Never discard them, and never let a
 commit settle them, without the human's confirmation (AskUserQuestion).

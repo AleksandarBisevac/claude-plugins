@@ -60,7 +60,9 @@ two different things; `DOC_CEILINGS` bounds a document no entry loads by its siz
 names one anywhere in its body (a `see reference/...` pointer), breaches whatever its
 size: no pipeline command makes the main loop read reference prose, and this is the
 check that holds it. A command outside the pipeline is not gated and may point there.
-CI and `tools/verify.sh` run it.
+A gated command carrying a flag-to-key map breaches too, and so does any command
+under `commands/` still handing an agent a brief's path rather than the `brief`
+command that prints it. CI and `tools/verify.sh` run it.
 """
 import argparse
 import io
@@ -117,9 +119,22 @@ AGENT_CEILINGS = {"executor": 9000, "reviewer": 7000}
 # the rule each step needs is printed by the driver at that step. A gated entry that
 # reads a file under `reference/` first, or names one in its body, breaches whatever
 # its size, since that read is the cost this ceiling exists to keep out; `--gate` exits 1 on any breach, and
-# `mc24` holds the shipped tree under it in the sweep.
+# `mc24` holds the shipped tree under it in the sweep. So does a gated body carrying
+# a flag-to-key map (`flag_references`): the map grows with every flag a verb gains
+# and is read only when a flag is given, so the CLI's own `--help` prints it.
+#
+# THE RUN FORM'S CEILING is its size when it was set plus a stated headroom. The
+# basis: on 2026-10-14, once the flag-to-key map had moved to `audit-task.py
+# add-phase --help` and the flag-reference rule above kept it out, `--gate` read
+# the run form at RUN_FORM_BASIS bytes. The headroom is smaller than any one
+# numbered step of the run section was that day (the smallest was 223 bytes), so
+# a clause added to a step fits and a whole new step still forces a trim. A flag
+# a verb gains no longer reaches the run form at all. `mc36` holds the ceiling to
+# that sum.
+RUN_FORM_BASIS = 3794
+RUN_FORM_HEADROOM = 186
 ENTRY_CEILINGS = (
-    ("/audit:phase run form, before sign-off", 3980),
+    ("/audit:phase run form, before sign-off", RUN_FORM_BASIS + RUN_FORM_HEADROOM),
     ("/audit:phase add", 8000),
     ("/audit:task add", 8000),
     ("/audit:run", 4000),
@@ -210,6 +225,11 @@ _ROOTED_RE = re.compile(r"`" + re.escape(ROOT_VAR) + r"([^`]+)`")
 # A reference path a body names anywhere, rooted or bare: the shape a `see ...`
 # pointer takes, which the up-front rule above does not count as a read.
 _POINTER_RE = re.compile(r"\breference/[\w./-]*\w")
+# A flag's code span followed by a quoted key's: one pair of a flag-to-key map.
+_FLAG_MAP_RE = re.compile(r'`(--[a-z][a-z-]*)` `"[A-Za-z]+"`')
+# The dispatch block `next --signal` replaced: the brief's path in the print, or
+# the prompt that hands an agent that path.
+_BRIEF_PATH_RE = re.compile(r"Read your brief at|\bbrief=<path>")
 
 
 # --- where the files come from ---------------------------------------------------
@@ -364,6 +384,31 @@ def first_reads(body):
     return []
 
 
+def flag_references(body):
+    """The flags of every flag-to-key pair a command body carries, in order: a
+    flag's code span followed by a quoted key's (`--area` then `"area"`). Such a
+    map grows with every flag a verb gains and is read when a flag is given, so
+    it belongs to the CLI's own `--help`; a gated body carrying one breaches."""
+    text = body.decode("utf-8") if isinstance(body, bytes) else body
+    return _FLAG_MAP_RE.findall(text)
+
+
+def brief_path_teachers(source):
+    """Every `commands/*.md` whose body still teaches the dispatch the signal
+    form replaced - an agent handed a brief's PATH to read - rather than the
+    `brief --role <role> <id>` command that prints the brief. Every command,
+    gated or not: the block is a wrong instruction wherever it sits."""
+    out = []
+    for rel in source["names"]:
+        parts = rel.split("/")
+        if len(parts) != 2 or parts[0] != "commands" or not rel.endswith(".md"):
+            continue
+        body = split_frontmatter(source["read"](rel) or b"")[1].decode("utf-8")
+        if _BRIEF_PATH_RE.search(body):
+            out.append(rel)
+    return sorted(out)
+
+
 def reference_pointers(body):
     """Every reference path a command body names, in first-seen order. A model
     handed `see reference/x.md` reads it as often as not, so a pointer costs the
@@ -457,17 +502,18 @@ def measure(source, claude_md=None):
         known = [r["bytes"] for r in rows if r["bytes"] is not None]
         loaded = set(r["path"] for r in rows)
         data = source["read"](rel) if kind != "agent" else None
-        pointers = [p for p in reference_pointers(split_frontmatter(data)[1])
-                    if p not in loaded] if data is not None else []
+        body = split_frontmatter(data)[1] if data is not None else b""
+        pointers = [p for p in reference_pointers(body) if p not in loaded]
         entries.append({"entry": label, "rows": rows, "bytes": sum(known),
                         "missing": [r["path"] for r in rows if r["bytes"] is None],
-                        "pointers": pointers})
+                        "pointers": pointers, "flagMap": flag_references(body)})
     docs = []
     for rel, _ceiling in DOC_CEILINGS:
         data = source["read"](rel)
         docs.append({"path": rel, "bytes": None if data is None else len(data)})
     return {"label": source["label"], "entries": entries, "listing": listing(source),
-            "claudeMd": claude_md, "docs": docs}
+            "claudeMd": claude_md, "docs": docs,
+            "briefPath": brief_path_teachers(source)}
 
 
 def ceiling_breaches(measured):
@@ -505,6 +551,9 @@ def entry_ceiling_breaches(measured):
             why.append("reads %s first" % ", ".join(reads))
         if entry.get("pointers"):
             why.append("names %s in its body" % ", ".join(entry["pointers"]))
+        if entry.get("flagMap"):
+            why.append("carries a flag-to-key map (%s), which the CLI's own --help "
+                       "prints on demand" % ", ".join(entry["flagMap"]))
         if entry["bytes"] > ceiling:
             why.append("%d bytes, over a ceiling of %d" % (entry["bytes"], ceiling))
         if why:
@@ -513,12 +562,17 @@ def entry_ceiling_breaches(measured):
 
 
 def gate_breaches(measured):
-    """What `--gate` refuses: every pipeline entry past its T2 ceiling and every
-    agent start past its own, as `(entry, bytes, ceiling, why)`."""
+    """What `--gate` refuses: every pipeline entry past its T2 ceiling, every
+    agent start past its own, every document past its ceiling, and every command
+    still teaching the brief-path dispatch, as `(entry, bytes, ceiling, why)`."""
     agents = [(name, size, ceiling, "the agent's start is %s bytes, over %d"
                % ("missing" if size is None else size, ceiling))
               for name, size, ceiling in ceiling_breaches(measured)]
-    return entry_ceiling_breaches(measured) + agents + doc_ceiling_breaches(measured)
+    briefs = [(rel, None, None, "teaches the brief-path dispatch; the signal form "
+               "names `brief --role <role> <id>`, which prints the brief")
+              for rel in measured.get("briefPath") or []]
+    return (entry_ceiling_breaches(measured) + agents + doc_ceiling_breaches(measured)
+            + briefs)
 
 
 def doc_ceiling_breaches(measured):
@@ -551,8 +605,9 @@ def render_gate(measured, breaches):
         size = sizes.get(rel)
         lines.append("  %-42s %8s / %d" % (rel, "-" if size is None else size, ceiling))
     if not breaches:
-        lines.append("GATE OK: every entry within its ceiling, and no gated command "
-                     "reads or names a reference file")
+        lines.append("GATE OK: every entry within its ceiling, no gated command "
+                     "reads or names a reference file or carries a flag-to-key map, "
+                     "and no command teaches the brief-path dispatch")
     for name, _size, _ceiling, why in breaches:
         lines.append("BREACH %s: %s" % (name, why))
     return "\n".join(lines)
@@ -1091,6 +1146,7 @@ def _cases(check):
           and [b[0] for b in gone] == ["executor", "reviewer"])
 
     _gate_cases(check, shipped)
+    _signal_form_cases(check, shipped)
     _eol_cases(check)
 
 
@@ -1327,6 +1383,78 @@ def _gate_cases(check, shipped):
           "the pipeline is a rule that still matches, not one that matches nothing: "
           "%r" % (named,),
           named is not None and "reference/manifest-conventions.md" in named)
+
+
+def _signal_form_cases(check, shipped):
+    """The run form's flag reference and the brief-path block: over the shipped
+    tree, and over fixtures carrying each, with an allow twin per rule."""
+    import tempfile
+    from _suite import remove_tree
+    finder = globals().get("flag_references")
+    teachers = globals().get("brief_path_teachers")
+    gated = dict(ENTRY_CEILINGS)
+    run_form = "/audit:phase run form, before sign-off"
+    plugin = tree_source(os.path.join(REPO, PLUGIN_REL))
+    entry = next((e for e in shipped["entries"] if e["entry"] == run_form), None)
+    body = split_frontmatter(plugin["read"]("commands/phase.md") or b"")[1]
+    pairs = finder(body) if finder else None
+    basis = globals().get("RUN_FORM_BASIS")
+    headroom = globals().get("RUN_FORM_HEADROOM")
+    check("mc36 the /audit:phase run form holds no flag reference and is under its "
+          "ceiling with the stated headroom: %r"
+          % ((pairs, entry and entry["bytes"], gated.get(run_form), basis, headroom),),
+          pairs == [] and entry is not None
+          and isinstance(basis, int) and isinstance(headroom, int) and headroom > 0
+          and gated.get(run_form) == basis + headroom
+          and entry["bytes"] <= gated.get(run_form))
+    taught = teachers(plugin) if teachers else None
+    check("mc37 no command under commands/ teaches the brief-path block the signal "
+          "form replaced: %r" % (taught,), taught == [])
+    if finder is None or teachers is None:
+        return
+    scratch = tempfile.mkdtemp(prefix="measure-context-signal-")
+    try:
+        _fx_lean(scratch)
+        _fx_write(scratch, "commands/phase.md", "---\ndescription: x\n---\nRun "
+                  "it. Hint flags are keys: `--area` `\"area\"`, `--id` `\"id\"`.\n")
+        mapped, mapped_code, mapped_printed = _gate_run(scratch)
+        mapped_pairs = finder(split_frontmatter(
+            tree_source(scratch)["read"]("commands/phase.md"))[1])
+        # THE ALLOW TWIN: a flag named on its own, and a key named on its own, are
+        # not a map - a rule widened to every flag would convict the run form's
+        # own `--dry-run` and `--signal`.
+        _fx_lean(scratch)
+        _fx_write(scratch, "commands/phase.md", "---\ndescription: x\n---\n"
+                  "`--dry-run` previews; `\"title\"` is the batch's key.\n")
+        unmapped, unmapped_code, _p = _gate_run(scratch)
+        _fx_lean(scratch)
+        _fx_write(scratch, "commands/next.md", "---\ndescription: x\n---\nthe "
+                  "prompt `Read your brief at <path> and follow it.`\n")
+        _fx_write(scratch, "commands/bug.md", "---\ndescription: x\n---\n"
+                  "`dispatch <agent> <id> model=<m> brief=<path>` - one Agent.\n")
+        _fx_write(scratch, "commands/run.md", "---\ndescription: x\n---\nthe "
+                  "prompt names `brief --role <role> <id>`.\n")
+        briefs = teachers(tree_source(scratch))
+        _b, brief_code, brief_printed = _gate_run(scratch)
+    finally:
+        remove_tree(scratch)
+    check("mc36b THE RED TWIN: a run form carrying a flag-to-key map breaches, both "
+          "pairs counted, and --gate exits 1 naming the run form: %r"
+          % ((mapped, mapped_pairs, mapped_code),),
+          mapped_pairs == ["--area", "--id"] and mapped_code == 1
+          and [b[0] for b in mapped] == [run_form, "/audit:phase add"]
+          and "flag-to-key" in mapped_printed)
+    check("mc36c ALLOW: a flag or a key named alone is no map, and the lean tree "
+          "stays green: %r" % ((unmapped, unmapped_code),),
+          unmapped == [] and unmapped_code == 0)
+    check("mc37b THE RED TWIN: the brief-path block is named in every command that "
+          "carries it - one outside the pipeline included - while a command naming "
+          "`brief --role` is not, and --gate exits 1 naming each: %r"
+          % ((briefs, brief_code),),
+          briefs == ["commands/bug.md", "commands/next.md"] and brief_code == 1
+          and "commands/bug.md" in brief_printed
+          and "commands/next.md" in brief_printed
+          and "commands/run.md" not in brief_printed)
 
 
 def _selftest():

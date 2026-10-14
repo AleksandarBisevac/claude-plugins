@@ -40,10 +40,8 @@ Ask what is missing, run `S/manifest/audit-task.py" add --from-file - <<'PLAN'`
 with this shape as its body, then a line `PLAN`, and print its line: `{"request": "<as typed>",
 "openChoices": [<each choice it left open>], "phase": {"title", "desiredOutcome", "description"},
 "tasks": [{"key", "title", "description", "files", "tests": {"mode", "add": ["<path>: <what it
-asserts>"]}, "dependsOn"}]}`. Hint flags are
-`phase` keys: `--description` `"description"`, `--gate` `"testGate"` (`--gate-clear`: `[]`),
-`--blocked-by` `"blockedBy"`, `--area` `"area"`, `--review-skill` `"reviewSkill"`, `--id` `"id"`,
-`--parent-branch` `"parentBranch"` (an existing local branch, or refused).
+asserts>"]}, "dependsOn"}]}`. A hint flag given sets the `phase` key
+`S/manifest/audit-task.py" add-phase --help` prints beside it.
 Omit `id`: over a plan holding `P0`, `P1` and `P3`, the next id is `P4`, and never the `P2` the gap makes look free.
 `--park`, or no tasks yet: `S/manifest/audit-task.py" add-phase "<title>" --outcome "<..>"` with the flags. On a
 phase branch, ask first: phase work is `/audit:task add --phase <id>`; new work is
