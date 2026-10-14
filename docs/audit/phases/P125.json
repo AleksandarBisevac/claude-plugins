@@ -3057,7 +3057,7 @@
     {
       "id": "P125.52-0h5",
       "title": "The unpriced-model check ignores ids that are not models, starting with Claude Code's <synthetic> turn",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase-review finding (med, false fire), measured: over the recorded sessions the shipped unpriced-model check fired on two, both on the model id `<synthetic>` - Claude Code's synthetic turn, not a model with a price - and on no real unpriced model. Exclude `<synthetic>` and any id that is not a model id (one predicate, shared by the session-start notice in meter-usage.py and doctor's unpriced-models row in _doctor_trail.py) so neither names it. A real unknown model id is still named.",
       "files": [
         "plugins/audit/hooks/meter-usage.py",
@@ -3093,14 +3093,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8f5d72557d54",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added usage_ledger.is_model_id(model) (non-empty string not starting with '<'); the transcript scanner now skips non-model ids through it; meter-usage session_start_check and _doctor_trail.unpriced_model_tokens call ul.is_model_id so <synthetic> is never named while an unknown real id still is. Full sweep: 335/335 files ok, exit 0. ruff clean. Selftests: usage_ledger 122/122, meter_usage 56/56, doctor_trail 150/150. vermin not run.",
+        "descriptive": "The unpriced-model notice and doctor row no longer name Claude Code's <synthetic> turn as a model."
       },
       "startedAt": "2026-10-14T14:56:12Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T15:56:23Z",
+      "verifiedBy": [
+        "a previous session whose last model id is <synthetic> prints no unpriced-model notice, and one whose id is an unknown real model still does",
+        "ledger rows with model <synthetic> are not named by the unpriced-models row, and rows of an unknown real model are, with their token count",
+        "is_model_id: a real model id is one, the synthetic turn, an empty id and a non-string are not"
+      ],
       "reviewPerTask": "phase",
       "notes": [
         {
@@ -3112,12 +3116,23 @@
         "runId": "2026-10-14T15:56:22Z.f5728f",
         "status": "passed",
         "at": "2026-10-14T15:56:22Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "8f5d72557d54",
+        "at": "2026-10-14T15:56:23Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T15:04:41Z",
+        "basis": "`python3 plugins/audit/tests/test_meter_usage.py --selftest` in a throwaway tree at HEAD: the command could not start: [Errno 2] No such file or directory: 'python3 plugins/audit/tests/test_meter_usage.py --selftest'; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.53-0h5",
       "title": "Every closer reads a filed return through the journal row that recorded it, so a return changed or deleted after filing cannot close a task",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase-review finding (med, half delivered): an earlier P125 task bound a filed return to a `task.return.filed` journal row carrying its digest and added `_filed_returns.read_filed_return_checked`, but no closer calls it - `audit-task.py done`, `commit-task-work.py` (claims_from_return and its own read) and the drive's own return reads still use the plain `read_filed_return`, so a return edited after filing still closes its task. Make the checked read the one every closer uses (pass the journal rows and checkout), and make the plain read unreachable from a closer: one invariant, not one call site at a time. A return with no filing row (filed before the row existed) is read as today and says so, never refused silently and never treated as checked.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -3155,16 +3170,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T15:56:24Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.54-0h5",
@@ -3277,12 +3293,13 @@
     {
       "id": "P125.56-0h5",
       "title": "The register-citation lint reads every source kind this repo ships, not only Python",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase-review finding (low, house rule): the lint that keeps private register ids (F/P/BUG numbers) out of code comments and docstrings - `_deps`' `_py_comment_citations` / `_py_docstring_citations`, held by case rc16 over the real tree - reads .py files only, so a .mjs, .js or .sh comment citing a register id escapes it (tools/capture-screenshots.mjs's awaitSaveCard docstring does today). Widen the lint to the comment syntax of every source kind the tree ships (.mjs/.js line and block comments, .sh # comments), through one table of comment syntaxes rather than one function per language, and fix the citations it then finds by stating the constraint instead of the id.",
       "files": [
         "plugins/audit/scripts/_deps.py",
         "plugins/audit/tests/test__deps.py",
-        "tools/capture-screenshots.mjs"
+        "tools/capture-screenshots.mjs",
+        "examples/panel.sh tools/verify.sh tools/check-report-interactive.mjs tools/ui-checks/csv.mjs tools/ui-checks/layout-baseline.mjs tools/ui-checks/liveness.mjs tools/ui-checks/responsive.mjs tools/ui-checks/stage-tabs.mjs tools/ui-tests/ado-panel.test.mjs tools/ui-tests/armed-reason.test.mjs tools/ui-tests/capture-provenance.test.mjs tools/ui-tests/evidence-badge.test.mjs tools/ui-tests/gate-reasons.test.mjs tools/ui-tests/layout-baseline.test.mjs tools/ui-tests/parse.test.mjs tools/ui-tests/proposals-cell.test.mjs tools/ui-tests/refresh-deferral.test.mjs tools/ui-tests/sandbox.mjs tools/ui-tests/version-banner.test.mjs plugins/audit/scripts/ui/panel/ado-connector.js plugins/audit/scripts/ui/panel/appearance-view.js plugins/audit/scripts/ui/panel/boot.js plugins/audit/scripts/ui/panel/branch-convention.js plugins/audit/scripts/ui/panel/composition.js plugins/audit/scripts/ui/panel/core.js plugins/audit/scripts/ui/panel/help-drawer.js plugins/audit/scripts/ui/panel/overview.js plugins/audit/scripts/ui/panel/proposals-view.js plugins/audit/scripts/ui/panel/run-status.js plugins/audit/scripts/ui/panel/version-banner.js plugins/audit/scripts/ui/panel/write-confirmation.js"
       ],
       "tests": {
         "mode": "tdd",
@@ -3308,21 +3325,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T15:56:26Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.57-0h5",
       "title": "Three small review findings: a miscounted comment, an unbounded failure message, and a retry loop that duplicates _output.while_shared",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase-review findings (low, each small). (1) plugins/audit/scripts/_refs.py: the comment above TOOL_NAME_TREES calls `.claude/hooks` 'a fourth' tree while the tuple holds five; restate it without an ordinal. (2) tools/release.py: case rl8, and any case asserting on the fake runner's call list, prints the whole call list on failure; with wait_ci polling the fake for its whole timeout the message has reached more than 64 MB. Clip the message, and let the fake end wait_ci's loop so the case cannot poll for its timeout. (3) plugins/audit/scripts/governance/stamp-verification.py: `_remove_throwaway` carries its own retry loop for a shared-file removal; use `_output.while_shared`, the one retry helper for that.",
       "files": [
         "plugins/audit/scripts/_refs.py",
@@ -3354,16 +3372,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T15:56:28Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.58-0h5",
