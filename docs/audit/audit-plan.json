@@ -6756,14 +6756,16 @@
       "P122.8-z4y",
       "P124.11",
       "P123.15",
-      "P123.48-64p"
+      "P123.48-64p",
+      "P128.16-0h5"
     ],
     "plugins/audit/tests/test__gate_derive.py": [
       "P79.2",
       "P79.8-5bh",
       "P81.15-j7p",
       "P124.11",
-      "P123.15"
+      "P123.15",
+      "P128.16-0h5"
     ],
     "plugins/audit/scripts/governance/derive-phase-gate.py": [
       "P79.3",
