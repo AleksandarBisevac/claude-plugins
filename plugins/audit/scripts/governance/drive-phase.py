@@ -374,6 +374,15 @@ STEPS = {
         "line": "done %(phase)s: %(why)s",
         "rule": ("Report where it landed: a parent that is not the development "
                  "branch does not hold the work yet.",)},
+    # Printed ONLY when the plan's own readiness names a phase beyond the one
+    # that just finished - never a guess, and never for the phase that just
+    # closed, which has nothing left ready. A phase boundary is a context
+    # boundary: everything the next phase needs is on disk (manifest, journal,
+    # evidence, drive state, briefs), so nothing is lost by starting it clean.
+    "done-chain-next": {
+        "line": "chain: clear context, then re-enter with /audit:phase %(phase)s "
+                "for a fresh start",
+        "rule": ()},
     "done-task": {
         "line": "done %(task)s: %(why)s",
         "rule": ()},
@@ -1918,13 +1927,38 @@ def drop_state(ctx):
         pass
 
 
+def _next_chain_phase(ctx):
+    """The phase id the plan's own readiness names next, once this phase's
+    `done` is on disk - `None` when nothing is ready, read as "no chain to
+    continue" rather than as a phase named `none`.
+
+    Reads the manifest FRESH, after sign-off's own write, through the same
+    `ready_by_phase` every other surface derives its ready list from - never
+    a second readiness rule kept only for this message. The phase that just
+    finished holds no ready task of its own any more (it is done), so the
+    first key is always a DIFFERENT phase; nothing here excludes `ctx["phase"]`
+    by name, because the set it reads already cannot contain it."""
+    try:
+        manifest = _mio.load_manifest(ctx["manifest"])
+    except Exception:
+        return None
+    for phase_id in _status_facts.ready_by_phase(manifest):
+        if phase_id:
+            return phase_id
+    return None
+
+
 def finish(ctx, state, why):
     """The phase is through: give back a lock this drive took, drop the state."""
     stop = release_lock(ctx, state)
     if stop is not None:
         return stop
     drop_state(ctx)
-    return instruction("done", step_text("done", phase=ctx["phase"], why=why))
+    lines = step_text("done", phase=ctx["phase"], why=why)
+    next_phase = _next_chain_phase(ctx)
+    if next_phase:
+        lines = lines + step_text("done-chain-next", phase=next_phase)
+    return instruction("done", lines)
 
 
 # --- sign-off --------------------------------------------------------------------

@@ -199,6 +199,69 @@ def resolve_author(repo_root, mode="email"):
 
 
 # --- transcript discovery -------------------------------------------------------
+def main_transcript_path(session_id, home=None):
+    """The MAIN-session transcript for `session_id`, or `None` when
+    `session_id` is falsy or nothing matches.
+
+    Found by globbing every project directory Claude Code knows about rather
+    than by deriving the one project slug `audit-usage.py`'s own discovery
+    needs: a session id is a UUID, so `<home>/projects/*/<sessionId>.jsonl`
+    is unambiguous on its own and needs no project path at all - which is
+    what lets a live orchestrator ask for its OWN transcript with nothing
+    more than the session id Bash already has in its environment."""
+    if not session_id:
+        return None
+    home = home or os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(
+        os.path.expanduser("~"), ".claude")
+    matches = sorted(glob.glob(os.path.join(home, "projects", "*",
+                                            str(session_id) + ".jsonl")))
+    return matches[0] if matches else None
+
+
+def current_context_size(transcript_path):
+    """`(tokens, model, reason)` for the MOST RECENT assistant turn a MAIN
+    transcript carries.
+
+    `tokens` is `_context_of` applied to that turn's `message.usage` block -
+    a SNAPSHOT of the last turn seen, never a running sum: what a next
+    request would carry forward is set by the size of the last turn alone,
+    not by everything that came before it. `model` is that same turn's
+    `message.model`.
+
+    `tokens` is `None` - never a number standing in for one that was not
+    measured - when the file cannot be opened or carries no assistant usage
+    yet; `reason` then names which, in words a caller can print as the
+    basis for 'unknown'. `reason` is `None` only when `tokens` is a real
+    reading."""
+    last_usage, last_model, seen = None, None, False
+    try:
+        with open(transcript_path, "rb") as fh:
+            for raw in fh:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    entry = json.loads(raw.decode("utf-8", "replace"))
+                except Exception:
+                    continue
+                if not isinstance(entry, dict) or entry.get("type") != "assistant":
+                    continue
+                message = entry.get("message")
+                if not isinstance(message, dict):
+                    continue
+                usage = message.get("usage")
+                if not isinstance(usage, dict):
+                    continue
+                last_usage, last_model, seen = usage, message.get("model"), True
+    except OSError as exc:
+        return None, None, "transcript %s cannot be read (%s)" % (
+            transcript_path, exc)
+    if not seen:
+        return None, None, "transcript %s carries no assistant usage yet" % (
+            transcript_path,)
+    return _context_of(_usage_counts(last_usage)), last_model, None
+
+
 def subagent_dir(transcript_path):
     """`.../<sessionId>.jsonl` -> `.../<sessionId>/subagents`.
 

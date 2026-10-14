@@ -3510,6 +3510,57 @@ def _landing_word_cases(check):
           and "uncommitted" not in (plain or ""))
 
 
+def _chain_next_cases(check):
+    """`finish`'s `done` print carries the chain's own fresh-context step
+    exactly when the plan's own readiness names a phase beyond the one that
+    just closed - never a guess, and never when nothing is ready."""
+    M, why = _load("dp_chain_mod")
+    check("cn0 the driver loads: %r" % (why,), M is not None)
+    if M is None:
+        return
+
+    root = _harness.fixture_root("drive-chain-")
+    mpath = os.path.join(root, "audit-plan.json")
+
+    def _manifest(next_task_status):
+        return {
+            "meta": {"version": 2, "developmentBranch": "main"},
+            "fileIndex": {},
+            "phases": [
+                {"id": "P1", "title": "first", "status": "done",
+                 "desiredOutcome": "x", "blockedBy": [], "tasks": [
+                    {"id": "P1.1", "status": "done", "blockedBy": [],
+                     "dependsOn": []}]},
+                {"id": "P2", "title": "second", "status": "pending",
+                 "desiredOutcome": "y", "blockedBy": [], "tasks": [
+                    {"id": "P2.1", "status": next_task_status,
+                     "blockedBy": [], "dependsOn": []}]},
+            ]}
+
+    ctx = {"manifest": mpath, "project": root, "phase": "P1", "did": [],
+          "log": []}
+    M.release_lock = lambda ctx, state: None
+    M.drop_state = lambda ctx: None
+
+    with open(mpath, "w") as fh:
+        json.dump(_manifest("pending"), fh)
+    out = M.finish(ctx, {}, "signed off (passed)")
+    check("cn1 a next phase the plan's own readiness names beyond the one "
+          "that just closed gets the chain's fresh-context step, naming it: "
+          "%r" % (out["lines"],),
+          out["kind"] == "done"
+          and any("clear context" in line and "P2" in line
+                  for line in out["lines"]))
+
+    with open(mpath, "w") as fh:
+        json.dump(_manifest("done"), fh)
+    out2 = M.finish(ctx, {}, "signed off (passed)")
+    check("cn2 THE TWIN: with nothing left ready, done carries no chain line "
+          "at all - never printed on a guess: %r" % (out2["lines"],),
+          out2["kind"] == "done"
+          and not any("clear context" in line for line in out2["lines"]))
+
+
 # --- waves: ready disjoint tasks run together, each in a tree of its own -------
 # The gate every wave task declares asks the tree it runs in which source files
 # differ from the commit the tree was cut at, and passes only when the answer is
@@ -4682,6 +4733,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("di-block", "_decline_breach_cases"),
           ("of-block", "_open_finding_cases"),
           ("nf-block", "_landing_cases"), ("bk-block", "_blocked_cases"),
+          ("cn-block", "_chain_next_cases"),
           ("wv-block", "_wave_cases"), ("wr-block", "_wave_red_sibling_cases"),
           ("wc-block", "_wave_crash_cases"), ("w1-block", "_width_one_cases"),
           ("wz-block", "_wave_width_cases"),

@@ -1336,6 +1336,58 @@ def _cases(check):
         check("cc7 cli cost: no cost-state recorded means no comparison at "
               "all, never one manufactured from nothing",
               M.cli_cost_compare(_cc_rows, None) == {})
+
+        # --- the orchestrator's own CURRENT context (ctx) ----------------------
+        _ctx_path = os.path.join(_cc_dir, "s-ctx.jsonl")
+        _write_jsonl(_ctx_path, [
+            {"type": "assistant", "message": {
+                "model": "claude-sonnet-5-5",
+                "usage": {"input_tokens": 100, "output_tokens": 50,
+                         "cache_read_input_tokens": 900}}},
+            {"type": "assistant", "message": {
+                "model": "claude-sonnet-5-5",
+                "usage": {"input_tokens": 10, "output_tokens": 5,
+                         "cache_creation_input_tokens": 200,
+                         "cache_creation": {"ephemeral_5m_input_tokens": 200,
+                                           "ephemeral_1h_input_tokens": 0},
+                         "cache_read_input_tokens": 1500}}},
+        ])
+        tokens, model, reason = M.current_context_size(_ctx_path)
+        check("cctx1 current_context_size: the LAST assistant turn's own "
+              "usage, never a sum across every turn in the file (10 + 200 + "
+              "1500 = 1710, not 1000 + 1710)",
+              tokens == 1710 and model == "claude-sonnet-5-5" and reason is None,
+              (tokens, model, reason))
+        tokens, model, reason = M.current_context_size(
+            os.path.join(_cc_dir, "nope-ctx.jsonl"))
+        check("cctx2 current_context_size: a transcript that cannot be opened "
+              "answers (None, None, <reason>), never a number standing in for "
+              "one that was not measured",
+              tokens is None and model is None and bool(reason), reason)
+        _empty_path = os.path.join(_cc_dir, "s-empty.jsonl")
+        _write_jsonl(_empty_path, [{"type": "user", "message": {"content": "hi"}}])
+        tokens, model, reason = M.current_context_size(_empty_path)
+        check("cctx3 current_context_size: a transcript with no assistant "
+              "usage yet answers unknown, not zero",
+              tokens is None and model is None and bool(reason), reason)
+
+        _home_dir = tempfile.mkdtemp(prefix="usage-ledger-home-")
+        try:
+            _proj_dir = os.path.join(_home_dir, "projects", "-some-project")
+            os.makedirs(_proj_dir)
+            _sid = "11111111-2222-3333-4444-555555555555"
+            shutil.copyfile(_ctx_path, os.path.join(_proj_dir, _sid + ".jsonl"))
+            check("cctx4 main_transcript_path: found by globbing every "
+                  "project dir for the session id alone - no project-path "
+                  "slug needed",
+                  M.main_transcript_path(_sid, home=_home_dir)
+                  == os.path.join(_proj_dir, _sid + ".jsonl"))
+            check("cctx5 main_transcript_path: no match, and no session id, "
+                  "both answer None rather than raising",
+                  M.main_transcript_path("no-such-session", home=_home_dir)
+                  is None and M.main_transcript_path(None, home=_home_dir) is None)
+        finally:
+            shutil.rmtree(_home_dir, ignore_errors=True)
     finally:
         shutil.rmtree(_cc_dir, ignore_errors=True)
 

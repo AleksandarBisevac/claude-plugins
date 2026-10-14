@@ -547,6 +547,95 @@ def _cases(_record):
           and "this phase" not in M._usage_line(_sum_none, _u_due),
           (M._resumable_lines(_fx_due, _sum_none), M._usage_line(_sum_none, _u_due)))
 
+    # --- the orchestrator's OWN current context (oc) ---------------------------
+    # Read from the live transcript via $CLAUDE_CODE_SESSION_ID, never a guess,
+    # and absent entirely when there is no session to ask about at all - the
+    # ordinary case for every run outside a live Claude Code session, which this
+    # must leave exactly as quiet as it was before the feature existed.
+    import tempfile as _oc_tf
+    import shutil as _oc_sh
+
+    _oc_env_before = {k: os.environ.get(k)
+                      for k in ("CLAUDE_CODE_SESSION_ID", "CLAUDE_CONFIG_DIR")}
+
+    def _oc_restore_env():
+        for k, v in _oc_env_before.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def _oc_write(path, entries):
+        with open(path, "w", encoding="utf-8") as fh:
+            for entry in entries:
+                fh.write(json.dumps(entry) + "\n")
+
+    try:
+        os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+        _oc_ctx_none = M.orchestrator_context({}, "/no/such/manifest.json")
+        check("ocx1 orchestrator_context: no $CLAUDE_CODE_SESSION_ID at all means "
+              "noSession - nothing to ask about outside a live session",
+              _oc_ctx_none.get("tokens") is None
+              and _oc_ctx_none.get("noSession") is True
+              and bool(_oc_ctx_none.get("reason")),
+              _oc_ctx_none)
+        check("ocx2 _context_line: noSession prints nothing - every run outside "
+              "a live session stays exactly as quiet as before this existed",
+              M._context_line(_oc_ctx_none) is None)
+        _oc_sum_bare = M.rollup({"phases": []}, [], [])
+        check("ocx3 render_short with no session id carries no orchestrator "
+              "context line at all",
+              "orchestrator context" not in M.render_short({"phases": []},
+                                                            _oc_sum_bare))
+
+        _oc_home = _oc_tf.mkdtemp(prefix="audit-status-oc-home-")
+        _oc_sid = "99999999-8888-7777-6666-555555555555"
+        try:
+            os.environ["CLAUDE_CONFIG_DIR"] = _oc_home
+            os.environ["CLAUDE_CODE_SESSION_ID"] = _oc_sid
+            _oc_ctx_missing = M.orchestrator_context({}, "/no/such/manifest.json")
+            check("ocx4 orchestrator_context: a session id with no matching "
+                  "transcript answers unknown, with a reason - never a number",
+                  _oc_ctx_missing.get("tokens") is None
+                  and not _oc_ctx_missing.get("noSession")
+                  and bool(_oc_ctx_missing.get("reason")),
+                  _oc_ctx_missing)
+            check("ocx5 _context_line: a reason with no reading prints "
+                  "'unknown (<reason>)', the basis named rather than a default",
+                  M._context_line(_oc_ctx_missing)
+                  == "  orchestrator context: unknown (%s)"
+                  % (_oc_ctx_missing["reason"],))
+
+            _oc_proj = os.path.join(_oc_home, "projects", "-fixture-project")
+            os.makedirs(_oc_proj)
+            _oc_path = os.path.join(_oc_proj, _oc_sid + ".jsonl")
+            _oc_write(_oc_path, [
+                {"type": "assistant", "message": {
+                    "model": "claude-sonnet-5-5",
+                    "usage": {"input_tokens": 400, "output_tokens": 10,
+                             "cache_read_input_tokens": 8000}}},
+            ])
+            _oc_ctx_read = M.orchestrator_context({}, "/no/such/manifest.json")
+            check("ocx6 orchestrator_context: a real transcript names the "
+                  "current turn's own context size and model",
+                  _oc_ctx_read.get("tokens") == 8400
+                  and _oc_ctx_read.get("model") == "claude-sonnet-5-5"
+                  and _oc_ctx_read.get("reason") is None,
+                  _oc_ctx_read)
+            check("ocx7 _context_line: a real reading names the tokens and the "
+                  "model",
+                  M._context_line(_oc_ctx_read)
+                  == "  orchestrator context: %s tok (claude-sonnet-5-5)"
+                  % (M._fmt.fmt_tokens(8400),))
+            check("ocx8 render_status carries the orchestrator context line "
+                  "once a session id resolves to a real transcript",
+                  "orchestrator context: %s tok" % (M._fmt.fmt_tokens(8400),)
+                  in M.render_status({"phases": []}, _oc_sum_bare))
+        finally:
+            _oc_sh.rmtree(_oc_home, ignore_errors=True)
+    finally:
+        _oc_restore_env()
+
     _fx_sig = copy.deepcopy(_fx)
     _fx_sig["phases"][0].update(status="in_progress", blockedBy=["P2"],
                                 review={"status": "passed"})

@@ -984,6 +984,19 @@ commit` once the filed return has been checked, by script rather than by an agen
 command — see the table above ("The subagent does not commit; the orchestrator does") for the
 same rule stated as a guard.
 
+**A phase boundary is a context boundary.** Driving several phases back to back in one
+never-cleared orchestrator context buys nothing: everything a phase needs lives on disk
+(manifest, journal, evidence, drive state, briefs), and a long-lived context pays to re-read all
+of it on every further request. So `/audit:phase`'s own loop states it as the step: once a
+`done` print carries `chain: clear context, then re-enter with /audit:phase <next>`, clear
+context and run that command fresh rather than continuing the same conversation into the next
+phase. `/audit:status` and the step driver's own entry view name what that costs while you
+decide: `orchestrator context: <tokens> tok (<model>)`, read from the live session's own
+transcript via `$CLAUDE_CODE_SESSION_ID` — or `orchestrator context: unknown (<reason>)` when the
+transcript cannot be read, never a guess, and absent entirely outside a live session. Past the
+model's own long-prompt cliff, the same line prices what one further request this size would cost
+at the dated table.
+
 **Attribution**, most precise first — nothing is ever dropped:
 
 | Level | How | Precision |

@@ -773,6 +773,26 @@ one-line instructions are the run's progress. `/audit:status` still renders the 
 typed. The lines above are the ones a script genuinely cannot produce, because they report
 events as they happen; those stay yours.
 
+### A phase boundary is a context boundary
+
+Driving several phases back to back in one never-cleared context buys nothing: everything a phase
+needs is on disk (manifest, journal, evidence, drive state, briefs), and a long-lived orchestrator
+context pays to re-read all of it on every further request without reading anything a fresh entry
+could not also read. `next`'s own `done` print states this as the step, not a tip - "do what it
+prints" already covers it: once `done` carries a `chain: clear context, then re-enter with
+/audit:phase <next>` line - meaning the plan's own readiness names a phase beyond the one that
+just finished - report where the finished phase landed, then clear context and type
+`/audit:phase <next>` as a fresh entry, rather than continuing the same conversation into the
+next phase.
+
+`/audit:status`'s short and full renders, and the entry view the step driver's own loop echoes,
+both name the orchestrator's OWN current context size - read from its live transcript via
+`$CLAUDE_CODE_SESSION_ID`, never a guess - as `orchestrator context: <tokens> tok (<model>)`, or
+`orchestrator context: unknown (<reason>)` when the transcript cannot be read; the line is absent
+entirely outside a live session, where there is nothing to ask about. Past the model's own
+long-prompt cliff, the same line also prices what one further request this size would cost at the
+dated table - the basis a context boundary is worth paying attention to in the first place.
+
 ## Dry-run / preview
 
 `next`, `run`, and `phase` accept a **`--dry-run`** token in their arguments. In dry-run:

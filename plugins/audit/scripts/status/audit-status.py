@@ -608,6 +608,75 @@ def _load_validator():
     return _manifest_rules
 
 
+# --- orchestrator context --------------------------------------------------------
+def orchestrator_context(manifest, manifest_path, project_dir=None):
+    """`{"tokens", "model", "nextCostUSD", "reason"}` for THIS run's OWN
+    session, read via `$CLAUDE_CODE_SESSION_ID` - the id Bash already has
+    when this runs inside the orchestrator's own session, so no argument
+    carries it in.
+
+    Every key but `reason` is `None`, and `reason` names why, when nothing
+    could be read: no session id in this process' environment, no
+    transcript found for it, or the transcript carrying no assistant usage
+    yet - never a default standing in for a number that was not measured.
+
+    `nextCostUSD` prices `tokens` as a fresh `in` read at the resolved
+    table - the no-cache UPPER BOUND a next turn this size would cost - and
+    is set only past `usage_ledger.LONG_PROMPT_THRESHOLD_TOKENS`, the one
+    cliff this already prices a prompt differently at, reused rather than
+    inventing a second number for the same idea."""
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if not session_id:
+        # `noSession` is its own key, read by `_context_line` to stay silent -
+        # never a string match on `reason`'s wording, which is free to change.
+        return {"tokens": None, "model": None, "nextCostUSD": None,
+                "noSession": True,
+                "reason": "no $CLAUDE_CODE_SESSION_ID in this process' environment"}
+    try:
+        ul = _loader.load_script("usage_ledger.py", modname="usage_ledger",
+                                 cache=False)
+    except Exception as exc:
+        return {"tokens": None, "model": None, "nextCostUSD": None,
+                "reason": "usage_ledger.py could not be loaded (%s)" % (exc,)}
+    path = ul.main_transcript_path(session_id)
+    if not path:
+        return {"tokens": None, "model": None, "nextCostUSD": None,
+                "reason": "no transcript found for session %s" % (session_id,)}
+    tokens, model, reason = ul.current_context_size(path)
+    if reason:
+        return {"tokens": None, "model": None, "nextCostUSD": None,
+                "reason": reason}
+    next_cost = None
+    if model and tokens is not None and tokens > ul.LONG_PROMPT_THRESHOLD_TOKENS:
+        try:
+            pricing = ul.project_pricing(manifest, manifest_path, project_dir)
+            priced_model = ul.tiered_model_key(model, tokens)
+            next_cost = ul.price({"in": tokens}, priced_model, pricing["table"])
+        except Exception:
+            next_cost = None
+    return {"tokens": tokens, "model": model, "nextCostUSD": next_cost,
+            "reason": None}
+
+
+def _context_line(ctx):
+    """The one line `_header_lines`/`render_short` print for `ctx`
+    (`orchestrator_context`'s own return), or `None` when there is no
+    session id to ask about at all - the ordinary case for every run outside
+    a live Claude Code session, which stays exactly as quiet as it was
+    before this existed."""
+    if ctx is None or ctx.get("noSession"):
+        return None
+    if ctx.get("reason"):
+        return "  orchestrator context: unknown (%s)" % (ctx["reason"],)
+    line = "  orchestrator context: %s tok" % (_fmt.fmt_tokens(ctx["tokens"]),)
+    if ctx.get("model"):
+        line += " (%s)" % (ctx["model"],)
+    if ctx.get("nextCostUSD") is not None:
+        line += (" - past a long prompt, each further request costs ~%s"
+                 % (_fmt.fmt_cost(ctx["nextCostUSD"]),))
+    return line
+
+
 # --- usage summary --------------------------------------------------------------
 def usage_summary(manifest, manifest_path, project_dir=None, full=True):
     """Compact token-usage block for the rollup, or None when there is no ledger.
@@ -844,7 +913,7 @@ def _evidence_cell(holder):
 
 
 def render_status(manifest, summary, width=18, only_phase=None, pt=None,
-                  view=None, own=None):
+                  view=None, own=None, manifest_path=None):
     """Plain-ASCII status report. Printed verbatim by /audit:status.
 
     Pure ASCII, no ANSI, no box-drawing — the same constraint audit-usage.py's
@@ -865,7 +934,8 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None,
     """
     pt = pt or _cli_fmt.PLAIN
     here = own if own is not None else manifest
-    lines = _header_lines(manifest, summary, width, pt=pt)
+    lines = _header_lines(manifest, summary, width, pt=pt,
+                          manifest_path=manifest_path)
     lines += _phase_table_lines(manifest, summary, only_phase, view)
     lines += _ready_lines(manifest, summary, pt=pt)
     lines += _area_lines(summary, pt=pt)
@@ -882,7 +952,7 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None,
 SHORT_FULL_VIEW_POINTER = "/audit:status"
 
 
-def render_short(manifest, summary, width=18, pt=None):
+def render_short(manifest, summary, width=18, pt=None, manifest_path=None):
     """The condensed render an automated run echoes mid-flight: the overall
     line, the usage line, the READY NOW block (with the command to type), the
     UNFINISHED block when a lock was read, and a closing line naming the
@@ -909,6 +979,9 @@ def render_short(manifest, summary, width=18, pt=None):
     usage = summary.get("usage")
     if usage:
         lines.append("  " + _usage_line(summary, usage))
+    ctx_line = _context_line(orchestrator_context(manifest, manifest_path))
+    if ctx_line:
+        lines.append(ctx_line)
     lines += _ready_lines(manifest, summary, pt=pt)
     # The same block the full view ends on, so a run stopped mid-phase reads the
     # same sentence in the view an automated run echoes between waves.
@@ -960,7 +1033,7 @@ def _overall_line(summary, width=18):
               len(summary["ready"])))
 
 
-def _header_lines(manifest, summary, width=18, pt=None):
+def _header_lines(manifest, summary, width=18, pt=None, manifest_path=None):
     """Who this plan is, the whole-plan bar, and every notice that qualifies it.
 
     The notices sit here rather than in their own blocks because each one is a
@@ -992,6 +1065,9 @@ def _header_lines(manifest, summary, width=18, pt=None):
     if usage:
         out.append("  " + _usage_line(summary, usage))
         out += _budget_lines(summary, usage, pt=pt)
+    ctx_line = _context_line(orchestrator_context(manifest, manifest_path))
+    if ctx_line:
+        out.append(ctx_line)
     return out
 
 
@@ -2237,7 +2313,7 @@ def main(argv):
             # `sh0` pins its output byte for byte - and `only_phase`/`view` are
             # a full-render policy that the condensed form has no table to
             # apply either to.
-            print(render_short(plan, summary, pt=pt))
+            print(render_short(plan, summary, pt=pt, manifest_path=manifest_path))
         else:
             # THE DEFAULT PICK, and it is copied rather than invented: the
             # identical expression decides `_report_page`'s starting view and
@@ -2254,7 +2330,8 @@ def main(argv):
                 view = ("active" if (segs_present & set(("active", "pending")))
                         else "all")
             print(render_status(plan, summary, only_phase=only_phase, pt=pt,
-                                view=view, own=manifest))
+                                view=view, own=manifest,
+                                manifest_path=manifest_path))
 
     if want_gate:
         # WHERE THE VERDICT GOES. The machine-readable verdict is already whole in
