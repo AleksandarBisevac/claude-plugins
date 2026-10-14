@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "own-tests: python3 plugins/audit/tests/test__machine_paths.py --selftest": "pass",
+    "python3 tools/check-committed-pii.py": "pass",
+    "python3 tools/check-committed-pii.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-14T22:28:35Z",
+    "basis": "`python3 plugins/audit/tests/test__machine_paths.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 21 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, the task's run with its inline suite tools/check-committed-pii.py laid over as HEAD's copy plus its 1 test hunk(s), 2 other hunk(s) held at HEAD), each passing with the working tree's implementation - escaped control characters written as backslash sequences (a CRLF described as backslash-r backslash-n, doubled for JSON) are not a Windows user path, while an escaped C:/Users/<name> home and an escaped UNC server/share path still are (quiet side, 4 strings, found [('\\\\\\\\r\\\\\\\\r\\\\\\\\n', 'windows-user-path'), ('text \\\\\\\\r\\\\\\\\n\\\\\\\\r\\\\\\\\n done', 'windows-user-path'), ('a\\\\\\\\t\\\\\\\\b\\\\\\\\n\\\\\\\\', 'windows-user-path')]) (house FAIL): SELFTEST FAILED: 20/21 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "windows-user-path UNC arm now requires server and share of 2+ chars in _machine_paths.py; added two cases to test__machine_paths.py (quiet side and found side: escaped home, escaped UNC, two-char server/share) and one case to tools/check-committed-pii.py selftest; removed two BASELINE rows made dead (P82 CRLF row and the audit-plan.json dirname example row). check-committed-pii.py exit 0 (32 findings all baselined), its --selftest 46/46, test__machine_paths 21/21, full sweep 335/335 files ok, 16273 cases.",
+    "descriptive": "Escaped control-character text no longer reads as a Windows user path; real escaped homes and UNC paths still are, and two stale baseline rows are gone."
+  },
+  "testsAdded": [
+    "escaped control characters written as backslash sequences (a CRLF described as backslash-r backslash-n, doubled for JSON) are not a Windows user path, while an escaped C:/Users/<name> home and an escaped UNC server/share path still are",
+    "every committed artifact is clean with no baseline row standing for an escape sequence read as a path"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:0a5ecad301d93edcf5e9da429cffe124b018322def93d688803dabdd4b08ca47\",\"dirtyDigest\":\"sha256:3c5a84351cf4480e101f78575814b9a60b532e26715d132c22e825a312f503ab\",\"dirtyPaths\":{\"plugins/audit/scripts/_machine_paths.py\":\"17a2556cc19b1957\",\"plugins/audit/tests/test__machine_paths.py\":\"6f51a65dd86d4887\",\"tools/check-committed-pii.py\":\"791c977b3f15a83a\"},\"head\":\"fc19b245\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/_machine_paths.py\",\"plugins/audit/tests/test__machine_paths.py\",\"tools/check-committed-pii.py\"],\"scopeDigest\":\"sha256:1dee8d32a4b4b50a2b5c32465e28e786c31a4130a29527d8b800a484966b833f\",\"v\":2}"
+}

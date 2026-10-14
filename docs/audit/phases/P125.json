@@ -4203,7 +4203,7 @@
     {
       "id": "P125.67-0h5",
       "title": "The Windows user-path shape does not read escaped control characters as path segments",
-      "status": "pending",
+      "status": "in_progress",
       "description": "CI run 38645130027 (every leg running tools/check-committed-pii.py, ci/p125 at c317df64): the P125.66 return's text describing CRLF bytes as `<outside-repo>` (JSON-escaped) was reported as `windows-user-path` at two columns, and q26/q27/q27b/q7 went red with it. This is the SECOND instance of the class: check-committed-pii's BASELINE already carries rows for P82 text 'with the carriage-return and newline escapes spelled out as escaped backslash sequences. The detector reads the escapes as path separators; no path.' A baseline per instance is the patch; the invariant is in the shape: `_machine_paths._MACHINE_PATH_SHAPES` 'windows-user-path' second alternative (`\\\\{2,4}[A-Za-z0-9._-]+\\\\{1,2}[A-Za-z0-9._$-]+\\\\`) accepts one-character segments, which is exactly an escape sequence. Require a segment shape no escape sequence has (at least two characters, and not a lone escape letter), keep every real UNC and escaped Windows home path found, remove the BASELINE rows the change makes stale (the check reports a dead baseline itself), and prove both directions: the escape text is quiet, a real escaped `<outside-repo><name>\\\\` and a `<outside-repo>` path are still found. The write scrub uses the same predicate, so the filed-return scrub inherits the fix.",
       "files": [
         "plugins/audit/scripts/_machine_paths.py",
@@ -4234,21 +4234,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T22:20:16Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.68-0h5",
       "title": "Every text-mode file and subprocess read or write in scripts/ and hooks/ names its encoding",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Third encoding defect in this phase (F666 fixture, F668 brief read-back and fixture writes, now this): CI run 38645130027 windows plain 1 - a subprocess reader thread decoded a verb's UTF-8 output as cp1252 (`codecs.charmap_decode` in `subprocess._readerthread`), so the follower-at-integration case and sn6 still fail on Windows after P125.66. Some `subprocess.run(..., text=True)` / `universal_newlines` / `Popen(text=True)` in the product names no encoding (P125.61's owner query `<script> --follower-for` and the drive's verb runner are first suspects). The class fix is an invariant, not the next site: (1) a lint over every .py under scripts/ and hooks/ (built like the repo's other AST lints, rows in tools/prove-gates.py and tools/gate-parity.py) that reports any text-mode `open`/`io.open` and any text-mode subprocess call (`text=True`, `universal_newlines=True`, or an `encoding=`-less capture decoded later with `.decode()` without a codec) that names no encoding; (2) fix every site it reports, UTF-8 with an explicit errors policy chosen per site and stated; (3) reproduce on POSIX: run the drive and integrate suites with `LC_ALL=C PYTHONUTF8=0` (a locale whose preferred encoding is ASCII), which turns the same defect red here, and add that run as a case. Widen through the drive for the files the lint reports; stop and name them.",
       "files": [
         "plugins/audit/scripts/_output.py",
@@ -4257,7 +4258,22 @@
         "plugins/audit/scripts/governance/drive-phase.py",
         "plugins/audit/tests/test_drive_phase.py",
         "tools/prove-gates.py",
-        "tools/gate-parity.py"
+        "tools/gate-parity.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/scripts/governance/full-gate.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/manifest/_ado_fetch.py",
+        "plugins/audit/scripts/manifest/ado-connect.py",
+        "plugins/audit/scripts/panel/_panel_runstate.py",
+        "plugins/audit/scripts/status/_doctor_ado.py",
+        "plugins/audit/scripts/status/_doctor_hygiene.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        ".claude/hooks/arm-release-bypass.py",
+        ".claude/hooks/guard-uncommitted.py",
+        ".claude/hooks/require-claim-block.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -4283,16 +4299,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T22:20:18Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
