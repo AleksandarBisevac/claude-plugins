@@ -2572,7 +2572,7 @@
     {
       "id": "P125.45-0h5",
       "title": "The affected-test selection reads no meta.coupling: the arm P125.8 added is removed, as the owner's freeze on third-place readers requires",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Owner decision D1 (2026-10-14, quality-gates-internal reports/2026-10-14-cost-code-ci-analysis/DECISIONS.md): freeze the third place, mutes and coupling now - no new reader of those keys, the coupling arm of P125.8 named explicitly - and decide after the orchestration study. P125.8 (3321ac71) landed before the decision with a coupling arm in _affected_tests.py, raising the files that read third-place keys from 23 to 24 (code study, studies/K-code-study.md). Remove the arm and its cases; the remaining arms (related listing, import graph, e2e listing, all-e2e on app source) and the widen-to-phase-gate fallbacks stay. Documentation stops naming coupling as a selection source. Net code must go down.",
       "files": [
         "plugins/audit/scripts/governance/_affected_tests.py",
@@ -2603,16 +2603,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T14:07:07Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.46-0h5",
@@ -2683,7 +2684,7 @@
     {
       "id": "P125.47-0h5",
       "title": "CI e2e plan-gate step still asserts the warn tier never denies, which P125.40 changed",
-      "status": "in_progress",
+      "status": "done",
       "description": "Both e2e legs (ubuntu and windows) went red at 3943f6d7 (run 38535638721) in 'Plan gate grades on evidence, end to end through the launcher': step 2 (a manifest whose only phase is done, a FRESH session, one 120-line Edit) now gets require-plan's deny ('change magnitude 120 (> 80) ... no phase is in_progress'). P125.40 made a no-phase edit past the session's free file deny; this is the session's FIRST edit, so decide which is right before touching either side: (a) the large first edit is meant to be denied too, and the CI step's step-2 assertion and its comment are stale; or (b) the free file must cover the first edit whatever its magnitude, and require-plan is wrong. The local gates never ran this shell step, so also make the step's assertion reachable locally (or name it in gate-parity's exemptions with its reason). Holds the release: CI must be green on the release commit. Found by the orchestrator reading the last ci/p125 run before the machine move.",
       "files": [
         ".github/workflows/ci.yml",
@@ -2716,14 +2717,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "123be1bf65ec",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Decision (a): require-plan.py unchanged. New tools/check-plan-gate-e2e.py drives sh py-launch.sh require-plan.py ask via stdin over 7 scenarios (no manifest silent; no-phase manifest no permissionDecision; all-done phases big first edit denies with /audit:phase add; same manifest small first edit allowed; running phase deny; sharded running deny; enforce deny), with --selftest of 10 cases incl. 2 mutation cases. ci.yml step body replaced by 'python tools/check-plan-gate-e2e.py'. Added to verify.sh and CONTRIBUTING.md; ABSENT_BY_DESIGN row for CLAUDE.md in tools/gate-parity.py. gate-parity exit 0, full sweep 335/335 files ok exit 0, ruff clean. Files changed beyond the two originally declared: tools/check-plan-gate-e2e.py, tools/gate-parity.py, tools/verify.sh, CONTRIBUTING.md (all in the widened scope). require-plan.py not edited.",
+        "descriptive": "The e2e plan-gate CI step now asserts the current tiers and runs locally in the sweep and verify.sh."
       },
       "startedAt": "2026-10-14T10:32:22Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T14:07:06Z",
+      "verifiedBy": [
+        "tools/check-plan-gate-e2e.py --selftest (s0-s6, m1, m2, d1)"
+      ],
       "reviewPerTask": "phase",
       "notes": [
         {
@@ -2735,12 +2738,23 @@
         "runId": "2026-10-14T14:07:04Z.28b279",
         "status": "passed",
         "at": "2026-10-14T14:07:04Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "123be1bf65ec",
+        "at": "2026-10-14T14:07:06Z"
+      },
+      "redFirst": {
+        "status": "could-not-prove",
+        "at": "2026-10-14T13:57:01Z",
+        "basis": "P125.47-0h5 declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P125.47-0h5 declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.48-0h5",
       "title": "One home for reading a Playwright or vitest run: stamp-verification reads failures through _runner_output, not a private regex",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase-review finding (med, DRY) on the red-first helper work: stamp-verification.py carries its own `_PW_LINE_ENTRY` regex and `red_read_tally` / `red_failing_cases` wrappers, while `_runner_output._FAILURE_READERS[\"playwright\"]` - the shared reader every other surface uses - lacks re.M and so misses line-anchored entries. Fix the shared reader (re.M, plus the Playwright line and vitest JSON readers the helper needed) and make stamp-verification call it; delete the private regex and wrappers. One runner's reading lives in one place. Behaviour seen by stamp-verification's existing cases must not change.",
       "files": [
         "plugins/audit/scripts/governance/_runner_output.py",
@@ -2772,16 +2786,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T14:07:09Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.49-0h5",
@@ -2836,7 +2851,7 @@
     {
       "id": "P125.50-0h5",
       "title": "The executor brief tells the agent to reuse each tests.add clause verbatim as its case title, or to file a tests.addMap entry",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase-review finding (med, noise): `_filed_returns.tests_add_gaps` matches a declared tests.add case only by its verbatim clause or by a `tests.addMap` entry, so a return whose case titles paraphrase the plan is flagged even when every declared case is covered (seen on two cases of an earlier P125 task). The rule is right; the brief never states it. Make the brief's Tests section (audit-lookup.py brief) and agents/audit-executor.md say it in one sentence, next to the tests.add list, naming the two ways a case is matched. No change to the matching itself.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -2867,16 +2882,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T14:07:11Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.51-0h5",
@@ -3294,6 +3310,54 @@
         "gateBasis": "phase-no-spelling"
       },
       "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.60-0h5",
+      "title": "A task's start is identified uniquely, so a restart within the same second never reads the previous start's return or marks",
+      "status": "pending",
+      "description": "Seen on CI run 38575164197 (ubuntu spaced leg, test_drive_phase sc4): after `--answer retry` the attempts went 1 -> 2, yet the next step printed the OLD start's scope-changed decision ('filed under 1 files'), because the return path and the drive's per-start marks are keyed by `startedAt` at one-second resolution (`_filed_returns.return_start_key`, `drive-phase.start_key`): a restart inside the same second as the start it replaces gets the same key, so it finds the previous start's filed return, its `gated` mark and its brief. A fast runner does this; locally sc4 passed twelve times out of twelve. Invariant: every start has an identity no earlier start of the task can share (the attempt number in the key, or a strictly increasing stamp - one definition, read by every place that keys by start: return paths, drive marks, briefs, attempts records), with returns already filed under the old key still found. Make sc4 deterministic: pin the clock so the restart lands in the start's second, and prove it red against today's key.",
+      "files": [
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a retry whose new start falls in the same second as the start it replaces dispatches the executor again and does not read the previous start's return, marks or brief",
+          "plugins/audit/tests/test__filed_returns.py: two starts of one task in the same second get distinct return paths, and a return filed under the old one-second key is still found for the start it answers"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
       "skills": [],
       "risk": "low",
       "blockedBy": [],
