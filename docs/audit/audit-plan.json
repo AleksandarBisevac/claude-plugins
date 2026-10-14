@@ -4700,7 +4700,8 @@
       "P125.3",
       "P125.4",
       "P125.18",
-      "P125.39-0h5"
+      "P125.39-0h5",
+      "P125.46-0h5"
     ],
     "plugins/audit/templates/audit-plan.starter.json": [
       "P1.5"
@@ -5815,7 +5816,8 @@
       "P121.16-eof",
       "P125.3",
       "P125.4",
-      "P125.2"
+      "P125.2",
+      "P125.46-0h5"
     ],
     "plugins/audit/tests/test_audit_version.py": [
       "P67.1",
@@ -6387,7 +6389,8 @@
       "P125.3",
       "P125.4",
       "P125.18",
-      "P125.39-0h5"
+      "P125.39-0h5",
+      "P125.46-0h5"
     ],
     "plugins/audit/tests/test_validate_config.py": [
       "P47.1",
