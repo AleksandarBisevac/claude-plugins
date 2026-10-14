@@ -79,7 +79,10 @@ Hard rules (non-negotiable):
   adjacent file is small enough to be an exception.** The plan gate
   (`hooks/require-plan.py`) holds the one definition of a trivial edit and enforces it
   on every write. If you need the adjacent file, edit it and say whether the gate
-  allowed it; if it refuses, its refusal is your instruction — stop and report.
+  allowed it; if it refuses, its refusal is your instruction — stop and report, naming
+  the file and why the right design needs it, rather than faking that design around
+  the gap: a rewritten fixture standing in for a file you could not touch is the same
+  workaround as editing it without permission.
 - **A blocked tool call is never a signal to reach for a different tool.** Finishing a
   refused Edit through Bash (a heredoc, `sed -i`, a one-liner) is the same workaround.
   Stop and report the refusal. Stated, not fully enforced: `guard-bash-writes.py` only

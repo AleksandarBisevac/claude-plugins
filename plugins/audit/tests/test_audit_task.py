@@ -1505,6 +1505,52 @@ def _add_cases(check):
               and det_cw.get("reason") == "whole area shelved"
               and det_cw.get("phaseId") == "P2")
 
+        # ---- (ip) a design source naming :focus/:hover owes its own parity
+        # case, synthesized into tests.add: a pixel-diff threshold over a
+        # whole section can hide a ring a control-sized snapshot catches.
+        projip, mpip = mk("ip-add", base_manifest())
+        os.makedirs(os.path.join(projip, "styles"), exist_ok=True)
+        with open(os.path.join(projip, "styles", "flux.css"), "w") as _fh:
+            _fh.write(".field input:focus {\n  outline: 3px solid blue;\n}\n"
+                      ".field input:hover {\n  border-color: teal;\n}\n")
+        code, _txt = run(["add", "Style the refund form", "--phase", "P2",
+                          "--project-dir", projip, "--files", "styles/flux.css"])
+        added = (task_in(mpip, "P2.4") or {}).get("tests", {}).get("add") or []
+        check("ip1 a design source naming BOTH :focus and :hover for a "
+              "selector gets one synthesized tests.add entry naming the file, "
+              "the selector and both states, asking for a clipped snapshot "
+              "of the control's own box, not only rest: %r" % (added,),
+              code == 0 and len(added) == 1
+              and "styles/flux.css" in added[0] and ".field input" in added[0]
+              and "focus and hover" in added[0] and "not only rest" in added[0])
+
+        projip2, mpip2 = mk("ip-add-none", base_manifest())
+        os.makedirs(os.path.join(projip2, "styles"), exist_ok=True)
+        with open(os.path.join(projip2, "styles", "plain.css"), "w") as _fh:
+            _fh.write(".field input {\n  outline: none;\n}\n")
+        code, _txt = run(["add", "Style the refund form, no pseudo", "--phase",
+                          "P2", "--project-dir", projip2,
+                          "--files", "styles/plain.css"])
+        added2 = (task_in(mpip2, "P2.4") or {}).get("tests", {}).get("add") or []
+        check("ip2 RED TWIN: a CSS file with neither pseudo-class gets no "
+              "synthesized entry: %r" % (added2,), code == 0 and added2 == [])
+
+        projip3, mpip3 = mk("ip-add-authored", base_manifest())
+        os.makedirs(os.path.join(projip3, "styles"), exist_ok=True)
+        with open(os.path.join(projip3, "styles", "flux.css"), "w") as _fh:
+            _fh.write(".btn:hover {\n  opacity: 0.9;\n}\n")
+        code, _txt = run(["add", "Style the submit button", "--phase", "P2",
+                          "--project-dir", projip3, "--files", "styles/flux.css",
+                          "--tests-add", "tests/test_btn.py: submit button renders"])
+        added3 = (task_in(mpip3, "P2.4") or {}).get("tests", {}).get("add") or []
+        check("ip3 the author's own tests.add entries come FIRST, the "
+              "synthesized parity case appended after, never replacing them: "
+              "%r" % (added3,),
+              code == 0 and len(added3) == 2
+              and added3[0] == "tests/test_btn.py: submit button renders"
+              and ".btn" in added3[1] and "hover" in added3[1]
+              and "focus and hover" not in added3[1])
+
     finally:
         _harness.remove_tree(tmp)
 

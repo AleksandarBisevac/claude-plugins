@@ -463,6 +463,15 @@ verb writes and refuses, and what the run commands leave behind, is
      hold up a commit would be a second gate with none of the first one's bracketing. Nothing
      enforces this routing either — no hook reads a subagent's return — so the run's own
      recorded outcome is the verdict either way.
+   - **The refusal the executor reports is a widening REQUEST, never a cue to work around the
+     gate.** `agents/audit-executor.md`'s own hard rule says to name the file and why, and stop —
+     not to ship an inferior design that avoids touching it. P6.3's plugin executor was refused
+     `playwright.config.ts`, so it faked a "Resend mock" by rewriting the browser's own response
+     instead; a plain session with no such refusal edited the config and ran a real mock. A test
+     double standing in for a file the executor could not touch is the same workaround as editing
+     it without permission — grade the request on its merits (does the task genuinely need the
+     file) and widen `task.files`, rather than reading the executor's workaround as "it managed
+     without".
    - **A widened scope CONTINUES the executor; it does not replace it.** When the plan gate refuses
      a file the task genuinely needs, you widen `task.files` (`/audit:task scope`) and then send the
      running executor a message telling it to carry on — you do **not** spawn a fresh one. A

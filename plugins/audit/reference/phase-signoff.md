@@ -104,11 +104,15 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    string diff, that flagged most of the danuvia tasks on language alone). **A reviewer's `matches`
    answer whose note quotes none of the task's own `description`** is refused as unsupported before
    it can file - `unsupported_match_basis` in `_filed_returns.py` - so a renamed scope cannot read
-   back as matching on the strength of the executor's own restatement. **Each planned test carries a
-   falsifier** - a small code change the plan says it must fail against - which the drive applies in
+   back as matching on the strength of the executor's own restatement. **A planned test MAY carry a
+   falsifier** - a small code change it must fail against - which `run_falsifier` applies in
    a throwaway copy of the tree, never the executor's own, and runs: a test that survives its own
    mutant is a finding with file:line, and a patch that breaks the build is `could-not-run`, never a
-   kill.
+   kill. Callable over a `{file, find, replace}` mutation and a task's own gate command; nothing in
+   the pipeline calls it automatically, because the mutation it needs names code a `tdd` task has
+   not written yet at the point task synthesis runs, and inventing one would be a model judgement
+   no deterministic verb here makes. A reviewer or a human who already knows the shape of the fix
+   runs it by hand against the filed return's tree.
 
    **Nothing refuses a hand edit of the shard** — the validator's shape warning is the only
    backstop, and a hand-written finding carries no journal row and no tally. Then, for each

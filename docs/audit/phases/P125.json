@@ -769,7 +769,7 @@
     {
       "id": "P125.12",
       "title": "Doctor reports the git-snapshot setting and the README cost section names it",
-      "status": "in_progress",
+      "status": "done",
       "description": "N4. A plugin cannot set includeGitInstructions or CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS for its users (its settings carry only agent and subagentStatusLine), so this is a report and a documented recommendation. /audit:doctor reads the effective value (env var, then project .claude/settings.local.json and settings.json, then user settings) and names where it came from; it also reads, from the session's subagent transcripts, each later dispatch's first-request cache read and write so the user sees whether starts are served from cache. The README's cost section names the setting, recommends it at project level (a user-level setting removes Claude's built-in git instructions from every session), and states that the plugin's executors never commit and the driver commits by script. No figure is printed without the reading that produced it.",
       "files": [
         "plugins/audit/scripts/status/_doctor_setup.py",
@@ -809,13 +809,13 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "267ff155d7ce",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "placeholder",
+        "descriptive": "placeholder"
       },
       "startedAt": "2026-10-13T23:36:13Z",
-      "completedAt": null,
+      "completedAt": "2026-10-14T00:58:51Z",
       "verifiedBy": [],
       "reviewPerTask": "phase",
       "notes": [
@@ -828,6 +828,17 @@
         "runId": "2026-10-14T00:58:49Z.233d9f",
         "status": "passed",
         "at": "2026-10-14T00:58:49Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "267ff155d7ce",
+        "at": "2026-10-14T00:58:51Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T00:03:03Z",
+        "basis": "`python3 plugins/audit/tests/test__doctor_setup.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_doctor_setup' has no attribute 'check_git_instructions'\" (read as python), and the task introduces 'check_git_instructions': absent from HEAD's plugins/audit/scripts/status/_doctor_setup.py, plugins/audit/scripts/status/_doctor_trail.py, plugins/audit/scripts/status/_claude_home.py, plugins/audit/scripts/status/audit-doctor.py, plugins/audit/commands/doctor.md, plugins/audit/README.md and present in the working tree's plugins/audit/scripts/status/_doctor_setup.py, plugins/audit/scripts/status/audit-doctor.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -954,9 +965,9 @@
         }
       ],
       "testEvidence": {
-        "runId": "2026-10-13T17:49:17Z.1b9976",
+        "runId": "2026-10-14T01:08:23Z.61834a",
         "status": "passed",
-        "at": "2026-10-13T17:49:17Z"
+        "at": "2026-10-14T01:08:23Z"
       },
       "redFirst": {
         "at": "2026-10-13T17:31:25Z",

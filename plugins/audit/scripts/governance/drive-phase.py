@@ -929,65 +929,18 @@ def review_items(reviewer):
     return ", ".join(items)
 
 
-def claim_section(task, filed_return):
-    """The reviewer-facing block for one task: the task's own `description`
-    FIRST, then the executor's filed return LAST and labelled as the claim
-    under review - never the reverse. A brief that put the executor's
-    restatement ahead of (or in place of) the task's own words let a reviewer
-    grade a renamed scope against itself: P5.3's text said a card's `src` is
-    set when it ENTERS the viewport, the executor shipped a 200px
-    `rootMargin` and renamed its test to "once the card is near the
-    viewport", and a reviewer handed only that restatement answered
-    `matches`. Putting the task text first and labelling the return as the
-    claim is what a reader - human or model - needs to judge one against the
-    other instead of reading the second as a paraphrase of the first."""
-    return "\n".join([
-        "## Task", (task.get("description") or "").strip(), "",
-        "## Claim under review (the executor's filed return)",
-        json.dumps(filed_return, indent=2, sort_keys=True)])
-
-
-_CONTRADICTED_CLAUSE_MARKER = "contradicts task clause"
-
-
-def floor_contradicted_clause(findings):
-    """`findings` with a `low` severity raised to `med` wherever its `issue`
-    names a contradicted task clause (`_CONTRADICTED_CLAUSE_MARKER`). Probe 2
-    measured 4 of 6 Opus/Sonnet runs rating a contradicted clause `low`,
-    which review-convergence would park as a carried low rather than a
-    finding a fix task is owed for - so the floor is mechanical, not left to
-    the model that wrote the finding."""
-    out = []
-    for finding in findings or []:
-        if (isinstance(finding, dict) and finding.get("severity") == "low"
-                and _CONTRADICTED_CLAUSE_MARKER in (finding.get("issue") or "")):
-            finding = dict(finding, severity="med")
-        out.append(finding)
-    return out
-
-
-def tests_add_gaps(task, filed_titles):
-    """Declared `tests.add` entries with no filed counterpart in
-    `filed_titles` (a return's `testsAdded`). A case is matched by its
-    VERBATIM title - the executor reuses the clause the plan declares - or by
-    an explicit `tests.addMap` entry the task itself carries (declared path ->
-    filed title), never by a fuzzy compare: scored as one string diff, this
-    flagged most of the danuvia tasks, mostly Serbian plan text against
-    English test titles."""
-    tests = (task or {}).get("tests") or {}
-    declared = [str(e) for e in tests.get("add") or []]
-    titles = set(str(t).strip() for t in filed_titles or [])
-    add_map = tests.get("addMap") if isinstance(tests.get("addMap"), dict) else {}
-    gaps = []
-    for entry in declared:
-        clause = entry.split(":", 1)[1].strip() if ":" in entry else entry.strip()
-        mapped = add_map.get(entry) or add_map.get(clause)
-        if entry.strip() in titles or clause in titles:
-            continue
-        if mapped and str(mapped).strip() in titles:
-            continue
-        gaps.append(entry)
-    return gaps
+# `claim_section`, `tests_add_gaps` and `floor_contradicted_clause` live in
+# `_filed_returns.py`, not here - ONE HOME for logic the reviewer brief
+# (`audit-lookup.py`) and this driver both need, below both in the layer
+# graph. Two entry points may not runtime-load each other
+# (`_deps.layer_violations()`), which is what putting the first version of
+# `claim_section` here and loading it FROM `audit-lookup.py` tripped - a
+# same-layer edge neither module's own layer may carry. Aliased here, not
+# re-defined, so this file's own cases (`test_drive_phase.py`) and anything
+# that reads `M.claim_section` off this module keep working unchanged.
+claim_section = _fr.claim_section
+tests_add_gaps = _fr.tests_add_gaps
+floor_contradicted_clause = _fr.floor_contradicted_clause
 
 
 def run_falsifier(cmd, tree, mutation):

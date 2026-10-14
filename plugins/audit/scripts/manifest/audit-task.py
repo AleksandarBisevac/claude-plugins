@@ -644,6 +644,52 @@ def _tests_add_paths(entries):
     return paths, unnamed
 
 
+_INTERACTION_PSEUDO_RE = re.compile(
+    r"([^{}\n,]+?):(focus|hover)(?=[\s,{:]|$)")
+
+
+def _interaction_state_parity_entries(files, project):
+    """One `tests.add` entry per CSS selector a design source among `files`
+    gives a `:focus` or `:hover` rule - the parity case task synthesis owes
+    it: a snapshot (or computed-style assertion) of that control's OWN BOX in
+    its focus state, and its hover state where the source defines one, never
+    only its rest state.
+
+    `flux.css`'s `.field input:focus` hid a 2px ring under a 1% pixel-diff
+    threshold measured over a WHOLE SECTION (about 0.2% of it, 2px/4px
+    against the design's 9px) - caught only by a live `getComputedStyle`
+    probe on the control itself, which is why the case this writes asks for
+    a CLIPPED snapshot of the control, not a widened threshold on the page.
+
+    Reads only `.css` paths already in `files` - the task's own declared
+    scope, never a wider scan of `project`. A file that is not there, or will
+    not read, contributes no entry rather than raising: synthesis still owes
+    the rest of the task."""
+    found = {}
+    for rel in files or []:
+        if not isinstance(rel, str) or not rel.endswith(".css"):
+            continue
+        try:
+            with open(os.path.join(project or ".", rel), "r",
+                      encoding="utf-8") as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        for selector, pseudo in _INTERACTION_PSEUDO_RE.findall(text):
+            base = selector.strip().splitlines()[-1].strip()
+            if base:
+                found.setdefault((rel, base), set()).add(pseudo)
+    entries = []
+    for (rel, base), pseudos in sorted(found.items()):
+        states = ("focus and hover" if pseudos == {"focus", "hover"} else
+                  "focus" if "focus" in pseudos else "hover")
+        entries.append(
+            "%s: %s interaction-state parity - a clipped snapshot (or a "
+            "computed-style assertion) of its OWN box in its %s state, not "
+            "only rest" % (rel, base, states))
+    return entries
+
+
 def _unnamed_add_note(unnamed):
     """The report line for `tests.add` entries that named no file, or None.
 
@@ -2771,6 +2817,12 @@ def _build_task(task_id, title, args, phase, assembled, failing_row=None,
     # lockfile is in scope because the change cannot avoid it, and it is not a
     # path any runner should be pointed at.
     files = _union_paths(files, [c["path"] for c in companions])
+    # A DESIGN SOURCE NAMING `:focus`/`:hover` OWES ITS OWN PARITY CASE,
+    # synthesized rather than left to the author to remember - never a case
+    # that redefines `tests.add`, only one appended after the author's own.
+    tests_add = list(args.tests_add or []) + [
+        e for e in _interaction_state_parity_entries(files, project)
+        if e not in (args.tests_add or [])]
     task = {
         "id": task_id,
         "title": title,
@@ -2791,7 +2843,7 @@ def _build_task(task_id, title, args, phase, assembled, failing_row=None,
         "files": files,
         "tests": {
             "mode": mode,
-            "add": list(args.tests_add or []),
+            "add": tests_add,
             # true iff tdd -- the machine-readable disambiguation of `add`.
             "expectRedFirst": mode == "tdd",
             "gate": gate,

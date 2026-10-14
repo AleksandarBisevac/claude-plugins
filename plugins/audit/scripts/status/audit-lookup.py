@@ -871,24 +871,89 @@ def _phase_scope_lines(ctx, phase, head):
             + (["- %s" % (p,) for p in outside] or ["none"]))
 
 
+def _filed_obj(text):
+    """The executor's filed return as a dict, parsed once - `{}` when none is
+    filed yet or the text on record does not parse as a JSON object, so a
+    caller reading `testsAdded` off it gets an absent value rather than a
+    raise. Never printed itself: the brief prints `text` AS FILED."""
+    if not isinstance(text, str) or not text.strip():
+        return {}
+    try:
+        obj = json.loads(text)
+    except ValueError:
+        return {}
+    return obj if isinstance(obj, dict) else {}
+
+
+# Probe 2 (24 reviewer runs, Opus/Sonnet/Haiku, over a real P5.3 brief
+# section): the brief as filed, task text first with the claim labelled, and
+# the claim hidden, each found 0/3 `diverges`; only a rule asking the reviewer
+# to quote each clause worked, 3/3 on all three models. Computed here rather
+# than added to `agents/audit-reviewer.md` - that file is already within a few
+# bytes of `measure-context.py --gate`'s ceiling, and this text is per-brief,
+# not loaded on every reviewer start.
+CLAUSE_QUOTING_LINES = [
+    "Quote each clause of the task's own description (below, labelled "
+    "`## Task`) and judge the diff against THAT clause - never against the "
+    "executor's restatement or its test titles. A scope difference between "
+    "a clause and the diff is `diverges`, quoted both sides, even when the "
+    "executor's own note agrees with its narrowed scope.",
+    "Answer two things, not one: does the diff do what the clause asked, "
+    "and separately, does the executor's claim (labelled `## Claim under "
+    "review` below) describe the diff in front of you - `intent.note` "
+    "quotes both.",
+    "A finding whose `issue` names a contradicted task clause is floored at "
+    "`med` before it can file as `low` (the drive's `floor_contradicted_"
+    "clause`) - do not file it low yourself."]
+
+
+def _tests_add_review_lines(task, filed_titles):
+    """`tests.add`, the gaps `tests_add_gaps` already named before any
+    reviewer runs, and the two questions (4) asks of every declared test:
+    can it fail on the unfixed code, and does it reach a real external
+    service or side effect rather than a stub. Measured on the testbed with
+    the same model: the plugin's executors alone shipped a lazy-load test
+    that could not fail, an e2e that sent real mail, and a race asserting
+    state the SSR HTML already had - none of the three a plain session
+    shipped."""
+    tests = task.get("tests") or {}
+    add = [str(a) for a in tests.get("add") or []]
+    gaps = _fr.tests_add_gaps(task, filed_titles)
+    lines = ["tests.add:"] + (["- %s" % (a,) for a in add] or ["- none"])
+    if gaps:
+        lines += ["Declared with no filed counterpart (named by the drive, "
+                 "before you run - not yours to re-derive):"] + (
+            ["- %s" % (g,) for g in gaps])
+    if add:
+        lines += ["Per declared test, ask: (1) can it fail on the unfixed "
+                 "code - read the executor's `redFirst` word and basis, or "
+                 "say it was never seen red; (2) does it reach a real "
+                 "external service or side effect (mail, payment, network) "
+                 "rather than a stub - name its file:line if it does."]
+    return lines
+
+
 def compose_reviewer_brief(manifest, phase, task, ctx, filed):
     """The task-mode reviewer's whole brief, as lines. `filed` is the
-    executor's `(rel, text)` for the current start, text present."""
+    executor's `(rel, text)` for the current start, text present. The task's
+    own description and the executor's filed return are the LAST section,
+    adjacent and in that order (`claim_section`) - everything else a reviewer
+    needs (the gate, the diff) comes first, so nothing sits between the task's
+    words and the claim graded against them."""
     tid = str(task.get("id"))
     entries, whose = _task_gate(manifest, phase, task)
     evidence = task.get("testEvidence") or {}
+    filed_obj = _filed_obj(filed[1])
     lines = ["# Brief for %s (reviewer, mode: task)" % (tid,), "",
              "Computed by audit-lookup.py brief from %s at %s, plugin copy %s."
              % (ctx["manifest"], ctx["at"], ctx["plugin"]),
              "The rules and the return shape are agents/audit-reviewer.md's."]
-    lines += _section("Description (verbatim)",
-                      _verbatim(task.get("description"),
-                                "The task records no description."))
     lines += _section("Phase desired outcome",
                       _verbatim(phase.get("desiredOutcome"),
                                 "The phase records no desiredOutcome."))
-    lines += _section("The executor's return, as filed (%s)" % (filed[0],),
-                      [filed[1]])
+    lines += _section("The intent question", CLAUSE_QUOTING_LINES)
+    lines += _section("tests.add", _tests_add_review_lines(
+        task, filed_obj.get("testsAdded")))
     lines += _section("The recorded gate run", [
         "runId %s, status %s, at %s (task.testEvidence)"
         % (evidence.get("runId"), evidence.get("status"), evidence.get("at"))
@@ -905,6 +970,7 @@ def compose_reviewer_brief(manifest, phase, task, ctx, filed):
             "phase tree yet; the diff below is read in that tree against that "
             "base. Read its files there, not in the project."])
     lines += _section("The diff", _diff_lines(ctx, task.get("files"), tree, base))
+    lines += [""] + _fr.claim_section(task, filed[1]).split("\n")
     lines += _section("Your return", [
         "File the return object agents/audit-reviewer.md declares - your one "
         "write. %s:" % (RETURN_ON_STDIN,),
@@ -1109,6 +1175,7 @@ def compose_phase_brief(manifest, phase, ctx):
     lines += _section("Phase desired outcome",
                       _verbatim(phase.get("desiredOutcome"),
                                 "The phase records no desiredOutcome."))
+    lines += _section("The intent question, per task", CLAUSE_QUOTING_LINES)
     listed, skipped = [], []
     for task in phase.get("tasks") or []:
         if not isinstance(task, dict) or not task.get("commit"):
@@ -1149,23 +1216,32 @@ def compose_phase_brief(manifest, phase, ctx):
         tid = str(task.get("id"))
         entries, whose = _task_gate(manifest, phase, task)
         evidence = task.get("testEvidence") or {}
-        rel, text = filed_return(ctx, task, "executor")
+        _rel, text = filed_return(ctx, task, "executor")
         answers, owed_by = mechanical.get(tid, ({}, {}))
         computed = answer_lines(answers, owed_by) if (
             not owed_why and _fr.owed_answer(task, phase, live, answered)) else []
+        # The task's own description and its filed return are the LAST two
+        # things in the section, adjacent and in that order (`claim_section`)
+        # - everything a reviewer needs to ask about first (the gate, the
+        # diff, the owed answers) comes before them, same rule as the
+        # task-mode brief. Ordered before the nested `## Task` / `## Claim
+        # under review` headers `claim_section` writes, not after: the
+        # per-task body a re-review reads (`answer_lines` in
+        # `test_audit_lookup.py`) is split at the next `## ` header, so text
+        # placed after that nested pair would read as outside this task.
         lines += _section("%s %s" % (tid, task.get("title") or ""), [
             "commit: %s" % (task.get("commit"),),
-            "files:"] + ["- %s" % (f,) for f in task.get("files") or []] + [
-            "description (verbatim):",
-            task.get("description") or "none recorded",
+            "files:"] + ["- %s" % (f,) for f in task.get("files") or []]
+            + _tests_add_review_lines(
+                task, _filed_obj(text).get("testsAdded")) + [
             _recorded_run_line(evidence, rows, rows_why),
             "gate commands, %s:" % (whose,)] + gate_lines(manifest, entries)
-            + ["executor return (%s):" % (rel,),
-               text if text is not None else
-               "none filed for its current start",
-               _owed_line(task, phase, live, answered)] + computed
             + _task_commit_diff_lines(ctx, task.get("commit"),
-                                      task.get("files")))
+                                      task.get("files"))
+            + [_owed_line(task, phase, live, answered)] + computed
+            + [""] + _fr.claim_section(
+                task, text if text is not None else
+                "none filed for its current start").split("\n"))
     lines += _section("Phase diff scope", _phase_scope_lines(ctx, phase, head))
     lines += _section("Existing test files the phase modifies",
                       existing_test_lines(ctx, phase, head))

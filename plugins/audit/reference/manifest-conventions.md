@@ -164,6 +164,14 @@ not yet `done` or `cancelled` the validator **refuses** an entry naming no file
 (`COMPATIBILITY.md` → *Validation stays additive*). For `regression` and `gate-only`
 the shape is recommended, not required.
 
+**A CSS file named in `--files` that gives a selector a `:focus` or `:hover` rule gets an
+entry of its own, appended after the author's own `tests.add`.** `/audit:task add` reads
+only the `.css` paths already in the task's declared scope (never a wider scan) and asks
+for a clipped snapshot, or a computed-style assertion, of that control's OWN box in its
+focus state and its hover state where the source defines one — not only its rest state. A
+1% pixel-diff threshold over a whole section is wide enough to hide a few pixels of ring
+on one control; a control-sized snapshot is not.
+
 **`testEvidence` is deliberately NOT in that list**, and its absence is the fact rather than an
 omission: it is written by the recorder when a gate actually runs, and absent means *no run has
 been recorded*, which is a different claim from every value it could be initialized to. The same
