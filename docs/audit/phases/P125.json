@@ -4310,6 +4310,50 @@
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "phase"
+    },
+    {
+      "id": "P125.69-0h5",
+      "title": "The sweep's legacy-encoding pass also sets a non-UTF-8 locale, so a file read or subprocess capture with no encoding fails locally",
+      "status": "pending",
+      "description": "Three encoding defects in this phase reached Windows CI while every local and ubuntu sweep was green, including the `--encoding cp1252` pass: that pass sets only PYTHONIOENCODING (the child's stdio), not the locale's preferred encoding that `open()` and `subprocess(text=True)` use with no `encoding=`. Under `LC_ALL=C LANG=C PYTHONUTF8=0` the preferred encoding is ASCII and the same defects go red on POSIX (measured: test_drive_phase fm-block raised UnicodeDecodeError in a text-mode git capture). Make `--encoding <codec>` also put each child under a locale whose preferred encoding is not UTF-8 (LC_ALL=C/LANG=C, PYTHONUTF8=0) on POSIX, and have the runner VERIFY it took (ask the child's `locale.getpreferredencoding(False)` once) and refuse the pass as could-not-run if it is still UTF-8 - a pass that claims a legacy encoding while running UTF-8 is the silent pass this replaces. Windows legs already run under a legacy code page; leave them. Update the docstring line and CONTRIBUTING.md's description of what the pass covers so they say both halves.",
+      "files": [
+        "tools/sweep-selftests.py",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/sweep-selftests.py: under --encoding cp1252 a child suite that reads a UTF-8 file with no encoding fails on POSIX, and the same suite naming its encoding passes",
+          "tools/sweep-selftests.py: a legacy-encoding pass whose child still reports UTF-8 as its preferred encoding is refused as could-not-run, naming the encoding it saw"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
