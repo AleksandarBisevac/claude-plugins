@@ -1421,7 +1421,8 @@
       "P125.44-0h5",
       "P125.54-0h5",
       "P125.37-0h5",
-      "P125.49-0h5"
+      "P125.49-0h5",
+      "P125.61-0h5"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -6393,7 +6394,8 @@
       "P125.8",
       "P125.35-0h5",
       "P125.49-0h5",
-      "P125.54-0h5"
+      "P125.54-0h5",
+      "P125.61-0h5"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
