@@ -428,14 +428,30 @@ def _cases(check):
               _levels(rep, "plan gate") == ["OK"]
               and _detail(rep, "plan gate").startswith("observe"))
 
+        empty = _manifest()
+        empty["phases"] = []
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(empty, fh)
+        rep = base.Report()
+        M.check_plan_gate(rep, tmp, cfg, cfg_mod, mrel)
+        check("ds14n a manifest holding NO phase is WARN, and the row says the "
+              "plan holds none yet rather than that one is idle: %r"
+              % (_detail(rep, "plan gate"),),
+              _detail(rep, "plan gate").startswith("warn")
+              and "holds no phase" in _detail(rep, "plan gate"))
+
         with open(mpath, "w", encoding="utf-8") as fh:
             json.dump(_manifest(), fh)
         rep = base.Report()
         M.check_plan_gate(rep, tmp, cfg, cfg_mod, mrel)
         _ds14_detail = _detail(rep, "plan gate")
-        check("ds14 a manifest with no phase in_progress is WARN, not deny: %r"
+        check("ds14 a plan holding phases with none in_progress is the deny step "
+              "PAST THE FREE FILE, naming that step and the command that adds a "
+              "phase - never the full deny of a phase holding work: %r"
               % (_ds14_detail,),
-              _ds14_detail.startswith("warn"))
+              _ds14_detail.startswith("deny past the free file")
+              and "/audit:phase add" in _ds14_detail
+              and "has work in progress" not in _ds14_detail)
 
         # A phase that merged but whose `status` never caught up to `done`
         # resolves to WARN (the fix), and the row NAMES the gap instead of
@@ -450,10 +466,12 @@ def _cases(check):
         rep = base.Report()
         M.check_plan_gate(rep, tmp, cfg, cfg_mod, mrel)
         _ds14b_detail = _detail(rep, "plan gate")
-        check("ds14b a merged-but-stale phase is WARN, not the deny a stale "
-              "in_progress status would hold for ever: %r"
+        check("ds14b a merged-but-stale phase reads as nothing running - the "
+              "deny step past the free file - not the deny a stale in_progress "
+              "status would hold for ever: %r"
               % (_ds14b_detail,),
-              _ds14b_detail.startswith("warn"))
+              _ds14b_detail.startswith("deny past the free file")
+              and "has work in progress" not in _ds14b_detail)
         check("ds14c ...and the row names the stale phase and the reason, "
               "so the operator does not have to re-derive it: %r"
               % (_ds14b_detail,),
@@ -468,7 +486,7 @@ def _cases(check):
               "the reason flag, ahead of the verb: %r" % (_ds14b_detail,),
               "--record" in _ds14b_detail
               and "--no-evidence-reason" in _ds14b_detail)
-        check("ds14d SECOND-DIRECTION CASE: an ordinary warn (ds14, no stale "
+        check("ds14d SECOND-DIRECTION CASE: an ordinary idle plan (ds14, no stale "
               "phase at all) carries no such note - the case that fails if "
               "it becomes unconditional and every warn starts naming a "
               "phase that is not stale: %r" % (_ds14_detail,),
@@ -481,10 +499,11 @@ def _cases(check):
         rep = base.Report()
         M.check_plan_gate(rep, tmp, cfg, cfg_mod, mrel)
         check("ds15s a phase in_progress whose every task is done and whose sign-off is "
-              "not recorded is WARN, and the line says why - it names the phase as "
+              "not recorded reads as nothing running (the deny step past the free "
+              "file), and the line says why - it names the phase as "
               "awaiting sign-off and the verb that records it, rather than claiming no "
               "phase is in_progress: %r" % (_detail(rep, "plan gate"),),
-              _detail(rep, "plan gate").startswith("warn")
+              _detail(rep, "plan gate").startswith("deny past the free file")
               and "P1" in _detail(rep, "plan gate")
               and "sign-off" in _detail(rep, "plan gate")
               and "signoff" in _detail(rep, "plan gate")
@@ -497,7 +516,7 @@ def _cases(check):
         check("ds15t a phase awaiting sign-off whose stored status is PENDING is named "
               "with that status - the line says only what is true of it, never that it "
               "is in_progress: %r" % (_detail(rep, "plan gate"),),
-              _detail(rep, "plan gate").startswith("warn")
+              _detail(rep, "plan gate").startswith("deny past the free file")
               and "P1 (pending)" in _detail(rep, "plan gate")
               and "in_progress" not in _detail(rep, "plan gate").split("Start a")[0])
 

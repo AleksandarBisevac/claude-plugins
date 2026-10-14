@@ -395,8 +395,11 @@ def _gate_topic():
         ("No manifest in this repo", {}, {"exists": False},
          "Records that the edit would have needed a plan, and reports once per "
          "session. Never blocks."),
-        ("A manifest, nothing running", {}, {"exists": True},
+        ("A manifest holding no phase", {}, {"exists": True},
          "Warns in-band: there is a plan and this edit is not in it."),
+        ("Phases, none running", {}, {"exists": True, "hasPhases": True},
+         "The free file stays; the next edit is refused until a phase runs "
+         "(/audit:phase add, then run it)."),
         ("A manifest and a phase in progress", {}, {"exists": True,
                                                     "phaseRunning": True},
          "Refuses the edit unless the file is in the running task, exempt, or a "
@@ -433,9 +436,7 @@ def _gate_topic():
             "anything, and `guard-secrets-read` reads a tier in exactly one "
             "function (`_plan_gate_write_verdict`) that no secret rule calls.",
             "Every Bash WRITE form grades identically, so `sed -i`, a `>` "
-            "redirect, `python3 -c` and the Edit tool agree about the same file. "
-            "The interpreter form used to be the exception: it refused a file an "
-            "in_progress task declared, at every tier, in the plan gate's name.",
+            "redirect, `python3 -c` and the Edit tool agree about the same file.",
             "`planGate` pins one tier by hand - observe, warn, ask or deny - "
             "instead of grading on evidence, and it beats the legacy `enforce` "
             "flag when both are set. A typo fails open to the graded ladder, "

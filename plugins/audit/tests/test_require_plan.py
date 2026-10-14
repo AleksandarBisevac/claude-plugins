@@ -483,14 +483,123 @@ def _cases(check):
     write_manifest({"meta": {"version": 2}, "phases": [
         {"id": "P1", "title": "p", "status": "done",
          "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]}]})
-    check_graded("k2 manifest present, nothing running -> warn", "warn",
-                 offending("selftest-k2"))
+    check_graded("k2 manifest holding phases, nothing running -> block: the "
+                 "plan exists, so an edit outside a running phase waits for one",
+                 "block", offending("selftest-k2"))
+    write_manifest({"meta": {"version": 2}, "phases": []})
+    check_graded("k2b a manifest holding no phase keeps the warn tier", "warn",
+                 offending("selftest-k2b"))
 
     write_manifest({"meta": {"version": 2}, "phases": [
         {"id": "P1", "title": "p", "status": "in_progress",
          "tasks": [{"id": "P1.1", "title": "t", "status": "pending"}]}]})
     check_graded("k3 manifest + running phase -> block", "block",
                  offending("selftest-k3"))
+
+    # (np) A PLAN WITH PHASES AND NONE RUNNING. Edits past a session's free file
+    #      used to be reported only after they landed, so a session could change
+    #      several files before any phase existed. The step sits on the ladder:
+    #      the free file stays free, a read is never graded, the tiers with no
+    #      manifest and with no phase are unchanged, and a pin outranks it.
+    np_plan = {"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "p", "status": "done",
+         "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]}]}
+
+    def np_decide(data, use_cfg=None, event="PreToolUse"):
+        ok, got = _harness.attempt(M.decide, data, cfg=use_cfg or cfg_graded,
+                                   state_dir=sd, logs_dir=ld, event=event)
+        return got if ok else ("raised", str(got))
+
+    def np_spend(sid, use_cfg=None):
+        return np_decide(payload("Write", "src/np/free-%s.ts" % sid,
+                                 content="const a = 1;", sid=sid), use_cfg)
+
+    def np_second(sid, agent=None):
+        return payload("Edit", "src/np/second.ts", new_string="const b = 2;",
+                       sid=sid, agent=agent)
+
+    write_manifest(np_plan)
+    np_free = np_spend("selftest-np1")
+    check("np1 with phases and none running, the session's first small file "
+          "is still its free file: %r" % (np_free,), np_free[0] == "allow")
+    np_again = np_decide(payload("Write", "src/np/free-selftest-np1.ts",
+                                 content="const a = 2;", sid="selftest-np1"))
+    check("np1b ...and editing that free file again is still allowed: %r"
+          % (np_again,), np_again[0] == "allow")
+    np_v, np_m = np_decide(np_second("selftest-np1"))
+    check("np2 the next small edit to ANOTHER file is denied at PreToolUse, "
+          "before it lands: %r" % ((np_v, np_m[:120]),), np_v == "block")
+    check("np3 ...naming that no phase is running and the two commands that "
+          "add a phase and start it, each once - and not the running-phase "
+          "cause, which would be false here: %r" % (np_m,),
+          "no phase is in_progress" in np_m
+          and np_m.count('/audit:phase add "<title>" --outcome') == 1
+          and np_m.count("/audit:phase <the id add printed>") == 1
+          and "is in_progress, so edits are held" not in np_m
+          and "Phase ?" not in np_m)
+    np_read = np_decide({"tool_name": "Read", "session_id": "selftest-np1",
+                         "cwd": str(tmp),
+                         "tool_input": {"file_path": str(tmp / "src/np/x.ts")}})
+    check("np4 a read-only tool in that same session is never graded: %r"
+          % (np_read,), np_read[0] == "allow")
+    np_main_free = np_spend("selftest-np5")
+    np_sub = np_decide(np_second("selftest-np5", agent="exec-np"))
+    np_ag_free = np_decide(payload("Write", "src/np/ag-free.ts",
+                                   content="const a = 1;", sid="selftest-np6",
+                                   agent="exec-np6"))
+    np_ag_v, np_ag_m = np_decide(np_second("selftest-np6", agent="exec-np6"))
+    check("np5 a subagent whose own free file is spent is refused too, told "
+          "to stop, with the same no-phase cause: %r"
+          % ((np_ag_free[0], np_ag_v, np_ag_m[:160]),),
+          np_ag_free[0] == "allow" and np_ag_v == "block"
+          and "YOU ARE A SUBAGENT" in np_ag_m
+          and "no phase is in_progress" in np_ag_m)
+    check("np5b ...while a different writer's spent slot does not spend it: "
+          "the agent's first file is its own free one: %r"
+          % ((np_main_free[0], np_sub[0]),),
+          np_main_free[0] == "allow" and np_sub[0] == "allow")
+
+    write_manifest({"meta": {"version": 2}, "phases": []})
+    np_spend("selftest-np7")
+    np_nophase = np_decide(np_second("selftest-np7"))
+    check("np7 a manifest holding no phase keeps today's warn tier past the "
+          "free file: %r" % ((np_nophase[0],),), np_nophase[0] == "warn")
+    clear_manifest()
+    np_spend("selftest-np8")
+    np_none = np_decide(np_second("selftest-np8"))
+    check("np8 no manifest at all keeps today's observe tier past the free "
+          "file: %r" % ((np_none[0],),), np_none[0] == "observe")
+
+    write_manifest({"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "p", "status": "done",
+         "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]},
+        {"id": "P2", "title": "q", "status": "in_progress", "tasks": [
+            {"id": "P2.1", "title": "t", "status": "in_progress",
+             "files": ["src/np/second.ts"]}]}]})
+    np_spend("selftest-np9")
+    np_cov = np_decide(np_second("selftest-np9"))
+    check("np9 while a phase runs, an edit its task covers is allowed past "
+          "the free file: %r" % ((np_cov[0],),), np_cov[0] == "allow")
+    np_unc_v, np_unc_m = np_decide(payload("Edit", "src/np/stray.ts",
+                                           new_string="x = 1",
+                                           sid="selftest-np9"))
+    check("np9b ...and an uncovered one is refused with the RUNNING phase as "
+          "its cause, not the no-phase step: %r" % (np_unc_m[:200],),
+          np_unc_v == "block" and "Phase P2 is in_progress" in np_unc_m
+          and "no phase is in_progress" not in np_unc_m)
+
+    write_manifest(np_plan)
+    for np_pin, np_want in (("warn", "warn"), ("observe", "observe"),
+                            ("ask", "ask")):
+        np_cfg = dict(cfg_graded)
+        np_cfg["planGate"] = np_pin
+        np_sid = "selftest-np-pin-%s" % np_pin
+        np_spend(np_sid, np_cfg)
+        np_pinned = np_decide(np_second(np_sid), np_cfg)
+        check("np10 planGate pinned to %r keeps that tier with phases and none "
+              "running - the pin outranks the step: %r"
+              % (np_pin, np_pinned[0]), np_pinned[0] == np_want)
+    clear_manifest()
 
     # A covered file is allowed on the strictest tier — grading changes only the
     # verdict for edits that were already out of policy.
@@ -1210,9 +1319,7 @@ def _cases(check):
         [r.get("event") for r in rows] == ["ask.shown", "ask.approved"],
         repr(rows))
     ild = tmp / "ev-warn"
-    write_manifest({"meta": {"version": 2}, "phases": [
-        {"id": "P1", "title": "p", "status": "done",
-         "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]}]})
+    write_manifest({"meta": {"version": 2}, "phases": []})
     v, m = M.decide(offending("selftest-i5"), cfg=cfg_graded, state_dir=sd,
                     logs_dir=ild, event="PostToolUse")
     rows = feed(ild)
@@ -2056,9 +2163,7 @@ def _cases(check):
     clear_manifest()
     drive("selftest-u-obs", cfg_graded)
     drive("selftest-u-obs-spent", cfg_graded, spent=True)
-    write_manifest({"meta": {"version": 2}, "phases": [
-        {"id": "P1", "title": "p", "status": "done",
-         "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]}]})
+    write_manifest({"meta": {"version": 2}, "phases": []})
     drive("selftest-u-warn", cfg_graded)
     drive("selftest-u-warn-spent", cfg_graded, spent=True)
     clear_manifest()

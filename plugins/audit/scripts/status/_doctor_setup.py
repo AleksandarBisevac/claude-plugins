@@ -781,7 +781,12 @@ def check_plan_gate(rep, project, cfg, cfg_mod, manifest_rel):
                "plan-coverage class is silent on this tier for the same reason. Run "
                "/audit:init to enforce, or set \"planGate\": \"deny\" to enforce "
                "without a manifest" % manifest_rel)
-    elif mode == "warn":
+    elif mode == "warn" and not state.get("hasPhases"):
+        rep.ok("plan gate",
+               "warn - the manifest at %s holds no phase yet, so out-of-plan "
+               "edits are advisory. Add one (/audit:phase add) and run it to "
+               "enforce" % manifest_rel)
+    elif cfg_mod.plan_gate_step(cfg, state) == "nothing-running":
         stale = state.get("staleClosedPhase")
         due = state.get("signoffDuePhase")
         note = ("" if not stale else
@@ -793,17 +798,21 @@ def check_plan_gate(rep, project, cfg, cfg_mod, manifest_rel):
         # by the gate's rule, so the line has to say which of the two it read -
         # "no phase is in_progress" would be false of the plan beside it.
         if due:
-            head = ("warn - no phase has work in flight: phase %s (%s) only awaits "
+            head = ("deny past the free file - no phase has work in flight: "
+                    "phase %s (%s) only awaits "
                     "sign-off (every task terminal, no verdict recorded), which does "
                     "not hold the gate - run its gate with `run-test-gate.py "
                     "--record` (or pass --no-evidence-reason), then `/audit:phase "
                     "signoff %s` records it"
                     % (due, state.get("signoffDueStatus"), due))
         else:
-            head = "warn - a manifest exists but no phase is in_progress"
+            head = ("deny past the free file - the plan in %s holds phases but "
+                    "none is in_progress" % manifest_rel)
         rep.ok("plan gate",
-               "%s, so out-of-plan edits are advisory. Start a phase (/audit:next, "
-               "/audit:phase) to enforce%s" % (head, note))
+               "%s, so an edit past this session's free file is refused before "
+               "it lands. Start a phase: /audit:phase add \"<title>\" --outcome "
+               "\"<what success is>\", then /audit:phase <id> (or /audit:next)%s"
+               % (head, note))
     else:
         rep.ok("plan gate",
                "deny - phase %s has work in progress, so edits are held to the "

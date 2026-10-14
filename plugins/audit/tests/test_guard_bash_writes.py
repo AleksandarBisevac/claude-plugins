@@ -194,20 +194,21 @@ def _cases(check):
               "expected %s, got %s" % (expected, verdict))
 
     def plant_plan(project_dir):
-        """A manifest that exists with nothing running — the middle rung.
+        """A manifest that exists and holds no phase — the warn rung.
 
         The plan-coverage class is graded on `plan_gate_mode`, so a fixture with
         no manifest is on the observe rung and reports nothing. The (f) and
         (h) fixtures below are about REAL git integration and nested-gitRoot path
         handling, and neither can be proven by a silence that the grading would
         produce whatever git did. They opt in, so their subject is still theirs.
+        It holds NO phase because a plan holding phases with none running is
+        the deny step, where a non-source file is graded too; the cases built
+        on this rung are about the advisory notice.
         """
         d = Path(project_dir) / "docs" / "audit"
         d.mkdir(parents=True, exist_ok=True)
         (d / "audit-plan.json").write_text(json.dumps({
-            "meta": {"version": 2},
-            "phases": [{"id": "P0", "title": "p", "status": "done", "tasks": [
-                {"id": "P0.1", "title": "t", "status": "done"}]}],
+            "meta": {"version": 2}, "phases": [],
         }), encoding="utf-8")
 
     def seed(sid, *, use_cfg=None, state_dir=None, cwd=None, dirty=()):

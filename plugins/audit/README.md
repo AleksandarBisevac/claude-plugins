@@ -224,7 +224,8 @@ page behind it, read against the form rather than instead of it. All of it is
   - `require-plan.py` (PreToolUse + PostToolUse: Edit/Write/MultiEdit/NotebookEdit) —
     non-trivial edits must be planned in the manifest or opted out via a single-use keyword,
     **once there is a plan to check against**: it observes with no plan (one report per
-    session), warns with a plan and nothing running, and denies while a phase runs —
+    session), warns with a manifest that holds no phase, denies past the session's free
+    file when the plan holds phases and none is running, and denies while a phase runs —
     `/audit:doctor` prints the active tier. A phase runs while it has work in flight — an
     `in_progress` task, or an `in_progress` phase with work left; one that only awaits
     sign-off does not hold it (`planGate` pins any single tier — including `ask`, which holds
@@ -349,7 +350,7 @@ are the table in [SECURITY.md](../../SECURITY.md#fail-modes-by-design).
 | The model does not edit the installed plugin's own files | `guard-edits.py` — PreToolUse edits **and `mcp__.*`** | **deny**, with a dev-mode exception when the plugin is checked out *inside* the repo. An MCP call naming a path in there is refused **whatever the operation**, as a secret path is one guard over: that directory sits outside the consuming repo, so nothing ordinary reads or writes it |
 | The plan-first bypass cannot be armed by an agent | `guard-edits.py` refuses a forged `<stateDir>/plan-bypass-*.json` — through an edit tool, or through an MCP call whose payload carries a write basis; `detect-plan-skip.py` — UserPromptSubmit — arms it only from a submitted prompt | **deny** for the forgery. Hooks see human prompts only, which is what makes the keyword the human's |
 | The audit trail is append-only — no hand edits | `guard-edits.py` | **deny**. Nothing legitimate writes those files with an edit tool, or with an MCP write tool — both are refused. A *read* of a journal file is not: the trail is committed and meant to be read |
-| A non-trivial edit is covered by an `in_progress` task, or by a live single-use bypass | `require-plan.py` — PreToolUse edits **and `mcp__.*`**, an MCP call decided on the path `_mcp_plan_target` resolves | graded on evidence: it observes with no plan, warns with a plan and nothing running, and **denies** while a phase runs (`/audit:doctor` prints the active tier). `planGate` pins one tier by hand |
+| A non-trivial edit is covered by an `in_progress` task, or by a live single-use bypass | `require-plan.py` — PreToolUse edits **and `mcp__.*`**, an MCP call decided on the path `_mcp_plan_target` resolves | graded on evidence: it observes with no plan, warns with a manifest holding no phase, **denies** past the free file when the plan holds phases and none runs, and **denies** while a phase runs (`/audit:doctor` prints the active tier). `planGate` pins one tier by hand |
 | A manifest or shard write while another **live** session holds the governing lock | `require-plan.py`, reading the lock `scripts/governance/audit-lock.py` wrote | **deny**, naming the holder. An abandoned lock allows, with a notice — [the full verdict table](../../SECURITY.md#the-one-denial-that-is-not-about-the-plan-0270) |
 | Every write to the manifest or the config leaves a hash-chained row — including the derived `task.complete`, `task.commit` and `phase.signoff` rows — **whichever tool made it**, a shell command inside a `Bash` call and an MCP server's write tool included | `journal-writes.py` — PreToolUse and PostToolUse on edits, `Bash` and `mcp__.*` | records; never blocks. It is the **only** writer of those actions, which is why the orchestrator must not append them. The Post pass refreshes the pre-image it just recorded, so the baseline is the manifest as of the last row rather than as of the last edit |
 | Token spend is attributed to a phase and a task | `meter-usage.py` — Stop / SubagentStop / SessionEnd | records; never blocks. Ledger rows carry `phaseId`, `taskId` and `model` |
@@ -561,16 +562,22 @@ but it surprises teams who expect a prompt first.
 
 The guard hooks activate in **every** project and session. That is the point — a guard you
 have to remember to switch on is not a guard. But the plan gate observes with no plan,
-warns with a plan and nothing running, and denies while a phase runs (`/audit:doctor`
-prints the active tier), so installing it does not start denying edits in repos that
-never opted in.
+warns with a manifest that holds no phase yet, and denies past the session's free file
+once the plan holds phases — whether or not one is running (`/audit:doctor` prints the
+active tier and which step of the ladder put it there), so installing it does not start
+denying edits in repos that never opted in.
+
+**The consequence to know about:** a project with a plan but no phase running now gets
+refusals past its free file, where it used to get an advisory after the edit had landed.
+Start a phase first, or pin `planGate: "warn"` to keep the old behaviour.
 
 **The plan gate grades itself on what it actually knows:**
 
 | Your repo | Plan gate | What you see |
 |---|---|---|
 | No audit manifest | **observes** | One line per session naming what it *would* have held. Nothing is blocked. |
-| A manifest, no phase `in_progress` | **warns** | An advisory noting the file is not covered by a running task. |
+| A manifest holding no phase yet | **warns** | An advisory noting the file is not covered by a running task. |
+| A manifest holding phases, none `in_progress` | **denies past the free file** | The session's first small file is still free; the next edit to another file is refused **before it lands**, naming the two commands that add a phase (`/audit:phase add "<title>" --outcome "<…>"`) and start it (`/audit:phase <id>`). |
 | A manifest + a phase `in_progress` | **denies** | Edits are held to the running plan (bypass: the **human** includes `#no-plan` in their own prompt — single-use, logged, expires unused after 30 minutes). |
 
 The reasoning is the same one the cost report applies to itself: a claim needs the evidence
@@ -662,7 +669,7 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | `manifestPath` | Path to the manifest | `docs/audit/audit-plan.json` |
 | `gitRoot` | Git repo root relative to the project dir (set when git/the workspace is in a subdir; keep in sync with manifest `meta.gitRoot`) | `.` |
 | `exemptGlobs` | Globs exempt from plan-first (a test-suffix glob never claims a data/markup file — `tsconfig.test.json` is not a test) | `docs/audit/**`, `**/*.md`, `.claude/**`, `**/*.spec.*`, `**/*.test.*` |
-| `planGate` | Pin the plan gate to one tier: `observe` \| `warn` \| `ask` (hold each out-of-plan edit for approval) \| `deny`. Unset → the graded ladder: observe → warn → deny (see above). Wins over `enforce`; an unknown value falls back to the ladder | unset |
+| `planGate` | Pin the plan gate to one tier: `observe` \| `warn` \| `ask` (hold each out-of-plan edit for approval) \| `deny`. Unset → the graded ladder: observe (no manifest) → warn (no phase) → deny past the free file (phases, none running) → deny (a phase running) (see above). Wins over `enforce`; an unknown value falls back to the ladder | unset |
 | `enforce` | Legacy (pre-0.34): `true` = always-deny, the same as `planGate: "deny"` — which wins when both are set | `false` |
 | `trivialLineThreshold` | Max change magnitude for the 1st free code file/session | `80` |
 | `stateDir` / `logsDir` | Where state + bypass log live (both self-ignore — a `*` .gitignore is written inside; the journal is the opposite: never ignore it) | `.claude/state` / `.claude/logs` |

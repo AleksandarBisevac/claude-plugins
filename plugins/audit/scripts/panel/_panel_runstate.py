@@ -369,20 +369,25 @@ def _gate_block(project, config):
         state = cfg_mod.manifest_state(project, manifest_rel)
         out["mode"] = cfg_mod.plan_gate_mode(config, state)
         knob = cfg_mod.plan_gate_knob(config)
+        step = cfg_mod.plan_gate_step(config, state)
         if knob:
             out["source"] = ("planGate: \"%s\" in .claude/audit.config.json "
                              "(pinned)" % knob)
-        elif cfg_mod.enforce_always(config):
+        elif step == "enforce":
             out["source"] = ("enforce: true (legacy; same as planGate: "
                              "\"deny\")")
-        elif not state.get("exists"):
+        elif step == "no-manifest":
             out["source"] = "graded on evidence: no manifest at %s" % manifest_rel
-        elif state.get("phaseRunning"):
+        elif step == "phase-running":
             out["source"] = ("graded on evidence: phase %s is in_progress"
                              % state.get("runningPhase"))
+        elif step == "nothing-running":
+            out["source"] = ("graded on evidence: the plan holds phases, none "
+                             "in_progress - edits past the free file are "
+                             "refused until one runs")
         else:
-            out["source"] = ("graded on evidence: manifest present, nothing "
-                             "running")
+            out["source"] = ("graded on evidence: manifest present, holding "
+                             "no phase")
         sd = os.path.join(str(project),
                           str(config.get("stateDir")
                               or cfg_mod.DEFAULTS["stateDir"]))

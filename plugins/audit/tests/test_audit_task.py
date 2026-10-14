@@ -7804,9 +7804,14 @@ def _close_cases(check):
                                              "docs/audit/audit-plan.json")
         sd_mode = _sd_config.plan_gate_mode(dict(_sd_config.DEFAULTS),
                                            sd_state)
+        sd_step = _sd_config.plan_gate_step(dict(_sd_config.DEFAULTS),
+                                            sd_state)
         check("sd4 the plan gate is INERT (observe) with no manifest at all "
-              "and LIVE (warn -- advisory, nothing running yet) the moment "
-              "this writes one: %r" % (sd_mode,), sd_mode == "warn")
+              "and LIVE the moment this writes one: the seeded plan holds a "
+              "phase that is not running, so the gate is on the deny step "
+              "past the free file, which names how to start that phase: %r"
+              % ((sd_mode, sd_step),),
+              sd_mode == "deny" and sd_step == "nothing-running")
         sd2_proj, sd2_mp = mk("sd-exists", base_manifest())
         _sd2_before = open(sd2_mp, "rb").read()
         code2, _txt2 = run(["seed", "--project-dir", sd2_proj])

@@ -29,8 +29,9 @@ Config keys (all optional; defaults in DEFAULTS below):
                                   evidence (same as planGate: "deny"; planGate wins
                                   when both are set). Default false, which grades
                                   the gate: observe with no manifest, warn with a
-                                  manifest but nothing running, deny once a phase
-                                  is in_progress. What is graded is the
+                                  manifest holding no phase, deny past the free
+                                  file once the plan holds phases (running or
+                                  not; PLAN_GATE_LADDER). What is graded is the
                                   PLAN-COVERAGE class, wherever it is enforced —
                                   require-plan's Edit/Write path, BOTH Bash-write
                                   branches of guard-secrets-read (the shell forms
@@ -3528,9 +3529,14 @@ def declaring_tasks(root, manifest_rel, rel):
 
 def manifest_state(root, manifest_rel):
     """How much the plan gate actually knows:
-    {"exists": bool, "phaseRunning": bool, "runningPhase": "<id>"|None,
-     "staleClosedPhase": "<id>"|None, "signoffDuePhase": "<id>"|None,
-     "signoffDueStatus": "<stored status>"|None}.
+    {"exists": bool, "hasPhases": bool, "phaseRunning": bool,
+     "runningPhase": "<id>"|None, "staleClosedPhase": "<id>"|None,
+     "signoffDuePhase": "<id>"|None, "signoffDueStatus": "<stored status>"|None}.
+
+    `hasPhases` is whether the assembled manifest holds any phase at all, in any
+    status: a plan with phases and none running is a repository that has adopted
+    the workflow and is editing outside it, while a manifest holding no phase has
+    not planned anything yet, and `plan_gate_step` grades the two apart.
 
     `runningPhase` names the phase behind `phaseRunning` (the phase itself when
     it is in_progress, the OWNER phase when only a task is), so a denial can say
@@ -3575,9 +3581,9 @@ def manifest_state(root, manifest_rel):
 
     Never raises. On any error it reports the LEAST aggressive state, so a crash in
     here can only relax the gate, never invent a denial."""
-    state = {"exists": False, "phaseRunning": False, "runningPhase": None,
-             "staleClosedPhase": None, "signoffDuePhase": None,
-             "signoffDueStatus": None}
+    state = {"exists": False, "hasPhases": False, "phaseRunning": False,
+             "runningPhase": None, "staleClosedPhase": None,
+             "signoffDuePhase": None, "signoffDueStatus": None}
     try:
         path = Path(root) / manifest_rel
         if not path.exists():
@@ -3590,6 +3596,7 @@ def manifest_state(root, manifest_rel):
         for phase in manifest.get("phases", []) or []:
             if not isinstance(phase, dict):
                 continue
+            state["hasPhases"] = True
             if phase.get("mergedAt"):
                 if (state["staleClosedPhase"] is None
                         and mio.effective_phase_status(phase) not in mio.TERMINAL):
@@ -3631,6 +3638,19 @@ BYPASS_TTL_SECONDS = 30 * 60
 # the two are pinned together by that validator's selftest.
 PLAN_GATE_TIERS = ("observe", "warn", "ask", "deny")
 
+# The graded ladder, in order: each step the evidence can put a repository on,
+# and the tier that step resolves to. `plan_gate_step` names the step and
+# `plan_gate_mode` reads its tier off this table, so a caller that has to say
+# WHY a tier is in force (the deny text, the doctor's row) asks for the step and
+# cannot disagree with the tier. A pinned tier (`planGate`, legacy `enforce`)
+# is not a step: it outranks every row.
+PLAN_GATE_LADDER = (
+    ("no-manifest", "observe"),
+    ("no-phase", "warn"),
+    ("nothing-running", "deny"),
+    ("phase-running", "deny"),
+)
+
 
 def plan_gate_knob(cfg):
     """The `planGate` override: one of PLAN_GATE_TIERS, or None when unset.
@@ -3648,6 +3668,28 @@ def plan_gate_knob(cfg):
     return None
 
 
+def plan_gate_step(cfg, state):
+    """Which rung decides the tier: "planGate" or "enforce" when a tier is
+    pinned by hand, otherwise the PLAN_GATE_LADDER step the evidence names.
+
+    A state without `hasPhases` (a caller that built one by hand) reads as
+    holding no phase - the less aggressive step, so such a caller keeps the tier
+    it had. Never raises; on any error it names the least aggressive step."""
+    try:
+        if plan_gate_knob(cfg):
+            return "planGate"
+        if enforce_always(cfg):
+            return "enforce"
+        st = state or {}
+        if not st.get("exists"):
+            return "no-manifest"
+        if st.get("phaseRunning"):
+            return "phase-running"
+        return "nothing-running" if st.get("hasPhases") else "no-phase"
+    except Exception:
+        return "no-manifest"
+
+
 def plan_gate_mode(cfg, state):
     """Resolve evidence into "observe" | "warn" | "ask" | "deny".
 
@@ -3662,8 +3704,19 @@ def plan_gate_mode(cfg, state):
     So the gate is graded the same way:
 
         no manifest                  -> observe   (record, never block)
-        manifest, nothing running    -> warn      (advisory)
+        manifest holding no phase    -> warn      (advisory)
+        phases, none running         -> deny      (past the free file)
         manifest + a phase running   -> deny      (full enforcement)
+
+    THE THIRD ROW IS A STEP OF ITS OWN, not a widening of the fourth. A plan
+    that holds phases is a repository that has adopted plan-first work, and an
+    edit past the session's free file there is work happening outside any
+    phase: reported only after it landed, it let a session change several files
+    before a phase existed. So it is refused before it lands, and the refusal
+    names the commands that add and start a phase. The free file stays free,
+    and a manifest holding no phase keeps the advisory tier - nothing has been
+    planned there yet, so there is nothing to start. The rows are
+    PLAN_GATE_LADDER, and `plan_gate_step` says which one is in force.
 
     `planGate` (v0.34) pins one tier by hand — "observe" | "warn" | "ask" |
     "deny" — and wins over everything below, including `enforce`: it is the
@@ -3708,13 +3761,35 @@ def plan_gate_mode(cfg, state):
         knob = plan_gate_knob(cfg)
         if knob:
             return knob
-        if enforce_always(cfg):
+        step = plan_gate_step(cfg, state)
+        if step == "enforce":
             return "deny"
-        if not (state or {}).get("exists"):
-            return "observe"
-        return "deny" if (state or {}).get("phaseRunning") else "warn"
+        return dict(PLAN_GATE_LADDER).get(step, "observe")
     except Exception:
         return "observe"
+
+
+def plan_gate_cause(cfg, state, manifest_rel):
+    """The sentence a deny ends with, naming the rung that actually put the gate
+    there (`plan_gate_step`): a pin, the legacy `enforce`, a plan holding phases
+    with none running, or the phase that is. One copy, so a refusal cannot say
+    "a phase is in_progress" when none is - which is what a cause written per
+    hook said once the ladder grew a deny step with nothing running. Asked only
+    once the tier is deny, so a `planGate` pin here is the "deny" pin."""
+    step = plan_gate_step(cfg, state)
+    if step == "planGate":
+        return ("planGate is set to \"deny\" in .claude/audit.config.json - "
+                "refused regardless of what is running.")
+    if step == "enforce":
+        return ("enforce: true is set in .claude/audit.config.json (legacy; "
+                "planGate: \"deny\" says the same) - refused regardless of "
+                "what is running.")
+    if step == "nothing-running":
+        return ("The plan in %s holds phases, but no phase is in_progress, so "
+                "an edit past this session's free file is refused before it "
+                "lands." % manifest_rel)
+    return ("Phase %s is in_progress, so edits are held to the plan."
+            % ((state or {}).get("runningPhase") or "?"))
 
 
 def enforce_always(cfg):

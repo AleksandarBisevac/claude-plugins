@@ -185,8 +185,16 @@ def _cases(check):
     check("t2 the gate table is COMPUTED by plan_gate_mode, not typed - these are "
           "the hook's own answers, planGate rows included (v0.34: ask joins the "
           "ladder, and the pinned-tier rows are the knob's own verdicts)",
-          [r[1] for r in gate] == ["Observe", "Warn", "Deny", "Ask", "Deny"],
+          [r[1] for r in gate] == ["Observe", "Warn", "Deny", "Deny", "Ask",
+                                   "Deny"],
           repr(gate))
+    check("t2c a manifest holding no phase and a plan holding phases with none "
+          "running are two rows, warn and deny, and the deny row says the free "
+          "file stays and names the command that adds a phase",
+          "no phase" in gate[1][0] and gate[1][1] == "Warn"
+          and "none running" in gate[2][0] and gate[2][1] == "Deny"
+          and "free file" in gate[2][2] and "/audit:phase add" in gate[2][2],
+          repr(gate[1:3]))
     check("t2b the page says what the knob is and that it beats the legacy flag",
           any("planGate" in p and "enforce" in p
               for p in tps["gate-tiers"]["paragraphs"]))

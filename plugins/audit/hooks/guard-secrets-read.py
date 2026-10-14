@@ -2465,21 +2465,13 @@ _PLAN_WRITE_ASK = (
 
 def _plan_gate_cause(cfg, root, manifest_rel, state=None):
     """Why the plan gate is at the deny tier, in the sentence a refusal ends
-    with. The refusal names its ACTUAL cause, mirroring require-plan word for
-    word: "a phase is in_progress" was printed even when the denial came from
-    enforce:true in an empty repo."""
-    if _config.plan_gate_knob(cfg) == "deny":
-        return ("planGate is set to \"deny\" in "
-                ".claude/audit.config.json - refused regardless "
-                "of what is running.")
-    if _config.enforce_always(cfg):
-        return ("enforce: true is set in .claude/audit.config.json "
-                "(legacy; planGate: \"deny\" says the same) - "
-                "refused regardless of what is running.")
+    with: `_config.plan_gate_cause`, the one copy require-plan ends its own
+    refusal with, so a shell write and an Edit of the same file name the same
+    cause - including a plan holding phases with none running, where "a phase
+    is in_progress" would be false."""
     if state is None:
         state = _config.manifest_state(root, manifest_rel)
-    return ("Phase %s is in_progress, so edits are held to "
-            "the plan." % (state.get("runningPhase") or "?"))
+    return _config.plan_gate_cause(cfg, state, manifest_rel)
 
 
 def _plan_gate_write_verdict(root, cfg, hit, surface):

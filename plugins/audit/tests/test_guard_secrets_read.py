@@ -510,11 +510,12 @@ def _two_tree_cases(check):
     """One command writing uncovered files in two trees is graded in each."""
     lw = _harness.worktree_pair("gsr-two-trees-")
     main = Path(lw["main"])
+    # The main checkout's plan holds NO phase, so its tier is the advisory
+    # one: a plan holding phases with none running denies past the free file,
+    # which would make the first file's verdict a refusal and leave nothing
+    # for the second tree to be graded apart from.
     (main / "docs" / "audit" / "audit-plan.json").write_text(json.dumps(
-        {"meta": {"version": 2}, "phases": [
-            {"id": "P41", "title": "p", "status": "done", "tasks": [
-                {"id": "P41.1", "title": "t", "status": "done"}]}]}),
-        encoding="utf-8")
+        {"meta": {"version": 2}, "phases": []}), encoding="utf-8")
     cfg = _config._deep_merge(_config.DEFAULTS, {})
     held = os.environ.get("CLAUDE_PROJECT_DIR")
     os.environ["CLAUDE_PROJECT_DIR"] = str(main)
@@ -529,8 +530,8 @@ def _two_tree_cases(check):
 
     try:
         alone = run("echo x > src/undeclared.ts")
-        check("tt1 an uncovered file of the main checkout, whose plan runs "
-              "nothing, is allowed at its warn tier: %r" % (alone[:1],),
+        check("tt1 an uncovered file of the main checkout, whose plan holds no "
+              "phase, is allowed at its warn tier: %r" % (alone[:1],),
               alone[0] == "allow")
         both = run("echo x > src/undeclared.ts; echo y > %s"
                    % shlex.quote(wt_file))
@@ -2558,12 +2559,23 @@ def _cases(check):
     _expect("s5a no manifest -> shell write observed, not blocked", "allow",
           bash("sed -i 's/a/b/' src/graded.ts"))
 
+    _mfile.write_text(json.dumps({"meta": {"version": 2}, "phases": []}),
+                      encoding="utf-8")
+    _expect("s5b manifest holding no phase -> shell write not blocked (warn)",
+          "allow", bash("sed -i 's/a/b/' src/graded.ts"))
+
     _mfile.write_text(json.dumps({"meta": {"version": 2}, "phases": [
         {"id": "P1", "title": "p", "status": "done",
          "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]}]}),
         encoding="utf-8")
-    _expect("s5b manifest, nothing running -> shell write not blocked", "allow",
+    _expect("s5b2 phases held, none running -> shell write blocked, as an "
+          "Edit of the same file is past the free file", "block",
           bash("sed -i 's/a/b/' src/graded.ts"))
+    got = M.decide(bash("sed -i 's/a/b/' src/graded.ts"), cfg=cfg)
+    check("s5b3 ...and the refusal names that cause, never a phase running",
+          got[0] == "block" and "holds phases, but no phase is in_progress"
+          in got[1] and "Phase ? is in_progress" not in got[1],
+          repr(got[1][-300:]))
 
     _mfile.write_text(json.dumps({"meta": {"version": 2}, "phases": [
         {"id": "P1", "title": "p", "status": "in_progress",
@@ -3580,10 +3592,16 @@ def _cases(check):
           "observed, not blocked - the interpreter arm denied here, which is "
           "the tier with no plan to be first about",
           _agree(_uncovered, cfg) == ["allow"], repr(_agree(_uncovered, cfg)))
-    _plan(False, [])
-    check("we2 a manifest with nothing running warns rather than blocks, and "
+    _pdir.mkdir(parents=True, exist_ok=True)
+    _pfile.write_text(json.dumps({"meta": {"version": 2}, "phases": []}),
+                      encoding="utf-8")
+    check("we2 a manifest holding no phase warns rather than blocks, and "
           "all three agree about that too",
           _agree(_uncovered, cfg) == ["allow"], repr(_agree(_uncovered, cfg)))
+    _plan(False, [])
+    check("we2b a plan holding phases with none running blocks, and all three "
+          "agree about that too",
+          _agree(_uncovered, cfg) == ["block"], repr(_agree(_uncovered, cfg)))
     _plan(True, [_covered])
     check("we3 a running phase denies an UNCOVERED file in all three spellings",
           _agree(_uncovered, cfg) == ["block"], repr(_agree(_uncovered, cfg)))

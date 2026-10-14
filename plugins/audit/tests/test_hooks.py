@@ -12,10 +12,14 @@ disagree. Only a test that sends both through every hook registered for each
 tool, and compares the combined answers, can hold that promise - so the unit
 here is the operation class, and a row is one spelling of it.
 
-THE TIERS ARE THREE FIXTURE PROJECTS, NOT THREE CONFIG VALUES. The plan gate
-grades itself on evidence - no manifest is `observe`, a manifest with nothing
-running is `warn`, a running phase is `deny` - so pinning `planGate` by hand
-would test the knob and skip the reading. Each fixture is a real git repository
+THE TIERS ARE FIXTURE PROJECTS, ONE PER LADDER STEP, NOT CONFIG VALUES. The
+plan gate grades itself on evidence - no manifest is `observe`, a manifest
+holding no phase is `warn`, a plan holding phases with none running is `idle`
+(a deny step past the session's free file), a running phase is `deny` - so
+pinning `planGate` by hand would test the knob and skip the reading. `idle`
+and `deny` both resolve to the deny tier and are kept apart because they are
+two readings of the evidence, and a guard that agreed with the Edit path at
+one and not the other would be invisible in a matrix holding only one. Each fixture is a real git repository
 under `_harness.fixture_root`, with its own local identity because the sweep
 supplies none, and the same tracked files in each:
 
@@ -31,8 +35,9 @@ layout. It is BUILT, never spelled: `_refs` reads every anchored path in this
 directory as a reference to a file in THIS repository, and these files exist
 only inside the fixture.
 
-The `warn` and `deny` fixtures add a manifest whose done task records HEAD's
-commit, so a history rewrite has a recorded SHA to orphan.
+The `idle` and `deny` fixtures add a manifest whose done task records HEAD's
+commit, so a history rewrite has a recorded SHA to orphan; the `warn` fixture's
+manifest holds no phase, so it records none.
 
 COMBINED VERDICT = DENY OVER ASK OVER ALLOW, across every hook whose matcher
 fullmatches the row's tool, each run as `hooks.json` spells it - `sh
@@ -73,7 +78,7 @@ import _loader                                     # noqa: E402
 
 PLUGIN_DIR = os.path.dirname(_harness.HOOKS_DIR)
 HOOKS_JSON = os.path.join(_harness.HOOKS_DIR, "hooks.json")
-TIERS = ("observe", "warn", "deny")
+TIERS = ("observe", "warn", "idle", "deny")
 RANK = {"allow": 0, "ask": 1, "deny": 2}
 
 FX_PLUGIN = "/".join(("plugins", "audit"))
@@ -91,11 +96,11 @@ OPERATOR_DECISION = ("operator decision, 2026-10-06: taken by the orchestrator "
 
 
 def _all(verdict):
-    return {"observe": verdict, "warn": verdict, "deny": verdict}
+    return dict((tier, verdict) for tier in TIERS)
 
 
-def _ladder(observe, warn, deny):
-    return {"observe": observe, "warn": warn, "deny": deny}
+def _ladder(observe, warn, idle, deny):
+    return {"observe": observe, "warn": warn, "idle": idle, "deny": deny}
 
 
 # --- the contract: operation classes and their verdict per tier ------------------
@@ -120,17 +125,19 @@ CLASSES = {
                  "allowed, and _config.plan_gate_mode: a shell write and Edit "
                  "of one file cannot disagree"},
     "large-new-undeclared-file": {
-        "verdict": _ladder("allow", "allow", "deny"),
+        "verdict": _ladder("allow", "allow", "deny", "deny"),
         "basis": "require-plan.py header: a magnitude above "
                  "trivialLineThreshold is not trivial, graded by the "
-                 "plan_gate_mode ladder"},
+                 "plan_gate_mode ladder, whose step for a plan holding phases "
+                 "with none running denies past the free file"},
     "write-past-handed-bound": {
-        "verdict": _ladder("allow", "allow", "deny"),
+        "verdict": _ladder("allow", "allow", "deny", "deny"),
         "basis": "guard-secrets-read.py _past_bound_writers: a command handed "
                  "deeper than the walk follows that carries a write, or hands "
                  "on a command, writes files nobody can name, so the plan gate "
-                 "refuses it at the deny tier rather than read it as nothing; "
-                 "observe and warn never block"},
+                 "refuses it at the deny tier - with a phase running or "
+                 "with phases and none running - rather than read it as "
+                 "nothing; observe and warn never block"},
     "write-test-file": {
         "verdict": _all("allow"),
         "basis": "_config test-file exemption: a test file and its data are "
@@ -153,12 +160,13 @@ CLASSES = {
         "verdict": _all("allow"),
         "basis": "no guard grades a write outside the project tree"},
     "history-rewrite-recorded": {
-        "verdict": _ladder("allow", "deny", "deny"),
+        "verdict": _ladder("allow", "allow", "deny", "deny"),
         "basis": "guard-history-rewrite.py header: a force push, a rebase or "
                  "a reset that orphans a recorded SHA is refused while the "
-                 "manifest records one; observe has no manifest"},
+                 "manifest records one; observe has no manifest, and a "
+                 "manifest holding no phase records no commit to orphan"},
     "stash-with-plan": {
-        "verdict": _ladder("allow", "deny", "deny"),
+        "verdict": _ladder("allow", "deny", "deny", "deny"),
         "basis": "guard-history-rewrite.py header: stash is refused as soon "
                  "as an audit plan exists on disk"},
     "unquoted-git-words": {
@@ -172,14 +180,14 @@ CLASSES = {
                  "to a journal file reports at every tier; one operation gets "
                  "one verdict whichever tool performs it"},
     "manifest-edit-orchestrator": {
-        "verdict": {"warn": "allow", "deny": "allow"},
-        "tiers": ("warn", "deny"),
+        "verdict": {"warn": "allow", "idle": "allow", "deny": "allow"},
+        "tiers": ("warn", "idle", "deny"),
         "basis": "guard-secrets-read.py: the manifest is exempt from the plan "
                  "gate for the orchestrator, refused to subagents and live "
                  "lock holders"},
     "manifest-edit-subagent": {
-        "verdict": {"warn": "deny", "deny": "deny"},
-        "tiers": ("warn", "deny"),
+        "verdict": {"warn": "deny", "idle": "deny", "deny": "deny"},
+        "tiers": ("warn", "idle", "deny"),
         "basis": "guard-secrets-read.py and require-plan.py: a subagent is "
                  "refused the plan it is judged by"},
     "secret-read": {
@@ -573,13 +581,13 @@ ROWS = (
      "input": _bash(_nested("echo x >> %s" % JOURNAL, HANDED_BOUND + 2)),
      "why": "an append to the journal handed two levels past the nesting the "
             "write guard follows",
-     "today": _ladder("allow", "allow", "deny"),
+     "today": _ladder("allow", "allow", "deny", "deny"),
      "contradicts": "_config.plan_gate_mode docstring: a guard whose claim "
                     "binds to a journal file reports at every tier. A residual "
                     "SECURITY.md names: a command one level past the bound is "
                     "read flat for the journal, and one handed on further is "
                     "a write nobody can place, which only the deny tier "
-                    "refuses. The journal's hash chain is what detects the "
+                    "(either of its steps) refuses. The journal's hash chain is what detects the "
                     "write, after the fact"},
     # manifest edits
     {"id": "b11", "class": "manifest-edit-orchestrator", "tool": "Edit",
@@ -683,7 +691,7 @@ def _git(root, *argv):
 
 def _plan(head, phase_status):
     """A manifest whose done task records `head` and whose second phase declares
-    the demo hook - pending at warn, running at deny."""
+    the demo hook - pending at idle, running at deny."""
     task_status = "in_progress" if phase_status == "in_progress" else "pending"
     return {"meta": {"version": 3, "developmentBranch": "main"},
             "phases": [
@@ -714,7 +722,11 @@ def build_project(parent, tier):
         _git(root, "add", "-A")
         _git(root, "commit", "-qm", "c%d" % n)
     _write(root, "notes.md", "notes, edited and not committed\n")
-    if tier != "observe":
+    if tier == "warn":
+        _write(root, MANIFEST, json.dumps(
+            {"meta": {"version": 3, "developmentBranch": "main",
+                      "title": "r"}, "phases": []}, indent=2) + "\n")
+    elif tier != "observe":
         head = _git(root, "rev-parse", "HEAD")
         status = "in_progress" if tier == "deny" else "pending"
         _write(root, MANIFEST, json.dumps(_plan(head, status), indent=2) + "\n")

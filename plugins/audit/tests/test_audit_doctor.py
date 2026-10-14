@@ -548,8 +548,15 @@ def _cases(check):
         check("a resolvable buildCommands runner is OK",
               levels(rep, "buildCommands") == ["OK"], detail(rep, "buildCommands"))
         check("a `cd x && runner` form resolves the runner, not cd", True)
-        check("no running phase is reported as the warn tier",
-              "warn" in detail(rep, "plan gate"), detail(rep, "plan gate"))
+        check("phases with none running is reported as the deny step that "
+              "names itself - none in_progress, the free file, and the command "
+              "that adds a phase - never as a phase having work in progress",
+              detail(rep, "plan gate").startswith("deny")
+              and "none is in_progress" in detail(rep, "plan gate")
+              and "free file" in detail(rep, "plan gate")
+              and "/audit:phase add" in detail(rep, "plan gate")
+              and "has work in progress" not in detail(rep, "plan gate"),
+              detail(rep, "plan gate"))
 
         # `cd ... && runner` - the git-in-subdir shape
         with open(os.path.join(tmp, "plan.json"), "w", encoding="utf-8") as fh:

@@ -296,11 +296,13 @@ def _cases(check):
         st = M.manifest_state(tmp_f, rel)
         check("f1 no manifest -> exists False, phaseRunning False, no phase "
               "to name",
-              st == {"exists": False, "phaseRunning": False,
+              st == {"exists": False, "hasPhases": False, "phaseRunning": False,
                      "runningPhase": None, "staleClosedPhase": None,
                      "signoffDuePhase": None,
                      "signoffDueStatus": None}, repr(st))
         check("f2 no manifest -> observe", M.plan_gate_mode({}, st) == "observe")
+        check("f2b ...on the no-manifest step",
+              M.plan_gate_step({}, st) == "no-manifest")
 
         write_manifest({"meta": {"version": 2}, "phases": [
             {"id": "P1", "title": "p", "status": "done", "tasks": [
@@ -308,11 +310,33 @@ def _cases(check):
         st = M.manifest_state(tmp_f, rel)
         check("f3 manifest with nothing running -> exists, not running, no "
               "phase to name",
-              st == {"exists": True, "phaseRunning": False,
+              st == {"exists": True, "hasPhases": True, "phaseRunning": False,
                      "runningPhase": None, "staleClosedPhase": None,
                      "signoffDuePhase": None,
                      "signoffDueStatus": None}, repr(st))
-        check("f4 manifest, nothing running -> warn", M.plan_gate_mode({}, st) == "warn")
+        check("f4 manifest holding phases, nothing running -> deny, on the "
+              "step that names it: an edit past the free file waits for a "
+              "phase to start",
+              M.plan_gate_mode({}, st) == "deny"
+              and M.plan_gate_step({}, st) == "nothing-running",
+              repr((M.plan_gate_mode({}, st), M.plan_gate_step({}, st))))
+
+        write_manifest({"meta": {"version": 2}, "phases": []})
+        st = M.manifest_state(tmp_f, rel)
+        check("f4b a manifest holding NO phase says so, and keeps the warn "
+              "tier it had: %r" % (st,),
+              st["exists"] is True and st["hasPhases"] is False
+              and M.plan_gate_mode({}, st) == "warn"
+              and M.plan_gate_step({}, st) == "no-phase")
+        check("f4c a hand-built state without `hasPhases` reads as holding "
+              "none - the less aggressive reading, so an older caller keeps "
+              "its tier",
+              M.plan_gate_mode({}, {"exists": True}) == "warn")
+        check("f4d every ladder step resolves to a tier the knob can pin, and "
+              "the steps are distinct",
+              all(t in M.PLAN_GATE_TIERS for _s, t in M.PLAN_GATE_LADDER)
+              and len(set(s_ for s_, _t in M.PLAN_GATE_LADDER))
+              == len(M.PLAN_GATE_LADDER), repr(M.PLAN_GATE_LADDER))
 
         write_manifest({"meta": {"version": 2}, "phases": [
             {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
@@ -323,6 +347,8 @@ def _cases(check):
               "plan is holding the pen", st["runningPhase"] == "P1",
               repr(st))
         check("f6 manifest + running phase -> deny", M.plan_gate_mode({}, st) == "deny")
+        check("f6b ...on the phase-running step, not the no-phase one",
+              M.plan_gate_step({}, st) == "phase-running")
 
         # A task running under a phase that is not still counts as executing a plan.
         write_manifest({"meta": {"version": 2}, "phases": [
@@ -358,9 +384,10 @@ def _cases(check):
               repr(st))
         check("f9c ...and the state names it as the stale one",
               st["staleClosedPhase"] == "P1", repr(st))
-        check("f9d ...which resolves the tier to warn (advisory), not the "
-              "deny a stale in_progress status would have held it at for ever",
-              M.plan_gate_mode({}, st) == "warn")
+        check("f9d ...which resolves to the nothing-running step, not the "
+              "phase-running one a stale in_progress status would have held "
+              "it at for ever",
+              M.plan_gate_step({}, st) == "nothing-running")
 
         # A PHASE ONLY AWAITING SIGN-OFF IS NOT RUNNING (an operator decision):
         # every task terminal and no review verdict held this repository's own gate
@@ -374,8 +401,9 @@ def _cases(check):
               "is not recorded is NOT phaseRunning, and is named as sign-off due: %r"
               % (st,),
               st["phaseRunning"] is False and st.get("signoffDuePhase") == "P1")
-        check("sg2 ...so the tier is warn, not the deny it held for ever",
-              M.plan_gate_mode({}, st) == "warn")
+        check("sg2 ...so the step is nothing-running, not the phase-running "
+              "one it held for ever",
+              M.plan_gate_step({}, st) == "nothing-running")
         write_manifest({"meta": {"version": 2}, "phases": [
             {"id": "P1", "title": "p", "status": "in_progress", "tasks": []}]})
         check("sg3 SECOND DIRECTION: a phase just started, with no task yet, IS running "
@@ -489,13 +517,15 @@ def _cases(check):
         # Never raises, and degrades to the least aggressive verdict.
         check("f14 manifest_state on garbage input still returns the safe shape",
               M.manifest_state(None, None) == {"exists": False,
+                                             "hasPhases": False,
                                              "phaseRunning": False,
                                              "runningPhase": None,
                                              "staleClosedPhase": None,
                                              "signoffDuePhase": None,
                      "signoffDueStatus": None})
         check("f15 plan_gate_mode on garbage input degrades to observe",
-              M.plan_gate_mode(None, None) == "observe")
+              M.plan_gate_mode(None, None) == "observe"
+              and M.plan_gate_step(None, None) == "no-manifest")
 
         # --- planGate: pin a tier by hand (v0.34 B1) --------------------------
         # `planGate` set = that tier, whatever the evidence; absent = the graded
@@ -513,6 +543,31 @@ def _cases(check):
               and M.plan_gate_mode({"planGate": "ask"}, _running) == "ask")
         check("f19 planGate: 'warn' pins warn",
               M.plan_gate_mode({"planGate": "warn"}, _running) == "warn")
+        _np = {"exists": True, "hasPhases": True, "phaseRunning": False}
+        check("f19b planGate pinned to warn or observe keeps that tier on the "
+              "nothing-running step, and the step reports the pin",
+              M.plan_gate_mode({"planGate": "warn"}, _np) == "warn"
+              and M.plan_gate_mode({"planGate": "observe"}, _np) == "observe"
+              and M.plan_gate_step({"planGate": "warn"}, _np) == "planGate"
+              and M.plan_gate_step({"enforce": True}, _np) == "enforce")
+        _causes = dict(
+            (name, M.plan_gate_cause(c, st_, "m.json")) for name, c, st_ in (
+                ("pin", {"planGate": "deny"}, _np),
+                ("enforce", {"enforce": True}, _np),
+                ("nothing", {}, _np),
+                ("running", {}, {"exists": True, "hasPhases": True,
+                                 "phaseRunning": True, "runningPhase": "P7"})))
+        check("f19c the deny cause names the rung that put the gate there: the "
+              "nothing-running one says no phase is in_progress and names no "
+              "phase as running, the running one names its phase: %r"
+              % (_causes,),
+              "planGate is set to \"deny\"" in _causes["pin"]
+              and "enforce: true" in _causes["enforce"]
+              and "no phase is in_progress" in _causes["nothing"]
+              and "m.json" in _causes["nothing"]
+              and "is in_progress, so edits are held" not in _causes["nothing"]
+              and _causes["running"].startswith("Phase P7 is in_progress")
+              and len(set(_causes.values())) == 4)
         check("f20 planGate beats enforce, in both directions",
               M.plan_gate_mode({"planGate": "observe", "enforce": True},
                              _running) == "observe"

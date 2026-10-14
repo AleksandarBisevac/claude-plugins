@@ -51,7 +51,9 @@ ASK = permissionDecision "ask" when planGate pins that tier):
      main loop, or one dispatched agent - `_config.slot_key`) with
      change magnitude <= trivialLineThreshold → ALLOW. A 2nd distinct
      non-exempt file, or a change over the threshold → the gate's tier decides
-     (observe/warn/ask/deny — _config.plan_gate_mode).
+     (observe/warn/ask/deny — _config.plan_gate_mode; which ladder step put
+     it there is _config.plan_gate_step, and a plan holding phases with none
+     running is a deny step whose refusal names how to start a phase).
 
 Every verdict past step 5 also drops one line into the gate events feed
 (_config.append_gate_event → <logsDir>/plan-gate-events.jsonl): deny and
@@ -1104,18 +1106,17 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
         # Asking for the relay "before continuing" named a moment that had
         # already gone; the paragraph says what is actually true instead.
         #
-        # IT STAYS A WARNING, AND THAT IS THE DECISION. The same report asked
-        # for the opposite ending: after enough uncovered edits with no phase
-        # running, stop entirely and say so once. That is silence with a
-        # counter in front of it. Field reports have named this tier as the
-        # thing that got a phase started, and the same reporter credits a
-        # sibling guard's notice with changing how he works - an operator
-        # learns about the next uncovered file from the line beside the edit,
-        # not from a tally nobody opens. So the repair is VOLUME, not silence.
-        # `plugins/audit/tests/test_require_plan.py` holds that as a case: a
-        # mutation letting this branch fall quiet once the session has already
-        # warned turns it red, so the choice is kept by a check rather than by
-        # this comment.
+        # WHILE THIS TIER HOLDS, IT DOES NOT FALL QUIET. One proposal was to
+        # stop relaying after enough uncovered edits and say so once - silence
+        # with a counter in front of it - so the repair here is VOLUME, not
+        # silence. `plugins/audit/tests/test_require_plan.py` holds that as a
+        # case: a mutation letting this branch fall quiet once the session has
+        # already warned turns it red.
+        #
+        # A PLAN THAT HOLDS PHASES NO LONGER REACHES THIS BRANCH unless warn is
+        # pinned: with none running, `_config.plan_gate_step` names the
+        # `nothing-running` step, which refuses at Pre below. What is left here
+        # is a manifest holding no phase, where there is nothing to start.
         warned = _warned_files(sd, session_id)
         repeat = rel in warned
         tally = len(warned) if repeat else len(warned) + 1
@@ -1169,17 +1170,7 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     # The deny names its ACTUAL cause: "a phase is in_progress" was
     # printed even when the denial came from enforce:true in an empty repo —
     # a flatly false sentence, shipped because nothing pinned the text.
-    knob = _config.plan_gate_knob(cfg)
-    if knob == "deny":
-        cause = ("planGate is set to \"deny\" in .claude/audit.config.json - "
-                 "refused regardless of what is running.")
-    elif _config.enforce_always(cfg):
-        cause = ("enforce: true is set in .claude/audit.config.json (legacy; "
-                 "planGate: \"deny\" says the same) - refused regardless of "
-                 "what is running.")
-    else:
-        cause = ("Phase %s is in_progress, so edits are held to the plan."
-                 % (state.get("runningPhase") or "?"))
+    cause = _config.plan_gate_cause(cfg, state, manifest_rel)
     if not commit_state:
         # Pre only: after a denial there is no Post pass to record anything.
         _config.append_gate_event(ld, {
@@ -1230,6 +1221,26 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
             "not belong to dodge the refusal, or abandon work you have already "
             "done. All three have happened, and each was worse than stopping."
             % (head, note["subagent"]),
+        )
+    if _config.plan_gate_step(cfg, state) == "nothing-running":
+        # The remedy here is a running phase, not a task: no task the plan
+        # holds opens a file until its phase runs, so the commands are the two
+        # that make one run, in the order they are typed.
+        return (
+            "block",
+            "%s"
+            "Start a phase before editing further:\n"
+            "  1. /audit:phase add \"<title>\" --outcome \"<what success is>\" "
+            "- adds the phase and the tasks that declare these files to %s.\n"
+            "  2. /audit:phase <the id add printed> - runs it; its tasks' "
+            "`files` are covered while it runs.\n"
+            "A phase the plan already holds starts the same way, or with "
+            "/audit:next. A genuine one-off: the HUMAN types %s in their own "
+            "prompt (single-use, expires unused after %d minutes).\n"
+            "Exempt regardless: %s, and the first single small (magnitude <= "
+            "%d) non-exempt file per session."
+            % (head, manifest_rel, keyword, _config.BYPASS_TTL_SECONDS // 60,
+               ", ".join(exempt), threshold),
         )
     return (
         "block",
