@@ -1623,8 +1623,92 @@ def _cases(check):
           and "not set" not in _set[0]["detail"])
 
 
+def _standing_rows_of(project):
+    """The doctor's own row about the standing approval, by check name."""
+    rep = M.Report()
+    checker = getattr(M, "check_standing_approval", None)
+    if checker is None:
+        return []
+    cfg_mod = _loader.load_hooks_config(modname="audit__config_doctor_test",
+                                        cache=False)
+    checker(rep, project, cfg_mod.load(project), cfg_mod)
+    return [r for r in rep.rows if r["check"] == "standing approval"]
+
+
+def _standing_cases(check):
+    """Doctor names whether a standing approval is armed, since when, and how
+    many commits went through it."""
+    import _journal_io
+    project = _harness.fixture_root("doctor-standing-")
+    env = dict(os.environ)
+    env["CLAUDE_PROJECT_DIR"] = project
+
+    def owner_types(prompt):
+        subprocess.run(
+            [sys.executable, os.path.join(_harness.HOOKS_DIR, "detect-plan-skip.py")],
+            input=json.dumps({"hook_event_name": "UserPromptSubmit",
+                              "session_id": "owner", "prompt": prompt}),
+            cwd=project, env=env, capture_output=True, text=True, timeout=120)
+
+    cfg_mod = _loader.load_hooks_config(modname="audit__config_doctor_rows",
+                                        cache=False)
+
+    def use_row(task_id):
+        """One use row, written the way the drive writes one: through the
+        hooks' own entry builder, against the approval as the reader sees it
+        now. Without a builder nothing is written, and the count reads 0."""
+        builder = getattr(cfg_mod, "standing_use_entry", None)
+        reader = getattr(cfg_mod, "standing_approval", None)
+        if builder is None or reader is None:
+            return
+        approval = reader(_journal_io.read_all(project))
+        _journal_io.append(project, builder(task_id, "P1", "sha256:%s" % ("0" * 64,),
+                                            approval))
+
+    none = _standing_rows_of(project)
+    check("sx1a with nothing armed the doctor says no standing approval is "
+          "armed: %r" % (none,),
+          len(none) == 1 and "not armed" in none[0]["detail"])
+    owner_types("#approve-high-risk")
+    use_row("P1.1")
+    time.sleep(1.1)
+    owner_types("#approve-high-risk again, for P2")
+    arms = [r for r in _journal_io.read_all(project)
+            if r.get("action") == "risk.standing.armed"]
+    current = arms[-1] if arms else {}
+    use_row("P2.1")
+    use_row("P2.2")
+    armed = _standing_rows_of(project)
+    detail = armed[0]["detail"] if len(armed) == 1 else ""
+    # COUNTED, NOT FOUND: three use rows exist, one under the earlier arming.
+    # A count of every use row ever written reads 3; the commits that went
+    # through THIS approval are 2.
+    check("sx1b armed, the doctor names the moment it was armed and the commits "
+          "that used this approval, not every use row ever written: %r"
+          % (detail,),
+          "ARMED" in detail and str(current.get("ts")) in detail
+          and "2 commit(s)" in detail and "3 commit(s)" not in detail)
+    owner_types("#revoke-high-risk")
+    revoked = _standing_rows_of(project)
+    check("sx1c revoked, the doctor says it is not armed and when it was "
+          "revoked: %r" % (revoked,),
+          len(revoked) == 1 and "not armed" in revoked[0]["detail"]
+          and "revoked" in revoked[0]["detail"])
+    wired = [r for r in M.diagnose(project).rows if r["check"] == "standing approval"]
+    check("sx1 doctor reports whether a standing approval is armed, since when, "
+          "and how many commits used it",
+          len(none) == 1 and "not armed" in none[0]["detail"]
+          and "ARMED" in detail and str(current.get("ts")) in detail
+          and "2 commit(s)" in detail and len(wired) == 1)
+
+
+def _all_cases(check):
+    _cases(check)
+    _standing_cases(check)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    return _harness.run(_all_cases)
 
 
 if __name__ == "__main__":

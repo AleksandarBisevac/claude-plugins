@@ -3632,6 +3632,137 @@ def manifest_state(root, manifest_rel):
 # still sweeps them).
 BYPASS_TTL_SECONDS = 30 * 60
 
+# --- the standing high-risk approval --------------------------------------------
+# The owner's answer to the high-risk gate, given once and standing until they
+# revoke it, beside the per-phase answer `record-risk-confirmation.py` records for
+# a named list of tasks. Both keywords are read off the `prompt` of a
+# UserPromptSubmit payload and nothing else (`owner_prompt`): hooks see a human's
+# prompts only, and every other text a payload can carry - a tool result, a file
+# the payload names, a subagent's prompt - is text the model could have written.
+#
+# THE RECORD IS THE JOURNAL, never a state-directory slot: a slot is a file any
+# write can make, and nothing here reads one. The rows the reader honours carry
+# `actor.via` STANDING_VIA, which the prompt hook writes. What this does NOT
+# hold: `audit-journal.py append --via` can spell that word, and a same-user
+# process can write any file the hook can. Edit-tool writes into the journal are
+# refused by `guard-edits.py`, and a forged row stays in a chain that is
+# committed and attributed - but no check here tells it from the hook's own.
+STANDING_ARM_KEYWORD = "#approve-high-risk"
+STANDING_REVOKE_KEYWORD = "#revoke-high-risk"
+STANDING_ARMED = "risk.standing.armed"
+STANDING_REVOKED = "risk.standing.revoked"
+STANDING_USED = "risk.standing.used"
+STANDING_VIA = "owner-prompt"
+# The prefix of a use row's `details.reason`, naming the arming row it used by
+# the first characters of that row's hash; `standing_approval` counts uses by it.
+STANDING_USE_REASON = "standing approval %s armed %s"
+STANDING_REF_CHARS = 12
+PROMPT_EVENT = "UserPromptSubmit"
+
+
+def owner_prompt(data):
+    """The text the owner typed: the `prompt` of a UserPromptSubmit payload,
+    or "" for every other payload. A payload naming an agent is a subagent's,
+    whose prompt the model wrote, so it is "" too. No other key is read -
+    `user_prompt`, `message`, a tool result and the transcript a payload names
+    are all text a keyword could reach without the owner typing it."""
+    if not isinstance(data, dict) or data.get("hook_event_name") != PROMPT_EVENT:
+        return ""
+    if data.get("agent_id"):
+        return ""
+    prompt = data.get("prompt")
+    return prompt if isinstance(prompt, str) else ""
+
+
+def keyword_typed(prompt, keyword):
+    """True when `keyword` stands in `prompt` as a word of its own, case-
+    insensitive: a longer token carrying it (`#approve-high-risk-later`) is a
+    sentence about the keyword, not the keyword."""
+    return bool(re.search(r"(?i)(?:^|\s)" + re.escape(keyword)
+                          + r"(?=\s|$|[.,!?;:])", prompt or ""))
+
+
+def standing_prompt_act(data):
+    """"revoke", "arm" or None for one hook payload. A prompt carrying both
+    keywords revokes: the safe reading of an owner who typed the word that
+    stops it."""
+    prompt = owner_prompt(data)
+    if not prompt:
+        return None
+    if keyword_typed(prompt, STANDING_REVOKE_KEYWORD):
+        return "revoke"
+    if keyword_typed(prompt, STANDING_ARM_KEYWORD):
+        return "arm"
+    return None
+
+
+def standing_entry(act, words, session_id, agent):
+    """The journal entry for an arming or a revoking prompt: the owner's words
+    in `details.reason` as typed (the journal bounds a value and marks the
+    cut), and STANDING_VIA as the writer."""
+    armed = act == "arm"
+    return {"action": STANDING_ARMED if armed else STANDING_REVOKED,
+            "summary": ("standing high-risk approval %s by the owner's prompt"
+                        % ("armed" if armed else "revoked",)),
+            "details": {"reason": words,
+                        "basis": "the prompt of a %s payload" % (PROMPT_EVENT,)},
+            "actor": {"sessionId": session_id or None, "via": STANDING_VIA,
+                      "agent": agent}}
+
+
+def _owner_written(row):
+    actor = row.get("actor") if isinstance(row.get("actor"), dict) else {}
+    return actor.get("via") == STANDING_VIA
+
+
+def standing_approval(rows):
+    """What the trail says about the standing approval, read oldest first:
+    `{"armed", "since", "row", "words", "uses", "revokedAt"}`.
+
+    The last owner-written arming or revoking row decides. `row` is the arming
+    row's hash prefix, the name a use row cites, and `uses` counts the use rows
+    citing THIS arming - a use under an earlier arming went through a different
+    approval. A revocation leaves `revokedAt` set until the next arming."""
+    current, revoked_at = None, None
+    rows = [r for r in (rows or []) if isinstance(r, dict)]
+    for row in rows:
+        if not _owner_written(row):
+            continue
+        if row.get("action") == STANDING_ARMED:
+            current, revoked_at = row, None
+        elif row.get("action") == STANDING_REVOKED:
+            current, revoked_at = None, row.get("ts")
+    if current is None:
+        return {"armed": False, "since": None, "row": None, "words": None,
+                "uses": 0, "revokedAt": revoked_at}
+    ref = str(current.get("hash") or "")[:STANDING_REF_CHARS]
+    since = current.get("ts")
+    head = STANDING_USE_REASON % (ref, since)
+    uses = [r for r in rows if r.get("action") == STANDING_USED
+            and str((r.get("details") or {}).get("reason") or "") == head]
+    return {"armed": bool(ref), "since": since, "row": ref,
+            "words": (current.get("details") or {}).get("reason"),
+            "uses": len(uses), "revokedAt": None}
+
+
+def standing_use_entry(task_id, phase_id, digest, approval):
+    """The journal entry one commit under the standing approval writes: the
+    task, its scope digest, and the arming row it used."""
+    return {"action": STANDING_USED,
+            "summary": ("%s: high-risk commit under the standing approval armed %s"
+                        % (task_id, approval.get("since"))),
+            "details": {"taskId": str(task_id), "phaseId": str(phase_id),
+                        "basis": "scope digest %s" % (digest,),
+                        "reason": STANDING_USE_REASON % (approval.get("row"),
+                                                         approval.get("since"))},
+            "actor": {"sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID"),
+                      "via": "cli"}}
+
+
+def journal_lib():
+    """`_journal_io`, loaded the way every hook here loads it, or None."""
+    return _load_journal_lib()
+
 # --- plan gate ----------------------------------------------------------------
 # The tiers `planGate` may pin, in escalation order. validate-config.py mirrors
 # this as PLAN_GATE_MODES (its FINDING enum, which the panel's select reads);

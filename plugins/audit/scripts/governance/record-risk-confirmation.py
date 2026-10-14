@@ -50,6 +50,16 @@ does that. This command bounds what may be CLAIMED and leaves a row a reader can
 the claim against afterwards; `audit-journal.py show --target <phaseId>` is where they
 find it.
 
+THE OTHER WAY TO ANSWER EARLY, beside this one and not a replacement for it: the
+owner's STANDING approval, armed by `#approve-high-risk` and revoked by
+`#revoke-high-risk` in their own prompt (`hooks/detect-plan-skip.py`), never by a
+command anyone runs. It is a condition rather than a list, which is everything
+this file refuses to be - so it stands on different ground: only the owner's
+prompt arms it, and `drive-phase.py` writes one `risk.standing.used` row per commit
+it lets through, naming the task and its scope digest. A task this command covers
+is answered here first; the standing approval is read only for a task it does not
+cover, and this command's covered set is not widened or narrowed by it.
+
 THE WORDS GO IN UNCHANGED -- `reference/manifest-conventions.md` -> *The operator's
 words go in unchanged*, the same rule `/audit:phase cancel --reason` follows, and for
 the same reason: the chain guarantees whatever sentence it is handed, so a paraphrase

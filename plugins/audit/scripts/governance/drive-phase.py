@@ -1153,11 +1153,15 @@ def advance(ctx, state, manifest, phase, task, tree=None):
     if due and reviewer is None:
         return dispatch(ctx, state, phase, task, "reviewer")
     if task.get("risk") == "high" and not _marked(state, "confirmed", task):
-        if task["id"] not in confirmed_in_advance(ctx, phase["id"]):
-            return decision(ctx, state, "high-risk", task, "")
+        if task["id"] in confirmed_in_advance(ctx, phase["id"]):
+            said = "high-risk %s confirmed in advance" % (task["id"],)
+        else:
+            said = standing_use(ctx, phase, task, tree)
+            if said is None:
+                return decision(ctx, state, "high-risk", task, "")
         _mark(state, "confirmed", task)
         write_state(ctx, state)
-        ctx["did"].append("high-risk %s confirmed in advance" % (task["id"],))
+        ctx["did"].append(said)
     if tree:
         said = integrate_member(ctx, state, phase, task)
         if said is not None:
@@ -1219,6 +1223,46 @@ def confirmed_in_advance(ctx, phase_id):
             else [i.strip() for i in ids.split(",")]
         covered.update(i for i in (ids[:-1] if clipped else ids) if i)
     return covered
+
+
+def standing_use(ctx, phase, task, tree=None):
+    """The did-line for a high-risk commit the owner's standing approval lets
+    through, once its journal row is written; None when no approval is armed,
+    or when the row could not be written - the decision is then asked, as it
+    is with none armed, because an unrecorded use is the gate skipped rather
+    than answered. The row names the task, the digest of its declared files
+    as they stand before the commit, and the arming row it used; a digest
+    that cannot be taken is the same refusal, said on the did-line.
+
+    The reading of the trail is the hooks' own (`_config.standing_approval`),
+    the module whose prompt hook writes the arming rows."""
+    try:
+        rows = _journal_io.read_all(ctx["project"])
+        cfg_mod = _loader.load_hooks_config(modname="audit__config")
+        approval = cfg_mod.standing_approval(rows)
+    except Exception as exc:                                   # noqa: BLE001
+        ctx["did"].append("standing approval not read for %s (%s: %s)"
+                          % (task["id"], type(exc).__name__, exc))
+        return None
+    if not approval["armed"]:
+        return None
+    excluded, _dropped = _evio.recorded_paths(ctx["project"], ctx["manifest"],
+                                              ctx["config"])
+    digest, basis = _tree_stamp.scope_digest(tree or ctx["project"],
+                                             task.get("files"), excluded=excluded)
+    if digest is None:
+        ctx["did"].append("standing approval not used for %s: its scope digest "
+                          "could not be taken (%s)" % (task["id"], basis))
+        return None
+    entry = cfg_mod.standing_use_entry(task["id"], phase["id"], digest, approval)
+    entry["target"] = _output.posix_rel(ctx["manifest"], ctx["project"])
+    written, why = _journal_io.append_from_cli_why(ctx["project"], entry)
+    if not written:
+        ctx["did"].append("standing approval not used for %s: its journal row "
+                          "was not written (%s)" % (task["id"], why))
+        return None
+    return ("high-risk %s commits under the standing approval armed %s"
+            % (task["id"], approval["since"]))
 
 
 # --- waves: ready disjoint tasks, each in a tree of its own ---------------------

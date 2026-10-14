@@ -1202,6 +1202,39 @@ def check_journal(rep, project, cfg, cfg_mod, git_root):
            % (res.get("rows", 0), len(res.get("files") or []), where))
 
 
+def check_standing_approval(rep, project, cfg, cfg_mod):
+    """Is the owner's standing high-risk approval armed, since when, and how
+    many commits went through it?
+
+    The reading is the hooks' own (`_config.standing_approval`), the module
+    whose prompt hook writes the arming rows, so this row and the drive that
+    lets a commit through cannot disagree about whether one is armed. A
+    journal that cannot be read, or hooks with no such reader, is a warning
+    that says which: "not armed" is a claim, and neither case supports it."""
+    reader = getattr(cfg_mod, "standing_approval", None)
+    if reader is None:
+        rep.warn("standing approval",
+                 "the hooks' _config could not be loaded or has no standing-"
+                 "approval reader, so whether one is armed cannot be said")
+        return
+    try:
+        state = reader(_journal_io.read_all(project, cfg))
+    except Exception as exc:                                   # noqa: BLE001
+        rep.warn("standing approval", "could not read the journal: %s" % (exc,))
+        return
+    if state["armed"]:
+        rep.ok("standing approval",
+               "ARMED since %s by the owner's prompt (row %s); %d commit(s) "
+               "went through it - type %s to revoke"
+               % (state["since"], state["row"], state["uses"],
+                  cfg_mod.STANDING_REVOKE_KEYWORD))
+        return
+    detail = "not armed - a high-risk task asks before its commit"
+    if state["revokedAt"]:
+        detail += "; last revoked %s" % (state["revokedAt"],)
+    rep.ok("standing approval", detail)
+
+
 # --- checks: patterns, not only state -------------------------------------------
 # EVERYTHING ABOVE THIS MARKER ANSWERS "IS IT TRUE NOW." A single journal row or
 # a single ledger row is a fact about one moment, and folding many of them into

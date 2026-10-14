@@ -30,7 +30,13 @@ UserPromptSubmit hook — plan-first opt-out logger + config-error surfacing.
    prompt — stale-session leftovers (and forgotten armed bypasses) expire instead
    of accumulating.
 
-4. Stamping which plugin copy is running. `CLAUDE_PLUGIN_ROOT` is fixed when a
+4. The standing high-risk approval. `#approve-high-risk` in the owner's own
+   prompt arms it and `#revoke-high-risk` revokes it (`_config.owner_prompt`
+   reads the `prompt` of a UserPromptSubmit payload and nothing else). Each is
+   one journal row with the prompt's words in it, which is the only record
+   `drive-phase.py` reads before letting a high-risk commit through unasked.
+
+5. Stamping which plugin copy is running. `CLAUDE_PLUGIN_ROOT` is fixed when a
    session starts, so a session that began before an upgrade keeps executing the
    copy it started with — and `/audit:doctor` is a different process that cannot
    see that root, because the harness substitutes the variable into a command
@@ -169,6 +175,47 @@ def _arm_bypass(state_dir, logs_dir, session_id,
             "logged, expires in %d minutes if unused)." % (keyword, minutes))
 
 
+# --- the standing high-risk approval -------------------------------------------
+def _record_standing(root, cfg, data, session_id, act):
+    """Journal the owner's arming or revoking prompt; returns the systemMessage.
+
+    The words go into the row as typed - the journal is where an approval has
+    to be answerable for, and an approval with no words behind it is one
+    nobody can hold to what was said. The row is the whole record: when it
+    does not land, nothing is armed or revoked, and the message says so rather
+    than reporting a state the reader will not find. The append is claimed for
+    this session the way the journal-writes hook claims its own, so the next
+    shell command is not told the plugin's write was a hand edit."""
+    armed = act == "arm"
+    lib = _config.journal_lib()
+    if lib is None:
+        path, why = False, "the journal module could not be loaded"
+    else:
+        entry = _config.standing_entry(act, _config.owner_prompt(data),
+                                       session_id, _config.agent_of(data))
+        path, why = lib.append_why(str(root), entry, config=cfg)
+        if path:
+            lib.record_plugin_write(str(root), cfg, session_id, path)
+    if not path:
+        return ("[audit] Standing high-risk approval NOT %s: the journal row "
+                "could not be written (%s), and the journal is the only record "
+                "the drive reads. %s"
+                % ("armed" if armed else "revoked", why,
+                   "High-risk tasks still ask before their commit." if armed else
+                   "If one was armed it still is - fix the journal and type %s "
+                   "again." % (_config.STANDING_REVOKE_KEYWORD,)))
+    if armed:
+        return ("[audit] Standing high-risk approval ARMED (%s): a high-risk "
+                "task's commit proceeds without asking until you revoke it, and "
+                "each one writes a %s journal row naming the task and its scope "
+                "digest. Type %s to revoke; a per-phase confirmation keeps "
+                "working beside it."
+                % (_config.STANDING_ARM_KEYWORD, _config.STANDING_USED,
+                   _config.STANDING_REVOKE_KEYWORD))
+    return ("[audit] Standing high-risk approval REVOKED (%s): a high-risk task "
+            "asks before its commit again." % (_config.STANDING_REVOKE_KEYWORD,))
+
+
 # --- detection ----------------------------------------------------------------
 def _prompt_text(data):
     for key in ("prompt", "user_prompt", "message"):
@@ -277,6 +324,14 @@ def main():
         if keyword in prompt.lower():
             messages.append(_arm_bypass(state_dir, _config.logs_dir(root, cfg),
                                         session_id, keyword, prompt))
+
+        # --- 2b. the standing high-risk approval, armed or revoked ----------
+        # Read through `_config.owner_prompt`, which takes the `prompt` of a
+        # UserPromptSubmit payload and nothing else - not `_prompt_text` above,
+        # whose other keys are text the owner did not necessarily type.
+        act = _config.standing_prompt_act(data)
+        if act:
+            messages.append(_record_standing(root, cfg, data, session_id, act))
 
         # --- 3. report what the plan gate observed, once per session ----------
         # In a repo with no manifest the gate records rather than denies. Saying so

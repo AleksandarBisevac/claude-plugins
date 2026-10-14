@@ -168,6 +168,7 @@ check_dispatch_cache = _trail.check_dispatch_cache
 _journal_never_committed = _trail._journal_never_committed
 _anchor_row = _trail._anchor_row
 check_journal = _trail.check_journal
+check_standing_approval = _trail.check_standing_approval
 check_task_restarts = _trail.check_task_restarts
 check_gate_patterns = _trail.check_gate_patterns
 check_gate_economy = _trail.check_gate_economy
@@ -275,6 +276,9 @@ def diagnose(project, deep=False, transcript_path=None):
     check_dispatch_cache(rep, transcript_path)
     check_unpriced_models(rep, project, cfg, manifest_rel, pricing, cost_state)
     check_journal(rep, project, cfg, cfg_mod, git_root)
+    # Directly after: the same trail, read for the one approval that lets a
+    # high-risk commit through without asking.
+    check_standing_approval(rep, project, cfg, cfg_mod)
     # Directly after: `check_journal` asks whether the trail still HOLDS, and
     # these two ask what it has been SAYING all along. Both fold the whole
     # trail into a claim about a repeated fact rather than a single moment,

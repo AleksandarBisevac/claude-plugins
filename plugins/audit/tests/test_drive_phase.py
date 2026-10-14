@@ -2933,6 +2933,89 @@ def _risk_cases(check):
           and "decide high-risk P1.1" in last)
 
 
+def _owner_types(root, prompt):
+    """The owner typing `prompt`: the prompt hook run as Claude Code runs it,
+    over the fixture project. Returns its exit code."""
+    env = dict(os.environ)
+    env["CLAUDE_PROJECT_DIR"] = root
+    done = subprocess.run(
+        [sys.executable, os.path.join(_harness.HOOKS_DIR, "detect-plan-skip.py")],
+        input=json.dumps({"hook_event_name": "UserPromptSubmit",
+                          "session_id": "owner-session", "prompt": prompt}),
+        cwd=root, env=env, capture_output=True, text=True, timeout=120)
+    return done.returncode
+
+
+def _standing_risk_cases(check):
+    """A standing approval the owner armed lets a high-risk commit through with
+    no decision, and every such commit leaves one row; with none armed the
+    decision is asked as before."""
+    M, why = _load("drive_phase_standing")
+    if M is None:
+        check("sh1 the driver loads", False, why)
+        return
+    import _journal_io
+    import _tree_stamp
+
+    def risky(plan):
+        for task in plan["phases"][0]["tasks"]:
+            if task["id"] == "P1.1":
+                task["risk"] = "high"
+
+    root, mpath = _repo("standing", task_ids=TASKS[:2])
+    _commit_plan(root, mpath, risky, "P1.1 is high risk")
+    armed_rc = _owner_types(root, "#approve-high-risk for the whole of P1")
+    run = drive(M, root, mpath, answer=None)
+    asked = [s for s in run["steps"] if s[:2] == ("decide", "high-risk")]
+    rows = _journal_io.read_all(root)
+    arms = [r for r in rows if r.get("action") == "risk.standing.armed"]
+    uses = [r for r in rows if r.get("action") == "risk.standing.used"]
+    digest, _basis = _tree_stamp.scope_digest(root, ["src/f1.txt"])
+    use = (uses[0].get("details") or {}) if len(uses) == 1 else {}
+    named = " ".join(str(v) for v in use.values())
+    text = "\n".join(t for _c, t in run["prints"])
+    check("sh1a with the approval armed, P1.1 commits and no high-risk decision "
+          "is printed: %r" % ((armed_rc, asked, text[-500:]),),
+          armed_rc == 0 and asked == []
+          and tasks_of(mpath).get("P1.1", {}).get("status") == "done")
+    check("sh1b ...and exactly one use row names P1.1, its scope digest and "
+          "the arming row it used: %r" % ((uses, digest),),
+          len(uses) == 1 and use.get("taskId") == "P1.1" and bool(digest)
+          and digest in named and len(arms) == 1
+          and str(arms[0].get("hash"))[:12] in named)
+
+    root2, mpath2 = _repo("standing-none", task_ids=TASKS[:2])
+    _commit_plan(root2, mpath2, risky, "P1.1 is high risk")
+    run2 = drive(M, root2, mpath2, answer=None)
+    last2 = run2["prints"][-1][1]
+    uses2 = [r for r in _journal_io.read_all(root2)
+             if r.get("action") == "risk.standing.used"]
+    check("sh1c THE TWIN: with none armed the drive stops at the high-risk "
+          "decision for P1.1, and writes no use row: %r" % ((last2, uses2),),
+          run2["steps"][-1] == ("decide", "high-risk", None)
+          and "decide high-risk P1.1" in last2 and uses2 == [])
+
+    # Revoked after arming: the drive asks again, which is what a revocation
+    # is for. A reader that took the first arming row and never looked
+    # further would let this one through.
+    root3, mpath3 = _repo("standing-revoked", task_ids=TASKS[:2])
+    _commit_plan(root3, mpath3, risky, "P1.1 is high risk")
+    _owner_types(root3, "#approve-high-risk")
+    _owner_types(root3, "#revoke-high-risk")
+    run3 = drive(M, root3, mpath3, answer=None)
+    check("sh1d armed and then revoked, the drive stops at the high-risk "
+          "decision again: %r" % (run3["steps"][-1:],),
+          run3["steps"][-1] == ("decide", "high-risk", None))
+    check("sh1 with a standing approval armed, a high-risk task's commit "
+          "proceeds with no decision, and one journal row names the task, its "
+          "scope digest and the approval it used; with none armed, the "
+          "decision is asked as today",
+          asked == [] and tasks_of(mpath).get("P1.1", {}).get("status") == "done"
+          and len(uses) == 1 and use.get("taskId") == "P1.1" and bool(digest)
+          and digest in named
+          and run2["steps"][-1] == ("decide", "high-risk", None))
+
+
 def _boot_cases(check):
     """`meta.runtimeBoot`, when the phase touched its app root, is a human's
     answer before the verdict: booted, or not reachable and not signed off."""
@@ -5022,6 +5105,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("sf-block", "_fix_review_cases"),
           ("cv-block", "_converge_cases"), ("lf-block", "_low_fix_cases"),
           ("rc-block", "_round_cap_cases"), ("hr-block", "_risk_cases"),
+          ("sh-block", "_standing_risk_cases"),
           ("rb-block", "_boot_cases"), ("db-block", "_decline_boot_cases"),
           ("gb-block", "_banner_cases"), ("dc-block", "_decline_coverage_cases"),
           ("dc4-block", "_reuse_gate_cases"), ("gr-block", "_stale_gate_cases"),

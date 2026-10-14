@@ -20,9 +20,9 @@ phase id to run. A phase whose id is that word: ask (AskUserQuestion) which one.
    <manifest> <phaseId> --project <dir> --dry-run`, whose `no branch is recorded` exit 1 reads
    `not started yet`, never a refusal - print the plan, stop.
 1. `--confirm-high-risk "<your words>"`: run `S/governance/record-risk-confirmation.py"
-   <manifest> <phaseId> --confirm-high-risk "<your words>"` first and print the task ids it covers
-   verbatim in your own reply - a high-risk task not on that list still stops and asks.
-   **The operator's words go in VERBATIM**: the journal keeps them as typed.
+   <manifest> <phaseId> --confirm-high-risk "<your words>"` first; print the ids it covers
+   verbatim in your own reply - a task off it asks unless the owner typed `#approve-high-risk`
+   (`#revoke-high-risk` disarms). **The operator's words go in VERBATIM**.
 2. Run `S/governance/drive-phase.py" next <phaseId>`, do what it prints, repeat until it
    prints `done` - a closed task is not a stop:
    `dispatch <agent> <id> model=<m> brief=<path>` → one Agent call with that `subagent_type` and
