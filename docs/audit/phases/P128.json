@@ -832,6 +832,49 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P128.16-0h5",
+      "title": "A recorded gate spelling wins over a sibling task's, and repointing substitutes only the {paths} slot",
+      "status": "pending",
+      "description": "F659 (found by P125.44): resolve_shape prefers a sibling task's path-scoped entry over meta.phaseGate.derived.spelling, and repointed() replaces every path-shaped word including the runner, so a narrowed gate runs one suite. The recorded spelling wins; only the {paths} slot is substituted.",
+      "files": [
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/tests/test__gate_derive.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__gate_derive.py: with a recorded spelling and a sibling path-scoped entry, a task touching tools/affected.py derives 'python3 tools/sweep-selftests.py <its suites>', the runner path untouched"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }
