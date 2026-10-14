@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "sweep-selftests": "fail",
+    "audit-lookup selftest": "pass",
+    "measure-context --gate": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-14T14:20:05Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_lookup.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 97 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - plugins/audit/tests/test_audit_lookup.py: an executor brief for a task with tests.add states, beside the list, that each case title is the clause verbatim or a tests.addMap entry, and a brief for a task with no tests.add does not (house FAIL): SELFTEST FAILED: 95/97 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added TITLE_RULE in audit-lookup.py, printed in the executor brief's Tests section right after the tests.add list (only when tests.add is non-empty), and a two-line sentence in agents/audit-executor.md after the test-discipline bullet. Two cases added whose labels are the tests.add clauses verbatim; the second derives acceptance from _filed_returns.tests_add_gaps (verbatim clause and addMap entry accepted, paraphrase a gap) before checking the sentence. audit-lookup selftest 97/97. measure-context --gate OK, executor 8227/9000. Full sweep: 334/335 files ok; the one failure is plugins/audit/tests/test__proc_group.py (PermissionError from os.killpg in this sandbox), a file outside my files, left alone.",
+    "descriptive": "The executor brief and agent doc now tell the executor to title each case with its tests.add clause verbatim or file a tests.addMap entry."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_audit_lookup.py: an executor brief for a task with tests.add states, beside the list, that each case title is the clause verbatim or a tests.addMap entry, and a brief for a task with no tests.add does not",
+    "plugins/audit/tests/test_audit_lookup.py: the sentence the brief prints names the same two matches tests_add_gaps accepts (verbatim clause, addMap entry) - read off the function's behaviour, not a second copy of the wording"
+  ],
+  "claims": "claims:\n1 audit-lookup.py TITLE_RULE appended to the Tests section in compose_executor_brief; matches tests_add_gaps (_filed_returns.py:328-349)\n2 both new cases failed 95/97 before the change, 97/97 after; no mutation of the over-fire direction beyond the no-tests.add brief case\n3 n/a \u2014 not a fix of a reported defect\n4 enforced by the two new cases; the agent-doc sentence is prose, nothing enforces it beyond tests_add_gaps flagging at filing\n5 n/a \u2014 no property recorded\n6 n/a \u2014 no guard\n7 n/a \u2014 no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:5ddeba8358bfc91e7fc2b07837ba6924ceb2dd2427d407e5ba6e0a4c8b5c8a62\",\"dirtyDigest\":\"sha256:53804958901484dd977c08105866be0021ac93d28a0c269527b4793b71b14d64\",\"dirtyPaths\":{\"plugins/audit/agents/audit-executor.md\":\"01ae5be6717ac37d\",\"plugins/audit/scripts/status/audit-lookup.py\":\"21855edfb2d27432\",\"plugins/audit/tests/test_audit_lookup.py\":\"46e52441e600f397\"},\"head\":\"123be1bf\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/agents/audit-executor.md\",\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/tests/test_audit_lookup.py\"],\"scopeDigest\":\"sha256:7de0c011cc4878265bc8501a70731676dff37ff7deaf613107f3a43f2d3453ac\",\"v\":2}"
+}

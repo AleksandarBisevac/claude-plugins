@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "selftests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-14T14:27:37Z",
+    "basis": "`python3 plugins/audit/tests/test__runner_output.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_runner_output' has no attribute 'read_run_tally'. Did you mean: 'read_tally'?\" (read as python), and the task introduces 'read_run_tally': absent from HEAD's plugins/audit/scripts/governance/_runner_output.py, plugins/audit/scripts/governance/stamp-verification.py and present in the working tree's plugins/audit/scripts/governance/_runner_output.py, plugins/audit/scripts/governance/stamp-verification.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Shared _FAILURE_READERS['playwright'] now carries re.M and the tolerant entry shape. The Playwright JSON/line readers, vitest JSON reader and the wide tally/cases pair moved into _runner_output (read_run_tally, run_failing_cases); stamp-verification deleted _PW_LINE_ENTRY, _PW_ASSERTION, _VITEST_JSON_ASSERTION and the red_* wrappers and calls the shared pair at four sites. Added ru15 (test__runner_output.py) and sp3 (test_stamp_verification.py, mutates the shared reader and ssees the verdict change). python3 tools/sweep-selftests.py in the task tree: exit 0, 335/335 files ok, 16170 cases; ruff check exit 0. run-test-gate's per-line .match on the playwright pattern is unaffected by re.M. Pointer: the gate's other entries (vermin, plugin-validate etc.) were not run.",
+    "descriptive": "One home for reading Playwright and vitest-JSON runs; the shared Playwright reader now finds entries anywhere in the text."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__runner_output.py: ru15 a Playwright list-reporter output whose failing entries start mid-text (not at offset 0) is read as red with each failing test named, through _FAILURE_READERS['playwright']",
+    "plugins/audit/tests/test_stamp_verification.py: sp3 stamp-verification defines no Playwright or vitest pattern of its own - its red reading is the _runner_output reader's answer (a mutation of the shared reader changes the helper's verdict)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:c23fd9bcf7f77d7ffda89a3a32d765f6dd5cf0c8ae27c9d25e591718443f1af5\",\"dirtyDigest\":\"sha256:cf44edd90d71a43df00069340571bc0e0d8dcc1990dd5d2693a22e6851cf872b\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_runner_output.py\":\"b5bc5c3b317018e9\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"efdd9f06ab93691b\",\"plugins/audit/tests/test__runner_output.py\":\"4d9cc11b1392b991\",\"plugins/audit/tests/test_stamp_verification.py\":\"6d5402b7fd450fa2\"},\"head\":\"123be1bf\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_runner_output.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/tests/test__runner_output.py\",\"plugins/audit/tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:78a24b0d30ce8899287dcfe50fd592952af49ccf8390cf646e58691c4589b052\",\"v\":2}"
+}

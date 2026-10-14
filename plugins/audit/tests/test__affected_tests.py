@@ -180,13 +180,20 @@ def _cases(check):
           "not app source: %r" % (docs,),
           docs["suites"] == [] and docs["widen"] is None)
 
-    # --- coupling, and what the task already runs -----------------------------
-    coupled = M.select(["lib/store.ts"], {"coupling": [
-        {"test": "tests/unit/cart.test.ts", "sources": ["lib/store.ts"]},
-        {"test": "tests/unit/far.test.ts", "sources": ["lib/far.ts"]}]}, {})
-    check("af15 a recorded coupling whose sources overlap the change selects its "
-          "test, and one learned from other files does not: %r" % (coupled,),
-          _suites(coupled) == [("tests/unit/cart.test.ts", "coupling")])
+    # --- what the task already runs --------------------------------------------
+    # The two selections differ only in meta.coupling, whose entry names a test
+    # nothing else selects: a reader of the key would add it, so equality and the
+    # absence of that test are what separate "ignored" from "read".
+    coupling = [{"test": "tests/unit/cart.test.ts", "sources": ["lib/store.ts"]}]
+    plain = M.select(["lib/store.ts"], _meta(), {})
+    coupled = M.select(["lib/store.ts"], _meta(coupling=coupling), {})
+    check("af15 a manifest carrying meta.coupling selects exactly what the same "
+          "manifest without it selects; no arm named coupling appears in the "
+          "selection's basis",
+          coupled == plain and plain["suites"] == []
+          and "tests/unit/cart.test.ts" not in repr(coupled)
+          and "coupling" not in repr(coupled).replace("meta.coupling", "")
+          and "coupling" not in M.ARMS)
 
     own = M.select(["pkg/core.py"], {}, {"pySources": sources},
                    exclude=["tests/test_direct.py"])
@@ -211,7 +218,7 @@ def _cases(check):
     phase = {"id": "P1", "tasks": [
         {"id": "P1.1", "tests": {"gate": ["lint", "sh tests/own_test.sh"]}}]}
     picked = [{"path": "tests/smoke_test.sh", "arm": "related", "basis": "b"},
-              {"path": "tests/x_test.sh", "arm": "coupling", "basis": "c"}]
+              {"path": "tests/x_test.sh", "arm": "python", "basis": "c"}]
     steps, why = M.entries_for(picked, phase, {"buildCommands": {"lint": "true"}},
                                ".")
     check("af19 each arm becomes its own step in the sibling's spelling, named "
@@ -219,7 +226,7 @@ def _cases(check):
           "copied through: %r" % (steps,),
           why is None and steps == [
               ("affected/related: tests/smoke_test.sh", "sh tests/smoke_test.sh"),
-              ("affected/coupling: tests/x_test.sh", "sh tests/x_test.sh")])
+              ("affected/python: tests/x_test.sh", "sh tests/x_test.sh")])
 
     spelled, why = M.entries_for(picked[:1], {"id": "P1", "tasks": []},
                                  {"phaseGate": {"derived": {

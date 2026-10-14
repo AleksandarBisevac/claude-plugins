@@ -15,9 +15,8 @@ THE ARMS, IN ORDER: the project's recorded related listing
 (`meta.phaseGate.derived.listing.related`, the same version-verified listing
 `derive-phase-gate.py` already trusts); a stdlib `ast` import graph from Python
 test files to the changed modules; the e2e runner's changed listing
-(`listing.e2eChanged`) when one is recorded; `meta.coupling` entries whose
-sources overlap the change; and, when the project has e2e specs that no
-recorded listing can see, every one of them.
+(`listing.e2eChanged`) when one is recorded; and, when the project has e2e specs
+that no recorded listing can see, every one of them.
 
 PURE. Every observation -- a listing's exit and output, the version answer,
 the Python sources, the tree's suite files -- arrives in `facts`, gathered once
@@ -57,11 +56,11 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _manifest_phases as _phases   # noqa: E402  (is_suite_path, gate_entry_paths)
-import _gate_derive                  # noqa: E402  (the coupling arm, the e2e
-#                                       reading of a path, the path-scoped shape
-#                                       and its re-pointing: asked, not copied)
+import _gate_derive                  # noqa: E402  (the e2e reading of a path, the
+#                                       path-scoped shape and its re-pointing:
+#                                       asked, not copied)
 
-ARMS = ("related", "python", "e2e-changed", "coupling", "e2e-widening")
+ARMS = ("related", "python", "e2e-changed", "e2e-widening")
 STEP_PREFIX = "affected/"
 # Prose is not app source: a change to these alone reaches no spec.
 _DOC_EXTENSIONS = (".md", ".rst", ".txt")
@@ -304,11 +303,6 @@ def select(changed, meta, facts, exclude=None):
             add(path, "e2e-changed", "e2e-changed: named by the recorded "
                 "listing `%s`" % (facts["e2eChanged"].get("command"),))
 
-    for path in _gate_derive._coupling_arm(meta, changed):
-        overlap = sorted(set(changed) & set(_coupled_sources(meta, path)))
-        add(path, "coupling", "coupling: a recorded meta.coupling entry ties it "
-            "to %s" % (", ".join(overlap),))
-
     specs = [p for p in (facts.get("suites") or [])
              if isinstance(p, str) and _phases.is_suite_path(p)
              and _gate_derive._e2e_like(p)]
@@ -322,13 +316,6 @@ def select(changed, meta, facts, exclude=None):
                 "recorded listing sees the e2e specs, so every spec runs"
                 % (source[0],))
     return {"suites": suites, "widen": None, "lines": lines}
-
-
-def _coupled_sources(meta, test):
-    """Every source a `meta.coupling` entry for `test` names."""
-    return [s for entry in (meta.get("coupling") or [])
-            if isinstance(entry, dict) and entry.get("test") == test
-            for s in (entry.get("sources") or []) if isinstance(s, str)]
 
 
 # --- what the task's gate already is, and the commands the rest run under --------

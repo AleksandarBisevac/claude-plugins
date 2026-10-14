@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 plugins/audit/tests/test__affected_tests.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-14T14:23:14Z",
+    "basis": "`python3 plugins/audit/tests/test__affected_tests.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 21 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - af15 (house FAIL): SELFTEST FAILED: 20/21 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Removed the coupling arm from _affected_tests.py: the select() loop, _coupled_sources, the ARMS entry, the _gate_derive comment and the module docstring mention. Replaced the old coupling case (af15) with one asserting a manifest carrying meta.coupling selects exactly what the same one without it selects, and that no coupling arm is in ARMS or the basis; the entries_for fixture now uses the python arm. README line naming meta.coupling as a selection source dropped. reference/execute-task.md needed no change (its only hit was the word 'decoupled'). _gate_derive._coupling_arm stays: the phase-gate derivation uses it, outside this task's scope. Sweep: 335/335 files ok, 16168 cases. Net: 23 insertions, 29 deletions across 3 files.",
+    "descriptive": "The task-gate affected-test selection no longer reads meta.coupling."
+  },
+  "testsAdded": [
+    "af15 a manifest carrying meta.coupling selects exactly what the same manifest without it selects; no arm named coupling appears in the selection's basis"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:2a1057a76a194e3027e6d5cd7b9c5163cca3742f318f38c4832356c84889d208\",\"dirtyDigest\":\"sha256:9b9edd10aeeeff4ef214118466ce418cc8750df3c222e5da90f18c6f76829dee\",\"dirtyPaths\":{\"plugins/audit/README.md\":\"dc9ca62c103d5343\",\"plugins/audit/scripts/governance/_affected_tests.py\":\"b9df98b05a069f71\",\"plugins/audit/tests/test__affected_tests.py\":\"9053e19a0a61f39c\"},\"head\":\"123be1bf\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/README.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/_affected_tests.py\",\"plugins/audit/tests/test__affected_tests.py\"],\"scopeDigest\":\"sha256:58abc75454b053e116bf294be0cce875a1416254e1e8c50ab629c006e3b0f676\",\"v\":2}"
+}

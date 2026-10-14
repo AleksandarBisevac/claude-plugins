@@ -1393,7 +1393,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" \
 
 A task's run is its own gate **plus every suite its change can break**: the recorded related
 listing (`meta.phaseGate.derived.listing.related`), a Python import graph, the e2e runner's
-changed listing (`listing.e2eChanged`), `meta.coupling`, and every e2e spec when nothing
+changed listing (`listing.e2eChanged`), and every e2e spec when nothing
 recorded can say which ones a source change reaches. Each joins as a step named
 `affected/<arm>: <suites>`. A listing that cannot answer widens the task's run to the phase gate
 with the reason printed, never to an empty selection; the phase's own sign-off gate stays the
