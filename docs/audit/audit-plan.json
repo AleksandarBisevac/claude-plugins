@@ -6516,7 +6516,8 @@
       "P118.2",
       "P118.8",
       "P118.13-v7t",
-      "P118.15-v7t"
+      "P118.15-v7t",
+      "P128.13-0h5"
     ],
     "tools/check-prohibitions.py": [
       "P32.8",
@@ -6725,7 +6726,8 @@
       "P127.2-bgr",
       "P127.6-bgr",
       "P125.11",
-      "P128.7-0h5"
+      "P128.7-0h5",
+      "P128.12-0h5"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
