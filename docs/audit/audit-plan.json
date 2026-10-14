@@ -830,7 +830,8 @@
     ".claude/hooks/guard-uncommitted.py": [
       "P43.1",
       "P59.12",
-      "P123.52-64p"
+      "P123.52-64p",
+      "P125.68-0h5"
     ],
     ".claude/hooks/require-claim-block.py": [
       "P37.2",
@@ -838,7 +839,8 @@
       "P38.2",
       "P59.12",
       "P109.9",
-      "P123.52-64p"
+      "P123.52-64p",
+      "P125.68-0h5"
     ],
     ".claude/settings.json": [
       "P37.2",
@@ -1422,7 +1424,8 @@
       "P125.54-0h5",
       "P125.37-0h5",
       "P125.49-0h5",
-      "P125.61-0h5"
+      "P125.61-0h5",
+      "P125.68-0h5"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2337,7 +2340,8 @@
       "P125.40-0h5",
       "P125.42-0h5",
       "P128.15-0h5",
-      "P125.58-0h5"
+      "P125.58-0h5",
+      "P125.68-0h5"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -2375,7 +2379,8 @@
       "P123.59-64p",
       "P123.64-64p",
       "P123.72-64p",
-      "P128.15-0h5"
+      "P128.15-0h5",
+      "P125.68-0h5"
     ],
     "plugins/audit/hooks/guard-capabilities.py": [
       "P15.4",
@@ -3115,7 +3120,8 @@
       "P122.8-z4y",
       "P124.2",
       "P123.41-64p",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P125.68-0h5"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
@@ -3335,7 +3341,8 @@
       "P123.15",
       "P123.24",
       "P123.65-64p",
-      "P125.38-0h5"
+      "P125.38-0h5",
+      "P125.68-0h5"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -3644,7 +3651,8 @@
       "P125.36-0h5",
       "P125.48-0h5",
       "P125.57-0h5",
-      "P125.63-0h5"
+      "P125.63-0h5",
+      "P125.68-0h5"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -4128,7 +4136,8 @@
       "P122.8-z4y",
       "P123.46-64p",
       "P123.65-64p",
-      "P125.40-0h5"
+      "P125.40-0h5",
+      "P125.68-0h5"
     ],
     "plugins/audit/scripts/panel/_panel_settings.py": [
       "P12.1",
@@ -4362,7 +4371,8 @@
       "P122.8-z4y",
       "P122.9-z4y",
       "P123.33",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P125.68-0h5"
     ],
     "plugins/audit/scripts/status/_doctor_completions.py": [
       "P69.2",
@@ -4390,7 +4400,8 @@
       "P122.8-z4y",
       "P122.9-z4y",
       "P123.33",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P125.68-0h5"
     ],
     "plugins/audit/scripts/status/_doctor_policy.py": [
       "P18.6",
@@ -6945,7 +6956,8 @@
       "P81.16-j7p",
       "P102.10",
       "P122.8-z4y",
-      "P123.62-64p"
+      "P123.62-64p",
+      "P125.68-0h5"
     ],
     "plugins/audit/tests/test_full_gate.py": [
       "P80.10",
@@ -6974,7 +6986,8 @@
       "P80.11",
       "P86.2",
       "P80.16-rtb",
-      "P123.52-64p"
+      "P123.52-64p",
+      "P125.68-0h5"
     ],
     "plugins/audit/tests/test_verify_invariants.py": [
       "P75.1",
@@ -8443,7 +8456,8 @@
       "P123.6-z4y"
     ],
     "plugins/audit/scripts/manifest/_ado_fetch.py": [
-      "P123.6-z4y"
+      "P123.6-z4y",
+      "P125.68-0h5"
     ],
     "plugins/audit/scripts/manifest/_ado_connect.py": [
       "P123.6-z4y",
@@ -8467,7 +8481,8 @@
     "plugins/audit/scripts/manifest/ado-connect.py": [
       "P122.8-z4y",
       "P123.41-64p",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P125.68-0h5"
     ],
     "plugins/audit/scripts/manifest/check-ado-item.py": [
       "P122.8-z4y"
