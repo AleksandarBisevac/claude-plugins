@@ -2028,6 +2028,58 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P125.44-0h5",
+      "title": "This repo's task gates actually narrow: the sweep runs a named list of suites, and a verb records the phase gate's derived listing and spelling in meta",
+      "status": "pending",
+      "description": "Owner's cost target: P125.8 (affected-test task gates) and P125.9 (tools/affected.py --list-all / --list-related) landed, but this repo's task gates still run the full ~505 s phase gate, because two primitives are missing: (1) tools/sweep-selftests.py takes no list of suites, so a path-scoped spelling has nothing to call; (2) no verb writes meta.phaseGate.derived (the plan's listing/spelling the deriver reads), and a hand edit of the plan is refused. Add a suite-path list to the sweep (positional paths or one flag; same grading, same isolation), and a manifest verb that records meta.phaseGate.derived {listing: {all, related}, spelling} with validation (spelling must carry {paths}) and a journal row. Then record this repo's values through it (the orchestrator runs the verb after landing) and measure one real task gate before and after, with the commands in the return. Keep it small; one way to spell a suite list, shared with verify.sh's later --only if the CI study asks for one.",
+      "files": [
+        "tools/sweep-selftests.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/tests/test_derive_phase_gate.py",
+        "plugins/audit/reference/manifest-conventions.md",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/sweep-selftests.py: a sweep given suite paths runs exactly those (graded by the same rules, contract and debris included) and refuses a path that is not a suite in the tree, naming it",
+          "plugins/audit/tests/test_audit_task.py: the verb that records meta.phaseGate.derived (listing.all, listing.related, spelling) writes it through the manifest writer, revalidates, journals one row, and refuses a spelling without the {paths} placeholder",
+          "plugins/audit/tests/test_derive_phase_gate.py: with this repo's recorded listing and spelling, a task touching only tools/affected.py derives a gate naming its own suites, not the whole sweep"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.9"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
