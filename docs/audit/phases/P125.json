@@ -3290,7 +3290,7 @@
     {
       "id": "P125.55-0h5",
       "title": "The drive speaks in one-line signals, a brief per task and an explain on demand; phase.md and orchestrator.md are rewritten to the seven verbs",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase-review finding (med, CLASS - recurred on three P125 tasks): commands/phase.md sits at its byte ceiling in tools/measure-context.py, so every flag added to the run form trims unrelated prose, and the trims hit sentences other gates pin. Implement consolidated plan F2.5 (approved 2026-10-14), which rewrites P128.5. `drive-phase.py next --signal` prints one line of at most 200 bytes in the form `audit <phase> <verb> <subject> [auto...] | <basis> | next: <one command or wait>`, with the verbs dispatch, wait, ask, judge, review, done and stop. `brief <id>` prints the executor brief with the stable text first and the task-specific part last. `--explain <id>` gives at most 2 KB. The dispatch prompt is one fixed sentence plus the id, so two dispatch prompts are identical up to the id. Rewrite reference/orchestrator.md and commands/phase.md to the seven verbs, and LOWER measure-context's ceilings for them. The multi-line `decide-*` prompts in STEPS stop being the main channel and stay only behind --explain. Prefer removals (owner decision D9).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -3328,16 +3328,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T18:24:20Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.56-0h5",
@@ -3604,7 +3605,7 @@
     {
       "id": "P125.59-0h5",
       "title": "/audit:status shows whether a standing high-risk approval is armed, since when, and how many commits used it",
-      "status": "in_progress",
+      "status": "done",
       "description": "The standing high-risk approval task asked for doctor AND status to show the approval; doctor does (`_doctor_trail.check_standing_approval`, read from `_config.standing_approval`), status does not, because audit-status.py was outside that task's files. Add the same reading to status - through `_config.standing_approval`, not a second parse of the journal - in text and in --json, and say nothing when none was ever armed.",
       "files": [
         "plugins/audit/scripts/status/audit-status.py",
@@ -3636,14 +3637,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "21d7ea558b22",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-status.py gains standing_approval_block(manifest_path, project), which reads the journal through the hooks' own journal_lib and calls _config.standing_approval unchanged (no second parse, no new import, so the PLUGIN-BUILD-GUIDE module map is untouched). It returns {} when never armed or revoked, the reader's dict when armed or revoked, and {error} when the reader or journal is unavailable. main injects it as summary['standingApproval'] only when non-empty (all modes, so the bare --json payload is unchanged for plans with no approval), and render_status appends a STANDING APPROVAL block via _standing_approval_lines: 'armed since <ts>; N commit(s) used it' or 'revoked <ts>'. Tests sa1-sa6 added in test_audit_status.py (stage sa-block). Full sweep: 335/335 files ok, 16214 cases; ruff clean. An earlier attempt importing _journal_io directly made test__deps g1 (module map) red; replaced by hooks.journal_lib().",
+        "descriptive": "/audit:status now shows the standing high-risk approval (armed/revoked, since when, commits that used it) in text and --json, silent when never armed."
       },
       "startedAt": "2026-10-14T17:07:36Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T18:24:19Z",
+      "verifiedBy": [
+        "with a standing approval armed, status names it, the time it was armed and the number of commits that used it, in text and in --json; revoked, it says revoked; never armed, it prints nothing about it",
+        "status's standing-approval facts are _config.standing_approval's answer (a mutation of that reader changes what status prints)"
+      ],
       "reviewPerTask": "phase",
       "notes": [
         {
@@ -3655,6 +3659,17 @@
         "runId": "2026-10-14T18:24:18Z.dab7a6",
         "status": "passed",
         "at": "2026-10-14T18:24:18Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "21d7ea558b22",
+        "at": "2026-10-14T18:24:19Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T17:22:54Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_status.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases sl1 (house FAIL), sl2 (house FAIL), sl3 (house FAIL), sa2 (house FAIL), sa3 (house FAIL), sa4 (house FAIL), sa5 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 388/391 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 389/397 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -3742,6 +3757,140 @@
         "gateBasis": "phase-no-spelling"
       },
       "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.62-0h5",
+      "title": "A filed return's digest is taken over the bytes on disk, so a Windows close does not read every return as changed",
+      "status": "pending",
+      "description": "Regression in this phase, CI run 38604025090 (windows-latest plain 1 and cp1252 1, ci/p125 at 28449751): test__filed_returns rj8 - a return whose bytes match its row was reported 'has changed since the journal recorded it filed' (row sha256:d769a8..., file sha256:0c1436...). Every other leg is green. The shape points at a newline translation between the bytes the digest is taken over and the bytes on disk (CRLF on Windows). First establish whether the PRODUCT path has it - submit's `task.return.filed` row (drive-phase.py, `_journal_io` append with the filed bytes' sha256) against `_filed_returns` writing the return (`newline=\"\"` at its write) and `read_filed_return_checked` hashing the file - or only the test fixture writes in text mode. If the product has it, every Windows close of a filed task is refused: fix it so the digest is always over the exact bytes written and read (one function both sides call). If only the fixture, fix the fixture and add a case that writes with CRLF translation deliberately and proves the product path is immune. Either way a case that would go red on POSIX too (simulate the translation), since this machine and ubuntu cannot see it natively.",
+      "files": [
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__filed_returns.py: a return written with CRLF line endings and its filing row agree on one digest, and a return whose bytes changed after filing is still refused",
+          "plugins/audit/tests/test__filed_returns.py: the digest a filing row records and the digest the checked read compares are computed by the same function over the same bytes"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.63-0h5",
+      "title": "A timed-out red-first run's throwaway is removed within the shared sharing-wait, not a quarter second",
+      "status": "pending",
+      "description": "Regression in this phase, CI run 38604025090 (windows-latest cp1252 3): test_stamp_verification sr9 - after a run that times out, the throwaway is not removed (`[(4, None, None), (3, 'could-not-prove', True)]`). The removal now goes through `_output.while_shared` with `REMOVE_WAIT_S = 0.25`; the retry loop it replaced waited longer, and a killed Windows process can hold its files past a quarter second. Take the wait from the shared helper's own bound (`_output.SHARING_WAIT_SECONDS`) rather than a private constant, keep sr215-sr219's guarantees, and make sr9's removal observable on POSIX by simulating a holder that releases after a delay longer than the old constant.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: a throwaway whose holder releases its files after more than a quarter second, within the shared sharing wait, is removed after a timed-out run",
+          "plugins/audit/tests/test_stamp_verification.py: the throwaway removal's wait is the shared helper's bound, not a constant of its own (a change to the shared bound changes it)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.64-0h5",
+      "title": "The commit suites' git fixture calls report git's own stderr, so a failing clone names its cause",
+      "status": "pending",
+      "description": "Seen once on CI run 38604025090 (ubuntu-latest cp1252 2): test_commit_task_work's ir-block raised `CalledProcessError: git clone --quiet --no-hardlinks ... scratch-ir-mid returned non-zero exit status 128` with no stderr, so the cause cannot be read; it passed twice locally under --encoding cp1252 and on every other leg. A fixture failure that hides git's words is a silent failure. Make the git calls in the commit suites' fixtures (test_commit_task_work.py, test_commit_manifest_index.py, test_commit_audit_state.py - find their shared helper first and change it once) raise with git's stderr in the message. Then reproduce: run the ir-block stage under the cp1252 sweep in a loop and under a TMPDIR like CI's; if the cause shows, fix it, and if not, say so with the run count.",
+      "files": [
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/test_commit_manifest_index.py",
+        "plugins/audit/tests/test_commit_audit_state.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_commit_task_work.py: a fixture git command that fails raises an error carrying git's own stderr text"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
       "skills": [],
       "risk": "low",
       "blockedBy": [],
