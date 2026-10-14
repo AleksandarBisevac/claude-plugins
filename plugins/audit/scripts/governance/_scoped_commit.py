@@ -86,6 +86,7 @@ import _task_outputs  # noqa: E402  (`covers`: the one rule for whether a declar
 import _journal_io  # noqa: E402  (the withdrawing row's append)
 import _manifest_io as _mio  # noqa: E402  (atomic_write_text: the start snapshot's one writer)
 import _manifest_phases as _phases  # noqa: E402  (tests_add_path: the file a `tests.add` entry names)
+import _manifest_vocab as _vocab  # noqa: E402  (one reading of a `files` entry's line suffix)
 
 
 # --- asking git ---------------------------------------------------------------
@@ -1096,6 +1097,48 @@ def close_evidence_refusal(task, project, executor, changed):
             "answer was that nothing needed to change closes with /audit:task "
             "done %s --no-change --reason <why>"
             % ("; ".join(parts), tid, tid, tid))
+
+
+# --- the committed pair -------------------------------------------------------
+# A commit carrying a plan record leaves the index and the shards git holds
+# afterwards, and that pair has to validate. The fileIndex half of it is the one
+# a scoped commit can break on its own: a task commit carries a shard whose
+# `files` grew while the rows naming them stay in an uncommitted index, and an
+# index commit carries rows removed while the shard still declaring them stays
+# uncommitted. Both ask the one question below, each of its own pair.
+def index_rows_owed(index_doc, shard_doc):
+    """`[(path, taskId)]` - each file a task of `shard_doc` declares whose
+    fileIndex row in `index_doc` does not name that task, in declaration order.
+
+    A path is matched with its `:line-range` suffix dropped on both sides,
+    which is the validator's own pairing rule, so this is empty exactly when
+    that rule finds nothing missing for these tasks. An index with no
+    fileIndex owes every declared file.
+    """
+    file_index = (index_doc or {}).get("fileIndex")
+    named = {}
+    for key, refs in (file_index.items() if isinstance(file_index, dict)
+                      else ()):
+        if isinstance(refs, list):
+            named.setdefault(_vocab._strip_line_suffix(key), set()).update(
+                r for r in refs if isinstance(r, str))
+    owed = []
+    for task in ((shard_doc or {}).get("tasks") or []):
+        tid = task.get("id") if isinstance(task, dict) else None
+        if not isinstance(tid, str) or not tid:
+            continue
+        for entry in (task.get("files") or []):
+            if not isinstance(entry, str) or not entry.strip():
+                continue
+            path = _vocab._strip_line_suffix(entry)
+            if tid not in named.get(path, ()) and (path, tid) not in owed:
+                owed.append((path, tid))
+    return owed
+
+
+def rows_named(rows):
+    """`path (taskId), ...` - the rows a refusal names, in the order given."""
+    return ", ".join("%s (%s)" % (path, tid) for path, tid in rows)
 
 
 # --- what happened ------------------------------------------------------------

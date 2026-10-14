@@ -1697,7 +1697,8 @@
         "plugins/audit/scripts/governance/_scoped_commit.py",
         "plugins/audit/scripts/governance/commit-manifest-index.py",
         "plugins/audit/tests/test_commit_task_work.py",
-        "plugins/audit/tests/test__scoped_commit.py"
+        "plugins/audit/tests/test__scoped_commit.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1735,9 +1736,9 @@
       "verifiedBy": [],
       "reviewPerTask": "phase",
       "testEvidence": {
-        "runId": "2026-10-14T03:21:47Z.c3d465",
+        "runId": "2026-10-14T03:40:44Z.635c41",
         "status": "passed",
-        "at": "2026-10-14T03:21:47Z"
+        "at": "2026-10-14T03:40:44Z"
       }
     },
     {
@@ -1791,7 +1792,7 @@
     {
       "id": "P125.36-0h5",
       "title": "A throwaway tree left after a torn-down run is removed with a bounded retry, not one attempt",
-      "status": "in_progress",
+      "status": "done",
       "description": "F649. CI run 38430725479 (ci/p125, windows-latest cp1252 shard 3): test_stamp_verification sr9 got exit 4 (E_LEFT_BEHIND) for the timed-out run: _run_in tears down the process group on timeout, then _remove_throwaway calls git worktree remove and shutil.rmtree(holder, ignore_errors=True) once; on Windows a killed process's handles are released asynchronously, so the single attempt can leave the tree. Not a regression (unchanged since v3.3.0, whose CI was green; seen once in the last seven failed runs). _remove_throwaway retries the removal while the holder still exists, with a short backoff and a total bound stated beside the constant with its reason, and the bound is injectable so the test needs no real sleep.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -1823,14 +1824,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "875fb758046b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "placeholder",
+        "descriptive": "placeholder"
       },
       "startedAt": "2026-10-14T02:29:25Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T03:31:28Z",
+      "verifiedBy": [
+        "sr215",
+        "sr216"
+      ],
       "reviewPerTask": "phase",
       "notes": [
         {
@@ -1842,6 +1846,17 @@
         "runId": "2026-10-14T03:31:26Z.ebc680",
         "status": "passed",
         "at": "2026-10-14T03:31:26Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "875fb758046b",
+        "at": "2026-10-14T03:31:28Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T02:39:49Z",
+        "basis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest --stage sr-remove-retry` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 0/1 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'REMOVE_RETRIES': TypeError: _remove_throwaway() got an unexpected keyword argument 'backoff'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'REMOVE_RETRY_S': TypeError: _remove_throwaway() got an unexpected keyword argument 'backoff'; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {

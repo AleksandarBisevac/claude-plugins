@@ -40,6 +40,7 @@ import _invariants                                 # noqa: E402
 import _journal_io                                 # noqa: E402
 import _loader                                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402
+import _scoped_commit                              # noqa: E402
 import test__invariants as TI                      # noqa: E402  (the ONE git fixture)
 # commitlint's default `subject-case`, transcribed ONCE and imported: the rule is
 # commitlint's and belongs to none of the three writers, so a second
@@ -210,15 +211,32 @@ def _phase_and_task(fx, tid=TASK):
     raise RuntimeError("fixture lost %s" % (tid,))
 
 
-def _set_task(fx, files=None, gate=None, phase_gate=None, basis=None):
+def _set_task(fx, files=None, gate=None, phase_gate=None, basis=None,
+              rows=True):
     """Rewrite the fixture task's `files` and/or `tests.gate` (and
     `tests.gateBasis` when `basis` is given) in its shard, and the phase's
     `testGate` when `phase_gate` is given. Left uncommitted, which is what a task
-    that widened its scope mid-run looks like."""
+    that widened its scope mid-run looks like.
+
+    A widened `files` also writes the fileIndex rows it needs and, with
+    `rows`, commits the index alone - what `/audit:task scope` followed by
+    `commit-manifest-index.py` leaves, and the order a close requires so the
+    committed pair validates. `rows=False` leaves the index as it was."""
     shard = _mio.read_json(fx["shard"])
     task = [t for t in shard["tasks"] if t.get("id") == TASK][0]
     if files is not None:
         task["files"] = list(files)
+        if rows:
+            index = _mio.read_json(fx["manifest"])
+            for entry in files:
+                refs = index["fileIndex"].setdefault(entry.split(":")[0], [])
+                if TASK not in refs:
+                    refs.append(TASK)
+            TI._write_json(fx["manifest"], index)
+            if TI._git(fx["root"], "status", "--porcelain", "--", INDEX_REL):
+                TI._git(fx["root"], "commit", "-q", "-m",
+                        "fixture: the widened scope's index rows", "--",
+                        INDEX_REL)
     if gate is not None:
         task["tests"]["gate"] = list(gate)
     if basis is not None:
@@ -477,11 +495,7 @@ def _declared_cases(check, repos):
     # --- a declared file that is not there ---------------------------------
     fx = repos.make()
     _dirty_work(fx)
-    _manifest, _phase, task = _phase_and_task(fx)
-    shard = _mio.read_json(fx["shard"])
-    shard["tasks"][0]["files"] = [OWNED, "src/not-written-yet.py",
-                                  "src/a.py:10-20"]
-    TI._write_json(fx["shard"], shard)
+    _set_task(fx, files=[OWNED, "src/not-written-yet.py", "src/a.py:10-20"])
     _gate(fx)
     before = _head(fx)
     code, text = _run(fx)
@@ -736,6 +750,156 @@ def _bug_link_cases(check, repos):
           code == 0 and after != before
           and INDEX_REL not in _carried(fx, after)
           and INDEX_REL in TI._git(fx["root"], "status", "--porcelain"))
+
+
+WIDENED = "src/new.py"
+OTHER_ROW = "src/d.py"
+CMI = _loader.load_script("commit-manifest-index.py", "cmi_for_ctw")
+
+
+def _index_commit(fx):
+    """`(code, text)` of `commit-manifest-index.py` on the fixture, in-process
+    - the remedy a close owing the index rows names."""
+    lines = []
+    held = sys.stderr
+    sys.stderr = io.StringIO()
+    try:
+        code = CMI.main([fx["manifest"], PHASE, "--project", fx["root"]],
+                        out=lines.append)
+    finally:
+        sys.stderr = held
+    return code, "\n".join(lines)
+
+
+def _widen(fx, row=True):
+    """P1.1's scope widened during its attempt to a new file, written: the
+    shard declares it and, with `row`, the working index holds its row -
+    neither committed, which is what `/audit:task scope` leaves."""
+    _dirty_work(fx)
+    _set_task(fx, files=[OWNED, WIDENED], rows=False)
+    _write(os.path.join(fx["root"], WIDENED), "n = 1\n")
+    if row:
+        index = _mio.read_json(fx["manifest"])
+        index["fileIndex"][WIDENED] = [TASK]
+        TI._write_json(fx["manifest"], index)
+
+
+def _validates_at(fx, sha, scratch):
+    """`(findings, committedIndex)` read off a fresh clone at `sha`."""
+    import _manifest_rules as _rules
+    clone = _clone_at(fx, sha, scratch)
+    path = os.path.join(clone, *INDEX_REL.split("/"))
+    return (_rules.validate(_mio.load_manifest(path))[0],
+            _mio.read_json(path))
+
+
+@_own_repos
+def _index_row_cases(check, repos):
+    """A task whose scope was widened during its attempt is closed: the close
+    refuses while the index HEAD holds lacks the rows its shard needs, naming
+    each, so the committed pair never stops validating; the index commit it
+    names goes first, and then the close commits. An index row another phase
+    has not committed stays out of the close."""
+    fx = repos.make()
+    _widen(fx)
+    _gate(fx)
+    before = _head(fx)
+    found = _index_entries(fx)
+    code, text = _run(fx)
+    check("ctw-ir1 RED-FIRST: a task widened by scope during its attempt, whose "
+          "fileIndex row is not committed, is REFUSED at its close - committed, "
+          "the shard declaring %s beside an index without its row fails "
+          "'missing from fileIndex' at HEAD - and the refusal names the row "
+          "and the task, leaving HEAD and the git index as they were: %r"
+          % (WIDENED, (code, text[-400:]),),
+          code == 1 and "%s (%s)" % (WIDENED, TASK) in text
+          and "commit-manifest-index.py" in text and _head(fx) == before
+          and _index_entries(fx) == found)
+    icode, itext = _index_commit(fx)
+    _gate(fx)
+    mid = _head(fx)
+    code, text = _run(fx)
+    after = _head(fx)
+    findings, _committed = _validates_at(fx, after, repos.scratch("ir-after"))
+    mid_findings, _ = _validates_at(fx, mid, repos.scratch("ir-mid"))
+    check("ctw-ir2 ...and the order it names leaves every commit valid: the "
+          "index commit first, then the close, each read off a fresh clone "
+          "where validate-manifest finds nothing: %r"
+          % ((icode, itext[-200:], code, text[-200:], mid_findings[:2],
+              findings[:2]),),
+          icode == 0 and code == 0 and after != mid and mid != before
+          and findings == [] and mid_findings == []
+          and WIDENED in _carried(fx, after))
+
+    # THE ROWS ARE COMMITTED, and another phase's row is not.
+    fx = repos.make()
+    _widen(fx)
+    TI._git(fx["root"], "commit", "-q", "-m", "fixture: the widened rows",
+            "--", INDEX_REL)
+    index = _mio.read_json(fx["manifest"])
+    index["fileIndex"][OTHER_ROW] = ["P2.1"]
+    TI._write_json(fx["manifest"], index)
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    after = _head(fx)
+    findings, committed = _validates_at(fx, after, repos.scratch("ir-other"))
+    check("ctw-ir3 SECOND-DIRECTION CASE: with the widened rows committed the "
+          "close commits, and it carries no index row belonging to another "
+          "phase's uncommitted change - P2.1's row for %s is absent from the "
+          "committed index and still uncommitted in the working tree: %r"
+          % (OTHER_ROW, (code, text[-200:], findings[:2],
+                         sorted(committed.get("fileIndex") or {})),),
+          code == 0 and after != before and findings == []
+          and INDEX_REL not in _carried(fx, after)
+          and OTHER_ROW not in (committed.get("fileIndex") or {})
+          and OTHER_ROW in _mio.read_json(fx["manifest"])["fileIndex"]
+          and INDEX_REL in TI._git(fx["root"], "status", "--porcelain"))
+
+    # THE WORKING INDEX LACKS THE ROW TOO.
+    fx = repos.make()
+    _widen(fx, row=False)
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw-ir4 a widened shard whose row the WORKING index lacks as well "
+          "is refused naming re-derivation first, since committing that index "
+          "would carry no row: %r" % ((code, text[-400:]),),
+          code == 1 and "%s (%s)" % (WIDENED, TASK) in text
+          and "reindex" in text and _head(fx) == before)
+
+    # THE SHARED QUESTION, asked directly.
+    owed = getattr(_scoped_commit, "index_rows_owed", None)
+    shard = _mio.read_json(fx["shard"])
+    plain = json.loads(json.dumps(shard))
+    plain["tasks"][0]["files"] = ["%s:1-2" % (OWNED,)]
+    answer = (owed(TI.INDEX, shard), owed(TI.INDEX, plain)) if owed else None
+    check("ctw-ir5 the shared check names the owed row as `(path, taskId)` and "
+          "answers an empty list - not None - for a shard the index pairs, a "
+          "`:line-range` entry matched by its path the way the validator "
+          "matches it: %r" % (answer,),
+          answer == ([(WIDENED, TASK)], []))
+
+    # THE INDEX COMMIT, in the other direction: a row a committed shard needs.
+    fx = repos.make()
+    index = _mio.read_json(fx["manifest"])
+    del index["fileIndex"][OWNED]
+    TI._write_json(fx["manifest"], index)
+    before = _head(fx)
+    icode, itext = _index_commit(fx)
+    check("ctw-ir6 an index commit that would drop a row the shard committed "
+          "at HEAD still declares is refused, naming the row - the same "
+          "question the close asks, of the other pair: %r"
+          % ((icode, itext[-400:]),),
+          icode == 1 and "%s (%s)" % (OWNED, TASK) in itext
+          and _head(fx) == before)
+    index["fileIndex"][OWNED] = [TASK]
+    index["meta"]["title"] = "touched"
+    TI._write_json(fx["manifest"], index)
+    icode, itext = _index_commit(fx)
+    check("ctw-ir7 ALLOW: the same index keeping that row commits: %r"
+          % ((icode, itext[-200:]),),
+          icode == 0 and _head(fx) != before)
 
 
 @_own_repos
@@ -1923,8 +2087,8 @@ def _owe_test(fx):
     shard = _mio.read_json(fx["shard"])
     task = [t for t in shard["tasks"] if t.get("id") == TASK][0]
     task["tests"]["add"] = ["%s: the a case" % (CE_TEST,)]
-    task["files"] = [OWNED, CE_TEST]
     TI._write_json(fx["shard"], shard)
+    _set_task(fx, files=[OWNED, CE_TEST])
 
 
 @_own_repos
@@ -1983,6 +2147,7 @@ STAGES = (("or-block", "_ordinary_cases"), ("dc-block", "_declared_cases"),
           ("cl-block", "_claims_cases"), ("sl-block", "_success_line_cases"),
           ("dp-block", "_default_project_cases"),
           ("ae-block", "_attempt_cases"), ("bl-block", "_bug_link_cases"),
+          ("ir-block", "_index_row_cases"),
           ("ce-block", "_close_evidence_cases"))
 
 

@@ -80,7 +80,9 @@ Exit codes:
      (the single-file refusal is one of those, and is deliberately not a failure)
   1  it could not - git refused, the git index already held work this commit
      may not carry, or the index names a task or phase the shard committed at
-     HEAD does not hold yet (commit that shard first; the refusal names it)
+     HEAD does not hold yet, or no longer carries a fileIndex row a shard
+     committed at HEAD still declares (commit that shard first; the refusal
+     names it and each row)
   2  usage error - the manifest will not load, or there is no such phase
   3  the index lock is held by a process that is alive - try again after it
   4  the lock is stale; a human confirms the holder is gone, then --takeover
@@ -232,9 +234,11 @@ def _foreign_after_staging(foreign):
 # a phase no committed shard holds - a commit that fails validation, which
 # `verify-invariants`' `manifest-revalidated` then reports against every commit
 # after it until the shard lands. The order is the shard first, and this is where it
-# is enforced. Only a reference AHEAD of its shard is refused: one the committed
-# shard holds (a widened scope, whose pairing sign-off settles) commits, and one no
-# shard holds at all is the validator's to report, not this command's.
+# is enforced. A reference AHEAD of its shard is refused: one the committed
+# shard holds (a widened scope, whose rows go first so the close after them
+# validates) commits, and one no shard holds at all is the validator's to report,
+# not this command's. The other direction is refused too (`rows_dropped`): a row a
+# committed shard still declares, which this index would no longer carry.
 def _shard_at_head(git_root, rel):
     """The shard as HEAD holds it, parsed, or None when HEAD holds none."""
     code, out, _err = _scoped_commit.run_git(git_root, ["show", "HEAD:%s" % rel])
@@ -264,13 +268,20 @@ def _task_ids(doc):
                if isinstance(t, dict) and t.get("id"))
 
 
-def ahead_of_shards(git_root, manifest_path, index_doc):
-    """[(reference, shardRel)] - what the index would record that only an
-    UNCOMMITTED shard supports, each with the shard to commit first."""
+def committed_shards(git_root, manifest_path, index_doc):
+    """[(stub, shardRel, now, head)] - each shard the index names that is on
+    disk, as the working tree holds it and as HEAD does (None when HEAD holds
+    none). Read once and handed to both pair checks below.
+
+    ONE `git status` over every shard, and a `git show` only for the ones it
+    names. An unchanged shard IS its committed copy, so it needs no second read -
+    and this runs under the index lock, where a read per phase would make every
+    index commit wait on the size of the whole plan rather than on the change.
+    """
     if not isinstance(index_doc, dict):
         return []
     base = os.path.dirname(os.path.abspath(manifest_path))
-    ahead, now_ids, head_ids, stubs = [], {}, {}, []
+    stubs = []
     for stub in index_doc.get("phases") or []:
         if not isinstance(stub, dict) or not stub.get("shard"):
             continue
@@ -282,18 +293,24 @@ def ahead_of_shards(git_root, manifest_path, index_doc):
         except (OSError, ValueError):
             continue               # a shard that is not there is the validator's
         stubs.append((stub, rel, now))
-    # ONE `git status` over every shard, and a `git show` only for the ones it
-    # names. An unchanged shard IS its committed copy, so it needs no second read -
-    # and this runs under the index lock, where a read per phase would make every
-    # index commit wait on the size of the whole plan rather than on the change.
     changed = _changed_shards(git_root, [rel for _s, rel, _n in stubs])
-    for stub, rel, now in stubs:
+    return [(stub, rel, now,
+             now if changed is not None and rel not in changed
+             else _shard_at_head(git_root, rel))
+            for stub, rel, now in stubs]
+
+
+def ahead_of_shards(git_root, manifest_path, index_doc, shards=None):
+    """[(reference, shardRel)] - what the index would record that only an
+    UNCOMMITTED shard supports, each with the shard to commit first."""
+    if not isinstance(index_doc, dict):
+        return []
+    if shards is None:
+        shards = committed_shards(git_root, manifest_path, index_doc)
+    ahead, now_ids, head_ids = [], {}, {}
+    for stub, rel, now, head in shards:
         for tid in _task_ids(now):
             now_ids[tid] = rel
-        if changed is not None and rel not in changed:
-            head_ids.update((tid, rel) for tid in _task_ids(now))
-            continue
-        head = _shard_at_head(git_root, rel)
         if head is None:
             ahead.append(("phase %s" % (stub.get("id"),), rel))
             continue
@@ -307,6 +324,38 @@ def ahead_of_shards(git_root, manifest_path, index_doc):
         if tid in now_ids and tid not in head_ids:
             ahead.append(("task %s (%s's fix)" % (tid, bug.get("id")), now_ids[tid]))
     return ahead
+
+
+def rows_dropped(git_root, manifest_path, index_doc, shards=None):
+    """[(rows, shardRel)] - the fileIndex rows a shard HEAD holds still needs
+    that this index would no longer carry, per shard.
+
+    THE OTHER DIRECTION OF THE COMMITTED PAIR, asked through the one question
+    a task commit asks of its own shard (`_scoped_commit.index_rows_owed`):
+    a row removed from the index while the shard still declaring its file sits
+    uncommitted leaves HEAD failing "missing from fileIndex". Only rows the
+    index HEAD holds are counted, so a gap HEAD already had is not charged to
+    this commit. The committed index is read the way the task commit reads it,
+    through `_invariants.json_at`.
+    """
+    if not isinstance(index_doc, dict):
+        return []
+    head_index = _invariants.json_at(git_root, "HEAD", _invariants._rel(
+        os.path.abspath(manifest_path), git_root))
+    if head_index is None:
+        return []
+    if shards is None:
+        shards = committed_shards(git_root, manifest_path, index_doc)
+    found = []
+    for _stub, rel, _now, head in shards:
+        if not isinstance(head, dict):
+            continue
+        before = _scoped_commit.index_rows_owed(head_index, head)
+        rows = [row for row in _scoped_commit.index_rows_owed(index_doc, head)
+                if row not in before]
+        if rows:
+            found.append((rows, rel))
+    return found
 
 
 # --- the commit ---------------------------------------------------------------
@@ -493,7 +542,9 @@ def commit_index(manifest, phase, manifest_path, project, git_root, subject=None
 
     # THE SHARD FIRST. Refused before anything is staged, naming each reference
     # and the shard that holds it, so the remedy is one command away.
-    ahead = ahead_of_shards(git_root, manifest_path, _mio.read_json(manifest_path))
+    index_doc = _mio.read_json(manifest_path)
+    shards = committed_shards(git_root, manifest_path, index_doc)
+    ahead = ahead_of_shards(git_root, manifest_path, index_doc, shards=shards)
     if ahead:
         shards = sorted(set(rel for _what, rel in ahead))
         return E_FAIL, _scoped_commit.answer(skipped, refused=(
@@ -502,6 +553,18 @@ def commit_index(manifest, phase, manifest_path, project, git_root, subject=None
             "Commit %s first (the task commit that carries it, or "
             "commit-audit-state.py <manifest> <phase>), then run this again"
             % ("; ".join(what for what, _rel in ahead), ", ".join(shards))))
+    # ...AND THE OTHER DIRECTION: rows a committed shard still declares.
+    dropped = rows_dropped(git_root, manifest_path, index_doc, shards=shards)
+    if dropped:
+        return E_FAIL, _scoped_commit.answer(skipped, refused=(
+            "the index no longer carries %s, which the shard committed at HEAD "
+            "still declares - committed now, it would record a plan that does "
+            "not validate ('missing from fileIndex'). Commit the change to %s "
+            "that stops declaring it first (the task commit that carries it, "
+            "or commit-audit-state.py <manifest> <phase>), or restore the row "
+            "(audit-task.py reindex), then run this again"
+            % ("; ".join(_scoped_commit.rows_named(rows) for rows, _r in dropped),
+               ", ".join(rel for _rows, rel in dropped))))
 
     # STAGED, READ BACK AND COMMITTED BY `_scoped_commit.commit_with_rows`, the
     # sequence every scoped commit shares: the row naming the commit written
