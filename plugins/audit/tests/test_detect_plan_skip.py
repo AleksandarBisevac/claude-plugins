@@ -457,9 +457,108 @@ def _standing_cases(check):
         _sh.rmtree(str(proj), ignore_errors=True)
 
 
+BYPASS_WORD = "#no-plan"
+_PROMPT_FIELDS = ("prompt", "user_prompt", "message")
+
+
+def _bypass_slots(project):
+    state = Path(project) / ".claude" / "state"
+    return sorted(p.name for p in state.glob("plan-bypass-*.json")) if state.is_dir() else []
+
+
+def _bypass_cases(check):
+    """The plan-first bypass is armed by the owner's prompt and by nothing else:
+    the same reader the standing approval uses, not a wider one."""
+    import shutil as _sh
+    proj = Path(tempfile.mkdtemp(prefix="dps-bypass-"))
+    try:
+        benign = "carry on with the phase"
+        elsewhere = [
+            ("user_prompt only", {"hook_event_name": "UserPromptSubmit",
+                                  "session_id": "b1", "user_prompt": BYPASS_WORD}),
+            ("message only", {"hook_event_name": "UserPromptSubmit",
+                              "session_id": "b2", "message": BYPASS_WORD}),
+            ("both extra keys beside a benign prompt",
+             _owner_payload(benign, session="b3", message=BYPASS_WORD,
+                            user_prompt=BYPASS_WORD)),
+            ("a subagent's prompt", _owner_payload(
+                BYPASS_WORD, session="b4", agent_id="a1b2c3d4e5f6")),
+            ("a prompt on a tool event", {
+                "hook_event_name": "PostToolUse", "session_id": "b5",
+                "prompt": BYPASS_WORD}),
+        ]
+        armed_by = []
+        for label, payload in elsewhere:
+            rc, _out = _prompt_hook(proj, payload)
+            slots = _bypass_slots(proj)
+            if rc != 0 or slots:
+                armed_by.append((label, rc, slots))
+        rc, out = _prompt_hook(proj, _owner_payload(
+            "tidy this up %s" % BYPASS_WORD, session="b6"))
+        slots = _bypass_slots(proj)
+        check("by1 the plan-first bypass keyword carried only in user_prompt or "
+              "message, or in a payload with an agent_id, arms nothing, and the "
+              "same keyword in the owner's prompt still arms it: %r"
+              % ((armed_by, rc, slots),),
+              armed_by == [] and rc == 0 and len(slots) == 1
+              and "bypass" in out.lower())
+    finally:
+        _sh.rmtree(str(proj), ignore_errors=True)
+
+
+def prompt_readers(source):
+    """Names of every place `source` reads a prompt field off a payload itself:
+    a `.get("prompt")`-shaped call or a `["prompt"]` subscript on any of the
+    payload's prompt keys, or a call to the retired `_prompt_text`. Reading
+    through `_config.owner_prompt` is not a reader; neither is any other key."""
+    import ast
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "get" and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and node.args[0].value in _PROMPT_FIELDS):
+            found.append("line %d: .get(%r)" % (node.lineno, node.args[0].value))
+        elif (isinstance(node, ast.Subscript)
+              and isinstance(node.slice, ast.Constant)
+              and node.slice.value in _PROMPT_FIELDS):
+            found.append("line %d: [%r]" % (node.lineno, node.slice.value))
+        elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+              and node.func.id == "_prompt_text"):
+            found.append("line %d: _prompt_text()" % node.lineno)
+    return found
+
+
+def _one_reader_cases(check):
+    path = os.path.join(_harness.HOOKS_DIR, "detect-plan-skip.py")
+    with open(path, encoding="utf-8") as fh:
+        real = fh.read()
+    second = real + "\n\ndef _again(data):\n    return data.get('user_prompt')\n"
+    sub = real + "\n\ndef _sub(data):\n    return data['message']\n"
+    # THE ALLOW DIRECTION: a lint that flags every .get() or every string
+    # subscript would also be red on the real file, so the clean source and a
+    # source reading through the one reader and an unrelated key must report
+    # nothing.
+    ok_src = ("def f(data):\n    t = _config.owner_prompt(data)\n"
+              "    return data.get('session_id'), data['cwd'], t\n")
+    check("one1 detect-plan-skip reads prompt text in exactly one place, "
+          "_config.owner_prompt (a second reader of the payload's prompt fields "
+          "is reported by name)",
+          prompt_readers(real) == []
+          and prompt_readers(ok_src) == []
+          and len(prompt_readers(second)) == 1
+          and "user_prompt" in prompt_readers(second)[0]
+          and len(prompt_readers(sub)) == 1
+          and len(prompt_readers("x = _prompt_text(d)\n")) == 1,
+          "real=%r second=%r sub=%r" % (prompt_readers(real),
+                                        prompt_readers(second), prompt_readers(sub)))
+
+
 def _all_cases(check):
     _cases(check)
     _standing_cases(check)
+    _bypass_cases(check)
+    _one_reader_cases(check)
 
 
 def _selftest():

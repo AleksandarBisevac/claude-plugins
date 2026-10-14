@@ -217,14 +217,6 @@ def _record_standing(root, cfg, data, session_id, act):
 
 
 # --- detection ----------------------------------------------------------------
-def _prompt_text(data):
-    for key in ("prompt", "user_prompt", "message"):
-        val = data.get(key)
-        if isinstance(val, str) and val:
-            return val
-    return ""
-
-
 def _observed_message(state_dir, session_id, cfg=None):
     """One line naming what the plan gate would have blocked, then never again.
 
@@ -320,15 +312,14 @@ def main():
         # --- 2. arm the single-use bypass when the keyword is present --------
         keyword = (cfg.get("bypassKeyword")
                    or _config.DEFAULTS["bypassKeyword"]).lower()
-        prompt = _prompt_text(data)
+        prompt = _config.owner_prompt(data)
         if keyword in prompt.lower():
             messages.append(_arm_bypass(state_dir, _config.logs_dir(root, cfg),
                                         session_id, keyword, prompt))
 
         # --- 2b. the standing high-risk approval, armed or revoked ----------
-        # Read through `_config.owner_prompt`, which takes the `prompt` of a
-        # UserPromptSubmit payload and nothing else - not `_prompt_text` above,
-        # whose other keys are text the owner did not necessarily type.
+        # Read through `_config.owner_prompt` too, as the bypass keyword above
+        # is: the one reader of what the owner typed.
         act = _config.standing_prompt_act(data)
         if act:
             messages.append(_record_standing(root, cfg, data, session_id, act))
