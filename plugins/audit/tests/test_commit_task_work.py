@@ -133,12 +133,26 @@ def _head(fx):
     return TI._head(fx["root"])
 
 
+def _git_checked(args):
+    """Run git; on a non-zero exit raise with git's own words.
+
+    `check=True` raises a CalledProcessError whose text names only the command
+    and the exit status, so a fixture clone that died on a runner left nothing
+    to read. The merged output is captured already; it is carried in the message.
+    """
+    done = subprocess.run(["git"] + list(args), stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT)
+    if done.returncode != 0:
+        raise RuntimeError("git %s exited %d: %s" % (
+            " ".join(args), done.returncode,
+            done.stdout.decode("utf-8", "replace").strip() or "(no output)"))
+    return done
+
+
 def _clone_at(fx, sha, dest):
     """A fresh clone, checked out at `sha`. Returns the clone's path."""
-    subprocess.run(["git", "clone", "--quiet", "--no-hardlinks", fx["root"], dest],
-                   check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    subprocess.run(["git", "-C", dest, "checkout", "--quiet", sha],
-                   check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    _git_checked(["clone", "--quiet", "--no-hardlinks", fx["root"], dest])
+    _git_checked(["-C", dest, "checkout", "--quiet", sha])
     return dest
 
 
@@ -2177,7 +2191,27 @@ def _close_evidence_cases(check, repos):
           code == 0 and OWNED in carried and CE_TEST in carried)
 
 
-STAGES = (("or-block", "_ordinary_cases"), ("dc-block", "_declared_cases"),
+@_own_repos
+def _fixture_git_cases(check, repos):
+    """A fixture git command that fails carries git's own stderr text."""
+    fx = repos.make()
+    dest = repos.scratch("fg-missing")
+    try:
+        _clone_at(fx, "0" * 40, dest)
+        raised = None
+    except Exception as exc:                  # noqa: BLE001 - the text is the subject
+        raised = exc
+    text = str(raised)
+    check("ctw-fg1 a fixture git command that fails raises an error carrying "
+          "git's own stderr text (a checkout of a commit that does not exist "
+          "names it, not only the exit status): %r" % (text[:300],),
+          raised is not None and "fatal:" in text and "exited" in text)
+    check("ctw-fg2 ALLOW: a fixture git command that succeeds raises nothing "
+          "and returns the clone's path",
+          os.path.isdir(_clone_at(fx, _head(fx), repos.scratch("fg-ok"))))
+
+
+STAGES = (("fg-block", "_fixture_git_cases"), ("or-block", "_ordinary_cases"),("dc-block", "_declared_cases"),
           ("rc-block", "_records_cases"), ("ix-block", "_index_cases"),
           ("vd-block", "_verdict_cases"), ("sc-block", "_scope_cases"),
           ("br-block", "_branch_cases"), ("eg-block", "_empty_gate_cases"),

@@ -3877,7 +3877,7 @@
     {
       "id": "P125.63-0h5",
       "title": "A timed-out red-first run's throwaway is removed within the shared sharing-wait, not a quarter second",
-      "status": "in_progress",
+      "status": "done",
       "description": "Regression in this phase, CI run 38604025090 (windows-latest cp1252 3): test_stamp_verification sr9 - after a run that times out, the throwaway is not removed (`[(4, None, None), (3, 'could-not-prove', True)]`). The removal now goes through `_output.while_shared` with `REMOVE_WAIT_S = 0.25`; the retry loop it replaced waited longer, and a killed Windows process can hold its files past a quarter second. Take the wait from the shared helper's own bound (`_output.SHARING_WAIT_SECONDS`) rather than a private constant, keep sr215-sr219's guarantees, and make sr9's removal observable on POSIX by simulating a holder that releases after a delay longer than the old constant.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -3909,19 +3909,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b634d314e6c6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py: removed REMOVE_WAIT_S; _remove_throwaway(wait=None) now reads _output.SHARING_WAIT_SECONDS at the call (the caller passes no wait, so the default is what runs). test_stamp_verification.py: _remove_retry_cases gains sr220 (fake rmtree denies until a fake clock passes 0.6 s, between 0.25 and the shared bound; removed) and sr221 (deadline asked of while_shared tracks the shared bound at 3.0 and 7.0); run helper omits wait when None. sr215-sr219 green. Full sweep: 335/335 files ok, 16245 cases.",
+        "descriptive": "A timed-out run's throwaway is removed within the shared sharing wait instead of a private quarter second."
       },
       "startedAt": "2026-10-14T19:18:23Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T19:54:23Z",
+      "verifiedBy": [
+        "a throwaway whose holder releases its files after more than a quarter second, within the shared sharing wait, is removed after a timed-out run",
+        "the throwaway removal's wait is the shared helper's bound, not a constant of its own (a change to the shared bound changes it)"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T19:54:22Z.f2b1bf",
         "status": "passed",
         "at": "2026-10-14T19:54:22Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "b634d314e6c6",
+        "at": "2026-10-14T19:54:23Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T19:35:11Z",
+        "basis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 281 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sr220 (house FAIL): SELFTEST FAILED: 279/281 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -3967,7 +3981,12 @@
       "startedAt": "2026-10-14T19:18:25Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-14T20:03:50Z.c78a05",
+        "status": "passed",
+        "at": "2026-10-14T20:03:50Z"
+      }
     },
     {
       "id": "P125.65-0h5",
