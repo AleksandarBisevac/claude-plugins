@@ -551,6 +551,16 @@ DEFAULT_TIMEOUT = 480
 # Copying files and deleting the temp directory are local and are not budgeted.
 REMOVE_GIT_TIMEOUT = 10
 TEARDOWN_MARGIN = 3 * _proc_group.GRACE_SECONDS + 2 * REMOVE_GIT_TIMEOUT
+# A killed process's handles are released asynchronously on Windows, so the
+# `rmtree` right after tearing down a timed-out run's process group can still
+# find the holder busy on the very first try. Retried a bounded few times,
+# backing off between attempts, rather than trusted once - and bounded so a
+# holder that is genuinely stuck (not merely slow to let go) is still
+# reported left behind rather than retried forever. Both are small enough to
+# stay within "local and not budgeted" above: the worst case adds a quarter
+# second, not a deadline.
+REMOVE_RETRIES = 5
+REMOVE_RETRY_S = 0.05
 MAX_TIMEOUT = HOST_BASH_LIMIT - TEARDOWN_MARGIN
 
 # Every throwaway's temp directory starts with this, which is how a leftover from
@@ -3049,14 +3059,23 @@ def _lay_over(root, path, rels):
     return copied
 
 
-def _remove_throwaway(root, holder, path):
+def _remove_throwaway(root, holder, path, retries=REMOVE_RETRIES,
+                      backoff=REMOVE_RETRY_S):
     """True only when the directory is gone AND git no longer lists it.
 
     The removal is asked of git whether or not the build got as far as
     registering the tree, because a build that died half way is exactly the
-    case in which nobody knows."""
+    case in which nobody knows. `shutil.rmtree` is retried, backing off
+    between attempts, while the holder still exists - a single attempt can
+    lose a race against handles a just-killed process has not yet released -
+    but only up to `retries`, so a holder that never clears is reported left
+    behind rather than retried forever."""
     _git(root, ["worktree", "remove", "--force", path], timeout=REMOVE_GIT_TIMEOUT)
-    shutil.rmtree(holder, ignore_errors=True)
+    for attempt in range(retries):
+        shutil.rmtree(holder, ignore_errors=True)
+        if not os.path.exists(holder) or attempt == retries - 1:
+            break
+        time.sleep(backoff)
     code, listing = _git(root, ["worktree", "list", "--porcelain"],
                          timeout=REMOVE_GIT_TIMEOUT)
     listed = code != 0 or still_listed(listing, path)

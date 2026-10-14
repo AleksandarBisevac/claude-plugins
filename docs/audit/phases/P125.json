@@ -1393,7 +1393,7 @@
     {
       "id": "P125.29-0h5",
       "title": "Submit refuses a return whose outcome is a placeholder or whose testsAdded is empty while tests.add is not",
-      "status": "in_progress",
+      "status": "done",
       "description": "F643. drive-phase.py submit checks the return's shape and then files it once per start. Two executors in P125 filed outcome.technical == outcome.descriptive == 'placeholder' with testsAdded [] (returns/P125.1/20261013T125847Z, returns/P125.2/20261013T141945Z), the second despite an explicit instruction, and the record could not be corrected. An instruction does not hold this; the filing must. Before running the helper and before writing anything, refuse: (a) outcome texts that are identical to each other, shorter than a floor stated beside the check with its reason, or a template word (placeholder, TODO, TBD, <...>); (b) testsAdded empty while the task's tests.mode is tdd or regression and tests.add is non-empty. The refusal names the field and says nothing was filed, so the agent resubmits in the same start. The check lives in the one function every return passes through (_filed_returns), not in drive-phase alone, so a reviewer return and a /audit:run filing are held to it too.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -1428,19 +1428,35 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e92fd8aed7b7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added _outcome_problems() and _tests_add_empty_problem() to plugins/audit/scripts/manifest/_filed_returns.py, wired into _executor_problems(body, task=None) (now threading task through from return_problems), so an executor return is refused before the red-first helper runs or anything is written whenever: (a) outcome.technical/outcome.descriptive is under a stated 12-character floor, carries a template word (placeholder/TODO/TBD) or an unfilled <...>, or the two fields are identical; (b) testsAdded is [] while the task's tests.mode is tdd/regression and tests.add is non-empty - naming the field. drive-phase.py needed no change: its submit() already calls _fr.return_problems(role, body, task) before the stamp is taken or the helper runs, so the new checks apply there automatically. Added test cases rp13/rp14 in test__filed_returns.py (covering the placeholder/identical/floor and testsAdded-empty shapes, plus the allow twins: a real sentence, a filed case, and a gate-only task with no tests.add asked nothing), and ds5p/ds5q in test_drive_phase.py (a placeholder outcome refused by submit before the stamp, then the same start accepting a corrected return right after). Fixed three existing fixtures that the new floor/testsAdded checks would otherwise have broken: _executor()'s default outcome (was 1-char 't'/'d'), ds3's second-filing fixture (was 'a second claim'/'again', both under the new floor), and ce2/ce3's _file_executor calls (task declares tests.add under regression mode, so the default empty testsAdded now needs an explicit non-empty one to reach the close-time check those cases actually test). Verified the full test suite - and specifically every other test file's file-return/return_problems call sites across the repo (test_audit_task.py, test_commit_task_work.py, test_audit_lookup.py, test_close_phase.py, test__refs.py) - keeps its executor-return fixtures a safe distance above the floor and non-identical, so none needed touching. python3 plugins/audit/tests/test__filed_returns.py --selftest: 70/70 passed. python3 plugins/audit/tests/test_drive_phase.py --selftest: 258/258 passed. ruff check and vermin -t=3.8- on the touched files: clean. python3 tools/sweep-selftests.py --jobs 6 (full tree, in the task's own worktree): 334/334 files ok, 16043 cases, no failures - _filed_returns.py, test__filed_returns.py (70 cases) and test_drive_phase.py (258 cases) all reported ok under that run.",
+        "descriptive": "An agent can no longer file a placeholder or empty-testsAdded executor return through drive-phase.py submit - the refusal fires before the stamp is taken, names the field, and writes nothing, so the same start can simply resubmit the real text."
       },
       "startedAt": "2026-10-14T02:29:18Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T03:12:00Z",
+      "verifiedBy": [
+        "rp13 an outcome whose `technical` and `descriptive` are both the bare word `placeholder` is refused - named for the template word and the identical pair - and so is one that merely falls under the stated floor, before anything is written",
+        "rp14 a tdd or regression return with `testsAdded` empty while the task's tests.add names a case is refused by naming `testsAdded`; one that files the case is not, and a gate-only task with no `tests.add` is never asked",
+        "ds5p a placeholder outcome is refused by name, before the stamp is taken, and nothing is written",
+        "ds5q THE ALLOW TWIN: the same start accepts the corrected return right after the refusal"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T03:11:58Z.6e1a02",
         "status": "passed",
         "at": "2026-10-14T03:11:58Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "e92fd8aed7b7",
+        "at": "2026-10-14T03:12:00Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T02:57:21Z",
+        "basis": "`python3 plugins/audit/tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 70 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rp13 (house FAIL), rp14 (house FAIL): SELFTEST FAILED: 68/70 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1717,7 +1733,12 @@
       "startedAt": "2026-10-14T02:29:22Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-14T03:21:47Z.c3d465",
+        "status": "passed",
+        "at": "2026-10-14T03:21:47Z"
+      }
     },
     {
       "id": "P125.35-0h5",
@@ -1816,7 +1837,12 @@
           "at": "2026-10-14T02:44:54Z",
           "text": "Outcome (the filed return carries placeholder text; this note is the record): stamp-verification._remove_throwaway retries shutil.rmtree while the holder still exists, bounded by REMOVE_RETRIES (5) x REMOVE_RETRY_S (0.05 s), both injectable; tests sr215 (fails once then removes -> removed after 2 attempts) and sr216 (never removes -> left behind after exactly 3), stage sr-remove-retry; sweep 334/334. Red-first proved by the orchestrator: HEAD's stamp-verification.py in the task tree -> sr-remove-retry 0/1 (TypeError, no retries/backoff at HEAD), restored (cmp equal) -> 2/2. The helper's could-not-prove was a symbol-matching miss."
         }
-      ]
+      ],
+      "testEvidence": {
+        "runId": "2026-10-14T03:31:26Z.ebc680",
+        "status": "passed",
+        "at": "2026-10-14T03:31:26Z"
+      }
     },
     {
       "id": "P125.37-0h5",

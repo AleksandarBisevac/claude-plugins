@@ -3259,6 +3259,68 @@ def _leftover_cases(check):
           deep_path not in found)
 
 
+def _remove_retry_cases(check):
+    """`_remove_throwaway` retries `shutil.rmtree` while the holder still
+    exists, bounded rather than trusted on the first try or retried forever."""
+    real_git = M._git
+    real_rmtree = M.shutil.rmtree
+
+    def git_ok(where, args, timeout=120, strip=True):
+        return 0, ""
+    M._git = git_ok
+
+    def once_then_succeeds():
+        holder = _harness.fixture_root("stamp-retry-ok-")
+        os.makedirs(os.path.join(holder, "tree"))
+        calls = []
+
+        def flaky(target, ignore_errors=False):
+            calls.append(target)
+            if len(calls) > 1:
+                real_rmtree(target, ignore_errors=True)
+        M.shutil.rmtree = flaky
+        try:
+            removed = M._remove_throwaway(holder, holder,
+                                          os.path.join(holder, "tree"),
+                                          backoff=0.001)
+        finally:
+            M.shutil.rmtree = real_rmtree
+        return removed, calls
+
+    def never_succeeds():
+        holder = _harness.fixture_root("stamp-retry-stuck-")
+        os.makedirs(os.path.join(holder, "tree"))
+        calls = []
+
+        def stuck(target, ignore_errors=False):
+            calls.append(target)
+        M.shutil.rmtree = stuck
+        try:
+            removed = M._remove_throwaway(holder, holder,
+                                          os.path.join(holder, "tree"),
+                                          retries=3, backoff=0.001)
+        finally:
+            M.shutil.rmtree = real_rmtree
+            real_rmtree(holder, ignore_errors=True)
+        return removed, calls
+
+    try:
+        removed_ok, calls_ok = once_then_succeeds()
+        removed_stuck, calls_stuck = never_succeeds()
+    finally:
+        M._git = real_git
+    check("sr215 a removal whose first rmtree leaves the holder in place "
+          "(simulated: a removal function that fails once then succeeds) "
+          "still returns removed, within the stated bound - %d attempt(s): "
+          "%r" % (len(calls_ok), (removed_ok, calls_ok)),
+          removed_ok is True and len(calls_ok) == 2)
+    check("sr216 a holder that never goes away is reported left behind after "
+          "the bound, not retried forever - exactly the %d attempts the bound "
+          "allowed, the holder still there: %r"
+          % (len(calls_stuck), (removed_stuck, calls_stuck)),
+          removed_stuck is False and len(calls_stuck) == 3)
+
+
 def _holder_cases(check):
     """The throwaway's temp directory, when the configured one is inside the repo."""
     root = _seeded_repo("stamp-holder-")
@@ -5045,6 +5107,7 @@ STAGES = (
     ("sr-crlf", "_crlf_cases"),
     ("sr-listing", "_listing_cases"),
     ("sr-leftover", "_leftover_cases"),
+    ("sr-remove-retry", "_remove_retry_cases"),
     ("sr-holder", "_holder_cases"),
     ("sv-take", "_take_cases"),
     ("sv-compare", "_compare_cases"),
