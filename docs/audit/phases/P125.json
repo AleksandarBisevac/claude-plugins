@@ -3866,7 +3866,7 @@
     {
       "id": "P125.62-0h5",
       "title": "A filed return's digest is taken over the bytes on disk, so a Windows close does not read every return as changed",
-      "status": "in_progress",
+      "status": "done",
       "description": "Regression in this phase, CI run 38604025090 (windows-latest plain 1 and cp1252 1, ci/p125 at 28449751): test__filed_returns rj8 - a return whose bytes match its row was reported 'has changed since the journal recorded it filed' (row sha256:d769a8..., file sha256:0c1436...). Every other leg is green. The shape points at a newline translation between the bytes the digest is taken over and the bytes on disk (CRLF on Windows). First establish whether the PRODUCT path has it - submit's `task.return.filed` row (drive-phase.py, `_journal_io` append with the filed bytes' sha256) against `_filed_returns` writing the return (`newline=\"\"` at its write) and `read_filed_return_checked` hashing the file - or only the test fixture writes in text mode. If the product has it, every Windows close of a filed task is refused: fix it so the digest is always over the exact bytes written and read (one function both sides call). If only the fixture, fix the fixture and add a case that writes with CRLF translation deliberately and proves the product path is immune. Either way a case that would go red on POSIX too (simulate the translation), since this machine and ubuntu cannot see it natively.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -3900,19 +3900,35 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d893e5498814",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "PRODUCT NOT AFFECTED; the fault was the test fixture alone. Established on POSIX: sha256 of json.dumps(_executor())+'\\n' is d769a8... with LF bytes and 0c1436... with CRLF bytes - exactly the row and file digests CI windows-latest printed for rj8. In _journaled_cases the return is written by M.file_once (newline='', so LF bytes; the row digest is over those), then rewritten with open(path, 'w', encoding='utf-8') in text mode before rj8, which on Windows writes CRLF, so the checked read was RIGHT to refuse. Product path traced end to end: audit-task.py file-return -> _filed_returns.file_once writes with newline='' (no translation, writes exactly the text it was given); drive-phase._journal_filed_return -> _journal_io.append_from_cli_why -> the append sets row stateHash = _journal_io.file_hash(target), which opens 'rb' over the bytes on disk after the write; read_filed_return_checked -> filed_digest_problem -> return_digest opens 'rb'. Every digest is over the on-disk bytes, none over text; .gitattributes '* text=auto eol=lf' keeps a checkout from translating committed returns. No product step sees translated bytes on Windows. Changes: (1) plugins/audit/tests/test__filed_returns.py: the rj4 and rj8 fixture rewrites now use newline='' as file_once does; new rc-block case rc1 writes a return with explicit CRLF bytes through file_once, appends the real task.return.filed row through _journal_io.append_from_cli_why, reads it back with read_all, asserts the row digest equals return_digest and differs from the digest over the untranslated (LF) text, the checked read is clean with no unchecked note, and after the CRLF bytes become LF (same JSON) the read is refused naming both digests; new ds-block cases ds1 (the filing site set is exactly return_digest in _filed_returns, file_hash in _journal_io, none in drive-phase; the row's stateHash is assigned only from file_hash or None; the two functions' try bodies are one AST; filed_digest_problem compares via return_digest), ds2 (a second site hashing text-mode-read text is reported by name), ds2a allow twin (hashing handed text, or opening without hashing, is no site). (2) plugins/audit/scripts/manifest/_filed_returns.py: new file_digest_sites(source) with _opens_for_reading/_calls_sha256 - the AST reader the source check uses; takes an argument and walks no tree, so it is not a gate. The digest is still two byte-identical function bodies in two layer-mates (_journal_io and _filed_returns may not import each other); literally one function would need a shared lower module such as _machine_paths.py plus _journal_io.py, both outside this task's files, and was not owed since the product is unaffected - ds1 holds the two to one AST body instead. drive-phase.py and test_drive_phase.py unchanged. Mutation checks in a scratch copy (never the shared tree): return_digest hashing text-mode-read text turns rc1 and ds1 red with every LF case green (91/93); the old fixture's translation simulated on POSIX turns rj8 red with exactly 'carries sha256:d769a8 and it now hashes to sha256:0c1436'. Runs: python3 plugins/audit/tests/test__filed_returns.py --selftest red first at 90/93 (ds1, ds2, ds2a, file_digest_sites absent), then 93/93 exit 0; python3 tools/sweep-selftests.py exit 0, 335/335 files ok; ruff and vermin on the two files clean.",
+        "descriptive": "The rj8 Windows red was the fixture rewriting a return in text mode; the product hashes on-disk bytes throughout, and a CRLF case plus a one-digest source check now hold that on POSIX."
       },
       "startedAt": "2026-10-14T21:09:19Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T21:30:05Z",
+      "verifiedBy": [
+        "rc1 a return written with CRLF line endings and its filing row agree on one digest, and a return whose bytes changed after filing is still refused",
+        "ds1 the digest a filing row records and the digest the checked read compares are computed by the same function over the same bytes",
+        "ds2 a second hashing site is reported by name",
+        "ds2a THE ALLOW TWIN: hashing handed text or opening without hashing is no site"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T21:30:04Z.5d1dfe",
         "status": "passed",
         "at": "2026-10-14T21:30:04Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "d893e5498814",
+        "at": "2026-10-14T21:30:05Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T21:19:54Z",
+        "basis": "`python3 plugins/audit/tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 93 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ds1 (house FAIL): SELFTEST FAILED: 90/93 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -4116,6 +4132,53 @@
         "status": "proved",
         "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P125.66-0h5",
+      "title": "The drive's brief and follower cases hold on Windows: a brief read back is the brief written, and fixtures write UTF-8",
+      "status": "pending",
+      "description": "Regressions in this phase on windows-latest shard 1 (plain and cp1252), CI runs 38638062120 and 38640789691 at d893e549, every other leg green: (1) test_drive_phase fm-block raised `UnicodeEncodeError: 'charmap' codec can't encode character '\\u2190'` in the test helper `_write_lf` (test_drive_phase.py around line 240), which opens a file with no encoding - a test-only defect, fix it by writing UTF-8 as the product does; (2) test_drive_phase sn6 - `brief <id> --role <role>` printed the brief the drive wrote for the executor dispatches but NOT for the reviewer ones (`(4, [True, False, True, False])`). Establish whether the product's `brief --read` (audit-lookup.py read_brief, reached through drive-phase.py's brief verb) changes bytes on Windows (a text-mode read or print translating newlines, or a non-cp1252 character in the reviewer brief failing on a cp1252 stdout) or only the test's comparison does; if the product, fix it so the printed brief is the written bytes on every platform and stdout encoding, with a POSIX-visible case that simulates the translation; if the test, fix the test. (3) test_audit_task tk7 failed once on windows plain 2 (run 38638062120) and passed on the next run: its 'no live holder' uses `pc_gone_pid()`; make the gone pid certain on Windows (a pid the test itself spawned and reaped), not assumed. Also, generally: grep test_drive_phase.py and the drive's own writes for any `open(..., 'w')` without an encoding and fix them in the same change - this is the second encoding defect in this phase.",
+      "files": [
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_lookup.py: a reviewer brief carrying non-cp1252 characters and CRLF-prone text, read back through brief --read under a cp1252 stdout, prints exactly the bytes that were written",
+          "plugins/audit/tests/test_drive_phase.py: every file the drive and its fixtures write in text mode names its encoding (a write without one is reported by file and line)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
