@@ -1393,7 +1393,7 @@
     {
       "id": "P125.29-0h5",
       "title": "Submit refuses a return whose outcome is a placeholder or whose testsAdded is empty while tests.add is not",
-      "status": "done",
+      "status": "pending",
       "description": "F643. drive-phase.py submit checks the return's shape and then files it once per start. Two executors in P125 filed outcome.technical == outcome.descriptive == 'placeholder' with testsAdded [] (returns/P125.1/20261013T125847Z, returns/P125.2/20261013T141945Z), the second despite an explicit instruction, and the record could not be corrected. An instruction does not hold this; the filing must. Before running the helper and before writing anything, refuse: (a) outcome texts that are identical to each other, shorter than a floor stated beside the check with its reason, or a template word (placeholder, TODO, TBD, <...>); (b) testsAdded empty while the task's tests.mode is tdd or regression and tests.add is non-empty. The refusal names the field and says nothing was filed, so the agent resubmits in the same start. The check lives in the one function every return passes through (_filed_returns), not in drive-phase alone, so a reviewer return and a /audit:run filing are held to it too.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -1426,31 +1426,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 0,
       "maxAttempts": 3,
-      "commit": "e92fd8aed7b7",
+      "commit": null,
       "outcome": {
-        "technical": "Added _outcome_problems() and _tests_add_empty_problem() to plugins/audit/scripts/manifest/_filed_returns.py, wired into _executor_problems(body, task=None) (now threading task through from return_problems), so an executor return is refused before the red-first helper runs or anything is written whenever: (a) outcome.technical/outcome.descriptive is under a stated 12-character floor, carries a template word (placeholder/TODO/TBD) or an unfilled <...>, or the two fields are identical; (b) testsAdded is [] while the task's tests.mode is tdd/regression and tests.add is non-empty - naming the field. drive-phase.py needed no change: its submit() already calls _fr.return_problems(role, body, task) before the stamp is taken or the helper runs, so the new checks apply there automatically. Added test cases rp13/rp14 in test__filed_returns.py (covering the placeholder/identical/floor and testsAdded-empty shapes, plus the allow twins: a real sentence, a filed case, and a gate-only task with no tests.add asked nothing), and ds5p/ds5q in test_drive_phase.py (a placeholder outcome refused by submit before the stamp, then the same start accepting a corrected return right after). Fixed three existing fixtures that the new floor/testsAdded checks would otherwise have broken: _executor()'s default outcome (was 1-char 't'/'d'), ds3's second-filing fixture (was 'a second claim'/'again', both under the new floor), and ce2/ce3's _file_executor calls (task declares tests.add under regression mode, so the default empty testsAdded now needs an explicit non-empty one to reach the close-time check those cases actually test). Verified the full test suite - and specifically every other test file's file-return/return_problems call sites across the repo (test_audit_task.py, test_commit_task_work.py, test_audit_lookup.py, test_close_phase.py, test__refs.py) - keeps its executor-return fixtures a safe distance above the floor and non-identical, so none needed touching. python3 plugins/audit/tests/test__filed_returns.py --selftest: 70/70 passed. python3 plugins/audit/tests/test_drive_phase.py --selftest: 258/258 passed. ruff check and vermin -t=3.8- on the touched files: clean. python3 tools/sweep-selftests.py --jobs 6 (full tree, in the task's own worktree): 334/334 files ok, 16043 cases, no failures - _filed_returns.py, test__filed_returns.py (70 cases) and test_drive_phase.py (258 cases) all reported ok under that run.",
-        "descriptive": "An agent can no longer file a placeholder or empty-testsAdded executor return through drive-phase.py submit - the refusal fires before the stamp is taken, names the field, and writes nothing, so the same start can simply resubmit the real text."
+        "technical": null,
+        "descriptive": null
       },
       "startedAt": "2026-10-14T02:29:18Z",
-      "completedAt": "2026-10-14T03:12:00Z",
-      "verifiedBy": [
-        "rp13 an outcome whose `technical` and `descriptive` are both the bare word `placeholder` is refused - named for the template word and the identical pair - and so is one that merely falls under the stated floor, before anything is written",
-        "rp14 a tdd or regression return with `testsAdded` empty while the task's tests.add names a case is refused by naming `testsAdded`; one that files the case is not, and a gate-only task with no `tests.add` is never asked",
-        "ds5p a placeholder outcome is refused by name, before the stamp is taken, and nothing is written",
-        "ds5q THE ALLOW TWIN: the same start accepts the corrected return right after the refusal"
-      ],
+      "completedAt": null,
+      "verifiedBy": [],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T03:11:58Z.6e1a02",
         "status": "passed",
         "at": "2026-10-14T03:11:58Z"
-      },
-      "intentCheck": {
-        "answer": "deferred",
-        "commit": "e92fd8aed7b7",
-        "at": "2026-10-14T03:12:00Z"
       },
       "redFirst": {
         "at": "2026-10-14T02:57:21Z",
@@ -1462,7 +1452,7 @@
     {
       "id": "P125.30-0h5",
       "title": "A retry brief quotes the operator's reason, each failing case, and the previous attempt's filed return",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F644. P125.1's retry brief (.claude/state/briefs/P125.1/20261013T131601Z.executor.md) dropped the --reason given with '--answer retry', cut the red sweep to its last lines so the failing case (test__deps rc16) was not named, and said 'redFirst: none recorded' and 'outcome.technical: none recorded' over a filed return (returns/P125.1/20261013T125847Z.executor.json) that carried a helper-proved redFirst. The orchestrator restated all three in the dispatch prompt. The retry section reads the answer's reason from where drive-phase records it (record it if it is not recorded), reads each failing file's FAIL lines from the sweep's per-file output, and reads attempt N-1's filed return before saying none recorded.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -1497,16 +1487,17 @@
       "dependsOn": [
         "P125.29-0h5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T03:40:48Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.31-0h5",
@@ -1690,7 +1681,7 @@
     {
       "id": "P125.34-0h5",
       "title": "A commit that carries a plan record leaves a committed plan that validates",
-      "status": "in_progress",
+      "status": "done",
       "description": "F647. A task close commits the phase shard (the record rides the task commit) but never the shared index. P125.2 was widened by scope mid-attempt; its close c51a9ef5 committed the shard with 15 files whose fileIndex rows stayed uncommitted, so validate-manifest at HEAD was INVALID and the whole next wave's gates went red on validate. commit-manifest-index.py already refuses to commit an index the committed shard does not match; the task close asks nothing in the other direction. One invariant for every commit carrying a plan record, shared rather than restated: the committed pair validates. The close carries the index rows its own shard needs, under the index lock and only for its own phase, or refuses naming the rows. The shared check lives in one function both commit-manifest-index and the close call.",
       "files": [
         "plugins/audit/scripts/governance/commit-task-work.py",
@@ -1726,19 +1717,38 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "20c86798e6bf",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Implemented the REFUSE half of the task (the description allows 'or refuses naming the rows'); the CARRY half could not be built because its grader lives in a file outside scope and the plan gate refused the edit. (1) _scoped_commit.py: new section '--- the committed pair ---' with index_rows_owed(index_doc, shard_doc) -> [(path, taskId)] (each file a shard task declares whose fileIndex row does not name the task, :line-range suffix stripped on both sides as the validator does) and rows_named(rows); new import _manifest_vocab. This is the one shared check both commands call. (2) commit-task-work.py: owed_index_rows(phase, manifest_path, git_root) asks it of the index HEAD holds against the working shard (only for tasks HEAD's shard already holds, only when HEAD's index has this phase's stub, never in the single-file layout) and also returns the rows the working index lacks; index_rows_refusal() words it. _commit_work refuses before staging, after the do-nothing answers, naming each row as 'path (taskId)' with the remedy 'commit the index first (commit-manifest-index.py <manifest> <phase>)', plus 'audit-task.py reindex' when the working index lacks the rows too; for a bug-link commit (which already stages the whole working index) only rows the working index lacks are owed. answer gains indexRows. Docstring and exit-code text updated. (3) commit-manifest-index.py: the other direction - rows_dropped() refuses an index commit that would drop a fileIndex row a shard committed at HEAD still declares (gaps HEAD already had are not counted), via the same index_rows_owed. committed_shards() now reads the shards once (one git status, a git show only for changed shards) and hands them to both ahead_of_shards() and rows_dropped(); the HEAD index is read through _invariants.json_at, the same reader the close uses - note that test_commit_manifest_index's cmi26 counts only _scoped_commit.run_git shows, so that read is not counted there; it is one read of the index, not of a shard. (4) Tests, test_commit_task_work.py new stage ir-block (_index_row_cases): ctw-ir1 widened close refused naming 'src/new.py (P1.1)', HEAD and git index unchanged; ctw-ir2 index commit then close, both commits validate on fresh clones; ctw-ir3 with rows committed the close commits and carries no other phase's uncommitted row (P2.1's src/d.py absent from the committed index, still dirty in the working tree); ctw-ir4 working index lacking the row names reindex; ctw-ir5 index_rows_owed returns [(src/new.py, P1.1)] and [] for a paired shard with a :line-range entry; ctw-ir6/ir7 index commit dropping a committed shard's row refused naming it, and the same index keeping it commits. Fixture: _set_task(files=...) now writes the widened rows and commits the index alone (rows=False opts out), and ctw16 and _owe_test go through it, since the close now requires that order. (5) PLUGIN-BUILD-GUIDE.md, OUTSIDE files: one line of the generated module map updated (_scoped_commit -> ... _manifest_vocab ...) so test__deps g1 matches `_deps.py --render`; the plan gate allowed this Edit. REFUSED by the plan gate: plugins/audit/scripts/governance/_invariants.py ('[require-plan] ... is outside task P125.34-0h5, the task this worktree is bound to ... Only that task's files are open here.'). That file holds commit_scope, which counts a task commit carrying the index as a breach unless it completes a bug link - so a close CARRYING the rows (the description's first option) would go red at sign-off until commit_scope gets a matching exception; and the shared function would then belong there (the lowest layer both writers and the grader reach). Left, same class: commit-audit-state.py also commits a phase shard without the index and asks no pair question. Also: a row for a task the shard adds in the same commit is not refused (commit-manifest-index refuses an index ahead of its shard, so refusing both would leave no order). Runs: test_commit_task_work --selftest ALL PASS 113/113 at first run, then after the fixture and wording edits; ir-block alone 7/7; test_commit_manifest_index 37/37; test__scoped_commit 31/31; test_commit_audit_state 46/46; test__deps 314/314 after the guide line (313/314 before, g1); full sweep `python3 tools/sweep-selftests.py --jobs 6` exit 0: '334/334 files ok, 153 migrated to tests/, 16046 cases' (the run before the guide edit was 333/334, test__deps red, g1 only); ruff exit 0; vermin exit 0. Red before the fix: ir-block on unchanged code ran 2/5 with ctw-ir1 failing its assertion (clone: \"task P1.1: file 'src/new.py' missing from fileIndex\"); the test was then rewritten for the refuse design.",
+        "descriptive": "A close whose widened shard needs fileIndex rows HEAD's index lacks is now refused naming each row, and an index commit that drops a row a committed shard still declares is refused too - both through one shared _scoped_commit.index_rows_owed - so neither commit leaves an invalid plan at HEAD; carrying the rows inside the close still needs _invariants.commit_scope, which the plan gate kept out of scope."
       },
       "startedAt": "2026-10-14T02:29:22Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T03:40:45Z",
+      "verifiedBy": [
+        "ctw-ir1",
+        "ctw-ir2",
+        "ctw-ir3",
+        "ctw-ir4",
+        "ctw-ir5",
+        "ctw-ir6",
+        "ctw-ir7"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T03:40:44Z.635c41",
         "status": "passed",
         "at": "2026-10-14T03:40:44Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "20c86798e6bf",
+        "at": "2026-10-14T03:40:45Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T03:01:39Z",
+        "basis": "`python3 plugins/audit/tests/test_commit_task_work.py --selftest` in a throwaway tree at HEAD exited 1 with 5 of 113 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ctw-ir1 (house FAIL): SELFTEST FAILED: 108/113 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1906,7 +1916,7 @@
     {
       "id": "P125.38-0h5",
       "title": "A concurrent writer that loses a Windows sharing race retries within its deadline instead of refusing the write",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F615 recurred and has a twin, so this is the class, not two instances. CI run 38442950089 (ci/p125 at 125a69b8, windows-latest): test__journal_io sl4 lost a row to 'refused: [Errno 13] Permission denied ... .lock.break' (F615, first seen 2026-10-10, still unfixed), and test_panel_server hr2 had the second of two concurrent POST /api/proposal drops refused ([('first', True), ('second', False)]). Neither file changed since v3.3.0; both are intermittent (3.3.0's CI was green). The class: on Windows, opening, renaming or replacing a file another process holds is denied, and a writer that reads that denial as a refusal loses the write. One invariant in one place: the lock acquire / breaker / atomic-replace helpers (_locks, and the replace helper the writers share) treat a sharing denial as contention - retried with backoff within the operation's existing deadline - and only a deadline expiry is a refusal. Every concurrent writer (journal append, panel write, manifest write) goes through those helpers; no per-site retry loop. Simulate the denial in tests; never sleep for real beyond a few ms.",
       "files": [
         "plugins/audit/scripts/governance/_journal_io.py",
@@ -1942,21 +1952,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T03:40:51Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.39-0h5",
       "title": "A new session says once, without the network, when its model has no price or the last session's CLI cost disagrees with the plugin's, and is silent otherwise",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Owner request, 2026-10-13: check model prices when a new orchestrator session starts, and prove it works, what it finds and what it costs. Design: no network (hooks are stdlib and fail-open, and no official per-token price API is known; a fetch stays an explicit command if ever). A SessionStart hook (a new mode of meter-usage.py rather than a new file, unless the measurement argues otherwise) checks (1) whether the session's model resolves in the price table (P125.2's rates_for; unpriced -> one line naming the model and the config remedy) and (2) whether the previous session's CLI cost-state (P125.4's read_cost_state / cli_cost_compare) diverges from the plugin's figure beyond CLI_COST_TOLERANCE_USD, printing both figures with their basis and the table's pricingAsOf. Silent when both pass: a quiet start costs zero context tokens. MEASUREMENT IS PART OF DONE, reported in the return with the commands that produce each number: (a) start latency of the new mode with tools/bench-hooks.py, against the hook budget (--gate must stay green); (b) bytes added to context when it fires, and that a quiet start adds none; (c) benefit: run the check (offline, read-only) over every recorded session transcript under <home>/.claude/projects for this repo and for the danuvia testbed, and report how many sessions it would fire on, split by cause (unpriced model / divergence), and for each divergence whether the cause is a stale price or something else (compaction trimming the transcript, subagent spend outside it). If divergence fires mostly for causes other than price, ship only check (1), keep (2) out, and say so with the numbers. Never write a measured number into README or code prose; the return carries it.",
       "files": [
         "plugins/audit/hooks/hooks.json",
@@ -1995,16 +2006,17 @@
       "dependsOn": [
         "P125.29-0h5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T03:40:54Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.40-0h5",
