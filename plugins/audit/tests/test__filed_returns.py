@@ -146,6 +146,85 @@ def _cases(check):
           and M.return_problems("executor", _executor(testsAdded=[]),
                                 gate_only_task) == [])
 
+    # The refusal is of an outcome that IS a placeholder - the whole trimmed
+    # text, never a template word or a `<...>` span merely present somewhere
+    # in a real sentence. Replayed over outcome text copied verbatim from
+    # filed returns of this phase (fixtures, not a read of the evidence
+    # directory at test time: a suite's cwd is pointed at scratch space under
+    # `tools/sweep-selftests.py`, so a path relative to the project would read
+    # nothing there) - every placeholder-shaped one refused, every real one
+    # not, even where the real text uses the word "placeholder" to describe
+    # the feature or carries a `<home>/...`- or `<taskId>`-shaped path.
+    _PLACEHOLDER_OUTCOMES = (
+        ("P125.1/20261013T125847Z", "placeholder", "placeholder"),
+        ("P125.2/20261013T141945Z", "placeholder", "placeholder"),
+        ("P125.11/20261013T144615Z", "pending", "pending"),
+        ("P125.12/20261013T233613Z", "placeholder", "placeholder"),
+        ("P125.22/20261013T175751Z", "placeholder", "placeholder"),
+        ("P125.28/20261013T215547Z", "placeholder", "placeholder"),
+        ("P125.36-0h5/20261014T022925Z", "placeholder", "placeholder"),
+    )
+    _REAL_OUTCOMES = (
+        ("P125.18/20261014T010828Z",
+         "Threaded a new chain line through drive-phase.py's finish() and a "
+         "context-size reading through audit-status.py, reading the "
+         "orchestrator's own transcript at <home>/projects/*/<sessionId>.jsonl "
+         "for the snapshot, and naming the next phase as <next> when one is "
+         "ready.",
+         "A phase chain now tells the orchestrator to clear context before "
+         "the next phase, and /audit:status names the orchestrator's own "
+         "current context size."),
+        ("P125.31-0h5/20261014T010832Z",
+         "Factored the move/basename check into is_plugin_py_path(path) and "
+         "moved_file_target(path, repo_root=None, index=None), the new home "
+         "a plugin .py path <name> moved to, or None; audit-task.py now "
+         "refuses a .py --files entry whose file moved elsewhere.",
+         "add and scope now refuse a .py --files entry whose file moved "
+         "elsewhere in the plugin, naming the new home."),
+        ("P125.32-0h5/20261014T010836Z",
+         "manifest_revalidated's breach now appends a write-provenance "
+         "clause naming which journal row last wrote the index before the "
+         "offending commit, composed as '(last written by <action> via "
+         "<via> at <ts>)' or '(the write is not in the journal)'.",
+         "An index-validity breach now names which journal-recorded "
+         "command last wrote the manifest index before the offending "
+         "commit, instead of leaving the operator to guess."),
+        ("P125.8/20261013T215538Z",
+         "New module _affected_tests.py selects suites a change can break "
+         "by its related/python/e2e-changed/coupling/e2e-widening arms, "
+         "run-test-gate.py now runs them attributed per arm, and every "
+         "mutation this task relies on was confirmed to turn the guarding "
+         "case red - none of this is a placeholder, the real work is the "
+         "selection itself.",
+         "A task's recorded gate now also runs every suite its change can "
+         "break, each attributed to the arm that selected it."),
+        ("P125.29-0h5/20261014T022918Z",
+         "Added _outcome_problems() and _tests_add_empty_problem() so an "
+         "executor return is refused whenever its outcome is a placeholder "
+         "- the bare word, never a sentence that merely explains what a "
+         "placeholder is while describing the feature.",
+         "An agent can no longer file a placeholder or empty-testsAdded "
+         "executor return through drive-phase.py submit."),
+    )
+
+    def _outcome_flagged(tech, desc):
+        problems = M.return_problems("executor", _executor(
+            outcome={"technical": tech, "descriptive": desc}))
+        return any("outcome." in p or "identical" in p for p in problems)
+
+    placeholder_misses = [name for name, t, d in _PLACEHOLDER_OUTCOMES
+                          if not _outcome_flagged(t, d)]
+    real_false_positives = [name for name, t, d in _REAL_OUTCOMES
+                            if _outcome_flagged(t, d)]
+    check("rp15 replayed over outcome text copied verbatim from filed "
+          "returns of this phase: every placeholder-shaped one is refused "
+          "and every real one passes, including one using the word "
+          "\"placeholder\" in passing and ones carrying a `<home>/...`- or "
+          "`<taskId>`-shaped path - the refusal is of an outcome that IS a "
+          "placeholder, never one that merely CONTAINS one: misses=%r, "
+          "false positives=%r" % (placeholder_misses, real_false_positives),
+          placeholder_misses == [] and real_false_positives == [])
+
     # ---- the write and the read ----------------------------------------------
     path = M.return_path(root, task, "executor")
     first = json.dumps(_executor(claims="claims:\n1 n/a")) + "\n"

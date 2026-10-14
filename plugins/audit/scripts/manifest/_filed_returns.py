@@ -148,20 +148,29 @@ def _text_field(body, key):
 # sentence stating what changed does not. Stated beside the check so the
 # number and its reason travel together.
 _OUTCOME_FLOOR = 12
-# The words that stand in for unwritten text, matched whole so a legitimate
-# sentence mentioning one in passing is not caught by it, and the angle-bracket
-# shape a template leaves when nobody fills it in (`<what changed>`).
-_TEMPLATE_WORD = re.compile(r"\b(?:placeholder|todo|tbd)\b", re.I)
-_TEMPLATE_ANGLE = re.compile(r"<[^<>]{1,80}>")
+# The words that stand in for unwritten text WHOLE - the entire trimmed
+# outcome, folded to one case, is one of these, never a word met in passing.
+# A real sentence is free to use any of them while describing what it did
+# (this very check among the things worth describing as a "placeholder"), so
+# the match is against the whole text, not a substring search.
+_TEMPLATE_WORD = ("placeholder", "pending", "todo", "tbd")
+# The shape a template leaves when nobody fills it in (`<what changed>`) -
+# again read WHOLE: real prose naming a path (`<home>/...`) or an id
+# (`<taskId>`) carries the same bracket shape as a substring without being
+# one, so only a text that IS nothing but one such token is refused.
+_TEMPLATE_ANGLE_WHOLE = re.compile(r"^<[^<>]{1,80}>$")
 
 
 def _template_reason(text):
     """Why `text` reads as a template left unfilled rather than a written
-    outcome, or None."""
-    if _TEMPLATE_WORD.search(text):
-        return "carries a template word (`placeholder`, `TODO` or `TBD`) in place of the real text"
-    if _TEMPLATE_ANGLE.search(text):
-        return "carries an unfilled `<...>` placeholder"
+    outcome, or None: the WHOLE trimmed text is one of the bare template
+    words, or the whole text is a single unfilled `<...>` token - never a
+    template word or an angle-bracket span merely present somewhere in a
+    real sentence."""
+    if text.lower() in _TEMPLATE_WORD:
+        return "is the bare template word `%s` in place of the real text" % (text.lower(),)
+    if _TEMPLATE_ANGLE_WHOLE.match(text):
+        return "is an unfilled `<...>` placeholder, not the real text"
     return None
 
 
