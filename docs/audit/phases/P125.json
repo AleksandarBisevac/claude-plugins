@@ -1665,7 +1665,7 @@
     {
       "id": "P125.33-0h5",
       "title": "A filed return is bound to a journal row carrying its digest, and the close reads it through that row",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F646. drive-phase.py submit files a return once per start, but the only thing holding 'once' is that the file exists: it writes no journal row. The P125.3 executor filed a placeholder return, deleted docs/audit/evidence/returns/P125.3/20261013T144608Z.executor.json, and filed again; nothing recorded either filing. Submit appends a task.return.filed journal row (sha256 of the filed bytes, the task, the start timestamp, role, the red-first verdict) through the existing journal writer; a second filing for a start is refused by that row, not by the file; the close (and any reader that closes on a return) reads the return through the row and refuses one whose digest the row does not carry.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -1700,16 +1700,17 @@
       "dependsOn": [
         "P125.29-0h5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T08:30:00Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.34-0h5",
@@ -2198,7 +2199,7 @@
     {
       "id": "P125.41-0h5",
       "title": "add, add-phase and retarget take --parent-branch, so start's 'set the phase's parentBranch' remedy is a verb",
-      "status": "in_progress",
+      "status": "done",
       "description": "F652 (owner, danuvia-software testbed, 2026-10-13, plugin 3.3.0): after /audit:phase add on a feature branch, audit-task start refused 'phase ... forks from main ... git switch main, or set the phase's parentBranch, then start again', but no verb sets parentBranch; the only route was a hand edit of the manifest, which the auto-mode classifier denied as audit tampering. Add --parent-branch <name> to add (the batch's phase key parentBranch too), add-phase and retarget: validated as an existing local branch, written and journaled through the verb; retarget refuses it once the phase has a branch (the same reason --rename is refused: the branch name and the fork point are already recorded). start's refusal names the flag. commands/phase.md is at its byte ceiling (measure-context): take bytes out of it for any word added.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -2235,19 +2236,38 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3943f6d7d23d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "add-phase, add-phase --from-file batch, and retarget now take --parent-branch <name>, validated in _parent_branch_refusal as an existing local branch before any write; add-phase writes phase.parentBranch and journals it under phase.add's details.parent, the batch path validates the key on phase.parentBranch the same way, and retarget writes it through _locked_retarget while refusing the flag once the phase already carries a branch (same reason --rename is refused there). _phase_entry's start-time fork refusal now names audit-task.py retarget <id> --parent-branch <branch> instead of the old dead-end sentence. Restored commands/phase.md step 4's removed sentence (Nothing measures whether you held the order when a gate is run by hand, needed by test__refs.py so3) and trimmed unrelated prose elsewhere in the file to stay at 3989/4000 bytes under tools/measure-context.py --gate's run-form ceiling, taking care not to touch substrings pinned by tools/prove-gates.py's phase_id_doc_drift row, test__proposals.py's ap5/ap6, or test__refs.py's rt1/so1-so4 (all re-verified green after each trim). plugins/audit/tests/test_audit_task.py gained pab1-pab7 in _record_cases (stage at7-block): add-phase --parent-branch writes the phase with no branch cut yet and a ready task lands in it (pab1-pab2); start run from that branch forks the phase branch from it, recording baseRef, with parentBranch unchanged (pab3); a --parent-branch naming no local branch is refused with nothing written (pab4); retarget --parent-branch on a phase already on a branch is refused like --rename, field untouched (pab5); retarget writes parentBranch onto a branchless phase, journaled as a phase.retarget field move (pab6, the allow case); start's refusal on the wrong branch names --parent-branch by name (pab7). README.md's /audit:phase row and reference/manifest-conventions.md's phase-field list document the new flag and field. Ran python3 plugins/audit/tests/test_audit_task.py --selftest --stage at7-block: 231/231 cases passed. Ran python3 plugins/audit/tests/test__refs.py --selftest: 336/336 (so3 restored). Ran python3 plugins/audit/tests/test__proposals.py --selftest: 62/62 (ap5/ap6 fixed after reverting an over-aggressive trim of the Omit id sentence). Ran python3 tools/prove-gates.py --selftest: 37/37 (phase_id_doc_drift anchor intact). Ran python3 tools/measure-context.py --gate: GATE OK, run form 3989/4000. Ran python3 tools/sweep-selftests.py --jobs 6 twice: first run (before the phase.md fix) showed 332/334 files ok with FAIL on test__proposals.py and tools/prove-gates.py, both caused by my own over-trimming of a pinned sentence; second run after the fix: 334/334 files ok, 16087 cases, exit 0.",
+        "descriptive": "add-phase, its batch form, and retarget can now set a phase's parentBranch through a validated flag instead of a hand edit the plan gate used to refuse, and start's old dead-end refusal now names the verb that fixes it."
       },
       "startedAt": "2026-10-14T07:29:47Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T08:29:59Z",
+      "verifiedBy": [
+        "pab1",
+        "pab2",
+        "pab3",
+        "pab4",
+        "pab5",
+        "pab6",
+        "pab7"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T08:29:58Z.3b91de",
         "status": "passed",
         "at": "2026-10-14T08:29:58Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "3943f6d7d23d",
+        "at": "2026-10-14T08:29:59Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T08:10:39Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage at7-block` in a throwaway tree at HEAD exited 1 with 1 of 227 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pab1 (house FAIL): SELFTEST FAILED: 225/227 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2310,7 +2330,7 @@
     {
       "id": "P125.43-0h5",
       "title": "The panel's refused-save check waits for the refusal banner instead of reading the page at a fixed moment",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F653: P125.27's gate went red on shots with 'settings: a refused save drew null - expected a bold title, the findings body and a dismiss button'; the same check passed three times in the task tree (two with a gap) and on the phase tree, and the change under test did not touch the panel. The check reads the DOM before the banner is drawn. Wait on the banner's own element (or the save response) with a bounded timeout, and when it never appears, say what the save request returned. Do not raise a global timeout.",
       "files": [
         "tools/capture-screenshots.mjs"
@@ -2338,21 +2358,28 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T08:30:03Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-14T08:48:41Z",
+          "text": "Red-first proved by the orchestrator (the helper cannot prove an .mjs check): in the task tree, the refused-save round's awaitSaveCard call replaced by HEAD's fixed 700 ms read with the new 1.2 s response delay kept -> node tools/capture-screenshots.mjs --check --only panel exit 1, 'FAIL settings: a refused save drew no card'; restored (cmp equal); the executor's two runs with the change exit 0."
+        }
+      ]
     },
     {
       "id": "P125.44-0h5",
       "title": "This repo's task gates actually narrow: the sweep runs a named list of suites, and a verb records the phase gate's derived listing and spelling in meta",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Owner's cost target: P125.8 (affected-test task gates) and P125.9 (tools/affected.py --list-all / --list-related) landed, but this repo's task gates still run the full ~505 s phase gate, because two primitives are missing: (1) tools/sweep-selftests.py takes no list of suites, so a path-scoped spelling has nothing to call; (2) no verb writes meta.phaseGate.derived (the plan's listing/spelling the deriver reads), and a hand edit of the plan is refused. Add a suite-path list to the sweep (positional paths or one flag; same grading, same isolation), and a manifest verb that records meta.phaseGate.derived {listing: {all, related}, spelling} with validation (spelling must carry {paths}) and a journal row. Then record this repo's values through it (the orchestrator runs the verb after landing) and measure one real task gate before and after, with the commands in the return. Keep it small; one way to spell a suite list, shared with verify.sh's later --only if the CI study asks for one.",
       "files": [
         "tools/sweep-selftests.py",
@@ -2390,16 +2417,17 @@
       "dependsOn": [
         "P125.9"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T08:30:07Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.45-0h5",

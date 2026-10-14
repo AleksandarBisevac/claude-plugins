@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "shots": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-14T08:44:57Z",
+    "basis": "`node tools/capture-screenshots.mjs --check` in a throwaway tree at HEAD: inline suite tools/capture-screenshots.mjs (its test file is its implementation file): it is not Python, and an inline suite's test hunks are read from Python definitions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/capture-screenshots.mjs: assertSaveNoteLifecycle's refused-save and landed-save checks read the findings-slot on a fixed page.waitForTimeout(700) before the save's own PUT /api/config had necessarily resolved and rendered, which is the F653 race. Added awaitSaveCard(page, scope, kind, resBody, timeout) that page.waitForSelector()s the outcome card with a bounded per-call timeout and, when it never paints, reports what the save itself returned (captured via page.waitForResponse on the PUT). The refused-save round now also delays the server's PUT /api/config response by 1.2s on purpose via page.route(CONFIG_URL, ...), so the wait-for-paint behaviour is exercised on every run instead of relying on the race recurring by chance; the landed-save round uses the same helper. Verified: node --check tools/capture-screenshots.mjs (syntax ok); node tools/capture-screenshots.mjs --check --only panel run twice with a gap, both exit 0 and both print 'settings: a refused save, with its own response delayed 1.2s, still drew the refusal card \u2014 the wait tracks the paint' plus the existing 'refusal card up, still up 5.6s later, closed by its \u00d7' and '\"saved\" card present after the save, gone on its 5s clock' lines; python3 tools/sweep-selftests.py --jobs 6 exit 0, 334/334 files ok, 16115 cases.",
+    "descriptive": "The panel's refused-save screenshot check now waits for the refusal banner's own paint (bounded, with the save's own response named on timeout) instead of racing a fixed clock, and exercises that wait against a deliberately delayed save response on every run."
+  },
+  "testsAdded": [
+    "tools/capture-screenshots.mjs: with the refusal banner's render delayed in the fixture, the refused-save check waits for it and passes; a save that is not refused is still reported, naming what the save returned"
+  ],
+  "claims": "n/a \u2014 no comment/docstring/.md/guard/fault-register fix in this task; the change is a browser-driven gate script fix with its evidence inline above",
+  "stamp": "audit-stamp: {\"content\":\"sha256:b969406a8a2677785aaa85cb34c65b2a7e77469cd1686c1473f560552b32bfc4\",\"dirtyDigest\":\"sha256:5befb176cc368a47bafe4a6899b83470721f76e9a78e259b42e48726c9badb3a\",\"dirtyPaths\":{\"tools/capture-screenshots.mjs\":\"7712cb4688f82cbe\"},\"head\":\"3943f6d7\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/capture-screenshots.mjs\"],\"scopeDigest\":\"sha256:c4fb49706ba4613f68b2b9bf1e05696d21392e7629c5f3ebbcadff2473900a2e\",\"v\":2}"
+}
