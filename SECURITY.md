@@ -187,7 +187,7 @@ commit and the command above does not.
 | `remind-tdd` | PostToolUse edits | silent | no-op |
 | `journal-writes` | PreToolUse edits **+ Bash**, PostToolUse edits + Bash | silent | no-op |
 | `detect-plan-skip` | UserPromptSubmit | silent | no-op |
-| `meter-usage` | Stop / SubagentStop / SessionEnd | silent | no-op |
+| `meter-usage` | Stop / SubagentStop / SessionEnd / SessionStart | silent | no-op |
 
 **One row on that table has two arms with different activation, and the column
 above cannot show it.** `guard-history-rewrite` refuses history rewrites only

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
 Stop / SubagentStop / SessionEnd meter — records token usage, blocks nothing.
+Also answers SessionStart: whether the PREVIOUS session's model is priced at
+all (see `session_start_check`) - no network call, silent when it is.
 
 Claude Code hands hooks a `transcript_path` but no token counts. The transcript
 JSONL has them: every `assistant` entry carries `message.model` and a
@@ -45,8 +47,8 @@ Contract: ALWAYS exits 0 and NEVER emits a decision. Any unexpected input or
 exception also exits 0 — metering must never break legitimate work. Registered in
 hooks.json with the `open` (fail-silent) launcher mode for the same reason.
 
-The only exceptions to "prints nothing" are two `systemMessage`s, neither of which
-is a decision:
+The only exceptions to "prints nothing" are three messages, none of which is a
+decision:
 
   * when the task in flight passes the project's own outlier cost band, said once
     while there is still time to act — and worded for WHICH of two causes
@@ -54,9 +56,14 @@ is a decision:
     a lot of new work narrows by scoping the task down, while a long-lived
     run re-paying for context it already read is fixed by handing what is
     left to a fresh agent instead;
-  * on SessionEnd, one line saying what the session cost.
+  * on SessionEnd, one line saying what the session cost;
+  * on SessionStart, one line when the PREVIOUS session's model has no price
+    row in this project's table (`session_start_check`) — rides
+    `additionalContext` rather than `systemMessage`, the one place this
+    hook's output is meant to be read by the model and not only the user, and
+    is absent entirely on a quiet start.
 
-Both are advice and block nothing — and a Stop hook could not block even if it
+All are advice and block nothing — and a Stop hook could not block even if it
 wanted to, since `decision: "block"` there means "do not stop, keep going". A real
 spend gate would belong on PreToolUse, like require-plan.py.
 
@@ -259,6 +266,67 @@ def advise(ul, ledger_priced, manifest, ucfg, cursor, rows):
             "blocked." % (head, action))
 
 
+def session_start_check(data, ul=None, cfg=None, root=None):
+    """At SessionStart: one line when the PREVIOUS session's model - its last
+    assistant turn's `message.model` - has no price row in this project's
+    table (`usage_ledger.rates_for`); silent otherwise.
+
+    SHIPS ONLY THIS ONE CHECK. A second check was built beside it - whether
+    the previous session's CLI-reported cost-state
+    (`usage_ledger.read_cost_state`) disagrees with the ledger's own figure
+    for it, beyond `usage_ledger.CLI_COST_TOLERANCE_USD`
+    (`usage_ledger.cli_cost_divergences`) - then measured OFFLINE, read-only,
+    against every recorded session transcript for two real projects before
+    being wired in: for each model that disagreed, whether the CLI/plugin
+    ratio stayed roughly CONSTANT across every session it appeared in (what a
+    single static mispriced rate would produce) or varied session to
+    session (which a wrong rate alone cannot explain). Most measured models
+    varied rather than held constant, and a sizeable share of the
+    disagreements had no ledger row for that session at all - not a priced
+    disagreement to begin with. A scattered ratio is the shape
+    `usage_ledger.read_cost_state`'s own docstring already documents on this
+    repo's own transcripts - conversation compaction trimming the retained
+    `.jsonl` while the CLI's own total stays cumulative, or a subagent
+    spending outside what got scanned - not a stale price. Firing a
+    confident "your price is stale" message on data that is mostly this would
+    be wrong more often than right, so the second check stays unwired rather
+    than shipped unreliable; the measurement that found this is reported
+    with the task's return (never here, where a number would rot).
+
+    Fails open on anything unreadable, missing or malformed: returns None
+    rather than raising, so a vanished transcript never blocks a session from
+    starting. A session with no previous transcript to compare against (the
+    first one ever opened in this project directory) also answers None -
+    there is nothing yet to check. No network call: the one read is a
+    transcript already on disk."""
+    try:
+        home = _config.tree_for(data, _config.PROJECT_ONLY, cfg, project=root)
+        root, cfg = home["project"], home["cfg"]
+        if not _config.usage_enabled(cfg):
+            return None
+        ul = ul if ul is not None else _load_ledger_lib()
+        prev = ul.previous_session_transcript(data)
+        if not prev:
+            return None
+
+        plan_root = _config.tree_for(data, None, cfg, project=root)["root"]
+        manifest = _config._load_manifest_assembled(
+            Path(plan_root)
+            / (cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"]))
+        table = _pricing(ul, manifest, root)["table"]
+
+        _tokens, model, _reason = ul.current_context_size(prev)
+        if model and ul.rates_for(model, table) is None:
+            return ("[audit] the previous session's model (%s) has no price "
+                    "row in this project's table, so its cost is not being "
+                    "counted - add a rate for it under usage.pricing in "
+                    ".claude/audit.config.json, or ignore this if it is "
+                    "intentionally unpriced." % model)
+        return None
+    except Exception:
+        return None
+
+
 def session_summary(ul, ledger_priced, ucfg, session_id):
     """What this session cost, said once at the end.
 
@@ -444,14 +512,37 @@ def main():
         data = json.load(sys.stdin)
     except Exception:
         sys.exit(0)
+
+    # SessionStart answers a different question from every other event this
+    # hook handles (did the PREVIOUS session price cleanly, not what THIS
+    # turn cost) and has nothing to meter yet - its own transcript_path names
+    # a session that has written no assistant turn. Routed here, before
+    # `meter()`, rather than folded into it. It rides `additionalContext`,
+    # never `systemMessage`: that is what makes a quiet start cost zero
+    # context tokens and a firing one cost exactly its own text, the figure
+    # this hook's own measurement reports.
+    if (data or {}).get("hook_event_name") == "SessionStart":
+        try:
+            note = session_start_check(data)
+        except Exception:
+            note = None
+        if note:
+            try:
+                sys.stdout.write(json.dumps({"hookSpecificOutput": {
+                    "hookEventName": "SessionStart",
+                    "additionalContext": note}}))
+            except Exception:
+                pass
+        sys.exit(0)
+
     notices = []
     try:
         meter(data, notices=notices)
     except Exception:
         pass
-    # The ONLY output this hook ever produces, and it is a message to the user —
-    # never a decision. Emitting it is itself wrapped, because a serialisation
-    # failure must not turn a spend note into a broken hook.
+    # The ONLY other output this hook ever produces, and it is a message to
+    # the user — never a decision. Emitting it is itself wrapped, because a
+    # serialisation failure must not turn a spend note into a broken hook.
     if notices:
         try:
             # Newline, not space: on SessionEnd both an outlier advisory and the

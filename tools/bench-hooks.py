@@ -508,6 +508,12 @@ LANES = (
     ("guard-secrets-read.py", "ask", "bash"),
     ("guard-history-rewrite.py", "ask", "bash"),
     ("guard-capabilities.py", "ask", "skill"),
+    # The QUIET path of the new SessionStart mode: no sibling transcript to
+    # read at all (the common case - the first session opened in a project
+    # directory, or one with nothing recorded since). It is the one that has
+    # to be cheap, because it runs on EVERY session, not only the rare one
+    # whose previous run mispriced or disagreed with the CLI.
+    ("meter-usage.py", "open", "sessionstart"),
 )
 
 
@@ -520,6 +526,9 @@ def _payloads(root):
         "bash": {"tool_name": "Bash", "tool_input": {"command": "ls -la"}},
         "read": {"tool_name": "Read", "tool_input": {"file_path": src}},
         "skill": {"tool_name": "Skill", "tool_input": {"skill": "some-skill"}},
+        "sessionstart": {"hook_event_name": "SessionStart", "transcript_path":
+                         os.path.join(root, "projects", "-bench",
+                                      "new-session.jsonl")},
     }
 
 

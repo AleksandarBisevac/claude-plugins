@@ -1386,6 +1386,39 @@ def _cases(check):
                   "both answer None rather than raising",
                   M.main_transcript_path("no-such-session", home=_home_dir)
                   is None and M.main_transcript_path(None, home=_home_dir) is None)
+
+            # --- the previous session (prv), for SessionStart -----------------
+            _new_id = "99999999-0000-1111-2222-333333333333"
+            _new_path = os.path.join(_proj_dir, _new_id + ".jsonl")
+            # The new session's own file may not even exist yet - a
+            # SessionStart payload names it before Claude Code has written
+            # one, and discovery must not depend on it being there.
+            check("prv1 previous_session_transcript: the only OTHER file in "
+                  "the project dir, even though the new session's own file "
+                  "does not exist on disk yet",
+                  M.previous_session_transcript(
+                      {"session_id": _new_id, "transcript_path": _new_path})
+                  == os.path.join(_proj_dir, _sid + ".jsonl"))
+            import time as _time
+            _older_id = "88888888-0000-1111-2222-333333333333"
+            _older_path = os.path.join(_proj_dir, _older_id + ".jsonl")
+            shutil.copyfile(_ctx_path, _older_path)
+            _now = _time.time()
+            os.utime(_older_path, (_now - 100, _now - 100))
+            os.utime(os.path.join(_proj_dir, _sid + ".jsonl"), (_now, _now))
+            check("prv2 previous_session_transcript: the MOST RECENTLY "
+                  "modified sibling wins, not just any other file",
+                  M.previous_session_transcript(
+                      {"session_id": _new_id, "transcript_path": _new_path})
+                  == os.path.join(_proj_dir, _sid + ".jsonl"))
+            check("prv3 previous_session_transcript: no transcript_path, or a "
+                  "directory that cannot be listed, answers None rather than "
+                  "raising",
+                  M.previous_session_transcript({}) is None
+                  and M.previous_session_transcript(
+                      {"session_id": "x", "transcript_path":
+                       os.path.join(_home_dir, "projects", "no-such-dir",
+                                   "x.jsonl")}) is None)
         finally:
             shutil.rmtree(_home_dir, ignore_errors=True)
     finally:

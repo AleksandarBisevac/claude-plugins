@@ -521,6 +521,114 @@ def _cases(check):
             check("tf2 ...and the ledger is the PROJECT's - nothing was written "
                   "into the worktree", not os.path.exists(os.path.join(
                       _tf["wt"], str(_config.usage_cfg(_tf_cfg)["ledgerDir"]))))
+
+        # (ss) SessionStart: says ONE thing, and only when there is something
+        # to act on - never silent and spurious, never silent when it should
+        # not be. Each case gets its OWN project directory: the function
+        # discovers "the previous session" as the most recently modified
+        # sibling transcript, so two cases sharing one directory would have
+        # the later case's file win every earlier one's lookup.
+        ss_root = Path(tempfile.mkdtemp(prefix="meter-usage-sessionstart-"))
+        try:
+            (ss_root / "docs" / "audit").mkdir(parents=True, exist_ok=True)
+            (ss_root / "docs" / "audit" / "audit-plan.json").write_text(
+                json.dumps({"meta": {"version": 2}, "phases": []}),
+                encoding="utf-8")
+            ss_cfg = _config.load(ss_root)
+
+            def _ss_case(name):
+                """A fresh project dir for one (previous, new) session pair,
+                and the SessionStart payload naming a new session that has
+                not written anything into it yet."""
+                proj = ss_root / "projects" / ("-ss-" + name)
+                proj.mkdir(parents=True, exist_ok=True)
+                prev_id = name + "-prev-1111-2222-333333333333"
+                payload = {"session_id": name + "-new", "cwd": str(ss_root),
+                           "hook_event_name": "SessionStart",
+                           "transcript_path": str(proj / (name + "-new.jsonl"))}
+                return proj, prev_id, payload
+
+            # ss1: an unpriced model - the previous session's last assistant
+            # turn names a model this project's table carries no row for.
+            proj1, prev1, payload1 = _ss_case("unpriced")
+            (proj1 / (prev1 + ".jsonl")).write_text(
+                json.dumps({"type": "assistant", "message": {
+                    "model": "some-future-model-nobody-priced",
+                    "usage": {"input_tokens": 1, "output_tokens": 1}}}) + "\n",
+                encoding="utf-8")
+            msg = M.session_start_check(payload1, ul=ul, cfg=ss_cfg, root=ss_root)
+            check("ss1 an unpriced model names itself and the config remedy, "
+                  "in exactly one line: %r" % (msg,),
+                  msg and "some-future-model-nobody-priced" in msg
+                  and "usage.pricing" in msg and "\n" not in msg, msg)
+
+            # ss2: a priced model with no cost-state at all - silent.
+            proj2, prev2, payload2 = _ss_case("quiet")
+            (proj2 / (prev2 + ".jsonl")).write_text(
+                json.dumps({"type": "assistant", "message": {
+                    "model": "claude-opus-5",
+                    "usage": {"input_tokens": 1, "output_tokens": 1}}}) + "\n",
+                encoding="utf-8")
+            msg2 = M.session_start_check(payload2, ul=ul, cfg=ss_cfg, root=ss_root)
+            check("ss2 a priced model with no recorded cost-state says "
+                  "nothing at all", msg2 is None, msg2)
+
+            # ss3: a GENUINE cli-vs-plugin divergence beyond the tolerance -
+            # independently confirmed via usage_ledger.cli_cost_divergences
+            # on these exact rows, so this is not silent because the fixture
+            # failed to diverge - still produces no line from
+            # session_start_check. That second check was built and then
+            # measured offline against two real projects' recorded
+            # transcripts: most of the (model, session) pairs that diverged
+            # this way had a CLI/plugin ratio that varied session to session
+            # rather than holding to one constant factor, which a single
+            # mispriced rate cannot produce - the shape
+            # `usage_ledger.read_cost_state`'s own docstring already
+            # documents (compaction trimming the retained transcript, or a
+            # subagent spending outside it). So the check stays unwired
+            # rather than shipped unreliable; see `session_start_check`'s
+            # docstring and the task's return for the measurement.
+            proj3, prev3, payload3 = _ss_case("divergent")
+            (proj3 / (prev3 + ".jsonl")).write_text(
+                json.dumps({"type": "assistant", "message": {
+                    "model": "claude-opus-5",
+                    "usage": {"input_tokens": 1, "output_tokens": 1}}}) + "\n"
+                + json.dumps({"type": "cost-state", "totalCostUSD": 99.0,
+                              "modelUsage": {"claude-opus-5": {
+                                  "costUSD": 99.0}}}) + "\n",
+                encoding="utf-8")
+            _ss3_rows = [{"sessionId": prev3, "model": "claude-opus-5",
+                         "costUSD": 1.0}]
+            _ss3_cost_state = ul.read_cost_state(str(proj3 / (prev3 + ".jsonl")))
+            _ss3_divergence = ul.cli_cost_divergences(_ss3_rows, _ss3_cost_state)
+            check("ss3a the fixture really does diverge beyond the tolerance "
+                  "- a positive control, so ss3b's silence is not an accident "
+                  "of a fixture that never disagreed: %r" % (_ss3_divergence,),
+                  _ss3_divergence
+                  and _ss3_divergence["claude-opus-5"]["cliCostUSD"] == 99.0
+                  and _ss3_divergence["claude-opus-5"]["pluginCostUSD"] == 1.0)
+            msg3 = M.session_start_check(payload3, ul=ul, cfg=ss_cfg, root=ss_root)
+            check("ss3b session_start_check stays silent on that same "
+                  "divergence - the cost-state check is measured but "
+                  "intentionally unwired", msg3 is None, msg3)
+
+            # ss4: no previous session exists yet (the first ever opened in a
+            # project directory) - nothing to compare against, silent.
+            proj4, _prev4, payload4 = _ss_case("first-ever")
+            msg4 = M.session_start_check(payload4, ul=ul, cfg=ss_cfg, root=ss_root)
+            check("ss4 no previous session to compare against stays silent",
+                  msg4 is None, msg4)
+
+            # ss5: fails open - a previous transcript that cannot be opened
+            # (a path that is a directory, not a file) prints nothing and
+            # never raises; no network call is made anywhere in this path.
+            proj5, prev5, payload5 = _ss_case("unreadable-transcript")
+            (proj5 / (prev5 + ".jsonl")).mkdir()
+            msg5 = M.session_start_check(payload5, ul=ul, cfg=ss_cfg, root=ss_root)
+            check("ss5 a previous transcript that cannot be opened fails "
+                  "open", msg5 is None, msg5)
+        finally:
+            shutil.rmtree(ss_root, ignore_errors=True)
     finally:
         if prev_env is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)

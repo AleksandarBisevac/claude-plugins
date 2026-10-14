@@ -218,6 +218,46 @@ def main_transcript_path(session_id, home=None):
     return matches[0] if matches else None
 
 
+def previous_session_transcript(data):
+    """The most recently-modified OTHER main-session transcript beside a
+    SessionStart payload's own `transcript_path` -> absolute path, or None.
+
+    A SessionStart payload already names the right project directory in
+    `transcript_path` - Claude Code resolved whatever slug scheme applies,
+    so this walks SIBLINGS of it rather than re-deriving one. The payload's
+    own `session_id` excludes that file by NAME, never by mtime: a brand new
+    session's transcript may not exist on disk yet, and even if it does, an
+    empty file just created can still sort newest on some filesystems.
+
+    None when `transcript_path` is absent, its directory cannot be listed, or
+    it holds no other `.jsonl` file - never raises."""
+    transcript = (data or {}).get("transcript_path")
+    if not transcript:
+        return None
+    session_id = str((data or {}).get("session_id") or "")
+    base = os.path.dirname(transcript)
+    try:
+        names = os.listdir(base)
+    except OSError:
+        return None
+    candidates = []
+    for name in names:
+        if not name.endswith(".jsonl"):
+            continue
+        if os.path.splitext(name)[0] == session_id:
+            continue
+        path = os.path.join(base, name)
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            continue
+        candidates.append((mtime, path))
+    if not candidates:
+        return None
+    candidates.sort()
+    return candidates[-1][1]
+
+
 def current_context_size(transcript_path):
     """`(tokens, model, reason)` for the MOST RECENT assistant turn a MAIN
     transcript carries.
