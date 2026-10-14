@@ -1393,7 +1393,7 @@
     {
       "id": "P125.29-0h5",
       "title": "Submit refuses a return whose outcome is a placeholder or whose testsAdded is empty while tests.add is not",
-      "status": "in_progress",
+      "status": "done",
       "description": "F643. drive-phase.py submit checks the return's shape and then files it once per start. Two executors in P125 filed outcome.technical == outcome.descriptive == 'placeholder' with testsAdded [] (returns/P125.1/20261013T125847Z, returns/P125.2/20261013T141945Z), the second despite an explicit instruction, and the record could not be corrected. An instruction does not hold this; the filing must. Before running the helper and before writing anything, refuse: (a) outcome texts that are identical to each other, shorter than a floor stated beside the check with its reason, or a template word (placeholder, TODO, TBD, <...>); (b) testsAdded empty while the task's tests.mode is tdd or regression and tests.add is non-empty. The refusal names the field and says nothing was filed, so the agent resubmits in the same start. The check lives in the one function every return passes through (_filed_returns), not in drive-phase alone, so a reviewer return and a /audit:run filing are held to it too.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -1428,14 +1428,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "19c64655441c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_filed_returns.py's _template_reason() over-fired: it matched a template word or an unfilled `<...>` ANYWHERE in outcome.technical/outcome.descriptive, so real prose that merely used the word 'placeholder' while describing the feature, or that quoted a path like `<home>/...` or an id like `<taskId>`, was refused as if it were itself a placeholder - measured against the filed returns of this phase (P125.18, P125.31-0h5, P125.32-0h5, P125.8, P125.29-0h5 itself). Fixed by matching the WHOLE trimmed text instead of searching for a substring: _TEMPLATE_WORD is now a tuple of bare words compared against text.lower() in full, and _TEMPLATE_ANGLE_WHOLE anchors ^<...>$ so only a text that IS nothing but one such token is refused; also added 'pending' to the template-word set per the orchestrator's instruction (P125.11's return used it). The floor check, the identical-outcome check and the testsAdded-empty check were already correct and are unchanged. Added rp15 to test__filed_returns.py: a replay over outcome text copied verbatim from docs/audit/evidence/returns/P125.*/*.executor.json (as fixtures, not a live read of the evidence directory, since a suite's cwd is pointed at scratch space under the sweep) - every placeholder-shaped return (P125.1, P125.2, P125.11, P125.12, P125.22, P125.28, P125.36-0h5) is refused, and every real one (P125.18, P125.31-0h5, P125.32-0h5, P125.8, P125.29-0h5) passes. Proved red first: reverted _template_reason to the old substring-matching form, re-ran python3 plugins/audit/tests/test__filed_returns.py --selftest -> SELFTEST FAILED: 70/71 (rp15 failed, naming the five real returns as false positives: P125.18, P125.31-0h5, P125.32-0h5, P125.8, P125.29-0h5); restored the fix and reran -> ALL PASS: 71/71. test_drive_phase.py's existing ds5p/ds5q (a placeholder outcome refused by exact word, then the same start accepting the corrected return) needed no change and stayed green: ALL PASS: 258/258. Also found and removed a fault-register citation (F630) I had accidentally copied verbatim into a fixture's outcome text from P125.18's real filed return; caught by test__deps.py's rc16 gate, which went 313/314 until the citation was reworded out while keeping the fixture's realistic shape. Ran the full tree: python3 tools/sweep-selftests.py --jobs 6 -> 334/334 files ok, 153 migrated to tests/, 16081 cases, exit 0.",
+        "descriptive": "Submit now refuses an outcome only when it IS a placeholder - the whole trimmed text is a bare template word or a single unfilled `<...>` token - never when it merely mentions one in a real sentence, so P125.18/.31/.32/.8/.29's own kind of return can no longer be wrongly refused."
       },
       "startedAt": "2026-10-14T05:29:41Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T06:26:46Z",
+      "verifiedBy": [
+        "rp15"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T06:26:43Z.137436",
@@ -1443,10 +1445,15 @@
         "at": "2026-10-14T06:26:43Z"
       },
       "redFirst": {
-        "at": "2026-10-14T02:57:21Z",
-        "basis": "`python3 plugins/audit/tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 70 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rp13 (house FAIL), rp14 (house FAIL): SELFTEST FAILED: 68/70 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
+        "at": "2026-10-14T05:50:59Z",
+        "basis": "`python3 plugins/audit/tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 71 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rp15 (house FAIL): SELFTEST FAILED: 70/71 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; the user's .npmrc in the home directory dropped (every run has a fresh home)",
         "status": "proved",
         "source": "red-first-helper"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "19c64655441c",
+        "at": "2026-10-14T06:26:46Z"
       }
     },
     {
@@ -2154,17 +2161,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-14T05:29:45Z",
+      "startedAt": "2026-10-14T06:44:25Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-14T06:35:24Z.588ee3",
+        "status": "failed",
+        "at": "2026-10-14T06:35:24Z"
+      }
     },
     {
       "id": "P125.41-0h5",
@@ -2214,7 +2226,12 @@
       "startedAt": "2026-10-14T05:29:48Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-14T06:44:03Z.6c512b",
+        "status": "failed",
+        "at": "2026-10-14T06:44:03Z"
+      }
     },
     {
       "id": "P125.42-0h5",
@@ -2397,6 +2414,51 @@
         "gateBasis": "phase-no-spelling"
       },
       "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.46-0h5",
+      "title": "A usage-ledger month rewrite never waits on its own open handle: it lets go of the tail before the replace, and the shared sharing-denial retry is its only retry",
+      "status": "pending",
+      "description": "Regression introduced in this phase, caught by CI run 38517006899 (ci/p125 at a7d1b5c4, windows-latest plain and cp1252): test_audit_usage bw14 'a row appended while a refused replace is retried survives the replace' got calls=66/70 instead of 2 (count=1, code=0). P125.38 made _manifest_io.atomic_write_text retry a sharing denial (_output.while_shared, up to SHARING_WAIT_SECONDS); usage_ledger's month rewrite keeps its OWN tail handle open while it calls _replace_rows, so on Windows the first replace now spins ~2 s against itself before raising, and only then does the old except-branch drain and close the tail and call _replace_retrying. Structural fix: drain and close the rewrite's own tail handle before the replace (the lock already excludes appenders), so the only holder a retry can meet is someone else, and delete _replace_retrying (the shared helper is the one retry). Keep bw14's guarantee: an append between the last read and the swap waits for the swap and survives. Net code down.",
+      "files": [
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/tests/test_usage_ledger.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_usage.py: bw14 holds on both platforms - a row appended while the replace is refused survives it, and the replace is attempted a bounded small number of times (no spin against the rewrite's own handle)",
+          "plugins/audit/tests/test_usage_ledger.py: a month rewrite whose only holder is another process waits through the shared helper and lands; one whose replace stays refused past the deadline returns False with the old file intact"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
       "skills": [],
       "risk": "low",
       "blockedBy": [],
