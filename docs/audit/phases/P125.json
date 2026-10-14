@@ -1497,7 +1497,13 @@
       "startedAt": "2026-10-14T03:40:48Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-14T04:14:55Z",
+          "text": "Red-first proved by the orchestrator (the helper answered could-not-prove: no --case on the submit line): in the task tree drive-phase.py and audit-lookup.py set to HEAD's bytes -> test_audit_lookup.py --selftest 90/95, FAIL bf3 bf53 bf53a bf54 bf55; restored (cmp equal) -> 95/95."
+        }
+      ]
     },
     {
       "id": "P125.31-0h5",
