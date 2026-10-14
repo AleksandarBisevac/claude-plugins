@@ -2848,7 +2848,8 @@
         "plugins/audit/tests/test__gate_derive.py",
         "plugins/audit/tests/test__affected_tests.py",
         "plugins/audit/tests/test_run_test_gate.py",
-        "plugins/audit/tests/test_derive_phase_gate.py"
+        "plugins/audit/tests/test_derive_phase_gate.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
