@@ -1159,7 +1159,8 @@
       "P127.8-bgr",
       "P125.9",
       "P125.11",
-      "P128.7-0h5"
+      "P128.7-0h5",
+      "P125.44-0h5"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -2614,7 +2615,8 @@
       "P123.21",
       "P125.19",
       "P125.22",
-      "P125.41-0h5"
+      "P125.41-0h5",
+      "P125.44-0h5"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -3937,7 +3939,8 @@
       "P125.28",
       "P125.31-0h5",
       "P125.19",
-      "P125.41-0h5"
+      "P125.41-0h5",
+      "P125.44-0h5"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -5770,7 +5773,8 @@
       "P125.22",
       "P125.28",
       "P125.31-0h5",
-      "P125.41-0h5"
+      "P125.41-0h5",
+      "P125.44-0h5"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -6674,7 +6678,8 @@
       "P127.2-bgr",
       "P127.4-bgr",
       "P127.6-bgr",
-      "P127.8-bgr"
+      "P127.8-bgr",
+      "P125.44-0h5"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -6746,7 +6751,8 @@
       "P122.9-z4y",
       "P123.7",
       "P123.20",
-      "P123.49-64p"
+      "P123.49-64p",
+      "P125.44-0h5"
     ],
     "plugins/audit/tests/test_derive_phase_gate.py": [
       "P79.3",
@@ -6757,7 +6763,8 @@
       "P108.10-4gh",
       "P123.7",
       "P123.20",
-      "P123.49-64p"
+      "P123.49-64p",
+      "P125.44-0h5"
     ],
     "plugins/audit/scripts/governance/import-evidence.py": [
       "P80.5",
