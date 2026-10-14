@@ -43,6 +43,7 @@ that each block runs in exactly one stage, since a cut half-made runs cases
 twice or never and a green run looks the same either way.
 """
 import argparse
+import ast
 import contextlib
 import io
 import json
@@ -121,18 +122,20 @@ def _repo(prefix, task_ids=TASKS, gate=("true",), per_task="always",
     os.makedirs(os.path.join(root, "docs", "audit"))
     os.makedirs(os.path.join(root, ".claude"))
     os.makedirs(os.path.join(root, "src"))
-    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w",
+              encoding="utf-8") as fh:
         json.dump({"manifestPath": "docs/audit/audit-plan.json",
                    "review": {"perTask": per_task}}, fh)
-    with open(os.path.join(root, ".gitignore"), "w") as fh:
+    with open(os.path.join(root, ".gitignore"), "w", encoding="utf-8") as fh:
         fh.write(".claude/state/\n")
     # At least three sources: the findings these cases hand in name `src/f1.txt`
     # to `src/f3.txt`, and a fix task is scoped only onto a path that exists.
     for n in range(1, max(len(task_ids), 3) + 1):
-        with open(os.path.join(root, "src", "f%d.txt" % (n,)), "w") as fh:
+        with open(os.path.join(root, "src", "f%d.txt" % (n,)), "w",
+                  encoding="utf-8") as fh:
             fh.write("v0\n")
     mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
-    with open(mpath, "w") as fh:
+    with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(_plan(task_ids, gate, phase_gate), fh, indent=2)
     # The identity is the repository's own, not only this call's: the verbs the
     # driver runs commit in it too, and a sweep pins HOME and refuses a guessed
@@ -212,7 +215,7 @@ def _pinned_clock(at):
     """Every Python child started inside the block reads `time.gmtime()` as the
     epoch second `at`."""
     where = os.path.realpath(_harness.fixture_root("drive-clock-"))
-    with open(os.path.join(where, "sitecustomize.py"), "w") as fh:
+    with open(os.path.join(where, "sitecustomize.py"), "w", encoding="utf-8") as fh:
         fh.write(_PINNED_GMTIME % (at,))
     held = os.environ.get("PYTHONPATH")
     os.environ["PYTHONPATH"] = where + (os.pathsep + held if held else "")
@@ -227,16 +230,20 @@ def _pinned_clock(at):
 
 
 def _verb(root, name, args, stdin=None):
+    # The verbs write UTF-8 whatever the console's code page; decoding them in
+    # the locale's would fail on Windows on the first arrow a verb prints.
     done = subprocess.run(_script(name) + args, cwd=root, input=stdin,
-                          capture_output=True, text=True, timeout=120)
+                          capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", timeout=120)
     return done.returncode, done.stdout + done.stderr
 
 
 def _write_lf(path, text):
     """A member's change as the bytes it names: text mode would write CRLF on
     Windows, and the member's own work would then be CRLF before the driver
-    carried anything."""
-    with open(path, "w", newline="\n") as fh:
+    carried anything - and the locale's encoding there, cp1252, cannot spell
+    every character a change carries."""
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
 
 
@@ -311,7 +318,7 @@ def _file_phase_review(root, mpath, text, findings=(), entry_over=None,
     differently; `phase_intent` is the phase-level answer. Returns its
     `(code, text)`."""
     brief = _BRIEF.search(text)
-    with open(os.path.join(root, *brief.group(1).split("/"))) as fh:
+    with open(os.path.join(root, *brief.group(1).split("/")), encoding="utf-8") as fh:
         head = _HEAD_LINE.search(fh.read()).group(1)
     answered = _answered(root, mpath)
     entries = [dict({"id": tid, "commit": t.get("commit"), "answer": "matches",
@@ -912,10 +919,12 @@ def _single_task_cases(check):
               and "one at a time" in e for _g, c, s, e in refused)
           and all(t.get("status") == "pending" for t in after.values())
           and not os.path.exists(os.path.join(root_t, ".claude", "state", "drive")))
-    with open(os.path.join(root_t, ".claude", "audit.config.json")) as fh:
+    with open(os.path.join(root_t, ".claude", "audit.config.json"),
+              encoding="utf-8") as fh:
         cfg = json.load(fh)
     cfg["executor"] = {"waveWidth": 3}
-    with open(os.path.join(root_t, ".claude", "audit.config.json"), "w") as fh:
+    with open(os.path.join(root_t, ".claude", "audit.config.json"), "w",
+              encoding="utf-8") as fh:
         json.dump(cfg, fh)
     errs = io.StringIO()
     with _Env(root_t), contextlib.redirect_stderr(errs):
@@ -937,11 +946,11 @@ def _single_task_cases(check):
     check("dt5 THE ALLOW TWIN: a plan with no board owes no ADO echo, and no print "
           "says one is owed: %r" % (echo_free,), echo_free == [])
     root_a, mpath_a = _repo("single-ado")
-    with open(mpath_a) as fh:
+    with open(mpath_a, encoding="utf-8") as fh:
         plan = json.load(fh)
     plan["meta"]["ado"] = {"organization": "o", "project": "p"}
     plan["phases"][0]["tasks"][1]["ado"] = {"id": 4242}
-    with open(mpath_a, "w") as fh:
+    with open(mpath_a, "w", encoding="utf-8") as fh:
         json.dump(plan, fh, indent=2)
     subprocess.run(_GIT + ["commit", "-qam", "board"], cwd=root_a, check=True,
                    capture_output=True, timeout=60)
@@ -1400,18 +1409,18 @@ def _submit_cases(check):
     os.makedirs(os.path.join(root, "tests"))
     for rel, text in (("src/mine.py", "v = 1\n"),
                       ("tests/test_mine.py", _house_suite([("old1", "mine.v >= 1")]))):
-        with open(os.path.join(root, *rel.split("/")), "w") as fh:
+        with open(os.path.join(root, *rel.split("/")), "w", encoding="utf-8") as fh:
             fh.write(text)
-    with open(mpath, "w") as fh:
+    with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(plan, fh, indent=2)
     subprocess.run(_GIT + ["add", "-A"], cwd=root, check=True, capture_output=True)
     subprocess.run(_GIT + ["commit", "-qm", "tdd"], cwd=root, check=True,
                    capture_output=True)
     with _Env(root):
         M.main(["next", PHASE, mpath, "--project-dir", root], out=[].append)
-    with open(os.path.join(root, "src", "mine.py"), "w") as fh:
+    with open(os.path.join(root, "src", "mine.py"), "w", encoding="utf-8") as fh:
         fh.write("v = 2\n")
-    with open(os.path.join(root, "tests", "test_mine.py"), "w") as fh:
+    with open(os.path.join(root, "tests", "test_mine.py"), "w", encoding="utf-8") as fh:
         fh.write(_house_suite([("old1", "mine.v >= 1"), ("new1", "mine.v == 2")]))
     body = _executor_body("P1.1", {"testsAdded": ["tests/test_mine.py: new1"]})
     del body["redFirst"]
@@ -1460,18 +1469,18 @@ def _submit_cases(check):
     os.makedirs(os.path.join(root, "tests"))
     for rel, text in (("src/mine.py", "v = 1\n"),
                       ("tests/test_mine.py", _house_suite([("old1", "mine.v >= 1")]))):
-        with open(os.path.join(root, *rel.split("/")), "w") as fh:
+        with open(os.path.join(root, *rel.split("/")), "w", encoding="utf-8") as fh:
             fh.write(text)
-    with open(mpath, "w") as fh:
+    with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(plan, fh, indent=2)
     subprocess.run(_GIT + ["add", "-A"], cwd=root, check=True, capture_output=True)
     subprocess.run(_GIT + ["commit", "-qm", "tdd"], cwd=root, check=True,
                    capture_output=True)
     with _Env(root):
         M.main(["next", PHASE, mpath, "--project-dir", root], out=[].append)
-    with open(os.path.join(root, "src", "mine.py"), "w") as fh:
+    with open(os.path.join(root, "src", "mine.py"), "w", encoding="utf-8") as fh:
         fh.write("v = 1\n\n\ndef foo():\n    return 2\n")
-    with open(os.path.join(root, "tests", "test_mine.py"), "w") as fh:
+    with open(os.path.join(root, "tests", "test_mine.py"), "w", encoding="utf-8") as fh:
         fh.write(_house_suite([("old1", "mine.v >= 1"), ("new1", "mine.foo() == 2")]))
     body = _executor_body("P1.1", {"testsAdded": ["tests/test_mine.py: new1"]})
     code, text = _submit(None, root, mpath, "P1.1", body,
@@ -1495,7 +1504,8 @@ def _submit_cases(check):
             _script(DRIVER) + ["submit", "P1.1", "--role", "executor",
                                os.path.relpath(mpath, root), "--project-dir", root],
             cwd=elsewhere, input=json.dumps(_executor_body("P1.1")),
-            capture_output=True, text=True, timeout=120)
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=120)
     path = _filed_path(mpath, "P1.1")
     check("ds9 the manifest a brief prints relative to the project is read from "
           "that project, whatever directory the agent's shell stands in: %r"
@@ -1523,7 +1533,8 @@ def _submit_cases(check):
                 _script(DRIVER) + ["submit", "P1.1", "--role", "executor", rel,
                                    "--project-dir", root],
                 cwd=cwd, input=json.dumps(_executor_body("P1.1")),
-                capture_output=True, text=True, timeout=120)
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=120)
         check("%s: %r" % (label, (done_w.returncode, done_w.stdout + done_w.stderr)),
               (done_w.returncode == 0) == want
               and os.path.exists(_filed_path(mpath, "P1.1") or "-") == want)
@@ -2081,10 +2092,10 @@ def _signed(mpath):
 
 def _commit_plan(root, mpath, edit, message):
     """Apply `edit(plan)` to the fixture's plan and commit it."""
-    with open(mpath) as fh:
+    with open(mpath, encoding="utf-8") as fh:
         plan = json.load(fh)
     edit(plan)
-    with open(mpath, "w") as fh:
+    with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(plan, fh, indent=2)
     subprocess.run(_GIT + ["commit", "-qam", message], cwd=root, check=True,
                    capture_output=True, timeout=60)
@@ -2353,12 +2364,12 @@ def _reuse_findings_cases(check, M):
 
     # Written, not committed: a commit moves HEAD, and a return filed at the
     # old head is then no longer the one at the current head.
-    with open(mpath) as fh:
+    with open(mpath, encoding="utf-8") as fh:
         plan = json.load(fh)
     for phase in plan["phases"]:
         if phase["id"] == PHASE:
             phase["review"]["findings"] = []
-    with open(mpath, "w") as fh:
+    with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(plan, fh, indent=2)
     code, text = _next(M, root, mpath)
     after = recorded(mpath)
@@ -2513,7 +2524,7 @@ def _phase_review_briefs(root, run):
     briefs = [b.group(1) for b in briefs if b]
     text = ""
     if briefs:
-        with open(os.path.join(root, *briefs[-1].split("/"))) as fh:
+        with open(os.path.join(root, *briefs[-1].split("/")), encoding="utf-8") as fh:
             text = fh.read()
     return text, len(briefs)
 
@@ -2705,7 +2716,7 @@ def _round_cap_cases(check):
             return
         ledger = os.path.join(root, ".claude", "usage")
         os.makedirs(ledger, exist_ok=True)
-        with open(os.path.join(ledger, "2026-10.jsonl"), "w") as fh:
+        with open(os.path.join(ledger, "2026-10.jsonl"), "w", encoding="utf-8") as fh:
             fh.write("".join(json.dumps(r) + "\n" for r in _USAGE_ROWS))
 
     def answer(kind, text):
@@ -2904,7 +2915,7 @@ def _handed_triage_cases(check):
 
 
 def _head_of_brief(root, rel):
-    with open(os.path.join(root, *rel.split("/"))) as fh:
+    with open(os.path.join(root, *rel.split("/")), encoding="utf-8") as fh:
         found = _HEAD_LINE.search(fh.read())
     return found.group(1) if found else None
 
@@ -2976,7 +2987,8 @@ def _owner_types(root, prompt):
         [sys.executable, os.path.join(_harness.HOOKS_DIR, "detect-plan-skip.py")],
         input=json.dumps({"hook_event_name": "UserPromptSubmit",
                           "session_id": "owner-session", "prompt": prompt}),
-        cwd=root, env=env, capture_output=True, text=True, timeout=120)
+        cwd=root, env=env, capture_output=True, text=True, encoding="utf-8",
+        errors="replace", timeout=120)
     return done.returncode
 
 
@@ -3234,7 +3246,7 @@ def _drive_state(root):
     """The driver's own state for the fixture phase, or {} when it has none."""
     path = os.path.join(root, ".claude", "state", "drive", "%s.json" % (PHASE,))
     try:
-        with open(path) as fh:
+        with open(path, encoding="utf-8") as fh:
             return json.load(fh)
     except (OSError, ValueError):
         return {}
@@ -3374,7 +3386,7 @@ def _stale_gate_cases(check):
 
     M, seen, root, mpath, run = to_coverage("stale-edit")
     before = seen["runs"]
-    with open(os.path.join(root, "src", "f1.txt"), "w") as fh:
+    with open(os.path.join(root, "src", "f1.txt"), "w", encoding="utf-8") as fh:
         fh.write("edited after the gate, never committed\n")
     code, text = _next(M, root, mpath, "--answer", "accept", "--reason", words)
     runs = seen["runs"]
@@ -3717,7 +3729,7 @@ def _chain_next_cases(check):
     M.release_lock = lambda ctx, state: None
     M.drop_state = lambda ctx: None
 
-    with open(mpath, "w") as fh:
+    with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(_manifest("pending"), fh)
     out = M.finish(ctx, {}, "signed off (passed)")
     check("cn1 a next phase the plan's own readiness names beyond the one "
@@ -3727,7 +3739,7 @@ def _chain_next_cases(check):
           and any("clear context" in line and "P2" in line
                   for line in out["lines"]))
 
-    with open(mpath, "w") as fh:
+    with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(_manifest("done"), fh)
     out2 = M.finish(ctx, {}, "signed off (passed)")
     check("cn2 THE TWIN: with nothing left ready, done carries no chain line "
@@ -3760,7 +3772,7 @@ def _wave_repo(prefix, width, red=(), per_task="phase", setup=None,
     root, mpath = _repo(prefix, task_ids=TASKS[:2], per_task=per_task)
     trees = os.path.realpath(_harness.fixture_root("drive-trees-%s-" % (prefix,)))
     cfg_path = os.path.join(root, ".claude", "audit.config.json")
-    with open(cfg_path) as fh:
+    with open(cfg_path, encoding="utf-8") as fh:
         cfg = json.load(fh)
     executor = {"worktreeRoot": trees}
     if width is not None:
@@ -3768,21 +3780,21 @@ def _wave_repo(prefix, width, red=(), per_task="phase", setup=None,
     if setup is not None:
         executor["worktreeSetup"] = setup
     if spare_file:
-        with open(os.path.join(root, "src", "f3.txt"), "w") as fh:
+        with open(os.path.join(root, "src", "f3.txt"), "w", encoding="utf-8") as fh:
             fh.write("v0\n")
     cfg["executor"] = executor
-    with open(cfg_path, "w") as fh:
+    with open(cfg_path, "w", encoding="utf-8") as fh:
         json.dump(cfg, fh)
-    with open(os.path.join(root, "check_own.py"), "w") as fh:
+    with open(os.path.join(root, "check_own.py"), "w", encoding="utf-8") as fh:
         fh.write(_OWN_DIFF)
-    with open(mpath) as fh:
+    with open(mpath, encoding="utf-8") as fh:
         plan = json.load(fh)
     for n, task in enumerate(plan["phases"][0]["tasks"], 1):
         task["tests"]["gate"] = [
             '"%s" -c "import sys; sys.exit(1)"' % (sys.executable,)
             if task["id"] in red else
             '"%s" check_own.py src/f%d.txt' % (sys.executable, n)]
-    with open(mpath, "w") as fh:
+    with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(plan, fh, indent=2)
     for argv in (["add", "-A"], ["commit", "-qm", "wave fixture"]):
         subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
@@ -3889,9 +3901,9 @@ def _wave_cases(check):
           and all(keyed[t] and keyed[t][0] for t in keyed)
           and keyed["P1.1"] != keyed["P1.2"])
     tasks = tasks_of(mpath)
-    with open(os.path.join(root, "src", "f1.txt")) as fh:
+    with open(os.path.join(root, "src", "f1.txt"), encoding="utf-8") as fh:
         f1 = fh.read()
-    with open(os.path.join(root, "src", "f2.txt")) as fh:
+    with open(os.path.join(root, "src", "f2.txt"), encoding="utf-8") as fh:
         f2 = fh.read()
     check("wv6 both tasks are integrated into the phase tree and closed against "
           "a commit each: %r" % ([(t, tasks[t].get("status"), tasks[t].get("commit"))
@@ -3994,13 +4006,13 @@ def _wave_records_repo(prefix):
     the phase tree and P1.2's gate red, so P1.2's tree is still there to read
     once the drive has gated it."""
     root, mpath = _wave_repo(prefix, 2, red=("P1.2",))
-    with open(os.path.join(root, "check_records.py"), "w") as fh:
+    with open(os.path.join(root, "check_records.py"), "w", encoding="utf-8") as fh:
         fh.write(_RECORDS_MATCH)
-    with open(mpath) as fh:
+    with open(mpath, encoding="utf-8") as fh:
         plan = json.load(fh)
     first = plan["phases"][0]["tasks"][0]
     first["tests"]["gate"].append('"%s" check_records.py' % (sys.executable,))
-    with open(mpath, "w") as fh:
+    with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(plan, fh, indent=2)
     for argv in (["add", "-A"], ["commit", "-qm", "the record check"]):
         subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
@@ -4184,14 +4196,14 @@ def _preflight_repo(prefix, include, tasks=1):
     the task adds, and that test declared in `tests.add`."""
     root, mpath = _repo(prefix, task_ids=TASKS[:tasks],
                         gate=("npx vitest run lib/store.test.ts",))
-    with open(os.path.join(root, "vitest.config.ts"), "w") as fh:
+    with open(os.path.join(root, "vitest.config.ts"), "w", encoding="utf-8") as fh:
         fh.write("const INCLUDE = %s;\nexport default { test: { include: %s } };\n"
                  % ("['tests/unit/**/*.test.ts']", include))
-    with open(mpath) as fh:
+    with open(mpath, encoding="utf-8") as fh:
         plan = json.load(fh)
     plan["phases"][0]["tasks"][0]["tests"]["add"] = [
         "lib/store.test.ts: the store keeps its items"]
-    with open(mpath, "w") as fh:
+    with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(plan, fh, indent=2)
     for argv in (["add", "-A"], ["commit", "-qm", "preflight fixture"]):
         subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
@@ -4248,10 +4260,10 @@ def _preflight_cases(check):
           and "scope-gap" not in text)
     root, mpath = _preflight_repo("pfwave", "['tests/unit/**/*.test.ts']", tasks=2)
     cfg_path = os.path.join(root, ".claude", "audit.config.json")
-    with open(cfg_path) as fh:
+    with open(cfg_path, encoding="utf-8") as fh:
         cfg = json.load(fh)
     cfg["executor"] = {"waveWidth": 2}
-    with open(cfg_path, "w") as fh:
+    with open(cfg_path, "w", encoding="utf-8") as fh:
         json.dump(cfg, fh)
     code, text = _next_wave(M, root, mpath)
     check("pf5 the same stop holds at a wave width above 1: %r" % (text,),
@@ -4311,7 +4323,7 @@ def _wave_width_cases(check):
     sent = _dispatched(first)
     tree = _tree_of(root, "P1.2")
     if tree:
-        with open(os.path.join(tree, "notes.txt"), "w") as fh:
+        with open(os.path.join(tree, "notes.txt"), "w", encoding="utf-8") as fh:
             fh.write("written by P1.2, declared by nobody\n")
     for t in sent:
         _file_wave_executor(root, mpath, t)
@@ -4365,11 +4377,11 @@ def _follower_repo(prefix, rel, recipe, owner, wave=False, browser=False):
                   **({"needsBrowser": True} if browser else {}))
     _write_lf(os.path.join(root, "check_follower.py"), _FOLLOWER_GATE % (
         rel, "current", "FOLLOWER-OWED " + json.dumps(record)))
-    with open(mpath) as fh:
+    with open(mpath, encoding="utf-8") as fh:
         plan = json.load(fh)
     plan["phases"][0]["tasks"][-1]["tests"]["gate"] = [
         '"%s" check_follower.py' % (sys.executable,)]
-    with open(mpath, "w") as fh:
+    with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(plan, fh, indent=2)
     for argv in (["add", "-A"], ["commit", "-qm", "follower fixture"]):
         subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
@@ -4472,7 +4484,7 @@ def _follower_map_cases(check):
     block = _deps._fenced_block_after(text, _deps._GUIDE_HEADING)
     _write_lf(os.path.join(root, guide),
               text.replace(block, "a map from before this change\n", 1))
-    with open(os.path.join(root, ".gitignore"), "a") as fh:
+    with open(os.path.join(root, ".gitignore"), "a", encoding="utf-8") as fh:
         fh.write("__pycache__/\n")
     for argv in (["add", "-A"], ["commit", "-qm", "the module map's owner"]):
         subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
@@ -4575,10 +4587,10 @@ def _setup_fixture(prefix, fail_first=False):
     aux = os.path.realpath(_harness.fixture_root("drive-setup-%s-" % (prefix,)))
     script = os.path.join(aux, "setup.py")
     flag, log = os.path.join(aux, "fail-once"), os.path.join(aux, "provisioned.log")
-    with open(script, "w") as fh:
+    with open(script, "w", encoding="utf-8") as fh:
         fh.write(_SETUP)
     if fail_first:
-        with open(flag, "w") as fh:
+        with open(flag, "w", encoding="utf-8") as fh:
             fh.write("fail the first setup\n")
     return '"%s" "%s" "%s" "%s"' % (sys.executable, script, flag, log), log
 
@@ -4586,7 +4598,7 @@ def _setup_fixture(prefix, fail_first=False):
 def _provisioned(log):
     """The trees the setup completed in, in order."""
     try:
-        with open(log) as fh:
+        with open(log, encoding="utf-8") as fh:
             return [ln.strip() for ln in fh if ln.strip()]
     except OSError:
         return []
@@ -4594,7 +4606,8 @@ def _provisioned(log):
 
 def _tree_expected(root, task_id):
     """Where `tree_path` puts a task's tree in a `_wave_repo` fixture."""
-    with open(os.path.join(root, ".claude", "audit.config.json")) as fh:
+    with open(os.path.join(root, ".claude", "audit.config.json"),
+              encoding="utf-8") as fh:
         where = json.load(fh)["executor"]["worktreeRoot"]
     return os.path.join(where, "%s-%s" % (os.path.basename(root), task_id))
 
@@ -4605,7 +4618,7 @@ def _brief_of(root, text, task_id, role="executor"):
         hit = _DISPATCH.match(line)
         brief = _BRIEF.search(line)
         if hit and brief and hit.group(1).endswith(role) and hit.group(2) == task_id:
-            with open(os.path.join(root, *brief.group(1).split("/"))) as fh:
+            with open(os.path.join(root, *brief.group(1).split("/")), encoding="utf-8") as fh:
                 return fh.read()
     return ""
 
@@ -4738,7 +4751,7 @@ def _discard_run(M, prefix):
     _code, first = _next_wave(M, root, mpath)
     tree = _tree_of(root, "P1.2")
     if tree:
-        with open(os.path.join(tree, "notes.txt"), "w") as fh:
+        with open(os.path.join(tree, "notes.txt"), "w", encoding="utf-8") as fh:
             fh.write("written by P1.2, declared by nobody\n")
     for t in _dispatched(first):
         _file_wave_executor(root, mpath, t)
@@ -4863,12 +4876,12 @@ def _width_one_run(M, prefix, width, trees=None):
     root, mpath = _repo(prefix, task_ids=TASKS[:2])
     if width is not None:
         cfg_path = os.path.join(root, ".claude", "audit.config.json")
-        with open(cfg_path) as fh:
+        with open(cfg_path, encoding="utf-8") as fh:
             cfg = json.load(fh)
         cfg["executor"] = {"waveWidth": width}
         if trees:
             cfg["executor"]["worktreeRoot"] = trees
-        with open(cfg_path, "w") as fh:
+        with open(cfg_path, "w", encoding="utf-8") as fh:
             json.dump(cfg, fh)
         for argv in (["add", "-A"], ["commit", "-qm", "width"]):
             subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
@@ -4924,7 +4937,7 @@ def _wave_redo_cases(check):
     for t in _dispatched(first):
         _file_wave_executor(root, mpath, t)
     stray = os.path.join(root, "stray.txt")
-    with open(stray, "w") as fh:
+    with open(stray, "w", encoding="utf-8") as fh:
         fh.write("a change the phase tree holds that no task made\n")
     _code, refused = _next_wave(M, root, mpath)
     check("wd1 a dirty phase tree refuses the integration, and the decision "
@@ -4936,7 +4949,7 @@ def _wave_redo_cases(check):
     check("wd2 `retry` is not an answer to it any more: %r" % (wrong,),
           code == 2 and "redo|block" in wrong)
     os.remove(stray)
-    with open(os.path.join(root, "moved.txt"), "w") as fh:
+    with open(os.path.join(root, "moved.txt"), "w", encoding="utf-8") as fh:
         fh.write("the phase tree moved on\n")
     for argv in (["add", "moved.txt"], ["commit", "-qm", "the phase tree moved"]):
         subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
@@ -5039,7 +5052,7 @@ def _wave_hooks_cases(check):
             os.makedirs(os.path.join(root, "hooks"))
             for fname, body in (("_config.py", "def task_binding(t, m):\n    pass\n"),
                                 ("require-plan.py", "x = task_binding(r, m)\n")):
-                with open(os.path.join(root, "hooks", fname), "w") as fh:
+                with open(os.path.join(root, "hooks", fname), "w", encoding="utf-8") as fh:
                     fh.write(body if binding else "pass\n")
             return root
 
@@ -5047,7 +5060,7 @@ def _wave_hooks_cases(check):
             home = os.path.join(base, "home-%d" % (len(os.listdir(base)),))
             os.makedirs(os.path.join(home, "plugins"))
             with open(os.path.join(home, "plugins", "installed_plugins.json"),
-                      "w") as fh:
+                      "w", encoding="utf-8") as fh:
                 json.dump({"plugins": {"audit@quality-gates": [
                     {"scope": "user", "installPath": path, "version": "1.0.0"}]}}, fh)
             _Env.CLAUDE_HOME[0] = home
@@ -5165,7 +5178,7 @@ def _close_evidence_cases(check):
     _commit_plan(root, mpath, _with_tests_add, "fixture: tests.add")
     _next(M, root, mpath)
     os.makedirs(os.path.join(root, "tests"))
-    with open(os.path.join(root, "tests", "test_f1.py"), "w") as fh:
+    with open(os.path.join(root, "tests", "test_f1.py"), "w", encoding="utf-8") as fh:
         fh.write("assert True\n")
     _file_executor(root, mpath, "P1.1",
                    {"testsAdded": ["%s: the f1 case" % (TESTS_ADD_FILE,)]})
@@ -5178,14 +5191,14 @@ def _close_evidence_cases(check):
           and "%s P1.1" % (M.CLOSED,) in text)
 
     root, mpath = _repo("ce-tracked", task_ids=TASKS[:1], per_task="phase")
-    with open(os.path.join(root, "notes.txt"), "w") as fh:
+    with open(os.path.join(root, "notes.txt"), "w", encoding="utf-8") as fh:
         fh.write("v0\n")
     subprocess.run(_GIT + ["add", "notes.txt"], cwd=root, check=True,
                    capture_output=True, timeout=60)
     subprocess.run(_GIT + ["commit", "-qm", "fixture: notes"], cwd=root,
                    check=True, capture_output=True, timeout=60)
     _next(M, root, mpath)
-    with open(os.path.join(root, "notes.txt"), "w") as fh:
+    with open(os.path.join(root, "notes.txt"), "w", encoding="utf-8") as fh:
         fh.write("an allowlist the gate needed\n")
     _file_executor(root, mpath, "P1.1")
     code, text = _next(M, root, mpath)
@@ -5199,13 +5212,13 @@ def _close_evidence_cases(check):
           and M.CLOSED not in text)
 
     root, mpath = _repo("ce-older", task_ids=TASKS[:1], per_task="phase")
-    with open(os.path.join(root, "notes.txt"), "w") as fh:
+    with open(os.path.join(root, "notes.txt"), "w", encoding="utf-8") as fh:
         fh.write("v0\n")
     subprocess.run(_GIT + ["add", "notes.txt"], cwd=root, check=True,
                    capture_output=True, timeout=60)
     subprocess.run(_GIT + ["commit", "-qm", "fixture: notes"], cwd=root,
                    check=True, capture_output=True, timeout=60)
-    with open(os.path.join(root, "notes.txt"), "w") as fh:
+    with open(os.path.join(root, "notes.txt"), "w", encoding="utf-8") as fh:
         fh.write("dirty before the start\n")
     _next(M, root, mpath)
     _file_executor(root, mpath, "P1.1")
@@ -5238,7 +5251,7 @@ def _brief_scope_cases(check):
     brief = _BRIEF.search(again)
     held = ""
     if brief:
-        with open(os.path.join(root, *brief.group(1).split("/"))) as fh:
+        with open(os.path.join(root, *brief.group(1).split("/")), encoding="utf-8") as fh:
             held = fh.read()
     check("bs1 after `scope` widens a task whose brief was printed and no return "
           "filed, `next` issues the brief again over the widened scope - not "
@@ -5855,9 +5868,62 @@ def _falsifier_cases(check):
         _harness.remove_tree(root)
 
 
+def _opens_text_without_encoding(call):
+    """True when `call` is `open(...)` or `io.open(...)` in a text mode with no
+    `encoding=`: such a file is read or written in the locale's encoding,
+    which on Windows is cp1252 and cannot spell what the drive writes. A mode
+    that is not a literal is read as text, since nothing says it is binary."""
+    func = call.func
+    named = (getattr(func, "id", None) == "open"
+             or (getattr(func, "attr", None) == "open"
+                 and getattr(getattr(func, "value", None), "id", None) == "io"))
+    if not named or any(kw.arg == "encoding" for kw in call.keywords):
+        return False
+    modes = [kw.value for kw in call.keywords if kw.arg == "mode"]
+    mode = call.args[1] if len(call.args) > 1 else (modes[0] if modes else None)
+    if isinstance(mode, ast.Constant) and isinstance(mode.value, str):
+        return "b" not in mode.value
+    return True
+
+
+def unencoded_text_opens(source):
+    """The line of every text-mode `open` in `source` that names no encoding,
+    sorted."""
+    return sorted(node.lineno for node in ast.walk(ast.parse(source))
+                  if isinstance(node, ast.Call)
+                  and _opens_text_without_encoding(node))
+
+
 def _stage_cases(check):
-    """The stages cover every block once, and the fixture's hand-written
-    identity is one git reads."""
+    """The stages cover every block once, the fixture's hand-written identity
+    is one git reads, and every file the drive and this suite open as text
+    names its encoding."""
+    scanned = {}
+    for rel, path in (("governance/%s" % (DRIVER,), _loader.script_path(DRIVER)),
+                      ("tests/test_drive_phase.py", os.path.abspath(__file__))):
+        with open(path, "r", encoding="utf-8") as fh:
+            scanned[rel] = ["%s:%d" % (rel, line)
+                            for line in unencoded_text_opens(fh.read())]
+    found = [site for rel in sorted(scanned) for site in scanned[rel]]
+    # Each line of the twin is one shape: lines 1-3 and 6 must be reported
+    # (a write, an append, a bare read, a keyword mode), lines 4, 5 and 7 must
+    # not (binary, an encoding named, `io.open` with one). A check reporting
+    # every open fails the second half; one reporting none fails the first.
+    twin = ("a = open(p, 'w')\n"
+            "b = open(p, 'a', newline='')\n"
+            "c = open(p)\n"
+            "d = open(p, 'wb')\n"
+            "e = open(p, 'w', encoding='utf-8')\n"
+            "f = io.open(p, mode='w')\n"
+            "g = io.open(p, 'r', encoding='utf-8', newline='')\n")
+    twin_lines = unencoded_text_opens(twin)
+    check("plugins/audit/tests/test_drive_phase.py: every file the drive and its "
+          "fixtures write in text mode names its encoding (a write without one "
+          "is reported by file and line) (and a text-mode read too, which "
+          "misreads UTF-8 the same way): %r" % ((found, twin_lines),),
+          sorted(scanned) == ["governance/%s" % (DRIVER,),
+                              "tests/test_drive_phase.py"]
+          and found == [] and twin_lines == [1, 2, 3, 6])
     with open(os.path.abspath(__file__), "r", encoding="utf-8") as fh:
         src = fh.read()
     got = _harness.stage_reach(src, STAGES)

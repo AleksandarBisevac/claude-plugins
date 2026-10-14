@@ -1635,6 +1635,43 @@ def _brief_cases(check):
           and not os.path.exists(brief_file(proj_n, "P1.1",
                                             "20260101T000000Z.executor.md")))
 
+    # A return filed on Windows carries CRLF, and a reviewer brief embeds it as
+    # filed; the arrow is a character cp1252 cannot spell. The stand-in stdout
+    # is what a Windows console pipe is: cp1252, strict, and every "\n"
+    # written through it leaving as "\r\n".
+    proj_w, mpath_w = project("bf-crlf", _bf_manifest())
+    file_exec(proj_w, text=_BF_EXEC.replace("descriptive\": \"d\"",
+                                            "descriptive\": \"d ← e\"")
+              .replace("\n", "\r\n"))
+    crlf_code, _crlf_said = brief(proj_w, mpath_w, "P1.1", "reviewer")
+    try:
+        with open(brief_file(proj_w, "P1.1", "20260101T000000Z.reviewer.md"),
+                  "rb") as fh:
+            written_w = fh.read()
+    except OSError:
+        written_w = b""
+    raw_w = io.BytesIO()
+    console = io.TextIOWrapper(raw_w, encoding="cp1252", errors="strict",
+                               newline="\r\n")
+    err_w = io.StringIO()
+    with contextlib.redirect_stdout(console), contextlib.redirect_stderr(err_w):
+        try:
+            read_w = M.main([mpath_w, "brief", "P1.1", "--role", "reviewer",
+                             "--read", "--project", proj_w])
+        except Exception as exc:                                   # noqa: BLE001
+            read_w = "%s: %s" % (type(exc).__name__, exc)
+    console.flush()
+    printed_w = raw_w.getvalue()
+    check("plugins/audit/tests/test_audit_lookup.py: a reviewer brief carrying "
+          "non-cp1252 characters and CRLF-prone text, read back through brief "
+          "--read under a cp1252 stdout, prints exactly the bytes that were "
+          "written (the brief holds both, and the bytes printed are the "
+          "file's): %r" % ((crlf_code, read_w, len(written_w), len(printed_w),
+                            printed_w.count(b"\r\r\n")),),
+          crlf_code == M.E_OK and read_w == M.E_OK
+          and b"\r\n" in written_w and "←".encode("utf-8") in written_w
+          and printed_w == written_w)
+
     code6, said6 = brief(proj, mpath, "P1", "executor")
     check("bf11 a phase id asked for a task's role, or a task id for the "
           "phase's, is a miss rather than a brief about the wrong thing: %r"

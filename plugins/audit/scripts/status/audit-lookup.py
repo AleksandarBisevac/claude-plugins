@@ -1441,6 +1441,23 @@ def write_brief(manifest, manifest_path, project_arg, node_id, role):
     return E_OK, path
 
 
+def write_exact(stream, text):
+    """Put `text` on `stream` as the UTF-8 bytes a brief is written in.
+
+    A text stream is no route for those bytes: on Windows it turns every "\\n"
+    into "\\r\\n", so a CRLF line a brief embeds leaves as "\\r\\r\\n", and its
+    encoding is the console's code page, which cannot spell every character a
+    brief carries. So the bytes go to the stream's own buffer. A stream with
+    no buffer is an in-memory one, which neither translates nor encodes."""
+    raw = getattr(stream, "buffer", None)
+    if raw is None:
+        stream.write(text)
+        return
+    stream.flush()
+    raw.write(text.encode("utf-8"))
+    raw.flush()
+
+
 def read_brief(manifest, manifest_path, project_arg, node_id, role):
     """`(code, text)` - the brief `write_brief` wrote for `node_id`'s current
     start, read back unchanged, or why there is none. It composes nothing, so
@@ -1731,7 +1748,7 @@ def main(argv):
         code, said = read_brief(manifest, args.manifest, args.project, args.id,
                                 args.role)
         if code == E_OK:
-            sys.stdout.write(said)
+            write_exact(sys.stdout, said)
         else:
             sys.stderr.write("audit-lookup.py: %s\n" % (said,))
         return code

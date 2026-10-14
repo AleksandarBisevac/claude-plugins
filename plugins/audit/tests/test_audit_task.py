@@ -5337,10 +5337,20 @@ def _start_cases(check):
                  "startedAt": "2026-01-01T00:00:00Z", "handedOff": True,
                  "note": "phase run"})
 
+        # Every child `pc_gone_pid` spawned, kept until this block ends.
+        _pc_gone_children = []
+
         def pc_gone_pid():
-            """A pid no process holds: a child that has already been reaped."""
+            """A pid no live process holds: a child this block spawned and that
+            has exited. Reaping alone does not keep it free on Windows, which
+            hands a freed pid to the next process soon after; while a handle
+            to the exited process stays open its pid is not reused, and the
+            `Popen` kept here holds that handle until the block ends. Linux
+            and macOS hand pids out in order, so there one is reused only
+            after the whole range wraps."""
             child = subprocess.Popen([sys.executable, "-c", "pass"])
             child.wait()
+            _pc_gone_children.append(child)
             return child.pid
 
         def pc_json(txt):
