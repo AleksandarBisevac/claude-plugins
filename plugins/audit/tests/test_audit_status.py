@@ -4386,6 +4386,92 @@ def _other_checkout_cases(check):
         shutil.rmtree(base, ignore_errors=True)
 
 
+def _standing_rows(root, rows):
+    """Write `rows` as a journal file under `root`'s default journal directory."""
+    jdir = os.path.join(root, "journal")
+    os.makedirs(jdir, exist_ok=True)
+    with open(os.path.join(jdir, "2026-10.sa.jsonl"), "w", encoding="utf-8") as fh:
+        for row in rows:
+            fh.write(json.dumps(row) + "\n")
+
+
+def _standing_row(action, ts, digest, reason=""):
+    return {"ts": ts, "action": action, "hash": digest,
+            "actor": {"via": "owner-prompt"}, "details": {"reason": reason}}
+
+
+def _standing_approval_cases(check):
+    """`standing_approval_block` hands back what the hooks' reader answers,
+    shown in text and `--json`, and says nothing when none was ever armed."""
+    root = _harness.fixture_root("audit-status-sa-")
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    mpath = os.path.join(root, "audit-plan.json")
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(_fixture(), fh)
+    none_text = _cli([mpath], root)[1]
+    none_json = json.loads(_cli([mpath, "--json"], root)[1])
+    check("sa1 never armed: no journal at all prints nothing about it, text "
+          "or --json", "STANDING APPROVAL" not in none_text
+          and "standingApproval" not in none_json)
+    arm_ts = "2026-10-01T08:00:00Z"
+    digest = "abcdef0123456789abcdef"
+    ref = digest[:12]
+    use = {"ts": "2026-10-02T08:00:00Z", "action": "risk.standing.used",
+           "hash": "u1", "details": {"reason": "standing approval %s armed %s"
+                                     % (ref, arm_ts)}}
+    _standing_rows(root, [_standing_row("risk.standing.armed", arm_ts, digest),
+                          use, dict(use, hash="u2"),
+                          dict(use, hash="u3", details={"reason": "other"})])
+    text = _cli([mpath], root)[1]
+    blob = json.loads(_cli([mpath, "--json"], root)[1]).get("standingApproval")
+    check("sa2 armed: text names it, the time it was armed and the two "
+          "commits that used it (a third use row cites another arming): %r"
+          % (text[-200:],),
+          "STANDING APPROVAL  armed since %s; 2 commit(s) used it" % arm_ts
+          in text and text.count("STANDING APPROVAL") == 1)
+    check("sa3 armed: --json carries armed, since and uses: %r" % (blob,),
+          isinstance(blob, dict) and blob.get("armed") is True
+          and blob.get("since") == arm_ts and blob.get("uses") == 2)
+    rev_ts = "2026-10-03T08:00:00Z"
+    _standing_rows(root, [_standing_row("risk.standing.armed", arm_ts, digest),
+                          _standing_row("risk.standing.revoked", rev_ts, "r1")])
+    rtext = _cli([mpath], root)[1]
+    rblob = json.loads(_cli([mpath, "--json"], root)[1]).get("standingApproval")
+    check("sa4 revoked: text says revoked and when, and does not say armed: %r"
+          % (rtext[-200:],),
+          "STANDING APPROVAL  revoked %s" % rev_ts in rtext
+          and "armed since" not in rtext)
+    check("sa5 revoked: --json says armed false with revokedAt: %r" % (rblob,),
+          isinstance(rblob, dict) and rblob.get("armed") is False
+          and rblob.get("revokedAt") == rev_ts)
+
+    # The facts are the reader's answer, not a second parse: a reader returning
+    # values no journal could produce changes what status returns.
+    class _Rows(object):
+        @staticmethod
+        def read_all(project, config=None):
+            return []
+
+    class _Stub(object):
+        journal_lib = staticmethod(lambda: _Rows)
+
+        @staticmethod
+        def standing_approval(rows):
+            return {"armed": True, "since": "SENTINEL-SINCE", "row": "x",
+                    "words": None, "uses": 77, "revokedAt": None}
+    real = M._loader.load_hooks_config
+    M._loader.load_hooks_config = lambda modname=None: _Stub
+    try:
+        got = M.standing_approval_block(mpath, root)
+    finally:
+        M._loader.load_hooks_config = real
+    check("sa6 the block is _config.standing_approval's answer (a stub reader "
+          "with since/uses no journal holds comes through unchanged): %r"
+          % (got,), got.get("since") == "SENTINEL-SINCE" and got.get("uses") == 77)
+    _harness.remove_tree(root)
+
+
 def _selftest():
     def body(record):
         _cases(record)
@@ -4399,6 +4485,7 @@ def _selftest():
         _harness.stage(record, "we", _worked_elsewhere_cases)
         _harness.stage(record, "sl-block", _success_line_cases)
         _harness.stage(record, "kt-block", _kept_tree_cases)
+        _harness.stage(record, "sa-block", _standing_approval_cases)
     return _harness.run(body)
 
 

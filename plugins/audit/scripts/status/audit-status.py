@@ -944,6 +944,7 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None,
     lines += _resumable_lines(here, summary, pt=pt)
     lines += _unfinished_lines(summary, pt=pt)
     lines += _kept_tree_lines(summary, pt=pt)
+    lines += _standing_approval_lines(summary, pt=pt)
     return "\n".join(lines)
 
 
@@ -2055,6 +2056,46 @@ def _kept_tree_lines(summary, pt=None):
     return out
 
 
+def standing_approval_block(manifest_path, project):
+    """The owner's standing high-risk approval as the hooks read it: `{}` when
+    none was ever armed or revoked (nothing to say), else the answer of
+    `_config.standing_approval` unchanged - `armed`, `since`, `uses`,
+    `revokedAt` - or `{"error": why}` when the trail or the reader could not be
+    had, because "not armed" is a claim neither case supports."""
+    try:
+        _root, config = _evidence_io.project_config_for(manifest_path, project)
+        hooks = _loader.load_hooks_config(modname="audit__config")
+        reader = getattr(hooks, "standing_approval", None)
+        if reader is None:
+            return {"error": "the hooks' _config has no standing-approval reader"}
+        journal = hooks.journal_lib()
+        if journal is None:
+            return {"error": "the hooks could not load the journal reader"}
+        state = reader(journal.read_all(project, config))
+    except Exception as exc:                       # defensive; see the docstring
+        return {"error": "the journal could not be read: %s" % (exc,)}
+    if not state["armed"] and not state["revokedAt"]:
+        return {}
+    return dict(state)
+
+
+def _standing_approval_lines(summary, pt=None):
+    """`STANDING APPROVAL` - armed (since when, how many commits used it) or
+    revoked. Nothing when the block is absent or empty (never armed)."""
+    pt = pt or _cli_fmt.PLAIN
+    block = (summary or {}).get("standingApproval")
+    if not isinstance(block, dict) or not block:
+        return []
+    if block.get("error"):
+        return ["", pt.paint("  STANDING APPROVAL  unknown - %s" % block["error"],
+                             "warn")]
+    if block.get("armed"):
+        return ["", pt.paint("  STANDING APPROVAL  armed since %s; %d commit(s) "
+                             "used it" % (block.get("since"), block.get("uses", 0)),
+                             "warn")]
+    return ["", "  STANDING APPROVAL  revoked %s" % (block.get("revokedAt"),)]
+
+
 def main(argv):
     try:
         args = build_parser().parse_args(list(argv))
@@ -2261,6 +2302,12 @@ def main(argv):
                            for c in _status_facts.FULL_RUN_CONDITIONS))
             or not (want_json or want_gate)):
         summary["fullRun"] = full_run_block(manifest, manifest_path, project)
+
+    # Every mode carries it, but only when an approval was ever armed or revoked,
+    # so a plan whose trail never held one keeps its payload byte for byte.
+    standing = standing_approval_block(manifest_path, project)
+    if standing:
+        summary["standingApproval"] = standing
 
     gate_view = summary
     if want_gate and laid:

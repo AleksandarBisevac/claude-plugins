@@ -3529,7 +3529,7 @@
     {
       "id": "P125.58-0h5",
       "title": "Every keyword the owner types is read through one owner-prompt reader, the plan-first bypass included",
-      "status": "in_progress",
+      "status": "done",
       "description": "Found while landing the standing high-risk approval: `_config.owner_prompt` reads only the `prompt` field of a UserPromptSubmit payload with no `agent_id`, but the same hook's older `_prompt_text` (detect-plan-skip.py) - which arms the plan-first bypass - also accepts `user_prompt` and `message`. Two readers of one boundary, one weaker. Invariant: every keyword a human arms by typing it is read through `_config.owner_prompt`; delete `_prompt_text`. A selftest that a payload carrying the bypass keyword only in `user_prompt` or `message`, or carrying an `agent_id`, arms nothing, beside the allow case where the owner's own prompt does.",
       "files": [
         "plugins/audit/hooks/detect-plan-skip.py",
@@ -3562,14 +3562,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "65fd336c0bd7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Deleted _prompt_text from detect-plan-skip.py; its only caller (the bypass-keyword read in main) now uses _config.owner_prompt. No non-keyword use existed: the prompt only fed the keyword test and _arm_bypass, which does not use its wording. _config.py needed no change. Added by1 (bypass keyword in user_prompt/message, agent_id payload, or tool-event payload arms nothing; owner prompt arms exactly one slot) and one1 (AST lint prompt_readers reports .get/subscript of prompt/user_prompt/message or _prompt_text calls). Red 1: both cases failed on old code (42/44). Red 2 (over-fire): mutated lint to flag every .get call, one1 went red (43/44), temp copy removed. Full sweep: 335/335 files ok, 16210 cases; ruff clean.",
+        "descriptive": "The plan-first bypass is armed only by the owner's own prompt, through the one reader the standing approval uses."
       },
       "startedAt": "2026-10-14T17:07:34Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T18:14:55Z",
+      "verifiedBy": [
+        "the plan-first bypass keyword carried only in user_prompt or message, or in a payload with an agent_id, arms nothing, and the same keyword in the owner's prompt still arms it",
+        "detect-plan-skip reads prompt text in exactly one place, _config.owner_prompt (a second reader of the payload's prompt fields is reported by name)"
+      ],
       "reviewPerTask": "phase",
       "notes": [
         {
@@ -3585,6 +3588,17 @@
         "runId": "2026-10-14T18:14:53Z.ca8cb3",
         "status": "passed",
         "at": "2026-10-14T18:14:53Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "65fd336c0bd7",
+        "at": "2026-10-14T18:14:55Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T17:16:02Z",
+        "basis": "`python3 plugins/audit/tests/test_detect_plan_skip.py --selftest` in a throwaway tree at HEAD exited 1, but no case --case names failed an assertion as the task's own: by1 (house FAIL), one1 (house FAIL) - SELFTEST FAILED: 42/44 cases passed; --case the plan-first bypass keyword carried only in user_prompt or message, or in a payload with an agent_id, arms nothing, and the same keyword in the owner's prompt still arms it names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -3636,7 +3650,12 @@
           "at": "2026-10-14T17:24:01Z",
           "text": "Red-first proved by the orchestrator: git archive of the wave base plus the new test_audit_status.py, Claude session variables unset, __pycache__ purged -> exit 1, 392/397 (FAIL sa2, sa3, sa4, sa5 and the sa-block raise); with the task's audit-status.py -> exit 0, 397/397. The executor's sl1-sl3 reds were its shell's session variables, which the sweep strips."
         }
-      ]
+      ],
+      "testEvidence": {
+        "runId": "2026-10-14T18:24:18Z.dab7a6",
+        "status": "passed",
+        "at": "2026-10-14T18:24:18Z"
+      }
     },
     {
       "id": "P125.60-0h5",
