@@ -4268,7 +4268,7 @@
     {
       "id": "P125.68-0h5",
       "title": "Every text-mode file and subprocess read or write in scripts/ and hooks/ names its encoding",
-      "status": "in_progress",
+      "status": "done",
       "description": "Third encoding defect in this phase (F666 fixture, F668 brief read-back and fixture writes, now this): CI run 38645130027 windows plain 1 - a subprocess reader thread decoded a verb's UTF-8 output as cp1252 (`codecs.charmap_decode` in `subprocess._readerthread`), so the follower-at-integration case and sn6 still fail on Windows after P125.66. Some `subprocess.run(..., text=True)` / `universal_newlines` / `Popen(text=True)` in the product names no encoding (P125.61's owner query `<script> --follower-for` and the drive's verb runner are first suspects). The class fix is an invariant, not the next site: (1) a lint over every .py under scripts/ and hooks/ (built like the repo's other AST lints, rows in tools/prove-gates.py and tools/gate-parity.py) that reports any text-mode `open`/`io.open` and any text-mode subprocess call (`text=True`, `universal_newlines=True`, or an `encoding=`-less capture decoded later with `.decode()` without a codec) that names no encoding; (2) fix every site it reports, UTF-8 with an explicit errors policy chosen per site and stated; (3) reproduce on POSIX: run the drive and integrate suites with `LC_ALL=C PYTHONUTF8=0` (a locale whose preferred encoding is ASCII), which turns the same defect red here, and add that run as a case. Widen through the drive for the files the lint reports; stop and name them.",
       "files": [
         "plugins/audit/scripts/_output.py",
@@ -4320,25 +4320,43 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "64f75f0fca33",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_output.py: new section 'text I/O names its encoding'. unencoded_text_io(source) is the one walker and returns (line, what). text_encoding_violations(dirs, pending) runs it over ENCODING_DIRS (= NEWLINE_DIRS: scripts/, hooks/, and .claude/hooks when present, labelled .claude/hooks/<file>). ENCODING_PENDING = (). It reports a text-mode open/io.open/os.fdopen with no encoding, read_text/write_text with none, run/Popen/check_output/check_call/call given text=/universal_newlines=/errors= but no encoding=, and a bare .decode(). Fixed sites: drive-phase.py x5 (mutation runner and SHA lookups use utf-8/replace, --git-path uses utf-8/surrogateescape); integrate-task.py x3 (.decode: the path uses surrogateescape, SHAs use replace); hooks/_config.py:651, guard-bash-writes.py:1472,1698, _journal_io.py:701, _panel_runstate.py:78, _doctor_hygiene.py:516 (git paths, utf-8/surrogateescape); full-gate.py:158, _ado_fetch.py:343, ado-connect.py:147,163, _doctor_ado.py:205 (tool output, utf-8/replace); _worktrees.py:165 and stamp-verification.py:3211 (open, utf-8). The orchestrator fixed the 12 .claude/hooks sites. test_drive_phase.py: the old two-file walker now calls _output.unencoded_text_io, so it covers subprocess calls too; its own three text-mode subprocess calls are fixed (dd4 git status, _head, _git_out - _git_out is the CI culprit); new al-block re-runs fm-block in a child under LC_ALL=C LANG=C PYTHONUTF8=0 after checking the child's preferred encoding is not UTF-8. test__output.py: en1 (the tests.add case), en2 allow, en3 pending, en4 shared walker, en5 real tree. prove-gates.py: one red row (lint crippled to return []) and three allow rows (binary widened, subprocess encoding ignored, pending ignored). gate-parity.py: a NOT_AN_EXEMPTION row for the _UNENCODED message table. PLUGIN-BUILD-GUIDE.md: one sentence beside the newline lint. Results: test__output 269/269; test_drive_phase 295/295 under both the default env and LC_ALL=C; test_integrate_task 27/27 under both. Sweep: 334/335 files ok. The one failure is tools/check-committed-pii.py (q7, q26, q27, q27b), whose windows-user-path findings are in docs/audit/evidence/returns/P125.66-0h5 and docs/audit/phases/P125.json, records this task does not own. Mutations in a scratch copy: each prove-gates row turned its target case red. sn6 [True, False, True, False] does not reproduce on POSIX under the ASCII locale (it passes there); Windows CI decides it.",
+        "descriptive": "Every text file and subprocess read or write in scripts/, hooks/ and .claude/hooks now names UTF-8, a lint keeps it that way, and the drive's follower case holds under an ASCII locale."
       },
       "startedAt": "2026-10-14T22:20:18Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T23:29:56Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__output.py: a text-mode open or a text-mode subprocess call with no encoding anywhere under scripts/ or hooks/ is reported by file and line, and one that names its encoding is not",
+        "plugins/audit/tests/test_drive_phase.py: under a locale whose preferred encoding is ASCII, a drive whose verbs print non-ASCII text integrates and closes as it does under UTF-8",
+        "en2",
+        "en3",
+        "en4",
+        "en5"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T23:29:55Z.b1ace5",
         "status": "passed",
         "at": "2026-10-14T23:29:55Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "64f75f0fca33",
+        "at": "2026-10-14T23:29:56Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T22:58:10Z",
+        "basis": "`python3 plugins/audit/tests/test__output.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_output' has no attribute 'text_encoding_violations'. Did you mean: 'text_write_newline_violations'?\" (read as python), and the task introduces 'text_encoding_violations': absent from HEAD's plugins/audit/scripts/_output.py, plugins/audit/scripts/git/integrate-task.py, plugins/audit/scripts/governance/drive-phase.py, tools/prove-gates.py, tools/gate-parity.py, plugins/audit/hooks/_config.py, plugins/audit/hooks/guard-bash-writes.py, plugins/audit/scripts/git/_worktrees.py, plugins/audit/scripts/governance/_journal_io.py, plugins/audit/scripts/governance/full-gate.py, plugins/audit/scripts/governance/stamp-verification.py, plugins/audit/scripts/manifest/_ado_fetch.py, plugins/audit/scripts/manifest/ado-connect.py, plugins/audit/scripts/panel/_panel_runstate.py, plugins/audit/scripts/status/_doctor_ado.py, plugins/audit/scripts/status/_doctor_hygiene.py, PLUGIN-BUILD-GUIDE.md, .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py and present in the working tree's plugins/audit/scripts/_output.py, tools/prove-gates.py, tools/gate-parity.py, PLUGIN-BUILD-GUIDE.md; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.69-0h5",
       "title": "The sweep's legacy-encoding pass also sets a non-UTF-8 locale, so a file read or subprocess capture with no encoding fails locally",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Three encoding defects in this phase reached Windows CI while every local and ubuntu sweep was green, including the `--encoding cp1252` pass: that pass sets only PYTHONIOENCODING (the child's stdio), not the locale's preferred encoding that `open()` and `subprocess(text=True)` use with no `encoding=`. Under `LC_ALL=C LANG=C PYTHONUTF8=0` the preferred encoding is ASCII and the same defects go red on POSIX (measured: test_drive_phase fm-block raised UnicodeDecodeError in a text-mode git capture). Make `--encoding <codec>` also put each child under a locale whose preferred encoding is not UTF-8 (LC_ALL=C/LANG=C, PYTHONUTF8=0) on POSIX, and have the runner VERIFY it took (ask the child's `locale.getpreferredencoding(False)` once) and refuse the pass as could-not-run if it is still UTF-8 - a pass that claims a legacy encoding while running UTF-8 is the silent pass this replaces. Windows legs already run under a legacy code page; leave them. Update the docstring line and CONTRIBUTING.md's description of what the pass covers so they say both halves.",
       "files": [
         "tools/sweep-selftests.py",
@@ -4364,6 +4382,53 @@
         "gateBasis": "phase-no-spelling"
       },
       "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-14T23:29:58Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
+    },
+    {
+      "id": "P125.70-0h5",
+      "title": "A filed return and a written brief carry the same bytes on every platform, and the brief read-back case names where it differs",
+      "status": "pending",
+      "description": "Last red leg of the phase: CI run 38654487121 (ci/p125 at 64f75f0f, windows-latest shard 1 plain and cp1252, every other leg green) - test_drive_phase sn6 `(4, [True, False, True, False])`: the reviewer briefs read back through `brief <id> --role reviewer` differ from the files the drive wrote; the executor briefs match. Not reproducible on POSIX under an ASCII locale. Known Windows-only difference on this path (P125.66's executor, from CPython's subprocess source): `drive-phase.run_verb` passes a verb's stdin as TEXT (`input=stdin` with `text=True`), and on Windows the text wrapper turns `\\n` into `\\r\\n`, so a return filed through `submit -> file-return` is CRLF on Windows and LF elsewhere - the same record differs by platform - and a reviewer brief embeds that return. Fix at the root: (1) stdin to a verb is sent as UTF-8 bytes with no newline translation, so a filed return's bytes are the same on every platform; (2) every brief is written with an explicit encoding and `newline=\"\"` and read back the same way; (3) sn6 reports, for each mismatching brief, the role, the first differing offset and a repr of both sides around it, so a red on a platform nobody can reproduce locally says what differed. Make (1) POSIX-visible: a case that hands run_verb's stdin path a text containing newlines through a stand-in that translates like Windows' text wrapper, and asserts the filed bytes are LF. Existing CRLF returns already committed stay readable (the checked read hashes bytes on disk).",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_audit_lookup.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a verb's stdin reaches it as the exact UTF-8 bytes it was given, with no newline translation, so a return filed through submit is byte-identical on every platform",
+          "plugins/audit/tests/test_drive_phase.py: a brief read back that differs from the written brief is reported with its role, the first differing offset and both sides around it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
       "skills": [],
       "risk": "low",
       "blockedBy": [],
