@@ -3260,65 +3260,107 @@ def _leftover_cases(check):
 
 
 def _remove_retry_cases(check):
-    """`_remove_throwaway` retries `shutil.rmtree` while the holder still
-    exists, bounded rather than trusted on the first try or retried forever."""
+    """`_remove_throwaway` removes the holder through `_output.while_shared`,
+    the one retry for a name another process still holds open: a sharing
+    denial is retried until its deadline, anything else is not retried."""
+    import errno
     real_git = M._git
     real_rmtree = M.shutil.rmtree
+    real_shared = M._output.while_shared
 
     def git_ok(where, args, timeout=120, strip=True):
         return 0, ""
-    M._git = git_ok
 
-    def once_then_succeeds():
-        holder = _harness.fixture_root("stamp-retry-ok-")
+    def denial():
+        return OSError(errno.EACCES, "held open by another process")
+
+    def run(rmtree, wait, clock=None):
+        holder = _harness.fixture_root("stamp-retry-")
         os.makedirs(os.path.join(holder, "tree"))
-        calls = []
-
-        def flaky(target, ignore_errors=False):
-            calls.append(target)
-            if len(calls) > 1:
-                real_rmtree(target, ignore_errors=True)
-        M.shutil.rmtree = flaky
+        seen = []
+        M._git = git_ok
+        M.shutil.rmtree = lambda target, *a, **k: rmtree(target, seen)
         try:
+            kwargs = {"wait": wait}
+            if clock is not None:
+                kwargs["clock"] = clock
             removed = M._remove_throwaway(holder, holder,
                                           os.path.join(holder, "tree"),
-                                          backoff=0.001)
+                                          **kwargs)
         finally:
-            M.shutil.rmtree = real_rmtree
-        return removed, calls
-
-    def never_succeeds():
-        holder = _harness.fixture_root("stamp-retry-stuck-")
-        os.makedirs(os.path.join(holder, "tree"))
-        calls = []
-
-        def stuck(target, ignore_errors=False):
-            calls.append(target)
-        M.shutil.rmtree = stuck
-        try:
-            removed = M._remove_throwaway(holder, holder,
-                                          os.path.join(holder, "tree"),
-                                          retries=3, backoff=0.001)
-        finally:
+            M._git = real_git
             M.shutil.rmtree = real_rmtree
             real_rmtree(holder, ignore_errors=True)
-        return removed, calls
+        return removed, seen
 
+    def flaky(target, seen):
+        seen.append(target)
+        if len(seen) == 1:
+            raise denial()
+        real_rmtree(target)
+
+    def stuck(target, seen):
+        seen.append(target)
+        raise denial()
+
+    def broken(target, seen):
+        seen.append(target)
+        raise OSError(errno.EPERM, "not a sharing denial")
+
+    ticks = [0.0]
+
+    def clock():
+        ticks[0] += 0.1
+        return ticks[0]
+
+    removed_ok, seen_ok = run(flaky, 5.0)
+    removed_stuck, seen_stuck = run(stuck, 0.35, clock)
+    removed_bad, seen_bad = run(broken, 5.0)
+
+    routed = []
+
+    def counting(op, deadline=None, clock=None):
+        routed.append(deadline)
+        return real_shared(op, deadline=deadline) if clock is None else \
+            real_shared(op, deadline=deadline, clock=clock)
+    M._output.while_shared = counting
     try:
-        removed_ok, calls_ok = once_then_succeeds()
-        removed_stuck, calls_stuck = never_succeeds()
+        run(flaky, 5.0)
     finally:
-        M._git = real_git
-    check("sr215 a removal whose first rmtree leaves the holder in place "
-          "(simulated: a removal function that fails once then succeeds) "
-          "still returns removed, within the stated bound - %d attempt(s): "
-          "%r" % (len(calls_ok), (removed_ok, calls_ok)),
-          removed_ok is True and len(calls_ok) == 2)
-    check("sr216 a holder that never goes away is reported left behind after "
-          "the bound, not retried forever - exactly the %d attempts the bound "
-          "allowed, the holder still there: %r"
-          % (len(calls_stuck), (removed_stuck, calls_stuck)),
-          removed_stuck is False and len(calls_stuck) == 3)
+        M._output.while_shared = real_shared
+
+    def plain(target, seen):
+        seen.append(target)
+        real_rmtree(target)
+
+    def does_nothing(op, deadline=None, clock=None):
+        return None
+    M._output.while_shared = does_nothing
+    try:
+        removed_mut, seen_mut = run(plain, 5.0)
+    finally:
+        M._output.while_shared = real_shared
+
+    check("sr215 a removal refused once as a sharing denial is retried and "
+          "returns removed - %d attempt(s): %r"
+          % (len(seen_ok), (removed_ok, seen_ok)),
+          removed_ok is True and len(seen_ok) == 2)
+    check("sr216 a holder whose removal is always denied is reported left "
+          "behind once the deadline passes, not retried forever - attempts "
+          "made: %d" % (len(seen_stuck),),
+          removed_stuck is False and 1 < len(seen_stuck) < 10)
+    check("sr217 an error that is not a sharing denial is not retried - one "
+          "attempt, the holder reported left behind: %r"
+          % ((removed_bad, len(seen_bad)),),
+          removed_bad is False and len(seen_bad) == 1)
+    check("sr218 the retry is `_output.while_shared`: it was asked exactly "
+          "once for the removal, with a deadline of its own: %r" % (routed,),
+          len(routed) == 1 and routed[0] is not None)
+    check("sr219 MUTATION: with `while_shared` replaced by one that does "
+          "nothing, a plain removal is never attempted and the holder is "
+          "reported left behind - the removal lives behind the helper, not "
+          "beside it: %r" % ((removed_mut, len(seen_mut)),),
+          removed_mut is False and len(seen_mut) == 0)
 
 
 def _holder_cases(check):

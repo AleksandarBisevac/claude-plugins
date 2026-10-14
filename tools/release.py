@@ -671,14 +671,19 @@ class FakeRunner(object):
     can fail exactly one step by matching a substring of it. Records every
     call so a case can assert what did, or did not, run."""
 
-    def __init__(self, responses=None, default=(0, "")):
+    def __init__(self, responses=None, default=(0, ""), call_limit=200):
         self.calls = []
+        self.call_limit = call_limit
         self.responses = list(responses or [])
         self.default = default
 
     def __call__(self, args, cwd=None):
         text = args if isinstance(args, str) else " ".join(str(a) for a in args)
         self.calls.append(text)
+        if len(self.calls) > self.call_limit:
+            # A loop that polls (`wait_ci`) ends here instead of at its
+            # timeout, and the recorded list stays small enough to print.
+            return 1, "fake runner: more than %d calls" % (self.call_limit,)
         for predicate, result in self.responses:
             if predicate(text):
                 return result
@@ -859,12 +864,33 @@ def _cases(check):
         code, detail = run_pipeline(ctx, out=io.StringIO())
         check("rl8 a bug filed in the plan after preflight ran stops the run "
               "at the next remote step, naming the bug, with no push issued: "
-              "%r / %r" % (detail, runner.calls),
+              "%r / %s" % (detail, excerpt(repr(runner.calls))),
               code == 1 and "BUG-9" in detail
               and step_done(ctx.state, "push-ci-branch") is False
               and not runner.calls)
     finally:
         remove_tree(tmp)
+
+    # A run that never appears: the fake ends the poll, not the 60s timeout,
+    # and the failure text built from its call list stays short.
+    runner = FakeRunner(default=(0, "[]"), call_limit=50)
+    tmp = _fixture_repo()
+    try:
+        ctx = Context(tmp, "9.9.9", push=False, runner=runner,
+                     poll_interval=0, ci_timeout=60)
+        began = time.time()
+        ok, detail = wait_ci(ctx, "audit/some-branch")
+        waited = time.time() - began
+    finally:
+        remove_tree(tmp)
+    message = "%r / %s" % (detail, excerpt(repr(runner.calls)))
+    check("rl8b wait_ci over a fake that never shows a run returns once the "
+          "fake's call limit ends the poll, not at its 60s timeout, and the "
+          "message naming the call list is bounded (a few KB at most): "
+          "%.2fs, %d calls, %d chars"
+          % (waited, len(runner.calls), len(message)),
+          ok is False and waited < 10 and len(runner.calls) == 51
+          and len(message) < 2048 and "[... " in message)
 
     tmp = _fixture_repo(bugs=[{"id": "BUG-2", "status": "open",
                               "severity": "high", "title": "still open"}])

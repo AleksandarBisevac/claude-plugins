@@ -683,7 +683,7 @@ TOOLS_REL = "tools"
 # test tree is here for the same reason and was added by this lint's FIRST run, which
 # reported the cross-language pin's own name: a tool that says where its behaviour is
 # pinned is doing the right thing, and that name goes stale on a rename exactly like
-# any other. `.claude/hooks` is a fourth, repository-level tree rather than part of the
+# any other. `.claude/hooks` is a repository-level tree, not part of the
 # plugin: `tools/release.py` loads `.claude/hooks/guard-release.py` by path and names
 # it in its own prose, and that is this repository's configuration, not the plugin's
 # product - the same reason `_tool_known_basenames` must look there too.

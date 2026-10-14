@@ -3316,7 +3316,7 @@
     {
       "id": "P125.56-0h5",
       "title": "The register-citation lint reads every source kind this repo ships, not only Python",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase-review finding (low, house rule): the lint that keeps private register ids (F/P/BUG numbers) out of code comments and docstrings - `_deps`' `_py_comment_citations` / `_py_docstring_citations`, held by case rc16 over the real tree - reads .py files only, so a .mjs, .js or .sh comment citing a register id escapes it (tools/capture-screenshots.mjs's awaitSaveCard docstring does today). Widen the lint to the comment syntax of every source kind the tree ships (.mjs/.js line and block comments, .sh # comments), through one table of comment syntaxes rather than one function per language, and fix the citations it then finds by stating the constraint instead of the id.",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -3399,19 +3399,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f302e1611eef",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Widened _deps.register_citation_violations through one COMMENT_SYNTAXES table (.mjs, .js, .sh) with a small scanner that skips string literals, template literals and regex literals; .py unchanged. Added rc16b (fixture: id in .mjs block comment, .js line comment, .sh comment reported with file/line; same id in strings, a template literal and after shell $# not reported) and rc16c (real tree has no source-kind comment citation). The widened lint found 136 citations in 32 files; every one was rewritten as the constraint it stood for (id deleted, meaning kept, no code touched) in examples/panel.sh, 12 files under plugins/audit/scripts/ui/panel/, tools/capture-screenshots.mjs, tools/check-report-interactive.mjs, tools/verify.sh, tools/ui-checks/*, tools/ui-tests/*. Section markers: only two markers carried an id (version-banner.js line 1 and the ado-connector.js '// --- F187:' header, plus '/* ---- F-P-n (xx):' headers in stage-tabs.mjs and capture-screenshots.mjs); none is pinned by a test (grep over plugins/audit/tests and tools found no reference), ids dropped and text otherwise unchanged. Results: test__deps selftest 316/316; vitest 809/809 in 55 files; ruff clean; check-rendered-artifacts --before-commit OK. FAILING: python3 tools/sweep-selftests.py is 334/335 files; plugins/audit/tests/test__refs.py cases sc1/sc2 fail because docs/screenshots/*.png record panel source digest 63c6c0c998e9 and the panel sources now digest 3fd7078ecbdf (comment-only edits under ui/panel change the digest). Not refreshed: docs/screenshots/*.png and captured-at.json are outside scope. Refresh command: node tools/capture-screenshots.mjs, then commit the result. Two runtime strings in capture-screenshots.mjs still say 'F90 regressed' style text? Not changed: only comments were in scope.",
+        "descriptive": "The register-citation lint now reads .mjs/.js/.sh comments through one syntax table, and the 136 citations it found are rewritten as constraints; the sweep is red only on the screenshot source-digest sidecar until the screenshots are re-captured."
       },
       "startedAt": "2026-10-14T15:56:26Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T16:58:09Z",
+      "verifiedBy": [
+        "a register id cited in a .mjs block comment, a .js line comment and a .sh comment is reported with file and line, and the same id inside a string literal of those files is not",
+        "over this repository's tree no source kind carries a register citation in a comment"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T16:58:07Z.1dcd78",
         "status": "passed",
         "at": "2026-10-14T16:58:07Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "f302e1611eef",
+        "at": "2026-10-14T16:58:09Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T16:32:09Z",
+        "basis": "`python3 plugins/audit/tests/test__deps.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 316 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rc16b (house FAIL): SELFTEST FAILED: 315/316 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -3465,7 +3479,12 @@
           "at": "2026-10-14T16:34:20Z",
           "text": "Red-first proved by the orchestrator: wave base plus the new test_stamp_verification.py -> exit 1, 274/275 (sr-remove-retry block raised: _remove_throwaway's wait/clock form absent); with the task's stamp-verification.py -> 279/279. The executor's scratch runs: sr215/216/218/219 red with while_shared removed; rl8b red with call_limit disabled (60 s, 9.9M calls), green 21/21. File length checked equal to base after the restore and redo."
         }
-      ]
+      ],
+      "testEvidence": {
+        "runId": "2026-10-14T17:07:30Z.bed804",
+        "status": "passed",
+        "at": "2026-10-14T17:07:30Z"
+      }
     },
     {
       "id": "P125.58-0h5",
