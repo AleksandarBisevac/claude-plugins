@@ -705,7 +705,7 @@ function refreshDiscard(b,n){
 /**
  * Say WHICH fields are unsaved, not just how many.
  *
- * F-P-15: the savebar counted ("Discard 1 change") and nothing on the form said
+ * The savebar counted ("Discard 1 change") and nothing on the form said
  * which of twenty-odd settings it meant. The count's basis existed - Discard
  * lists every row before anything is thrown away - but it was a click away, and
  * the Policy tab next door already marks its pending cells inline. Two surfaces
@@ -1005,7 +1005,7 @@ function saveOutcome(res,rows,what,slot,hint){
  const diff=appliedDiff(rows,res);
  const log=res.journaled?' · logged'
    :(res.journaledWhy==='failed'?' · NOT logged':'');
- // F102: the count AND the file. A local write finishes faster than a person can
+ // The count AND the file. A local write finishes faster than a person can
  // see it, so the only thing that separates "done, and it was fast" from "nothing
  // happened" is a sentence naming what landed where — and the reasonable answer
  // to that ambiguity is to press Save again. `what` was already here, spent only

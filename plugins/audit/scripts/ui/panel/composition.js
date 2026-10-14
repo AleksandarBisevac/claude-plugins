@@ -219,7 +219,7 @@ function apIsFallback(v){return !!v&&typeof v==='object'&&!Array.isArray(v)
 function apFallbackWords(fb){
  return (fb&&fb.id!=null)?('#'+fb.id)
   :'nothing is set (meta.ado.parentWorkItem is empty)';}
-// How many characters an option in a phase-row cell may SHOW. F211: those cells
+// How many characters an option in a phase-row cell may SHOW. Those cells
 // carry ONE width declaration, in `panel-css/composition.css` under the
 // `td.phparent` selector — the selector is not quoted here, because a pin counts
 // that literal and a comment reproducing it makes the page carry it twice. A
@@ -378,7 +378,7 @@ function apBoardState(b){
  * THE DECLARATION IS THE OTHER HALF AND IT IS ALREADY PAINTED, which is what
  * makes the silence dangerous: a select reading `#101` with nothing beside it
  * looks the same whether the board agrees or nobody ever asked, and on the
- * board this was found on it was the second (F101). So `never-asked` says so
+ * board this was found on it was the second. So `never-asked` says so
  * outright, and it is not an error - nothing is wrong with a phase nobody has
  * compared; what was wrong was showing it as agreement.
  *
@@ -918,7 +918,7 @@ const SEG_ORDER={active:0,pending:1,archived:2};
  *
  * `disabled` and not the `.btn` convention of `aria-disabled`: that one exists to
  * keep a tab stop on a button whose refusal a reader has to be able to reach and
- * hear (F16). Nothing here is refusable — the phase is closed — so the standard
+ * hear. Nothing here is refusable — the phase is closed — so the standard
  * control is right, and a disabled control also fires no events, which is what
  * makes the patch object unreachable rather than merely discouraged.
  *
@@ -1235,7 +1235,7 @@ function renderComp(){closeCombo();
     &&!apIsFallback(ph.adoParent))?ph.adoParent:null;
   apNote=el('span',{class:'mut small apnote'});
   // WHAT THE BOARD SAYS, beside what the manifest declares - and where nothing
-  // has been asked, that is what it says (F101). Written once at render and
+  // has been asked, that is what it says. Written once at render and
   // never touched by `apApply`: the declaration is what an edit changes, and
   // the board's answer is not something a save here can move. Same class as the
   // unfinished-edit note because it is the same kind of line under the same
@@ -1252,7 +1252,7 @@ function renderComp(){closeCombo();
   // in `resolve`'s own words. It is supplementary — the control's accessible
   // name is its aria-label and does not depend on this — and it is the one place
   // a reader can see that an absent declaration is already doing something.
-  // BOUNDED BY `PHCELL_OPTION_CHARS` (F211). A candidate's label is built from a
+  // BOUNDED BY `PHCELL_OPTION_CHARS`. A candidate's label is built from a
   // work item's TITLE, so nothing here can promise it is short; the id and the
   // type are what the hierarchy check grades on, they lead the label, and the
   // whole sentence stays on the option's `title`.

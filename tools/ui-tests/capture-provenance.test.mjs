@@ -1,4 +1,4 @@
-// The two refusals that stand between a re-capture and a committed leak (F137).
+// The two refusals that stand between a re-capture and a committed leak.
 //
 // WHY THEY ARE TESTED HERE AND NOT BY RUNNING THE CAPTURE. Driving the capture
 // takes a machine-wide lock and several minutes of browser time, and neither

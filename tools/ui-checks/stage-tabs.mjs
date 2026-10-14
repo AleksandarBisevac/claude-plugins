@@ -39,8 +39,8 @@
  *
  * The strip/pill count is deliberately not asserted to DROP: on a plan whose tasks
  * all share one status the correct filtered set is every phase, and calling that
- * "inert" is exactly the false accusation check-report-interactive.mjs made once
- * (see F3). The oracle is the expected set, computed here; equality holds either way.
+ * "inert" is exactly the false accusation check-report-interactive.mjs made once.
+ * The oracle is the expected set, computed here; equality holds either way.
  */
 // --- the Overview tab ----------------------------------------------------------
 
@@ -83,7 +83,7 @@ export async function assertOverviewWorks(page, { note, fail, tabTo }) {
       })(),
     };
   });
-  // ov (F-P-5): Overview follows the report's table, so it opens on a VIEW —
+  // ov: Overview follows the report's table, so it opens on a VIEW —
   // active & pending — and the archived phases are off screen by design. Every
   // count below is therefore taken against the view the tab is actually in,
   // computed the same way the client computes it. Switch to `all` first, so the
@@ -250,7 +250,7 @@ export async function assertOverviewWorks(page, { note, fail, tabTo }) {
     }
   }
 
-  // ov (F-P-5): a phase row OPENS IN PLACE. It used to leave for Composition —
+  // ov: a phase row OPENS IN PLACE. It used to leave for Composition —
   // a tab that edits tasks, models and skills — so "show me this phase" landed
   // the reader in a form with their filters behind them. Composition is still
   // reachable, by a named press inside the detail.
@@ -482,7 +482,7 @@ export async function assertHelpDrawerWorks(page, declared, { note, fail, tabTo 
   // Whichever tab the run left behind, this one is about Settings. Selected
   // rather than assumed: `#guards` is merely hidden on the other four, and a
   // click on a hidden button is a 30-second Playwright timeout whose stack reads
-  // exactly like a dead panel (F7's lesson, in this harness).
+  // exactly like a dead panel.
   await tabTo(page, 'guards');
   await page.waitForTimeout(200);
   // trivialLineThreshold as the worked example since v0.34 B1: `enforce` lost
@@ -942,7 +942,7 @@ export async function assertPolicyWorks(page, statePath,
     const d = document.querySelector('#policy [data-discard=policy]');
     return { rows: editRows('policy'), blocked: ev.defaultPrevented,
              label: d ? d.textContent : null,
-             // aria-disabled (F16). This one asserts the button is NOT dead, so
+             // aria-disabled. This one asserts the button is NOT dead, so
              // reading `.disabled` would go on passing for the rest of time
              // whatever the panel did — the direction that hides a regression.
              disabled: d ? d.getAttribute('aria-disabled') === 'true' : null,
@@ -1035,7 +1035,7 @@ export async function assertPolicyWorks(page, statePath,
 }
 
 
-/* ---- F-P-6 (th): Appearance — the look, edited as tokens ---------------------
+/* ---- (th): Appearance — the look, edited as tokens ---------------------
  *
  * The panel and the report are one visual system: a single token layer that the
  * server compiles by substituting values into the stylesheet. This tab edits
@@ -1232,7 +1232,7 @@ export async function assertAppearanceWorks(page, { note, fail, tabTo, shot }) {
   await shot(page, 'panel-appearance', { full: true });
 }
 
-/* ---- F-P-3 (px): the capability table, given the whole screen ----------------
+/* ---- (px): the capability table, given the whole screen ----------------
  *
  * The Policy tab's table is the one surface here that is a LIST first: a
  * project with a plugin or two installed already scrolls it inside a 34rem

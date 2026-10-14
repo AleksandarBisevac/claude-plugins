@@ -292,7 +292,7 @@ function renderAppearance(){closeCombo();
    renderAppearance();
    // One save, one toast: this used to call showWriteResult and then toast again,
    // and the second call overwrote the save result before it was on screen, so
-   // this was the one save surface that reported nothing (F102). Anything extra a
+   // this was the one save surface that reported nothing. Anything extra a
    // save has to say goes to saveOutcome as its trailing clause, never to a second
    // toast — `toast` replaces the text of ONE element.
    showWriteResult('#look',res,rows,'the theme',

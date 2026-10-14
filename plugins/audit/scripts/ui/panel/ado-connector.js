@@ -433,7 +433,7 @@ function renderAdoCard(c){
      MDESC.adoPull),
    el('span',{class:'f','data-adosetting':'pull'},
      flabel('Pull tags',MDESC.adoPull),tags)));
- // --- F187: the two settings that had no control at all. `requireParent` is a
+ // --- the two settings that had no control at all. `requireParent` is a
  // gate that refuses every create with nowhere to hang, `parentWorkItem` is the
  // manifest-wide answer to "where", and `tagVocabulary` decides which tags an
  // item may carry — all three were preconditions a reader could satisfy only by

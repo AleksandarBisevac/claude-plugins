@@ -25,7 +25,7 @@
  *
  *   320  / 390   not breakpoints \u2014 the narrowest screen this UI claims, and the
  *                phone. 320 is where Settings' unwrapped label put 16px back on
- *                the document (F8) and 390 is where the report's filter panel
+ *                the document and 390 is where the report's filter panel
  *                was found hanging off the left edge. Both are kept because a
  *                defect was measured at each.
  *   544  / 545   34rem. report: .colswrap ticks shrink, .bud drops its bars,
@@ -108,7 +108,7 @@ export const measureResponsiveFrame = (opts) => {
   // and cannot push the document, which is the distinction being drawn.
   // BOTH edges, because the two failures look nothing alike \u2014 past the right
   // edge the document scrolls, past the left edge nothing scrolls at all and
-  // the content is simply gone (F9's signature, and the filter panel's).
+  // the content is simply gone (the signature of a left-edge overhang, and the filter panel's).
   const framed = (n) => {
     for (let p = n.parentElement; p; p = p.parentElement) {
       if (getComputedStyle(p).overflowX !== 'visible') return true;
@@ -225,7 +225,7 @@ export const measureResponsiveFrame = (opts) => {
   // is the case this must not swallow. And it is COUNTED, so losing it, or
   // widening it until it eats a real one, shows up in the summary rather than
   // as a check that quietly got easier.
-  // F19: ask what a READER can reach, not which attribute is present. This
+  // Ask what a READER can reach, not which attribute is present. This
   // codebase deliberately moves tooltip text into a JS property -- `report.js`
   // sets `node.__tip` and its hover layer walks ancestors looking for it (the
   // same walk mirrored here), promoting it to a real `title` only on demand. So
@@ -235,7 +235,7 @@ export const measureResponsiveFrame = (opts) => {
   // them holding the full string, and zero `title` ancestors.
   //
   // It OVER-reported, so it was noise rather than a hole -- and it still cost a
-  // real finding: the first record of what became F17 read "a truncated name
+  // real finding: the first record of what became a separate finding read "a truncated name
   // with nothing carrying the whole of it", which was false. The string was
   // carried; the actual fault was elsewhere and worse. A check that cries wolf
   // gets skimmed, and the thing it was really pointing at gets written down
@@ -410,7 +410,7 @@ export async function walkResponsiveLadder(page, label, tally,
     // here before anyone has to go looking for why the ladder went quiet.
     + (unpainted ? `; ${unpainted} visually-hidden node(s) excluded as never `
       + `painted` : '')
-    // F19: reported for the same reason `unpainted` is. This oracle used to read
+    // Reported for the same reason `unpainted` is. This oracle used to read
     // only attributes and called every JS-carried tooltip unreachable; the count
     // is what makes widening it arguable instead of invisible.
     + (jsCarried ? `; ${jsCarried} clipped label(s) reachable through a JS tip `

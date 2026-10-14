@@ -1,6 +1,6 @@
 // ---------- Proposals: parked phases, and what happens to them ----------
 //
-// F-P-32. `/audit:init` can park every synthesized phase, and until now the panel
+// `/audit:init` can park every synthesized phase, and until now the panel
 // had no idea they existed: the whole content of the plan lived in `proposals[]`
 // and the only surface that showed it was `/audit:status`. A tab that cannot see
 // the work is a tab that reports "nothing here" about a full plan.
@@ -23,7 +23,7 @@ let PROPBUSY = false;
  * The phase a proposal reserves and how big it is, as ONE string.
  *
  * `_proposals.reserved_cell` in JavaScript, down to the parentheses and the dash.
- * F93 was this cell existing in three spellings; the Python side was reduced to
+ * This cell once existed in three spellings; the Python side was reduced to
  * one and THIS FILE WAS THE FOURTH AND FIFTH — the card composed it with ` · `
  * and the confirm dialog with ` (…)`, and the dialog hand-rolled the plural as
  * `+(n===1?'':'s')`, which is the exact convention `shared/plural.js` exists to
@@ -46,7 +46,7 @@ function propReservedCell(row) {
 /**
  * The words on a proposal's status badge.
  *
- * THREE READINGS, NOT ONE, and that is `proposal_rows`' F93 decision arriving on
+ * THREE READINGS, NOT ONE, and that is `proposal_rows`' decision arriving on
  * this surface. `status` is normalised — a MISSING status reads as `proposed` —
  * so a badge rendered from it alone tells a record with no status that it has
  * one, and tells a record carrying `parked` that it says `Parked`, in the same

@@ -122,7 +122,7 @@ function branchCard(comp,patch){
  // `developmentBranch` and `merge` are composition FORM keys like `branch`, so
  // they ride the same draft, the same confirm dialog and the same PUT. The merge
  // TARGET was reachable only by hand-editing the manifest until now, which is the
- // same gap F187 recorded for meta.areas: a lever every reader of a sign-off
+ // same gap meta.areas had: a lever every reader of a sign-off
  // report depends on, and nothing to set it with.
  const dev=el('input',{'data-branchfield':'developmentBranch',
    'aria-label':'development branch',

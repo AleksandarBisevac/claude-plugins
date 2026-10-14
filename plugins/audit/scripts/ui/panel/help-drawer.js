@@ -472,7 +472,7 @@ function comboWrap(inp,itemsFn,onChoose,onEnterFree){
  // WHICH input this menu belongs to. The focus guard in boot.js samples the
  // focused control's own edges and finds the menu sitting next to it; without
  // an owner it cannot tell a STALE menu from the one this very focus opened,
- // and closes both. F90.
+ // and closes both.
  me.inp=inp;
  // Fixed-position, like the hint tip: placed at the input's own x where that
  // fits, clamped into the viewport where it does not, and flipped above the input

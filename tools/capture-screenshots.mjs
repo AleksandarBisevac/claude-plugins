@@ -26,7 +26,7 @@
  * fixture HOME, and asserts it got exactly those before a shutter opens. Nothing
  * about the product changes; see the fixture-homes section.
  *
- * AND A SHOT OF ANYTHING BUT A FIXTURE IS REFUSED (F137). The two paragraphs above
+ * AND A SHOT OF ANYTHING BUT A FIXTURE IS REFUSED. The two paragraphs above
  * each closed one channel by which a machine reached a committed PNG, one at a
  * time and after the fact. What they could not close is the general case:
  * `tools/check-committed-pii.py` refuses a committed artifact naming the machine
@@ -46,7 +46,7 @@
  * all, which is the only kind of detection a committed PNG supports.
  *
  * "ON ONE MACHINE" IS THE WHOLE OF THE CLAIM, and it is load-bearing rather than
- * cautious (F18). The path is now a LITERAL root — /tmp/audit-shots-<uid> on every
+ * cautious. The path is now a LITERAL root — /tmp/audit-shots-<uid> on every
  * POSIX host, the platform root on Windows — because it used to come from
  * `tmpdir()`, which reads TMPDIR: one host under two environments produced two
  * paths, and thirteen panel PNGs "changed" for that reason alone. What remains
@@ -452,7 +452,7 @@ async function settle(page) {
  *   LIVENESS asks "is the thing I measured still the thing I set up?" It catches a
  *            check with the WRONG input, which looks nothing like an empty one.
  *
- * A run can be entirely non-vacuous and entirely wrong. F23: a probe validated its
+ * A run can be entirely non-vacuous and entirely wrong. A probe validated its
  * own direction by writing `document.body.innerHTML = '<p>x</p>'` and then restored
  * the saved HTML **string**. That puts the markup back and drops every listener the
  * page had bound, so the `.tab` clicks after it were inert and all six tabs were
@@ -490,7 +490,7 @@ async function settle(page) {
 
 /** The anchor for every panel liveness check: a `.tab` is server-rendered in
  *  panel.html, is never re-created by panel.js, and is exactly where the product
- *  binds the handler F23 threw away (`t.onclick = () => showTab(...)`). */
+ *  binds the handler a restore once threw away (`t.onclick = () => showTab(...)`). */
 const PANEL_LIVE_ANCHOR = '.tab';
 const panelLiveness = newLivenessTally();
 
@@ -557,7 +557,7 @@ async function waitForPanelBoot(page, label) {
  * Switch the panel to tab `t` — and prove the page still answers being driven.
  *
  * Every bare `page.click('.tab[data-t=…]')` in this file went through here for one
- * reason: that click is the exact operation F23 measured six times against a page
+ * reason: that click is the exact operation that was once measured six times against a page
  * that had stopped listening. A second copy of this rule is how the bug comes back.
  *
  * The landing is WAITED FOR, not asserted on the next tick. A view that renders
@@ -909,7 +909,7 @@ async function assertBarsPainted(page, label) {
 }
 
 /**
- * Every ⓘ must open its bubble INSIDE the viewport (F9).
+ * Every ⓘ must open its bubble INSIDE the viewport.
  *
  * A check of its own rather than one more selector in the overflow sweep, because
  * the bubble is `.hint::after` — a pseudo-element, with no node. Nothing can call
@@ -1719,7 +1719,7 @@ async function assertUsageWorks(page) {
            + `the facts, period "${rest.period}", arrows parked`);
       }
 
-      // F-P-9: a cell hands over its DATUM through the panel's own tip layer.
+      // A cell hands over its DATUM through the panel's own tip layer.
       // It used to carry a native `title` and `cursor:help`, which macOS draws as
       // an arrow-with-a-question-mark on every cell whether or not it holds
       // anything — reported as "a question mark regardless of whether there is
@@ -1904,7 +1904,7 @@ async function assertUsageWorks(page) {
 
       // The custom range IS the panel's day filter: scope to a mid..end
       // window and the heatmap's whole universe becomes that window.
-      // F-P-13: a granularity the ledger holds exactly ONE of says so, and a dead
+      // A granularity the ledger holds exactly ONE of says so, and a dead
       // arrow says why it is dead.
       //
       // Reported as "the filters do not work — Year instead of Month shows the
@@ -2105,7 +2105,7 @@ const shownMsgs = (page) => page.evaluate(() => {
 // --- accessibility: target size and the LIN census -----------------------------
 
 /**
- * SC 2.5.8 Target Size across DENSITIES (F30).
+ * SC 2.5.8 Target Size across DENSITIES.
  *
  * `--sp-*` are scaled by `layout.density`, and the spacing migration keeps moving
  * declarations onto that scale — so a control that clears 24px today can be
@@ -2228,7 +2228,7 @@ async function assertTargetSizeAcrossDensities(page) {
  * SC 2.5.3 Label in Name (AA). When a control carries a VISIBLE text label, its
  * accessible name must CONTAIN that text -- speech users say what they can see.
  *
- * Kept HERE rather than in a scratch harness on purpose. F28's figure ("91
+ * Kept HERE rather than in a scratch harness on purpose. An earlier figure ("91
  * instances across 41 shapes") was measured by a probe that then vanished, so by
  * the time anyone read the number the population had changed and nothing could
  * re-derive it. A criterion measured once is a criterion nobody is watching.
@@ -2384,8 +2384,8 @@ async function linCensus(page, rootSel, pfx) {
  *
  * The ⓘ is a control inside another control's activation area. While the wrapper
  * was a `<label>`, clicking the hint activated the labelled field: MEASURED in
- * Chromium before the F41 repair, **6 of 12 checkbox+hint pairs flipped** — six
- * settings a user silently changed by reading about them. The F41 fix made those
+ * Chromium before the repair, **6 of 12 checkbox+hint pairs flipped** — six
+ * settings a user silently changed by reading about them. The fix made those
  * wrappers `<span>`s, and this is the gate that stops the shape returning, since
  * the defect is invisible to every substring pin (the markup was valid, the names
  * were fine, nothing threw).
@@ -2735,10 +2735,10 @@ async function captureConfirmDialog(page) {
 }
 
 /**
- * The guard for F4's class: a fixture must not be an assignment to state the
+ * The guard for a class of flake: a fixture must not be an assignment to state the
  * panel itself rewrites on a timer.
  *
- * F4 was one such assignment, racing a 5s poll — a check that failed once in a
+ * One such assignment raced a 5s poll — a check that failed once in a
  * month of CI and passed on every rerun, which is the shape that gets learned as
  * "just flaky" and then waves a real regression through. The rule is: anything the
  * poll owns is installed at its ENDPOINT (page.route), where every later poll
@@ -2809,7 +2809,7 @@ function assertNoHandAssignedPolledState() {
 /**
  * Wait for the confirm dialog — and when it never opens, say WHY.
  *
- * F-P-17. This wait timed out once in a full run and passed on every re-run. A
+ * This wait timed out once in a full run and passed on every re-run. A
  * bare timeout is the least useful failure a gate can produce: it says the dialog
  * is absent and nothing about the panel that failed to open it, so the only way
  * forward was guessing, and each guess costs a ~160s run.
@@ -2925,7 +2925,7 @@ async function assertConfirmFlowWorks(page) {
   const clean = await page.evaluate(() => {
     const ev = new Event('beforeunload', { cancelable: true });
     dispatchEvent(ev);
-    // aria-disabled, not `.disabled`: these buttons keep their tab stop (F16), so
+    // aria-disabled, not `.disabled`: these buttons keep their tab stop, so
     // the DOM property is permanently false and reading it would report every
     // Discard as live. The attribute is the state now.
     const d = document.querySelector('#comp [data-discard=comp]');
@@ -3079,13 +3079,13 @@ async function assertConfirmFlowWorks(page) {
   // v0.34 lv: the panel now refreshes ITSELF when the disk stamp moves, and
   // this step writes to the manifest out-of-band on purpose — a poll landing
   // in the window would swap STATE under the exact staleness the echo exists
-  // to catch, and the check would go red once in N runs (the F4 shape). So
+  // to catch, and the check would go red once in N runs. So
   // the stamp is frozen at the ENDPOINT for the duration and thawed after;
   // the deferred refresh then lands on a clean form, which is the ordinary
   // case — and the echo stays the guard for a move the refresh cannot see,
   // a dialog already open (refreshes are deferred while any dialog is).
   //
-  // The freeze alone is HALF the fix (F-C-1's second face, found when the
+  // The freeze alone is HALF the fix (a second face of the same race, found when the
   // gate-card shot shifted the poll's phase): the saves above moved the stamp,
   // and if the client has not adopted that move yet, the first poll against
   // the frozen route sees a stamp it does not hold and refreshes anyway —
@@ -3174,7 +3174,7 @@ async function assertConfirmFlowWorks(page) {
   // because nothing was running when the tab loaded is exactly the reassurance
   // this flow must not give.
   //
-  // It is installed at the ENDPOINT, and this is F4. The fixture used to be an
+  // It is installed at the ENDPOINT, and that matters. The fixture used to be an
   // assignment to the panel's own `RUNSTATUS`, which the poll owns and rewrites
   // every five seconds — so a poll landing between the assignment and the click
   // put the real (unlocked) answer back, `cfLock` returned nothing, and the check
@@ -3281,7 +3281,7 @@ async function assertConfirmFlowWorks(page) {
   const path = await box.getAttribute('id');
   await box.click();
   await page.waitForTimeout(200);
-  // F-P-15: the savebar counts ("Discard 1 change") and the form must say WHICH
+  // The savebar counts ("Discard 1 change") and the form must say WHICH
   // field that is. The count's basis existed - Discard lists the rows - but a
   // click away, while the Policy tab next door marks its pending cells inline.
   {
@@ -3786,7 +3786,7 @@ async function assertComboDescriptionSearch(page) {
  * REPLACES: USAGE is refetched whenever the disk stamp moves, and the
  * confirm-flow checks just moved it (saves to the manifest and its config) —
  * so a refetch landing between the injection and the menu swapped USAGE and
- * erased the probe, red once in ~10 runs (F-C-1, the F4 shape). The endpoint
+ * erased the probe, red once in ~10 runs. The endpoint
  * is therefore frozen for the step's duration, pending refreshes are drained
  * before the probe goes in, and the race window is then driven ON PURPOSE —
  * a real stamp move plus a poll — so a lost freeze goes red every run rather
@@ -3805,7 +3805,7 @@ async function assertModelCombo(page, project) {
   await tabTo(page, 'comp');
   await page.waitForSelector('#comp table', { timeout: 15000 });
   await page.waitForTimeout(200);
-  // Freeze the poll's endpoint for the whole step (the F4 rule, the same
+  // Freeze the poll's endpoint for the whole step (the same
   // page.route the stale-echo and lock legs use): frozen, every mid-step poll
   // re-serves the same stamp, and the refetch that would swap USAGE cannot
   // start.
@@ -3937,7 +3937,7 @@ async function assertModelCombo(page, project) {
   if (!rev) {
     fail('composition: no review-model input to drive the combo on');
   } else {
-    // WHAT CLOSES THE MENU, asked directly. The F90 fix is in and the first
+    // WHAT CLOSES THE MENU, asked directly. The focus-guard fix is in and the first
     // attempt still fails, so the previous reading - "the poll re-rendered under
     // it" - is either wrong or incomplete, and a sixth guess is worth less than
     // one measurement. `closeCombo` is the only thing that hides a menu holding
@@ -3959,7 +3959,7 @@ async function assertModelCombo(page, project) {
     // WAIT FOR THE MENU, and when it does not come, SAY WHAT THE PANEL LOOKED LIKE.
     // This is not a fix for the CI-only failure below it - I do not know the cause,
     // and guessing at it has been wrong four times today. It is the same move that
-    // finally named F-P-17: a fixed 250ms produced "opened no menu", which is true
+    // finally named the dialog-wait failure: a fixed 250ms produced "opened no menu", which is true
     // and says nothing, so the next occurrence carries the state instead. If the
     // menu was merely slow this passes; if it never opens the dump says whether the
     // input was reached, focused, disabled, or reached at all.
@@ -4038,7 +4038,7 @@ async function assertModelCombo(page, project) {
       // reported which attempt won and let the run go green, which is measuring
       // around the defect; the cause is known now (the focus guard closed a menu
       // it could not tell from a stale one), so anything less than opening on
-      // the first click is a regression of F90 and says so with the counters.
+      // the first click is a regression of the focus-guard fix and says so with the counters.
       fail('composition: the review-model combo opened only on the ' + opened
          + ' attempt - F90 regressed. At the first failure ' + JSON.stringify(firstFail));
     }
@@ -4118,7 +4118,7 @@ async function assertPhaseWhyNote(page) {
   await tabTo(page, 'comp');
   await page.waitForSelector('#comp table', { timeout: 15000 });
   // Freeze the poll for the step — an untimely refetch would swap STATE under
-  // the injection (the F-C-1 class), and the injected phase with it.
+  // the injection, and the injected phase with it.
   const frozen = await page.evaluate(() => api('GET', '/api/runstatus'));
   await page.route(RUNSTATUS_URL, (r) => r.fulfill({
     status: 200, contentType: 'application/json', body: JSON.stringify(frozen) }));
@@ -4180,7 +4180,7 @@ async function assertPhaseWhyNote(page) {
  * fixed clock — and, when it never paints within `timeout`, say what the
  * save itself returned instead of reporting the card alone as absent.
  *
- * F653: a fixed 700ms sleep read the DOM before the save's own render had
+ * A fixed 700ms sleep read the DOM before the save's own render had
  * necessarily run. The same check passed on every re-run because the real
  * render usually lands well inside 700ms; it is a race, not a missing
  * feature, so the fix is to wait for the paint rather than guess its clock.
@@ -4450,7 +4450,7 @@ async function assertLiveData(page, project) {
   await page.evaluate((a) => setF('author', a), who);
   await page.evaluate((p) => openInComp(p), pid);
   await page.waitForTimeout(300);
-  // ov (F-P-5): Overview opens on the ACTIVE view now, and the phase this step
+  // ov: Overview opens on the ACTIVE view now, and the phase this step
   // writes to is a finished one — off screen there by design. The view is a
   // precondition of what this step measures (does a disk write reach the
   // screen), not part of it, so it is set explicitly rather than assumed.
@@ -4527,7 +4527,7 @@ async function assertLiveData(page, project) {
   await page.waitForTimeout(200);
 }
 
-/* ---- F-P-2 (uc): the empty usage bucket is named, and findable ---------------
+/* ---- (uc): the empty usage bucket is named, and findable ---------------
  *
  * "--" is the ledger's storage key for spend with no phase or task behind it.
  * It reached the screen as those two characters in four places (the ranked
@@ -4588,7 +4588,7 @@ async function assertUncategorizedNamed(page) {
   }
 }
 
-/* ---- F-P-1 (co): the combo menu is an overlay, and an open one is not a target -
+/* ---- (co): the combo menu is an overlay, and an open one is not a target -
  *
  * Four faces of one report ("the composition dropdown flickers, sometimes shows,
  * sometimes not, and moves the layout"), each reproduced in a real browser
@@ -4826,7 +4826,7 @@ async function assertComboOverlay(page, project) {
 /**
  * The `reason` a `bypass.armed` row really carries, read from the hook that writes it.
  *
- * NOT A SENTENCE TYPED HERE (F167). The gate-card fixture below used to seed a
+ * NOT A SENTENCE TYPED HERE. The gate-card fixture below used to seed a
  * prompt-shaped line — `#no-plan` followed by what somebody was doing — and the
  * committed PNG of that card therefore advertised the plugin publishing a
  * sentence a person had written. `detect-plan-skip._arm_bypass` records the FACT
@@ -4877,7 +4877,7 @@ export function armedBypassReason() {
  *
  * THE FIXTURE CHOOSES MAGNITUDES; IT DOES NOT CHOOSE THE BAR. A gate row shows a
  * magnitude graded against a threshold, and that threshold is a product fact with
- * exactly one home. Typed here it was F169's shape one notch smaller: move the
+ * exactly one home. Typed here it was the retyped-reason fault one notch smaller: move the
  * default and the committed PNG shows a magnitude graded against a bar no project
  * has, with nothing going red — the number is a picture decision nowhere and a
  * product fact everywhere.
@@ -5290,7 +5290,7 @@ async function assertAdoCardWorks(page) {
     note('ado card: Discard restored the saved card; nothing was written');
   }
 
-  // F187. EVERY SETTING A HUMAN IS EXPECTED TO SET HAS A CONTROL ON THIS CARD,
+  // EVERY SETTING A HUMAN IS EXPECTED TO SET HAS A CONTROL ON THIS CARD,
   // and only a rendered page can say so: the card mints its ids as `'ado-'+path`,
   // so a source scan resolves none of them and a Python selftest sees a string.
   //
@@ -5657,7 +5657,7 @@ function policyFixtureBlock(liveArea) {
 /**
  * The Proposals tab, driven for real: drop → revive → materialize.
  *
- * F-P-32. The panel could not see `proposals[]` at all, so an /audit:init that
+ * The panel could not see `proposals[]` at all, so an /audit:init that
  * parked every phase left the tab that shows the plan showing nothing. Pins over
  * UI_HTML can prove the constructs exist; only this can prove the round trip
  * writes the manifest and comes back.
@@ -6240,7 +6240,7 @@ const currentLeg = () => legsRun[legsRun.length - 1];
  *
  * `_output.ui_surface_digests()` is the one home for which files a surface's pictures
  * are of, and this asks it over a pipe. A walk here would be the second
- * implementation of "which files", which is the defect F85's round exists to remove:
+ * implementation of "which files", which is the defect that single home exists to remove:
  * right on the day it was written, and free to drift from the assembler's afterwards.
  *
  * ONCE PER RUN, not per shot. The sources cannot move while a capture is in flight,
@@ -6309,7 +6309,7 @@ function loadUiSourceDigests() {
  * matches its file is the loud version of that. The hash is what stops this file
  * being edited into agreement without the pictures being the ones captured.
  *
- * AND THE VERSION IS NOT THE WHOLE CLAIM (F85). A stamp says which release a
+ * AND THE VERSION IS NOT THE WHOLE CLAIM. A stamp says which release a
  * picture was taken at; it cannot say whether the UI has moved since, and it did —
  * commits landed under `scripts/ui/` after a re-capture and the rule stayed green
  * over pictures of a panel that no longer existed. So each entry also carries the
@@ -6378,7 +6378,7 @@ export function mergeCaptureRecord(prior, note, file, entry) {
   return { note, images: ordered, ...others };
 }
 
-/* ---- the shutter may only open on a fixture (F137) --------------------------
+/* ---- the shutter may only open on a fixture --------------------------
  *
  * WHAT THIS FILE RENDERS, and why nothing checked it. Both legs build their own
  * subject: the report leg renders the committed example plan, the panel leg
@@ -6668,7 +6668,7 @@ function pidAlive(pid) {
  * that died before its `finally`, not a live one, so that tree is reclaimed with a
  * note rather than blocking every capture until someone deletes it by hand.
  *
- * AND HERE IS WHAT IT DOES NOT BUY, which is F18 and is stated here because this is
+ * AND HERE IS WHAT IT DOES NOT BUY, and is stated here because this is
  * where somebody reads about reproducibility and decides what it is worth. The fixed
  * path is fixed PER MACHINE and cannot be anything else: a Linux runner writes
  * `/tmp/audit-shots-<uid>` where a Mac writes `/var/folders/…/T/audit-shots-<uid>`,
@@ -6782,7 +6782,7 @@ async function machineFingerprint() {
 /**
  * `--repro`: are two consecutive captures ON THIS MACHINE byte-identical?
  *
- * F18. The panel PNGs became reproducible within one machine and nothing could
+ * The panel PNGs became reproducible within one machine and nothing could
  * re-derive that: it was a sentence in a docstring, measured once, by hand. A
  * property nobody can print is a property that rots, and this repo has the scars to
  * prove it. So the claim is a mode of the tool, and its output carries the machine
@@ -6791,7 +6791,7 @@ async function machineFingerprint() {
  * IT DELIBERATELY DOES NOT COMPARE AGAINST docs/screenshots/. That comparison is the
  * one that would quietly pass on the maintainer's Mac and fail on a Linux runner with
  * nobody able to tell whether the difference was drift or the host, which is exactly
- * the outcome F18 rules out. Two fresh captures on one host hold everything except
+ * the outcome this rules out. Two fresh captures on one host hold everything except
  * the product constant, so a difference between them is the product or it is a bug in
  * this file — and nothing else.
  *
@@ -7132,7 +7132,7 @@ async function main() {
           await page.click(`#audit-areas .fchip[data-a="${pick.tag}"]`);
           await page.waitForTimeout(250);
           // Releasing the chip returns to the AT-REST view, and since vw
-          // (F-P-4) "at rest" means the chosen VIEW — the archived phases are
+          // "at rest" means the chosen VIEW — the archived phases are
           // off screen unless the reader asked for them. The expectation reads
           // the select's own value rather than assuming every row shows.
           const back = await page.evaluate(() => {
@@ -7454,7 +7454,7 @@ async function main() {
       // Said HERE, and not only in the panel-wide tally further down, because the
       // next step reaches the help drawer by clicking a ⓘ: with none on the page
       // that click spends 30 seconds timing out and takes the run down with a
-      // stack, and a diagnostic that dies before it can accuse anything is F7.
+      // stack, and a diagnostic that dies before it can accuse anything is the fault this check exists for.
       if (!deskHints.length) {
         fail('Settings rendered every one of its declared controls and not one ⓘ — '
            + 'every containment check in this file now has nothing to look at');
@@ -7547,9 +7547,9 @@ async function main() {
       // really write (event names, reason shapes), because a committed PNG that
       // invents its own vocab is documentation of a product that does not exist.
       // NO `reason` HERE IS TYPED HERE. The `bypass.armed` row reads its sentence
-      // out of `_arm_bypass` (F167) — it used to be a prompt-shaped line, and that
+      // out of `_arm_bypass` — it used to be a prompt-shaped line, and that
       // made this PNG a picture of a leak the hook no longer has — and its five
-      // siblings read theirs out of `require-plan.decide` (F169), which agreed
+      // siblings read theirs out of `require-plan.decide`, which agreed
       // with the copies right up until the release that repaired one writer.
       // See `armedBypassReason` and `gateReason`.
       // Asserted before the shutter: a card that fell back to its "no events
@@ -7557,8 +7557,8 @@ async function main() {
       {
         const gateLogs = path.join(big, '.claude', 'logs');
         mkdirSync(gateLogs, { recursive: true });
-        // Every `reason` below is its writer's own wording (F169), and every row
-        // asks for it BY ITS OWN EVENT (F172). The event was written twice per
+        // Every `reason` below is its writer's own wording, and every row
+        // asks for it BY ITS OWN EVENT. The event was written twice per
         // row once — as the row's field, and again as the argument picking the
         // sentence — and the only thing keeping the two in step was that the
         // wordings happened to take different numbers of values. Exchange two
@@ -7833,7 +7833,7 @@ async function main() {
       // Driven over EVERY tab, not whichever one the shot happens to sit on. This
       // assertion has existed since panel c2 and only ever ran on Overview — one of
       // the views that passed — so it was green for its whole life while Settings
-      // took the document 76px sideways (F8). A check that looks at one of five
+      // took the document 76px sideways. A check that looks at one of five
       // views is not an assertion about the panel, and the tab it looks at is
       // decided by where the photographer stopped. Proven rather than argued: with
       // the defect restored and this loop cut back to Overview, the gate is green.
@@ -7850,7 +7850,7 @@ async function main() {
       // touching. The ⓘ bubble is the other thing that reaches past the edge, and it
       // is measured separately by assertHintsFit — it has no node to be named in a
       // list of widest elements, so a sweep tripping over it would report a number
-      // with an empty list of causes, which is exactly how F9 stayed open.
+      // with an empty list of causes, which is exactly how a hint overflow stayed open.
       const overflowAt = async (tab) => {
         await mob.mouse.move(0, 0);
         await tabTo(mob, tab);
@@ -8061,11 +8061,11 @@ async function main() {
       //
       // The page-level overflow is measured as a DELTA across opening it, not as
       // an absolute. It was written that way because Settings overflowed by 76px
-      // before anything was opened (F8, since fixed, and the sweep above is now the
+      // before anything was opened (since fixed, and the sweep above is now the
       // check for it); it stays that way because what this step is asking is what
       // the DRAWER adds. An absolute here would be red for whatever else is on the
       // page, which proves nothing about the drawer — and there is still one such
-      // thing, F9.
+      // thing, a hint overflow.
       await tabTo(mob, 'guards');
       await mob.waitForSelector('#guards [data-hint="trivialLineThreshold"]', { timeout: 15000 });
       const before390 = await mob.evaluate(() =>
@@ -8248,7 +8248,7 @@ async function main() {
       await assertFilterPersistence(page, browser, panel.url);
       await assertSaveNoteLifecycle(page);
       await assertLiveData(page, big);
-      // co (F-P-1): appends a blank line to the fixture's ledger, so it keeps to
+      // co: appends a blank line to the fixture's ledger, so it keeps to
       // the writes-last discipline too.
       await assertComboOverlay(page, big);
       await assertUncategorizedNamed(page);

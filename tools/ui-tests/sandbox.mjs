@@ -127,7 +127,7 @@ export function pythonInterpreter() {
 // `sys.argv[3]` is an EXTRA directory, empty for every production caller. It
 // exists so the part readers below can be pointed at a fixture module instead of
 // the shipped one — a reader that can only ever be run against the real file is a
-// reader whose failure mode cannot be reproduced, which is how F129 survived.
+// reader whose failure mode cannot be reproduced, which is how the regex reader survived.
 const BRIDGE = [
   'import importlib, json, os, sys',
   'sys.path.insert(0, sys.argv[1])',
@@ -201,7 +201,7 @@ export function pyCall(moduleName, calls, extraPath) {
 // shows up as a part nobody parses rather than as two files agreeing with each
 // other and neither with the product.
 //
-// ASKED, NOT PARSED, and that distinction is F129. This used to match
+// ASKED, NOT PARSED, and that distinction matters. This used to match
 // `_JS_PARTS = \(([\s\S]*?)\)` over the module's SOURCE — a second Python parser,
 // written as one regex, which ended at the first closing parenthesis. A comment
 // inside the tuple containing one therefore truncated the list, and every browser

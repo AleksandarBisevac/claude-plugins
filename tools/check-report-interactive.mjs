@@ -47,7 +47,7 @@ import { resolve } from 'node:path';
 // process entry point.
 // ...and the liveness rule, from the same file for the same reason: it is one
 // rule about whether a driven page is still the page that was set up, and a
-// second copy of it is how F23 comes back on the surface that did not get the
+// second copy of it is how a restored page silently going dead comes back on the surface that did not get the
 // fix. The panel gate arms it on a `.tab`; this file arms it on the control it
 // drives most.
 import { RESPONSIVE_LADDER, walkResponsiveLadder, assertLadderMeasuredSomething,
@@ -128,7 +128,7 @@ function csvFields(line) {
 // element that moved, a leg wrapped in a condition nobody re-read -- simply
 // contributes nothing, and the run still ends "report is interactive". A harness
 // that reports success for work it did not do is the failure mode this project
-// keeps meeting (F23: a restore that killed every listener, after which six tabs
+// keeps meeting (a restore that killed every listener, after which six tabs
 // measured as one and produced a complete, plausible, wrong result set).
 //
 // The floor is DERIVED FROM THIS FILE'S OWN SOURCE -- the set of `expect(` call
@@ -319,7 +319,7 @@ const state = () => page.evaluate(() => {
 // product. It has to be said in those words, because both of the ways it used to
 // come out read as the report being broken. `.sectools` was dereferenced inside
 // page.evaluate and the tool died with `Cannot read properties of null` and a
-// stack ending in this file (F7): a diagnostic that dies computing its own
+// stack ending in this file: a diagnostic that dies computing its own
 // diagnosis reports the wrong thing twice, and everything it had already checked
 // is lost with it, since the notes are printed at the end. Worse, `#audit-nojs`
 // was asserted as `banner === null` — trivially true of a report that never
@@ -400,7 +400,7 @@ if (load.total < 2) {
   process.exit(2);
 }
 
-// vw (F-P-4): the table renders in segments — active, pending, archived — and
+// vw: the table renders in segments — active, pending, archived — and
 // WHICH of them is on screen is a named View (active / archived / all), not a
 // disclosure toggle a reader has to find. The old D1 pins asserted the toggle;
 // they are replaced rather than kept, because the control they described is
@@ -525,7 +525,7 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
   expect('after a reload the report comes back in the view it was left in',
     back.view, 'archived');
   expect('...showing that view\'s rows and no others', back.archivedOnly, true);
-  // F-P-10: and the STATUS CHIPS follow the view, because the two gates are
+  // And the STATUS CHIPS follow the view, because the two gates are
   // ANDed. With Archived selected the bar used to keep offering Pending, and
   // pressing it produced "0 / 9 phases" — a control whose every use is empty by
   // construction. The segment each status files under is read off the rows, so
@@ -551,7 +551,7 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
     expect('...and the archived statuses that exist ARE offered, so the rule is '
       + 'not satisfiable by hiding everything', !wantedSome || chips.offered.length > 0, true);
   }
-  // F-P-14: the AREA select is the same fault one control over. Area and view
+  // The AREA select is the same fault one control over. Area and view
   // are ANDed too, so in the Archived view an area whose only phase is active
   // could still be picked, and picking it gave "0 / 4 phases". Found by
   // sweeping every control instead of waiting for a second report.
@@ -645,7 +645,7 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
         + 'authors to compare against', who.oracle.length > 0, true);
     }
   }
-  // F-P-32: parked proposals are ON the page. An /audit:init that parks everything
+  // Parked proposals are ON the page. An /audit:init that parks everything
   // used to render zero phases and no hint that any proposal existed, and a report
   // that shows nothing does not read as "the proposals are elsewhere" - it reads as
   // "there is nothing", on the one surface a team is likely to be shown.
@@ -685,7 +685,7 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
         + 'cannot click open', opened, true);
       await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
     }
-    // The other half of F-P-32, written as an IMPLICATION so it always runs: a
+    // The other half of the parked-proposals check, written as an IMPLICATION so it always runs: a
     // plan with phases satisfies it vacuously, and one without phases has to carry
     // the sentence. A conditional pair would have been wrong here - on a report
     // with phases NEITHER half can run, which is a skipped leg rather than a
@@ -711,7 +711,7 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
   await page.waitForTimeout(250);
 }
 
-// ex (F-P-4): the per-task detail row. The compact row truncates the outcome at
+// ex: the per-task detail row. The compact row truncates the outcome at
 // 70 characters — that truncation is what this row exists to undo — so the
 // oracle is the TEXT: whatever the table shows must be a prefix of what the
 // detail row shows, and longer for at least one task, or the row is decoration.
@@ -797,7 +797,7 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
   await page.waitForTimeout(300);
 }
 
-// sha (F-P-4): nine characters on screen, forty on the clipboard.
+// sha: nine characters on screen, forty on the clipboard.
 {
   const sha = await page.evaluate(() => {
     const b = document.querySelector('.shacopy');
@@ -1681,7 +1681,7 @@ if (await page.$('#ready') && !(await page.$('dl.ready'))) {
       lines.length - 1, segOracle.rows);
     expect('...and the filename names the segment',
       dl.suggestedFilename().includes(`-phases-${segName}.csv`), true);
-    // csv (F-P-4): the file carries the DATA. Three columns are lossy on
+    // csv: the file carries the DATA. Three columns are lossy on
     // screen — the commit is cut to nine characters and wears a Copy control,
     // the done cell is cut to the minute, the outcome is cut at seventy — and
     // the export used to take the cell text, Copy included.
@@ -2029,7 +2029,7 @@ if (!portrait || !landscape) {
 // Between the print block and the polish checks, because the print block is the
 // most invasive thing this file does to the page: two full PDF renders, four
 // media-emulation swaps and two viewport changes. None of those SHOULD replace a
-// node — and "should" is the word every version of F23 was written under.
+// node — and "should" is the word every silent page rebuild was written under.
 await stillLive('after the print and PDF block, before the polish checks');
 
 // 8. Back to a clean document for the polish checks below — the print block above
@@ -2166,7 +2166,7 @@ if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
     phone.offscreen.join(',') || 'none', 'none');
   expect('...without pushing the document sideways to get there', phone.pageOverflows, false);
 
-  //    The second recorded figure, and the one F219 moves. Read with the
+  //    The second recorded figure, and the one a missing filter-panel height bound moves. Read with the
   //    disclosure's state for the same reason the shut one is.
   const openState = await page.evaluate(() => {
     const st = document.querySelector('.sectools');

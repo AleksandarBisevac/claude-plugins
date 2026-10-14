@@ -48,7 +48,7 @@ describe('every ui/ part parses', () => {
     for (const name of panelParts()) expect(parts).toContain(name);
   });
 
-  // THE OTHER DIRECTION, and it is the one that catches a SHORT list (F129).
+  // THE OTHER DIRECTION, and it is the one that catches a SHORT list.
   // The clause above compares the lists against the walk, so a list that lost
   // its tail still satisfies it - every name it still holds is on disk. The
   // directory is the independent second opinion this needs: a part that exists
@@ -131,7 +131,7 @@ describe('the sandbox reads what it thinks it reads', () => {
   });
 });
 
-// F129. The reader used to match `_JS_PARTS = \(([\s\S]*?)\)` over the module's
+// The reader used to match `_JS_PARTS = \(([\s\S]*?)\)` over the module's
 // SOURCE, which is a second Python parser written as one regex: it ended at the
 // first closing parenthesis, so a comment inside the tuple carrying one cut the
 // list short and every browser suite silently loaded a panel missing its tail.

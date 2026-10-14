@@ -1,5 +1,5 @@
 /**
- * The RELATIVE arm beside the report gate's absolute one (F219).
+ * The RELATIVE arm beside the report gate's absolute one.
  *
  * WHAT WENT WRONG. `check-report-interactive.mjs` bounds the share of a phone
  * screen an OPEN filter panel may pin over the table it filters. That bar is
@@ -36,7 +36,7 @@
  * open bar is the shut bar plus the panel's own `max-height` cap plus a margin, so
  * the two figures move together — and that is exactly what makes them worth
  * recording apart. If both move, the bar's own controls grew; if only the open one
- * moves, the panel's height bound is what broke, which is F219 by name. One figure
+ * moves, the panel's height bound is what broke, which is the very fault this arm is named for. One figure
  * could report that something moved and never which.
  *
  * The shut figure has NO absolute bar and is not getting one here: there is no
@@ -104,7 +104,8 @@ export const PHONE_VIEWPORT = { width: 390, height: 780 };
  *   plausibly move it by costs 5pp. Call the top of that band 6pp, and add the
  *   rounding noise of an integer percentage, which is half a point.
  *
- *   the smallest REGRESSION of the class this arm exists for. F219 restored —
+ *   the smallest REGRESSION of the class this arm exists for. The original
+ *   fault restored —
  *   the filter panel with its height bound removed — moves the example by 30pp
  *   and the scale demo by 32pp. Nothing about those numbers was specific to the
  *   axes that happened to exist; the panel's content height is a property of
@@ -113,7 +114,7 @@ export const PHONE_VIEWPORT = { width: 390, height: 780 };
  * So any value from about 7 to about 25 behaves identically on every change either
  * population has ever produced, and the choice inside that gap is not fine-tuning.
  * It sits at the TIGHT end because the two mistakes cost differently: a false red
- * costs one re-record and a line in a diff, and a false green ships F219.
+ * costs one re-record and a line in a diff, and a false green ships the unbounded panel.
  *
  * A move is judged in BOTH directions. A figure that collapses is not good news —
  * it is what a filter panel that stopped rendering looks like, and the absolute

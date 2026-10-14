@@ -22,7 +22,7 @@ const LIVE_TOKENS = '__auditLiveTokens';
  * careful about, so the shared state is per-anchor and never global.
  *
  * Verdicts: `live` (same nodes as when armed), `armed` (fresh document — baseline
- * taken, nothing claimed), `rebuilt` (the F23 shape), `no-anchor` (the selector
+ * taken, nothing claimed), `rebuilt` (the page was rewritten under the harness), `no-anchor` (the selector
  * matches nothing, which is a fact about the document), `confused` (a mark with no
  * token, which neither a load nor a rewrite produces — reported, never swallowed).
  */

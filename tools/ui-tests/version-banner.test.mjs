@@ -1,6 +1,6 @@
 // The staleness banner's three answers, RUN rather than read.
 //
-// This is the JavaScript half of F100, and the whole fault it repairs is a
+// This is the JavaScript half of the staleness banner, and the whole fault it repairs is a
 // distinction between two ways of not warning: a comparison that was made and
 // came out equal, and a comparison that never happened because one half of it was
 // missing. Both paint nothing, so a substring pin over the assembled page cannot

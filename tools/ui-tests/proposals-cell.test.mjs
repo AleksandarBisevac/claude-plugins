@@ -1,6 +1,6 @@
 // The Proposals tab's two derived strings, against the Python they mirror.
 //
-// F93 was one cell — the phase a proposal reserves and how big it is — existing
+// This was once one cell — the phase a proposal reserves and how big it is — existing
 // in three spellings, two of which counted their own tasks and did not count the
 // same ones. The Python side was reduced to `_proposals.reserved_cell`; this file
 // is the JavaScript half, and the comparison is made against the LIVE function

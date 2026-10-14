@@ -1,4 +1,4 @@
-// ---------- the build serving this page, against the one installed (F100) ----------
+// ---------- the build serving this page, against the one installed ----------
 //
 // The panel is ephemeral and keyed by a per-project pidfile, so a relaunch after
 // an upgrade FINDS the running instance and points at it — and that instance is

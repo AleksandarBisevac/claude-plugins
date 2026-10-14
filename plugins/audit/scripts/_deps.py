@@ -3279,6 +3279,131 @@ def _py_comment_citations(text):
     return out
 
 
+# --- comment syntaxes of the non-Python source kinds -------------------------
+# ONE table, keyed by extension: adding a source kind to the citation scan is
+# a row here, not a function. `line` is the marker opening a to-end-of-line
+# comment, `block` the (open, close) pair or None, `quotes` the characters
+# opening a string literal whose body is NOT a comment, and `regex` whether a
+# `/` can open a regex literal (whose body may hold a quote or `//`).
+# `hash_word` is the shell rule: `#` opens a comment only at the start of a
+# word, so `$#` and `${#x}` are not comments.
+# `.py` is deliberately absent: it is read by `tokenize` plus the AST, which
+# know what a comment is without this scanner's approximation.
+COMMENT_SYNTAXES = {
+    ".mjs": {"line": "//", "block": ("/*", "*/"), "quotes": "'\"`",
+             "regex": True, "hash_word": False},
+    ".js": {"line": "//", "block": ("/*", "*/"), "quotes": "'\"`",
+            "regex": True, "hash_word": False},
+    ".sh": {"line": "#", "block": None, "quotes": "'\"",
+            "regex": False, "hash_word": True},
+}
+_REGEX_PRECEDERS = "(,=:[!&|?{};+-*%<>~^"
+
+
+def _skip_string(text, pos, quote, escapes=True):
+    """Index just past the string literal opening at `text[pos]`; a backslash
+    skips the next character unless `escapes` is off (a shell single quote)."""
+    i = pos + 1
+    while i < len(text):
+        if text[i] == "\\" and escapes:
+            i += 2
+            continue
+        if text[i] == quote:
+            return i + 1
+        i += 1
+    return len(text)
+
+
+def _skip_regex(text, pos):
+    """Index just past the regex literal opening at `text[pos]`, or None when
+    the line ends first (it was a division, not a regex)."""
+    i = pos + 1
+    in_class = False
+    while i < len(text) and text[i] != "\n":
+        ch = text[i]
+        if ch == "\\":
+            i += 2
+            continue
+        if ch == "[":
+            in_class = True
+        elif ch == "]":
+            in_class = False
+        elif ch == "/" and not in_class:
+            return i + 1
+        i += 1
+    return None
+
+
+def _source_comment_lines(text, syntax):
+    """[(lineno, body)] -- every line of every comment in `text` under
+    `syntax`, the marker and a block line's leading `*` stripped. A string
+    literal holding a marker is not a comment and yields nothing."""
+    out = []
+    line_marker = syntax["line"]
+    block = syntax["block"]
+    i = 0
+    lineno = 1
+    last_sig = ""
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "\n":
+            lineno += 1
+            i += 1
+            continue
+        if block is not None and text.startswith(block[0], i):
+            end = text.find(block[1], i + len(block[0]))
+            end = n if end == -1 else end
+            body = text[i + len(block[0]):end]
+            for k, raw in enumerate(body.split("\n")):
+                out.append((lineno + k, raw.lstrip().lstrip("*").strip()))
+            lineno += body.count("\n")
+            i = min(n, end + len(block[1]))
+            continue
+        if text.startswith(line_marker, i):
+            opens = True
+            if syntax["hash_word"] and i > 0:
+                opens = text[i - 1] in " \t\n;|&("
+            if opens:
+                end = text.find("\n", i)
+                end = n if end == -1 else end
+                out.append((lineno, text[i + len(line_marker):end].strip()))
+                i = end
+                continue
+        if ch in syntax["quotes"]:
+            end = _skip_string(text, i, ch, not (
+                syntax["hash_word"] and ch == "'"))
+            lineno += text.count("\n", i, end)
+            i = end
+            last_sig = ch
+            continue
+        if syntax["regex"] and ch == "/" and (
+                last_sig == "" or last_sig in _REGEX_PRECEDERS):
+            end = _skip_regex(text, i)
+            if end is not None:
+                i = end
+                last_sig = ")"
+                continue
+        if not ch.isspace():
+            last_sig = ch
+        i += 1
+    return out
+
+
+def _source_comment_citations(text, ext):
+    """[(lineno, token)] -- a register citation inside a comment of a source
+    kind `COMMENT_SYNTAXES` knows, read one comment line at a time exactly as
+    `_py_comment_citations` reads a `#` comment."""
+    out = []
+    for lineno, body in _source_comment_lines(text, COMMENT_SYNTAXES[ext]):
+        for _off, token in _fault_hits(body):
+            out.append((lineno, token))
+        phase = _phase_paragraph_hit(body)
+        if phase is not None:
+            out.append((lineno, phase))
+    return out
+
+
 def _docstring_constant_ids(tree):
     """{id(node): lineno} for every module/class/function docstring's own
     string-literal AST node in `tree` -- the ONE spot `_py_docstring_citations`
@@ -3541,6 +3666,22 @@ def register_citation_violations(repo_root=None, table=None):
         others = _py_other_literal_citations(text)
         if others is not None:
             out.extend((rel, ln, tok) for ln, tok in others)
+    src_scan = _output.prose_scan_set(tuple(sorted(COMMENT_SYNTAXES)), root,
+                                      rows)
+    if src_scan["problem"] is not None:
+        out.append((".gitignore", 0, src_scan["problem"]))
+    else:
+        for rel in src_scan["paths"]:
+            path = os.path.join(root, rel.replace("/", os.sep))
+            try:
+                with io.open(path, "r", encoding="utf-8") as fh:
+                    text = fh.read()
+            except (OSError, UnicodeDecodeError) as exc:
+                out.append((rel, 0, "<unreadable: %s>" % exc))
+                continue
+            ext = os.path.splitext(rel)[1]
+            out.extend((rel, ln, tok)
+                       for ln, tok in _source_comment_citations(text, ext))
     md_scan = _output.prose_scan_set((".md",), root, rows)
     if md_scan["problem"] is not None:
         out.append((".gitignore", 0, md_scan["problem"]))

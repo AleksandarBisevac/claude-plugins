@@ -53,7 +53,7 @@ async function refreshFromDisk(fpBack){
   const st=await api('GET','/api/state');
   const us=await api('GET','/api/usage').catch(()=>USAGE);
   const pol=await api('GET','/api/policy').catch(()=>null);
-  // F90. The caller answered `interacting()` three round trips ago, and it
+  // The caller answered `interacting()` three round trips ago, and it
   // answers a question about a person who is free to change their mind inside
   // that window: whoever opened a combo menu while these were in flight had it
   // closed by `renderComp`, which opens with `closeCombo()`, on a decision
@@ -547,12 +547,12 @@ function evMarks(run){
    why:run.treeBasis||'no tree comparison was made, so a rewrite cannot be '
      +'ruled out'});
  else if(run.treeMutated>0)marks.push({text:'tree mutated',
-   // THE COUNT IS THE WHOLE SET AND THE WHOLE SET ATTRIBUTES NOTHING (F273).
+   // THE COUNT IS THE WHOLE SET AND THE WHOLE SET ATTRIBUTES NOTHING.
    // This mark used to read "rewritten by the gate itself ... cannot sign
    // anything off", which is a claim about WHO wrote them that the number it is
    // built from cannot support - a parallel task moves the same kind of path.
    // The verdict word is where that claim lives now: `gate-mutated` is the run
-   // whose rewrite landed on files the work under test declares (F280).
+   // whose rewrite landed on files the work under test declares.
    why:plural(run.treeMutated,'path','paths')+' moved between the two tree '
      +'snapshots this run took. The bracket reports WHAT moved, never who moved '
      +'it, so read the verdict beside this mark: '+EVWORD['gate-mutated']
@@ -1185,7 +1185,7 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
   if(!evs.length)gcard.append(el('div',{class:'mut'},
     'No gate events yet — verdicts land here as they happen.'));
   else{const tb=el('tbody');
-   // `e.file` ARRIVES REDACTED (F113): _panel_runstate._redacted_event puts every
+   // `e.file` ARRIVES REDACTED: _panel_runstate._redacted_event puts every
    // row through the journal's repo_relative_or_token before the payload leaves
    // the server, so an out-of-repo row carries its class and not the operator's
    // home directory. Do not reconstruct a fuller path here to make the cell more
@@ -1196,7 +1196,7 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
      el('td',{},el('span',{class:'badge','data-ev':e.event||''},e.event||'')),
      el('td',{class:'mono'},e.file||''),
      el('td',{class:'d'},e.reason||''))));
-   // `reason`, NOT `why` (F170). The prune hint two elements down points at a
+   // `reason`, NOT `why`. The prune hint two elements down points at a
    // column by name - "an absolute path in `reason`" - and its sibling in the
    // same sentence, `file`, already lands on a heading. One of the two resolving
    // and the other not is the reader's problem, and the pointer is the half that
@@ -1284,7 +1284,7 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
 // are `_panel_write.prune_gate_events`'s own, and this is the half that shipped
 // late: `POST /api/gate-events/prune` answered with a real verdict while a sweep
 // of the page for any control mentioning it found nothing, so `/audit:logs prune`
-// was the only door onto a rule the panel already served (F110).
+// was the only door onto a rule the panel already served.
 //
 // NO RULE LIVES HERE. The endpoint classifies, refuses and rewrites; this asks it
 // twice — once with `dryRun` for the confirm dialog, once for real — which is the
@@ -1293,7 +1293,7 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
 //
 // THE COUNTS ARE THE WHOLE PAYLOAD THIS MAY RENDER. `audit-logs.py` refuses to
 // echo a removed row's path on the argument that printing it puts it back, the
-// server redacts the same cell out of the events table above (F113), and the
+// server redacts the same cell out of the events table above, and the
 // answer's `path` field names the feed FILE — an absolute path under whoever ran
 // it. None of the three is read here, and this card is the one
 // docs/screenshots/panel-gate.png is a committed render of.
@@ -1301,7 +1301,7 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
 const GPFEED='plan-gate-events.jsonl';
 /**
  * What a prune CANNOT decide — the half of `/audit:logs prune`'s answer the panel
- * used to drop (F164).
+ * used to drop.
  *
  * ONE FACT, ONE SENTENCE, WHEREVER IT IS RENDERED. `audit-logs.render` treats how
  * far back the feed reaches and what a prune cannot decide as a single statement
@@ -1389,7 +1389,7 @@ async function gpPrune(){
   // has written yet and a feed with nothing left to remove both end here, said
   // apart, because `exists` is the field that separates them.
   if(!dry.exists){toast('No gate events feed yet — nothing to clean up.');return;}
-  // THE CLAIM IS ABOUT THE RULE, NOT ABOUT THE FILE (F162). This used to report
+  // THE CLAIM IS ABOUT THE RULE, NOT ABOUT THE FILE. This used to report
   // the FILE as clean, which is the one thing a prune cannot know — the wording
   // is not quoted here, because a case downstream asserts it is gone from the
   // page and a comment is source text like any other. A row an older release

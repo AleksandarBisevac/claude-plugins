@@ -566,7 +566,7 @@ const optionText=(label,limit)=>{
 /**
  * Fill a `<select>`, optionally bounding what each option is allowed to SHOW.
  *
- * F211. A closed `<select>` renders one line and clips it — it does not wrap and
+ * A closed `<select>` renders one line and clips it — it does not wrap and
  * it does not ellipsise — so an option label longer than the control is a phrase
  * cut off mid-word. The composition table's parent picker is `width:9rem` and its
  * labels ran to `use the fallback — nothing is set (meta.ado.parentWorkItem is

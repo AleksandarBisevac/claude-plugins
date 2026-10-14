@@ -1,10 +1,10 @@
 // The gate-card fixture's five `require-plan.py` rows, and why they are read
-// rather than typed (F169).
+// rather than typed.
 //
 // WHAT WENT WRONG, AND WHY IT LOOKED FINE. `tools/capture-screenshots.mjs` seeded
 // the plan-gate feed with six rows. One of them — the armed bypass — was repaired
 // to read its sentence out of the hook that writes it, because that sentence had
-// drifted the moment its writer changed and its copy did not (F167). The other
+// drifted the moment its writer changed and its copy did not. The other
 // five stayed retyped literals, and every one of them still AGREED with
 // `require-plan.decide`. That agreement is the fault, not the defence: nothing
 // compared them, so they were not correct, they were untriggered. The sixth row is
@@ -54,7 +54,7 @@ const captureFlat = captureSrc.replace(/\n\s*\*?\s*/g, ' ').replace(/\s+/g, ' ')
  * Seeding a tier with neither asks for an arm nothing publishes, which is
  * `gateReason`'s own refusal to guess, not a case this fixture can ask for.
  *
- * The bar they are graded against is not one of them (F171). It is
+ * The bar they are graded against is not one of them. It is
  * `trivialLineThreshold`'s default, which has one home; typed here it would be a
  * second copy in the suite that exists to stop the first one — the same fault
  * this file was written against, wearing a test.

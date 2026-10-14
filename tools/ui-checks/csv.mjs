@@ -11,7 +11,7 @@
 /**
  * One CSV record as fields, double-quote escaping respected (RFC 4180).
  *
- * F-D-1 (v0.37 A3): the borrowed substring regex this replaces
+ * The borrowed substring regex this replaces
  * (`/"?\d+,\d{3}[,."]/`) read a legitimate 3-digit count after a date field
  * ("…-13,123,…" across a field boundary) as a thousands separator —
  * reproduced on a real ledger. Structure cannot be fooled that way: parse the

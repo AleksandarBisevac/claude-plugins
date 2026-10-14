@@ -2946,6 +2946,45 @@ def _cases(check):
           "(still standing: %d)" % (_rc_left,),
           _rc_left == 0)
 
+    # THE WIDENING: one table of comment syntaxes, so a block comment in
+    # .mjs, a line comment in .js and a # comment in .sh are each reported with
+    # file and line, while the same id inside a string literal (and a shell
+    # `$#`) is not a comment and is not reported. The allow half is the case
+    # that goes red if the scanner is loosened to read strings.
+    _src_tmp = tempfile.mkdtemp(prefix="audit-deps-rc-src-")
+    try:
+        with open(os.path.join(_src_tmp, ".gitignore"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("__pycache__/\n")
+        _src_files = {
+            "a.mjs": "const x = 1;\n/* first\n * cites F901 here\n */\n"
+                     "const s = 'F902 in a string';\n",
+            "b.js": "var a = 1;\nvar r = /'/; // F903 after a regex\n"
+                    "var t = \"// F904 in a string\";\n",
+            "c.sh": "echo $# \"F905 # in a string\"\n# F906 a comment\n",
+            "d.mjs": "const q = '/* F907 */'; const u = `// F908`;\n",
+        }
+        for _name, _body in _src_files.items():
+            with open(os.path.join(_src_tmp, _name), "w",
+                      encoding="utf-8") as fh:
+                fh.write(_body)
+        _src_hits = sorted(M.register_citation_violations(_src_tmp))
+        check("rc16b a register id cited in a .mjs block comment, a .js line "
+              "comment and a .sh comment is reported with file and line, and "
+              "the same id inside a string literal of those files is not: %r"
+              % (_src_hits,),
+              _src_hits == [("a.mjs", 3, "F901"), ("b.js", 2, "F903"),
+                            ("c.sh", 2, "F906")])
+    finally:
+        shutil.rmtree(_src_tmp, ignore_errors=True)
+
+    _src_real = [v for v in M.register_citation_violations()
+                 if os.path.splitext(v[0])[1] in M.COMMENT_SYNTAXES]
+    check("rc16c over this repository's tree no source kind carries a "
+          "register citation in a comment (still standing: %d, in %d files)"
+          % (len(_src_real), len(set(v[0] for v in _src_real))),
+          _src_real == [])
+
     # THE SEPARATION ITSELF: `CITATION_SCAN_EXEMPT` is this scan's own table, not
     # `_output.PROSE_SCAN_EXEMPT` reused. A path the NUMBER scan exempts for a
     # reason that has nothing to do with citations - the test file that holds

@@ -3132,7 +3132,7 @@
     {
       "id": "P125.53-0h5",
       "title": "Every closer reads a filed return through the journal row that recorded it, so a return changed or deleted after filing cannot close a task",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase-review finding (med, half delivered): an earlier P125 task bound a filed return to a `task.return.filed` journal row carrying its digest and added `_filed_returns.read_filed_return_checked`, but no closer calls it - `audit-task.py done`, `commit-task-work.py` (claims_from_return and its own read) and the drive's own return reads still use the plain `read_filed_return`, so a return edited after filing still closes its task. Make the checked read the one every closer uses (pass the journal rows and checkout), and make the plain read unreachable from a closer: one invariant, not one call site at a time. A return with no filing row (filed before the row existed) is read as today and says so, never refused silently and never treated as checked.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -3174,19 +3174,35 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "44178308dc02",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_filed_returns: read_filed_return_checked returns (text, body, problem, unchecked); unchecked is a sentence led by UNCHECKED_LEAD when no task.return.filed row names the return, the row has no stateHash, or the journal was not read; new filed_mismatch; claims_from_return always reads checked (plain fallback removed); new AST lint plain_read_violations over every scripts/ module but the home one, reporting any call to read_filed_return (aliases included) by file, line and function, a stale PLAIN_READ_EXEMPT entry, and a tree without the home module as blind. audit-task done reads the journal once (_filing_rows); _close_evidence_refusal refuses an edited return in every form of done; _close_returns reads checked and the close prints '<role> return: not checked against a filing row - ...' plus --json returnsUnchecked. commit-task-work: filing_rows, executor_return and claims_from_return read checked; an unchecked note goes to skipped. drive-phase filed() reads checked; filed_at_head and triage stay on the plain read, exempted with reasons (phase review returns, close no task, no filing row is written for one). tools/prove-gates.py: red row pr1 and allow row pr2 for plain_read_violations (FRT suite constant); tools/gate-parity.py: AUDITED_EXEMPTIONS PLAIN_READ_EXEMPT -> live/plain_read_violations. Full sweep 335/335 files ok, 16202 cases; prove-gates --selftest 37/37; gate-parity exit 0; ruff and vermin exit 0. Lint mutations in a scratch copy: never-fires -> pr1, pr3 red; over-fire (startswith) -> pr1, pr2 red; restored 87/87. prove-gates --only plain_read could not run: redfirst REFUSED (DIRTY) on the uncommitted _filed_returns.py.",
+        "descriptive": "A filed return edited after its journal filing row now refuses the close and the task commit, and a return with no row closes as before but says it was not checked."
       },
       "startedAt": "2026-10-14T15:56:24Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T16:48:45Z",
+      "verifiedBy": [
+        "done over a task whose filed return was edited after its filing row is refused, naming the recorded and the present digest, and writes nothing",
+        "the task commit's claims come from the checked read - a return edited after filing refuses the commit, naming both digests",
+        "every module that closes a task reads returns only through read_filed_return_checked (a closer calling the plain read is reported by name)",
+        "a return filed before filing rows existed closes as before and its close says the return was not checked against a row"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-14T16:48:44Z.e707ca",
         "status": "passed",
         "at": "2026-10-14T16:48:44Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "44178308dc02",
+        "at": "2026-10-14T16:48:45Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T16:28:01Z",
+        "basis": "`python3 plugins/audit/tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_filed_returns' has no attribute 'PLAIN_READ_HOME'\" (read as python), and the task introduces 'PLAIN_READ_HOME': absent from HEAD's plugins/audit/scripts/manifest/audit-task.py, plugins/audit/scripts/governance/commit-task-work.py, plugins/audit/scripts/governance/drive-phase.py, plugins/audit/scripts/manifest/_filed_returns.py, tools/prove-gates.py, tools/gate-parity.py and present in the working tree's plugins/audit/scripts/manifest/_filed_returns.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -3391,7 +3407,12 @@
       "startedAt": "2026-10-14T15:56:26Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-14T16:58:07Z.1dcd78",
+        "status": "passed",
+        "at": "2026-10-14T16:58:07Z"
+      }
     },
     {
       "id": "P125.57-0h5",

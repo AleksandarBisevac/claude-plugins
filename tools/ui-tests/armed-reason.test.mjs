@@ -1,5 +1,4 @@
-// The gate-card fixture's `bypass.armed` row, and why it is read rather than typed
-// (F167).
+// The gate-card fixture's `bypass.armed` row, and why it is read rather than typed.
 //
 // WHAT WENT WRONG. `tools/capture-screenshots.mjs` seeded that row with a
 // prompt-shaped sentence — the keyword followed by what somebody was doing — and

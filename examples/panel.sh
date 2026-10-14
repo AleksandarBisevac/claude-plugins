@@ -92,7 +92,7 @@ if [ "$detach" -eq 1 ]; then
   # where nobody else will open it: the same rule panel-server.py follows.
   # Stderr goes to the launch log, NEVER to /dev/null: a child that dies at
   # startup would otherwise leave exactly the trace a clean stop leaves, and
-  # --status would have nothing to report but its absence (F99). The append is
+  # --status would have nothing to report but its absence. The append is
   # load-bearing — panel-server.py empties that file once it is listening, and an
   # O_APPEND fd re-seeks instead of writing past the hole.
   mkdir -p "$project/.claude"

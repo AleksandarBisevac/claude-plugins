@@ -208,7 +208,7 @@ describe('one round-trip rule, two boxes', () => {
   });
 });
 
-// --- F211: the phase cell's controls clip what they cannot show ------------
+// --- the phase cell's controls clip what they cannot show ------------
 // A closed <select> renders ONE line and clips it — no wrap, no ellipsis — so a
 // label longer than the control is a phrase cut off mid-word. Every pin passed
 // while `use the fallback — nothing is set (…)` painted as `use the fallback —`,

@@ -121,10 +121,10 @@ describe('one map answers for both readers', () => {
   });
 });
 
-// ---------- F90: the answer is re-asked where it is USED --------------------
+// ---------- the answer is re-asked where it is USED --------------------
 //
 // Every check above drives `interacting()` in isolation, and the predicate has
-// always been right. That is exactly why F90 shipped: the poll asked it, then
+// always been right. That is exactly why the bug shipped: the poll asked it, then
 // awaited three endpoints, and only then rendered. A reader who opened a combo
 // menu inside that window was overruled by an answer taken before they touched
 // anything, because `renderComp` opens with `closeCombo()`.
@@ -142,7 +142,7 @@ describe('one map answers for both readers', () => {
 /**
  * A panel whose fetches resolve in order, running a hook before the last one.
  * @param {() => void} duringFetches called after the first response, i.e. while
- *   the refresh is still in flight - the window F90 lived in
+ *   the refresh is still in flight - the window the bug lived in
  * @returns {{ctx: object, calls: string[]}} the context and what it rendered
  */
 function panelMidFetch(duringFetches) {

@@ -95,7 +95,7 @@ function keepFocusClear(){
      // `render()` has already placed the menu against the input, so sampling the
      // input's own edges finds it, and `!over.contains(n)` is true because an
      // input is not inside its own menu. Without this test the guard closed the
-     // menu the reader had just asked for - F90, which read as "the combo does
+     // menu the reader had just asked for, which read as "the combo does
      // not open on the first click" and cost five wrong diagnoses. There is
      // nothing to correct in that case either: `place()` owns where a menu sits
      // relative to its own input, and scrolling to escape it would fight it.

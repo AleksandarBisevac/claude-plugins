@@ -96,7 +96,7 @@ done
 # two runs that have no reason to wait for each other - parallel phases through
 # worktrees are an advertised feature, and several agents running the gates at once
 # is the normal case now, not the edge. `capture-screenshots.mjs` keeps its lock
-# for the opposite reason: its fixed path is load-bearing (F18 - a committed PNG is
+# for the opposite reason: its fixed path is load-bearing (a committed PNG is
 # byte-comparable only against the same path) and it arbitrates one real resource,
 # a single panel-server per project. Neither is true of a throwaway log.
 WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/verify-XXXXXX") || {
@@ -403,10 +403,10 @@ run "docs/index.html is still a byte copy" docs_index_is_copy
 # the writer proves the writer was fixed; only reading the committed file proves
 # nothing else writes there and no older artifact is still shipping.
 run "committed artifacts carry no machine identity" python3 tools/check-committed-pii.py
-# F297: the same question about the same committed files, asked of their CONTENT
+# The same question about the same committed files, asked of their CONTENT
 # rather than their bytes. One row in the example's evidence ledger recorded
 # `passed` while its own observations named a file the gate had rewritten - a
-# faithful record of the pre-F280 runner, and therefore a verdict no current run
+# faithful record of an older runner, and therefore a verdict no current run
 # can produce. The ledger is hand-written narrative, so nothing re-derives it and
 # nothing was reading it; this measures every committed row against the schema's
 # published vocabulary and against itself.
@@ -415,7 +415,7 @@ run "committed artifacts carry no machine identity" python3 tools/check-committe
 # too truncated to answer, because the check that graded the shipped example used
 # to pass for exactly that reason.
 run "committed ledgers record a verdict the runner can make, and every commit a manifest names resolves" python3 tools/check-example-ledgers.py
-# F232: THIS RAN ONLY IN CI, AND IT COST A RED RUN ON A RELEASE CANDIDATE. The
+# THIS RAN ONLY IN CI, AND IT COST A RED RUN ON A RELEASE CANDIDATE. The
 # example's usage ledger is COMMITTED and DERIVED — `gen-demo-usage.py` builds it
 # from the manifest — so a phase added to the example silently desynchronises the
 # two, and nothing local asked. `gate-parity.py` permitted the absence through an
@@ -656,8 +656,8 @@ fi
 #R A tag is a git object; a Release is the page a reader lands on, and the README's
 #R fetch pins make the tag a published claim. Nothing in this procedure created one
 #R for a long time, so the Releases page drifted until it presented a
-#R long-superseded version as Latest while the README pinned a far newer tag
-#R (F222). The row below asks the REMOTE whether the newest published tag has a
+#R long-superseded version as Latest while the README pinned a far newer tag.
+#R The row below asks the REMOTE whether the newest published tag has a
 #R Release and whether Latest names it - and at this moment that tag is the
 #R PREVIOUS release, so it is the drift detector rather than a check of the release
 #R you are about to cut. It needs the network and says so when it cannot ask;

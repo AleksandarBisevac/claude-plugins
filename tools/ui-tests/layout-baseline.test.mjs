@@ -7,7 +7,7 @@
 // 30-second gate run against three documents that all happen to be current.
 //
 // EVERY CONDITIONAL FIX HAS TWO WRONG IMPLEMENTATIONS and only one of them is the
-// bug you started with. An arm that never fires is F219 back; an arm that always
+// bug you started with. An arm that never fires is the original fault back; an arm that always
 // fires is a gate somebody switches off. The cases that catch the second read as
 // vacuous — a figure inside the tolerance emits NO failure, a document outside the
 // checkout emits no failure — and they say so in a comment so they survive review.
@@ -109,7 +109,7 @@ describe('a baseline that cannot be read', () => {
 
 describe('judging one document', () => {
   it('says nothing when the figures still hold', () => {
-    // THE SECOND-DIRECTION CASE for the whole arm: it passes on the pre-F219 code
+    // THE SECOND-DIRECTION CASE for the whole arm: it passes on the code without this arm
     // by construction, and it is the only case that fails if the comparison
     // becomes unconditional. Keep it.
     write(table({ [DOC]: { filterBarShutShare: 30, filterBarOpenShare: 76 } }));
@@ -353,7 +353,7 @@ describe('the measurements themselves', () => {
     expect(share(390, 780)).toBe(50);
     expect(share(203, 780)).toBe(26);
     // Over the viewport is a real answer, not a clamp: an open bar taller than
-    // the screen is precisely the state F219 produces.
+    // the screen is precisely the state the unbounded panel produces.
     expect(share(792, 780)).toBe(102);
   });
 

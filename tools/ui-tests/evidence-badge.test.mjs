@@ -71,7 +71,7 @@ describe('a verdict is one word, and it claims nothing else', () => {
   });
 
   it('a gate that passed and rewrote the tree is its own word, not Passed', () => {
-    // F280. The run's commands all came back green, so the exit code alone said
+    // The run's commands all came back green, so the exit code alone said
     // `passed` and the verdict line said GATE MUTATED THE TREE — two answers
     // about one run, and the record kept the wrong one. The word is a TABLE
     // entry rather than the humanised fallback, which is what the second
@@ -92,7 +92,7 @@ describe('a verdict is one word, and it claims nothing else', () => {
   it('the tree marker claims WHAT moved, never who moved it', () => {
     // The count is the whole changed set and the bracket cannot attribute it:
     // a gate writing outside its own subject and a parallel task's executor
-    // move the same kind of path (F273). This sentence used to say the files
+    // move the same kind of path. This sentence used to say the files
     // were "rewritten by the gate itself" and that the run "cannot sign
     // anything off" — both of which are the VERDICT's claims, and only the
     // owned half of the set supports them.
