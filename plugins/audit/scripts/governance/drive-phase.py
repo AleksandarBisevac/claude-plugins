@@ -685,9 +685,16 @@ def next_task(manifest, phase):
 
 
 def filed(ctx, task, role):
-    """`(body, problem)` of `task`'s `role` return for its current start."""
-    _text, body, problem = _fr.read_filed_return(
-        _fr.return_path(ctx["evidence"], task, role))
+    """`(body, problem)` of `task`'s `role` return for its current start, read
+    through the journal row that filed it: the drive closes a task on what this
+    hands back, so a return edited after filing is a problem that stops it. A
+    return no row names reads as it stands; the close verb is what says so."""
+    try:
+        rows = _journal_io.read_all(ctx["project"], ctx.get("config"))
+    except Exception:                                          # noqa: BLE001
+        rows = None
+    _text, body, problem, _unchecked = _fr.read_filed_return_checked(
+        _fr.return_path(ctx["evidence"], task, role), rows, ctx["project"])
     return body, problem
 
 

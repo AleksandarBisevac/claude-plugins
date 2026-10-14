@@ -58,6 +58,7 @@ This module carries no `--selftest` of its own; its cases live in
 
 Stdlib only, Python 3.8 compatible.
 """
+import ast
 import hashlib
 import json
 import os
@@ -479,20 +480,18 @@ def return_body(text, label):
         return None, "%s cannot be read as JSON (%s)" % (label, exc)
 
 
-def claims_from_return(evidence_dir, task, journal_rows=None, checkout=None):
+def claims_from_return(evidence_dir, task, journal_rows, checkout):
     """`(claims, problem)` - the `claims` text of `task`'s executor return for its
     current start, verbatim, or None when there is none to carry: no start, no
     return filed, or a return that carries no `claims`. A filed return that will
-    not parse is the problem, not an absence. With `journal_rows` and `checkout`
-    both given, the read goes through `read_filed_return_checked` instead, so a
-    return edited after it was filed is the same kind of problem; every caller
-    that cannot supply them keeps the plain read, unchanged."""
+    not parse is the problem, not an absence, and so is one edited after its
+    filing row recorded it: the read is `read_filed_return_checked`'s, and there
+    is no plain-read form left to fall back to, because the claims go into the
+    commit a close stands on. `journal_rows` None is a journal the caller could
+    not read; the read then goes on unchecked, as the checked read describes."""
     path = return_path(evidence_dir, task, "executor")
-    if journal_rows is not None and checkout is not None:
-        _text, body, problem = read_filed_return_checked(path, journal_rows,
-                                                          checkout)
-    else:
-        _text, body, problem = read_filed_return(path)
+    _text, body, problem, _unchecked = read_filed_return_checked(
+        path, journal_rows, checkout)
     if problem:
         return None, problem
     claims = (body or {}).get("claims")
@@ -517,7 +516,8 @@ def claims_from_return(evidence_dir, task, journal_rows=None, checkout=None):
 # submit` is the one caller that writes the file (through `audit-task.py
 # file-return`) AND can reach the journal, so it is the one that reads the rows
 # in, calls `refiling_refusal` before asking the filing verb to write, and
-# appends `filed_return_row`'s entry once that write succeeds.
+# appends `filed_return_row`'s entry once that write succeeds. A closer reads the
+# rows in the same way and hands them to `read_filed_return_checked`.
 RETURN_FILED_ACTION = "task.return.filed"
 
 
@@ -620,21 +620,147 @@ def filed_digest_problem(path, row):
             "carries %s and it now hashes to %s" % (path, recorded, present))
 
 
+def filed_mismatch(path, rows, checkout):
+    """`filed_digest_problem` against the `RETURN_FILED_ACTION` row among
+    `rows` that names `path`, or None when none names it - the refusal half of
+    `read_filed_return_checked`, for a close that must refuse an edited return
+    without taking anything else from it."""
+    row = already_filed_row(rows, path, checkout)
+    return filed_digest_problem(path, row) if row is not None else None
+
+
+# The words a read with nothing to check against carries, which a close prints.
+UNCHECKED_LEAD = "not checked against a filing row"
+
+
+def _unchecked_note(path, rows, checkout, row):
+    """The sentence a return read with no digest to compare carries."""
+    named = return_target(path, checkout) or path
+    if rows is None:
+        why = "no journal was read to check it against"
+    elif row is None:
+        why = ("no %s journal row names it (a return filed before such rows "
+               "were written, or by a route that writes none)"
+               % (RETURN_FILED_ACTION,))
+    else:
+        why = "the %s row naming it records no digest" % (RETURN_FILED_ACTION,)
+    return "%s - %s, so it was read as it stands: %s" % (UNCHECKED_LEAD, why,
+                                                          named)
+
+
 def read_filed_return_checked(path, rows, checkout):
-    """`read_filed_return`, refused when `path`'s current bytes disagree with
-    the `RETURN_FILED_ACTION` row the journal already carries for it: this is
-    the close's reading - a return edited after it was filed is a problem
-    here too, never read as it now stands with nothing to say so."""
+    """`(text, body, problem, unchecked)`: `read_filed_return`, refused when
+    `path`'s current bytes disagree with the `RETURN_FILED_ACTION` row the
+    journal already carries for it. THE READ EVERY CLOSER MAKES -
+    `plain_read_violations` reports a closer reaching the plain one - so a
+    return edited after it was filed is a problem, never read as it now stands
+    with nothing to say so.
+
+    `rows` is the journal's full read (`_journal_io.read_all`), or None when the
+    caller could not read it; this module may not import `_journal_io`, so the
+    read is the caller's. `unchecked` is None when a row's digest vouched for
+    the bytes, or when nothing was read; otherwise it is the sentence saying
+    the return was read with nothing to compare it against - a return filed
+    before filing rows existed reads as it always did, and says so, rather
+    than being refused or passing as checked."""
     text, body, problem = read_filed_return(path)
     if text is None:
-        return text, body, problem
+        return text, body, problem, None
     row = already_filed_row(rows, path, checkout)
-    if row is None:
-        return text, body, problem
+    if row is None or not row.get("stateHash"):
+        return text, body, problem, _unchecked_note(path, rows, checkout, row)
     mismatch = filed_digest_problem(path, row)
     if mismatch:
-        return None, None, mismatch
-    return text, body, problem
+        return None, None, mismatch, None
+    return text, body, problem, None
+
+
+# --- the closers' one read --------------------------------------------------------
+# THE INVARIANT, NOT A LIST OF CALL SITES. The checked read existed for a while
+# with no closer calling it, so a return edited after filing still closed its
+# task. Every module under `scripts/` but this one is held to it: a call to the
+# plain read anywhere else is reported by file and function, unless the table
+# below names that function with its reason. A reason is owed because the
+# exemption is a claim that the read closes nothing.
+PLAIN_READ = "read_filed_return"
+PLAIN_READ_HOME = "manifest/_filed_returns.py"
+PLAIN_READ_EXEMPT = {
+    "governance/drive-phase.py::filed_at_head":
+        "a PHASE review's return, read for its findings and the mark the drive "
+        "keeps: it closes no task, and no filing row is written for one",
+    "governance/drive-phase.py::triage":
+        "a PHASE review's return, read to triage its findings: it closes no "
+        "task, and no filing row is written for one",
+}
+
+
+def _plain_read_sites(tree):
+    """`[(line, function)]` for every call reaching the plain read in `tree`:
+    an attribute or a bare name spelled `PLAIN_READ`, and any name an
+    `from ... import` binds it to under an alias."""
+    aliases = set([PLAIN_READ])
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            aliases.update(a.asname or a.name for a in node.names
+                           if a.name == PLAIN_READ)
+    sites = []
+
+    def visit(node, where):
+        for child in ast.iter_child_nodes(node):
+            here = (child.name if isinstance(
+                child, (ast.FunctionDef, ast.AsyncFunctionDef)) else where)
+            if isinstance(child, ast.Call):
+                fn = child.func
+                if ((isinstance(fn, ast.Attribute) and fn.attr == PLAIN_READ)
+                        or (isinstance(fn, ast.Name) and fn.id in aliases)):
+                    sites.append((child.lineno, here))
+            visit(child, here)
+    visit(tree, "<module>")
+    return sorted(sites)
+
+
+def plain_read_violations(script_dir=None, exempt=None):
+    """`(file, what)` for every call to the plain read outside this module that
+    the exemption table does not name, for every exemption naming a function
+    that no longer makes one, and for a tree without this module - BLIND, not
+    clean.
+
+    WHAT IT CANNOT SEE: a read reached through `getattr` or a name assigned
+    from the function at runtime, and a module that parses a return's file
+    itself without calling either read."""
+    script_dir = script_dir or _output.SCRIPTS_DIR
+    exempt = PLAIN_READ_EXEMPT if exempt is None else exempt
+    violations, seen, home = [], set(), False
+    for rel, path in _output.lint_py_files(script_dir):
+        rel = rel.replace(os.sep, "/")
+        if rel == PLAIN_READ_HOME:
+            home = True
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), filename=rel)
+        except (OSError, SyntaxError, ValueError):
+            continue
+        for line, where in _plain_read_sites(tree):
+            key = "%s::%s" % (rel, where)
+            if key in exempt:
+                seen.add(key)
+                continue
+            violations.append(("scripts/%s" % (rel,), "line %d (%s): calls %s, "
+                               "the plain read - a closer reads a filed return "
+                               "through read_filed_return_checked, or names "
+                               "this read in PLAIN_READ_EXEMPT with why it "
+                               "closes nothing" % (line, where, PLAIN_READ)))
+    if not home:
+        violations.append(("scripts/%s" % (PLAIN_READ_HOME,),
+                           "the home module is missing, so no closer's read "
+                           "was judged"))
+    for key in sorted(set(exempt) - seen):
+        violations.append(("scripts/%s" % (key.split("::")[0],),
+                           "PLAIN_READ_EXEMPT names %s, which calls no %s - "
+                           "a stale exemption would excuse the next read under "
+                           "that name" % (key, PLAIN_READ)))
+    return violations
 
 
 # --- the per-task review's key, and the property a landing asks ---------------

@@ -2495,6 +2495,7 @@ AUDITED_EXEMPTIONS = {
     "UNLINKED_BY_DESIGN": ("live", "doc_link_drift"),
     "PROSE_SCAN_EXEMPT": ("live", "prose_number_claims"),
     "CITATION_SCAN_EXEMPT": ("live", "register_citation_violations"),
+    "PLAIN_READ_EXEMPT": ("live", "plain_read_violations"),
     # The prohibitions this repo states and does NOT enforce. `check-prohibitions`
     # reads each row's reason for length and asks the document whether the rule it
     # excuses is still stated - so the table cannot go stale quietly, and a rule

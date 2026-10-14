@@ -85,6 +85,7 @@ ARE = "plugins/audit/tests/test__areas.py"
 PRP = "plugins/audit/tests/test__proposals.py"
 TRL = "plugins/audit/tests/test__doctor_trail.py"
 DMO = "plugins/audit/tests/test_gen_demo_manifest.py"
+FRT = "plugins/audit/tests/test__filed_returns.py"
 BEN = "tools/bench-hooks.py"          # its cases are inline, like every tools/ file
 
 # The anchor every scripts/ row appends after: present once in every module, and
@@ -541,6 +542,14 @@ TABLE = (
   "def returns_writer_violations(script_dir=None):\n"
   "    return []",
   OUT, "rw1"),
+ # The closers' one-read rule, crippled. It is what keeps a closer from reading
+ # a filed return past the journal row that recorded it, and a version reporting
+ # nothing reads exactly like a tree whose closers all read the checked way.
+ ("plain_read_violations", S + "manifest/_filed_returns.py", "replace",
+  "def plain_read_violations(script_dir=None, exempt=None):",
+  "def plain_read_violations(script_dir=None, exempt=None):\n"
+  "    return []",
+  FRT, "pr1"),
  # The text-ordered-timestamp rule, crippled. It is what keeps a new reader from
  # ordering rows by how a stamp is spelled, and a version reporting nothing
  # reads exactly like a tree that orders every stamp by its moment.
@@ -1627,6 +1636,12 @@ ALLOW = (
  ("returns_writer_violations", S + "_output.py", "replace",
   "            if built and wrote:",
   "            if built or wrote:", OUT, "rw2"),
+ # The closers' one-read rule, widened: the checked read shares the plain one's
+ # name as a prefix, and convicting it would refuse the very read the rule asks for.
+ ("plain_read_violations", S + "manifest/_filed_returns.py", "replace",
+  "(isinstance(fn, ast.Attribute) and fn.attr == PLAIN_READ)",
+  "(isinstance(fn, ast.Attribute) and fn.attr.startswith(PLAIN_READ))",
+  FRT, "pr2"),
  # The one-project-resolver rule, its table ignored: a site the table names with
  # its reason would be convicted anyway, and `md2`'s fixture holds one.
  ("manifest_dirname_project_violations", S + "_output.py", "replace",

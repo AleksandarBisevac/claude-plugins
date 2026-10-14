@@ -13190,6 +13190,64 @@ def _return_cases(check):
           r13[0] == 0 and (task(mpath).get("redFirst") or {}).get("status")
           == "proved")
 
+    # ---- (fj) the close reads a return through the row that filed it ------
+    def journal_filing(proj):
+        """The `task.return.filed` row `drive-phase.py submit` appends once
+        the filing verb has written, appended the same way; its recorded
+        digest, read back off the journal."""
+        path = derived(proj, "executor")
+        _journal_io.append_from_cli(proj, _fr.filed_return_row(
+            path, proj, "P1.1", "executor", "proved"))
+        rows = [r for r in _journal_io.read_all(proj)
+                if r.get("action") == _fr.RETURN_FILED_ACTION]
+        return path, (rows[-1].get("stateHash") if rows else None)
+
+    def journal_count(proj):
+        return len(_journal_io.read_all(proj))
+
+    proj, mpath = project("dr-fj-edited")
+    file_return(proj, "executor", _fr_executor())
+    file_return(proj, "reviewer", _fr_reviewer("matches"))
+    epath, recorded = journal_filing(proj)
+    with open(epath, "w", encoding="utf-8") as fh:
+        fh.write(_fr_executor(stamp="audit-stamp: v2 edited after filing"))
+    present = _fr.return_digest(epath)
+    before, rows_before = read(mpath), journal_count(proj)
+    rj1 = close(proj, "--from-return")
+    rj2 = close(proj, "--intent", "matches")
+    check("fj1 done over a task whose filed return was edited after its "
+          "filing row is refused, naming the recorded and the present digest, "
+          "and writes nothing - under `--from-return` and in the plain form "
+          "alike: %r" % ((rj1[0], rj1[1][:400], rj2[0], rj2[1][:400]),),
+          recorded is not None and present != recorded
+          and rj1[0] == M.E_USAGE and recorded in rj1[1] and present in rj1[1]
+          and rj2[0] == M.E_USAGE and recorded in rj2[1] and present in rj2[1]
+          and read(mpath) == before and journal_count(proj) == rows_before
+          and task(mpath).get("status") == "in_progress")
+
+    proj, mpath = project("dr-fj-intact")
+    file_return(proj, "executor", _fr_executor())
+    file_return(proj, "reviewer", _fr_reviewer("matches"))
+    journal_filing(proj)
+    rj3 = close(proj, "--from-return")
+    check("fj2 ALLOW, the over-fire direction: the same close over a return "
+          "whose bytes still match its row closes, and says nothing about the "
+          "executor's return going unchecked: %r" % ((rj3[0], rj3[1][:400]),),
+          rj3[0] == 0 and task(mpath).get("status") == "done"
+          and ("executor return: %s" % (_fr.UNCHECKED_LEAD,)) not in rj3[1])
+
+    proj, mpath = project("dr-fj-before-rows")
+    file_return(proj, "executor", _fr_executor())
+    file_return(proj, "reviewer", _fr_reviewer("matches"))
+    rj4 = close(proj, "--from-return")
+    check("fj3 a return filed before filing rows existed closes as before and "
+          "its close says the return was not checked against a row: %r"
+          % ((rj4[0], rj4[1][:600]),),
+          rj4[0] == 0 and task(mpath).get("status") == "done"
+          and (task(mpath).get("outcome") or {}).get("technical")
+          == "filed technical"
+          and ("executor return: %s" % (_fr.UNCHECKED_LEAD,)) in rj4[1])
+
     proj, mpath = project("dr-fr-mixed")
     file_return(proj, "executor", _fr_executor())
     file_return(proj, "reviewer", _fr_reviewer())

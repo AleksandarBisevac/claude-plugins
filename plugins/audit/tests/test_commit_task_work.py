@@ -953,6 +953,7 @@ def _file_executor_return(fx, claims=None):
     path = _filed_returns.return_path(
         os.path.join(fx["root"], "docs", "audit", "evidence"), task, "executor")
     _filed_returns.file_once(path, json.dumps(body) + "\n")
+    return path
 
 
 def _message(fx, sha):
@@ -1007,6 +1008,45 @@ def _claims_cases(check, repos):
           % (pparagraphs,),
           pcode == 0 and len(pparagraphs) == 2
           and pparagraphs[1].startswith(_invariants.ROW_TRAILER + ": "))
+
+    # THE CHECKED READ: the row `drive-phase.py submit` appends after a filing
+    # records the return's digest, and the commit reads the return through it.
+    import _filed_returns
+    edited = repos.make()
+    epath = _file_executor_return(edited, claims=_CLAIMS)
+    _journal_io.append_from_cli(edited["root"], _filed_returns.filed_return_row(
+        epath, edited["root"], TASK, "executor", "not-attempted"))
+    filed_rows = [r for r in _journal_io.read_all(edited["root"])
+                  if r.get("action") == _filed_returns.RETURN_FILED_ACTION]
+    recorded = filed_rows[-1].get("stateHash") if filed_rows else None
+    with io.open(epath, "r", encoding="utf-8") as fh:
+        body = json.load(fh)
+    body["claims"] = _CLAIMS + "\n3 a line added after filing"
+    _write(epath, json.dumps(body) + "\n")
+    present = _filed_returns.return_digest(epath)
+    _write(os.path.join(edited["root"], OWNED), "a = 2  # the task's own work\n")
+    _gate(edited)
+    before = _head(edited)
+    ecode, etext = _run(edited, TASK, "--subject", "the work")
+    check("cl4 the task commit's claims come from the checked read - a return "
+          "edited after filing refuses the commit, naming both digests: %r"
+          % ((ecode, recorded, present, etext[:500]),),
+          recorded is not None and present != recorded and ecode == 1
+          and recorded in etext and present in etext
+          and _head(edited) == before and _staged(edited) == [])
+
+    intact = repos.make()
+    ipath = _file_executor_return(intact, claims=_CLAIMS)
+    _journal_io.append_from_cli(intact["root"], _filed_returns.filed_return_row(
+        ipath, intact["root"], TASK, "executor", "not-attempted"))
+    _write(os.path.join(intact["root"], OWNED), "a = 2  # the task's own work\n")
+    _gate(intact)
+    icode, itext = _run(intact, TASK, "--subject", "the work")
+    iparagraphs = _message(intact, _head(intact)).split("\n\n")
+    check("cl5 ALLOW, the over-fire direction: the same return left as filed "
+          "commits, its claims carried byte-identical: %r"
+          % ((icode, itext[:300], iparagraphs),),
+          icode == 0 and len(iparagraphs) == 3 and iparagraphs[1] == _CLAIMS)
 
 
 # --- what the index says: renames, deletions, ignored directories -----------

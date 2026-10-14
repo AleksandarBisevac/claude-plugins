@@ -753,13 +753,25 @@ def commit_message(task_id, subject, manifest, claims=None):
     return paragraphs
 
 
-def claims_from_return(manifest_path, project, task):
+def filing_rows(project, config=None):
+    """The journal's full read, which the checked read compares a filed return
+    against, or None when it cannot be read - the read then goes on unchecked
+    and says so, rather than refusing every commit over a journal fault."""
+    try:
+        return _journal_io.read_all(project, config)
+    except Exception:
+        return None
+
+
+def claims_from_return(manifest_path, project, task, rows):
     """`(claims, refusal)` - the `claims` text of the executor's return filed for
     `task`'s current start, under THIS manifest's evidence directory, or None.
-    A filed return that will not parse is a refusal, never an absence."""
+    A filed return that will not parse is a refusal, never an absence, and so is
+    one edited after its filing row recorded it: `rows` is `filing_rows`'
+    answer, and the read is the checked one."""
     proj, cfg = _evidence_io.project_config_for(manifest_path, project)
     claims, problem = _filed_returns.claims_from_return(
-        _evidence_io.evidence_dir(proj, cfg), task)
+        _evidence_io.evidence_dir(proj, cfg), task, rows, project)
     if problem:
         return None, ("the executor's filed return %s - nothing was committed, "
                       "because a commit that dropped its claims would read as "
@@ -767,18 +779,20 @@ def claims_from_return(manifest_path, project, task):
     return claims, None
 
 
-def executor_return(manifest_path, project, task):
-    """`(body, refusal)` - the executor's return filed for `task`'s current
-    start under THIS manifest's evidence directory, or None when none is filed.
-    A filed return that will not parse is a refusal, never an absence."""
+def executor_return(manifest_path, project, task, rows):
+    """`(body, refusal, unchecked)` - the executor's return filed for `task`'s
+    current start under THIS manifest's evidence directory, or None when none is
+    filed. A filed return that will not parse, or one edited after its filing
+    row recorded it, is a refusal, never an absence; `unchecked` is the note a
+    return read with no filing row to compare it against carries, else None."""
     proj, cfg = _evidence_io.project_config_for(manifest_path, project)
-    _text, body, problem = _filed_returns.read_filed_return(
+    _text, body, problem, unchecked = _filed_returns.read_filed_return_checked(
         _filed_returns.return_path(_evidence_io.evidence_dir(proj, cfg), task,
-                                   "executor"))
+                                   "executor"), rows, project)
     if problem:
         return None, ("the executor's filed return %s - nothing was committed"
-                      % (problem,))
-    return body, None
+                      % (problem,)), None
+    return body, None, unchecked
 
 
 def record_row(project, task_id, phase_id, nonce, config=None):
@@ -917,9 +931,13 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
     # pending often enough - the filed return itself is one - so a commit of
     # them over a return that attempted nothing, or over a `tests.add` file
     # never written, would read as the task's finished work.
-    executor, why = executor_return(manifest_path, project, task)
+    journal_rows = filing_rows(project, config)
+    executor, why, unchecked = executor_return(manifest_path, project, task,
+                                               journal_rows)
     if why:
         return E_FAIL, _scoped_commit.answer(skipped, refused=why)
+    if unchecked:
+        skipped = skipped + ["the executor's filed return: %s" % (unchecked,)]
     changed = any(_scoped_commit.under_any(p, targets["declared"])
                   for p in pending)
     refusal = _scoped_commit.close_evidence_refusal(task, project, executor,
@@ -962,7 +980,8 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
     # The executor's filed return for the task's current start, for its
     # `claims`. Still before staging: a return that is there and will not parse
     # refuses with nothing to undo, rather than committing as if none was filed.
-    claims, why = claims_from_return(manifest_path, project, task)
+    claims, why = claims_from_return(manifest_path, project, task,
+                                     journal_rows)
     if why:
         return E_FAIL, _scoped_commit.answer(skipped, refused=why)
 

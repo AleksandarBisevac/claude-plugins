@@ -249,15 +249,16 @@ def _cases(check):
     check("rp9 a file that is there and will not parse is a PROBLEM, never read "
           "as not filed: %r" % (M.read_filed_return(broken)[2],),
           M.read_filed_return(broken)[2] is not None
-          and M.claims_from_return(root, {"id": "P1.2", "startedAt": _START})[1]
-          is not None)
-    claims, problem = M.claims_from_return(root, task)
+          and M.claims_from_return(root, {"id": "P1.2", "startedAt": _START},
+                                   [], root)[1] is not None)
+    claims, problem = M.claims_from_return(root, task, [], root)
     check("rp10 `claims_from_return` hands back the current start's `claims` "
           "verbatim, and None for a start with no return or a return without "
           "the field: %r" % (claims,),
           claims == "claims:\n1 n/a" and problem is None
-          and M.claims_from_return(root, later) == (None, None)
-          and M.claims_from_return(root, {"id": "P1.1"}) == (None, None))
+          and M.claims_from_return(root, later, [], root) == (None, None)
+          and M.claims_from_return(root, {"id": "P1.1"}, [], root)
+          == (None, None))
     dirty = M.return_path(root, {"id": "P1.3", "startedAt": _START}, "executor")
     machine = "/Users/someone/work/proj/docs/audit/audit-plan.json"
     M.file_once(dirty, json.dumps(_executor(
@@ -767,7 +768,89 @@ def _selftest():
         _harness.stage(check, "dm-block", _drive_mark_cases)
         _harness.stage(check, "rd-block", _read_set_cases)
         _harness.stage(check, "rj-block", _journaled_cases)
+        _harness.stage(check, "pr-block", _plain_read_cases)
     return _harness.run(body)
+
+
+def _plain_read_tree(root, files):
+    """A scripts directory holding the home module and `files`
+    (`{scripts-relative path: source}`), for the lint to walk."""
+    for rel, text in dict({M.PLAIN_READ_HOME: "def read_filed_return(p):\n"
+                                               "    return p\n"},
+                          **files).items():
+        path = os.path.join(root, *rel.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+    return root
+
+
+def _plain_read_cases(check):
+    """The checked read is the one a closer may call, held as an invariant
+    over the source rather than one call site at a time: the plain read is
+    reachable only from its own module and from the reads the exemption
+    table names, each with its reason."""
+    root = _harness.fixture_root("filed-returns-plain-")
+    try:
+        plain = _plain_read_tree(os.path.join(root, "plain"), {
+            "governance/closer-x.py":
+                "import _filed_returns as _fr\n\n"
+                "def close_it(path):\n"
+                "    return _fr.read_filed_return(path)\n",
+            "manifest/closer-y.py":
+                "from _filed_returns import read_filed_return as r\n\n"
+                "def other(path):\n"
+                "    return r(path)\n"})
+        found = M.plain_read_violations(plain, exempt={})
+        real = M.plain_read_violations()
+        named = "\n".join("%s: %s" % pair for pair in found)
+        check("pr1 every module that closes a task reads returns only through "
+              "read_filed_return_checked (a closer calling the plain read is "
+              "reported by name): %r / the tree: %r" % (found, real),
+              real == [] and len(found) == 2
+              and "scripts/governance/closer-x.py" in named
+              and "close_it" in named
+              and "scripts/manifest/closer-y.py" in named
+              and "read_filed_return" in named)
+
+        checked = _plain_read_tree(os.path.join(root, "checked"), {
+            "governance/closer-x.py":
+                "import _filed_returns as _fr\n\n"
+                "def close_it(path, rows, here):\n"
+                "    return _fr.read_filed_return_checked(path, rows, here)\n"})
+        quiet = M.plain_read_violations(checked, exempt={})
+        check("pr2 THE ALLOW TWIN, for the over-fire mutation: a closer "
+              "calling only the checked read is reported by nothing, and the "
+              "home module's own plain read is its own: %r" % (quiet,),
+              quiet == [])
+
+        held = _plain_read_tree(os.path.join(root, "held"), {
+            "governance/closer-x.py":
+                "import _filed_returns as _fr\n\n"
+                "def show(path):\n"
+                "    return _fr.read_filed_return(path)\n"})
+        exempt = {"governance/closer-x.py::show": "a display read",
+                  "governance/closer-x.py::gone": "a read since removed"}
+        stale = M.plain_read_violations(held, exempt=exempt)
+        check("pr3 an exempted read is quiet, and an exemption naming a "
+              "function that no longer calls the plain read is reported as "
+              "stale - an exemption outliving its read would excuse the next "
+              "one under that name: %r" % (stale,),
+              len(stale) == 1 and "gone" in stale[0][1]
+              and "show" not in stale[0][1])
+
+        blind = os.path.join(root, "blind")
+        os.makedirs(blind)
+        check("pr4 a tree without the home module is BLIND, never clean: %r"
+              % (M.plain_read_violations(blind, exempt={}),),
+              len(M.plain_read_violations(blind, exempt={})) == 1)
+        reasons = [why for why in M.PLAIN_READ_EXEMPT.values()
+                   if not (isinstance(why, str) and why.strip())]
+        check("pr5 every exemption of the real table carries a reason: %r"
+              % (sorted(M.PLAIN_READ_EXEMPT),),
+              M.PLAIN_READ_EXEMPT and reasons == [])
+    finally:
+        _harness.remove_tree(root)
 
 
 def _journaled_cases(check):
@@ -816,13 +899,57 @@ def _journaled_cases(check):
           and M.return_digest(path) in changed
           and row["stateHash"] != M.return_digest(path))
 
-    text, body, problem = M.read_filed_return_checked(path, [row], root)
+    text, body, problem, unchecked = M.read_filed_return_checked(
+        path, [row], root)
     check("rj5 `read_filed_return_checked` is the close's reading: it "
           "refuses the same edited return through the row, rather than "
           "reading its current bytes silently: %r"
-          % ((text, body, problem),),
+          % ((text, body, problem, unchecked),),
           text is None and body is None and problem is not None
-          and row["stateHash"] in problem)
+          and row["stateHash"] in problem and unchecked is None
+          and M.filed_mismatch(path, [row], root) == problem)
+    claims, why = M.claims_from_return(root, task, [row], root)
+    check("rj5c `claims_from_return` reads through the checked read, so the "
+          "same edited return is a problem for the claims too, naming both "
+          "digests: %r" % ((claims, why),),
+          claims is None and why is not None and row["stateHash"] in why
+          and M.return_digest(path) in why)
+
+    # A RETURN WITH NO FILING ROW is read as it stands, and says so: never
+    # refused, and never read as one the row vouched for.
+    old = M.return_path(root, {"id": "P1.8", "startedAt": _START}, "executor")
+    old_text = json.dumps(_executor(claims="claims:\n1 old")) + "\n"
+    M.file_once(old, old_text)
+    text, body, problem, unchecked = M.read_filed_return_checked(
+        old, [row], root)
+    unread = M.read_filed_return_checked(old, None, root)
+    check("rj7 a return no `task.return.filed` row names reads as it stands "
+          "and the reading says it was not checked against a row - the "
+          "journal read and holding no row, or not read at all: %r"
+          % ((problem, unchecked, unread[3]),),
+          text == old_text and problem is None
+          and unchecked is not None and M.UNCHECKED_LEAD in unchecked
+          and "returns/P1.8/" in unchecked
+          and unread[0] == old_text and unread[3] is not None
+          and M.UNCHECKED_LEAD in unread[3])
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(first)
+    text, body, problem, unchecked = M.read_filed_return_checked(
+        path, [row], root)
+    no_hash = M.read_filed_return_checked(
+        path, [dict(row, stateHash=None)], root)
+    check("rj8 SECOND DIRECTION: a return whose bytes match its row reads "
+          "with NO unchecked note - a note on every read would say nothing - "
+          "while a row recording no digest vouches for nothing and is noted: "
+          "%r" % ((problem, unchecked, no_hash[3]),),
+          text == first and problem is None and unchecked is None
+          and no_hash[0] == first and no_hash[3] is not None)
+    nothing = M.read_filed_return_checked(
+        M.return_path(root, {"id": "P1.7", "startedAt": _START}, "executor"),
+        [row], root)
+    check("rj9 nothing filed reads as four Nones - no return, so no note "
+          "about checking one: %r" % (nothing,),
+          nothing == (None, None, None, None))
 
     pin_path = os.path.join(root, "pin.txt")
     with open(pin_path, "w", encoding="utf-8") as fh:

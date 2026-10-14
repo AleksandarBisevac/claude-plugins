@@ -5684,14 +5684,31 @@ def _commit_touches(project, git_root, task, sha):
                if path.strip() for rel in mine)
 
 
-def _close_evidence_refusal(project, mpath, git_root, task, sha, verified):
+def _filing_rows(project, config, mpath):
+    """The journal's full read, which `_fr.read_filed_return_checked` compares a
+    return against, or None when it cannot be read - the read then goes on
+    unchecked and says so, rather than refusing every close over a journal
+    fault."""
+    try:
+        return _journal_io.read_all(project, _journal_cfg(config, mpath, project))
+    except Exception:
+        return None
+
+
+def _close_evidence_refusal(project, mpath, git_root, task, sha, verified,
+                            rows):
     """`_scoped_commit.close_evidence_refusal` over a close on `sha`: the
     executor's return filed for the current start, and whether the commit
     carries a change to a declared file - asked only of a SHA git verified. A
-    filed return that will not parse leaves the first question unasked here;
-    `--from-return` is where that refuses."""
-    _text, executor, _problem = _fr.read_filed_return(
-        return_path(project, mpath, task, "executor"))
+    return edited after its filing row recorded it refuses here, in every form
+    of the close; a filed return that will not parse leaves the first question
+    unasked here, and `--from-return` is where that refuses."""
+    path = return_path(project, mpath, task, "executor")
+    mismatch = _fr.filed_mismatch(path, rows, project)
+    if mismatch:
+        return mismatch
+    _text, executor, _problem, _unchecked = _fr.read_filed_return_checked(
+        path, rows, project)
     changed = _commit_touches(project, git_root, task, sha) if verified else None
     return _scoped_commit.close_evidence_refusal(task, project, executor, changed)
 
@@ -5928,25 +5945,30 @@ def _gate_key(gate, refusal, override):
             "overrideReason": override if refusal else None}
 
 
-def _close_returns(project, mpath, node, from_return):
-    """`(filed, refusal)` - the returns a close reads, for the task's CURRENT
-    start only, keyed by role as `(rel, body)`; a return from an earlier start is
-    at another path and is never read.
+def _close_returns(project, mpath, node, from_return, rows):
+    """`(filed, refusal, unchecked)` - the returns a close reads, for the task's
+    CURRENT start only, keyed by role as `(rel, body)`; a return from an earlier
+    start is at another path and is never read. `unchecked` is one line per
+    return read with no filing row to compare it against, for the close to print.
 
     The executor's is read only under `--from-return`, which is the one form that
-    takes anything from it; a filed file that will not parse refuses the close
-    rather than reading as absent."""
-    filed = {}
+    takes anything from it; a filed file that will not parse, or one edited after
+    its filing row recorded it, refuses the close rather than reading as absent
+    or as it now stands."""
+    filed, unchecked = {}, []
     roles = ("executor", "reviewer") if from_return else ("reviewer",)
     for role in roles:
         path = return_path(project, mpath, node, role)
-        _text, body, problem = _fr.read_filed_return(path)
+        _text, body, problem, note = _fr.read_filed_return_checked(
+            path, rows, project)
         if problem:
             return None, ("[audit-task] REFUSED: the filed %s return %s -- "
-                          "nothing written" % (role, problem))
+                          "nothing written" % (role, problem)), []
         if body is not None:
             filed[role] = (_output.posix_rel(path, project), body)
-    return filed, None
+        if note:
+            unchecked.append("%s return: %s" % (role, note))
+    return filed, None, unchecked
 
 
 # Where a task's `review.perTask` value was read, in the words a refusal says it.
@@ -6162,6 +6184,7 @@ def _locked_done(args, project, config, mpath, tid, out):
     git_root = os.path.abspath(os.path.join(project,
                                             (config or {}).get("gitRoot") or "."))
     no_change, unverified, unasked = None, None, []
+    filing_rows = _filing_rows(project, config, mpath)
     if args.no_change:
         # A BUG IS NEVER FIXED WITHOUT A FIX COMMIT. A done fix task derives its
         # bug `fixed` whatever its commit, so a no-change close would store the bug
@@ -6231,15 +6254,16 @@ def _locked_done(args, project, config, mpath, tid, out):
                    "it" if len(during) == 1 else "them"))
             return E_USAGE
         evidence = _close_evidence_refusal(project, mpath, git_root, node, sha,
-                                           unverified is None)
+                                           unverified is None, filing_rows)
         if evidence:
             out("[audit-task] REFUSED: %s closes on %s, but %s. Nothing "
                 "written." % (tid, sha[:7], evidence))
             return E_USAGE
     key, key_source, refusal = _review_key_for(config, node, phase)
-    filed = {}
+    filed, unchecked = {}, []
     if refusal is None:
-        filed, refusal = _close_returns(project, mpath, node, args.from_return)
+        filed, refusal, unchecked = _close_returns(
+            project, mpath, node, args.from_return, filing_rows)
     if refusal is None:
         intent, intent_basis, intent_return, refusal = _close_intent(
             args, tid, filed, no_change is not None, (key, key_source),
@@ -6364,6 +6388,9 @@ def _locked_done(args, project, config, mpath, tid, out):
                   "phaseComplete": not open_left,
                   "phaseStatus": _mio.effective_phase_status(phase),
                   "gate": _gate_key(gate, refused, override),
+                  # Each return this close read with no filing row to compare
+                  # it against - an empty list is every one checked or none read.
+                  "returnsUnchecked": unchecked,
                   "stored": settled,
                   "written": written,
                   "warnings": _wg.collapse_machine(warnings, written_manifest)}
@@ -6390,6 +6417,8 @@ def _locked_done(args, project, config, mpath, tid, out):
         out("  commit %s" % (node.get("commit"),))
     if unverified:
         out(unverified)
+    for line in unchecked:
+        out("  " + line)
     # EACH LINE CARRIES ITS BASIS, THE ABSENT ONE INCLUDED. A close that said
     # nothing about the outcome would read as a close that recorded one; these are
     # the fields sign-off and the report render, and the caller is the only one who
