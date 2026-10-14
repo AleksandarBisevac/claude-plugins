@@ -3208,7 +3208,7 @@
     {
       "id": "P125.54-0h5",
       "title": "A follower a gate step owes is a record with a recipe, and the drive regenerates a generated follower in the task's own commit",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase-review finding (med, CLASS - recurred on two P125 tasks): any task that adds an import regenerates PLUGIN-BUILD-GUIDE.md's module map outside its files, so every such task ends in an undeclared-change decision. Implement consolidated plan F2.3 (approved 2026-10-14), which rewrites P128.4. (1) A gate step that owes a follower prints one structured line naming the path and the recipe that regenerates it; run-test-gate records it in the evidence row as `followersOwed`. Owners today: _deps' module map (`python3 plugins/audit/scripts/_deps.py --render`), check-rendered-artifacts' STALE lines with their refresh command, _refs' README pins. (2) The drive regenerates a generated follower by its recipe in the task's tree and commits it with the task. A hand-edited follower becomes a widening whose basis is the lint's own record, so it needs no judgement. (3) Screenshot capture as a recipe is run by the orchestrator's drive, never by an agent. NOT built (the plan deletes them): tools/followers.py, a product `_followers` module, `meta.followers.command` - the product already has one planning-time deriver of companion files, `scripts/manifest/_scope_companions.py`, and `followersOwed` is the only run-time record. Prefer removals to additions (owner decision D9: net code lines in scripts+hooks must not grow past the 3.4.0 count).",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -3250,16 +3250,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T17:07:32Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.55-0h5",
@@ -3431,7 +3432,7 @@
     {
       "id": "P125.57-0h5",
       "title": "Three small review findings: a miscounted comment, an unbounded failure message, and a retry loop that duplicates _output.while_shared",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase-review findings (low, each small). (1) plugins/audit/scripts/_refs.py: the comment above TOOL_NAME_TREES calls `.claude/hooks` 'a fourth' tree while the tuple holds five; restate it without an ordinal. (2) tools/release.py: case rl8, and any case asserting on the fake runner's call list, prints the whole call list on failure; with wait_ci polling the fake for its whole timeout the message has reached more than 64 MB. Clip the message, and let the fake end wait_ci's loop so the case cannot poll for its timeout. (3) plugins/audit/scripts/governance/stamp-verification.py: `_remove_throwaway` carries its own retry loop for a shared-file removal; use `_output.while_shared`, the one retry helper for that.",
       "files": [
         "plugins/audit/scripts/_refs.py",
@@ -3465,14 +3466,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "28449751c78c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_refs.py: TOOL_NAME_TREES comment drops the ordinal. tools/release.py: FakeRunner gains call_limit (default 200) returning (1, ...) past it so wait_ci ends; rl8 message goes through excerpt(repr(calls)); new inline case rl8b. stamp-verification.py: REMOVE_RETRIES/REMOVE_RETRY_S replaced by REMOVE_WAIT_S; _remove_throwaway(root, holder, path, wait, clock) removes via _output.while_shared with a deadline, OSError swallowed so the later exists/listed check reports left-behind. test_stamp_verification.py: _remove_retry_cases rewritten as sr215-sr219. Full sweep: 335/335 files ok, exit 0. An earlier edit of mine with an interpreter-stdin script duplicated a region of stamp-verification.py; the owner restored that file to base and I redid it with Edit-tool edits only.",
+        "descriptive": "Three review findings closed: a miscounted comment, a bounded failure message with a self-ending fake, and one shared-file retry helper instead of a private loop."
       },
       "startedAt": "2026-10-14T15:56:28Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-14T17:07:31Z",
+      "verifiedBy": [
+        "tools/release.py: a failing case over the fake runner prints a bounded message (at most a few KB), and wait_ci over the fake returns without waiting for its timeout",
+        "plugins/audit/tests/test_stamp_verification.py: _remove_throwaway retries a shared-file removal through _output.while_shared (a mutation of while_shared changes its behaviour)"
+      ],
       "reviewPerTask": "phase",
       "notes": [
         {
@@ -3484,12 +3488,23 @@
         "runId": "2026-10-14T17:07:30Z.bed804",
         "status": "passed",
         "at": "2026-10-14T17:07:30Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "28449751c78c",
+        "at": "2026-10-14T17:07:31Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T16:30:57Z",
+        "basis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 274/275 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'REMOVE_WAIT_S': TypeError: _remove_throwaway() got an unexpected keyword argument 'wait'; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.58-0h5",
       "title": "Every keyword the owner types is read through one owner-prompt reader, the plan-first bypass included",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Found while landing the standing high-risk approval: `_config.owner_prompt` reads only the `prompt` field of a UserPromptSubmit payload with no `agent_id`, but the same hook's older `_prompt_text` (detect-plan-skip.py) - which arms the plan-first bypass - also accepts `user_prompt` and `message`. Two readers of one boundary, one weaker. Invariant: every keyword a human arms by typing it is read through `_config.owner_prompt`; delete `_prompt_text`. A selftest that a payload carrying the bypass keyword only in `user_prompt` or `message`, or carrying an `agent_id`, arms nothing, beside the allow case where the owner's own prompt does.",
       "files": [
         "plugins/audit/hooks/detect-plan-skip.py",
@@ -3520,21 +3535,32 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T17:07:34Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-14T17:16:26Z",
+          "text": "Red-first checked by the orchestrator: wave base plus the new test_detect_plan_skip.py -> see the run recorded beside this note's time; with the task's detect-plan-skip.py -> green. Executor's over-fire mutation (prompt_readers flags every .get) turned one1 red."
+        },
+        {
+          "at": "2026-10-14T17:16:34Z",
+          "text": "Red-first proved by the orchestrator (supersedes the previous note's wording): git archive of the wave base plus the new test_detect_plan_skip.py, __pycache__ purged, no CLAUDE_PROJECT_DIR -> exit 1, 42/44, FAIL by1 and FAIL one1; with the task's detect-plan-skip.py -> exit 0, 44/44."
+        }
+      ]
     },
     {
       "id": "P125.59-0h5",
       "title": "/audit:status shows whether a standing high-risk approval is armed, since when, and how many commits used it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The standing high-risk approval task asked for doctor AND status to show the approval; doctor does (`_doctor_trail.check_standing_approval`, read from `_config.standing_approval`), status does not, because audit-status.py was outside that task's files. Add the same reading to status - through `_config.standing_approval`, not a second parse of the journal - in text and in --json, and say nothing when none was ever armed.",
       "files": [
         "plugins/audit/scripts/status/audit-status.py",
@@ -3564,16 +3590,23 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-14T17:07:36Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-14T17:24:01Z",
+          "text": "Red-first proved by the orchestrator: git archive of the wave base plus the new test_audit_status.py, Claude session variables unset, __pycache__ purged -> exit 1, 392/397 (FAIL sa2, sa3, sa4, sa5 and the sa-block raise); with the task's audit-status.py -> exit 0, 397/397. The executor's sl1-sl3 reds were its shell's session variables, which the sweep strips."
+        }
+      ]
     },
     {
       "id": "P125.60-0h5",
@@ -3593,6 +3626,58 @@
         "add": [
           "plugins/audit/tests/test_drive_phase.py: a retry whose new start falls in the same second as the start it replaces dispatches the executor again and does not read the previous start's return, marks or brief",
           "plugins/audit/tests/test__filed_returns.py: two starts of one task in the same second get distinct return paths, and a return filed under the old one-second key is still found for the start it answers"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.61-0h5",
+      "title": "An undeclared change that a follower recipe reproduces byte for byte is integrated as that follower, not asked about",
+      "status": "pending",
+      "description": "Completes the follower record for the case it does not yet reach. The record (`followersOwed`, `FOLLOWER-OWED` lines from _deps' module map, _refs' README pins and check-rendered-artifacts' STALE lines, regenerated by the drive) exists only once a task gate goes red; in this phase the common shape was an executor regenerating PLUGIN-BUILD-GUIDE.md's module map (or the panel screenshots) itself, so the gate was green, no record existed, and wave integration still printed undeclared-change - six tasks needed a hand widening. At integration, for each undeclared path, ask the follower owners whether the path is one they own; when the owner's recipe, run in the task's tree, reproduces the tree's bytes for it exactly, widen the task with that owner's basis and integrate it with no decision. A path no owner claims, or whose bytes the recipe does not reproduce, stays the undeclared-change decision it is today. Also: `examples/report.sh`'s second write (`docs/index.html`, a byte copy of the example report) is recorded as a follower of the same recipe, and `tools/capture-screenshots.mjs` prints the follower line for the panel/report shots it owns, marked needsBrowser (run by the orchestrator's drive, never an agent). Prefer removals (owner decision D9); report the scripts+hooks line delta.",
+      "files": [
+        "plugins/audit/scripts/git/integrate-task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/_deps.py",
+        "tools/check-rendered-artifacts.py",
+        "tools/capture-screenshots.mjs",
+        "plugins/audit/tests/test_integrate_task.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test__deps.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a wave member that regenerated the module map itself, with its gate green, is integrated with the map widened on the owner's basis and no undeclared-change decision printed",
+          "plugins/audit/tests/test_integrate_task.py: an undeclared module-map edit whose bytes the recipe does not reproduce stays an undeclared-change decision, naming the path",
+          "tools/check-rendered-artifacts.py: a stale example report names docs/index.html as a follower of the same refresh recipe"
         ],
         "expectRedFirst": true,
         "gate": [

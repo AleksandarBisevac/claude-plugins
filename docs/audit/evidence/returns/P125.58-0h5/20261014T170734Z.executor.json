@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "selftests": "pass",
+    "lint-ruff": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-14T17:16:02Z",
+    "basis": "`python3 plugins/audit/tests/test_detect_plan_skip.py --selftest` in a throwaway tree at HEAD exited 1, but no case --case names failed an assertion as the task's own: by1 (house FAIL), one1 (house FAIL) - SELFTEST FAILED: 42/44 cases passed; --case the plan-first bypass keyword carried only in user_prompt or message, or in a payload with an agent_id, arms nothing, and the same keyword in the owner's prompt still arms it names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Deleted _prompt_text from detect-plan-skip.py; its only caller (the bypass-keyword read in main) now uses _config.owner_prompt. No non-keyword use existed: the prompt only fed the keyword test and _arm_bypass, which does not use its wording. _config.py needed no change. Added by1 (bypass keyword in user_prompt/message, agent_id payload, or tool-event payload arms nothing; owner prompt arms exactly one slot) and one1 (AST lint prompt_readers reports .get/subscript of prompt/user_prompt/message or _prompt_text calls). Red 1: both cases failed on old code (42/44). Red 2 (over-fire): mutated lint to flag every .get call, one1 went red (43/44), temp copy removed. Full sweep: 335/335 files ok, 16210 cases; ruff clean.",
+    "descriptive": "The plan-first bypass is armed only by the owner's own prompt, through the one reader the standing approval uses."
+  },
+  "testsAdded": [
+    "the plan-first bypass keyword carried only in user_prompt or message, or in a payload with an agent_id, arms nothing, and the same keyword in the owner's prompt still arms it",
+    "detect-plan-skip reads prompt text in exactly one place, _config.owner_prompt (a second reader of the payload's prompt fields is reported by name)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:a152bcd5d2740a572aad89dd4b4bf3a4e1ed0f0967a3dd9f3ba5c991ee9c3f35\",\"dirtyDigest\":\"sha256:be9b0bede318e1f155946d1bb491ba64dcab66296ed9784574bca8b666d84c58\",\"dirtyPaths\":{\"plugins/audit/hooks/detect-plan-skip.py\":\"03016e16a9d13dfe\",\"plugins/audit/tests/test_detect_plan_skip.py\":\"df11e9bd25301da2\"},\"head\":\"28449751\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/detect-plan-skip.py\",\"plugins/audit/tests/test_detect_plan_skip.py\"],\"scopeDigest\":\"sha256:53782f63e5425f1d826324ad54eed3ed350f3fae9815c7d6d8a8b982582da6f7\",\"v\":2}"
+}

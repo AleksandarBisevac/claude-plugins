@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "selftests (python3 tools/sweep-selftests.py in the task tree)": "pass",
+    "ruff check plugins/audit tools": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-14T17:22:54Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_status.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases sl1 (house FAIL), sl2 (house FAIL), sl3 (house FAIL), sa2 (house FAIL), sa3 (house FAIL), sa4 (house FAIL), sa5 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 388/391 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 389/397 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-status.py gains standing_approval_block(manifest_path, project), which reads the journal through the hooks' own journal_lib and calls _config.standing_approval unchanged (no second parse, no new import, so the PLUGIN-BUILD-GUIDE module map is untouched). It returns {} when never armed or revoked, the reader's dict when armed or revoked, and {error} when the reader or journal is unavailable. main injects it as summary['standingApproval'] only when non-empty (all modes, so the bare --json payload is unchanged for plans with no approval), and render_status appends a STANDING APPROVAL block via _standing_approval_lines: 'armed since <ts>; N commit(s) used it' or 'revoked <ts>'. Tests sa1-sa6 added in test_audit_status.py (stage sa-block). Full sweep: 335/335 files ok, 16214 cases; ruff clean. An earlier attempt importing _journal_io directly made test__deps g1 (module map) red; replaced by hooks.journal_lib().",
+    "descriptive": "/audit:status now shows the standing high-risk approval (armed/revoked, since when, commits that used it) in text and --json, silent when never armed."
+  },
+  "testsAdded": [
+    "with a standing approval armed, status names it, the time it was armed and the number of commits that used it, in text and in --json; revoked, it says revoked; never armed, it prints nothing about it",
+    "status's standing-approval facts are _config.standing_approval's answer (a mutation of that reader changes what status prints)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:dd1b99e788fd75d978679ae193f3f14e2f1fb4b9d39f0a1b9b16ef5b84d27b76\",\"dirtyDigest\":\"sha256:f8a48a2625321231c6b5a88448b207c73e5582237b72b374ce5f8cbf564ff1fc\",\"dirtyPaths\":{\"plugins/audit/scripts/status/audit-status.py\":\"0b0a604f7b340c72\",\"plugins/audit/tests/test_audit_status.py\":\"5bd8ab4c9f1250ef\"},\"head\":\"28449751\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/status/audit-status.py\",\"plugins/audit/tests/test_audit_status.py\"],\"scopeDigest\":\"sha256:7820cb248a4c6dc54af8713ffa7b4b76fac15db6e1ac361acb08e14aee6d2052\",\"v\":2}"
+}
