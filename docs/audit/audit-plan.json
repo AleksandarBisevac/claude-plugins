@@ -4633,7 +4633,8 @@
     "plugins/audit/scripts/ui/panel/branch-convention.js": [
       "P18.7",
       "P18.9",
-      "P21.2"
+      "P21.2",
+      "P125.56-0h5"
     ],
     "plugins/audit/scripts/ui/panel/composition.js": [
       "P63.9",
@@ -4642,7 +4643,8 @@
       "P74.4-qq5",
       "P105.2",
       "P105.7",
-      "P105.10-m32"
+      "P105.10-m32",
+      "P125.56-0h5"
     ],
     "plugins/audit/scripts/ui/panel/overview.js": [
       "P20.4",
@@ -4657,13 +4659,15 @@
       "P105.8-m32",
       "P115.3-4yc",
       "P115.4-4yc",
-      "P115.5-4yc"
+      "P115.5-4yc",
+      "P125.56-0h5"
     ],
     "plugins/audit/scripts/ui/panel/write-confirmation.js": [
       "P18.7",
       "P105.3",
       "P105.4",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P125.56-0h5"
     ],
     "plugins/audit/scripts/ui/report": [
       "P55.7",
@@ -6621,7 +6625,8 @@
       "P120.2-byv",
       "P121.9",
       "P123.28",
-      "P125.26"
+      "P125.26",
+      "P125.56-0h5"
     ],
     "tools/gate-parity.py": [
       "P19.2",
@@ -6780,11 +6785,13 @@
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
       "P74.3-qq5",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P125.56-0h5"
     ],
     "tools/ui-tests/gate-reasons.test.mjs": [
       "P58.2",
-      "P123.87-64p"
+      "P123.87-64p",
+      "P125.56-0h5"
     ],
     "tools/ui-tests/phase-signoff-note.test.mjs": [
       "P63.9",
@@ -6816,7 +6823,8 @@
       "P125.11",
       "P128.7-0h5",
       "P128.12-0h5",
-      "P125.47-0h5"
+      "P125.47-0h5",
+      "P125.56-0h5"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
@@ -7794,7 +7802,8 @@
       "P122.8-z4y"
     ],
     "plugins/audit/scripts/ui/panel/proposals-view.js": [
-      "P105.2"
+      "P105.2",
+      "P125.56-0h5"
     ],
     "plugins/audit/scripts/ui/panel/policy-view.js": [
       "P105.2",
@@ -7805,10 +7814,12 @@
     ],
     "plugins/audit/scripts/ui/panel/core.js": [
       "P105.3",
-      "P123.30"
+      "P123.30",
+      "P125.56-0h5"
     ],
     "plugins/audit/scripts/ui/panel/run-status.js": [
-      "P105.3"
+      "P105.3",
+      "P125.56-0h5"
     ],
     "plugins/audit/scripts/ui/panel-css/app-shell.css": [
       "P105.3"
@@ -7832,11 +7843,13 @@
       "P105.9-m32"
     ],
     "plugins/audit/scripts/ui/panel/ado-connector.js": [
-      "P105.7"
+      "P105.7",
+      "P125.56-0h5"
     ],
     "tools/ui-tests/ado-panel.test.mjs": [
       "P105.7",
-      "P105.10-m32"
+      "P105.10-m32",
+      "P125.56-0h5"
     ],
     "plugins/audit/tests/test_hooks.py": [
       "P108.1",
@@ -7854,7 +7867,8 @@
     ],
     "tools/ui-tests/capture-provenance.test.mjs": [
       "P103.8",
-      "P112.1-uce"
+      "P112.1-uce",
+      "P125.56-0h5"
     ],
     ".github/ISSUE_TEMPLATE/bug_report.md": [
       "P103.11"
@@ -7948,7 +7962,8 @@
     "examples/panel.sh": [
       "P105.9-m32",
       "P121.6",
-      "P123.24"
+      "P123.24",
+      "P125.56-0h5"
     ],
     "tools/ui-tests/policy-shape.test.mjs": [
       "P105.8-m32"
@@ -8540,7 +8555,8 @@
       "P125.26"
     ],
     "tools/ui-checks/responsive.mjs": [
-      "P123.28"
+      "P123.28",
+      "P125.56-0h5"
     ],
     "plugins/audit/scripts/ui/panel/usage-model.js": [
       "P123.32"
@@ -8632,6 +8648,51 @@
       "P125.47-0h5"
     ],
     "examples/panel.sh tools/verify.sh tools/check-report-interactive.mjs tools/ui-checks/csv.mjs tools/ui-checks/layout-baseline.mjs tools/ui-checks/liveness.mjs tools/ui-checks/responsive.mjs tools/ui-checks/stage-tabs.mjs tools/ui-tests/ado-panel.test.mjs tools/ui-tests/armed-reason.test.mjs tools/ui-tests/capture-provenance.test.mjs tools/ui-tests/evidence-badge.test.mjs tools/ui-tests/gate-reasons.test.mjs tools/ui-tests/layout-baseline.test.mjs tools/ui-tests/parse.test.mjs tools/ui-tests/proposals-cell.test.mjs tools/ui-tests/refresh-deferral.test.mjs tools/ui-tests/sandbox.mjs tools/ui-tests/version-banner.test.mjs plugins/audit/scripts/ui/panel/ado-connector.js plugins/audit/scripts/ui/panel/appearance-view.js plugins/audit/scripts/ui/panel/boot.js plugins/audit/scripts/ui/panel/branch-convention.js plugins/audit/scripts/ui/panel/composition.js plugins/audit/scripts/ui/panel/core.js plugins/audit/scripts/ui/panel/help-drawer.js plugins/audit/scripts/ui/panel/overview.js plugins/audit/scripts/ui/panel/proposals-view.js plugins/audit/scripts/ui/panel/run-status.js plugins/audit/scripts/ui/panel/version-banner.js plugins/audit/scripts/ui/panel/write-confirmation.js": [
+      "P125.56-0h5"
+    ],
+    "tools/ui-checks/csv.mjs": [
+      "P125.56-0h5"
+    ],
+    "tools/ui-checks/layout-baseline.mjs": [
+      "P125.56-0h5"
+    ],
+    "tools/ui-checks/liveness.mjs": [
+      "P125.56-0h5"
+    ],
+    "tools/ui-checks/stage-tabs.mjs": [
+      "P125.56-0h5"
+    ],
+    "tools/ui-tests/armed-reason.test.mjs": [
+      "P125.56-0h5"
+    ],
+    "tools/ui-tests/layout-baseline.test.mjs": [
+      "P125.56-0h5"
+    ],
+    "tools/ui-tests/parse.test.mjs": [
+      "P125.56-0h5"
+    ],
+    "tools/ui-tests/proposals-cell.test.mjs": [
+      "P125.56-0h5"
+    ],
+    "tools/ui-tests/refresh-deferral.test.mjs": [
+      "P125.56-0h5"
+    ],
+    "tools/ui-tests/sandbox.mjs": [
+      "P125.56-0h5"
+    ],
+    "tools/ui-tests/version-banner.test.mjs": [
+      "P125.56-0h5"
+    ],
+    "plugins/audit/scripts/ui/panel/appearance-view.js": [
+      "P125.56-0h5"
+    ],
+    "plugins/audit/scripts/ui/panel/boot.js": [
+      "P125.56-0h5"
+    ],
+    "plugins/audit/scripts/ui/panel/help-drawer.js": [
+      "P125.56-0h5"
+    ],
+    "plugins/audit/scripts/ui/panel/version-banner.js": [
       "P125.56-0h5"
     ]
   },
