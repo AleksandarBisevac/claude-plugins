@@ -2914,7 +2914,8 @@
       "P128.4-0h5",
       "P128.6-0h5",
       "P125.54-0h5",
-      "P125.56-0h5"
+      "P125.56-0h5",
+      "P125.51-0h5"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -3572,7 +3573,8 @@
       "P125.8",
       "P125.35-0h5",
       "P125.49-0h5",
-      "P125.54-0h5"
+      "P125.54-0h5",
+      "P125.51-0h5"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -5848,7 +5850,8 @@
       "P128.14-0h5",
       "P125.40-0h5",
       "P125.53-0h5",
-      "P125.60-0h5"
+      "P125.60-0h5",
+      "P125.51-0h5"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -6517,7 +6520,8 @@
       "P112.1-uce",
       "P112.5-uce",
       "P112.7-uce",
-      "P112.8-uce"
+      "P112.8-uce",
+      "P125.51-0h5"
     ],
     "tools/capture-screenshots.mjs": [
       "BF1.2",
@@ -6744,7 +6748,8 @@
       "P128.4-0h5",
       "P128.11-0h5",
       "P128.7-0h5",
-      "P125.27"
+      "P125.27",
+      "P125.51-0h5"
     ],
     "tools/redfirst.sh": [
       "P55.13",
