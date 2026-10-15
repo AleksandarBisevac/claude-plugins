@@ -7056,7 +7056,7 @@
     {
       "id": "P125.90-0h5",
       "title": "fix P125-R60: P125.30: the half that records the operator's --reason (apply_a...",
-      "status": "in_progress",
+      "status": "cancelled",
       "description": "P125.30: the half that records the operator's --reason (apply_answer -> _mark(state, 'retryReason', ...)) has no test. test_drive_phase.py is in the task's files but untouched, and bf53 writes the state file by hand, so deleting the new apply_answer block leaves every added case green.\n\nResolution asked: Add a test_drive_phase case that answers `retry --reason X`, then reads the state for retryReason keyed to the new start and the generated brief, so the recording is the thing under test.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -7090,10 +7090,10 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: test-only work over existing behaviour: the case passes at HEAD, so a tdd red-first cannot be filed; re-added as regression, proved by mutation"
       },
       "startedAt": "2026-10-15T17:33:34Z",
-      "completedAt": null,
+      "completedAt": "2026-10-15T17:52:26Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -8886,6 +8886,48 @@
         "mode": "regression",
         "add": [
           "plugins/audit/tests/test_drive_phase.py: a fixture git call that fails raises with git's own decoded message, and every locale-pinned child case reports the tail of the child's stderr, through one helper each"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.120-0h5",
+      "title": "A case pins that answering retry with --reason records the reason for the new start and the brief carries it",
+      "status": "pending",
+      "description": "Finding P125-R60 (re-added from cancelled P125.90 as regression: the behaviour exists, the test was missing). The case drives a fixture to a decision, answers retry --reason X through next, asserts retryReason keyed to the new start and the brief line. Proved by mutation: replacing the _mark(state, 'retryReason', ...) and write_state lines with pass turns it red (0/1, recorded {}).",
+      "files": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: answering retry with --reason records the reason keyed to the new start, and the generated brief carries it"
         ],
         "expectRedFirst": false,
         "gate": [
