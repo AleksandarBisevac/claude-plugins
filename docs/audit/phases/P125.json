@@ -7877,7 +7877,8 @@
         "docs/screenshots/panel-policy-expanded.png",
         "docs/screenshots/panel-policy.png",
         "docs/screenshots/panel-proposals.png",
-        "docs/screenshots/panel-usage.png"
+        "docs/screenshots/panel-usage.png",
+        "docs/screenshots/captured-at.json"
       ],
       "tests": {
         "mode": "tdd",
@@ -7905,14 +7906,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-15T08:09:29Z",
+      "startedAt": "2026-10-15T09:03:00Z",
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "phase"
