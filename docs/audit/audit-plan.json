@@ -8939,6 +8939,9 @@
     ],
     "plugins/audit/scripts/ui/panel/usage-charts.js": [
       "P125.75-0h5"
+    ],
+    "plugins/audit/scripts/ui/report/usage-range.js": [
+      "P125.105-0h5"
     ]
   },
   "bugs": [
