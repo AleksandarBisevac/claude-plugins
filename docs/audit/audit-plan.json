@@ -5159,7 +5159,8 @@
       "P118.9",
       "P125.6",
       "P125.40-0h5",
-      "P125.65-0h5"
+      "P125.65-0h5",
+      "P125.106-0h5"
     ],
     "plugins/audit/tests/test__id_refs.py": [
       "P61.7",
@@ -8012,13 +8013,15 @@
       "P102.12-ptn",
       "P122.8-z4y",
       "P123.65-64p",
-      "P125.48-0h5"
+      "P125.48-0h5",
+      "P125.80-0h5"
     ],
     "plugins/audit/tests/test__runner_output.py": [
       "P102.3",
       "P102.4",
       "P102.12-ptn",
-      "P125.48-0h5"
+      "P125.48-0h5",
+      "P125.80-0h5"
     ],
     "plugins/audit/scripts/manifest/migrate-json-encoding.py": [
       "P102.10",
@@ -9001,6 +9004,9 @@
     ],
     "plugins/audit/scripts/ui/report/usage-range.js": [
       "P125.105-0h5"
+    ],
+    "docs/research/token-efficiency-audit.md": [
+      "P125.106-0h5"
     ]
   },
   "bugs": [
