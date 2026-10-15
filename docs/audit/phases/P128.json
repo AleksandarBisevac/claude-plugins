@@ -921,49 +921,6 @@
       "verifiedBy": []
     },
     {
-      "id": "P128.18-0h5",
-      "title": "A fix task made from a finding carries its test file and a tests.add clause",
-      "status": "pending",
-      "description": "Register F674. `add --fixes` takes files from the finding text only and writes no tests.add, yet the task is tdd with expectRedFirst, so every fix executor stops for a widening. Read paths from path:symbol spellings, add the suite that tests each declared source, and write a tests.add clause from the resolution.",
-      "files": [
-        "plugins/audit/scripts/manifest/audit-task.py",
-        "plugins/audit/tests/test_audit_task.py"
-      ],
-      "tests": {
-        "mode": "tdd",
-        "add": [
-          "plugins/audit/tests/test_audit_task.py: a fix task built from a finding whose file is spelled path:symbol declares that path, the suite that tests it, and a tests.add clause from the resolution"
-        ],
-        "expectRedFirst": true,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "phase-no-spelling"
-      },
-      "model": "sonnet",
-      "skills": [],
-      "risk": "low",
-      "blockedBy": [],
-      "dependsOn": [],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
-    },
-    {
       "id": "P128.19-0h5",
       "title": "A hand-run task gate measures the task tree, and the record names the tree it measured",
       "status": "pending",
