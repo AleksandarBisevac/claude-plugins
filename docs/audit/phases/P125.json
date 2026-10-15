@@ -7472,15 +7472,18 @@
     {
       "id": "P125.96-0h5",
       "title": "fix P125-R80: P125.45 clause 'Documentation stops naming coupling as a select...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P125.45 clause 'Documentation stops naming coupling as a selection source' is contradicted. The tree line for _affected_tests.py still lists the arms as '(related listing, Python imports, e2e listing, coupling, e2e widening)', although the coupling arm is removed from ARMS. The commit touched the README but not this file, and HEAD still has the line.\n\nResolution asked: Edit the tree line to '(related listing, Python imports, e2e listing, e2e widening)'. Widen scope through the drive, since the file is outside the task's files.",
       "files": [
         "PLUGIN-BUILD-GUIDE.md",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__affected_tests.py"
       ],
       "tests": {
         "mode": "tdd",
-        "add": [],
+        "add": [
+          "plugins/audit/tests/test__affected_tests.py: the build guide's tree line for _affected_tests names exactly the arms ARMS holds, so a removed arm cannot stay documented"
+        ],
         "expectRedFirst": true,
         "gate": [
           "selftests",
@@ -7499,14 +7502,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T22:16:24Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -7517,7 +7520,8 @@
       ],
       "fixes": [
         "P125-R80"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.97-0h5",
@@ -9217,7 +9221,7 @@
     {
       "id": "P125.122-0h5",
       "title": "Fixture git runs no background auto-gc, measured first, so no repack races a clone or an add",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F690 (and possibly F679). CI 38792231809: a fixture git clone --no-hardlinks failed with ENOENT copying a loose object that vanished mid-copy. Hypothesis: git's detached gc --auto repacking the fixture repo in the background. Measure with GIT_TRACE first; if gc --auto spawns, set gc.auto=0 in _harness.GIT and every suite-local prefix, with a case; if not, report and leave the cause open.",
       "files": [
         "plugins/audit/tests/_harness.py",
@@ -9249,21 +9253,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T22:16:19Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.123-0h5",
       "title": "The filed-counterpart check accepts the house case label, a case id before the clause",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F682. title_names_clause accepts only the clause or clause plus ' (detail'; the suites label cases '<id> <title>', so correctly titled cases are reported as unfiled (P125.80, .107, .108).",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -9294,14 +9299,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "045c821f900f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "title_names_clause in _filed_returns.py now also accepts exactly one leading case-id token plus one space before the clause (clause then end or ' ('). Id shape _CASE_ID_TOKEN copies the runner's _HOUSE_CASE_ID regex (the token the house FAIL/PASS line prints first); the case pins the two patterns equal. Added helpers _after_case_id and _names_at. Refused: paraphrase, two ids, glued id, double space, non-id first word, run-on clause, bare id. Helper path: stamp-verification.py _is_named calls _filed_returns.title_names_clause (line 1452), so --case shares the predicate; no separate matcher. Own test 96/96. Full sweep exit 0 (335/335 files, 16445 cases); cp1252 sweep exit 0 (335/335 files; printed 0 cases, so which half ran is unconfirmed beyond the exit code). Comment near RETURN_FILED_ACTION untouched.",
+        "descriptive": "A case titled '<id> <clause> (detail)' now counts as the clause's filed counterpart and as a --case name."
       },
       "startedAt": "2026-10-15T20:57:12Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T22:16:18Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__filed_returns.py: a filed title of one case-id token, then the clause verbatim, then its detail, names that clause; a paraphrase or an id glued to the clause does not"
+      ],
       "movedFrom": {
         "id": "P128.26-0h5",
         "phase": "P128",
@@ -9312,12 +9319,23 @@
         "runId": "2026-10-15T22:16:17Z.b94715",
         "status": "passed",
         "at": "2026-10-15T22:16:17Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "045c821f900f",
+        "at": "2026-10-15T22:16:18Z"
+      },
+      "redFirst": {
+        "at": "2026-10-15T21:18:30Z",
+        "basis": "`python3 plugins/audit/tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_filed_returns' has no attribute '_CASE_ID_TOKEN'\" (read as python), and the task introduces '_CASE_ID_TOKEN': absent from HEAD's plugins/audit/scripts/manifest/_filed_returns.py and present in the working tree's plugins/audit/scripts/manifest/_filed_returns.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.124-0h5",
       "title": "The help payload's size is platform-independent and fits its budget with headroom, by reduction or a re-derived cap",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F692, a regression (P125.95 tipped it): CI 38806218995 measured the help payload at 200001 bytes on Windows against a 200000 cap (199998 on macOS); fields is ~190 KB. Find the platform difference and what in fields is duplicated or unneeded; reduce it, or re-derive the cap from a stated serving basis with headroom. A case pins platform independence.",
       "files": [
         "plugins/audit/scripts/config/_help.py",
@@ -9347,16 +9365,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T22:16:22Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
