@@ -7056,7 +7056,7 @@
     {
       "id": "P125.90-0h5",
       "title": "fix P125-R60: P125.30: the half that records the operator's --reason (apply_a...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P125.30: the half that records the operator's --reason (apply_answer -> _mark(state, 'retryReason', ...)) has no test. test_drive_phase.py is in the task's files but untouched, and bf53 writes the state file by hand, so deleting the new apply_answer block leaves every added case green.\n\nResolution asked: Add a test_drive_phase case that answers `retry --reason X`, then reads the state for retryReason keyed to the new start and the generated brief, so the recording is the thing under test.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -7064,7 +7064,9 @@
       ],
       "tests": {
         "mode": "tdd",
-        "add": [],
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: answering retry with --reason records the reason keyed to the new start, and the generated brief carries it"
+        ],
         "expectRedFirst": true,
         "gate": [
           "selftests",
@@ -7083,14 +7085,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T17:33:34Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -7101,7 +7103,8 @@
       ],
       "fixes": [
         "P125-R60"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.91-0h5",
@@ -7156,7 +7159,7 @@
     {
       "id": "P125.92-0h5",
       "title": "fix P125-R66: P125.34: the clause 'one invariant for every commit carrying a ...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P125.34: the clause 'one invariant for every commit carrying a plan record' is met for commit-task-work and commit-manifest-index only. commit-audit-state.py also commits a phase shard without the index and asks nothing; the executor left it, and no use of index_rows_owed exists there at HEAD. The grader exception in _invariants.commit_scope for the carry option was not made either.\n\nResolution asked: Call _scoped_commit.index_rows_owed from commit-audit-state.py (refuse naming the rows), with a case, or file a task that does.",
       "files": [
         "plugins/audit/scripts/governance/commit-audit-state.py",
@@ -7164,7 +7167,9 @@
       ],
       "tests": {
         "mode": "tdd",
-        "add": [],
+        "add": [
+          "plugins/audit/tests/test_commit_audit_state.py: a records commit carrying a phase shard whose index rows HEAD does not hold carries those rows too, so no commit records a plan that does not validate"
+        ],
         "expectRedFirst": true,
         "gate": [
           "selftests",
@@ -7183,14 +7188,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T17:33:36Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -7201,7 +7206,8 @@
       ],
       "fixes": [
         "P125-R66"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.93-0h5",
@@ -8710,7 +8716,7 @@
     {
       "id": "P125.116-0h5",
       "title": "A task widened by a follower path at integration closes in the same run: the index it changed is committed first",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F687, a regression from P125.61 (43c4ec1e). The drive widens a member by a byte-for-byte follower path at integration, re-gates green, and then commit-task-work refuses because the index HEAD holds has no fileIndex row for the new path. Seen closing P125.113 and P125.114.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -8741,25 +8747,41 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "93a38a969da4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: new commit_scope_index(ctx, subject) runs commit-manifest-index.py through _verb_or_stop in a sharded plan (no-op for a one-file plan; a manifest that cannot be read is a stop). widen_task calls it after its scope+note verbs, so every drive-side widening (integration follower, red-gate follower owed, integration widen answer) commits the index before the task commit; the scope-gap answer branch calls it too. Chosen over making commit-task-work stage the index row: the index is shared by every phase, so a task commit carrying it carries other phases' rows, and the repo already commits the index on its own commit (chore(audit-index)); that file is also outside this task's files. Second symptom: tree_holds_only_integrated gains followers=() and skips those paths; the integration mark now holds {'regate', 'followers': [paths]} and retire_member passes them, so a member whose only differing byte is a follower the integration took (its phase-tree copy is the owner's recipe over the phase tree, moved by a merged sibling) is removed, not kept. test_drive_phase.py: fm fixture factored into _drive_follower_map(M, prefix, sharded=False); new fi-block (_follower_index_cases, sharded layout, the tests.add clause as title) and fr-block (_follower_retire_cases: fr1 follower skipped, fr2 DENY non-follower still differs, fr3 retire_member hands the mark's followers to the check); wt8m mutant lambda takes followers. Red on base: fi-block FAILED with the exact commit-task-work REFUSED 'missing from fileIndex' text; fr-block raised TypeError (4 positional args) before the signature existed. Green: the 4-stage command exit 0, 8/8 cases. Full sweep exit 1: 334/335 files ok, the one failure plugins/audit/tests/test__proc_group.py PermissionError on os.killpg (sandbox-denied signal to a process group), a file outside this task, re-run alone also exit 1 with the same error; cp1252 sweep exit 0 (335/335, both halves ran). ruff exit 0, vermin on both files exit 0.",
+        "descriptive": "A drive that widens a task by a follower path now commits the index first, so the task closes in the same next, and a member tree whose only difference is such a follower is retired."
       },
       "startedAt": "2026-10-15T16:30:17Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T17:33:30Z",
+      "verifiedBy": [
+        "a wave member widened by a follower path at integration is committed and closed in one next, with no refusal for an uncommitted index (fi-block)",
+        "fr1 a member whose only differing path is a follower the integration wrote holds nothing the phase tree lacks",
+        "fr2 (DENY: the same difference at a path that is not a follower still keeps the tree)",
+        "fr3 retiring a member hands the check the follower paths its integration wrote"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-15T17:33:28Z.c72577",
         "status": "passed",
         "at": "2026-10-15T17:33:28Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "93a38a969da4",
+        "at": "2026-10-15T17:33:30Z"
+      },
+      "redFirst": {
+        "at": "2026-10-15T16:55:51Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage fi-block` in a throwaway tree at HEAD exited 1 with 1 of 1 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests on HEAD's code failing only the unknown-stage check for `fi-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - a wave member widened by a follower path at integration is committed and closed in one next, with no refusal for an uncommitted index (the print that widens the member by PLUGIN-BUILD-GUIDE.md also closes it; no print refuses or stops; HEAD's index carries the row and the task commit the map): widened=[\"[drive-phase] P1: records of P1.1 at c698a92; gate P1.1 green; stamp current; integrated P1.1; closed P1.1 at c247f37; tree of P1.1 removed; records of P1.2 at c247f37; gate P1.2 green; stamp current; P1.2 widened by PLUGIN-BUILD-GUIDE.md (written byte for byte at integration by `python3 plugins/audit/scripts/_deps.py --write-map` (_deps.map_drift)); integrated P1.2; re-gate P1.2 green; lock released\\n[drive-phase] P1: stopped - commit-task-work.py refused (exit 1); its own words follow\\n[commit-task-work] REFUSED: the shard this commit carries declares PLUGIN-BUILD-GUIDE.md (P1.2), and the index HEAD holds has no fileIndex row for it - committed now, it would record a plan that does not validate ('missing from fileIndex'). Commit the index first (commit-manifest-index.py <outside-repo> P1), then run this again. Nothing was staged\\nRelay these words and act on the remedy they name; never edit the plan or the journal by hand to get past them.\"] refused=[\"[drive-phase] P1: records of P1.1 at c698a92; gate P1.1 green; stamp current; integrated P1.1; closed P1.1 at c247f37; tree of P1.1 removed; records of P1.2 at c247f37; gate P1.2 green; stamp current; P1.2 widened by PLUGIN-BUILD-GUIDE.md (written byte for byte at integration by `python3 plugins/audit/scripts/_deps.py --write-map` (_deps.map_drift)); integrated P1.2; re-gate P1.2 green; lock released\\n[drive-phase] P1: stopped - commit-task-work.py refused (exit 1); its own words follow\\n[commit-task-work] REFUSED: the shard this commit carries declares PLUGIN-BUILD-GUIDE.md (P1.2), and the index HEAD holds has no fileIndex row for it - committed now, it would record a plan that does not validate ('missing from fileIndex'). Commit the index first (commit-manifest-index.py <outside-repo> P1), then run this again. Nothing was staged\\nRelay these words and act on the remedy they name; never edit the plan or the journal by hand to get past them.\", \"[drive-phase] P1: lock released\\n[drive-phase] P1: stopped - commit-task-work.py refused (exit 1); its own words follow\\n[commit-task-work] REFUSED: the shard this commit carries declares PLUGIN-BUILD-GUIDE.md (P1.2), and the index HEAD holds has no fileIndex row for it - committed now, it would record a plan that does not validate ('missing from fileIndex'). Commit the index first (commit-manifest-index.py <outside-repo> P1), then run this again. Nothing was staged\\nRelay these words and act on the remedy they name; never edit the plan or the journal by hand to get past them.\", \"[drive-phase] P1: lock released\\n[drive-phase] P1: stopped - commit-task-work.py refused (exit 1); its own words follow\\n[commit-task-work] REFUSED: the shard this commit carries declares PLUGIN-BUILD-GUIDE.md (P1.2), and the index HEAD holds has no fileIndex row for it - committed now, it would record a plan that does not validate ('missing from fileIndex'). Commit the index first (commit-manifest-index.py <outside-repo> P1), then run this again. Nothing was staged\\nRelay these words and act on the remedy they name; never edit the plan or the journal by hand to get past them.\", \"[drive-phase] P1: lock released\\n[drive-phase] P1: stopped - commit-task-work.py refused (exit 1); its own words follow\\n[commit-task-work] REFUSED: the shard this commit carries declares PLUGIN-BUILD-GUIDE.md (P1.2), and the index HEAD holds has no fileIndex row for it - committed now, it would record a plan that does not validate ('missing from fileIndex'). Commit the index first (commit-manifest-index.py <outside-repo> P1), then run this again. Nothing was staged\\nRelay these words and act on the remedy they name; never edit the plan or the journal by hand to get past them.\", \"[drive-phase] P1: lock released\\n[drive-phase] P1: stopped - commit-task-work.py refused (exit 1); its own words follow\\n[commit-task-work] REFUSED: the shard this commit carries declares PLUGIN-BUILD-GUIDE.md (P1.2), and the index HEAD holds has no fileIndex row for it - committed now, it would record a plan that does not validate ('missing from fileIndex'). Commit the index first (commit-manifest-index.py <outside-repo> P1), then run this again. Nothing was staged\\nRelay these words and act on the remedy they name; never edit the plan or the journal by hand to get past them.\", \"[drive-phase] P1: lock released\\n[drive-phase] P1: stopped - commit-task-work.py refused (exit 1); its own words follow\\n[commit-task-work] REFUSED: the shard this commit carries declares PLUGIN-BUILD-GUIDE.md (P1.2), and the index HEAD holds has no fileIndex row for it - committed now, it would record a plan that does not validate ('missing from fileIndex'). Commit the index first (commit-manifest-index.py <outside-repo> P1), then run this again. Nothing was staged\\nRelay these words and act on the remedy they name; never edit the plan or the journal by hand to get past them.\"] row=None carried=['docs/audit/evidence/2026-10.drive-fixture-session.jsonl', 'docs/audit/evidence/returns/P1.1/20261015T165454Z.executor.json', 'docs/audit/evidence/returns/P1.2/20261015T165455Z.executor.json', 'docs/audit/journal/2026-10.drive-fixture-session.jsonl', 'docs/audit/journal/2026-10.fb1bddcc-aedf-4720-99d2.jsonl', 'docs/audit/phases/P1.json', 'src/f1.txt'] status='in_progress' (house FAIL): SELFTEST FAILED: 0/1 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.117-0h5",
       "title": "Process teardown survives a PermissionError from killpg, judged by the confirmation step",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F686. test__proc_group raised PermissionError on os.killpg twice under loaded macOS sweeps; _kill does not handle it. Capture the line, confirm the cause (hypothesis: EPERM for a group of zombies), then handle it through the confirmation step.",
       "files": [
         "plugins/audit/scripts/governance/_proc_group.py",
@@ -8788,21 +8810,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T17:33:31Z",
       "completedAt": null,
       "verifiedBy": [],
       "movedFrom": {
         "id": "P128.30-0h5",
         "phase": "P128",
         "at": "2026-10-15T16:56:52Z"
-      }
+      },
+      "reviewPerTask": "phase"
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
