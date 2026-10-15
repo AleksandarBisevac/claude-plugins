@@ -84,8 +84,10 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
+import time
 import traceback
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1030,6 +1032,82 @@ def staged_main(argv, stages, namespace, prefix):
                               to[-1])
     return staged_selftest(stages, namespace, prefix,
                            flag_values(argv, "--stage"))
+
+
+# --- waiting for a killed process to be gone ------------------------------------
+# A killed child stays a zombie until its parent reaps it, and a zombie still
+# answers `kill(pid, 0)` - the product's own liveness rule, `_locks.pid_alive`,
+# counts it ALIVE (it is that signal and nothing more). One look a fixed time
+# after a kill therefore reads a successful teardown as a survivor on a loaded
+# runner. The wait below polls to a deadline and adds the zombie reading as
+# test-side knowledge; the product rule is left as it is.
+def _is_zombie(pid):
+    """True when the process exists but has exited and is only waiting to be reaped.
+
+    /proc where it exists (Linux), `ps -o stat=` elsewhere (macOS); unreadable is
+    False, so a platform that cannot say never turns a live process into a gone one.
+    """
+    try:
+        with open(os.path.join(os.sep, "proc", str(pid), "stat")) as fh:
+            return fh.read().rpartition(")")[2].split()[0] == "Z"
+    except (OSError, IndexError):
+        pass
+    try:
+        out = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             universal_newlines=True).stdout
+    except OSError:
+        return False
+    return out.strip().startswith("Z")
+
+
+def _pid_present(pid):
+    """A pid that is running: `_locks.pid_alive` says so and it is not a zombie."""
+    import _locks
+    alive = _locks.pid_alive(pid)
+    if alive is False:
+        return False
+    return alive is None or not _is_zombie(pid)
+
+
+def _group_present(pgid):
+    """A process group with at least one member that is not a zombie."""
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass                     # macOS answers EPERM for an all-zombie group too
+    try:
+        out = subprocess.run(["ps", "-A", "-o", "pgid=,stat="],
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             universal_newlines=True)
+    except OSError:
+        return True
+    if out.returncode != 0:
+        return True              # cannot enumerate: not confirmed gone
+    for line in out.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0] == str(pgid) and not parts[1].startswith("Z"):
+            return True
+    return False
+
+
+def gone_within(target, seconds, group=False, interval=0.05):
+    """True once `target` (a pid, or a process-group id with `group=True`) is gone.
+
+    Polls until `seconds` have passed and looks at least once, so a process that
+    needs a moment to be reaped is waited for and one that never goes is reported
+    after the deadline. Never the single look after a fixed sleep.
+    """
+    present = _group_present if group and hasattr(os, "killpg") else _pid_present
+    deadline = time.time() + seconds
+    while True:
+        if not present(target):
+            return True
+        if time.time() >= deadline:
+            return False
+        time.sleep(interval)
 
 
 # --- selftest -----------------------------------------------------------------

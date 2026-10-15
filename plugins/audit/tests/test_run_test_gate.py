@@ -22,6 +22,7 @@ installed, which is to say there would be no cases.
 faking that would test the arithmetic rather than the question -- so the fixture
 is an actual repository and the "mutation" is an actual file appearing in it.
 """
+import ast
 import datetime
 import json
 import os
@@ -5364,6 +5365,7 @@ def _cases(check):
     _harness.stage(check, "xg0 the excluded/no-suite block", _excluded_cases)
     _harness.stage(check, "ow0 the --own block", _own_cases)
     _harness.stage(check, "dgv0 the derived-gate block", _derived_gate_cases)
+    _harness.stage(check, "lv0 the killed-process liveness block", _liveness_cases)
 
     if SENDS_REAL_SIGNALS:
         _harness.stage(check, "is0 the real-interrupt block", _interrupt_cases)
@@ -8106,6 +8108,112 @@ def _reuse_cases(check):
           == seeded.get("runId"))
 
 
+_KILLERS = ("kill", "killpg", "terminate", "send_signal", "tear_down",
+            "_tear_down", "_kill")
+# The two functions that ARE the wait: they hold the one permitted signal-0 read.
+_LIVENESS_HOMES = (("_harness.py", "_pid_present"), ("_harness.py", "_group_present"))
+
+
+def _is_signal_zero_read(node):
+    """`os.kill(x, 0)` / `os.killpg(x, 0)`: the liveness probe, not a kill."""
+    return (isinstance(node.func, ast.Attribute)
+            and node.func.attr in ("kill", "killpg") and len(node.args) == 2
+            and isinstance(node.args[1], ast.Constant)
+            and type(node.args[1].value) is int and node.args[1].value == 0)
+
+
+def _own_calls(scope):
+    """The calls of `scope` itself, not of a function defined inside it."""
+    calls, todo = [], list(ast.iter_child_nodes(scope))
+    while todo:
+        node = todo.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if isinstance(node, ast.Call):
+            calls.append(node)
+        todo.extend(ast.iter_child_nodes(node))
+    return calls
+
+
+def _single_look_reads(source, filename):
+    """Lines of `filename` reading a process's liveness with signal 0 AFTER a kill.
+
+    Told apart by the enclosing function: a signal-0 read counts when the same
+    function (or the module body) calls a kill-shaped name on an earlier line. A
+    read in a function that never kills (a probe of a fixture that is meant to be
+    alive) is allowed, and so are the two functions of the wait itself.
+    """
+    tree = ast.parse(source)
+    scopes = [tree] + [n for n in ast.walk(tree)
+                       if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    found = set()
+    for scope in scopes:
+        if (os.path.basename(filename), getattr(scope, "name", None)) \
+                in _LIVENESS_HOMES:
+            continue
+        calls = _own_calls(scope)
+        kills = [c.lineno for c in calls if not _is_signal_zero_read(c)
+                 and isinstance(c.func, ast.Attribute) and c.func.attr in _KILLERS]
+        for c in calls:
+            if _is_signal_zero_read(c) and any(k < c.lineno for k in kills):
+                found.add(c.lineno)
+    return sorted(found)
+
+
+def _liveness_cases(check):
+    """A killed process is judged gone by the one deadline helper, never by a look."""
+    import _locks
+    _skip_reason = "no `os.killpg` here, so no group to wait on"
+    if not hasattr(os, "killpg"):
+        _harness.skip(check, "A torn-down group's grandchild is judged gone by "
+                      "one deadline helper", _skip_reason, True)
+        return
+    napper = "import time; time.sleep(0.6)"
+    kids = []
+    try:
+        # exits 0.6 s from now and is NOT reaped here: a zombie by the time it
+        # is judged. A single look at once sees it running.
+        solo = subprocess.Popen([sys.executable, "-c", napper],
+                                start_new_session=True)
+        kids.append(solo)
+        first_look = _harness._pid_present(solo.pid)
+        solo_gone = _harness.gone_within(solo.pid, 15)
+        product_says_alive = _locks.pid_alive(solo.pid)
+        grp = subprocess.Popen([sys.executable, "-c", napper],
+                               start_new_session=True)
+        kids.append(grp)
+        grp_gone = _harness.gone_within(grp.pid, 15, group=True)
+        self_gone = _harness.gone_within(os.getpid(), 0.2)
+    finally:
+        for kid in kids:
+            kid.wait()
+    scanned = {}
+    for name in sorted(os.listdir(_harness.TESTS_DIR)):
+        if name.endswith(".py"):
+            with open(os.path.join(_harness.TESTS_DIR, name),
+                      encoding="utf-8") as fh:
+                scanned[name] = _single_look_reads(fh.read(), name)
+    offenders = dict((n, l) for n, l in scanned.items() if l)
+    bad = ("import os\ndef f(p):\n    os.kill(p, 9)\n    os.kill(p, 0)\n")
+    fine = ("import os\ndef f(p):\n    os.kill(p, 0)\n")
+    home = ("import os\ndef _pid_present(p):\n    os.kill(p, 9)\n"
+            "    os.kill(p, 0)\n")
+    check("a torn-down group's grandchild is judged gone by one deadline helper "
+          "on the product's liveness rule, a zombie counts as gone, and no suite "
+          "reads a killed process's liveness once after a fixed sleep "
+          "(first_look=%r solo_gone=%r product_pid_alive=%r group_gone=%r "
+          "self_gone=%r offenders=%r)"
+          % (first_look, solo_gone, product_says_alive, grp_gone, self_gone,
+             offenders),
+          first_look is True and solo_gone is True
+          and product_says_alive is True and grp_gone is True
+          and self_gone is False and not offenders
+          and _single_look_reads(bad, "x.py") == [4]
+          and _single_look_reads(fine, "x.py") == []
+          and _single_look_reads(home, "_harness.py") == []
+          and len(scanned) > 10)
+
+
 def _interrupt_cases(check):
     """The cases that need a real signal delivered to a real child.
 
@@ -8179,12 +8287,7 @@ def _interrupt_cases(check):
                                                                  "replace")
     alive = None
     if grandchild is not None:
-        time.sleep(0.4)
-        try:
-            os.kill(grandchild, 0)
-            alive = True
-        except OSError:
-            alive = False
+        alive = not _harness.gone_within(grandchild, 10)
         if alive:
             _harness.attempt(os.kill, grandchild, 9)
     sig_rows = _recorded_rows(os.path.join(sigroot, "docs", "audit", "evidence"))

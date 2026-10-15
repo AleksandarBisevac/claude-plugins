@@ -307,15 +307,6 @@ def _group_alive(pgid):
     return True
 
 
-def _group_gone_within(pgid, seconds):
-    """Poll until the group is gone: a killed member is a zombie (EPERM) until
-    its reaper runs, so a single look straight after the kill is a race."""
-    deadline = time.time() + seconds
-    while _group_alive(pgid) and time.time() < deadline:
-        time.sleep(0.05)
-    return not _group_alive(pgid)
-
-
 def _eperm_cases(check):
     """A killpg that raises PermissionError must not escape a teardown."""
     real_killpg = os.killpg
@@ -418,7 +409,7 @@ def _reaped_cases(check):
         live, began = _reaped_root(1, marks)
         seen = _group_alive(live.pid)
         confirmed = M.tear_down(live)
-        after = not _group_gone_within(live.pid, 5)
+        after = not _harness.gone_within(live.pid, 5, group=True)
         dead, _b = _reaped_root(0, marks)
         empty_confirmed = M.tear_down(dead)
 
