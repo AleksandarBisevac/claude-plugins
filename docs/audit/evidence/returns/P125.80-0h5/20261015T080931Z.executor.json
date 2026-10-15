@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "sweep-selftests --encoding cp1252": "pass",
+    "ruff": "pass",
+    "vermin": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T09:01:51Z",
+    "basis": "`python3 plugins/audit/tests/test__runner_output.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 16 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ru15 (house FAIL), ru16 (house FAIL): SELFTEST FAILED: 14/16 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "R44: stamp-verification.py MISSING_SPELLINGS gains row 'export (rollup)' reading '\"x\" is not exported by \"y\"' with named groups name and spec; cases se3/se4 in test_stamp_verification.py (se3 titled 'a rollup 'is not exported by' message is read as a missing export (...)'). R45: _runner_output.py playwright_line_cases marks entries assertion None (was True), playwright_line_tally counts only entries marked as assertions, so a line-reporter run classifies collection-error not red; stamp-verification.py V_COLLECT basis now says playwright's line reporter cannot tell an assertion and to run --reporter=json. test__runner_output.py: ru15 now expects assertions 0, new case ru16 'a Playwright line-reporter failure is not marked an assertion (...)'. test_stamp_verification.py: sp2 flipped to a deny twin (line reporter stays could-not-prove naming --reporter=json), sp3 now mutates _PW_ASSERTION on JSON text since the line reader no longer reaches red. Sweep exit 0 (335/335 files ok), cp1252 sweep exit 0, ruff clean, vermin clean.",
+    "descriptive": "The red-first helper reads rollup/vite missing-export errors, and a Playwright line-reporter failure no longer proves an assertion; it asks for the JSON reporter."
+  },
+  "testsAdded": [
+    "se3 a rollup 'is not exported by' message is read as a missing export",
+    "se4 THE DENY TWIN for se3",
+    "ru16 a Playwright line-reporter failure is not marked an assertion"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:7a730d1c4fa4f129cd5e471daaba4e18e946e882fead45cf280ecf72f637b08c\",\"dirtyDigest\":\"sha256:cf44edd90d71a43df00069340571bc0e0d8dcc1990dd5d2693a22e6851cf872b\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_runner_output.py\":\"9918d5a31582cb8f\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"021449e2de1d1a15\",\"plugins/audit/tests/test__runner_output.py\":\"ee1c57fac9b3672f\",\"plugins/audit/tests/test_stamp_verification.py\":\"394f23e0ebcc96e4\"},\"head\":\"f6403a16\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_runner_output.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/tests/test__runner_output.py\",\"plugins/audit/tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:ff7b3abcdc97c11a15cfa0f9dc84b9bb184600054b8b21a4d38396d80009eac7\",\"v\":2}"
+}

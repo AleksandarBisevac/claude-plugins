@@ -7765,7 +7765,7 @@
     {
       "id": "P125.106-0h5",
       "title": "Every agent the plugin ships runs at effort high or above, held by a case",
-      "status": "in_progress",
+      "status": "done",
       "description": "Owner decision (2026-10-15): whatever model an agent runs, its effort is at least high. Today audit-executor and audit-explorer declare `effort: medium` and guide declares `effort: low`; only audit-reviewer is high. Set every agent under plugins/audit/agents/ to `effort: high` (keep each `model:` as it is), and add a case that reads every agent file's frontmatter and fails when an effort is missing or below high, naming the file - so a new agent cannot ship at a lower effort. If any document states an agent's effort (README, PLUGIN-BUILD-GUIDE.md, the agents' own text), it must say high.",
       "files": [
         "plugins/audit/agents/audit-executor.md",
@@ -7801,19 +7801,32 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ad513a3d3c41",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Attempt 2 edits: test__help.py g4 now asserts model haiku and effort in (high, xhigh, max), retitled 'the model and an effort of high or above are declared in the file'; docs/research/token-efficiency-audit.md section 2.7 three cells corrected to effort: high (executor, explorer, guide; haiku kept). Attempt 1 kept: three agent files effort: high, ef-block in test__refs.py. Full sweep python3 tools/sweep-selftests.py exit 0: 335/335 files ok, 16367 cases. Files changed: docs/research/token-efficiency-audit.md, plugins/audit/agents/{audit-executor,audit-explorer,guide}.md, plugins/audit/tests/test__help.py, plugins/audit/tests/test__refs.py.",
+        "descriptive": "Every shipped agent runs at effort high, held by a case, with the guide pin and the research table agreeing."
       },
       "startedAt": "2026-10-15T08:34:54Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T09:00:48Z",
+      "verifiedBy": [
+        "every agent under plugins/audit/agents declares effort high or above, and an agent declaring medium or none is reported by file"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-15T09:00:45Z.bafe77",
         "status": "passed",
         "at": "2026-10-15T09:00:45Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "ad513a3d3c41",
+        "at": "2026-10-15T09:00:48Z"
+      },
+      "redFirst": {
+        "at": "2026-10-15T08:47:32Z",
+        "basis": "`python3 plugins/audit/tests/test__refs.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 350 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - every agent under plugins/audit/agents declares effort high or above, and an agent declaring medium or none is reported by file (live: ['audit-executor.md: effort medium is below high', 'audit-explorer.md: effort medium is below high', 'guide.md: effort low is below high']) (house FAIL): SELFTEST FAILED: 349/350 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
