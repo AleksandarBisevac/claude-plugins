@@ -7159,7 +7159,7 @@
     {
       "id": "P125.92-0h5",
       "title": "fix P125-R66: P125.34: the clause 'one invariant for every commit carrying a ...",
-      "status": "in_progress",
+      "status": "cancelled",
       "description": "P125.34: the clause 'one invariant for every commit carrying a plan record' is met for commit-task-work and commit-manifest-index only. commit-audit-state.py also commits a phase shard without the index and asks nothing; the executor left it, and no use of index_rows_owed exists there at HEAD. The grader exception in _invariants.commit_scope for the carry option was not made either.\n\nResolution asked: Call _scoped_commit.index_rows_owed from commit-audit-state.py (refuse naming the rows), with a case, or file a task that does.",
       "files": [
         "plugins/audit/scripts/governance/commit-audit-state.py",
@@ -7193,10 +7193,10 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: the orchestrator's carry clause contradicts commit-manifest-index's design and _invariants.audit_state_scope; re-added as the refusal the finding asked for (P125-R66)"
       },
       "startedAt": "2026-10-15T17:33:36Z",
-      "completedAt": null,
+      "completedAt": "2026-10-15T17:36:08Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -8826,6 +8826,49 @@
         "at": "2026-10-15T16:56:52Z"
       },
       "reviewPerTask": "phase"
+    },
+    {
+      "id": "P125.118-0h5",
+      "title": "commit-audit-state refuses a shard whose index rows HEAD lacks, naming the rows and the index-first remedy, as commit-task-work does",
+      "status": "pending",
+      "description": "Finding P125-R66 (re-added from cancelled P125.92). commit-audit-state commits a phase shard without checking _scoped_commit.index_rows_owed. Refuse before staging, naming the rows, with commit-task-work's HEAD-shard-held filter and wording, so all three record commits agree with commit-manifest-index's design (the index is committed alone). Cases: owed rows refused; a shard owing none commits as today; a row owed only for a task new in this commit is not refused.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-audit-state.py",
+        "plugins/audit/tests/test_commit_audit_state.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_commit_audit_state.py: a records commit whose phase shard owes index rows HEAD lacks is refused naming the rows and the commit-manifest-index remedy, as commit-task-work refuses"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
