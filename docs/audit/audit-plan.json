@@ -1556,7 +1556,8 @@
       "P125.26",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.81-0h5"
     ],
     "docs/design/audit-concurrency-report.md": [
       "P60.3"
@@ -1604,7 +1605,8 @@
       "P125.26",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.81-0h5"
     ],
     "docs/screenshots": [
       "P53.9",
@@ -1655,7 +1657,8 @@
       "P125.56-0h5",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.81-0h5"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
@@ -1681,7 +1684,8 @@
       "P125.26",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.81-0h5"
     ],
     "examples/acme-store/acme-store-audit.md": [
       "P13.3",
@@ -1697,7 +1701,8 @@
       "P120.2-byv",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.81-0h5"
     ],
     "examples/acme-store/audit-plan.json": [
       "P50.3",
@@ -9049,6 +9054,12 @@
     ],
     "docs/research/token-efficiency-audit.md": [
       "P125.106-0h5"
+    ],
+    "plugins/audit/scripts/ui/report/page-state.js": [
+      "P125.81-0h5"
+    ],
+    "tools/ui-tests/table-fit.test.mjs": [
+      "P125.81-0h5"
     ]
   },
   "bugs": [
