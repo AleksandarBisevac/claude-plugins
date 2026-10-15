@@ -314,8 +314,10 @@
         "severity": "med",
         "file": "plugins/audit/tests/test_drive_phase.py:3510-3560",
         "issue": "The task's micro-test (two trivial phases driven back to back as the command directs; the second phase's first orchestrator request carries no more context than a fresh entry within a stated margin, offline fixture over recorded transcript rows) contradicts task clause: it is absent. cn1/cn2 only check that finish() prints a chain line; no margin is stated or measured.",
-        "resolution": "Add the offline fixture over recorded transcript rows with a named margin, or record the omission on the task.",
-        "fixTask": "P125.85-0h5"
+        "resolution": "fixed in P125.85-0h5 (5fadfc23c9cf): Add the offline fixture over recorded transcript rows with a named margin, or record the omission on the task.",
+        "fixTask": "P125.85-0h5",
+        "commit": "5fadfc23c9cf",
+        "status": "fixed"
       },
       {
         "id": "P125-R36",
@@ -1012,7 +1014,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 36 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 37 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6675,7 +6677,7 @@
     {
       "id": "P125.85-0h5",
       "title": "fix P125-R35: The task's micro-test (two trivial phases driven back to back a...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The task's micro-test (two trivial phases driven back to back as the command directs; the second phase's first orchestrator request carries no more context than a fresh entry within a stated margin, offline fixture over recorded transcript rows) contradicts task clause: it is absent. cn1/cn2 only check that finish() prints a chain line; no margin is stated or measured.\n\nResolution asked: Add the offline fixture over recorded transcript rows with a named margin, or record the omission on the task.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py",
@@ -6706,14 +6708,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "5fadfc23c9cf",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added _chain_context_cases (stage cx-block) in plugins/audit/tests/test_drive_phase.py: real M.finish() output for P1 with P2 pending; transcript rows (assistant usage rows plus a /clear row, JSON round-tripped) written by a simulated main loop that clears only when a printed line says 'clear context'; first-request context = input+cache_creation+cache_read. Compares second phase's first request vs a fresh entry (real commands/phase.md size) within CHAIN_MARGIN_TOKENS=64; cx1 red twin strips the chain line and goes over the margin; cx2 bounds the margin. Limitation: the main loop's obedience to the printed line is modelled, not observed; the case fails if finish stops printing the clear instruction, not if a live model ignores it. No existing reader (stream-cost.py/_usage_core) was importable cheaply for this, so a minimal reader was built. Stage run: 4/4 pass, exit 0. Full sweep exit 1: only plugins/audit/tests/test__proc_group.py failed (not my file; passes standalone 24/24). cp1252 sweep exit 0. ruff clean on the file. The mutate-the-driver red was not run by me; the in-case twin is the only red shown.",
+        "descriptive": "Adds the missing offline back-to-back-phases context case with a stated 64-token margin and a red twin."
       },
       "startedAt": "2026-10-15T14:56:42Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T15:47:56Z",
+      "verifiedBy": [
+        "two trivial phases driven back to back as the command directs, over recorded transcript rows offline, the second phase's first orchestrator request carries no more context than a fresh entry, within a margin the case states",
+        "cx1 RED TWIN",
+        "cx2 margin bound"
+      ],
       "notes": [
         {
           "at": "2026-10-15T03:41:27Z",
@@ -6736,6 +6742,17 @@
         "runId": "2026-10-15T15:47:54Z.5a7a60",
         "status": "passed",
         "at": "2026-10-15T15:47:54Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "5fadfc23c9cf",
+        "at": "2026-10-15T15:47:56Z",
+        "basis": "a fix task for P125-R35: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression mode, expectRedFirst false: the driver at HEAD already prints the chain line, so the case passes there by design (the helper confirmed: throwaway at HEAD exited 0, 4/4). Red is shown inside the case by the cx1 twin (chain line removed -> carried 28380 vs fresh 1290, margin 64).",
+        "at": "n/a"
       }
     },
     {
@@ -8470,7 +8487,8 @@
       "description": "Register F674. `add --fixes` takes files from the finding text only and writes no tests.add, yet the task is tdd with expectRedFirst, so every fix executor stops for a widening. Read paths from path:symbol spellings, add the suite that tests each declared source, and write a tests.add clause from the resolution.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
-        "plugins/audit/tests/test_audit_task.py"
+        "plugins/audit/tests/test_audit_task.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -8510,7 +8528,18 @@
         "phase": "P128",
         "at": "2026-10-15T13:32:45Z"
       },
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T16:08:40Z.19e4be",
+        "status": "passed",
+        "at": "2026-10-15T16:08:40Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-15T15:58:22Z",
+          "text": "files widened by PLUGIN-BUILD-GUIDE.md: written byte for byte at integration by `python3 plugins/audit/scripts/_deps.py --write-map` (_deps.map_drift)"
+        }
+      ]
     },
     {
       "id": "P125.114-0h5",

@@ -16536,6 +16536,89 @@ def _introduces_cases(check):
               code == M.E_USAGE and "docs/audit/audit-plan.json" in text
               and "record" in text
               and open(mpath, "rb").read() == before)
+
+        # ---- the suite a declared source is tested by, and the clause --------
+        # A Python project: `lib/` holds the sources, `tests/` the suites that
+        # import them, and `ui/` a stylesheet beside a JS test - the directory
+        # that once placed a `.test.css` "test" next to the stylesheet.
+        title = ("a fix task built from a finding whose file is spelled "
+                 "path:symbol declares that path, the suite that tests it, and a "
+                 "tests.add clause from the resolution")
+        proj, mpath = project("fx-suite", [
+            finding("P1-R1", "usage_ledger.py:read_cost_state docstring",
+                    resolution="Say in the docstring that the state is read "
+                               "once. Keep it short."),
+            finding("P1-R2", "lib/orphan.py:12",
+                    resolution="Return None on empty input"),
+            finding("P1-R3", "ui/report.css:40",
+                    resolution="Add a case to tests/test_report_css.py pinning "
+                               "the bar token"),
+            finding("P1-R4", "ui/panel.css",
+                    resolution="Add a test for the panel colour"),
+            finding("P1-R5", "tests/test_mapped.py",
+                    resolution="Assert the empty case; nothing else")])
+        for rel, text in (
+                ("lib/usage_ledger.py", "def read_cost_state():\n    return 1\n"),
+                ("lib/orphan.py", "def f():\n    return 1\n"),
+                ("lib/mapped.py", "def g():\n    return 1\n"),
+                ("tests/test_usage_ledger.py", "import usage_ledger\n"),
+                ("tests/test_mapped.py", "from mapped import g\n"),
+                ("tests/test_report_css.py", "X = 1\n"),
+                ("ui/report.css", ".bar { color: red; }\n"),
+                ("ui/panel.css", ".p { color: red; }\n"),
+                ("ui/widget.test.js", "test('w', () => {});\n")):
+            write(proj, rel, text)
+        codes = [verb(proj, "add", "Fix %d" % n, "--phase", "P1", "--fixes",
+                      "P1-R%d" % n)[0] for n in (1, 2, 3, 4, 5)]
+        by_title = dict((t.get("title"), t) for t in tasks(mpath).values())
+        r1, r2, r3, r4, r5 = (by_title.get("Fix %d" % n) or {} for n in (1, 2, 3, 4, 5))
+
+        def own(t):
+            # The fixture's gate is vitest's, so a Python test outside its
+            # include gets the config as a runner companion; that is cz11's
+            # subject, not this group's, and it is left out of the comparison.
+            return [f for f in t.get("files") or [] if f != "vitest.config.ts"]
+
+        def adds(t):
+            return list((t.get("tests") or {}).get("add") or [])
+
+        def notes_of(t):
+            return " ".join(n.get("text", "") for n in t.get("notes") or [])
+
+        check("cz22 %s (path:symbol: `usage_ledger.py:read_cost_state` scopes the "
+              "source, the suite importing it, and one clause naming that suite "
+              "with the resolution's first sentence): %r"
+              % (title, (codes, own(r1), adds(r1))),
+              codes == [0, 0, 0, 0, 0]
+              and own(r1) == ["lib/usage_ledger.py",
+                                      "tests/test_usage_ledger.py"]
+              and adds(r1) == ["tests/test_usage_ledger.py: Say in the docstring "
+                               "that the state is read once"]
+              and (r1.get("tests") or {}).get("mode") == "tdd")
+        check("cz23 %s (a source no suite imports is named in the note and no "
+              "suite is guessed for it): %r"
+              % (title, (own(r2), adds(r2), notes_of(r2))),
+              own(r2) == ["lib/orphan.py"] and adds(r2) == []
+              and "lib/orphan.py" in notes_of(r2)
+              and "no suite" in notes_of(r2))
+        check("cz24 %s (a stylesheet source: the clause names the test the "
+              "resolution names, never the stylesheet, and no `.test.css` is "
+              "placed beside it): %r"
+              % (title, (own(r3), adds(r3), own(r4), adds(r4),
+                         notes_of(r4))),
+              adds(r3) == ["tests/test_report_css.py: Add a case to "
+                           "tests/test_report_css.py pinning the bar token"]
+              and own(r3) == ["ui/report.css", "tests/test_report_css.py"]
+              and not any(".css" in a.split(": ", 1)[0]
+                          for a in adds(r3) + adds(r4))
+              and own(r4) == ["ui/panel.css"]
+              and "ui/panel.css" in notes_of(r4))
+        check("cz25 %s (every declared file a test: regression, and the clause "
+              "still names it): %r"
+              % (title, (own(r5), r5.get("tests"))),
+              own(r5) == ["tests/test_mapped.py"]
+              and (r5.get("tests") or {}).get("mode") == "regression"
+              and adds(r5) == ["tests/test_mapped.py: Assert the empty case"])
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

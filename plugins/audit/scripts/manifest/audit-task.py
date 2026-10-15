@@ -409,6 +409,8 @@ import _filed_returns as _fr  # noqa: E402  (a filed return's path, shape and
                               # and the landing property, shared with close-phase.py)
 import _config_rules          # noqa: E402  (review_per_task_mode: the one reading of
                               # `review.perTask`, refused rather than defaulted)
+import _affected_tests as _affected  # noqa: E402  (_python_arm: the import graph a
+#                                      fix task reads the suite of a source off)
 import _gate_derive           # noqa: E402  (is_shared_key, path_scoped_sibling,
                               # repointed: a TASK's own gate and a PHASE's derived
                               # one ask the same three questions, so both entry
@@ -3068,16 +3070,31 @@ _FINDING_PATH = re.compile(r"^[\w@.\-/\[\]()]+\.[A-Za-z][A-Za-z0-9]*$")
 _ASKS_FOR_TEST = re.compile(
     r"\b(?:add|write|create|introduce|cover|include)\b[^.;\n]{0,60}?"
     r"\b(?:tests?|specs?|test cases?)\b", re.IGNORECASE)
+_STYLESHEET_EXTENSIONS = ("css", "scss", "sass", "less", "styl")
+# A tests.add clause is one line a reader scans, not the resolution reprinted.
+_CLAUSE_LIMIT = 160
+# The first sentence of a resolution: up to a sentence stop followed by a space
+# or the end, or a semicolon - a stop inside a file name is not one.
+_FIRST_SENTENCE = re.compile(r"(.+?)(?:[.!?](?:\s|$)|;)")
 
 
 def _finding_paths(text):
     """The paths a finding's `file` text names, in order, once each, with no line
     suffix. A token is a path when it is a path-shaped word with an alphabetic
-    extension, so `308` (the tail of a line list), `and` and `e.g.` name nothing."""
+    extension, so `308` (the tail of a line list), `and` and `e.g.` name nothing.
+
+    A `path:symbol` spelling, or a line written with a letter before its number,
+    names the path before the colon: a
+    reviewer pointing at a function writes `usage_ledger.py:read_cost_state`, and
+    the whole token is not path-shaped, so it used to name nothing at all. Only
+    the head is read, and only when it is path-shaped on its own - a drive letter
+    (`C:/repo/a.py`) has no extension before its colon and still names nothing."""
     out = []
     for token in re.split(r"[\s,;]+", str(text or "")):
         token = token.strip("`'\"").rstrip(".:")
         path = _vocab._strip_line_suffix(token)
+        if not _FINDING_PATH.match(path) and ":" in path:
+            path = path.split(":", 1)[0]
         if _FINDING_PATH.match(path) and path not in out:
             out.append(path)
     return out
@@ -3140,11 +3157,14 @@ def _colocated_test(project, path):
     """The test file a source `path` would have beside it - `Why.test.tsx` for
     `components/Why.tsx` - when its directory already holds a `.test.` or `.spec.`
     file, which is the repo showing where its tests live; else None. Never a
-    guess at a convention the directory does not show."""
+    guess at a convention the directory does not show.
+
+    A STYLESHEET HAS NO TEST BESIDE IT: `report.test.css` is test-shaped by name
+    and runs nowhere, and a fix task once carried it as its red-first case."""
     head, _, base = path.rpartition("/")
     stem, dot, ext = base.rpartition(".")
     folder = os.path.join(project, *head.split("/")) if head else project
-    if not dot or not os.path.isdir(folder):
+    if not dot or ext.lower() in _STYLESHEET_EXTENSIONS or not os.path.isdir(folder):
         return None
     if not any(".test." in n or ".spec." in n for n in os.listdir(folder)):
         return None
@@ -3200,7 +3220,9 @@ def _unresolved_sentence(path, candidates):
 
 def _fix_scope(targets, project, records=()):
     """`{"paths", "newTests", "asksForTest", "unplaced", "unresolved",
-    "droppedRecords"}` for the findings `--fixes` names: every path they name
+    "droppedRecords", "byFinding"}` for the findings `--fixes` names (`byFinding`
+    is each finding's own `{id, paths, resolution, placed}`, the test placed for
+    it or None, which its tests.add clause is written from): every path they name
     that can be a `files` entry, each resolved to an existing repo-relative path
     (`_resolve_finding_path`; a word that resolves to several, or to none and is
     not a test file still to be written, is in `unresolved` as `(word,
@@ -3221,6 +3243,7 @@ def _fix_scope(targets, project, records=()):
     task's journal row). `droppedRecords` names each one, once, so the caller's
     notes can say why it is missing rather than leave it looking forgotten."""
     paths, asking, unresolved, tracked, dropped = [], [], [], [], []
+    by_finding = []
     for entry in targets:
         mine = []
         for word in _scope_paths(entry):
@@ -3245,11 +3268,13 @@ def _fix_scope(targets, project, records=()):
             else:
                 mine.append(p)
         paths.extend(p for p in mine if p not in paths)
+        by_finding.append({"id": str(entry.get("id")), "paths": mine,
+                           "resolution": entry.get("resolution"), "placed": None})
         if _ASKS_FOR_TEST.search(str(entry.get("resolution") or "")):
             asking.append((str(entry.get("id")), mine))
     exists = lambda p: os.path.exists(os.path.join(project, *p.split("/")))
     new_tests = [p for p in paths if _fr.is_test_path(p) and not exists(p)]
-    unplaced = []
+    unplaced, placed_for = [], {}
     for fid, mine in asking:
         if any(_fr.is_test_path(p) for p in mine):
             continue
@@ -3257,12 +3282,16 @@ def _fix_scope(targets, project, records=()):
                        if t and not exists(t)), None)
         if placed is None:
             unplaced.append(fid)
-        elif placed not in new_tests:
+            continue
+        placed_for[fid] = placed
+        if placed not in new_tests:
             new_tests.append(placed)
+    by_finding = [dict(f, placed=placed_for.get(f["id"])) for f in by_finding]
     return {"paths": paths + [t for t in new_tests if t not in paths],
             "newTests": new_tests, "unplaced": unplaced,
             "asksForTest": [fid for fid, _m in asking],
-            "unresolved": unresolved, "droppedRecords": dropped}
+            "unresolved": unresolved, "droppedRecords": dropped,
+            "byFinding": by_finding}
 
 
 def _unit_runner_paths(phase, assembled, project, declared):
@@ -3279,6 +3308,95 @@ def _unit_runner_paths(phase, assembled, project, declared):
                 if r in _gate_derive.UNIT_RUNNERS and ps)
 
 
+def _named_for(suite, source):
+    """Whether `suite` is named for `source` - `test_x.py` or `x_test.py` for
+    `x.py`, a hyphen read as the underscore an importable name needs. Only ever
+    asked to choose AMONG the suites the import graph already reached."""
+    stem = source.rsplit("/", 1)[-1].rsplit(".", 1)[0].replace("-", "_")
+    return suite.rsplit("/", 1)[-1] in ("test_%s.py" % stem, "%s_test.py" % stem)
+
+
+def _suites_for(project, sources):
+    """`(suites, unmapped)` - `{source: (suite, basis)}` for each declared source
+    an existing suite tests, and `[(source, why)]` for each it cannot say.
+
+    THE MAPPING IS THE AFFECTED-TEST ARM'S, asked rather than re-written: a `.py`
+    source goes through `_affected_tests._python_arm` with only the TEST files as
+    graph nodes, so a suite is reached when it imports or loads the source
+    itself, never through a helper in between. Several reaching it is answered by
+    the one named for it, else not answered. Any other source is tested by the
+    test `_colocated_test` places beside it, when that file already exists. What
+    neither reaches is returned unmapped with the reason - a suite is never
+    guessed from a name alone."""
+    suites, unmapped = {}, []
+    tests = None
+    for source in sources:
+        if source.endswith(".py"):
+            if tests is None:
+                tests = {}
+                for rel in _tracked_files(project):
+                    if rel.endswith(".py") and _fr.is_test_path(rel):
+                        try:
+                            with open(os.path.join(project, *rel.split("/")),
+                                      encoding="utf-8", errors="replace") as fh:
+                                tests[rel] = fh.read()
+                        except OSError:
+                            continue
+            reached = _affected._python_arm([source], tests)
+            named = [s for s in sorted(reached) if _named_for(s, source)]
+            pick = (sorted(reached) if len(reached) == 1 else named
+                    if len(named) == 1 else [])
+            if pick:
+                suites[source] = (pick[0], reached[pick[0]])
+            elif reached:
+                unmapped.append((source, "%d suites import it and none is named "
+                                 "for it (%s)" % (len(reached),
+                                                  _output.some_of(sorted(reached)))))
+            else:
+                unmapped.append((source, "no test file imports or loads it"))
+            continue
+        beside = _colocated_test(project, source)
+        if beside and os.path.isfile(os.path.join(project, *beside.split("/"))):
+            suites[source] = (beside, "the test beside it")
+        else:
+            unmapped.append((source, "no test sits beside it and the import graph "
+                             "reads only Python"))
+    return suites, unmapped
+
+
+def _condensed(resolution):
+    """The resolution's first sentence, whitespace folded and capped at a word
+    boundary - the half of a tests.add clause after the path."""
+    text = " ".join(str(resolution or "").split())
+    head = _FIRST_SENTENCE.match(text)
+    text = (head.group(1) if head else text).rstrip(" .;:")
+    if len(text) > _CLAUSE_LIMIT:
+        text = text[:_CLAUSE_LIMIT].rsplit(" ", 1)[0] + " ..."
+    return text
+
+
+def _fix_clauses(by_finding, suites):
+    """`(clauses, bare)` - one `<test path>: <resolution>` per finding, and the
+    ids of the findings no test path was found for. A finding's test is the one
+    it names, else the one placed for it, else the suite of its first source
+    that has one; never a source and never a stylesheet."""
+    clauses, bare = [], []
+    for finding in by_finding:
+        own = [p for p in finding["paths"] if _fr.is_test_path(p)
+               and p.rsplit(".", 1)[-1].lower() not in _STYLESHEET_EXTENSIONS]
+        mapped = [suites[p][0] for p in finding["paths"] if p in suites]
+        candidates = own + ([finding["placed"]] if finding["placed"] else []) + mapped
+        if not candidates:
+            bare.append(finding["id"])
+            continue
+        test = candidates[0]
+        said = _condensed(finding["resolution"]) or "the fix for %s" % finding["id"]
+        clause = "%s: %s" % (test, said)
+        if clause not in clauses:
+            clauses.append(clause)
+    return clauses, bare
+
+
 def _fix_task_args(args, targets, project, fixes, records=()):
     """`(args, notes)` for a task fixing the findings `targets` (`fixes`, their
     ids): `args` copied, widened onto every path the findings name, with the
@@ -3291,14 +3409,32 @@ def _fix_task_args(args, targets, project, fixes, records=()):
     task is given (`_paths_discipline`): regression when every path is a test,
     else tdd - a fix task used to default to gate-only, and a finding asking
     for a new test was handed a gate that could not run it. Gate-only is the
-    caller's to ask for, never a default."""
+    caller's to ask for, never a default.
+
+    EACH DECLARED SOURCE BRINGS THE SUITE THAT TESTS IT (`_suites_for`), and the
+    task carries one tests.add clause per finding (`_fix_clauses`) unless the
+    caller wrote its own or asked for gate-only: a red-first task with no case
+    gave its executor nothing to write, and a test it could not declare stopped
+    it for a scope widening."""
     scope = _fix_scope(targets, project, records)
     args = argparse.Namespace(**vars(args))
-    args.files = list(args.files or []) + scope["paths"]
+    sources = [p for p in scope["paths"] if not _fr.is_test_path(p)]
+    suites, unmapped = _suites_for(project, sources)
+    added = []
+    for source in sources:
+        suite = suites.get(source, (None,))[0]
+        if suite and suite not in scope["paths"] and suite not in added:
+            added.append(suite)
+    args.files = list(args.files or []) + scope["paths"] + added
     notes = []
     if scope["paths"]:
         notes.append("scope: %s, every path the finding(s) %s name"
                      % (", ".join(scope["paths"]), ", ".join(fixes)))
+    notes.extend("scope: %s, the suite that tests %s (%s)" % (suites[s][0], s,
+                                                              suites[s][1])
+                 for s in sources if s in suites)
+    notes.extend("no suite: %s - %s; name the one that tests it with `scope "
+                 "--files`, none was guessed" % (s, why) for s, why in unmapped)
     if scope["droppedRecords"]:
         notes.append("scope: dropped %s, named by the finding(s) %s but a "
                      "record this commit already carries beside the task's own "
@@ -3312,19 +3448,25 @@ def _fix_task_args(args, targets, project, fixes, records=()):
             "its directory shows no test convention to place one by; name the "
             "case with `scope --tests-mode tdd --tests-add \"<path>: <what it "
             "asserts>\"`" % ", ".join(scope["unplaced"]))
-    if args.tests_mode is not None:
-        return args, notes
-    if scope["newTests"]:
+    if args.tests_mode is None and scope["newTests"]:
         args.tests_mode = "tdd"
-        if not args.tests_add:
-            args.tests_add = ["%s: red-first case for %s" % (p, ", ".join(fixes))
-                              for p in scope["newTests"]]
         notes.append("tdd, not gate-only: %s is a test the finding(s) ask for "
                      "that does not exist yet" % ", ".join(scope["newTests"]))
+    elif args.tests_mode is None:
+        args.tests_mode, note = _paths_discipline(scope["paths"], ", ".join(fixes))
+        if note:
+            notes.append(note)
+    if args.tests_add or args.tests_mode == "gate-only":
         return args, notes
-    args.tests_mode, note = _paths_discipline(scope["paths"], ", ".join(fixes))
-    if note:
-        notes.append(note)
+    clauses, bare = _fix_clauses(scope["byFinding"], suites)
+    named = [c.split(": ", 1)[0] for c in clauses]
+    clauses.extend("%s: red-first case for %s" % (p, ", ".join(fixes))
+                   for p in scope["newTests"] if p not in named)
+    args.tests_add = clauses
+    if bare:
+        notes.append("no tests.add clause for %s: no test file is named, placed "
+                     "or mapped for it; name the case with `scope --tests-add "
+                     "\"<path>: <what it asserts>\"`" % ", ".join(bare))
     return args, notes
 
 
