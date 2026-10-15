@@ -6982,7 +6982,7 @@
     {
       "id": "P125.89-0h5",
       "title": "fix P125-R59: P125.30: task says to read 'each failing file's FAIL lines from...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P125.30: task says to read 'each failing file's FAIL lines from the sweep's per-file output'; red_step_lines prints the row's recorded `failing` list, which _evidence_io already cut to MAX_FAILING=10 lines. A sweep with more failing lines still drops names, and no per-file output is read. bf54 uses seven padded lines, inside that bound.\n\nResolution asked: Read the failing files from the row's failingSuites (or the step output) and print each file's own FAIL lines, or state the ten-line bound in the brief. Add a bf54 variant with more than ten failing lines.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -6990,7 +6990,9 @@
       ],
       "tests": {
         "mode": "tdd",
-        "add": [],
+        "add": [
+          "plugins/audit/tests/test_audit_lookup.py: a red gate step with more failing lines than the recorded bound still names every failing file, each with its own FAIL lines, read from the row's failing suites"
+        ],
         "expectRedFirst": true,
         "gate": [
           "selftests",
@@ -7009,14 +7011,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T16:30:19Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -7027,7 +7029,8 @@
       ],
       "fixes": [
         "P125-R59"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.90-0h5",
@@ -8560,7 +8563,7 @@
     {
       "id": "P125.114-0h5",
       "title": "The drive and the attempt check read the shared record-path definition too",
-      "status": "in_progress",
+      "status": "done",
       "description": "Found at P125.88's return: drive-phase.py (~1803) keeps its own _is_record, and commit-task-work.attempt_refusal's undeclared-change check skips neither sibling shards nor HEAD-only records. Both move onto _invariants.record_rels / is_record_path so the one definition is the only one; extend rp-block's 'no caller keeps a predicate' case to cover them.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -8593,14 +8596,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "307c61d405dd",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: removed local _is_record, tree_holds_only_integrated now calls _invariants.is_record_path (new import _invariants; PLUGIN-BUILD-GUIDE.md module map regenerated with _deps.py --write-map for the new edge). Behaviour: identical for paths equal to or under a record; records passed in already came from the shared set via integrate-task. commit-task-work.py: stage_targets reads the HEAD index and passes head_index to record_rels, returns 'records'; attempt_refusal's skip now includes targets records. Behaviour change: during-attempt changes to sibling shards, HEAD-only shards, whole journal/evidence directories and the index are no longer reported as undeclared strays; a declared HEAD-only shard is now classed a record by stage_targets (skipped with the record note). test__invariants.py rp-block: no-caller-predicate case extended with drive-phase, plus behavioural cases for tree_holds_only_integrated and attempt_refusal, each with a deny twin. Own selftest 134/134; full sweep exit 0 (335/335 files); cp1252 sweep exit 0 (335/335).",
+        "descriptive": "Drive and attempt check now answer 'is this a record' from the one shared definition."
       },
       "startedAt": "2026-10-15T14:56:40Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T16:30:13Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__invariants.py: no caller keeps a record predicate of its own - drive-phase and commit-task-work's attempt check answer from the shared definition, sibling shards included"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-15T16:29:35Z.c1003b",
@@ -8612,12 +8617,23 @@
           "at": "2026-10-15T16:19:19Z",
           "text": "files widened by PLUGIN-BUILD-GUIDE.md: written byte for byte at integration by `python3 plugins/audit/scripts/_deps.py --write-map` (_deps.map_drift)"
         }
-      ]
+      ],
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "307c61d405dd",
+        "at": "2026-10-15T16:30:13Z"
+      },
+      "redFirst": {
+        "at": "2026-10-15T15:31:04Z",
+        "basis": "`python3 plugins/audit/tests/test__invariants.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 134 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - one record-path definition - the index, every phase file the index names, the journal and the evidence directories, and anything under them - answers audit-task, commit-task-work and integrate-task alike (and no caller keeps a predicate of its own beside it) (house FAIL) and 2 more: SELFTEST FAILED: 131/134 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
     },
     {
       "id": "P125.115-0h5",
       "title": "docs: the _deps comment names every consumer of _affected_tests",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Found at P125.113's return: _deps.py (~594) says run-test-gate is _affected_tests's only consumer; audit-task now imports it to map a fix task's sources to their suites. Correct the comment; no behaviour change.",
       "files": [
         "plugins/audit/scripts/_deps.py"
@@ -8643,21 +8659,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T16:30:14Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.116-0h5",
       "title": "A task widened by a follower path at integration closes in the same run: the index it changed is committed first",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F687, a regression from P125.61 (43c4ec1e). The drive widens a member by a byte-for-byte follower path at integration, re-gates green, and then commit-task-work refuses because the index HEAD holds has no fileIndex row for the new path. Seen closing P125.113 and P125.114.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -8686,16 +8703,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T16:30:17Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
