@@ -7490,7 +7490,8 @@
         "plugins/audit/scripts/panel/_panel_usage.py",
         "plugins/audit/tests/test__report_usage.py",
         "plugins/audit/tests/test__panel_usage.py",
-        "tools/ui-tests/usage-edges.test.mjs"
+        "tools/ui-tests/usage-edges.test.mjs",
+        "plugins/audit/scripts/ui/report/usage-range.js"
       ],
       "tests": {
         "mode": "tdd",
