@@ -6336,7 +6336,15 @@
         "examples/acme-store/acme-store-audit.md",
         "docs/index.html",
         "docs/demo-large.html",
-        "docs/screenshots/captured-at.json"
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png"
       ],
       "tests": {
         "mode": "tdd",
