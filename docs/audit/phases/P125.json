@@ -4462,7 +4462,12 @@
       "startedAt": "2026-10-15T00:09:41Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T00:36:30Z.f4b5c4",
+        "status": "passed",
+        "at": "2026-10-15T00:36:30Z"
+      }
     },
     {
       "id": "P125.71-0h5",

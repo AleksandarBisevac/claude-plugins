@@ -1641,6 +1641,68 @@ def _submit_mutant_cases(check):
           "stamp before the filing verb refuses, and ds4 catches it: %r"
           % (text_m,),
           code_m == 1 and "stamp taken" in text_m)
+    _stdin_bytes_case(check)
+
+
+def _windows_text_run(real, received):
+    """`subprocess.run` as Windows runs it in text mode, for a POSIX host: a
+    str `input` reaches the child through a text wrapper that writes every
+    "\\n" as "\\r\\n", and the captured output is decoded and newline-translated
+    back. Bytes in, bytes out, untouched. Each input the child got is kept on
+    `received`, as the bytes it got."""
+    def run(*args, **kw):
+        text = bool(kw.pop("text", False))
+        text = bool(kw.pop("universal_newlines", False)) or text
+        encoding = kw.pop("encoding", None)
+        errors = kw.pop("errors", None)
+        text = text or encoding is not None or errors is not None
+        encoding, errors = encoding or "utf-8", errors or "strict"
+        data = kw.pop("input", None)
+        if text and isinstance(data, str):
+            data = data.replace("\n", "\r\n").encode(encoding, errors)
+        received.append(data)
+        done = real(*args, input=data, **kw)
+        if text:
+            for name in ("stdout", "stderr"):
+                raw = getattr(done, name)
+                if isinstance(raw, bytes):
+                    setattr(done, name, raw.decode(encoding, errors)
+                            .replace("\r\n", "\n").replace("\r", "\n"))
+        return done
+    return run
+
+
+def _stdin_bytes_case(check):
+    """A return filed through `submit` goes to `file-return` on its stdin, and
+    the driver's own copy of `subprocess` here translates the way Windows' text
+    wrapper does, so a POSIX run sees what a Windows run files."""
+    M, why = _load("drive_phase_windows_stdin")
+    label = ("plugins/audit/tests/test_drive_phase.py: a verb's stdin reaches "
+             "it as the exact UTF-8 bytes it was given, with no newline "
+             "translation, so a return filed through submit is byte-identical "
+             "on every platform (%r)")
+    if M is None:
+        check(label % (why,), False)
+        return
+    import types
+    received = []
+    stand_in = types.ModuleType("subprocess")
+    stand_in.__dict__.update(vars(subprocess))
+    stand_in.run = _windows_text_run(subprocess.run, received)
+    M.subprocess = stand_in
+    root, mpath, _t = _started(M, "winstdin")
+    try:
+        _edit(root, "P1.1", "changed\n")
+        code, text = _submit(M, root, mpath, "P1.1", _executor_body("P1.1"))
+        path = _filed_path(mpath, "P1.1")
+        filed = _read(path) if path and os.path.exists(path) else b""
+        given = [d for d in received if d is not None and b'"stamp"' in d]
+        check(label % ((code, text, filed[:80], [d[:80] for d in given]),),
+              code == 0 and filed.count(b"\n") > 1 and b"\r" not in filed
+              and len(given) == 1 and isinstance(given[0], bytes)
+              and b"\r" not in given[0] and given[0].count(b"\n") > 1)
+    finally:
+        _harness.remove_tree(root)
 
 
 def _handback_lines(M):
@@ -5602,10 +5664,42 @@ def _explain_cases(check):
         _harness.remove_tree(root)
 
 
+def _brief_difference(role, wrote, shown):
+    """None when the brief read back is the brief written, else `(role, offset,
+    written side, shown side)`: the first offset at which they differ and the
+    repr of about forty characters of each around it. A bare False said only
+    that some brief differed, which on a leg nobody runs locally is no lead."""
+    if wrote == shown:
+        return None
+    at = next((i for i, (a, b) in enumerate(zip(wrote, shown)) if a != b),
+              min(len(wrote), len(shown)))
+    lo = max(0, at - 20)
+    return (role, at, repr(wrote[lo:at + 20]), repr(shown[lo:at + 20]))
+
+
+def _brief_difference_case(check):
+    """sn6's report for a mismatch, over the pair a Windows leg produced: a
+    written brief embedding a CRLF return, read back with LF. A red there is on
+    a platform nobody runs locally, so the report has to say where it differs."""
+    wrote = "# Brief\n\n## The executor's return\n{\r\n  \"gates\": {}\r\n}\n"
+    shown = "# Brief\n\n## The executor's return\n{\n  \"gates\": {}\n}\n"
+    at = wrote.index("\r")
+    said = _brief_difference("reviewer", wrote, shown)
+    same = _brief_difference("executor", shown, shown)
+    check("plugins/audit/tests/test_drive_phase.py: a brief read back that "
+          "differs from the written brief is reported with its role, the first "
+          "differing offset and both sides around it (%r)" % ((said, same),),
+          same is None and isinstance(said, tuple) and len(said) == 4
+          and said[0] == "reviewer" and said[1] == at
+          and repr("{\r\n") [1:-1] in said[2] and "return" in said[2]
+          and repr("{\n  ")[1:-1] in said[3] and "\\r" not in said[3])
+
+
 def _signal_drive_cases(check):
     """A real drive under --signal: one line per step from the first dispatch
     to `done`, each agent briefed by `brief --role <role> <id>`, the dispatch prompts
     differing only by the id, and the did-words still read off the lines."""
+    _brief_difference_case(check)
     M, why = _load("signal_drive_mod")
     check("sn5a the driver loads: %r" % (why,), M is not None)
     if M is None:
@@ -5664,18 +5758,20 @@ def _signal_drive_cases(check):
               and one[0].endswith(" P1.1") and two[0].endswith(" P1.2")
               and one[0][:-len("P1.1")] == two[0][:-len("P1.2")]
               and "P1.1" not in one[0][:-len("P1.1")])
-        written = []
+        differ = []
         for role, subject, shown in briefs:
             folder = os.path.join(root, ".claude", "state", "briefs", subject)
             names = sorted(n for n in os.listdir(folder)
                            if n.endswith(".%s.md" % (role,)) or
                            (role == "phase" and n == "phase.md"))
-            with open(os.path.join(folder, names[-1]), "r", encoding="utf-8") as fh:
-                written.append(fh.read().rstrip("\n") == shown.rstrip("\n"))
+            with open(os.path.join(folder, names[-1]), "rb") as fh:
+                wrote = fh.read().decode("utf-8", "replace")
+            differ.append(_brief_difference(role, wrote.rstrip("\n"),
+                                            shown.rstrip("\n")))
         check("sn6 `brief <id> --role <role>` prints the brief the drive wrote for that "
               "dispatch, byte for byte, for every agent of the drive: %r"
-              % ((len(briefs), written),),
-              len(briefs) == 4 and all(written))
+              % ((len(briefs), [d for d in differ if d is not None]),),
+              len(briefs) == 4 and differ == [None] * 4)
         did = M.did_tasks("\n".join(printed))
         check("sn7 the did-words a session's stream is read from are still read "
               "off the signal lines: %r" % (did,),

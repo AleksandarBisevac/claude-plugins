@@ -623,16 +623,30 @@ def did_events(text):
 # --- running a verb ----------------------------------------------------------------
 def run_verb(ctx, script, args, stdin=None):
     """`(code, stdout, stderr)` of one verb run as a subprocess from the project,
-    logged on `ctx` for `--verbose`."""
+    logged on `ctx` for `--verbose`.
+
+    The run is in bytes. In text mode Windows writes `input` through a text
+    wrapper that turns every "\\n" into "\\r\\n", so a return filed through
+    `file-return` was CRLF there and LF elsewhere - one record, two byte
+    strings. `stdin` goes as its UTF-8 bytes instead, and the output is read
+    back as text mode read it: decoded, then newline-translated, so every
+    caller keeps the str it parsed before."""
     cmd = [sys.executable, _loader.script_path(script)] + list(args)
     env = dict(os.environ)
     env["CLAUDE_PROJECT_DIR"] = ctx["project"]
-    done = subprocess.run(cmd, cwd=ctx["project"], env=env, input=stdin,
-                          capture_output=True, text=True, encoding="utf-8",
-                          errors="replace")
-    ctx["log"].append((script, list(args), done.returncode,
-                       (done.stdout or "") + (done.stderr or "")))
-    return done.returncode, done.stdout or "", done.stderr or ""
+    sent = stdin.encode("utf-8") if stdin is not None else None
+    done = subprocess.run(cmd, cwd=ctx["project"], env=env, input=sent,
+                          capture_output=True)
+    out, err = _verb_text(done.stdout), _verb_text(done.stderr)
+    ctx["log"].append((script, list(args), done.returncode, out + err))
+    return done.returncode, out, err
+
+
+def _verb_text(raw):
+    """A verb's captured bytes as the str text mode gave: UTF-8 with
+    replacement, and "\\r\\n" and a lone "\\r" read as "\\n"."""
+    text = (raw or b"").decode("utf-8", "replace")
+    return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def relay_refusal(ctx, script, code, text):
