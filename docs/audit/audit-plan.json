@@ -9035,7 +9035,8 @@
     "plugins/audit/tests/test__affected_tests.py": [
       "P125.8",
       "P125.45-0h5",
-      "P125.49-0h5"
+      "P125.49-0h5",
+      "P125.96-0h5"
     ],
     "plugins/audit/scripts/manifest/_followers.py": [
       "P128.4-0h5"
