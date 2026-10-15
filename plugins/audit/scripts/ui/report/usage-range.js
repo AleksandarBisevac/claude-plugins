@@ -12,6 +12,22 @@
   let lastRange = '|';         // sentinel: "no range applied yet"
 
   /**
+   * What the range line's cost leaves out because no rate covers it, worded
+   * as `_usage_economics.unpriced_phrase` words it everywhere else. The count
+   * is the ledger's whole, not the range's - the per-day payload carries no
+   * unpriced split - so the clause says so. Empty for none, and for a null
+   * count: the totals never took one, and a count not taken is not zero.
+   * @returns {string} e.g. " (2.5M tokens unpriced across all dates, in no
+   *   cost here)", or ""
+   */
+  function unpricedClause() {
+    const n = U && U.unpricedTokens;
+    if (!Number.isInteger(n) || n <= 0) return '';
+    return ' (' + fmtTokens(n, 1) + ' tokens unpriced across all dates, '
+      + 'in no cost here)';
+  }
+
+  /**
    * Scope the usage charts, the monthly table and the heatmap to the current
    * date window, and write the line that names the span.
    *
@@ -62,7 +78,7 @@
         const sep = ' · ';
         note.textContent = 'Date range ' + f + ' to ' + t + ': '
           + fmtTokens(tok, 1) + ' tokens'
-          + (U.showCost !== false ? sep + fmtCost(cost) : '')
+          + (U.showCost !== false ? sep + fmtCost(cost) + unpricedClause() : '')
           + sep + fmtInt(msgs) + ' msgs. The tiles above stay all-time; the '
           + 'trend, monthly and hourly views below are scoped to this range.';
         note.hidden = false;

@@ -6,7 +6,7 @@
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { pyCall } from './python-fmt.mjs';
-import { loadPanel, reach } from './sandbox.mjs';
+import { loadPanel, loadReport, reach } from './sandbox.mjs';
 
 // --- the chart, the payload and the filter chips --------------------------
 
@@ -565,7 +565,7 @@ describe('with showCost off the tab prints no per-task dollar figure', () => {
   describe('a model no rate covers', () => {
     // 'mystery' is wholly unpriced: cost 0 because nothing priced it, not
     // because it was free. 'opus' is priced, with a figure under its tokens.
-    function renderUnpriced(withUnpriced) {
+    function renderUnpriced(withUnpriced, extra) {
       const { ctx, root } = recordingPanel();
       const { F } = reach(ctx, ['F']);
       const row = (model, tokens, cost, unpriced, day) => {
@@ -579,8 +579,9 @@ describe('with showCost off the tab prints no per-task dollar figure', () => {
       };
       const facts = [row('opus', 4000, 2.5, 0, 1)];
       if (withUnpriced) facts.push(row('mystery', 2500, 0, 2500, 2));
-      const usage = { facts, enabled: true, counts: { phases: 1 }, showCost: true,
-        taskMeta: { T1: { status: 'pending', risk: 'low' } } };
+      const usage = Object.assign({ facts, enabled: true, counts: { phases: 1 },
+        showCost: true, taskMeta: { T1: { status: 'pending', risk: 'low' } } },
+      extra || {});
       vm.runInContext('USAGE = ' + JSON.stringify(usage) + '; BANDS = null;', ctx);
       vm.runInContext('renderUsage();', ctx);
       const rows = all(root, hasClass('urow')).map(text);
@@ -628,5 +629,103 @@ describe('with showCost off the tab prints no per-task dollar figure', () => {
       expect(r.tile[0]).not.toContain('unpriced');
       expect(r.rows.join(' ')).not.toContain('unpriced');
     });
+
+    // The browse dialog, opened the way its button opens it, read back off the
+    // dialog node: each row's cost cell, by the row's id cell.
+    function browseUnpriced(dim, extra) {
+      const { ctx } = renderUnpriced(true, extra);
+      vm.runInContext('openBrowse(' + JSON.stringify(dim)
+        + ', "Browse", USAGE.facts);', ctx);
+      const dlg = vm.runInContext('BROWSE', ctx);
+      const heads = all(dlg, (n) => n.tagName === 'TH').map(text);
+      const at = heads.findIndex((h) => h.startsWith('cost'));
+      const cost = {};
+      all(dlg, (n) => n.tagName === 'TR').forEach((tr) => {
+        const tds = all(tr, (c) => c.tagName === 'TD');
+        if (tds.length > at && at >= 0) cost[text(tds[0])] = text(tds[at]);
+      });
+      return { cost, lines: (dlg.kids || []).map(text) };
+    }
+
+    it('the browse dialog\'s cost column says unpriced for a model no rate '
+      + 'covers, and keeps a dollar figure for a priced one', () => {
+      const r = browseUnpriced('model');
+      expect(r.cost.mystery).toBe('unpriced');
+      expect(r.cost.opus).toMatch(DOLLAR);
+    });
+
+    it('...and a group with any priced token keeps its figure there '
+      + '[the twin: a cell that always says unpriced fails here]', () => {
+      const r = browseUnpriced('phase');
+      expect(r.cost.P1).toMatch(DOLLAR);
+      expect(r.cost.P1).not.toContain('unpriced');
+    });
+
+    const CLI = "the CLI's estimate, recorded at meter time";
+    const cliCost = [
+      { session: 'sx', model: 'mystery', cliCostUSD: 0.4, pluginCostUSD: null,
+        pluginUnpriced: true, basis: CLI },
+      { session: 'sx', model: 'opus', cliCostUSD: 7.25, pluginCostUSD: 5,
+        pluginUnpriced: false, basis: CLI }];
+    const cliLines = (lines) => lines.filter((s) => s.includes('CLI $'));
+
+    it('the model browse prints the CLI\'s own figure beside the plugin\'s, '
+      + 'labelled, wherever the two differ', () => {
+      const r = browseUnpriced('model', { cliCost, rateBasis: 'rates as of X' });
+      const lines = cliLines(r.lines).join('\n');
+      expect(lines).toContain('session sx · opus: CLI $7.25 (' + CLI
+        + ') vs plugin $5.00');
+      expect(lines).toContain('session sx · mystery: CLI $0.40 (' + CLI
+        + ') vs plugin unpriced');
+      expect(lines).toContain('rates as of X');
+    });
+
+    it('...and prints none of it with showCost off, or with nothing that '
+      + 'differs [the twin: a line that always prints fails here]', () => {
+      expect(cliLines(browseUnpriced('model',
+        { cliCost, showCost: false }).lines)).toEqual([]);
+      expect(cliLines(browseUnpriced('model', { cliCost: [] }).lines)).toEqual([]);
+    });
+  });
+});
+
+// --- the report's range line ------------------------------------------------
+
+describe('the report\'s range line and the tokens no rate covers', () => {
+  // The line is written by applyUsageRange() into #audit-urange. A prologue
+  // installs the per-day payload and a node for that id ahead of the parts,
+  // the way report-prototype-keys.test.mjs replaces the pieces it needs.
+  function rangeLine(unpriced, showCost) {
+    const payload = { min: '2026-01-01', max: '2026-01-03',
+      showCost: showCost !== false, unpricedTokens: unpriced,
+      days: { '2026-01-01': [1000, 1.5, 2, []], '2026-01-02': [2000, 2.5, 3, []],
+        '2026-01-03': [4000, 4.5, 4, []] } };
+    const prologue = 'window.AUDIT_USAGE = ' + JSON.stringify(payload) + ';\n'
+      + 'globalThis.__urange = { hidden: true, textContent: "" };\n'
+      + '{ const prior = document.getElementById.bind(document);\n'
+      + '  document.getElementById = (id) => (id === "audit-urange"'
+      + ' ? globalThis.__urange : prior(id)); }\n';
+    const { ctx } = loadReport({ mutate: (src) => prologue + src });
+    vm.runInContext('dFrom = "2026-01-02"; dTo = "2026-01-03"; '
+      + 'lastRange = "|"; applyUsageRange();', ctx);
+    return vm.runInContext('globalThis.__urange', ctx);
+  }
+
+  it('says how many tokens its cost leaves out, worded as Python\'s '
+    + 'unpriced_phrase() words them', () => {
+    const phrase = pyCall('_usage_economics', [['unpriced_phrase', [2500000]]])[0];
+    const n = rangeLine(2500000);
+    expect(n.hidden).toBe(false);
+    expect(n.textContent).toContain('$7.00');
+    expect(n.textContent).toContain(phrase);
+  });
+
+  it('...and says nothing of it for none, for a count never taken (null), or '
+    + 'with showCost off [the twin: a clause that always fires fails here]', () => {
+    for (const [u, show] of [[0, true], [null, true], [2500000, false]]) {
+      const n = rangeLine(u, show);
+      expect(n.hidden, String(u)).toBe(false);
+      expect(n.textContent, String(u)).not.toContain('unpriced');
+    }
   });
 });

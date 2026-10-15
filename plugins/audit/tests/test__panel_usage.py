@@ -435,8 +435,70 @@ def _cases(check):
               "contextShape": {}})
 
     _read_time_pricing_cases(check, tmp, _atomic_write_json)
+    _cli_cost_cases(check, tmp, _atomic_write_json)
 
     shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _cli_cost_cases(check, tmp, write_json):
+    """The CLI's own per-session figure, read off each session's cursor the
+    way `/audit:usage` reads it, beside the plugin's own reading of the same
+    session. Session `sx` disagrees on opus and names a model no table
+    prices; session `sy` agrees to the cent, so it must ship nothing."""
+    proj = os.path.join(tmp, "cli-proj")
+    led = os.path.join(proj, ".claude", "usage")
+    os.makedirs(os.path.join(led, ".cursors"))
+    write_json(_paths._config_path(proj), {})
+    mpath = _paths._manifest_path(proj, _paths.read_config(proj))
+    os.makedirs(os.path.dirname(mpath), exist_ok=True)
+    write_json(mpath, {"meta": {"version": 2}, "phases": []})
+    zero = {"in": 0, "out": 0, "cacheW5m": 0, "cacheW1h": 0, "cacheR": 0}
+
+    def row(sid, ts, model, counts):
+        out = dict(zero, ts=ts, sessionId=sid, phaseId="P1", taskId="P1.1",
+                   attr="task", model=model, author="a@x.io", msgs=1,
+                   costUSD=0.0)
+        out.update(counts)
+        return out
+
+    with open(os.path.join(led, "2026-08.jsonl"), "w", encoding="utf-8") as fh:
+        for r in (row("sx", "2026-08-01T10", "claude-opus-5", {"in": 1000000}),
+                  row("sx", "2026-08-01T11", "claude-nonesuch-1",
+                      {"out": 2500000}),
+                  row("sy", "2026-08-02T10", "claude-opus-5", {"in": 1000000})):
+            fh.write(json.dumps(r) + "\n")
+
+    def cursor(sid, per_model):
+        write_json(os.path.join(led, ".cursors", "%s.json" % sid),
+                   {"files": {}, "cliCost": {
+                       "totalCostUSD": sum(per_model.values()),
+                       "perModel": per_model, "hasUnknownModelCost": False}})
+
+    cursor("sx", {"claude-opus-5": 7.25, "claude-nonesuch-1": 0.4})
+    cursor("sy", {"claude-opus-5": 5.0})
+    u = M.usage_state(proj)
+    got = sorted((c.get("session"), c.get("model"), c.get("cliCostUSD"),
+                  c.get("pluginCostUSD"), c.get("pluginUnpriced"),
+                  c.get("basis")) for c in (u.get("cliCost") or []))
+    label = "the CLI's estimate, recorded at meter time"
+    fields = list(u.get("fields") or [])
+    unp = [f for f in (u.get("facts") or [])
+           if "model" in fields and "unpriced" in fields
+           and f[fields.index("model")] == "claude-nonesuch-1"]
+    check("a session whose CLI cost figure differs from the plugin's reading "
+          "is shown with both figures, labelled, and a model no rate covers "
+          "reads unpriced in every panel cost column (the payload half: "
+          "session sx ships CLI 7.25 beside plugin 5.00 for opus and CLI 0.40 "
+          "beside an unpriced nonesuch, each labelled as the CLI's estimate; "
+          "session sy agrees and ships nothing; the nonesuch fact carries all "
+          "its tokens as unpriced, which is what every cost column reads - "
+          "the browse dialog's rendering is driven in usage-edges.test.mjs): "
+          "%r" % (got,),
+          got == [("sx", "claude-nonesuch-1", 0.4, None, True, label),
+                  ("sx", "claude-opus-5", 7.25, 5.0, False, label)]
+          and len(unp) == 1 and unp[0][fields.index("unpriced")] == 2500000
+          and unp[0][fields.index("tokens")] == 2500000
+          and M._usage_shape().get("cliCost") == [])
 
 
 def _read_time_pricing_cases(check, tmp, write_json):

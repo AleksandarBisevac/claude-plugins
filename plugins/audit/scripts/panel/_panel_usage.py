@@ -128,6 +128,10 @@ def _usage_shape(**overrides):
         # yet, exactly like `facts` above (empty but READABLE); `_gate_catches_payload` is the one
         # place that fills it.
         "gateCatches": {"catches": [], "readError": None},
+        # The CLI's own per-session figure where it differs from the plugin's
+        # reading of the same session - `_cli_cost_payload`. `[]` on the exits
+        # with no rows, where there is no plugin reading to differ from.
+        "cliCost": [],
     }
     unknown = sorted(k for k in overrides if k not in shape)
     if unknown:
@@ -323,6 +327,55 @@ def _usage_derived(ul, manifest, rows, pricing):
             "contextShape": context_shape}
 
 
+# --- the CLI's own figure beside the plugin's -------------------------------------
+# The label `/audit:usage` prints beside a figure the meter recorded on the
+# session's cursor. The panel reads only that recorded figure: re-reading a
+# transcript per GET /api/usage is the second parse the cursor exists to save.
+_CLI_BASIS = "the CLI's estimate, recorded at meter time"
+
+
+def _cli_cost_payload(ul, ledger_dir, rows):
+    """`[{session, model, cliCostUSD, pluginCostUSD, pluginUnpriced, basis}]`
+    - one entry per session and model where the CLI's own recorded figure
+    (`ul.recorded_cost_state`, the cursor's `cliCost`) and the plugin's
+    reading of the same session's priced `rows` differ, through the same
+    `ul.cli_cost_divergences` `/audit:usage` compares with. A model they agree
+    on ships nothing, and a session whose cursor recorded no figure ships
+    nothing. `pluginUnpriced` says the plugin's side has no figure because no
+    rate covers that model's tokens (`ul.all_unpriced`), which a reader must
+    not take for a model the plugin never saw.
+
+    Fail-soft to `[]`, like each derived block: one comparison going wrong
+    costs the tab that line, never the tab."""
+    try:
+        by_session = {}
+        for r in rows:
+            if r.get("sessionId"):
+                by_session.setdefault(r["sessionId"], []).append(r)
+        out = []
+        for sid in sorted(by_session):
+            state = ul.recorded_cost_state(ledger_dir, sid)
+            if not state:
+                continue
+            session_rows = by_session[sid]
+            diffs = ul.cli_cost_divergences(session_rows, state)
+            for model in sorted(diffs):
+                # Matched on the base name the comparison keys by: a ledger
+                # model with the long-prompt tier suffix is the same model.
+                model_rows = [r for r in session_rows
+                              if (r.get("model") or "") in
+                              (model, model + ul.LONG_PROMPT_SUFFIX)]
+                out.append({
+                    "session": sid, "model": model,
+                    "cliCostUSD": diffs[model]["cliCostUSD"],
+                    "pluginCostUSD": diffs[model]["pluginCostUSD"],
+                    "pluginUnpriced": ul.all_unpriced(ul.totals(model_rows)),
+                    "basis": _CLI_BASIS})
+        return out
+    except Exception:
+        return []
+
+
 # --- what the gates caught, from a DIFFERENT ledger than the rest of this file ---
 def _gate_catches_payload(project, config):
     """What every recorded gate CAUGHT, paired with what it cost - the other
@@ -453,7 +506,8 @@ def usage_state(project):
         "pricingBasis": {k: pricing[k] for k in
                          ("basis", "asOf", "source", "pricedWhenWritten")
                          + tuple(priced["mix"])},
-        "rateBasis": ul.rate_basis_phrase(pricing)})
+        "rateBasis": ul.rate_basis_phrase(pricing),
+        "cliCost": _cli_cost_payload(ul, ledger_dir, rows)})
     payload.update({"fields": list(_FACT_FIELDS), "facts": facts,
                     "phaseTitles": titles, "taskMeta": task_meta,
                     "phaseBudgets": budgets, "counts": _ledger_counts(rows),

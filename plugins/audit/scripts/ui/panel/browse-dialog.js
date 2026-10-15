@@ -47,7 +47,8 @@ const BNUM={tokens:1,share:1,cost:1,msgs:1};
  * @returns {Array<{id: string, title: string, status: string, risk: string,
  *   band: string, models: Array<{model: string, tokens: number,
  *   pct: number|null}>, dominant: string, tokens: number, share: number|null,
- *   cost: number, msgs: number}>} Ordered by tokens, biggest first. Every text
+ *   cost: number, msgs: number, unpriced: number}>} Ordered by tokens, biggest
+ *   first; `unpriced` is the row's tokens no rate covers. Every text
  *   field is a string and never null, so a cell renders without a per-field
  *   absence check; `share` is the one that can be null, because a share of
  *   nothing has no value to print.
@@ -57,9 +58,12 @@ function browseRows(dim,facts){
  // Which models did this phase/task/person actually use? The aggregate throws
  // that away, and it is the question the ranked bar cannot answer: two phases
  // costing the same can be one opus run and one long haiku grind.
- const mix={};
+ // The unpriced tokens per row ride the same pass: a cost of 0 over tokens no
+ // rate covers is not a price, and the cost cell has to be able to say so.
+ const mix={},unp={};
  for(const f of facts){const k=f[F[dim]]||'--',m=f[F.model]||'unknown';
-  (mix[k]=mix[k]||{})[m]=(mix[k][m]||0)+f[F.tokens];}
+  (mix[k]=mix[k]||{})[m]=(mix[k][m]||0)+f[F.tokens];
+  unp[k]=(unp[k]||0)+(f[F.unpriced]||0);}
  return g.map(([k,v])=>{const meta=(USAGE.taskMeta||{})[k]||{};
   // Slot order, not token order: the palette was validated on THAT adjacency, so
   // drawing segments in any other sequence puts unvalidated pairs side by side.
@@ -74,7 +78,8 @@ function browseRows(dim,facts){
     status:meta.status||'',risk:meta.risk||'',
     band:(dim==='task'?bandOf(k):null)||'',
     models:models,dominant:top?top.model:'',
-    tokens:v[0],share:uShare(v[0],grand),cost:v[1],msgs:v[2]};});}
+    tokens:v[0],share:uShare(v[0],grand),cost:v[1],msgs:v[2],
+    unpriced:unp[k]||0};});}
 
 /**
  * The model-mix cell: a proportional stack of the models this row used, plus the
@@ -99,6 +104,28 @@ function modelCell(r){
  cell.title=r.models.map(m=>m.model+'  '+uPct(m.pct)+'  '+uTok(m.tokens,2))
    .join('\n');
  return cell;}
+
+/**
+ * The CLI's own per-session figure, one line per session and model where it
+ * differs from the plugin's reading, each side with its own basis. The CLI's
+ * side is called its estimate and never the bill. Per session and whatever the
+ * filter: the CLI records a whole session, so it cannot be narrowed the way
+ * the facts are.
+ * @param {string} dim The dimension being browsed; only `model` carries it,
+ *   since a model is what both sides price.
+ * @returns {HTMLDivElement|null} Null with dollars off, on another dimension,
+ *   or when nothing differs.
+ */
+function browseCliNote(dim){
+ const diff=Array.isArray(USAGE.cliCost)?USAGE.cliCost:[];
+ if(dim!=='model'||!USAGE.showCost||!diff.length)return null;
+ const plugin=c=>c.pluginUnpriced?'unpriced'
+   :c.pluginCostUSD==null?'no reading':uCost(c.pluginCostUSD);
+ return el('div',{class:'mut small','data-cli-cost':''},
+   el('div',{},'Where the CLI\'s own figure differs from the plugin\'s'
+     +(USAGE.rateBasis?' (plugin: '+USAGE.rateBasis+')':'')+':'),
+   ...diff.map(c=>el('div',{},'session '+c.session+' · '+c.model+': CLI '
+     +uCost(c.cliCostUSD)+' ('+c.basis+') vs plugin '+plugin(c))));}
 
 /**
  * Open the browse dialog for one dimension.
@@ -194,7 +221,9 @@ function openBrowse(dim,title,facts){
       // the precision surface, so it gets the digits.
       :key==='share'?(r.share==null?'—'
         :(r.share<1?r.share.toFixed(2):r.share.toFixed(1))+'%')
-      :key==='cost'?uCost(r.cost)
+      // The By model list's rule: a row whose every token is unpriced has a
+      // cost of 0 that is not a price, and $0.00 would read as free.
+      :key==='cost'?(uAllUnpriced(r.tokens,r.unpriced)?'unpriced':uCost(r.cost))
       :key==='msgs'?r.msgs.toLocaleString()
       // The id column is where the empty bucket lands, so this is the cell
       // that has to name it rather than print the ledger's storage key.
@@ -209,7 +238,7 @@ function openBrowse(dim,title,facts){
  // replaceChildren is the native DOM API, not el(): it STRINGIFIES anything that
  // is not a Node, so passing the null `within` painted the literal text "null"
  // above the dialog. Filter before handing it over.
- BROWSE.replaceChildren(...[head,within,bandNote,
+ BROWSE.replaceChildren(...[head,within,bandNote,browseCliNote(dim),
    el('div',{class:'comptools'},search,count),
    el('div',{class:'btblwrap'},el('table',{class:'btbl'},thead,tb)),
    el('div',{class:'mut small bfoot'},
