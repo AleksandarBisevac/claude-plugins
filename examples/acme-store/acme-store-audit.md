@@ -1,6 +1,6 @@
 # ACME Store — security & correctness audit
 
-repo: acme-store · generated 2026-10-08 23:51 UTC
+repo: acme-store · generated 2026-10-15 05:38 UTC
 
 > Phase 0 (framework upgrade) was finished before this project started recording test runs, so nothing in it points at one — the test-gate column says 'Before recording' rather than 'No evidence', and the no-test-evidence gate excuses it instead of failing it. Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2, and Phase 4 writes down the invariants the audit relied on — documentation work, so it declares no test gate at all. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved. Phase 5 (sync worker resilience) is queued behind the storefront work, in a different part of the stack — a background Go service rather than the storefront's TypeScript — and its gate is a runner named for what it is: go test rather than npm test.
 
@@ -79,7 +79,7 @@ P2.4, P4.1, P5.1
 
 ## Usage
 
-**Total:** 90.3M tokens · ~$102.60 equiv · 1,282 msgs · 5 session(s) · cache hit 93% · rates as of 2026-08-06, the project's usage.pricing in .claude/audit.config.json
+**Total:** 90.3M tokens · ~$102.60 equiv · 1,282 msgs · 5 session(s) · cache hit 93% · rates as of 2026-08-06, the project's usage.pricing in .claude/audit.config.json; rows are priced at global routing; the ledger does not read a request's inference geo; 0 row(s) at the rate stamped when written, 232 priced again at the rate in effect on their date
 
 ### By phase
 

@@ -50,7 +50,7 @@ import _ui_theme as _theme  # noqa: E402  (the one place a machine value gets it
 
 import _usage_viz as _viz  # noqa: E402  (the section's number formatting and marks)
 from _usage_economics import (  # noqa: E402  (the one coverage sentence, the one rate basis)
-    coverage_sentence, rate_basis_phrase)
+    all_unpriced, coverage_sentence, rate_basis_phrase)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `_report_usage.py` unchanged, and an alias keeps them reading the same names
@@ -100,7 +100,9 @@ def _usage_md(u):
             cells = [_theme.UNCATEGORIZED if k == "--" else k,
                      _fmt_tokens(v["tokens"])]
             if show_cost:
-                cells.append(_fmt_cost(v["costUSD"]))
+                # The word, not $0.00, for a group no rate covers at all.
+                cells.append("unpriced" if all_unpriced(v)
+                             else _fmt_cost(v["costUSD"]))
             cells.append("{:,}".format(v["msgs"]))
             rows.append("| %s |" % " | ".join(_md(c) for c in cells))
         return ["### %s" % title, "", cols, sep] + rows + [""]

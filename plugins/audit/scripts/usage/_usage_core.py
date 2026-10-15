@@ -590,7 +590,17 @@ def priced_at_read(rows, table):
     """Every row's `costUSD`, priced at the rate in effect ON ITS OWN DATE.
 
     -> {"rows": copies of `rows`, each priceable row's `costUSD` replaced,
-        "pricedWhenWritten": how many rows kept their stored figure}
+        "pricedWhenWritten": how many rows kept their stored figure,
+        "mix": {"stamped": rows summed from their own stamp,
+                "readPriced": unstamped rows priced again against `table`,
+                "unpriced": rows no rate covers,
+                "unpricedTokens": the tokens on those rows,
+                "unpricedModels": their models, sorted}}
+
+    The three row counts in `mix` and `pricedWhenWritten` add up to the rows
+    read, one kind per row. `mix` is shaped to be laid straight over
+    `resolve_pricing`'s answer, which is how `rate_basis_phrase` comes to
+    state the mix: the table it names priced only the `readPriced` rows.
 
     A row carrying a `rate` STAMP (written by `usage_ledger.scan_transcripts`
     once it priced the row) is priced from that stamp directly
@@ -625,13 +635,17 @@ def priced_at_read(rows, table):
     `_cost()` already applies, and prints "unpriced" rather than a fabricated
     dollar amount."""
     out, kept = [], 0
+    counts = {"stamped": 0, "readPriced": 0, "unpriced": 0, "unpricedTokens": 0}
+    unpriced_models = set()
     for row in rows:
         copy = dict(row)
         stamped_rate = row.get("rate")
         if "rate" in row:
+            kind = "stamped"
             usd = _price_at_rate(row, stamped_rate) \
                 if isinstance(stamped_rate, dict) else None
         elif _priceable(row):
+            kind = "readPriced"
             usd = price(row, row.get("model"), table, at=bucket_date(row.get("ts")))
         else:
             kept += 1
@@ -640,10 +654,15 @@ def priced_at_read(rows, table):
         if usd is None:
             copy["costUSD"] = None
             copy["unpriced"] = True
+            counts["unpriced"] += 1
+            counts["unpricedTokens"] += _tokens(row)
+            unpriced_models.add(row.get("model") or "unknown")
         else:
             copy["costUSD"] = round(usd, 6)
+            counts[kind] += 1
         out.append(copy)
-    return {"rows": out, "pricedWhenWritten": kept}
+    mix = dict(counts, unpricedModels=sorted(unpriced_models))
+    return {"rows": out, "pricedWhenWritten": kept, "mix": mix}
 
 
 def totals(rows):

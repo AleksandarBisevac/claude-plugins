@@ -559,4 +559,74 @@ describe('with showCost off the tab prints no per-task dollar figure', () => {
       expect(on.heads.length, dim).toBe(off.heads.length + 1);
     }
   });
+
+  // Nested here for the recording builder above, which it needs to read the
+  // tab back as text; the subject is the unpriced word, not the showCost gate.
+  describe('a model no rate covers', () => {
+    // 'mystery' is wholly unpriced: cost 0 because nothing priced it, not
+    // because it was free. 'opus' is priced, with a figure under its tokens.
+    function renderUnpriced(withUnpriced) {
+      const { ctx, root } = recordingPanel();
+      const { F } = reach(ctx, ['F']);
+      const row = (model, tokens, cost, unpriced, day) => {
+        const r = [];
+        r[F.ts] = '2026-01-0' + day + 'T00:00:00Z';
+        r[F.phase] = 'P1'; r[F.task] = 'T1'; r[F.model] = model;
+        r[F.author] = 'me'; r[F.agent] = 'ag'; r[F.attr] = 'task';
+        r[F.tokens] = tokens; r[F.cost] = cost; r[F.msgs] = 1;
+        r[F.unpriced] = unpriced;
+        return r;
+      };
+      const facts = [row('opus', 4000, 2.5, 0, 1)];
+      if (withUnpriced) facts.push(row('mystery', 2500, 0, 2500, 2));
+      const usage = { facts, enabled: true, counts: { phases: 1 }, showCost: true,
+        taskMeta: { T1: { status: 'pending', risk: 'low' } } };
+      vm.runInContext('USAGE = ' + JSON.stringify(usage) + '; BANDS = null;', ctx);
+      vm.runInContext('renderUsage();', ctx);
+      const rows = all(root, hasClass('urow')).map(text);
+      const tile = all(root, hasClass('utile')).filter((t) => all(t, hasClass('k'))
+        .some((k) => text(k) === 'equivalent cost')).map(text);
+      return { ctx, rows, tile };
+    }
+
+    it('words the unpriced tokens exactly as Python unpriced_phrase() does', () => {
+      const { ctx } = renderUnpriced(false);
+      const { uUnpricedPhrase } = reach(ctx, ['uUnpricedPhrase']);
+      const ns = [999, 1500, 2500000, 1234567890];
+      const py = pyCall('_usage_economics', ns.map((n) => ['unpriced_phrase', [n]]));
+      ns.forEach((n, i) => {
+        expect(typeof py[i], String(n)).toBe('string');
+        expect(uUnpricedPhrase(n), String(n)).toBe(py[i]);
+      });
+      // Both sides are silent for nothing to say.
+      expect(pyCall('_usage_economics', [['unpriced_phrase', [0]]])[0]).toBe('');
+      expect(uUnpricedPhrase(0)).toBe('');
+    });
+
+    it('its By model row says unpriced beside its tokens, never a dollar figure', () => {
+      const r = renderUnpriced(true);
+      const mystery = r.rows.filter((s) => s.startsWith('mystery'));
+      expect(mystery.length).toBe(1);
+      expect(mystery[0]).toContain('unpriced');
+      expect(mystery[0]).not.toMatch(DOLLAR);
+      const opus = r.rows.filter((s) => s.startsWith('opus'));
+      expect(opus.length).toBe(1);
+      expect(opus[0]).toMatch(DOLLAR);
+      expect(opus[0]).not.toContain('unpriced');
+    });
+
+    it('the cost tile states how many tokens its figure leaves out', () => {
+      const r = renderUnpriced(true);
+      expect(r.tile.length).toBe(1);
+      expect(r.tile[0]).toContain('2.5K tokens unpriced');
+    });
+
+    it('...and says nothing of the kind when every token is priced '
+      + '[the twin: a clause that always fires fails here]', () => {
+      const r = renderUnpriced(false);
+      expect(r.tile.length).toBe(1);
+      expect(r.tile[0]).not.toContain('unpriced');
+      expect(r.rows.join(' ')).not.toContain('unpriced');
+    });
+  });
 });

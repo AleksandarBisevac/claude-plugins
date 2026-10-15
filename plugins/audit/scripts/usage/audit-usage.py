@@ -72,7 +72,7 @@ import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution 
 import _ui_theme as _theme  # noqa: E402  (the one place a machine value gets its words)
 import _evidence_io  # noqa: E402  (the OTHER ledger `planCost` reads - gate scope + reuse)
 from _usage_economics import (  # noqa: E402  (the one coverage sentence, the one rate basis)
-    coverage_sentence, rate_basis_phrase)
+    all_unpriced, coverage_sentence, rate_basis_phrase, unpriced_phrase)
 
 
 def _load(name, filename):
@@ -116,8 +116,7 @@ def cost_cell(totals_row, show=True):
     confident `$0.00` for spend that was never zero, just never priced."""
     if not show:
         return ""
-    if totals_row.get("tokens") and totals_row.get("unpricedTokens") \
-            == totals_row.get("tokens"):
+    if all_unpriced(totals_row):
         return "unpriced"
     return fmt_cost(totals_row.get("costUSD"))
 
@@ -426,8 +425,8 @@ def render(rows, args, manifest, window, show_cost, pt=None, pricing=None,
         # unpriced model's tokens are excluded from `costUSD` entirely (never
         # priced at a guess), so the total above understates spend by exactly
         # this many tokens unless a reader is told so.
-        if tot.get("unpricedTokens"):
-            head += sep + "%s tokens unpriced" % fmt_tokens(tot["unpricedTokens"])
+        if unpriced_phrase(tot.get("unpricedTokens")):
+            head += sep + unpriced_phrase(tot["unpricedTokens"])
     head += sep + "%s msgs" % fmt_int(tot["msgs"]) + sep + \
         "%s sessions" % tot["sessions"]
     if tot["authors"] > 1:
@@ -1107,15 +1106,17 @@ def main(argv):
 
     since = resolve_since(args.since)
     tags_by_phase = _areas.phase_tags(manifest)
-    # Every cost below is summed off these copies, priced at the resolved
-    # table the rate phrase names; the count of rows that kept the figure
-    # stored when written rides in the answer the phrase is worded from.
-    # After the filters, so the count is of the rows this run shows.
+    # Every cost below is summed off these copies: a stamped row at its own
+    # stamp, an unstamped one at the resolved table on its own date. The
+    # read's mix and the rows that kept the figure stored when written ride
+    # in the answer the phrase is worded from. After the filters, so the
+    # counts are of the rows this run shows.
     priced = ul.priced_at_read(
         apply_filters(ul.read_ledger(ledger_dir, since, args.until), args,
                       tags_by_phase), pricing)
     rows = priced["rows"]
-    resolved = dict(resolved, pricedWhenWritten=priced["pricedWhenWritten"])
+    resolved = dict(resolved, pricedWhenWritten=priced["pricedWhenWritten"],
+                    **priced["mix"])
     window = "all time" if not (since or args.until) else "%s -> %s" % (
         since or "start", args.until or today())
 
@@ -1135,7 +1136,8 @@ def main(argv):
             # Which place priced these rows, and the phrase every surface
             # prints for it - the resolver's answer as data, beside the words.
             "pricingBasis": {k: resolved[k] for k in
-                             ("basis", "asOf", "source", "pricedWhenWritten")},
+                             ("basis", "asOf", "source", "pricedWhenWritten")
+                             + tuple(priced["mix"])},
             "rateBasis": rate_basis_phrase(resolved),
             "totals": ul.totals(rows),
             "byPhase": ul.aggregate(rows, "phase"),

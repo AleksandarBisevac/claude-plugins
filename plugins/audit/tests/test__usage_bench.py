@@ -71,6 +71,10 @@ _UNTIMED = (
                           "holds and reads no rows"),
     ("rate_basis_phrase", "formats one phrase from the pricing answer its "
                           "caller already holds and reads no rows"),
+    ("all_unpriced", "compares two counts of one finished group and reads no "
+                     "rows"),
+    ("unpriced_phrase", "formats one phrase from a count its caller already "
+                        "holds and reads no rows"),
 )
 
 

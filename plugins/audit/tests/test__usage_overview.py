@@ -326,6 +326,27 @@ def _cases(check):
     check("uo27 ...and a real-but-tiny row is floored to a visible 0.8% "
           "track: a row at 0.08% of the peak paints an empty bar, which reads "
           "as 'no data' rather than 'a little'", "width:0.8%" in out, out[:400])
+    # An unpriced model's cost is not $0.00: no rate covers it, so the cost
+    # cell says so, in the row and in its hover. A partly priced model keeps
+    # its figure - the rate line beside the total counts the rest.
+    out = M._ranked(_u(byModel={
+        "claude-x-1": {"tokens": 500, "costUSD": 0.0, "msgs": 2,
+                       "unpricedTokens": 500},
+        "claude-opus-5": {"tokens": 900, "costUSD": 0.25, "msgs": 3,
+                          "unpricedTokens": 100}}), "byModel", "By model")
+    _unp_row = [r for r in out.split('<div class="rank"') if "claude-x-1" in r]
+    check("uo35 (a model with every token unpriced) its row reads 'unpriced' "
+          "beside its tokens, in the row and in the hover, and never $0.00: %r"
+          % (_unp_row,),
+          len(_unp_row) == 1 and "500 &middot; unpriced" in _unp_row[0]
+          and _unp_row[0].count("unpriced") == 2
+          and "$0.00" not in _unp_row[0])
+    _part_row = [r for r in out.split('<div class="rank"')
+                 if "claude-opus-5" in r]
+    check("uo36 ...while a partly priced model keeps its dollar figure - the "
+          "case that fails if every row with an unpriced token says the word",
+          len(_part_row) == 1 and "unpriced" not in _part_row[0]
+          and "$0.25" in _part_row[0])
 
     # --- the cost-per-task tile's coverage note ---
     out = M._usage_tiles(_u(unit={"costPerTask": 0.5, "completed": 3,

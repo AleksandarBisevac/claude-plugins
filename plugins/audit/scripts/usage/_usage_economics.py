@@ -59,6 +59,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _manifest_io as _mio  # noqa: E402  (the derived phase status a budget row carries)
+import _fmt  # noqa: E402  (the one token formatter the unpriced count is written in)
 import _usage_core as _core  # noqa: E402  (the arithmetic under every pass here)
 from _usage_core import task_index  # noqa: E402  (the plan index these all start from)
 
@@ -146,11 +147,29 @@ def rate_basis_phrase(pricing_basis):
     `pricedWhenWritten`, when the caller carries `_usage_core.priced_at_read`'s
     count beside the answer, names the rows whose figure is the one stored
     when they were written rather than this table's: the phrase would
-    otherwise claim one table for a sum of two."""
+    otherwise claim one table for a sum of two.
+
+    The rest of `priced_at_read`'s `mix`, laid over the answer by the caller,
+    finishes the same thought. `stamped`/`readPriced` say how many rows were
+    summed from the rate stamped on them when written and how many this table
+    priced again, because a stamped row is never re-resolved against the
+    table the phrase names. `unpricedTokens`/`unpricedModels` say what no
+    rate covers, in `unpriced_phrase`'s words, because those tokens are in no
+    cost figure at all. A caller that carries none of these keys gets none of
+    these clauses - a count it did not take is not a count of zero.
+
+    Every recorded basis also names the routing its rates assume. The ledger
+    keeps a transcript's token counts and its model and never its
+    `usage.inference_geo`, so every rate is the global-routing one and a
+    request pinned to one region is priced as if it were not."""
     pb = pricing_basis if isinstance(pricing_basis, dict) else {}
     basis = pb.get("basis")
+    tail = (_mix_clause(pb.get("stamped"), pb.get("readPriced"))
+            + _kept_clause(pb.get("pricedWhenWritten"))
+            + _unpriced_clause(pb.get("unpricedTokens"),
+                               pb.get("unpricedModels")))
     if basis not in _core.PRICING_BASES:
-        return "rate basis not recorded" + _kept_clause(pb.get("pricedWhenWritten"))
+        return "rate basis not recorded" + tail
     as_of = pb.get("asOf")
     as_of = as_of.strip() if isinstance(as_of, str) else ""
     source = pb.get("source")
@@ -166,17 +185,71 @@ def rate_basis_phrase(pricing_basis):
     else:
         where = "the project's usage.pricing in .claude/audit.config.json"
         hint = " - set usage.pricingAsOf"
-    return "%s, %s%s%s" % (when, where, "" if as_of else hint,
-                           _kept_clause(pb.get("pricedWhenWritten")))
+    return "%s, %s%s; %s%s" % (when, where, "" if as_of else hint,
+                               ROUTING_BASIS, tail)
+
+
+# What every recorded rate basis says about routing. A constant so the README
+# sentence and the suites can be held to the words the phrase prints.
+ROUTING_BASIS = ("rows are priced at global routing; the ledger does not read "
+                 "a request's inference geo")
+
+
+def _count(n):
+    """`n` when it is a real int count (not a bool), else None."""
+    return n if isinstance(n, int) and not isinstance(n, bool) else None
 
 
 def _kept_clause(kept):
     """The rate phrase's tail for rows priced when written; "" for none, or
     for a count that is not a positive int."""
-    if not isinstance(kept, int) or isinstance(kept, bool) or kept <= 0:
+    kept = _count(kept)
+    if kept is None or kept <= 0:
         return ""
     return ("; %d row(s) keep the cost stored when written, at no recorded "
             "rate" % kept)
+
+
+def _mix_clause(stamped, read_priced):
+    """The rate phrase's tail naming which rate priced which rows; "" unless
+    both counts were taken and at least one row was priced either way."""
+    stamped, read_priced = _count(stamped), _count(read_priced)
+    if stamped is None or read_priced is None or stamped < 0 \
+            or read_priced < 0 or stamped + read_priced == 0:
+        return ""
+    return ("; %d row(s) at the rate stamped when written, %d priced again at "
+            "the rate in effect on their date" % (stamped, read_priced))
+
+
+def unpriced_phrase(tokens, models=None):
+    """The one wording of the tokens no rate covers: `2.5M tokens unpriced`,
+    with the models in brackets when the caller names them. "" when there are
+    none, or when `tokens` is not a positive int count - a count not taken is
+    not stated. Every surface that says how many tokens a cost leaves out says
+    it through this: the rate phrase, `/audit:usage`'s total line, and the
+    panel's `uUnpricedPhrase`, whose suite holds it to this function's
+    answer."""
+    tokens = _count(tokens)
+    if tokens is None or tokens <= 0:
+        return ""
+    names = [m for m in (models or []) if isinstance(m, str) and m]
+    return "%s tokens unpriced%s" % (
+        _fmt.fmt_tokens(tokens), " (%s)" % ", ".join(names) if names else "")
+
+
+def _unpriced_clause(tokens, models):
+    phrase = unpriced_phrase(tokens, models)
+    return "; " + phrase if phrase else ""
+
+
+def all_unpriced(group):
+    """True when every token of a finished group (`_usage_core.totals` /
+    `aggregate`'s shape) is unpriced, so its cost cell must say "unpriced":
+    a dollar figure built from nothing would read as free. A group with some
+    priced tokens keeps its figure, and the rate phrase counts the rest; a
+    group of no tokens has nothing to call unpriced."""
+    tokens = group.get("tokens") if isinstance(group, dict) else None
+    return bool(tokens) and group.get("unpricedTokens") == tokens
 
 
 def unit_economics(manifest, rows):

@@ -1374,7 +1374,9 @@ def _cases(_record):
         import usage_ledger as _ul
         _pb_shipped = {"basis": "shipped", "asOf": _ul.PRICING_AS_OF,
                        "source": _ul.PRICING_SOURCE_URL,
-                       "pricedWhenWritten": 0}
+                       "pricedWhenWritten": 0, "stamped": 0, "readPriced": 1,
+                       "unpriced": 0, "unpricedTokens": 0,
+                       "unpricedModels": []}
         check("u10b ...and the line names the SHIPPED table's own date and "
               "source, the table that priced the rows - not 'rates as of' "
               "followed by nothing, and not 'undated': %r"
@@ -3181,6 +3183,13 @@ def _read_time_pricing_cases(check):
               "~%s equiv" % M._fmt.fmt_cost(7.5) in line
               and "1 row(s) keep the cost stored when written" in line
               and (u.get("pricingBasis") or {}).get("pricedWhenWritten") == 1)
+        check("rt3 (one row priced again, one kept) the status line's phrase "
+              "says which rows the named table priced, and the counts ride "
+              "in pricingBasis: %r %r" % (line, u.get("pricingBasis")),
+              "; 0 row(s) at the rate stamped when written, 1 priced again "
+              "at the rate in effect on their date" in line
+              and (u.get("pricingBasis") or {}).get("readPriced") == 1
+              and (u.get("pricingBasis") or {}).get("stamped") == 0)
     finally:
         _sh.rmtree(root, ignore_errors=True)
 

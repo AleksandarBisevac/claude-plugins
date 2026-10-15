@@ -142,6 +142,32 @@ def _cases(check):
               "- the manifest index, aliased rather than re-walked here",
               u["taskTitles"] == {"P0.1": "T"}, u["taskTitles"])
 
+        # One row on a model no table prices, beside one the shipped table
+        # does, both carrying every token field so both are priced at read.
+        _full = dict((k, 0) for k in _UL.TOKEN_KEYS)
+        pu = os.path.join(root, "p-unpriced")
+        mu, mpu = _write_project(pu, [
+            _row("2026-07-01T03", model="claude-nonesuch-1",
+                 **dict(_full, out=7000)),
+            _row("2026-07-01T04", model="claude-opus-5",
+                 **dict(_full, **{"in": 3000}))])
+        uu = M.load_usage(mu, mpu, pu) or {}
+        _bm = uu.get("byModel") or {}
+        check("ul13b (7000 tokens on an unpriced model) byModel carries each "
+              "model's unpriced tokens, so a renderer can say 'unpriced' "
+              "beside them: %r" % (_bm,),
+              (_bm.get("claude-nonesuch-1") or {}).get("unpricedTokens") == 7000
+              and (_bm.get("claude-opus-5") or {}).get("unpricedTokens") == 0)
+        _pbu = uu.get("pricingBasis") or {}
+        check("ul13c ...and pricingBasis carries the read's mix, so the rate "
+              "phrase states what priced the figure and what it leaves out: %r"
+              % (_pbu,),
+              _pbu.get("readPriced") == 1 and _pbu.get("stamped") == 0
+              and _pbu.get("unpriced") == 1
+              and _pbu.get("unpricedTokens") == 7000
+              and _pbu.get("unpricedModels") == ["claude-nonesuch-1"]
+              and _pbu.get("pricedWhenWritten") == 0)
+
         empty = os.path.join(root, "p2")
         _m2, mp2 = _write_project(empty, [])
         check("ul14 a ledger with no rows returns None, so the section "

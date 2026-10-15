@@ -116,6 +116,19 @@ def _cases(check):
                                              "msgs": 1}}))
     check("um11 ...and two authors do render it - the case that fails if the "
           "gate is dropped or inverted", "### By author" in out_two, "")
+    out_unp = M._usage_md(_u(byModel={
+        "claude-x-1": {"tokens": 400, "costUSD": 0.0, "msgs": 4,
+                       "unpricedTokens": 400},
+        "opus": {"tokens": 600, "costUSD": 1.0, "msgs": 6,
+                 "unpricedTokens": 0}}))
+    check("um11b (one model wholly unpriced) the By model table says "
+          "'unpriced' in that model's cost cell, never $0.00, and keeps the "
+          "priced model's figure: %r"
+          % ([ln for ln in out_unp.splitlines() if ln.startswith("| claude")
+              or ln.startswith("| opus")],),
+          "| claude-x-1 | 400 | unpriced | 4 |" in out_unp
+          and "| opus | 600 | $1.00 | 6 |" in out_unp
+          and out_unp.count("unpriced") == 1)
     out_unc = M._usage_md(_u(byPhase={"--": {"tokens": 5, "costUSD": 0.1,
                                              "msgs": 1}}))
     check("um12 ...and the empty bucket wears the shared word, never the "

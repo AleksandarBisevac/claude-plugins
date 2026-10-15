@@ -13,7 +13,7 @@
  * a row searched once is not re-joined on the next keystroke.
  *
  * @typedef {[string, string, string, string, string, string, string, number,
- *   number, number]} UsageFact
+ *   number, number, number]} UsageFact
  */
 
 /**
@@ -120,11 +120,14 @@ const SHOWN={phase:8,model:8,author:8,task:8};
 /**
  * The column of a `UsageFact` by name. The payload ships its own `fields` list
  * in the same order; this is the client's index into it.
+ * `unpriced` is the fact's tokens no rate covers: its `cost` leaves them out,
+ * so a cost of 0 beside them is not a price.
  * @type {{ts: number, phase: number, task: number, model: number,
  *   author: number, agent: number, attr: number, tokens: number,
- *   cost: number, msgs: number}}
+ *   cost: number, msgs: number, unpriced: number}}
  */
-const F={ts:0,phase:1,task:2,model:3,author:4,agent:5,attr:6,tokens:7,cost:8,msgs:9};
+const F={ts:0,phase:1,task:2,model:3,author:4,agent:5,attr:6,tokens:7,cost:8,msgs:9,
+ unpriced:10};
 
 /** Risk bands, worst first, so an `indexOf` on this sorts by severity. */
 const RISKS=['high','med','low','unrated'];
@@ -223,6 +226,28 @@ function uFixedHalfEven(x,dp){
 const uTok=(n,dp=1)=>{n=Math.trunc(n||0);
  for(const[l,s]of[[1e9,'B'],[1e6,'M'],[1e3,'K']])
  if(Math.abs(n)>=l)return uFixedHalfEven(n/l,dp)+s;return String(n);};
+
+/**
+ * The tokens no rate covers, worded as `_usage_economics.unpriced_phrase`
+ * words them for every other surface — '2.5K tokens unpriced'. Their cost is
+ * in no figure on the tab, so a cost that leaves them out says how many.
+ * tools/ui-tests/usage-edges.test.mjs holds this to the Python's answer.
+ *
+ * @param {number} n - unpriced tokens
+ * @returns {string} the phrase, or '' when there are none
+ */
+const uUnpricedPhrase=n=>Number.isInteger(n)&&n>0?uTok(n)+' tokens unpriced':'';
+
+/**
+ * True when every token of an aggregate is unpriced, so its cost cell must
+ * say 'unpriced' rather than a '$0.00' that reads as free — the rule
+ * `_usage_economics.all_unpriced` applies to the report and the CLI.
+ *
+ * @param {number} tokens - the aggregate's tokens
+ * @param {number} unpriced - how many of them no rate covers
+ * @returns {boolean}
+ */
+const uAllUnpriced=(tokens,unpriced)=>tokens>0&&unpriced===tokens;
 
 /**
  * A dollar amount, mirroring `_fmt.fmt_cost`: half-to-even at two places, and

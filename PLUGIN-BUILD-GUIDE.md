@@ -360,7 +360,7 @@ L3:
   _status_facts -> _areas, _filed_returns, _manifest_io, _manifest_vocab, _output, _priority, _usage_core
   _tree_stamp -> _journal_io, _manifest_vocab, _output
   _usage_coverage -> _manifest_io, _output, _usage_core
-  _usage_economics -> _manifest_io, _output, _usage_core
+  _usage_economics -> _fmt, _manifest_io, _output, _usage_core
   _usage_routing -> _manifest_io, _output, _usage_core
   _usage_spend -> _output, _usage_core
   _warning_groups -> _fmt, _manifest_io, _output

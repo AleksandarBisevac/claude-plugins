@@ -250,6 +250,25 @@ def _cases(check):
           "page that shows none",
           '"2026-08-01":[900000,0,' in M._usage_payload(dict(_uhr, showCost=False))
           and '"showCost":false' in M._usage_payload(dict(_uhr, showCost=False)))
+    # ug4c: the tokens no rate covers travel with the costs that leave them
+    # out, so the page's own data layer cannot read an unpriced model as free.
+    _uunp = dict(_u, totals=dict(_u["totals"], unpricedTokens=345678))
+    check("ug4c (345678 tokens unpriced) window.AUDIT_USAGE carries the count "
+          "of tokens its cost column leaves out, exactly once: %r"
+          % (M._usage_payload(_uunp)[:120],),
+          M._usage_payload(_uunp).count('"unpricedTokens":345678') == 1)
+    check("ug4d ...and a totals block that never counted them ships null, not "
+          "a zero it did not measure",
+          M._usage_payload(_u).count('"unpricedTokens":null') == 1)
+    _uunp_pb = dict(_uunp, pricingBasis=dict(_u["pricingBasis"],
+                                             unpricedTokens=345678,
+                                             unpricedModels=["claude-x-1"]))
+    check("ug4e ...and the section's rate line states it beside the cost, in "
+          "rate_basis_phrase's words: %r"
+          % (_ul.rate_basis_phrase(_uunp_pb["pricingBasis"]),),
+          M.e("345.7K tokens unpriced (claude-x-1)")
+          in M._usage_section(_uunp_pb)
+          and "tokens unpriced" not in uh)
     # ug5: every trend column and tick label says which day it draws — the hook
     # the client-side range dimming filters by.
     check("ug5 trend columns and tick labels carry data-d for the range filter",

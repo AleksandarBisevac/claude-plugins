@@ -150,8 +150,8 @@ _usage_md = _md_view._usage_md
 def _usage_payload(u):
     """The per-day data layer (C1/C3), embedded as one JSON blob.
 
-    `window.AUDIT_USAGE` = {"min", "max", "days": {date: [tokens, costUSD,
-    msgs, [24 hourly token counts]]}} — everything report.js needs to scope
+    `window.AUDIT_USAGE` = {"min", "max", "unpricedTokens", "days": {date:
+    [tokens, costUSD, msgs, [24 hourly token counts]]}} — everything report.js needs to scope
     the time-based views to a date range and to navigate the heatmap by
     calendar period, in a file that has no server to ask. Same embedding
     precedent as `window.AUDIT_MD_B64` in render-report.
@@ -181,8 +181,13 @@ def _usage_payload(u):
                    round(float(cost.get(d) or 0.0), 6) if show_cost else 0,
                    int(msgs.get(d) or 0),
                    [int(n) for n in (hourly.get(d) or [0] * 24)]]
+    # The tokens every cost in `days` leaves out because no rate covers their
+    # model - `totals`' own count, or null when the totals never took one, so
+    # the data layer cannot let an unpriced model's spend read as free.
+    unpriced = (u.get("totals") or {}).get("unpricedTokens")
     blob = json.dumps({"min": min(daily), "max": max(daily),
-                       "showCost": show_cost, "days": days},
+                       "showCost": show_cost, "days": days,
+                       "unpricedTokens": unpriced},
                       sort_keys=True, separators=(",", ":"))
     return "<script>window.AUDIT_USAGE=%s;</script>" % blob
 

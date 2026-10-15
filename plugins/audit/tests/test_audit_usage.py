@@ -711,7 +711,8 @@ def _cases(check):
               "phrase the terminal prints for it: %r"
               % (payload.get("pricingBasis"), ),
               set(payload.get("pricingBasis") or {})
-              == {"basis", "asOf", "source", "pricedWhenWritten"}
+              == {"basis", "asOf", "source", "pricedWhenWritten", "stamped",
+                  "readPriced", "unpriced", "unpricedTokens", "unpricedModels"}
               and payload.get("rateBasis")
               == _ul.rate_basis_phrase(payload.get("pricingBasis")))
         check("ac8 with no done task, the bands' doneTaskCoverage is None "
@@ -1750,6 +1751,14 @@ def _read_time_pricing_cases(check):
               and ("~%s equiv" % M.fmt_cost(92.5)) not in text
               and len(line) == 1
               and "1 row(s) keep the cost stored when written" in line[0])
+        check("ua5 (two rows priced again, none stamped) the --json phrase "
+              "and the dashboard line state that mix, with the counts as "
+              "data: %r %r" % (phrase, payload.get("pricingBasis")),
+              "; 0 row(s) at the rate stamped when written, 2 priced again "
+              "at the rate in effect on their date" in phrase
+              and (payload.get("pricingBasis") or {}).get("readPriced") == 2
+              and (payload.get("pricingBasis") or {}).get("stamped") == 0
+              and len(line) == 1 and "2 priced again" in line[0])
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

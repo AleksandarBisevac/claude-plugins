@@ -61,8 +61,11 @@ _MAX_FACTS = 20000
 
 # The positional columns of a `facts` row, in order. The client reads its rows
 # against this list, so the two travel together in the payload.
+# `unpriced` is the tokens of the fact no rate covers: their `cost` is 0.0
+# because nothing priced them, and the client must be able to tell that apart
+# from a priced zero. Appended last so every index before it stays where it was.
 _FACT_FIELDS = ("ts", "phase", "task", "model", "author", "agent", "attr",
-                "tokens", "cost", "msgs")
+                "tokens", "cost", "msgs", "unpriced")
 
 
 def _usage_shape(**overrides):
@@ -98,8 +101,8 @@ def _usage_shape(**overrides):
         "pricingBasis": None,
         "rateBasis": None,
         "facts": [],
-        # Empty on the no-ledger path even though the populated branch ships the
-        # ten column names: there are no rows to read against them. Same KEY,
+        # Empty on the no-ledger path even though the populated branch ships
+        # `_FACT_FIELDS`: there are no rows to read against them. Same KEY,
         # different value -- which is the distinction that matters to a client
         # reading `payload.fields.length`.
         "fields": [],
@@ -184,11 +187,15 @@ def _usage_facts(rows, token_keys, rolled):
                r.get("attr") or "unattributed")
         slot = facts.get(key)
         if slot is None:
-            slot = facts[key] = [0, 0.0, 0]
-        slot[0] += sum(int(r.get(k) or 0) for k in token_keys)
+            slot = facts[key] = [0, 0.0, 0, 0]
+        tokens = sum(int(r.get(k) or 0) for k in token_keys)
+        slot[0] += tokens
         slot[1] += float(r.get("costUSD") or 0.0)
         slot[2] += int(r.get("msgs") or 0)
-    return ([list(k) + [v[0], round(v[1], 6), v[2]]
+        # `priced_at_read`'s marker, the same one `_usage_core.totals` sums.
+        if r.get("unpriced"):
+            slot[3] += tokens
+    return ([list(k) + [v[0], round(v[1], 6), v[2], v[3]]
              for k, v in sorted(facts.items())], seen)
 
 
@@ -421,13 +428,15 @@ def usage_state(project):
     titles, task_meta, budgets = _usage_manifest_slice(manifest)
 
     # Every cost this tab ships - the facts the browser sums and the derived
-    # blocks - is `priced_at_read`'s copy, priced at the resolved table,
-    # because the phrase beside it names that table; the rows that kept the
-    # figure stored when written are counted into the basis it is worded from.
+    # blocks - is `priced_at_read`'s copy: a stamped row at its own stamp, an
+    # unstamped one at the resolved table on its own date. The read's mix and
+    # the rows that kept the figure stored when written are carried into the
+    # basis the phrase beside them is worded from.
     pricing = _usage_pricing(ul, manifest, config)
     priced = ul.priced_at_read(rows, pricing["table"])
     rows = priced["rows"]
-    pricing = dict(pricing, pricedWhenWritten=priced["pricedWhenWritten"])
+    pricing = dict(pricing, pricedWhenWritten=priced["pricedWhenWritten"],
+                   **priced["mix"])
     rolled = len(rows) > _MAX_FACTS
     facts, seen = _usage_facts(rows, ul.TOKEN_KEYS, rolled)
 
@@ -442,7 +451,8 @@ def usage_state(project):
     payload.update(_usage_derived(ul, manifest, rows, pricing["table"]))
     payload.update({
         "pricingBasis": {k: pricing[k] for k in
-                         ("basis", "asOf", "source", "pricedWhenWritten")},
+                         ("basis", "asOf", "source", "pricedWhenWritten")
+                         + tuple(priced["mix"])},
         "rateBasis": ul.rate_basis_phrase(pricing)})
     payload.update({"fields": list(_FACT_FIELDS), "facts": facts,
                     "phaseTitles": titles, "taskMeta": task_meta,

@@ -280,8 +280,12 @@ function renderUsage(){closeCombo();const c=$('#usage');
   return box;};
  const tiles=[tile('tokens',uTok(tot[0]),
    {key:'tokens',delta:dl&&dl.tokens,series:sp.series.tokens})];
+ // The tokens this cost leaves out because no rate covers their model, said
+ // under the figure rather than folded into it as a silent zero.
+ const unpTok=facts.reduce((a,f)=>a+(f[F.unpriced]||0),0);
  if(USAGE.showCost)tiles.push(tile('equivalent cost',uCost(tot[1]),
-   {key:'cost',delta:dl&&dl.cost,series:sp.series.cost}));
+   {key:'cost',delta:dl&&dl.cost,series:sp.series.cost,
+    sub:uUnpricedPhrase(unpTok)||null}));
  tiles.push(tile('messages',tot[2].toLocaleString(),
    {key:'msgs',delta:dl&&dl.msgs,series:sp.series.msgs}));
  // `tcov` (done-task coverage) is null over an empty ledger (no done task in

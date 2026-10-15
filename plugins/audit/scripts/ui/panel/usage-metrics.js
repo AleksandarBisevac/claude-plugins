@@ -367,6 +367,12 @@ function uBars(facts,dim,title){
  const limit=SHOWN[dim]||TOP;
  const head=g.slice(0,limit),tail=g.slice(limit);
  const peak=Math.max(...head.map(x=>x[1][0]))||1;
+ // The tokens no rate covers, per value: a value whose every token is one of
+ // them has a cost of 0 that is not a price, and says 'unpriced' instead.
+ const unp=new Map();
+ for(const f of facts){const u=f[F.unpriced]||0;
+  if(u){const key=f[F[dim]]||'--';unp.set(key,(unp.get(key)||0)+u);}}
+ const costOf=(k,v)=>uAllUnpriced(v[0],unp.get(k)||0)?'unpriced':uCost(v[1]);
  const out=[el('h2',{},title)];
  for(const[k,v]of head){
   // `||{}` on the container, not only on the lookup: every neighbouring reader
@@ -387,11 +393,11 @@ function uBars(facts,dim,title){
    el('span',{class:'bar'},el('i',{style:'width:'+
      Math.max(v[0]?0.8:0,100*v[0]/peak).toFixed(1)+'%;'+
      'background:'+(dim==='model'?uMCol(k):'var(--bar-neutral)')})),
-   el('span',{class:'uamt'},uTok(v[0])+(USAGE.showCost?' - '+uCost(v[1]):'')));
+   el('span',{class:'uamt'},uTok(v[0])+(USAGE.showCost?' - '+costOf(k,v):'')));
   bindTip(row,()=>[el('div',{class:'utip-h'},nm),
     tipRow(dim==='model'?uMCol(k):null,'tokens',uTok(v[0],2)),
     tipRow(null,'share',uPct(uShare(v[0],grand))),
-    USAGE.showCost?tipRow(null,'cost',uCost(v[1])):null,
+    USAGE.showCost?tipRow(null,'cost',costOf(k,v)):null,
     tipRow(null,'messages',v[2].toLocaleString()),
     el('div',{class:'utip-f'},active?'click to clear this filter':'click to filter')
    ].filter(Boolean));

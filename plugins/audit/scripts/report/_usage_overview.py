@@ -60,7 +60,7 @@ import _ui_theme as _theme  # noqa: E402  (the one place a machine value gets it
 
 import _usage_viz as _viz  # noqa: E402  (the section's number formatting and marks)
 from _usage_economics import (  # noqa: E402  (the one coverage sentence, the one rate basis)
-    coverage_sentence, rate_basis_phrase)
+    all_unpriced, coverage_sentence, rate_basis_phrase)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `_report_usage.py` unchanged, and an alias keeps them reading the same names
@@ -399,7 +399,9 @@ def _ranked(u, key, title, slots=None, models=None, row_attr=None):
         head.append(("other (%d)" % len(tail),
                      {"tokens": sum(v["tokens"] for _, v in tail),
                       "costUSD": sum(v["costUSD"] for _, v in tail),
-                      "msgs": sum(v["msgs"] for _, v in tail)}))
+                      "msgs": sum(v["msgs"] for _, v in tail),
+                      "unpricedTokens": sum(v.get("unpricedTokens") or 0
+                                            for _, v in tail)}))
     # No `or 1` on either denominator. It is not a divide guard — it fabricates a
     # whole of one token and every number measured against it becomes a confident
     # claim about a ledger that recorded nothing. The guard is `_fmt.share_pct`,
@@ -418,8 +420,11 @@ def _ranked(u, key, title, slots=None, models=None, row_attr=None):
         colour = ("var(--viz-%d)" % slots[k]) if (slots and k in slots) \
             else "var(--bar-neutral)"
         amt = _fmt_tokens(v["tokens"])
+        # A group no rate covers says so beside its tokens: its 0.0 is not a
+        # price, and "$0.00" would read as free.
+        cost = "unpriced" if all_unpriced(v) else _fmt_cost(v["costUSD"])
         if u.get("showCost", True):
-            amt += " &middot; %s" % e(_fmt_cost(v["costUSD"]))
+            amt += " &middot; %s" % e(cost)
         attr_bit = (' %s="%s"' % (row_attr, e(k))) \
             if (row_attr and k in data) else ""
         # The bar is a share the eye reads against its neighbours; the hover adds
@@ -439,8 +444,7 @@ def _ranked(u, key, title, slots=None, models=None, row_attr=None):
                _tip(label.strip(), [
                 ("tokens", _fmt_tokens(v["tokens"], 2)),
                 ("share", _hover_share(v["tokens"], grand)),
-                ("cost", _fmt_cost(v["costUSD"])
-                 if u.get("showCost", True) else None),
+                ("cost", cost if u.get("showCost", True) else None),
                 ("messages", "{:,}".format(v["msgs"]))]),
                e(label.strip()),
                # Floored: a row at 0.08% of the peak rounds to 0.0% and paints an

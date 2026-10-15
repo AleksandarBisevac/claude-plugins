@@ -70,8 +70,13 @@ def _cases(check):
     check("usage_state carries phase titles for labelling",
           isinstance(u["phaseTitles"], dict))
     check("usage_state does not roll up a small ledger", u["rolled"] is False)
+    # The column set by NAME, so a column added later is a deliberate edit
+    # here, and every fact has exactly those columns and nothing else.
     check("usage facts carry no prompt content — only dimensions and counts",
-          all(len(f) == 10 for f in u["facts"]))
+          list(u["fields"]) == ["ts", "phase", "task", "model", "author",
+                                "agent", "attr", "tokens", "cost", "msgs",
+                                "unpriced"]
+          and all(len(f) == len(u["fields"]) for f in u["facts"]))
     # --- one manifest read per /api/usage ---------------------------------------
     # The payload answers five questions about ONE document (titles/taskMeta/
     # budgets, routingAdvice, monthlyPlan, phaseAreas, areaOwners) and each used to
@@ -332,7 +337,10 @@ def _cases(check):
           "phrase rate_basis_phrase builds from it, not a retyped one: %r"
           % (_up_full.get("rateBasis"),),
           isinstance(_pb, dict) and set(_pb) == {"basis", "asOf", "source",
-                                              "pricedWhenWritten"}
+                                              "pricedWhenWritten", "stamped",
+                                              "readPriced", "unpriced",
+                                              "unpricedTokens",
+                                              "unpricedModels"}
           and _pb["basis"] in _ul.PRICING_BASES
           and _up_full.get("rateBasis") == _ul.rate_basis_phrase(_pb))
     check("up1b ...and the no-ledger payload carries None for both - a basis "
@@ -464,6 +472,37 @@ def _read_time_pricing_cases(check, tmp, write_json):
           % (u.get("rateBasis"), u.get("pricingBasis")),
           "1 row(s) keep the cost stored when written" in (u.get("rateBasis") or "")
           and (u.get("pricingBasis") or {}).get("pricedWhenWritten") == 1)
+
+    # A row stamped with the rate it was written at, and a row on a model no
+    # table prices, added to the same ledger: one of each kind of read.
+    stamped = dict(priced, ts="2026-08-03T10", costUSD=9.0,
+                   rate={"in": 3.0, "out": 0, "cacheW5m": 0, "cacheW1h": 0,
+                         "cacheR": 0})
+    unpriced = dict(priced, ts="2026-08-04T10", model="claude-nonesuch-1",
+                    costUSD=1.0, **{"in": 0, "out": 2500000})
+    with open(os.path.join(proj, ".claude", "usage", "2026-08.jsonl"), "w",
+              encoding="utf-8") as fh:
+        for row in (priced, kept, stamped, unpriced):
+            fh.write(json.dumps(row) + "\n")
+    u = M.usage_state(proj)
+    fields = list(u.get("fields") or [])
+    col = dict((name, fields.index(name)) for name in ("model", "cost", "unpriced")
+               if name in fields)
+    by_model = dict((f[col["model"]], (f[col["cost"]], f[col["unpriced"]]))
+                    for f in (u.get("facts") or [])
+                    if f[col["model"]] == "claude-nonesuch-1") \
+        if len(col) == 3 else {}
+    check("rt3 (2.5M tokens on a model no table prices) each fact carries its "
+          "unpriced tokens beside its cost, so the tab can say 'unpriced' "
+          "rather than sum a missing cost as free: %r %r" % (fields, by_model),
+          by_model == {"claude-nonesuch-1": (0.0, 2500000)})
+    rb = u.get("rateBasis") or ""
+    check("rt4 ...and the served rate phrase states the mix behind the figure "
+          "and the tokens it leaves out: %r" % (rb,),
+          "; 1 row(s) at the rate stamped when written, 1 priced again at the "
+          "rate in effect on their date" in rb
+          and "2.5M tokens unpriced (claude-nonesuch-1)" in rb
+          and "rows are priced at global routing" in rb)
 
 
 def _selftest():

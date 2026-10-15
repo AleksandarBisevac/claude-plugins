@@ -769,7 +769,32 @@ def _read_price_cases(check):
           ledger == before and bool(rows) and rows[0] is not ledger[0])
     check("rt7 an empty ledger prices to an empty list and counts nothing: %r"
           % (_rt_price([], shipped),),
-          _rt_price([], shipped) == {"rows": [], "pricedWhenWritten": 0})
+          _rt_price([], shipped) == {"rows": [], "pricedWhenWritten": 0,
+                                     "mix": {"stamped": 0, "readPriced": 0,
+                                             "unpriced": 0, "unpricedTokens": 0,
+                                             "unpricedModels": []}})
+
+    # One row of each kind the read can meet, so every count is 1 and a count
+    # read off the wrong kind cannot land on the right number by accident.
+    # The unpriced row carries more tokens than the others so `unpricedTokens`
+    # cannot be confused with a row count.
+    _mx_stamped = dict(_rt_full("claude-opus-5", "T1", 9.0, "in"),
+                       rate={"in": 3.0, "out": 0, "cacheW5m": 0,
+                             "cacheW1h": 0, "cacheR": 0})
+    _mx_unpriced = _rt_full("claude-nonesuch-1", "T4", 1.0, "out")
+    _mx_unpriced["out"] = 2500000
+    mixed = [_mx_stamped, _rt_full("claude-opus-5", "T2", 15.0, "in"),
+             _rt_row("T3", "claude-opus-5", 2.5), _mx_unpriced]
+    mx = _rt_price(mixed, shipped) or {}
+    check("rt10 (one stamped, one priced again, one kept, one on a model with "
+          "no rate) priced_at_read returns the count of each, and the four "
+          "add up to the rows read: %r"
+          % ({k: v for k, v in mx.items() if k != "rows"},),
+          mx.get("pricedWhenWritten") == 1
+          and mx.get("mix") == {"stamped": 1, "readPriced": 1, "unpriced": 1,
+                                "unpricedTokens": 2500000,
+                                "unpricedModels": ["claude-nonesuch-1"]}
+          and len(mx.get("rows") or []) == 4)
 
     # A plan's table naming one model is laid over the shipped table model by
     # model, like a config table: an unnamed model keeps its shipped row rather

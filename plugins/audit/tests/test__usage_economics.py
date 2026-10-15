@@ -194,6 +194,83 @@ def _cases(check):
                "pricedWhenWritten": 0}) == _rb_shipped
           and "row(s)" not in _rb_shipped)
 
+    # A ledger read is a mix: rows stamped with the rate they were written at
+    # are summed from that stamp, and only the unstamped ones are priced again.
+    # The phrase names the table, so it must say how many rows that table
+    # actually priced. Counts chosen unequal so a swapped pair fails.
+    _rb_mix = M.rate_basis_phrase(
+        {"basis": "shipped", "asOf": "2026-10-06", "source": _url,
+         "pricedWhenWritten": 1, "stamped": 2, "readPriced": 3})
+    check("rb8 (stamped 2, priced again 3, kept 1) the phrase states the mix "
+          "of rates behind the figure, ahead of the kept-row count: %r"
+          % (_rb_mix,),
+          _rb_mix.startswith(_rb_shipped)
+          and "; 2 row(s) at the rate stamped when written, 3 priced again at "
+              "the rate in effect on their date" in _rb_mix
+          and _rb_mix.index("stamped when written")
+          < _rb_mix.index("keep the cost stored"))
+    # The second direction: a phrase that always stated a mix would pass rb8.
+    check("rb9 ...and a caller that carried no counts, or counts of zero, gets "
+          "no mix clause at all - zero rows of each is not a mix: %r"
+          % (_rb_shipped,),
+          "stamped when written" not in _rb_shipped
+          and M.rate_basis_phrase(
+              {"basis": "shipped", "asOf": "2026-10-06", "source": _url,
+               "stamped": 0, "readPriced": 0}) == _rb_shipped)
+    # Routing. The ledger keeps the transcript's token counts and its model,
+    # never `usage.inference_geo`, so every rate is the global-routing one.
+    # Measured on 2026-10-15 over this machine's transcripts with
+    #   grep -oh '"inference_geo":"[^"]*"' ~/.claude/projects/*/*.jsonl \
+    #     | sort | uniq -c
+    # which printed 1047 "global" and 34782 "not_available": the field IS in
+    # the transcript, so the phrase says the ledger does not read it rather
+    # than that it is not there.
+    _routing = ("rows are priced at global routing; the ledger does not read "
+                "a request's inference geo")
+    _recorded = [_rb_shipped, _rb_man, _rb_cfg_nd, _rb_blank, _rb_kept, _rb_mix]
+    check("rb10 every recorded basis states the routing its rates assume, "
+          "once: %r" % ([p.count(_routing) for p in _recorded],),
+          all(p.count(_routing) == 1 for p in _recorded))
+    check("rb11 ...and an unrecorded basis states none, because it names no "
+          "rate at all (rb5 holds the exact words): %r"
+          % (M.rate_basis_phrase(None),),
+          _routing not in M.rate_basis_phrase(None))
+    import io as _io
+    import os as _os
+    import _output as _out
+    with _io.open(_os.path.join(_out.PLUGIN_ROOT, "README.md"),
+                  encoding="utf-8") as _fh:
+        _readme = _fh.read()
+    check("rb11b (the README's Token usage section) the README states the same "
+          "routing basis the phrase prints, in its words, exactly once",
+          M.ROUTING_BASIS == _routing and _readme.count(M.ROUTING_BASIS) == 1)
+    # The tokens no rate covers, worded by the one helper every surface uses.
+    _rb_unp = M.rate_basis_phrase(
+        {"basis": "shipped", "asOf": "2026-10-06", "source": _url,
+         "unpricedTokens": 2500000, "unpricedModels": ["claude-nonesuch-1"]})
+    check("rb12 (2.5M tokens on one unpriced model) the phrase says how many "
+          "tokens its cost leaves out, and on which model, in the words "
+          "unpriced_phrase builds: %r" % (_rb_unp,),
+          _rb_unp == _rb_shipped + "; 2.5M tokens unpriced (claude-nonesuch-1)"
+          and M.unpriced_phrase(2500000, ["claude-nonesuch-1"])
+          == "2.5M tokens unpriced (claude-nonesuch-1)"
+          and M.unpriced_phrase(2500000) == "2.5M tokens unpriced")
+    check("rb13 ...and no unpriced tokens is no clause, for zero, None, a bool "
+          "or a negative count - and an unrecorded basis still says it: %r"
+          % ([M.unpriced_phrase(v) for v in (0, None, True, -5)],),
+          all(M.unpriced_phrase(v) == "" for v in (0, None, True, -5))
+          and "tokens unpriced" not in _rb_shipped
+          and M.rate_basis_phrase({"unpricedTokens": 1500})
+          == "rate basis not recorded; 1.5K tokens unpriced")
+    # all_unpriced: the one rule for when a cost cell says the word instead of
+    # a figure. Partly priced keeps its figure; the total says the rest.
+    check("rb14 a group is all-unpriced only when every one of its tokens is, "
+          "and a group of no tokens is not",
+          M.all_unpriced({"tokens": 5, "unpricedTokens": 5}) is True
+          and M.all_unpriced({"tokens": 5, "unpricedTokens": 2}) is False
+          and M.all_unpriced({"tokens": 0, "unpricedTokens": 0}) is False
+          and M.all_unpriced({"tokens": 5}) is False)
+
     # cost_bands: the same sample gate, and a name that does not collide
     cb = M.cost_bands(man, ar)
     check("bands: 5 completed tasks clears the gate on the relative basis",

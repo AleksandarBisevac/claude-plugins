@@ -976,6 +976,20 @@ with or without a `stop_reason`, so the ledger keeps a running per-field tally f
 in its ring and a later entry adds only what it exceeds that tally by, never the whole count
 again. A selftest pins both halves.
 
+**What a cost figure says about its own rates.** Every cost is printed beside one rate phrase
+(`rate_basis_phrase` in `scripts/usage/_usage_economics.py`), and the phrase states what the
+figure rests on rather than only naming a table. It says how many rows were summed at the rate
+stamped on them when they were written and how many were priced again at the rate in effect on
+their own date. It also counts the rows that keep the figure they were stored with. It states
+the routing every rate assumes:
+rows are priced at global routing; the ledger does not read a request's inference geo.
+The transcript does carry that field, but the ledger keeps only token counts and the model, so a
+request pinned to one region is priced as if it were not. Tokens on a model no rate covers are
+**unpriced**. They are never summed as `$0.00`: the phrase says how many tokens a total leaves
+out and on which models, and a row whose every token is unpriced reads `unpriced` in its cost
+cell — in `/audit:usage`'s tables, the report's ranked lists and Markdown tables, and the
+panel's ranked lists.
+
 **Claude Code's built-in git instructions cost cache on every turn that carries them, and a
 plugin cannot turn them off for you** — `plugin.json` carries only `agent` and
 `subagentStatusLine`, nothing that reaches `includeGitInstructions` or

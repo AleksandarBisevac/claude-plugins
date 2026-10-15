@@ -731,16 +731,18 @@ def usage_summary(manifest, manifest_path, project_dir=None, full=True):
     try:
         # Which place prices these rows - the resolver every cost surface
         # asks, over this manifest and the raw config beside the ledger. Every
-        # sum below is of `priced_at_read`'s copies, priced at that table,
-        # because the phrase `_usage_line` prints beside them names it; the
-        # rows that kept the figure stored when written are counted into the
-        # basis the phrase is worded from.
+        # sum below is of `priced_at_read`'s copies - a stamped row at its own
+        # stamp, an unstamped one at that table on its own date - and the
+        # read's mix, with the rows that kept the figure stored when written,
+        # is carried into the basis the phrase `_usage_line` prints is worded
+        # from.
         pricing = ul.project_pricing(
             manifest, manifest_path,
             project_dir or os.environ.get("CLAUDE_PROJECT_DIR"))
         priced = ul.priced_at_read(rows, pricing["table"])
         rows = priced["rows"]
-        pricing = dict(pricing, pricedWhenWritten=priced["pricedWhenWritten"])
+        pricing = dict(pricing, pricedWhenWritten=priced["pricedWhenWritten"],
+                       **priced["mix"])
         total = ul.totals(rows)
         # WHICH OPTIONAL SWEEPS ARE WORTH THEIR PASS, asked of the MANIFEST so the
         # answer is a function of the plan and the flag alone: the same plan
@@ -787,7 +789,8 @@ def usage_summary(manifest, manifest_path, project_dir=None, full=True):
             "pricingAsOf": (as_of_raw.strip() or None)
             if isinstance(as_of_raw, str) else None,
             "pricingBasis": {k: pricing[k] for k in
-                             ("basis", "asOf", "source", "pricedWhenWritten")},
+                             ("basis", "asOf", "source", "pricedWhenWritten")
+                             + tuple(priced["mix"])},
             "rateBasis": ul.rate_basis_phrase(pricing),
             "showCost": bool(meta_usage.get("showCost", True))
             if isinstance(meta_usage, dict) else True,
