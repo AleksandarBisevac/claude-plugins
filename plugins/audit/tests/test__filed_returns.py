@@ -820,8 +820,28 @@ def _case_title_cases(check):
           and spaced == [declared] and paraphrase == [declared])
 
 
+def _clause_marker_cases(check):
+    import _loader                                 # noqa: E402  (load_script)
+    lookup = _loader.load_script("audit-lookup.py")
+    brief = "\n".join(lookup.CLAUSE_QUOTING_LINES)
+    marker = M._CONTRADICTED_CLAUSE_MARKER
+    # Written exactly as the brief directs: the issue STARTS with the marker.
+    directed = {"severity": "low", "issue": marker + " (3): the diff narrows it"}
+    # The deny twin: the same complaint in other words carries no marker, so the
+    # floor leaves it low - it is what fails if the match is widened to guess.
+    reworded = {"severity": "low", "issue": "the diff diverges from the clause"}
+    floored = M.floor_contradicted_clause([directed, reworded])
+    check("the reviewer brief's clause-quoting lines state the contradicted-clause "
+          "marker built from the constant the floor matches, so a finding written "
+          "as the brief directs is floored to med (%r)"
+          % ((brief.count(marker), [f["severity"] for f in floored]),),
+          brief.count(marker) == 1 and 'start the issue with "%s"' % marker in brief
+          and [f["severity"] for f in floored] == ["med", "low"])
+
+
 def _selftest():
     def body(check):
+        _harness.stage(check, "cm-block", _clause_marker_cases)
         _harness.stage(check, "ct-block", _case_title_cases)
         _harness.stage(check, "fr-block", _cases)
         _harness.stage(check, "ss-block", _same_second_cases)

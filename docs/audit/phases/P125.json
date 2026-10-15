@@ -8227,7 +8227,7 @@
     {
       "id": "P125.110-0h5",
       "title": "A wave member's records are carried whole: the index and every phase it names, at one project commit",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F681, a regression from P125.35 (the records-of step). The drive carried the shared audit-plan.json fileIndex into a member's tree without the sibling phase file it references, so adding P128 tasks mid-wave made validate-manifest red in every member tree (14 findings on P125.81), each tree inconsistent in a different way. Carry all records at one project commit, or have the member's validate step read the project's records.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -8260,19 +8260,35 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "326481c7f37e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "integrate-task.py record_paths now names every shard the index names - read from the working copy's index and, through a new head_index parameter, from the index at the commit a refresh copies from (new helpers _shard_files and _index_at); refresh_records reads HEAD first and passes its index. One definition of the record set therefore widens both the carry into a member tree and the integration's undeclared-change exemption (and the retire check, which reads the refresh's records). drive-phase.py unchanged. Tests: test_drive_phase.py gains the wq4-block stage (sharded fixture with a sibling phase; a task added to it mid-wave and committed; asserts the member tree validates, P1.1's gate row is passed and it closes, and no undeclared-change line); test_integrate_task.py gains the itk stage (HEAD-only sibling shard included; on-disk sibling shards included once each; allow direction: a single-file plan names no shard). Red before the fix, in the shared tree before any fix byte existed: wq4 0/1 (validate FINDING fileIndex['src/f3.txt']: task 'P2.2-xic' does not exist; rows ['failed']; decide gate-red P1.1), test_integrate_task 28/30 (TypeError on head_index, and the on-disk set lacking phases/P2.json). After: wq4 1/1, test_integrate_task 30/30, test_drive_phase full 303/303 exit 0, sweep exit 0 (335/335 files, 16394 cases), cp1252 sweep exit 0 (both halves ran, 335/335 files), ruff and vermin on touched files exit 0.",
+        "descriptive": "A task added to a sibling phase mid-wave no longer turns every wave member's validate gate red, and the sibling shard the carry brings is not reported as the member's undeclared change."
       },
       "startedAt": "2026-10-15T12:59:56Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T14:07:34Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py: a task added to a sibling phase while a wave member is in flight leaves that member's records valid and its gate green (the sibling's add commits the index and its own shard; the member's tree then validates, its record-reading gate records a green row, and the drive reports no undeclared change)",
+        "plugins/audit/tests/test_integrate_task.py: a task added to a sibling phase while a wave member is in flight leaves that member's records valid and its gate green (unit: record_paths includes a sibling shard named only by the HEAD index, beside the index and this phase's own shard)",
+        "plugins/audit/tests/test_integrate_task.py: a task added to a sibling phase while a wave member is in flight leaves that member's records valid and its gate green (unit: record_paths includes every sibling shard the working copy's index names, each once)",
+        "plugins/audit/tests/test_integrate_task.py: a single-file plan's record set names no shard at all - the set is the index, the journal and the evidence"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-15T14:07:31Z.8795f4",
         "status": "passed",
         "at": "2026-10-15T14:07:31Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "326481c7f37e",
+        "at": "2026-10-15T14:07:34Z"
+      },
+      "redFirst": {
+        "at": "2026-10-15T13:31:10Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage wq4-block` in a throwaway tree at HEAD exited 1 with 1 of 1 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `wq4-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - wq4 (house FAIL): SELFTEST FAILED: 0/1 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {

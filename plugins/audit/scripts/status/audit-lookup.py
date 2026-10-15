@@ -998,9 +998,11 @@ CLAUSE_QUOTING_LINES = [
     "and separately, does the executor's claim (labelled `## Claim under "
     "review` below) describe the diff in front of you - `intent.note` "
     "quotes both.",
-    "A finding whose `issue` names a contradicted task clause is floored at "
-    "`med` before it can file as `low` (the drive's `floor_contradicted_"
-    "clause`) - do not file it low yourself."]
+    "A finding whose `issue` contradicts a task clause is floored at `med` "
+    "before it can file as `low`, but only by its spelling: start the issue "
+    'with "%s" (the drive\'s `floor_contradicted_clause` matches that text '
+    "and nothing else) - do not file it low yourself."
+    % (_fr._CONTRADICTED_CLAUSE_MARKER,)]
 
 
 def _tests_add_review_lines(task, filed_titles):
