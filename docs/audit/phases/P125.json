@@ -6777,7 +6777,12 @@
       "fixes": [
         "P125-R37"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T13:45:17Z.29524d",
+        "status": "passed",
+        "at": "2026-10-15T13:45:17Z"
+      }
     },
     {
       "id": "P125.87-0h5",
@@ -6830,7 +6835,12 @@
       "fixes": [
         "P125-R42"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T13:55:32Z.9b22a0",
+        "status": "passed",
+        "at": "2026-10-15T13:55:32Z"
+      }
     },
     {
       "id": "P125.88-0h5",
@@ -8258,7 +8268,12 @@
       "startedAt": "2026-10-15T12:59:56Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T14:07:31Z.8795f4",
+        "status": "passed",
+        "at": "2026-10-15T14:07:31Z"
+      }
     },
     {
       "id": "P125.111-0h5",

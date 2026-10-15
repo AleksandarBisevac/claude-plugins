@@ -4233,6 +4233,99 @@ def _wave_record_mutant_cases(check):
           run["tree2"] and run["before"] != run["after"])
 
 
+# A member's gate entry that validates the plan its own tree holds, with the
+# plugin's validator: the validator's path is written into this file rather than
+# into the gate text, which the recorded row scrubs of machine paths.
+_VALIDATE_TREE = (
+    "import subprocess, sys\n"
+    "done = subprocess.run([sys.executable, %r, 'docs/audit/audit-plan.json'],\n"
+    "                      capture_output=True, text=True, encoding='utf-8',\n"
+    "                      errors='replace')\n"
+    "sys.stdout.write(done.stdout[-600:] + done.stderr[-600:])\n"
+    "sys.exit(done.returncode)\n")
+
+
+def _sibling_records_repo(prefix):
+    """The two-task wave fixture in the sharded layout with a SIBLING phase
+    beside the wave's: P1.1's gate validates the plan in its own tree, and P1.2's
+    gate is red, so P1.2's tree is still there to read once the drive gated it."""
+    root, mpath = _wave_repo(prefix, 2, red=("P1.2",))
+    with open(os.path.join(root, "check_valid.py"), "w", encoding="utf-8") as fh:
+        fh.write(_VALIDATE_TREE % (_loader.script_path("validate-manifest.py"),))
+    plan = _mio.load_manifest(mpath)
+    first = plan["phases"][0]["tasks"][0]
+    first["tests"]["gate"].append('"%s" check_valid.py' % (sys.executable,))
+    sibling = json.loads(json.dumps(plan["phases"][0]["tasks"][1]))
+    sibling.update({"id": "P2.1", "title": "the sibling's task",
+                    "files": ["src/f3.txt"], "description": "change src/f3.txt"})
+    sibling["tests"]["gate"] = ["true"]
+    plan["phases"].append({"id": "P2", "title": "two", "status": "pending",
+                           "desiredOutcome": "a sibling phase",
+                           "review": {"model": "sonnet"}, "testGate": ["true"],
+                           "tasks": [sibling]})
+    plan["fileIndex"]["src/f3.txt"] = ["P2.1"]
+    os.remove(mpath)
+    _mio.save_sharded(mpath, plan)
+    for argv in (["add", "-A"], ["commit", "-qm", "sharded, with a sibling phase"]):
+        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
+                       timeout=60)
+    return root, mpath
+
+
+def _sibling_add(root, mpath):
+    """A task added to the SIBLING phase on the project, through the verb, and
+    committed - the index and the sibling's shard in one commit."""
+    with _Env(root):
+        code, out = _verb(root, "audit-task.py", [
+            "add", "a task the sibling phase gained", mpath, "--project-dir", root,
+            "--phase", "P2", "--files", "src/f3.txt", "--description",
+            "a sibling's task, added mid-wave", "--gate", "true", "--json"])
+    try:
+        added = json.loads(out).get("id")
+    except ValueError:
+        added = "(add exit %d: %s)" % (code, out[:200])
+    for argv in (["add", "--", "docs/audit"],
+                 ["commit", "-qm", "record-only: a sibling phase's task add"]):
+        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
+                       timeout=60)
+    committed = [p for p in _git_out(root, "show", "--name-only", "--format=",
+                                     "HEAD").splitlines() if p.strip()]
+    return added, committed
+
+
+def _wave_sibling_record_cases(check):
+    M, why = _load("drive_phase_wave_sibling_records")
+    if M is None:
+        check("wq4 the driver loads", False, why)
+        return
+    root, mpath = _sibling_records_repo("wavesib")
+    _code, first = _next_wave(M, root, mpath)
+    sent = _dispatched(first)
+    added, committed = _sibling_add(root, mpath)
+    for t in sent:
+        _file_wave_executor(root, mpath, t)
+    tree2 = _tree_of(root, "P1.2")
+    _code, second = _next_wave(M, root, mpath)
+    valid = _verb(tree2, "validate-manifest.py", ["docs/audit/audit-plan.json"]) \
+        if tree2 and os.path.isdir(tree2) else (None, "no tree for P1.2")
+    rows = [r.get("status") for r in _rows_of(root, mpath, "P1.1")]
+    status = (tasks_of(mpath).get("P1.1") or {}).get("status")
+    undeclared = [ln for ln in second.splitlines() if "undeclared-change" in ln]
+    check("wq4 a task added to a sibling phase while a wave member is in flight "
+          "leaves that member's records valid and its gate green (the sibling's "
+          "add commits the index and its own shard; the member's tree then "
+          "validates, its record-reading gate records a green row, and the drive "
+          "reports no undeclared change): sent=%r added=%r committed=%r "
+          "validate=%r rows=%r status=%r undeclared=%r second=%r"
+          % (sent, added, committed, (valid[0], valid[1][-300:]), rows, status,
+             undeclared, second[-300:]),
+          sent == ["P1.1", "P1.2"] and str(added).startswith("P2.")
+          and "docs/audit/phases/P2.json" in committed
+          and "docs/audit/audit-plan.json" in committed
+          and valid[0] == 0 and rows == ["passed"] and status == "done"
+          and not undeclared)
+
+
 def _wave_crash_cases(check):
     M, why = _load("drive_phase_wave_crash")
     if M is None:
@@ -6066,6 +6159,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("wv-block", "_wave_cases"), ("wr-block", "_wave_red_sibling_cases"),
           ("wq-block", "_wave_record_cases"),
           ("wqm-block", "_wave_record_mutant_cases"),
+          ("wq4-block", "_wave_sibling_record_cases"),
           ("wc-block", "_wave_crash_cases"), ("w1-block", "_width_one_cases"),
           ("wz-block", "_wave_width_cases"),
           ("fw-block", "_follower_cases"), ("fh-block", "_follower_wave_cases"),

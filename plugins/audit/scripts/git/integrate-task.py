@@ -166,15 +166,52 @@ def _save_state(path, tasks):
                                             indent=2, sort_keys=True) + "\n")
 
 
-def record_paths(manifest, phase, manifest_path, project, git_root):
+def _shard_files(raw_index, index_abs):
+    """Absolute paths of every shard a raw index's phase stubs name, in stub
+    order; none for the single-file layout or an index that is not a dict."""
+    stubs = raw_index.get("phases") if isinstance(raw_index, dict) else None
+    base = os.path.dirname(index_abs)
+    return [os.path.abspath(os.path.join(base, str(stub["shard"])))
+            for stub in stubs or [] if isinstance(stub, dict) and stub.get("shard")]
+
+
+def _index_at(git_root, rev, manifest_path):
+    """The raw index as commit `rev` holds it, or None when that commit has no
+    such file or it does not parse - the working copy's index still names its
+    shards then. GitUnavailable when git cannot run at all."""
+    rel = os.path.relpath(os.path.abspath(manifest_path), git_root).replace(os.sep, "/")
+    if rel.startswith(".."):
+        return None
+    code, out, _err = _git(git_root, ["show", "%s:%s" % (rev, rel)])
+    if code != 0:
+        return None
+    try:
+        return json.loads(out.decode("utf-8"))
+    except ValueError:
+        return None
+
+
+def record_paths(manifest, phase, manifest_path, project, git_root, head_index=None):
     """Git-root-relative paths (files or directories) that are RECORD, not work: the
-    manifest pair, the journal directory and the evidence directory - the same
-    three `commit-task-work` stages besides the declared files."""
+    manifest pair, every other shard the index names, the journal directory and
+    the evidence directory. `head_index` is a second raw index - the one at the
+    commit a refresh copies from - whose shards are record too.
+
+    Every shard, not only this phase's: the index's `fileIndex` names tasks of
+    every phase, so an index carried without the sibling shards it references is
+    a plan that fails validation in the tree it lands in, and a sibling shard a
+    carry put there must not then read as the task's own change."""
     config = _journal_io.load_config(project)
     index_abs, phase_abs = _invariants.manifest_files(manifest_path, phase)
+    try:
+        raw = _mio.read_json(index_abs)
+    except (OSError, ValueError):
+        raw = None
+    shards = _shard_files(raw, index_abs) + _shard_files(head_index, index_abs)
     found = []
-    for absolute in (index_abs, phase_abs, _journal_io.journal_dir(project, config),
-                     _evidence_io.evidence_dir(project, config)):
+    for absolute in [index_abs, phase_abs] + shards + [
+            _journal_io.journal_dir(project, config),
+            _evidence_io.evidence_dir(project, config)]:
         rel = os.path.relpath(absolute, git_root).replace(os.sep, "/")
         if not rel.startswith("..") and rel not in found:
             found.append(rel)
@@ -559,9 +596,10 @@ def refresh_records(manifest, phase, task, manifest_path, project, git_root):
         if marker is None:
             return E_REFUSED, dict(answer, error=tree, sentence=(
                 "records not refreshed: %s" % (tree,)))
-        records = record_paths(manifest, phase, manifest_path, project, git_root)
         head = _git_ok(git_root, ["rev-parse", "HEAD"]).decode(
             "utf-8", "replace").strip()
+        records = record_paths(manifest, phase, manifest_path, project, git_root,
+                               head_index=_index_at(git_root, head, manifest_path))
         answer = dict(answer, tree=tree, head=head, records=records)
         if not records:
             return E_OK, dict(answer, sentence="task %s: no record path lies "

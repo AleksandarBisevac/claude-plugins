@@ -391,7 +391,53 @@ def _cli_cases(check):
           code == 1 and (ans.get("refused") or {}).get("kind") == "no-task-tree")
 
 
+def _record_set(proj, index, head_index, phase=None):
+    """`record_paths` over an index written into `proj`, or the error it raised -
+    a record set that cannot take a HEAD index is a failing case, not a crash."""
+    index_path = os.path.join(proj, "docs", "audit", "audit-plan.json")
+    _write(proj, "docs/audit/audit-plan.json", json.dumps(index))
+    phase = phase if phase is not None else {"id": "P1", "shard": "phases/P1.json"}
+    extra = {"head_index": head_index} if head_index is not None else {}
+    try:
+        return M.record_paths(index, phase, index_path, proj, proj, **extra)
+    except Exception as exc:                                   # noqa: BLE001
+        return "%s: %s" % (type(exc).__name__, exc)
+
+
+def _record_set_cases(check):
+    proj = os.path.join(os.path.realpath(
+        _harness.fixture_root("integrate-records-")), "proj")
+    os.makedirs(proj)
+    stubs = [{"id": "P1", "shard": "phases/P1.json"}]
+    # The working copy's index names P1 alone; the commit a refresh copies from
+    # names P2 as well, so only a set that reads the HEAD index carries P2.
+    head = {"phases": stubs + [{"id": "P2", "shard": "phases/P2.json"}]}
+    got = _record_set(proj, {"phases": stubs}, head)
+    check("a task added to a sibling phase while a wave member is in flight "
+          "leaves that member's records valid and its gate green (unit: "
+          "record_paths includes a sibling shard named only by the HEAD index, "
+          "beside the index and this phase's own shard): %r" % (got,),
+          isinstance(got, list) and "docs/audit/phases/P2.json" in got
+          and "docs/audit/phases/P1.json" in got
+          and "docs/audit/audit-plan.json" in got)
+    got = _record_set(proj, head, None)
+    check("a task added to a sibling phase while a wave member is in flight "
+          "leaves that member's records valid and its gate green (unit: "
+          "record_paths includes every sibling shard the working copy's index "
+          "names, each once): %r" % (got,),
+          isinstance(got, list) and got.count("docs/audit/phases/P2.json") == 1
+          and got.count("docs/audit/phases/P1.json") == 1)
+    # The other direction: a set that always widened would sweep in files no
+    # index names. A single-file plan names no shard, so it carries none.
+    got = _record_set(proj, {"phases": [{"id": "P1"}]}, None, phase={"id": "P1"})
+    check("a single-file plan's record set names no shard at all - the set is "
+          "the index, the journal and the evidence: %r" % (got,),
+          isinstance(got, list) and not [p for p in got if "/phases/" in p]
+          and "docs/audit/audit-plan.json" in got)
+
+
 def _cases(check):
+    _harness.stage(check, "itk", _record_set_cases)
     _harness.stage(check, "itc", _conflict_cases)
     _harness.stage(check, "ito", _clean_overlap_cases)
     _harness.stage(check, "itd", _dirty_cases)
