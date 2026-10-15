@@ -4079,7 +4079,8 @@
       "P125.98-0h5",
       "P128.18-0h5",
       "P128.23-0h5",
-      "P128.24-0h5"
+      "P128.24-0h5",
+      "P125.112-0h5"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
