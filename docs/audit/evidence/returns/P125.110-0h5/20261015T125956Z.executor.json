@@ -1,0 +1,26 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_drive_phase.py --selftest --stage wq4-block": "pass",
+    "python3 plugins/audit/tests/test_drive_phase.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_integrate_task.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --encoding cp1252": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T13:31:10Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage wq4-block` in a throwaway tree at HEAD exited 1 with 1 of 1 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `wq4-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - wq4 (house FAIL): SELFTEST FAILED: 0/1 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "integrate-task.py record_paths now names every shard the index names - read from the working copy's index and, through a new head_index parameter, from the index at the commit a refresh copies from (new helpers _shard_files and _index_at); refresh_records reads HEAD first and passes its index. One definition of the record set therefore widens both the carry into a member tree and the integration's undeclared-change exemption (and the retire check, which reads the refresh's records). drive-phase.py unchanged. Tests: test_drive_phase.py gains the wq4-block stage (sharded fixture with a sibling phase; a task added to it mid-wave and committed; asserts the member tree validates, P1.1's gate row is passed and it closes, and no undeclared-change line); test_integrate_task.py gains the itk stage (HEAD-only sibling shard included; on-disk sibling shards included once each; allow direction: a single-file plan names no shard). Red before the fix, in the shared tree before any fix byte existed: wq4 0/1 (validate FINDING fileIndex['src/f3.txt']: task 'P2.2-xic' does not exist; rows ['failed']; decide gate-red P1.1), test_integrate_task 28/30 (TypeError on head_index, and the on-disk set lacking phases/P2.json). After: wq4 1/1, test_integrate_task 30/30, test_drive_phase full 303/303 exit 0, sweep exit 0 (335/335 files, 16394 cases), cp1252 sweep exit 0 (both halves ran, 335/335 files), ruff and vermin on touched files exit 0.",
+    "descriptive": "A task added to a sibling phase mid-wave no longer turns every wave member's validate gate red, and the sibling shard the carry brings is not reported as the member's undeclared change."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_drive_phase.py: a task added to a sibling phase while a wave member is in flight leaves that member's records valid and its gate green (the sibling's add commits the index and its own shard; the member's tree then validates, its record-reading gate records a green row, and the drive reports no undeclared change)",
+    "plugins/audit/tests/test_integrate_task.py: a task added to a sibling phase while a wave member is in flight leaves that member's records valid and its gate green (unit: record_paths includes a sibling shard named only by the HEAD index, beside the index and this phase's own shard)",
+    "plugins/audit/tests/test_integrate_task.py: a task added to a sibling phase while a wave member is in flight leaves that member's records valid and its gate green (unit: record_paths includes every sibling shard the working copy's index names, each once)",
+    "plugins/audit/tests/test_integrate_task.py: a single-file plan's record set names no shard at all - the set is the index, the journal and the evidence"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:056ef70de7fc55aa111f17f97fbd8f7b207eaeca55378e81fd20d81268753a8a\",\"dirtyDigest\":\"sha256:63390bb046969df0ab2ef7cc6ee2e452188b1a081e5c3d3957f292ac1485545f\",\"dirtyPaths\":{\"plugins/audit/scripts/git/integrate-task.py\":\"37f84e7a8a324caa\",\"plugins/audit/tests/test_drive_phase.py\":\"6a6b8fa55ec03dc8\",\"plugins/audit/tests/test_integrate_task.py\":\"61ca093c24ff03bb\"},\"head\":\"6cb3e5fd\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/git/integrate-task.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/tests/test_drive_phase.py\",\"plugins/audit/tests/test_integrate_task.py\"],\"scopeDigest\":\"sha256:2e90d71324c97f5e15465a44b88d728fbfe9fe9a9ec0697642f3ff4f42a1dc8f\",\"v\":2}"
+}
