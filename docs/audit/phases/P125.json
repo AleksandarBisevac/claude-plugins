@@ -8463,6 +8463,50 @@
         "phase": "P128",
         "at": "2026-10-15T13:32:45Z"
       }
+    },
+    {
+      "id": "P125.114-0h5",
+      "title": "The drive and the attempt check read the shared record-path definition too",
+      "status": "pending",
+      "description": "Found at P125.88's return: drive-phase.py (~1803) keeps its own _is_record, and commit-task-work.attempt_refusal's undeclared-change check skips neither sibling shards nor HEAD-only records. Both move onto _invariants.record_rels / is_record_path so the one definition is the only one; extend rp-block's 'no caller keeps a predicate' case to cover them.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/tests/test__invariants.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__invariants.py: no caller keeps a record predicate of its own - drive-phase and commit-task-work's attempt check answer from the shared definition, sibling shards included"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",

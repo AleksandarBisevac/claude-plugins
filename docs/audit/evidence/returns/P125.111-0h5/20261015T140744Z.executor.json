@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "own: test_drive_phase.py --selftest --stage al-block": "pass",
+    "own: test_integrate_task.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --encoding cp1252": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task (expectRedFirst false): every declared file is a test, so a red at HEAD cannot be made; the helper run with the command after -- passed at HEAD with the task's test files (3/3), as the task states. The previous executor watched by hand: --stage al-block exited 1 with 2/3, and the new case failed with only noise lines in the clipped stderr.",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Applied the p109 diff by hand with Edit; all hunks' context matched the newer base, no porting needed. test_drive_phase.py: added _tail_bytes, _integrate_ascii_verdict (stderr clipped from the tail), _integrate_ascii_case delegates to it, new _integrate_tail_case (+ _TAIL_CHILD, _TAIL_NEEDLE) called from _ascii_locale_cases in stage al-block. test_integrate_task.py: _run decodes git stderr. Runs: al-block selftest 3/3 pass; test_integrate_task 30/30 pass; full sweep exit 0 (335/335 files, 16400 cases); sweep --encoding cp1252 exit 0 (both halves ran, 335/335). Cause of the original intermittent git add failure: NOT established. Candidates read from the code: the 30 s _run timeout over the freshly copied 302-file tree that _follower_cases seeds (_seed_map_owner); antivirus on just-written files. Ruled out: index.lock, autocrlf/safecrlf, non-ASCII names (per the task brief, not re-derived).",
+    "descriptive": "The locale-pinned integrate run now reports the tail of the child's stderr and git errors as text, so the next intermittent git add failure prints its cause."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_drive_phase.py: a child suite that fails under the pinned locale is reported by the tail of its stderr, so the raised error's own line is in the message"
+  ],
+  "claims": "claims: cause not established; gate results evidenced by exit codes sweep=0, enc=0.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:9cb826ee8e3b72a7e2d1846a943860cc7dbfb905c2f4551fe1416db6c4bea6d7\",\"dirtyDigest\":\"sha256:946992797032a67fd8a2f81de242276cb9860c625629ab1eebee0a8891772852\",\"dirtyPaths\":{\"plugins/audit/tests/test_drive_phase.py\":\"f339b7b96c7c6bb0\",\"plugins/audit/tests/test_integrate_task.py\":\"8596f21caa03675e\"},\"head\":\"dbbbb2fd\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/test_drive_phase.py\",\"plugins/audit/tests/test_integrate_task.py\"],\"scopeDigest\":\"sha256:cb06fbc057a4da9f480e10f4d62ba4722ac6f73e904bc771200348fae66ae568\",\"v\":2}"
+}
