@@ -379,16 +379,20 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/stamp-verification.py:672-690",
         "issue": "Task names the 'is not exported' error; only the node ESM wording 'does not provide an export named' is read, the row is limited to runners vitest/jest/None (a playwright run is excluded), and se1/se2 exercise only that wording. A rollup/vite `\"x\" is not exported by \"y\"` error is still not an --introduces proof. Still true at HEAD (stamp-verification.py:687).",
-        "resolution": "Add the 'is not exported by' spelling (named group for the export) to the row and a case for it, or state the wording the testbed actually printed.",
-        "fixTask": "P125.80-0h5"
+        "resolution": "fixed in P125.80-0h5 (dbd9008f4458): Add the 'is not exported by' spelling (named group for the export) to the row and a case for it, or state the wording the testbed actually printed.",
+        "fixTask": "P125.80-0h5",
+        "commit": "dbd9008f4458",
+        "status": "fixed"
       },
       {
         "id": "P125-R45",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/stamp-verification.py:2358-2402",
         "issue": "playwright_line_cases marks every entry `assertion: True` ('playwright: failed'), so a line-reporter run failing on a timeout, a refused connection or a crash proves red as 'a task's own case failing an assertion'. The docstring admits it; the weakening is in the proof the red word rests on. Still true at HEAD (_runner_output.py:698).",
-        "resolution": "Mark line-reporter entries `assertion: None/unknown` and let red say it proved a failure, not an assertion, or require the JSON reporter for `proved`.",
-        "fixTask": "P125.80-0h5"
+        "resolution": "fixed in P125.80-0h5 (dbd9008f4458): Mark line-reporter entries `assertion: None/unknown` and let red say it proved a failure, not an assertion, or require the JSON reporter for `proved`.",
+        "fixTask": "P125.80-0h5",
+        "commit": "dbd9008f4458",
+        "status": "fixed"
       },
       {
         "id": "P125-R46",
@@ -990,7 +994,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 25 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 27 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6240,7 +6244,7 @@
     {
       "id": "P125.80-0h5",
       "title": "the red-first helper reads every missing-export spelling and a line-reporter fai",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase-review findings fixed together (one theme, shared files).\n\nP125-R44: Task names the 'is not exported' error; only the node ESM wording 'does not provide an export named' is read, the row is limited to runners vitest/jest/None (a playwright run is excluded), and se1/se2 exercise only that wording. A rollup/vite `\"x\" is not exported by \"y\"` error is still not an --introduces proof. Still true at HEAD (stamp-verification.py:687).\n\nResolution asked: Add the 'is not exported by' spelling (named group for the export) to the row and a case for it, or state the wording the testbed actually printed.\n\nP125-R45: playwright_line_cases marks every entry `assertion: True` ('playwright: failed'), so a line-reporter run failing on a timeout, a refused connection or a crash proves red as 'a task's own case failing an assertion'. The docstring admits it; the weakening is in the proof the red word rests on. Still true at HEAD (_runner_output.py:698).\n\nResolution asked: Mark line-reporter entries `assertion: None/unknown` and let red say it proved a failure, not an assertion, or require the JSON reporter for `proved`.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -6274,14 +6278,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "dbd9008f4458",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R44: stamp-verification.py MISSING_SPELLINGS gains row 'export (rollup)' reading '\"x\" is not exported by \"y\"' with named groups name and spec; cases se3/se4 in test_stamp_verification.py (se3 titled 'a rollup 'is not exported by' message is read as a missing export (...)'). R45: _runner_output.py playwright_line_cases marks entries assertion None (was True), playwright_line_tally counts only entries marked as assertions, so a line-reporter run classifies collection-error not red; stamp-verification.py V_COLLECT basis now says playwright's line reporter cannot tell an assertion and to run --reporter=json. test__runner_output.py: ru15 now expects assertions 0, new case ru16 'a Playwright line-reporter failure is not marked an assertion (...)'. test_stamp_verification.py: sp2 flipped to a deny twin (line reporter stays could-not-prove naming --reporter=json), sp3 now mutates _PW_ASSERTION on JSON text since the line reader no longer reaches red. Sweep exit 0 (335/335 files ok), cp1252 sweep exit 0, ruff clean, vermin clean.",
+        "descriptive": "The red-first helper reads rollup/vite missing-export errors, and a Playwright line-reporter failure no longer proves an assertion; it asks for the JSON reporter."
       },
       "startedAt": "2026-10-15T08:09:31Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T09:47:17Z",
+      "verifiedBy": [
+        "se3 a rollup 'is not exported by' message is read as a missing export",
+        "se4 THE DENY TWIN for se3",
+        "ru16 a Playwright line-reporter failure is not marked an assertion"
+      ],
       "notes": [
         {
           "at": "2026-10-15T03:41:27Z",
@@ -6297,25 +6305,40 @@
         "runId": "2026-10-15T09:47:15Z.4d2202",
         "status": "passed",
         "at": "2026-10-15T09:47:15Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "dbd9008f4458",
+        "at": "2026-10-15T09:47:17Z",
+        "basis": "a fix task for P125-R44, P125-R45: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-15T09:01:51Z",
+        "basis": "`python3 plugins/audit/tests/test__runner_output.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 16 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ru15 (house FAIL), ru16 (house FAIL): SELFTEST FAILED: 14/16 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.81-0h5",
       "title": "tables never widen the page at any width: a contained overflow fallback, and the",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase-review findings fixed together (one theme, shared files).\n\nP125-R48: P125.26 contradicts the task's clause 'Decide with the owner, implement' (a), (b) or (c), and its title 'by construction ... at any width'. The fix is a wrap override on a fixed list of eight atom classes scoped to table.phases/table.data. It is the same kind of fix as P126.1, which the task names as margin. No min-width, no <wbr> and no overflow container was added, and the comment says titles are deliberately excluded. Any column kind outside the list, or any table not .phases or .data, can still widen the document. The task record shows no owner decision.\n\nResolution asked: Implement one of the three named options (for example a contained `.tablewrap{overflow-x:auto}` fallback, or the JS-measured switch), or record the owner's decision to accept this narrower scope. Then re-derive the title and description from what shipped.\n\nP125-R49: Leg 10c does not plant 'a token in EVERY column kind of every table'. It plants eight atom kinds, one first-match element each via querySelector, in table.phases/table.data only, and the monospace fallback is applied only to those two tables. The kinds the page lacks are logged as an 'ok' note, and the case passes on `planted.made.length > 0`. A fixture with one atom kind present passes it.\n\nResolution asked: Enumerate the columns of every table class (th/td kinds) and plant a token in each; fail when a kind or table that exists on the page is skipped or cannot be planted.",
       "files": [
         "plugins/audit/scripts/ui/report-css/tables.css",
         "tools/check-report-interactive.mjs",
         "plugins/audit/scripts/ui/report-css/tables.css",
-        "tools/check-report-interactive.mjs"
+        "tools/check-report-interactive.mjs",
+        "plugins/audit/tests/test_render_report.py"
       ],
       "tests": {
         "mode": "tdd",
         "add": [
           "plugins/audit/scripts/ui/report-css/tables.css: .dtoggle interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
           "plugins/audit/scripts/ui/report-css/tables.css: .shacopy interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
-          "plugins/audit/scripts/ui/report-css/tables.css: tr interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest"
+          "plugins/audit/scripts/ui/report-css/tables.css: tr interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "tools/check-report-interactive.mjs: every column kind of every table on the page is planted with an unbreakable token and none widens the document, and a kind present on the page that cannot be planted fails the leg",
+          "plugins/audit/tests/test_render_report.py: every report table sits in a contained overflow fallback, so no table can widen the page at any width"
         ],
         "expectRedFirst": true,
         "gate": [
@@ -6335,14 +6358,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T09:47:19Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -6354,12 +6377,13 @@
       "fixes": [
         "P125-R48",
         "P125-R49"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.82-0h5",
       "title": "the signal line keeps every event stream-cost reads, and the dispatch prompt nam",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase-review findings fixed together (one theme, shared files).\n\nP125-R91: `fit_clauses` does `keep.pop()` over the clauses `did_events` reads (closed/started/landed/fix-added/signed/released) when they exceed the byte room. Those events vanish from the signal line, leaving only a `+N`. `tools/stream-cost.py:1218` reads these events for close, fix-task and sign-off spans. With ids such as `P125.54-0h5` the room for clauses is roughly 70 bytes, so two closes already overflow. sn8 accepts the loss: it asserts only that the close survives on more than half of the corpus lines (`len(kept) * 2 > len(read_back)`).\n\nResolution asked: Carry the did-events losslessly. Either keep the read clauses and shrink the basis or the `next:` field instead, or write the events to the `.explain` file and have `did_events` read them there. Make sn8 require every read clause to survive.\n\nP125-R92: The prompt every agent is dispatched with is `python3 \"<script>\" brief --role <role> <id>`, with no manifest and no `--project-dir`. `project_context` falls back to `CLAUDE_PROJECT_DIR` or the cwd. A wave member's tree holds a committed copy of the manifest, and `submit_command` spells the manifest absolutely and adds `--project-dir` for exactly that reason. The tests call `M.main([\"brief\", subject, mpath, \"--role\", role, \"--project-dir\", root])`, so they never run the command the agent is actually given. If the agent's environment lacks CLAUDE_PROJECT_DIR, the brief is looked up in the tree's own state directory and the agent gets 'no brief to print'. Unchanged at HEAD.\n\nResolution asked: Put `--project-dir <project>` (and the absolute manifest) into the fixed prompt sentence. It is identical across tasks, so the 'identical up to the id' property holds. Make sn5/sn6 run the command parsed out of the printed prompt, from a wave tree's cwd.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -6368,7 +6392,10 @@
       ],
       "tests": {
         "mode": "regression",
-        "add": [],
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: every event stream-cost reads survives on the signal line, at the longest task ids the corpus holds",
+          "plugins/audit/tests/test_drive_phase.py: the brief command parsed out of the printed dispatch prompt, run from a wave tree with no CLAUDE_PROJECT_DIR, prints that task's brief"
+        ],
         "expectRedFirst": false,
         "gate": [
           "selftests",
@@ -6387,14 +6414,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T09:47:21Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -6414,12 +6441,13 @@
       "fixes": [
         "P125-R91",
         "P125-R92"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.83-0h5",
       "title": "fix P125-R32: dispatch_starts orders dispatches by file mtime and its docstri...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "dispatch_starts orders dispatches by file mtime and its docstring says that is 'the order a session actually spawned them in'. An mtime is the time of the last write, i.e. roughly when a dispatch finished, so a long first dispatch that ends after a second one starts swaps them. check_dispatch_cache then prints 'dispatch X read N cached token(s) at its start, served from <prev>'s' (lines 268-273), naming a predecessor as the cache's source on that ordering alone. The output asserts a cause that nothing in the reading establishes. Still true at HEAD (_doctor_trail.py:466-482).\n\nResolution asked: Order by the first entry's timestamp inside each transcript (the first usage block is already read), or drop the 'served from <prev>' attribution and print only the read/written tokens; correct the docstring either way.",
       "files": [
         "plugins/audit/scripts/status/_doctor_trail.py",
@@ -6427,7 +6455,9 @@
       ],
       "tests": {
         "mode": "tdd",
-        "add": [],
+        "add": [
+          "plugins/audit/tests/test__doctor_trail.py: dispatches are ordered by the first entry inside each transcript, not by file mtime, so a long first dispatch that finishes last is still first"
+        ],
         "expectRedFirst": true,
         "gate": [
           "selftests",
@@ -6446,14 +6476,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T09:47:23Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -6464,7 +6494,8 @@
       ],
       "fixes": [
         "P125-R32"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.84-0h5",
