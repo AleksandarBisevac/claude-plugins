@@ -12,7 +12,8 @@ most `SIGNAL_BYTES`, `audit <phase> <verb> <subject> [did] | <basis> | next:
 prints the block the line stands for: the dispatch with its brief and prompt,
 a decision with its options (answered with `--answer <option>`), a stop's own
 words. An agent is dispatched with `DISPATCH_PROMPT` and its id, and the
-command it names, `brief --role <role> <id>`, prints the brief written for it.
+command it names, `brief --manifest <manifest> --project-dir <project> --role
+<role> <id>`, prints the brief written for it from wherever the agent stands.
 
 The command body is the loop: run `next`, do what it prints, run `next` again.
 A task then costs four requests - dispatch the executor, `next` (the recorded
@@ -514,9 +515,13 @@ SIGNAL_VERBS = {
 }
 SIGNAL_HEAD = "audit "
 # The prompt every dispatch sends: one fixed sentence, the role and the id last,
-# so two prompts differ by nothing but the id. `commands/phase.md` states it in
+# so two prompts differ by nothing but the id. It names the manifest absolutely
+# and the project: an agent's shell may stand in a wave member's own tree, which
+# holds a committed copy of the manifest and none of the briefs, with no
+# CLAUDE_PROJECT_DIR to say where they are. `commands/phase.md` states it in
 # these words, and `sn4` holds the two together.
 DISPATCH_PROMPT = ('Follow the brief this prints: python3 "%(script)s" brief '
+                   '--manifest "%(manifest)s" --project-dir "%(project)s" '
                    '--role %(role)s ')
 EXPLAIN_SUFFIX = ".explain"
 
@@ -589,15 +594,39 @@ def did_bodies(text):
     return out
 
 
+def join_ids(ids):
+    """`ids` as one comma-joined word, each after the first that shares its
+    phase written from its `.` on - `P1.4,.5,.6` - which `split_ids` reads back
+    whole. The signal carries every start and close it read, and an id spelled
+    out in full each time is what made several of them overflow the line."""
+    phase = ids[0].split(".", 1)[0] + "." if "." in ids[0] else None
+    return ",".join([ids[0]] + [i[len(phase) - 1:] if phase and i.startswith(phase)
+                                else i for i in ids[1:]])
+
+
+def split_ids(word):
+    """The ids one `join_ids` word stands for, in order; a plain id is itself."""
+    parts = [p for p in word.split(",") if p]
+    phase = parts[0].split(".", 1)[0] if parts and "." in parts[0] else None
+    return parts[:1] + [phase + p if phase is not None and p.startswith(".") else p
+                        for p in parts[1:]]
+
+
 def did_tasks(text):
     """`{"started": [...], "closed": [...]}` - the tasks a driver's printed text
-    says it started and closed, in order, read off its did-lines only."""
+    says it started and closed, in order, read off its did-lines only: one id
+    after the word on a plain did-line, a `join_ids` word on a signal line."""
     found = {STARTED: [], CLOSED: []}
-    pattern = re.compile(r"\b(%s|%s) (\S+?)(?=[;,\s]|$)" % (STARTED, CLOSED))
+    pattern = re.compile(r"\b(%s|%s) ([^;,\s]+(?:,[^;,\s]+)*)" % (STARTED, CLOSED))
     for body in did_bodies(text):
-        for word, task in pattern.findall(body):
-            found[word].append(task)
+        for word, tasks in pattern.findall(body):
+            found[word].extend(split_ids(tasks))
     return found
+
+
+def _is_fix_added(words):
+    """The words of a clause `did_events` reads a fix task's addition from."""
+    return " ".join(words[:2]) == FIX_ADDED and words[3:5] == ["added", "for"]
 
 
 def did_events(text):
@@ -609,7 +638,7 @@ def did_events(text):
     for body in did_bodies(text):
         for clause in body.split("; "):
             words = clause.split(" ")
-            if clause.startswith(FIX_ADDED + " ") and words[3:5] == ["added", "for"]:
+            if _is_fix_added(words):
                 found["added"].append(words[2])
             elif clause == SIGNED:
                 found["signedOff"] = True
@@ -877,9 +906,11 @@ def answer_command(ctx, options, needs):
         " --reason (%s)" % ("/".join(needs),) if needs else "")
 
 
-def dispatch_prompt(role, node_id):
+def dispatch_prompt(ctx, role, node_id):
     """The prompt an agent is dispatched with: `DISPATCH_PROMPT`, then the id."""
     return DISPATCH_PROMPT % {"script": _loader.script_path("drive-phase.py"),
+                              "manifest": os.path.abspath(ctx["manifest"]),
+                              "project": os.path.abspath(ctx["project"]),
                               "role": role} + node_id
 
 
@@ -900,7 +931,7 @@ def dispatch_said(ctx, role, node_id, agent, model, brief):
         basis = "%s model=%s" % (agent, model)
     return instruction("dispatch", lines, signal_of(
         step, node_id, basis, "Agent: brief --role %s %s" % (role, node_id),
-        prompts=[dispatch_prompt(role, node_id)]))
+        prompts=[dispatch_prompt(ctx, role, node_id)]))
 
 
 def wave_said(ctx, members):
@@ -4183,45 +4214,72 @@ def did_word_clause(clause):
     return LANDED if words[0] == LANDED else " ".join(words)
 
 
-def fit_clauses(clauses, width):
-    """The did-line clauses inside `width` bytes, whole or not at all: the ones
-    `did_events` reads first, then the rest in order while they fit, and `+N`
-    for the ones left out. A clause is never cut, since a cut id would be read
-    back as another task's."""
+def read_clauses(clauses):
+    """`(read, rest)` of the did-line clauses as the signal carries them. `read`
+    is every one `did_events` reads, losslessly and compactly: the starts as
+    one `join_ids` word, the closes as another, each fix task's added-for words,
+    then a sign-off, a landing and a release once each. `rest` is every other
+    clause, in order, as `did_word_clause` gives it."""
     said = [did_word_clause(c) for c in clauses if _flat(c)]
-    read = [i for i, c in enumerate(said) if c.split(" ")[0] in (
-        STARTED, CLOSED, LANDED) or c.startswith(FIX_ADDED + " ")
-        or c in (SIGNED, RELEASED)]
+    ids, order, fixes, flags, rest = {STARTED: [], CLOSED: []}, [], [], [], []
+    for clause in said:
+        words = clause.split(" ")
+        if words[0] in ids and len(words) == 2:
+            order += [] if ids[words[0]] else [words[0]]
+            ids[words[0]].append(words[1])
+        elif _is_fix_added(words):
+            fixes.append(clause)
+        elif clause in (SIGNED, LANDED, RELEASED):
+            flags += [] if clause in flags else [clause]
+        else:
+            rest.append(clause)
+    read = ["%s %s" % (word, join_ids(ids[word])) for word in order]
+    return read + fixes + [f for f in (SIGNED, LANDED, RELEASED) if f in flags], rest
 
+
+def fit_rest(rest, width):
+    """The clauses `did_events` does not read, inside `width` bytes, whole or not
+    at all: in order while they fit, and `+N` for the ones left out. A clause is
+    never cut, since a cut id would be read back as another task's."""
     def text(keep):
-        left = len(said) - len(keep)
-        return "; ".join([said[i] for i in sorted(keep)]
-                         + (["+%d" % (left,)] if left else []))
-    keep = list(read)
-    while keep and _width(text(keep)) > width:
-        keep.pop()
-    for i in range(len(said)):
-        if i not in keep and _width(text(keep + [i])) <= width:
+        left = len(rest) - len(keep)
+        return "; ".join([rest[i] for i in keep] + (["+%d" % (left,)] if left else []))
+    keep = []
+    for i in range(len(rest)):
+        if _width(text(keep + [i])) <= width:
             keep.append(i)
     return text(keep) if _width(text(keep)) <= width else ""
 
 
 def signal_line(ctx, verb, subject, clauses, basis, nxt):
-    """The one line, inside `SIGNAL_BYTES`: the next command whole or, when it
-    cannot fit beside the rest, the `--explain` that prints it; then the
-    did-clauses, whole, with room kept for the start of the basis; then the
-    basis."""
+    """The one line: the head, then every did-clause `did_events` reads, never
+    dropped; then the next command whole or, when it cannot fit beside them
+    with room for the start of the basis, the `--explain` that prints it; then
+    the other did-clauses while they fit, and the basis in what is left.
+
+    The read clauses are what a session's cost is attributed by afterwards -
+    `tools/stream-cost.py` reads them off this line in the transcript, and the
+    `.explain` file is overwritten by the next signal - so the basis and the
+    `next:` field shrink for them instead. Inside `SIGNAL_BYTES` whenever those
+    clauses and the shorter of the two commands fit beside the head; a step
+    whose read events alone are longer prints them whole past the bound, since
+    a dropped one would move a span with nothing saying so."""
     subject = _fit(_flat(subject) or ctx["phase"], 60)
     head = "audit %s %s %s" % (ctx["phase"], verb, subject)
-    fixed = _width(head) + _width(" |  | next: ")
+    read, rest = read_clauses(clauses)
+    did = "; ".join(read)
+    fixed = _width(head) + (_width(did) + 1 if did else 0) + _width(" |  | next: ")
     nxt = _flat(nxt) or "wait"
-    if fixed + _width(nxt) > SIGNAL_BYTES - 40:
-        nxt = explain_command(ctx, subject)
+    explain = explain_command(ctx, subject)
+    if fixed + _width(nxt) > SIGNAL_BYTES - 40 and _width(explain) < _width(nxt):
+        nxt = explain
     room = SIGNAL_BYTES - fixed - _width(nxt)
     basis = _flat(basis)
-    auto = fit_clauses(clauses, room - min(_width(basis), 40) - 1)
-    if auto:
-        room -= _width(auto) + 1
+    joint = 2 if did else 1
+    more = fit_rest(rest, room - min(_width(basis), 40) - joint)
+    if more:
+        room -= _width(more) + joint
+    auto = "; ".join(read + ([more] if more else []))
     return "%s%s | %s | next: %s" % (head, " " + auto if auto else "",
                                      _fit(basis, room), nxt)
 
@@ -4333,6 +4391,11 @@ def run_brief(args, out):
     """`brief <id> --role <role>`: print the brief the drive wrote for that dispatch,
     as `audit-lookup.py brief --read` reads it for the id's current start - a
     record, so read back with its bytes as they are (`run_verb`)."""
+    if args.manifest and args.manifest_named and args.manifest != args.manifest_named:
+        out("drive-phase.py: two manifests named, %s and --manifest %s"
+            % (args.manifest, args.manifest_named))
+        return E_USAGE
+    args.manifest = args.manifest or args.manifest_named
     try:
         _manifest, ctx = project_context(args)
     except Exception as exc:                                   # noqa: BLE001
@@ -4392,6 +4455,9 @@ def build_parser():
     brf.add_argument("--role", required=True, choices=("executor", "reviewer", "phase"))
     brf.add_argument("manifest", nargs="?", default=None,
                      help="the manifest (default: the project's configured one)")
+    brf.add_argument("--manifest", dest="manifest_named", default=None,
+                     metavar="PATH", help="the manifest, named where the id "
+                     "must come last - the dispatch prompt's spelling")
     brf.add_argument("--project-dir", dest="project_dir", default=None)
     brf.add_argument("--verbose", action="store_true")
     sbm = sub.add_parser("submit", help="file an agent's return, read on stdin: "

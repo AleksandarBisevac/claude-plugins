@@ -48,6 +48,7 @@ import io
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -5547,7 +5548,8 @@ def _corpus_ctx(mpath):
     """A context whose did-line carries several clauses, the shape a `next`
     that closes one task and starts the next prints - long enough, with ids
     past the line's bound, that a line cut by bytes cuts an id."""
-    return {"phase": "P125", "only": None, "manifest": mpath, "verbose": False,
+    return {"phase": "P125", "only": None, "manifest": mpath,
+            "project": os.path.dirname(mpath), "verbose": False,
             "log": [], "did": ["closed P125.54-0h5 at 4cd8900",
                                "started P125.55-0h5", "gate P125.55-0h5 green",
                                "stamp current",
@@ -5555,6 +5557,24 @@ def _corpus_ctx(mpath):
                                "closed P125.55-0h5 at ef37f58",
                                "started P125.56-0h5", "closed P125.56-0h5 at 21d7ea5",
                                "started P125.57-0h5"]}
+
+
+# The did-line of the `next` that signs a phase off: the gate, the sign-off, the
+# commit, the landing and the release - the events after the task cycle that
+# `did_events` reads, which the task-cycle context above never carries.
+_SIGNOFF_DID = ["phase gate green", "invariants clean", "signed off",
+                "record committed at 9a8b7c6",
+                "landed (" + "merged into main at 9a8b7c6 " * 4 + ")",
+                "lock released"]
+# What `did_events` must read back off a corpus line, by which did-line it was
+# drawn from: the ids are the context's own, written out rather than parsed, so
+# the expectation shares no code with the line under test.
+_CYCLE_EVENTS = {"started": ["P125.55-0h5", "P125.56-0h5", "P125.57-0h5"],
+                 "closed": ["P125.54-0h5", "P125.55-0h5", "P125.56-0h5"],
+                 "added": ["P125.60-0h5"], "signedOff": False, "landed": False,
+                 "released": False}
+_SIGNOFF_EVENTS = {"started": [], "closed": [], "added": [], "signedOff": True,
+                   "landed": True, "released": True}
 
 
 def _corpus_findings(count, severity="med"):
@@ -5603,8 +5623,8 @@ def _signal_corpus(M, mpath):
         "../trees/P125.55-0h5"), {}))
     out.append(("resume-executor", M.resume_said(ctx, "P125.55-0h5"), {}))
     out.append(("done", M.done_said(ctx, "landed (" + "merged into main " * 10 + ")",
-                                    "P126"), {}))
-    out.append(("done", M.done_said(ctx, "landed", None), {}))
+                                    "P126"), {"did": _SIGNOFF_DID}))
+    out.append(("done", M.done_said(ctx, "landed", None), {"did": _SIGNOFF_DID}))
     out.append(("done-task", M.done_task_said(ctx, "P125.55-0h5", "done at 4cd8900"), {}))
     out.append(("decide-stalled", M.stalled_said(
         ctx, [{"id": "P125.%d" % (n,), "status": "blocked", "attempts": 3,
@@ -5651,15 +5671,33 @@ def _signal_cases(check):
           and set(table) == set(M.STEPS)
           and set(table.values()) <= set(SIGNAL_VERB_WORDS)
           and M.signal_verb_gaps() == [])
-    read_back = [(step, M.did_tasks(line)) for step, line in lines]
-    named = {"P125.54-0h5", "P125.55-0h5", "P125.56-0h5", "P125.57-0h5"}
-    wrong = [(s, d) for s, d in read_back
-             if not set(d["started"] + d["closed"]) <= named]
-    kept = [d for _s, d in read_back if d["closed"][:1] == ["P125.54-0h5"]]
-    check("sn8 a did-clause is carried whole or not at all, so every id read back "
-          "off a signal is one the drive named, and the close survives the bound "
-          "on most lines: %r" % ((wrong[:2], len(kept), len(read_back)),),
-          read_back and not wrong and len(kept) * 2 > len(read_back))
+    # Every line, not most: stream-cost bounds a session's close, fix-task and
+    # sign-off spans by these events, so one dropped from any line moves a span.
+    read_back = [(step, line, M.did_events(line),
+                  _SIGNOFF_EVENTS if extra.get("did") is _SIGNOFF_DID
+                  else _CYCLE_EVENTS)
+                 for (step, _said, extra), (_s, line) in zip(corpus, lines)]
+    lost = [(step, line, got) for step, line, got, want in read_back
+            if got != want]
+    check("plugins/audit/tests/test_drive_phase.py: every event stream-cost reads "
+          "survives on the signal line, at the longest task ids the corpus holds "
+          "(sn8: each of %d line(s) reads back every start, close, fix task, "
+          "sign-off, landing and release its did-line holds; lost on %r)"
+          % (len(read_back), lost[:2]),
+          len(read_back) == len(corpus) > 0 and not lost
+          and any(want is _SIGNOFF_EVENTS for _s, _l, _g, want in read_back))
+    # Past what any one line holds: the events still print whole, so the line
+    # runs over its bound rather than dropping one - and a task id of another
+    # phase in the same word is spelled in full, not expanded into this one's.
+    many = ["P125.%d-0h5" % (n,) for n in range(40, 60)] + ["P7.1"]
+    wide = M.signal_line(dict(_corpus_ctx(mpath), did=[]), "dispatch", "P125",
+                         ["%s %s" % (w, t) for t in many for w in ("closed", "started")]
+                         + ["gate P125.40-0h5 green"], "wave", "wait")
+    back = M.did_events(wide)
+    check("sn8b a signal whose read events alone are past the bound carries every "
+          "one of them, past the bound: %r" % ((len(wide.encode("utf-8")), back),),
+          back["closed"] == many and back["started"] == many
+          and len(wide.encode("utf-8")) > SIGNAL_BYTES)
     # THE RED TWIN of the table half: a step added with no verb is named.
     mutant, _why = _load("signal_mod_gap")
     if mutant is not None:
@@ -5671,18 +5709,22 @@ def _signal_cases(check):
     check("sn1m RED TWIN: a step the table gives no verb is named by "
           "signal_verb_gaps, so a step that prints no signal cannot ship: %r"
           % (gaps,), gaps == ["decide-new-thing: no verb"])
-    first = M.dispatch_prompt("executor", "P125.55-0h5")
-    second = M.dispatch_prompt("executor", "P3.1")
-    check("sn2u the dispatch prompt is one fixed sentence and the id, last: %r"
-          % ((first, second),),
+    where = {"manifest": os.path.join("proj", "plan.json"), "project": "proj"}
+    first = M.dispatch_prompt(where, "executor", "P125.55-0h5")
+    second = M.dispatch_prompt(where, "executor", "P3.1")
+    check("sn2u the dispatch prompt is one fixed sentence and the id, last, naming "
+          "the manifest and the project absolutely: %r" % ((first, second),),
           first.endswith(" P125.55-0h5") and second.endswith(" P3.1")
           and first[:-len("P125.55-0h5")] == second[:-len("P3.1")]
-          and "\n" not in first)
+          and "\n" not in first
+          and '--manifest "%s"' % (os.path.abspath(where["manifest"]),) in first
+          and '--project-dir "%s"' % (os.path.abspath("proj"),) in first)
     with open(os.path.join(_output.PLUGIN_ROOT, "commands", "phase.md"), "r",
               encoding="utf-8") as fh:
         phase_md = fh.read()
     template = M.DISPATCH_PROMPT % {"script": "S/governance/drive-phase.py",
-                                    "role": "<role>"}
+                                    "manifest": "<manifest>",
+                                    "project": "<project>", "role": "<role>"}
     said = template.replace('python3 "S/', 'S/')
     missing = [w for w in SIGNAL_VERB_WORDS if "`%s`" % (w,) not in phase_md]
     check("sn4 commands/phase.md states the dispatch prompt in the driver's own "
@@ -5809,7 +5851,13 @@ def _signal_drive_cases(check):
     if M is None:
         return
     root, mpath = _repo("signal", task_ids=TASKS[:2])
+    # A wave member's own tree: a checkout of the same commit, so it holds the
+    # manifest and the config at the paths the project does, and no state.
+    trees = os.path.realpath(_harness.fixture_root("drive-signal-tree-"))
+    tree = os.path.join(trees, "member")
     try:
+        subprocess.run(_GIT + ["worktree", "add", "-q", "--detach", tree],
+                       cwd=root, check=True, capture_output=True, timeout=60)
         printed, prompts, briefs = [], {}, []
         reply = []
         with _Env(root):
@@ -5839,10 +5887,8 @@ def _signal_drive_cases(check):
                 prompts[(role, subject)] = [ln[len("prompt: "):] for ln in
                                             explain.splitlines()
                                             if ln.startswith("prompt: ")]
-                shown = []
-                M.main(["brief", subject, mpath, "--role", role,
-                        "--project-dir", root], out=shown.append)
-                briefs.append((role, subject, "\n".join(shown)))
+                briefs.append((role, subject, _brief_from_prompt(
+                    prompts[(role, subject)], tree)))
                 if role == "executor":
                     _file_executor(root, mpath, subject)
                 elif role == "phase":
@@ -5872,8 +5918,11 @@ def _signal_drive_cases(check):
                 wrote = fh.read().decode("utf-8", "replace")
             differ.append(_brief_difference(role, wrote.rstrip("\n"),
                                             shown.rstrip("\n")))
-        check("sn6 `brief <id> --role <role>` prints the brief the drive wrote for that "
-              "dispatch, byte for byte, for every agent of the drive: %r"
+        check("plugins/audit/tests/test_drive_phase.py: the brief command parsed out "
+              "of the printed dispatch prompt, run from a wave tree with no "
+              "CLAUDE_PROJECT_DIR, prints that task's brief (sn6: the brief the "
+              "drive wrote for that dispatch, byte for byte, for every agent of "
+              "the drive: %r)"
               % ((len(briefs), [d for d in differ if d is not None]),),
               len(briefs) == 4 and differ == [None] * 4)
         did = M.did_tasks("\n".join(printed))
@@ -5881,7 +5930,29 @@ def _signal_drive_cases(check):
               "off the signal lines: %r" % (did,),
               did["started"] == ["P1.1", "P1.2"] and did["closed"] == ["P1.1", "P1.2"])
     finally:
+        _harness.remove_tree(trees)
         _harness.remove_tree(root)
+
+
+def _brief_from_prompt(prompts, tree):
+    """What the command a dispatch prompt names prints when an agent standing in
+    `tree` runs it, with no CLAUDE_PROJECT_DIR: the command is the prompt's
+    words after its fixed sentence, as a shell splits them, and the interpreter
+    it spells is this one. A failed run is its own words, so a mismatch says
+    why rather than only that it differs."""
+    if len(prompts) != 1:
+        return "no single prompt to run: %r" % (prompts,)
+    argv = shlex.split(prompts[0].partition(": ")[2])
+    if argv[:1] == ["python3"]:
+        argv[0] = sys.executable
+    env = dict((k, v) for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR")
+    run = subprocess.run(argv, cwd=tree, env=env, capture_output=True,
+                         timeout=120)
+    shown = run.stdout.decode("utf-8", "replace")
+    if run.returncode != 0:
+        return "exit %d: %s%s" % (run.returncode, shown,
+                                  run.stderr.decode("utf-8", "replace"))
+    return shown
 
 
 def _brief_crlf_cases(check):

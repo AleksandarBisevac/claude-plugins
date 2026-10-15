@@ -413,16 +413,20 @@
         "severity": "med",
         "file": "plugins/audit/scripts/ui/report-css/tables.css:62-85; tools/check-report-interactive.mjs:2546-2607",
         "issue": "P125.26 contradicts the task's clause 'Decide with the owner, implement' (a), (b) or (c), and its title 'by construction ... at any width'. The fix is a wrap override on a fixed list of eight atom classes scoped to table.phases/table.data. It is the same kind of fix as P126.1, which the task names as margin. No min-width, no <wbr> and no overflow container was added, and the comment says titles are deliberately excluded. Any column kind outside the list, or any table not .phases or .data, can still widen the document. The task record shows no owner decision.",
-        "resolution": "Implement one of the three named options (for example a contained `.tablewrap{overflow-x:auto}` fallback, or the JS-measured switch), or record the owner's decision to accept this narrower scope. Then re-derive the title and description from what shipped.",
-        "fixTask": "P125.81-0h5"
+        "resolution": "fixed in P125.81-0h5 (9e60ae16233a): Implement one of the three named options (for example a contained `.tablewrap{overflow-x:auto}` fallback, or the JS-measured switch), or record the owner's decision to accept this narrower scope. Then re-derive the title and description from what shipped.",
+        "fixTask": "P125.81-0h5",
+        "commit": "9e60ae16233a",
+        "status": "fixed"
       },
       {
         "id": "P125-R49",
         "severity": "med",
         "file": "tools/check-report-interactive.mjs:2546-2607",
         "issue": "Leg 10c does not plant 'a token in EVERY column kind of every table'. It plants eight atom kinds, one first-match element each via querySelector, in table.phases/table.data only, and the monospace fallback is applied only to those two tables. The kinds the page lacks are logged as an 'ok' note, and the case passes on `planted.made.length > 0`. A fixture with one atom kind present passes it.",
-        "resolution": "Enumerate the columns of every table class (th/td kinds) and plant a token in each; fail when a kind or table that exists on the page is skipped or cannot be planted.",
-        "fixTask": "P125.81-0h5"
+        "resolution": "fixed in P125.81-0h5 (9e60ae16233a): Enumerate the columns of every table class (th/td kinds) and plant a token in each; fail when a kind or table that exists on the page is skipped or cannot be planted.",
+        "fixTask": "P125.81-0h5",
+        "commit": "9e60ae16233a",
+        "status": "fixed"
       },
       {
         "id": "P125-R50",
@@ -994,7 +998,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 27 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 29 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6322,7 +6326,7 @@
     {
       "id": "P125.81-0h5",
       "title": "tables never widen the page at any width: a contained overflow fallback, and the",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase-review findings fixed together (one theme, shared files).\n\nP125-R48: P125.26 contradicts the task's clause 'Decide with the owner, implement' (a), (b) or (c), and its title 'by construction ... at any width'. The fix is a wrap override on a fixed list of eight atom classes scoped to table.phases/table.data. It is the same kind of fix as P126.1, which the task names as margin. No min-width, no <wbr> and no overflow container was added, and the comment says titles are deliberately excluded. Any column kind outside the list, or any table not .phases or .data, can still widen the document. The task record shows no owner decision.\n\nResolution asked: Implement one of the three named options (for example a contained `.tablewrap{overflow-x:auto}` fallback, or the JS-measured switch), or record the owner's decision to accept this narrower scope. Then re-derive the title and description from what shipped.\n\nP125-R49: Leg 10c does not plant 'a token in EVERY column kind of every table'. It plants eight atom kinds, one first-match element each via querySelector, in table.phases/table.data only, and the monospace fallback is applied only to those two tables. The kinds the page lacks are logged as an 'ok' note, and the case passes on `planted.made.length > 0`. A fixture with one atom kind present passes it.\n\nResolution asked: Enumerate the columns of every table class (th/td kinds) and plant a token in each; fail when a kind or table that exists on the page is skipped or cannot be planted.",
       "files": [
         "plugins/audit/scripts/ui/report-css/tables.css",
@@ -6376,14 +6380,19 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9e60ae16233a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Hybrid (R48 options a+c). plugins/audit/scripts/ui/report-css/tables.css: the contained .tablewrap{overflow-x:auto; border, radius, shadow} stays top-level (no-JS fail-safe); added @media (width>52rem){.tablewrap[data-fits]{overflow:visible} .tablewrap[data-fits] thead th{position:sticky;top:var(--sticky-3);z-index:var(--z-thead)}} - 3.3.0's sticky declaration, restored under the mark and above the 52rem tablet block, where forced-colors.css keeps every frame contained and headers static; table.phases/table.data get border-radius:var(--radius-lg) back so the table's fill stays inside the frame's curve when the frame is released (frame looks the same in both states). plugins/audit/scripts/ui/report/page-state.js: new section after the sticky-stack measurement - TABLE_FIT_ATTR='data-fits', markTableFits(wraps) (reads table.scrollWidth <= wrap.clientWidth with the frame's overflowX released to 'visible' for the reading and restored), queueTableFit() coalesced to one requestAnimationFrame like the scroll listener, driven by a ResizeObserver over every .tablewrap and its table (covers window width, expand, filters and view switch without enumerating them) plus window resize as fallback, and one queued pass at load. No wall clock, no polling. tools/ui-tests/table-fit.test.mjs (new, 4 cases on the sandbox.mjs loadReport/reach convention, with a mutate prelude that records listeners and rAF): fitting table is marked and measured with the frame released; a table 1px too wide stays unmarked and a stale mark is removed; resize toggles the mark both ways and a burst asks for one frame; the sheet's selector uses the very attribute the script writes and the contained frame is at depth zero. tools/check-report-interactive.mjs leg 10c keeps attempt 1's every-column-kind planting and adds a clean ladder pass before planting (document never widens; above 52rem every fitting frame is marked and its first th computes position:sticky; every other frame unmarked and not sticky; fails if no fitting frame was measured) and the same consistency check on the planted pass (fails if no overflowing frame was measured). plugins/audit/tests/test_render_report.py: attempt 1's 'no header is sticky' pins reworded to the hybrid (sticky-3 and z-thead required again, no bare thead th rule may be sticky, the [data-fits] rule must be); new _media_rules() helper and a case pinning the fit rules exactly under (width>52rem) and nowhere top-level; _loader import alignment restored. Re-rendered: sh examples/report.sh (acme html/md, docs/index.html) and docs/demo-large.html via the FOLLOWER-OWED recipe (check-rendered-artifacts then reports 0 STALE). Runs from the worktree: interactive acme exit 0 (190 checks, 55 fitting + 55 overflowing frames measured); interactive demo-large exit 0 (196 checks, 66+66); npx vitest run exit 0 (56 files, 825 tests); test_render_report --selftest 300/300; ruff exit 0; vermin exit 0; capture-screenshots --check exit 0; count-ui-pins before 1126 total / _CSS 64, after 1130 / _CSS 68 (test_render_report 177 -> 181); sweep exit 1, 334/335 files ok - only test__refs.py sc1/sc2, stale report screenshots areas, authors, dark, expanded, filtered, filters, mobile, overview (orchestrator's follow-up, not captured). Mutation proof in a scratch copy of the rendered acme page with `else w.removeAttribute(TABLE_FIT_ATTR);` deleted: gate exit 1, all three 10c cases FAIL (marked-but-overflowing at 320px, document widened 833 -> 11100, planted tables keep the mark). Known limit: the gate's ladder resizes between every rung, so it cannot tell the ResizeObserver path from the resize fallback; the vitest covers the resize path only (the sandbox has no ResizeObserver). Comments outside scope, not edited: forced-colors.css 'desktop keeps it' is true again for fitting tables; tools/ui-checks/responsive.mjs:42-43 ('.tablewrap starts scrolling, the <thead> unsticks' at 52rem) is now true only of fitting tables - an unfitting one is contained on both sides; usage.css:221 ('The report's global `thead th` is sticky') is stale - stickiness is no longer global, it is the [data-fits] rule's, and .hm sits in .hmwrap which is never marked. Elements are reached by the .tablewrap class, not a data- hook: adding one needs the Python emitters (_report_page.py, _usage_detail.py), outside this task's files.",
+        "descriptive": "No table can widen the report at any width, and desktop keeps sticky column headers wherever the table fits its frame."
       },
       "startedAt": "2026-10-15T10:36:47Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T11:22:01Z",
+      "verifiedBy": [
+        "tools/ui-tests/table-fit.test.mjs: a table that fits its frame is marked to fit and keeps sticky column headers, a table that would widen the page stays contained, and the mark follows a resize (4 cases)",
+        "tools/check-report-interactive.mjs: every column kind of every table on the page is planted with an unbreakable token and none widens the document, and a kind present on the page that cannot be planted fails the leg (before any planting / once planted)",
+        "plugins/audit/tests/test_render_report.py: every report table sits in a contained overflow fallback, so no table can widen the page at any width (and only a frame marked to fit is released, with its sticky headers restored above 52rem)",
+        "plugins/audit/tests/test_render_report.py: sticky: the column headers pin BELOW the bar that filters them and paint under it, and only where their table was measured to fit its frame"
+      ],
       "notes": [
         {
           "at": "2026-10-15T03:41:27Z",
@@ -6399,6 +6408,18 @@
         "runId": "2026-10-15T11:21:44Z.e1458c",
         "status": "passed",
         "at": "2026-10-15T11:21:44Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "9e60ae16233a",
+        "at": "2026-10-15T11:22:01Z",
+        "basis": "a fix task for P125-R48, P125-R49: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-15T10:57:42Z",
+        "basis": "`npx vitest run tools/ui-tests/table-fit.test.mjs` in a throwaway tree at HEAD: inline suite plugins/audit/scripts/ui/report-css/tables.css (its test file is its implementation file): it is not Python, and an inline suite's test hunks are read from Python definitions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -6468,7 +6489,12 @@
         "P125-R91",
         "P125-R92"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T11:32:22Z.cd59c7",
+        "status": "passed",
+        "at": "2026-10-15T11:32:22Z"
+      }
     },
     {
       "id": "P125.83-0h5",

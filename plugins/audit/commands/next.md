@@ -25,7 +25,7 @@ Do what its one line says, `audit <phase> <verb> <subject> ... | <basis> | next:
 until `done`; the whole step is `next <taskId> --explain <subject>`.
 
 - `dispatch` → an Agent per subject (`subagent_type`, `model`: the basis), the prompt
-  `Follow the brief this prints: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" brief --role <role> <id>`.
+  `Follow the brief this prints: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" brief --manifest "<manifest>" --project-dir "<project>" --role <role> <id>`.
   Wait for its one-line hand-back, then `next <taskId> --signal`.
 - `judge`, `wait` → do `next:`; `ask` → the human first (AskUserQuestion), then `next:` with
   their option. **The operator's words go in VERBATIM**: a `--reason` is theirs, unparaphrased,

@@ -28,7 +28,7 @@ Its one line is `audit <phase> <verb> <subject> ... | <basis> | next: <command>`
 step is `next <taskId> --explain <subject>`.
 
 - `dispatch` → an Agent (`subagent_type`, `model`: the basis), the prompt
-  `Follow the brief this prints: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" brief --role <role> <id>`.
+  `Follow the brief this prints: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" brief --manifest "<manifest>" --project-dir "<project>" --role <role> <id>`.
   Wait for its one-line hand-back, then `next <taskId> --task --signal`.
 - `judge`, `wait` → do `next:`; `ask` → the human first (AskUserQuestion), then `next:` with
   their option.
