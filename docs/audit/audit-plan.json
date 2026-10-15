@@ -4227,7 +4227,8 @@
       "P123.65-64p",
       "P125.3",
       "P125.4",
-      "P125.75-0h5"
+      "P125.75-0h5",
+      "P125.105-0h5"
     ],
     "plugins/audit/scripts/panel/_panel_write.py": [
       "P12.4",
@@ -4372,7 +4373,8 @@
       "P123.65-64p",
       "P125.3",
       "P125.4",
-      "P125.75-0h5"
+      "P125.75-0h5",
+      "P125.105-0h5"
     ],
     "plugins/audit/scripts/report/render-report.py": [
       "P3.3",
@@ -7204,7 +7206,8 @@
       "P104.11-tog",
       "P104.13-tog",
       "P125.3",
-      "P125.75-0h5"
+      "P125.75-0h5",
+      "P125.105-0h5"
     ],
     "docs/screenshots/areas.png": [
       "P84.7-791",
@@ -8136,7 +8139,8 @@
       "P104.15-tog",
       "P104.16-tog",
       "P104.18-tog",
-      "P125.75-0h5"
+      "P125.75-0h5",
+      "P125.105-0h5"
     ],
     "plugins/audit/scripts/ui/panel/policy-state.js": [
       "P105.8-m32"
@@ -8191,7 +8195,8 @@
       "P104.17-tog",
       "P123.17",
       "P125.3",
-      "P125.75-0h5"
+      "P125.75-0h5",
+      "P125.105-0h5"
     ],
     "plugins/audit/tests/test__usage_bench.py": [
       "P104.11-tog",
@@ -8204,7 +8209,8 @@
       "P123.65-64p"
     ],
     "plugins/audit/scripts/ui/panel/browse-dialog.js": [
-      "P104.16-tog"
+      "P104.16-tog",
+      "P125.105-0h5"
     ],
     "plugins/audit/scripts/ui/panel/usage-cards.js": [
       "P104.16-tog",
