@@ -7547,7 +7547,7 @@
     {
       "id": "P125.97-0h5",
       "title": "fix P125-R81: P125.46 clause 'drain and close the rewrite's own tail handle b...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P125.46 clause 'drain and close the rewrite's own tail handle before the replace' is unconditional, but the diff closes the handle only where REPLACE_PASSES_OPEN_FILE is false (os.name == 'nt'). On POSIX the descriptor is held across _replace_rows. The executor documents why: an unconditional close turns bw2, bw8, bw9, bw16, nm1, lf2 and lf3 red, because it drops the held-descriptor carry. The narrowing is deliberate and evidenced, but it is a scope difference from the task text. The Windows path is exercised only through an os.replace seam that emulates the platform, not on a real Windows run.\n\nResolution asked: Record the owner's acceptance of the platform-conditional close (amend the task description or note the decision), and confirm on the next Windows CI leg that bw14 and rs1 pass with the real platform.",
       "files": [
         "plugins/audit/scripts/usage/usage_ledger.py",
@@ -7555,7 +7555,9 @@
       ],
       "tests": {
         "mode": "tdd",
-        "add": [],
+        "add": [
+          "plugins/audit/tests/test_usage_ledger.py: bw14 and rs1 pass on a real Windows CI leg, so the platform-conditional close of the rewrite's tail handle is evidenced on the platform it exists for"
+        ],
         "expectRedFirst": true,
         "gate": [
           "selftests",
@@ -7574,14 +7576,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T23:29:09Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -7592,12 +7594,13 @@
       ],
       "fixes": [
         "P125-R81"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.98-0h5",
       "title": "fix P125-R84: The task title says a return 'changed or deleted after filing c...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The task title says a return 'changed or deleted after filing cannot close a task'. A DELETED return is not refused. `read_filed_return_checked` returns (None, None, None, None) when the file is missing, with no problem and no unchecked note, even though a filing row exists. In `audit-task.py` only the executor sha-branch (`_close_evidence_refusal`, via `filed_mismatch`) turns a missing file into a mismatch. `_close_returns` reads the reviewer return and the `--from-return` executor return through the checked read and treats a deleted one as unfiled. A reviewer's recorded `diverges` return can therefore be deleted and the task closed with `--intent matches`. No case covers deletion.\n\nResolution asked: In `read_filed_return_checked`, when no file is present but `already_filed_row(rows, path, checkout)` finds a row, return a problem naming the row's recorded digest and the missing file. Add a case in test__filed_returns and test_audit_task for a deleted reviewer return and a deleted executor return.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -7607,7 +7610,10 @@
       ],
       "tests": {
         "mode": "tdd",
-        "add": [],
+        "add": [
+          "plugins/audit/tests/test__filed_returns.py: a filed return whose file was deleted reads as a problem naming the filing row's digest and the missing file, never as unfiled",
+          "plugins/audit/tests/test_audit_task.py: a task whose filed reviewer or executor return was deleted cannot be closed, and the refusal names the missing return"
+        ],
         "expectRedFirst": true,
         "gate": [
           "selftests",
@@ -7626,19 +7632,20 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T23:29:11Z",
       "completedAt": null,
       "verifiedBy": [],
       "fixes": [
         "P125-R84"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.99-0h5",
@@ -9374,7 +9381,7 @@
     {
       "id": "P125.124-0h5",
       "title": "The help payload's size is platform-independent and fits its budget with headroom, by reduction or a re-derived cap",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F692, a regression (P125.95 tipped it): CI 38806218995 measured the help payload at 200001 bytes on Windows against a 200000 cap (199998 on macOS); fields is ~190 KB. Find the platform difference and what in fields is duplicated or unneeded; reduce it, or re-derive the cap from a stated serving basis with headroom. A case pins platform independence.",
       "files": [
         "plugins/audit/scripts/config/_help.py",
@@ -9406,25 +9413,43 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f645b24559ac",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Measured: payload 199998 bytes on posix at the CI SHA f9849e9b and HEAD 045c821f; fields 189943 of it (config 25194, manifest 164723). Platform difference found: guide_card()'s 'file' was os.path.join('agents', name), serialised as agents\\\\guide.md on Windows (+1 byte, reproduced by the backslash os.sep simulation: 199999). CRLF ruled out: .gitattributes forces LF and a CRLF copy of schema/ and agents/ measured 199998 identically. The other 2 bytes of the CI 200001 were not reproduced by any simulation. The drawer never reads payload.fields (help-drawer.js only reads composition/topics/agent/schemas and asks /api/help?doc=&path= per field), but tools/ui-checks/stage-tabs.mjs uses payload.fields.config.trivialLineThreshold as an oracle. Duplication: one $def mounted at several paths was expanded at each (proposals[].payload.phase re-expanded the whole phase shape, about 57 KB; bugs[].ado, tasks testEvidence/ado, policy.agents/mcp copying policy.skills). Fix in _help.py: _walk_schema records $def mount sites; fold_repeats drops a later mount's subtree when it equals the first (comparison ignores topic, includes default) and records an alias; unalias/lookup(aliases)/entry_for resolve through it; payload gains an 'aliases' key; the agent card file is 'agents/' + name. Payload now 133604 bytes, 66396 under the cap, headroom 26396 above the 40000 owed. Tests: p5 replaced by the clause case (native, CRLF-root and backslash-os builds must be equal and <= cap - headroom); fo1-fo5 added (no-loss over every full-table path, equal mount folds, differing default does not, chained alias, canonical key named); p1 key set updated. Mutation probes in a scratch copy: always-fold -> fo3 red; lookup ignoring aliases -> fo1,fo5; single-pass unalias -> fo1,fo4; os.path.join file -> p5; no fold -> fo1,fo2,fo5,p5. test__help 110/110 exit 0; full sweep exit 0 (335/335 files, 16452 cases); cp1252 sweep exit 0 (335/335); ruff and vermin clean on both files.",
+        "descriptive": "The help payload is a third smaller, measures the same on every platform, and keeps 40 KB of free headroom under its cap."
       },
       "startedAt": "2026-10-15T22:16:22Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T23:29:05Z",
+      "verifiedBy": [
+        "p5 the help payload measures the same on every platform and stays under its budget with stated headroom (native, CRLF sources and a backslash os.sep build one size, and at least PAYLOAD_HEADROOM bytes of PAYLOAD_CAP stay free)",
+        "fo1",
+        "fo2",
+        "fo3",
+        "fo4",
+        "fo5"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-15T23:29:02Z.278b7a",
         "status": "passed",
         "at": "2026-10-15T23:29:02Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "f645b24559ac",
+        "at": "2026-10-15T23:29:05Z"
+      },
+      "redFirst": {
+        "at": "2026-10-15T22:40:48Z",
+        "basis": "`python3 plugins/audit/tests/test__help.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 12/13 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_enriched': KeyError: 'fields'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_subtree': KeyError: 'fields'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_under': KeyError: 'fields'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_walk_schema': KeyError: 'fields'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'fold_repeats': KeyError: 'fields'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'unalias': KeyError: 'fields'; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.125-0h5",
       "title": "Every git process in the sweep runs with background maintenance off, set once in the runner's environment",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Follows P125.122 (F690/F679): git 2.53 spawns a detached 'git maintenance run --auto' after fixture commits; P125.122 switched it off in the shared and five suite-local prefixes, but 72 test files call git directly, including the test__invariants._git clone that failed in CI 38792231809. Set it once in the sweep runner's child environment (GIT_CONFIG_COUNT/KEY_n/VALUE_n beside GIT_CONFIG_NOSYSTEM), measured with GIT_TRACE on a suite outside the prefixes, and keep isolation_drift's documents in step.",
       "files": [
         "tools/sweep-selftests.py",
@@ -9456,16 +9481,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T23:29:06Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
