@@ -261,10 +261,11 @@ DEFAULTS = {
     # page PRICING_SOURCE_URL names, as of `pricingAsOf`, never derived: the cache
     # read multiplier is not uniform across models. `_usage_core.py`'s
     # DEFAULT_PRICING, PRICING_AS_OF and PRICING_SOURCE_URL are DERIVED from this
-    # table through `_loader.load_hooks_config()` rather than hand-copied (hooks/
-    # may import nothing from scripts/, so this file stays the one literal); the
-    # `pp` and `pv` cases in `tests/test__usage_core.py` hold that derivation to
-    # account, and the `dp` case asserts an edit here alone moves the copy.
+    # table, loaded by path when that module is imported, rather than hand-copied
+    # (hooks/ may import nothing from scripts/, so this file stays the one
+    # literal); the `pp` and `pv` cases in `tests/test__usage_core.py` hold that
+    # derivation to account, and the `dp` case runs `_usage_core`'s own loader
+    # over an edited copy of this file to show an edit here alone moves them.
     "usage": {
         "enabled": True,
         "ledgerDir": ".claude/usage",

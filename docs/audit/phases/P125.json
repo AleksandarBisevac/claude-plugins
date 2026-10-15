@@ -6039,7 +6039,12 @@
         "P125-R8",
         "P125-R9"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T07:32:08Z.43fdac",
+        "status": "passed",
+        "at": "2026-10-15T07:32:08Z"
+      }
     },
     {
       "id": "P125.78-0h5",

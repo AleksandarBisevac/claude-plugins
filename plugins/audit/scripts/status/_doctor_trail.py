@@ -178,18 +178,23 @@ def check_ledger(rep, project, cfg, manifest_rel):
 
 
 def unpriced_model_tokens(rows, pricing, ul):
-    """Token totals by model among `rows` whose `ul.rates_for` has no row at
-    all - `[(model, tokenCount), ...]` in first-seen order, so the message
-    does not reshuffle between runs over an unchanged ledger. A model
-    `price()` CAN rate is left out entirely, same as every other priced
-    surface - this is the complement, naming only what none of them can
-    price. An id that names no model (`<synthetic>`, see
-    `ul.is_model_id`) is not a finding either."""
+    """Token totals by model among the `rows` that leave their tokens out of
+    every dollar figure - `[(model, tokenCount), ...]` in first-seen order, so
+    the message does not reshuffle between runs over an unchanged ledger.
+    A row is one when `ul.rates_for` has no row for its model, OR when the row
+    itself carries `unpriced: True` or a `rate` stamp of None: a stamped row is
+    never priced again by a read, so adding the table row does not rescue it
+    (only `/audit:usage --backfill` rewrites it). An id that names no model
+    (`<synthetic>`, see `ul.is_model_id`) is not a finding either."""
     totals = {}
     order = []
     for row in rows:
         model = row.get("model")
-        if not ul.is_model_id(model) or ul.rates_for(model, pricing) is not None:
+        if not ul.is_model_id(model):
+            continue
+        stamped_out = row.get("unpriced") is True or (
+            "rate" in row and row["rate"] is None)
+        if ul.rates_for(model, pricing) is not None and not stamped_out:
             continue
         tokens = sum(int(row.get(k) or 0) for k in ul.TOKEN_KEYS)
         if model not in totals:
@@ -244,12 +249,22 @@ def check_unpriced_models(rep, project, cfg, manifest_rel,
         rep.ok("unpriced models", "every model in the ledger has a price row")
         return
     for model, tokens in unpriced:
+        if ul.rates_for(model, pricing) is None:
+            rep.warn("unpriced models",
+                     "%s has %d token(s) recorded with no price row, so its "
+                     "spend is left out of every dollar figure this ledger "
+                     "prints" % (model, tokens),
+                     "add a usage.pricing row for %s in "
+                     ".claude/audit.config.json, then run /audit:usage "
+                     "--backfill: a row already stamped unpriced is not "
+                     "priced again by a read" % (model,))
+            continue
         rep.warn("unpriced models",
-                 "%s has %d token(s) recorded with no price row, so its "
-                 "spend is left out of every dollar figure this ledger "
-                 "prints" % (model, tokens),
-                 "add a usage.pricing row for %s in "
-                 ".claude/audit.config.json" % (model,))
+                 "%s has %d token(s) in rows stamped unpriced although the "
+                 "table prices it now, so that spend is still left out of "
+                 "every dollar figure this ledger prints" % (model, tokens),
+                 "run /audit:usage --backfill to price the stamped rows "
+                 "again")
     if unknown_flag:
         rep.warn("unpriced models",
                  "the CLI's own cost-state for this session also reports "

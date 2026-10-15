@@ -69,7 +69,8 @@ _output.install_path()
 # not a second literal: hooks/ may import nothing from scripts/, so hooks/_config.py
 # stays the one place the shipped table is WRITTEN, and this module reads it back
 # by path. `tests/test__usage_core.py`'s `dp` case holds the derivation to account -
-# an edit to hooks/_config.py ALONE moves this copy.
+# an edit to hooks/_config.py ALONE moves this copy, by running
+# `_load_hooks_config_module` and `_shipped_pricing_from` over a scratch file.
 #
 # LOADED BY RAW `importlib`, NOT THROUGH `_loader.load_hooks_config()` - this
 # module sits at the FLOOR of scripts/'s import graph (it reaches only `_output`,
@@ -97,11 +98,13 @@ _output.install_path()
 # guess - `rates_for()` answers None for it, and `price()` follows. A project
 # that declares its own `usage.pricing._default` is still honoured, because the
 # lookup reads whatever `_default` the TABLE carries, never a module constant.
-def _load_hooks_config_module():
+def _load_hooks_config_module(path=None):
     """`hooks/_config.py`, loaded by path - never cached process-wide (unlike
     `_loader.load()`), because this runs exactly once, at import time, and the
-    constants below are what every later reader actually uses."""
-    path = os.path.join(_output.HOOKS_DIR, "_config.py")
+    constants below are what every later reader actually uses. `path` exists
+    so a suite can run THIS function over a scratch copy and watch the
+    constants it feeds move; nothing else passes it."""
+    path = path or os.path.join(_output.HOOKS_DIR, "_config.py")
     spec = importlib.util.spec_from_file_location(
         "audit_usage_core_hooks_config", path)
     mod = importlib.util.module_from_spec(spec)
@@ -109,12 +112,18 @@ def _load_hooks_config_module():
     return mod
 
 
+def _shipped_pricing_from(mod):
+    """`(table copy, asOf, source url)` read off a loaded hooks config module.
+    The table is a deep copy, not the module's own dict: a caller building a
+    drifted table off DEFAULT_PRICING for a test must not corrupt the module."""
+    usage = mod.DEFAULTS["usage"]
+    return (copy.deepcopy(usage["pricing"]), usage["pricingAsOf"].strip(),
+            mod.PRICING_SOURCE_URL)
+
+
 _hooks_config = _load_hooks_config_module()
-# A deep copy, not the loaded module's own dict: a caller building a drifted
-# table off DEFAULT_PRICING for a test must not corrupt `_hooks_config` itself.
-DEFAULT_PRICING = copy.deepcopy(_hooks_config.DEFAULTS["usage"]["pricing"])
-PRICING_AS_OF = _hooks_config.DEFAULTS["usage"]["pricingAsOf"].strip()
-PRICING_SOURCE_URL = _hooks_config.PRICING_SOURCE_URL
+DEFAULT_PRICING, PRICING_AS_OF, PRICING_SOURCE_URL = _shipped_pricing_from(
+    _hooks_config)
 
 TOKEN_KEYS = ("in", "out", "cacheW5m", "cacheW1h", "cacheR")
 
@@ -193,6 +202,19 @@ def rates_for(model, pricing=None, at=None):
     if entry is None:
         return None
     return _dated_row(entry, at)
+
+
+def _rate_via(model, pricing=None):
+    """`"_default"` when the entry that answers `model` is the TABLE's own
+    `_default` - no exact id and no prefix matched - else None. The shipped
+    table carries no `_default`, so this is only ever a project's own
+    declaration; a row priced through it is priced at a rate nobody named for
+    that model, which every surface must be able to say."""
+    table = pricing if isinstance(pricing, dict) and pricing else DEFAULT_PRICING
+    if table.get("_default") is None:
+        return None
+    named = dict((k, v) for k, v in table.items() if k != "_default")
+    return "_default" if _resolve_entry(model, named) is None else None
 
 
 def rate_for_stamp(model, pricing=None, at=None):
@@ -637,6 +659,7 @@ def priced_at_read(rows, table):
     out, kept = [], 0
     counts = {"stamped": 0, "readPriced": 0, "unpriced": 0, "unpricedTokens": 0}
     unpriced_models = set()
+    via_default, via_models = 0, set()
     for row in rows:
         copy = dict(row)
         stamped_rate = row.get("rate")
@@ -660,8 +683,19 @@ def priced_at_read(rows, table):
         else:
             copy["costUSD"] = round(usd, 6)
             counts[kind] += 1
+            via = row.get("rateVia") if kind == "stamped" else _rate_via(
+                row.get("model"), table)
+            if via == "_default":
+                via_default += 1
+                via_models.add(row.get("model") or "unknown")
         out.append(copy)
     mix = dict(counts, unpricedModels=sorted(unpriced_models))
+    # Present only when a declared `_default` priced something: a mix without
+    # the key has no such rows, and a reader that never asks sees the shape it
+    # always saw.
+    if via_default:
+        mix["viaDefault"] = via_default
+        mix["viaDefaultModels"] = sorted(via_models)
     return {"rows": out, "pricedWhenWritten": kept, "mix": mix}
 
 

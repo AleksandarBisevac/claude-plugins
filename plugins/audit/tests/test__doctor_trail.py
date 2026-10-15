@@ -206,6 +206,40 @@ def _cases(check):
         check("dt-up3 ...and the remedy names the config key that fixes it",
               "usage.pricing" in _fix(rep, "unpriced models"))
 
+        check("dt-up3b ...and names `/audit:usage --backfill` as the step after "
+              "adding the row, because a row stamped unpriced is never "
+              "re-resolved by a read - %r" % (_fix(rep, "unpriced models"),),
+              "/audit:usage --backfill" in _fix(rep, "unpriced models"))
+
+        # Rows already stamped unpriced, on a model the table prices NOW (the
+        # row was added after they were written): the table has a rate, the
+        # rows still leave their tokens out of every dollar figure.
+        stamped_ledger = os.path.join(tmp, "stamped-usage")
+        ul.append_rows(stamped_ledger, [
+            {"ts": "2026-01-01T00", "sessionId": "s-stamped",
+             "model": "claude-opus-5", "in": 10, "out": 400, "cacheW5m": 0,
+             "cacheW1h": 0, "cacheR": 90, "rate": None, "costUSD": None,
+             "unpriced": True},
+            {"ts": "2026-01-01T01", "sessionId": "s-stamped",
+             "model": "claude-opus-5", "in": 1, "out": 1, "cacheW5m": 0,
+             "cacheW1h": 0, "cacheR": 0, "rate": {"in": 5.0, "out": 25.0},
+             "costUSD": 0.01}])
+        rep = base.Report()
+        M.check_unpriced_models(rep, tmp,
+                               {"usage": {"ledgerDir": "stamped-usage"}},
+                               mrel, ul.DEFAULT_PRICING)
+        check("dt-up6 a model the table DOES price, whose rows were stamped "
+              "unpriced, is still a finding - counting only the stamped rows' "
+              "own 500 tokens, not the priced row beside them - %r"
+              % (_detail(rep, "unpriced models"),),
+              _levels(rep, "unpriced models") == ["WARNING"]
+              and "claude-opus-5" in _detail(rep, "unpriced models")
+              and "500 token" in _detail(rep, "unpriced models"))
+        check("dt-up7 ...and its remedy is the backfill alone, since the table "
+              "needs no row: %r" % (_fix(rep, "unpriced models"),),
+              "/audit:usage --backfill" in _fix(rep, "unpriced models")
+              and "add a usage.pricing row" not in _fix(rep, "unpriced models"))
+
         # A synthetic turn beside a real unknown model: only the real one is
         # named, with its own count; the synthetic one is never a finding.
         mixed_ledger = os.path.join(tmp, "mixed-usage")

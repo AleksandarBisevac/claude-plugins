@@ -34,8 +34,7 @@ import sys
 import _harness                                    # sets sys.path for scripts/ + hooks/
 import _output                                     # noqa: E402
 from _output import safe_stdio                     # noqa: E402
-import _loader                                     # noqa: E402
-import _usage_core as M                            # noqa: E402
+import _usage_core as M                           # noqa: E402
 
 
 # --- helpers that moved with the cases ----------------------------------------
@@ -374,13 +373,13 @@ def _cases(check):
           "pinned byte-for-byte against hooks/_config.py (pp8)",
           _lp_tiered_key not in M.DEFAULT_PRICING)
 
-    # --- dp: DEFAULT_PRICING is DERIVED from hooks/_config.py through
-    # `_loader`, never a second literal - pp7/pp8 above hold the two tables'
-    # CONTENTS equal, which a pair of literals kept in sync by hand would also
-    # pass. This proves the MECHANISM: `M._hooks_config` is the loaded module
-    # DEFAULT_PRICING is read off, and loading a hooks/_config.py edited on its
-    # own (simulated on a scratch copy - the real file is never touched) moves
-    # the figure through the exact call `_usage_core.py` makes.
+    # --- dp: DEFAULT_PRICING is DERIVED from hooks/_config.py, never a second
+    # literal - pp7/pp8 above hold the two tables' CONTENTS equal, which a pair
+    # of literals kept in sync by hand would also pass. This proves the
+    # MECHANISM: `M._hooks_config` is the loaded module DEFAULT_PRICING is read
+    # off, and running `_usage_core`'s own loader and reader over a
+    # hooks/_config.py edited on its own (a scratch copy - the real file is
+    # never touched) moves the figure.
     import shutil as _dp_shutil
     import tempfile as _dp_tempfile
 
@@ -410,13 +409,23 @@ def _cases(check):
             _dp_target.replace('"in":  5.0', '"in": 4321.5'), 1)
         with open(_dp_copy, "w", encoding="utf-8") as _fh:
             _fh.write(_dp_edited)
-        _dp_mod = _loader.load(_dp_copy, modname="audit_usage_core_dp_edited",
-                               cache=False)
-        check("dp4 LOADING a hooks/_config.py edited on its own (nothing in "
-              "_usage_core.py touched) carries the edit through the exact "
-              "mechanism (`_loader.load`) DEFAULT_PRICING is derived with",
-              _dp_mod.DEFAULTS["usage"]["pricing"]["claude-opus-5"]["in"]
-              == 4321.5)
+        _dp_mod = M._load_hooks_config_module(_dp_copy)
+        _dp_table, _dp_asof, _dp_url = M._shipped_pricing_from(_dp_mod)
+        check("dp4 running _usage_core's OWN loader and reader over a "
+              "hooks/_config.py edited on its own moves the figure "
+              "DEFAULT_PRICING is built from (4321.5 for the edited row), "
+              "while the live DEFAULT_PRICING keeps the shipped one - a "
+              "hand-copied literal in _usage_core would not move",
+              _dp_table["claude-opus-5"]["in"] == 4321.5
+              and M.DEFAULT_PRICING["claude-opus-5"]["in"] != 4321.5)
+        check("dp5 ...and over the UNEDITED file the same two calls reproduce "
+              "DEFAULT_PRICING, PRICING_AS_OF and the source url exactly, so "
+              "dp4's difference is the edit and nothing else",
+              M._shipped_pricing_from(M._load_hooks_config_module())
+              == (M.DEFAULT_PRICING, M.PRICING_AS_OF, M.PRICING_SOURCE_URL))
+        check("dp6 the table handed back is a copy: it is not the loaded "
+              "module's own dict",
+              _dp_table is not _dp_mod.DEFAULTS["usage"]["pricing"])
     finally:
         _dp_shutil.rmtree(_dp_tmp, ignore_errors=True)
 
@@ -795,6 +804,34 @@ def _read_price_cases(check):
                                 "unpricedTokens": 2500000,
                                 "unpricedModels": ["claude-nonesuch-1"]}
           and len(mx.get("rows") or []) == 4)
+
+    # --- rv: a row priced through a project's declared `_default` is labelled.
+    _rv_table = {"claude-opus-5": dict(shipped["claude-opus-5"]),
+                 "_default": {"in": 1.0, "out": 1.0, "cacheW5m": 0,
+                              "cacheW1h": 0, "cacheR": 0}}
+    check("rv1 _rate_via names _default only for a model no named entry answers",
+          M._rate_via("claude-nonesuch-1", _rv_table) == "_default"
+          and M._rate_via("claude-opus-5", _rv_table) is None
+          and M._rate_via("claude-opus-5-1-20260101", _rv_table) is None)
+    check("rv2 ...and a table with no _default (the shipped one) never does",
+          M._rate_via("claude-nonesuch-1", shipped) is None
+          and M._rate_via("claude-nonesuch-1") is None)
+    _rv_rows = [_rt_full("claude-nonesuch-1", "T1", 0.0, "in"),
+                _rt_full("claude-nonesuch-2", "T2", 0.0, "in"),
+                _rt_full("claude-opus-5", "T3", 0.0, "in")]
+    _rv_stamped = dict(_rt_full("claude-nonesuch-3", "T4", 0.0, "in"),
+                       rate=dict(_rv_table["_default"]), rateVia="_default")
+    _rv_mix = (_rt_price(_rv_rows + [_rv_stamped], _rv_table) or {}).get("mix", {})
+    check("rv3 priced_at_read counts the rows a declared _default priced, "
+          "stamped or read-priced, and names their models: %r" % (_rv_mix,),
+          _rv_mix.get("viaDefault") == 3
+          and _rv_mix.get("viaDefaultModels")
+          == ["claude-nonesuch-1", "claude-nonesuch-2", "claude-nonesuch-3"])
+    # Second direction: the label must not fire when nothing used _default.
+    _rv_clean = (_rt_price(_rv_rows[2:], _rv_table) or {}).get("mix", {})
+    check("rv4 a ledger no _default priced carries no viaDefault key at all: %r"
+          % (_rv_clean,),
+          "viaDefault" not in _rv_clean and "viaDefaultModels" not in _rv_clean)
 
     # A plan's table naming one model is laid over the shipped table model by
     # model, like a config table: an unnamed model keeps its shipped row rather
