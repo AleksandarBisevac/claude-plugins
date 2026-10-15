@@ -515,8 +515,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/status/audit-lookup.py:713-730",
         "issue": "P125.30: task says to read 'each failing file's FAIL lines from the sweep's per-file output'; red_step_lines prints the row's recorded `failing` list, which _evidence_io already cut to MAX_FAILING=10 lines. A sweep with more failing lines still drops names, and no per-file output is read. bf54 uses seven padded lines, inside that bound.",
-        "resolution": "Read the failing files from the row's failingSuites (or the step output) and print each file's own FAIL lines, or state the ten-line bound in the brief. Add a bf54 variant with more than ten failing lines.",
-        "fixTask": "P125.89-0h5"
+        "resolution": "fixed in P125.89-0h5 (704498fbe3d2): Read the failing files from the row's failingSuites (or the step output) and print each file's own FAIL lines, or state the ten-line bound in the brief. Add a bf54 variant with more than ten failing lines.",
+        "fixTask": "P125.89-0h5",
+        "commit": "704498fbe3d2",
+        "status": "fixed"
       },
       {
         "id": "P125-R60",
@@ -1014,7 +1016,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 37 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 38 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6982,7 +6984,7 @@
     {
       "id": "P125.89-0h5",
       "title": "fix P125-R59: P125.30: task says to read 'each failing file's FAIL lines from...",
-      "status": "in_progress",
+      "status": "done",
       "description": "P125.30: task says to read 'each failing file's FAIL lines from the sweep's per-file output'; red_step_lines prints the row's recorded `failing` list, which _evidence_io already cut to MAX_FAILING=10 lines. A sweep with more failing lines still drops names, and no per-file output is read. bf54 uses seven padded lines, inside that bound.\n\nResolution asked: Read the failing files from the row's failingSuites (or the step output) and print each file's own FAIL lines, or state the ten-line bound in the brief. Add a bf54 variant with more than ten failing lines.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -7013,14 +7015,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "704498fbe3d2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "red_step_lines now reads failingSuites: new failing_suite_lines prints every failing file with its own recorded FAIL lines, notes 'no FAIL line recorded for this file' where the row's MAX_FAILING cut dropped them, and states the MAX_PATHS bound when the file list reached it; with no failingSuites it prints the lines as before and states the MAX_FAILING bound when reached. Case added with 15 files over the 10-line bound. Full sweep exit 0 (335/335 files), cp1252 sweep exit 0. First sweep was red on prose-number lint over my fixture text, fixed by rewording.",
+        "descriptive": "A retry brief over a red sweep names every failing file, saying so when the record cannot hold their lines."
       },
       "startedAt": "2026-10-15T16:30:19Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T17:12:45Z",
+      "verifiedBy": [
+        "a red gate step with more failing lines than the recorded bound still names every failing file, each with its own FAIL lines, read from the row's failing suites"
+      ],
       "notes": [
         {
           "at": "2026-10-15T03:41:27Z",
@@ -7035,6 +7039,18 @@
         "runId": "2026-10-15T17:12:43Z.21a23e",
         "status": "passed",
         "at": "2026-10-15T17:12:43Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "704498fbe3d2",
+        "at": "2026-10-15T17:12:45Z",
+        "basis": "a fix task for P125-R59: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-15T17:02:12Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_lookup.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 104 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - a red gate step with more failing lines than the recorded bound still names every failing file, each with its own FAIL lines, read from the row's failing suites (named 10 of 15, own lines 10, unrecorded notes 0) (house FAIL): SELFTEST FAILED: 103/104 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -8674,7 +8690,12 @@
       "startedAt": "2026-10-15T16:30:14Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T17:23:04Z.afa077",
+        "status": "passed",
+        "at": "2026-10-15T17:23:04Z"
+      }
     },
     {
       "id": "P125.116-0h5",

@@ -591,8 +591,8 @@ LAYERS = (
      "_panel_usage",
      # `_affected_tests` (which suites a task's change can break) asks
      # `_gate_derive` for the coupling arm, the e2e reading of a path and the
-     # path-scoped shape, so it sits one layer above it; `run-test-gate` is its
-     # only consumer.
+     # path-scoped shape, so it sits one layer above it. Its callers are entry
+     # points and add no edge that moves it.
      "_affected_tests"),
     # `_report_md` (render_html's Markdown twin) and `_report_page` (the whole
     # document) are the report's answer to the same question `_panel_page`
