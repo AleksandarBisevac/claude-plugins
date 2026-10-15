@@ -1219,6 +1219,48 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P128.25-0h5",
+      "title": "Screenshot capture pins its browser locale and timezone, so committed images carry no host format",
+      "status": "pending",
+      "description": "Register F680. capture-screenshots.mjs sets no locale/timezone; the report's date inputs render the host placeholder (dd. mm. 2026.) in committed shots since v3.3.0.",
+      "files": [
+        "tools/capture-screenshots.mjs"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/capture-screenshots.mjs: the capture context runs with a pinned locale and timezone, asserted before the first shutter, and an unpinned context fails the check"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }
