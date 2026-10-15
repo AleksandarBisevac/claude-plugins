@@ -6366,14 +6366,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-15T09:47:19Z",
+      "startedAt": "2026-10-15T10:36:47Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -6508,7 +6508,12 @@
       "fixes": [
         "P125-R32"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T10:36:24Z.029b23",
+        "status": "failed",
+        "at": "2026-10-15T10:36:24Z"
+      }
     },
     {
       "id": "P125.84-0h5",
@@ -8000,6 +8005,49 @@
         "mode": "tdd",
         "add": [
           "plugins/audit/tests/test__deps.py: a document that binds a module name to an absolute layer number disagreeing with _deps.LAYERS fails the lint, naming the module, the stated layer and the real one"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.109-0h5",
+      "title": "The locale-pinned integrate run reports the error it failed on, and its intermittent git add failure is found and fixed",
+      "status": "pending",
+      "description": "Register F679. CI run 38715590987 (dbd9008f, windows-latest plain 1) failed once in test_integrate_task _world's git add -A under LC_ALL=C/PYTHONUTF8=0; the job re-ran green. _integrate_ascii_case clips the child's stderr from the head (clip_bytes(done.stderr, 600)), so the error line is lost, and _run prints git's stderr as a bytes repr. Make the failure diagnosable (tail of stderr, decoded git message), then find and fix the intermittent cause, or bound it with a reported retry - never a silent one.",
+      "files": [
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_integrate_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a child suite that fails under the pinned locale is reported by the tail of its stderr, so the raised error's own line is in the message"
         ],
         "expectRedFirst": true,
         "gate": [
