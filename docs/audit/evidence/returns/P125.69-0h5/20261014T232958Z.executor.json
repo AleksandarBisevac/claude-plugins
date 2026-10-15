@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --selftest": "pass",
+    "ruff check tools/sweep-selftests.py": "pass",
+    "python3 tools/gate-parity.py": "pass",
+    "python3 tools/sweep-selftests.py --encoding cp1252": "fail"
+  },
+  "redFirst": {
+    "at": "2026-10-14T23:58:58Z",
+    "basis": "`python3 tools/sweep-selftests.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 97 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, the task's run with its inline suite tools/sweep-selftests.py laid over as HEAD's copy plus its 2 test hunk(s), 4 other hunk(s) held at HEAD), each passing with the working tree's implementation - under --encoding cp1252 a child suite that reads a UTF-8 file with no encoding fails on POSIX, and the same suite naming its encoding passes: plain {'bare': 0, 'named': 0}, legacy {'bare': (True, None), 'named': (True, None)} (house FAIL): SELFTEST FAILED: 95/97 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/sweep-selftests.py: added LEGACY_LOCALE_VARS, locale_pins() (PYTHONIOENCODING everywhere, plus LC_ALL=C LANG=C PYTHONUTF8=0 on POSIX), legacy_locale_problem() probing a child's locale.getpreferredencoding(False) once, wired into main (exit 2, could-not-run, names the encoding seen) and run_one. Docstring line and CONTRIBUTING.md updated to name both halves. Two inline cases added. Full plain sweep 335/335 ok. Whole --encoding cp1252 pass now RED on a real latent defect: plugins/audit/tests/test__panel_discovery.py, line 94 in _cases (case after 'MCP rows carry a name and a source...'): open(M.__file__).read() with no encoding raises UnicodeDecodeError under ASCII locale. Also test_render_report.py failed once in the parallel pass but passed alone and on rerun under the pass (load flake, not attributed). CLAUDE.md line 'again, on a legacy code page' under-describes the pass now (also sets a non-UTF-8 locale on POSIX). Process note: one edit to the new case was made via a python script rather than the Edit tool; content verified by the suite.",
+    "descriptive": "The cp1252 sweep pass now also runs children under a non-UTF-8 locale on POSIX and refuses to run if that did not take, exposing a missing-encoding read in test__panel_discovery."
+  },
+  "testsAdded": [
+    "under --encoding cp1252 a child suite that reads a UTF-8 file with no encoding fails on POSIX, and the same suite naming its encoding passes (bare vs named fixture suites, plain vs legacy)",
+    "a legacy-encoding pass whose child still reports UTF-8 as its preferred encoding is refused as could-not-run, naming the encoding it saw (probe with PYTHONUTF8=1 override)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:26b0d04f0e2ab0ffdce7cbceceeeace894d9f479265775e0ef7993ff479ec60d\",\"dirtyDigest\":\"sha256:1bb9921d40308755a0e450c84f98abc4a974129a1861afb6b0c0d2efa7a07bd0\",\"dirtyPaths\":{\"CONTRIBUTING.md\":\"ddbd4f0b5e2f7ae1\",\"tools/sweep-selftests.py\":\"84d59251d2092991\"},\"head\":\"9cb96bae\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CONTRIBUTING.md\",\"tools/sweep-selftests.py\"],\"scopeDigest\":\"sha256:cbb9a54ba16276749dcd03309352865b8e2cdb51513197e1a13f1ac7fb332a4c\",\"v\":2}"
+}

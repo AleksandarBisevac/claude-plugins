@@ -283,8 +283,15 @@ python3 tools/sweep-selftests.py --selftest
 # ...and the sweep AGAIN, on a stream that cannot spell every character. A pipe on
 # Windows is the machine's legacy code page, and a suite printing a character that
 # page lacks dies there while every other OS stays green; the forced codec
-# reproduces that anywhere. CI runs this leg and so does verify.sh (`--fast` skips
-# it and says so). gate-parity compares the runners' sweep legs, so one side
+# reproduces that anywhere. The pass has two halves: the child's stdio codec
+# (PYTHONIOENCODING), and, on POSIX, a locale whose preferred encoding is not UTF-8
+# (LC_ALL=C, LANG=C, PYTHONUTF8=0), which is what `open()` and text-mode
+# `subprocess` use when no encoding is named - a read or capture that omits one
+# fails here as it does on a Windows runner. The runner asks a child for its
+# `locale.getpreferredencoding(False)` once and refuses the pass as could-not-run
+# (exit 2) if it is still UTF-8. Windows legs already run under a legacy code page
+# and get the first half only. CI runs this leg and so does verify.sh (`--fast`
+# skips it and says so). gate-parity compares the runners' sweep legs, so one side
 # dropping it fails by the leg's flags.
 python3 tools/sweep-selftests.py --encoding cp1252
 

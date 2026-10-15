@@ -10,7 +10,7 @@ sweeps that used to exist.
     tools/sweep-selftests.py --costs-from-log LOG --platform win32 --record-costs .github/sweep-costs.json
                                                  # ...or read them off a saved CI log
     tools/sweep-selftests.py --jobs 1            # serial, for a bisect
-    tools/sweep-selftests.py --encoding cp1252   # the "can it print" pass
+    tools/sweep-selftests.py --encoding cp1252   # the "can it print" pass: stdio codec AND, on POSIX, a non-UTF-8 locale
     tools/sweep-selftests.py --quiet             # failures and totals; no per-file lines
     tools/sweep-selftests.py --spaced            # TMPDIR and interpreter under a spaced symlink
     tools/sweep-selftests.py --selftest          # this file's own cases
@@ -550,6 +550,59 @@ def spaced_layout(holder):
     return scratch, interpreter
 
 
+# What `open()` and `subprocess(text=True)` consult when no encoding is named is the
+# locale's preferred encoding, not PYTHONIOENCODING. C locale plus the UTF-8 mode
+# switched off makes it ASCII on POSIX; windows legs already run under a legacy
+# code page and are left as they are.
+LEGACY_LOCALE_VARS = {"LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0"}
+PREFERRED_ENCODING_PROBE = ("import locale; "
+                            "print(locale.getpreferredencoding(False))")
+
+
+def locale_pins(encoding, locale_vars=None):
+    """The environment additions a `--encoding` pass makes: the child's stdio
+    codec everywhere, and on POSIX the locale pins too."""
+    if not encoding:
+        return {}
+    pins = {"PYTHONIOENCODING": encoding}
+    if os.name != "nt":
+        pins.update(LEGACY_LOCALE_VARS if locale_vars is None else locale_vars)
+    return pins
+
+
+def legacy_locale_problem(environ=None, locale_vars=None, interpreter=None):
+    """None when a child under the legacy pins really reports a non-UTF-8
+    preferred encoding, else the sentence that refuses the pass.
+
+    ASKED, not assumed: a pass that claims a legacy encoding while its children run
+    UTF-8 is the silent pass this exists to end. The probe sees the same filtered
+    environment a suite does. Windows is not probed - it is not given the pins.
+    """
+    if os.name == "nt":
+        return None
+    env = ambient_env(os.environ if environ is None else environ)
+    env.update(locale_pins("cp1252", locale_vars))
+    try:
+        done = subprocess.run([interpreter or sys.executable, "-c",
+                               PREFERRED_ENCODING_PROBE], env=env,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                              timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return "could-not-run: the locale probe failed to run: %s" % (exc,)
+    seen = done.stdout.decode("utf-8", "replace").strip()
+    if done.returncode != 0 or not seen:
+        return ("could-not-run: the locale probe exited %d and said %r"
+                % (done.returncode, seen))
+    if seen.lower().replace("-", "").replace("_", "") in ("utf8", "utf8sig"):
+        return ("could-not-run: a legacy-encoding pass needs children whose "
+                "preferred encoding is not UTF-8, and the probe saw %s under "
+                "%s" % (seen, " ".join("%s=%s" % kv
+                                       for kv in sorted(env.items())
+                                       if kv[0] in ("LC_ALL", "LANG",
+                                                    "PYTHONUTF8"))))
+    return None
+
+
 def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
             pycache=None, environ=None, spaced=False, grant=1):
     """Run one file's `--selftest` in a scratch directory and report what happened.
@@ -606,8 +659,7 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     """
     repo = repo or REPO
     env = ambient_env(os.environ if environ is None else environ)
-    if encoding:
-        env["PYTHONIOENCODING"] = encoding
+    env.update(locale_pins(encoding))
     env[STAGE_GRANT_VAR] = str(grant)
     env[FILE_TIMEOUT_VAR] = str(timeout)
     # A SHORT PREFIX, deliberately. This directory becomes the root of every fixture
@@ -1437,6 +1489,11 @@ def main(argv):
             sys.stderr.write("sweep-selftests: shard %d/%d holds no file - "
                              "refusing to report a green part over nothing\n"
                              % (index, count))
+            return 2
+    if encoding:
+        problem = legacy_locale_problem()
+        if problem:
+            sys.stderr.write("sweep-selftests: %s\n" % (problem,))
             return 2
     deadline = sweep_deadline()
     sys.stdout.write(budget_line(paths, jobs, costs, timeout, deadline=deadline))
@@ -2651,9 +2708,66 @@ def _cases(check):
           and nl_ran.returncode == 0 and nl_rowlines == [nl_real]
           and "1/1 files ok" in nl_text)
 
+    # --- the legacy pass also changes the locale, and checks that it took -----
+    # The suite reads a file holding valid UTF-8 with no encoding named. Under a
+    # UTF-8 locale that is fine, so a pass that only set the stdio codec never saw
+    # the defect; under the legacy locale it must raise. The second suite names its
+    # encoding and must pass under both. On windows the child already runs under a
+    # legacy code page, so the plain suite's verdict there is not asserted.
+    ll_title_a = ("under --encoding cp1252 a child suite that reads a UTF-8 file "
+                  "with no encoding fails on POSIX, and the same suite naming its "
+                  "encoding passes")
+    ll_title_b = ("a legacy-encoding pass whose child still reports UTF-8 as its "
+                  "preferred encoding is refused as could-not-run, naming the "
+                  "encoding it saw")
+    ll_box = tempfile.mkdtemp(prefix="sweep-locale-")
+    try:
+        with io.open(os.path.join(ll_box, "data"), "wb") as ll_fh:
+            ll_fh.write(u"café".encode("utf-8"))
+        ll_head = ("import os\n"
+                   "p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "
+                   "'data')\n")
+        ll_bodies = {
+            "bare": ll_head + "t = open(p).read()\n"
+                    "print('ALL PASS: 1/1 cases passed')\n",
+            "named": ll_head + "t = open(p, encoding='utf-8').read()\n"
+                     "print('ALL PASS: 1/1 cases passed')\n",
+        }
+        for ll_name, ll_body in ll_bodies.items():
+            with io.open(os.path.join(ll_box, ll_name), "w",
+                         encoding="utf-8") as ll_fh:
+                ll_fh.write(ll_body)
+        # The plain half is given a UTF-8 environment explicitly: this suite may
+        # itself be running under the legacy pass, and inheriting its pins would
+        # make the "reads fine under UTF-8" premise false.
+        ll_utf8 = dict(os.environ, LC_ALL="C.UTF-8", PYTHONUTF8="1")
+        ll_plain = dict((n, run_one(n, repo=ll_box, timeout=30, environ=ll_utf8))
+                        for n in ("bare", "named"))
+        ll_legacy = dict((r["path"], r) for r in sweep(
+            ["bare", "named"], set(), jobs=2, repo=ll_box, timeout=30,
+            encoding="cp1252"))
+    finally:
+        remove_tree(ll_box)
+    check("%s: plain %r, legacy %r" % (
+              ll_title_a,
+              dict((p, r["code"]) for p, r in ll_plain.items()),
+              dict((p, (r["ok"], r["why"])) for p, r in ll_legacy.items())),
+          ll_plain["bare"]["code"] == 0 and ll_plain["named"]["code"] == 0
+          and ll_legacy["named"]["ok"]
+          and (os.name == "nt" or (not ll_legacy["bare"]["ok"]
+                                   and "exited" in ll_legacy["bare"]["why"])))
+
+    ll_good = legacy_locale_problem(environ=os.environ)
+    ll_bad = legacy_locale_problem(
+        environ=os.environ, locale_vars={"PYTHONUTF8": "1", "LC_ALL": "C.UTF-8"})
+    check("%s: honest %r, UTF-8 child %r" % (ll_title_b, ll_good, ll_bad),
+          ll_good is None and ll_bad is not None
+          and "could-not-run" in ll_bad
+          and ("utf-8" in ll_bad.lower() or "utf8" in ll_bad.lower()))
+
 
 def _selftest():
-    from _suite import run          # the house runner; tools/_suite.py says why here
+    from _suite import run         # the house runner; tools/_suite.py says why here
     return run(_cases)
 
 
