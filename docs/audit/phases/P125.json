@@ -6731,7 +6731,12 @@
       "fixes": [
         "P125-R35"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T15:47:54Z.5a7a60",
+        "status": "passed",
+        "at": "2026-10-15T15:47:54Z"
+      }
     },
     {
       "id": "P125.86-0h5",
