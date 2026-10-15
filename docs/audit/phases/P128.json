@@ -1304,6 +1304,92 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P128.28-0h5",
+      "title": "The plan gate's shell arm grades an interpreter write it cannot resolve to a path as unresolved, not as no write",
+      "status": "pending",
+      "description": "Register F684 (fail-open, present at v3.3.0). _eval_write_targets sees only direct-call writes; p = Path(x); p.write_text(...) and loops pass ungraded. Orchestrator writes this guard code.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: a heredoc body that writes through a variable-held path or a loop is refused in a governed tree as an unresolved write, and a read-only body stays allowed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P128.29-0h5",
+      "title": "The plan gate's shell arm reads the task-tree binding, as the edit arm does",
+      "status": "pending",
+      "description": "Register F685 (present at v3.3.0). guard-secrets-read's _ungoverned_write_target reads the worktree's stale shard instead of _config.task_binding, so one file gets two verdicts by tool and undeclared shell writes pass on the free slot in a bound tree. Orchestrator writes this guard code.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: in a tree bound to a task, a shell write to a declared file is allowed and one to an undeclared file is refused, with no free slot, matching the edit arm"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }

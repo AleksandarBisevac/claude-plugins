@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test__invariants.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --encoding cp1252": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T15:31:04Z",
+    "basis": "`python3 plugins/audit/tests/test__invariants.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 134 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - one record-path definition - the index, every phase file the index names, the journal and the evidence directories, and anything under them - answers audit-task, commit-task-work and integrate-task alike (and no caller keeps a predicate of its own beside it) (house FAIL) and 2 more: SELFTEST FAILED: 131/134 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: removed local _is_record, tree_holds_only_integrated now calls _invariants.is_record_path (new import _invariants; PLUGIN-BUILD-GUIDE.md module map regenerated with _deps.py --write-map for the new edge). Behaviour: identical for paths equal to or under a record; records passed in already came from the shared set via integrate-task. commit-task-work.py: stage_targets reads the HEAD index and passes head_index to record_rels, returns 'records'; attempt_refusal's skip now includes targets records. Behaviour change: during-attempt changes to sibling shards, HEAD-only shards, whole journal/evidence directories and the index are no longer reported as undeclared strays; a declared HEAD-only shard is now classed a record by stage_targets (skipped with the record note). test__invariants.py rp-block: no-caller-predicate case extended with drive-phase, plus behavioural cases for tree_holds_only_integrated and attempt_refusal, each with a deny twin. Own selftest 134/134; full sweep exit 0 (335/335 files); cp1252 sweep exit 0 (335/335).",
+    "descriptive": "Drive and attempt check now answer 'is this a record' from the one shared definition."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__invariants.py: no caller keeps a record predicate of its own - drive-phase and commit-task-work's attempt check answer from the shared definition, sibling shards included"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:34079a972c8c770784c1ac4c92657ece0cedd1f342d2da3d12cb359c039b1161\",\"dirtyDigest\":\"sha256:781fd3093598b7832c700d58d43ab07fa7feef302b45399693b5692c117bd7c6\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"bb3679f9acb102cd\",\"plugins/audit/scripts/governance/commit-task-work.py\":\"ff924bf659f084ae\",\"plugins/audit/scripts/governance/drive-phase.py\":\"dbf4b1eed31a80b1\",\"plugins/audit/tests/test__invariants.py\":\"41ada097f900abfb\"},\"head\":\"c69e5041\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/commit-task-work.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/tests/test__invariants.py\"],\"scopeDigest\":\"sha256:efe6b12fd6fdeddf9bc79cd34c309a7f6416355be0ee829a4ba7579bf1958f77\",\"v\":2}"
+}

@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_audit_task.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T15:35:59Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest` in a throwaway tree at HEAD exited 1 with 4 of 1049 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cz22 (house FAIL): SELFTEST FAILED: 1045/1049 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-task.py: _finding_paths reads the head of a path:symbol token when the whole token is not path-shaped (308/and still name nothing; a drive letter has no extension before its colon). New _suites_for maps each declared source to the suite that tests it through _affected_tests._python_arm with only test files as graph nodes (direct importers/loaders); several reaching it is answered by the one named test_<stem>.py/<stem>_test.py, else unmapped with the reason (count + _output.some_of list); non-.py sources map to an EXISTING _colocated_test. _colocated_test refuses stylesheets (no report.test.css). _fix_scope returns byFinding; _fix_clauses writes one '<test path>: <resolution first sentence, capped>' clause per finding (named test, else placed test, else mapped suite; never a source or stylesheet); _fix_task_args adds mapped suites to files, notes each mapping with its basis and each unmapped source as 'no suite: ... none was guessed', notes findings left with no clause, writes tests.add unless the caller passed --tests-add or the mode is gate-only (a caller's --tests-mode no longer skips the clauses). All-test scope stays regression via _paths_discipline and still carries its clause. New cases cz22-cz25 in test_audit_task.py (_introduces_cases, stage cz-block). Red on HEAD code: cz-block 27/31 (cz22-cz25 FAIL). Green: cz-block 31/31; full test_audit_task.py --selftest exit 0. Full sweep `python3 tools/sweep-selftests.py` exit 0 (335/335 files ok); `--encoding cp1252` exit 0 (335/335 files ok). First sweep run had 3 reds: test__deps g1 (module map in PLUGIN-BUILD-GUIDE.md lacked the new audit-task -> _affected_tests edge), test__output lmd1 (a layer-numeral-shaped token in my docstring) and te11 (bounded list without some_of) - all fixed; test__proc_group raised PermissionError on os.killpg in that run (not my file; passed in the rerun). ruff and vermin clean on both changed .py files. PLUGIN-BUILD-GUIDE.md (outside files) edited by one line in the generated module-map fence; the plan gate allowed it. _deps.py's comment saying run-test-gate is _affected_tests's only consumer is now stale; the Edit was refused by require-plan (outside task, declared by other tasks) and is left for the orchestrator. COMPATIBILITY.md holds no promise about what add --fixes writes beyond tdd tests.add being '<path>: ...', which the clauses honour. Process deviation: one edit to the test file (swapping r.get(\"files\") for own(r) in the new cases) was made with a python one-liner rather than the Edit tool.",
+    "descriptive": "A fix task made from findings now declares the path in a path:symbol spelling, the suite that tests each source, and one tests.add clause per finding naming a real test file, never a stylesheet."
+  },
+  "testsAdded": [
+    "cz22",
+    "cz23",
+    "cz24",
+    "cz25"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:7923e17d9bc28af5b6cedf50f74ed929a7045b47c2e4c054da0d613cb171d165\",\"dirtyDigest\":\"sha256:727f0dc37afde721a241bf5b917c209685aecd16f8176404cf148faaf141ced4\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"09e0ae6c30c2c735\",\"plugins/audit/scripts/manifest/audit-task.py\":\"8de8c2e26cadbd9e\",\"plugins/audit/tests/test_audit_task.py\":\"9b3e625b4f443ab6\"},\"head\":\"c69e5041\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:80b9eaa451efd1512a60013fb915f56b5fcb0b4643c3a04485015bed1be352fe\",\"v\":2}"
+}

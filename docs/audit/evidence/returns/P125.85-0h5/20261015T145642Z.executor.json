@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "own-test python3 plugins/audit/tests/test_drive_phase.py --selftest --stage cx-block": "pass",
+    "python3 tools/sweep-selftests.py": "fail",
+    "python3 tools/sweep-selftests.py --encoding cp1252": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression mode, expectRedFirst false: the driver at HEAD already prints the chain line, so the case passes there by design (the helper confirmed: throwaway at HEAD exited 0, 4/4). Red is shown inside the case by the cx1 twin (chain line removed -> carried 28380 vs fresh 1290, margin 64).",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Added _chain_context_cases (stage cx-block) in plugins/audit/tests/test_drive_phase.py: real M.finish() output for P1 with P2 pending; transcript rows (assistant usage rows plus a /clear row, JSON round-tripped) written by a simulated main loop that clears only when a printed line says 'clear context'; first-request context = input+cache_creation+cache_read. Compares second phase's first request vs a fresh entry (real commands/phase.md size) within CHAIN_MARGIN_TOKENS=64; cx1 red twin strips the chain line and goes over the margin; cx2 bounds the margin. Limitation: the main loop's obedience to the printed line is modelled, not observed; the case fails if finish stops printing the clear instruction, not if a live model ignores it. No existing reader (stream-cost.py/_usage_core) was importable cheaply for this, so a minimal reader was built. Stage run: 4/4 pass, exit 0. Full sweep exit 1: only plugins/audit/tests/test__proc_group.py failed (not my file; passes standalone 24/24). cp1252 sweep exit 0. ruff clean on the file. The mutate-the-driver red was not run by me; the in-case twin is the only red shown.",
+    "descriptive": "Adds the missing offline back-to-back-phases context case with a stated 64-token margin and a red twin."
+  },
+  "testsAdded": [
+    "two trivial phases driven back to back as the command directs, over recorded transcript rows offline, the second phase's first orchestrator request carries no more context than a fresh entry, within a margin the case states",
+    "cx1 RED TWIN",
+    "cx2 margin bound"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:fe17f76790f36a8fca473bb5611dc3465d46e99599116a681488904b7e408590\",\"dirtyDigest\":\"sha256:c77cb05772f2f258100317a5cbbd99801348c0f6b2a677e2a211847f1a6a9c32\",\"dirtyPaths\":{\"plugins/audit/tests/test_drive_phase.py\":\"760da3a2d7f613a9\"},\"head\":\"c69e5041\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:f7c253d52ddbc9d99548d65fe594303a6f730d0f33400eba32c9cfeb3c6c35af\",\"v\":2}"
+}
