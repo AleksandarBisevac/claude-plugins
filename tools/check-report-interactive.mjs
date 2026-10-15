@@ -182,6 +182,10 @@ const FEATURE_ABSENT = [
              'every full-run line reads the sentence its own answer renders',
              'no full-run line is hidden by the stylesheet',
              'a merged phase carries one full-run line and never two'] },
+  // A plan that records no commit renders no copy button, so neither the
+  // button's hover nor the row hover that reveals it has a box to read.
+  { note: 'no task in this plan records a commit — sha hover skipped',
+    covers: ['tr interaction-state parity', '.shacopy interaction-state parity'] },
   { note: 'nothing is ready in this plan',
     covers: ['every ready task is a term', 'the list carries as many terms',
              'every term names its task id', 'every definition says why',
@@ -812,6 +816,121 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
       sha.copies.length >= sha.shown.replace(/\s/g, '').length
       && sha.copies.indexOf(sha.shown.replace(/\s/g, '')) === 0, true);
   } else notes.push('ok   (no task in this plan records a commit — sha copy skipped)');
+}
+
+// Hover, read off each control's OWN box. A screenshot of a whole table at rest
+// says nothing about what a pointer over one chevron does, and a pixel diff over
+// a section would let a colour change of a few pixels through. So each control
+// is hovered for real and its computed style compared twice: against its own
+// rest state, which proves the hover changed something, and against the token
+// the sheet names for that state, resolved in the same cell, which proves it
+// changed to the right thing.
+{
+  const view0 = await page.evaluate(() => {
+    const sel = document.getElementById('audit-view');
+    return sel ? sel.value : null;
+  });
+  if (view0 !== null && view0 !== 'all') {
+    await page.selectOption('#audit-view', 'all');
+    await page.waitForTimeout(200);
+  }
+  const shut = await page.evaluate(() =>
+    [...document.querySelectorAll('tr.task')].every((r) => r.offsetParent === null));
+  if (shut) { await page.click('#audit-expand'); await page.waitForTimeout(250); }
+  // The token as this very cell resolves it, so a theme or a dark sheet
+  // cannot make the comparison disagree with itself.
+  const tokenIn = (sel, prop, token) => page.evaluate(({ s, p, t }) => {
+    const host = document.querySelector(s);
+    const probe = document.createElement('span');
+    probe.style.setProperty(p, `var(${t})`);
+    host.append(probe);
+    const v = getComputedStyle(probe).getPropertyValue(p);
+    probe.remove();
+    return v;
+  }, { s: sel, p: prop, t: token });
+  const styleOf = (sel, props) => page.evaluate(({ s, ps }) => {
+    const n = document.querySelector(s);
+    const cs = getComputedStyle(n);
+    return Object.fromEntries(ps.map((p) => [p, cs.getPropertyValue(p)]));
+  }, { s: sel, ps: props });
+  const rest = async () => { await page.mouse.move(1, 1); await page.waitForTimeout(450); };
+  const hoverOn = async (sel) => { await page.hover(sel); await page.waitForTimeout(450); };
+
+  // Each target is marked by attribute, so the selector names one element and
+  // a later re-render cannot move the question onto a different one.
+  const marked = await page.evaluate(() => {
+    const visible = (n) => n && n.checkVisibility();
+    const tog = [...document.querySelectorAll('tr.task .dtoggle')].find(visible);
+    if (tog) tog.setAttribute('data-hover-probe', 'dtoggle');
+    const sha = [...document.querySelectorAll('tr.task .shacopy')]
+      .find((b) => visible(b.closest('tr')));
+    if (sha) {
+      sha.setAttribute('data-hover-probe', 'shacopy');
+      sha.closest('tr').setAttribute('data-hover-probe', 'row');
+      // A cell of the row that is not the button, so hovering the ROW never
+      // also hovers the control inside it.
+      const cell = [...sha.closest('tr').cells].find((c) => !c.contains(sha));
+      if (cell) cell.setAttribute('data-hover-probe', 'rowcell');
+    }
+    return { tog: !!tog, sha: !!sha };
+  });
+
+  if (marked.tog) {
+    const T = '[data-hover-probe="dtoggle"]';
+    await rest();
+    const at0 = await styleOf(T, ['color']);
+    await hoverOn(T);
+    const at1 = await styleOf(T, ['color']);
+    const accent = await tokenIn(T, 'color', '--accent');
+    expect('.dtoggle interaction-state parity - a clipped snapshot (or a computed-style '
+      + 'assertion) of its OWN box in its hover state, not only rest (its colour at rest, '
+      + 'hovered, and the --accent the hover rule names)',
+      `${at1.color !== at0.color} ${at1.color === accent}`, 'true true');
+  } else {
+    failures.push('FAIL no visible task row carries a .dtoggle to hover, so its hover state '
+      + 'was never measured');
+  }
+
+  if (marked.sha) {
+    const B = '[data-hover-probe="shacopy"]';
+    const R = '[data-hover-probe="row"]';
+    const C = '[data-hover-probe="rowcell"]';
+    await rest();
+    const rowRest = await styleOf(`${R} > td`, ['background-color']);
+    const btnRest = await styleOf(B, ['opacity', 'color', 'border-top-color']);
+    await hoverOn(C);
+    const rowHover = await styleOf(`${R} > td`, ['background-color']);
+    const btnInRow = await styleOf(B, ['opacity']);
+    const surface2 = await tokenIn(C, 'background-color', '--surface-2');
+    expect('tr interaction-state parity - a clipped snapshot (or a computed-style '
+      + 'assertion) of its OWN box in its hover state, not only rest (a task row hovered '
+      + 'away from its copy button: its cells change from rest to --surface-2, and the '
+      + 'copy button it holds goes from invisible to opaque)',
+      `${rowHover['background-color'] !== rowRest['background-color']} `
+      + `${rowHover['background-color'] === surface2} `
+      + `${btnRest.opacity} ${btnInRow.opacity}`, 'true true 0 1');
+    await hoverOn(B);
+    const btnHover = await styleOf(B, ['opacity', 'color', 'border-top-color']);
+    const accentC = await tokenIn(B, 'color', '--accent');
+    expect('.shacopy interaction-state parity - a clipped snapshot (or a computed-style '
+      + 'assertion) of its OWN box in its hover state, not only rest (its ink and its '
+      + 'border, at rest and hovered, against the --accent the hover rule names)',
+      `${btnHover.color !== btnRest.color} ${btnHover.color === accentC} `
+      + `${btnHover['border-top-color'] === accentC} ${btnHover.opacity}`,
+      'true true true 1');
+  } else notes.push('ok   (no task in this plan records a commit — sha hover skipped)');
+
+  await rest();
+  await page.evaluate(() => {
+    for (const n of document.querySelectorAll('[data-hover-probe]')) {
+      n.removeAttribute('data-hover-probe');
+    }
+  });
+  if (shut) { await page.click('#audit-expand'); await page.waitForTimeout(250); }
+  if (view0 !== null && view0 !== 'all') {
+    await page.selectOption('#audit-view', view0);
+    await page.waitForTimeout(200);
+  }
 }
 
 // The no-script banner. It is rendered into the HTML and removed by the script's
@@ -2543,67 +2662,200 @@ expect('...nor the panel inside it', onPaper.panel, true);
     planted.made.length > 0 && narrowest !== null && narrowest.painted, true);
 }
 
-// 10c. 10b plants a long run into the columns the renderer actually gives a
-//     paragraph - prose, full-width cells, evidence marks. Every OTHER column
-//     a table carries - a status, a risk word, a cost band, a delta, the name
-//     of what holds a phase shut - was left alone on the theory that the
-//     renderer never puts a long run there, so the question was never about
-//     content, it was about MARGIN: a bugs-table run reproduced this at the
-//     narrowest unframed width with CI's own fallback font and nothing longer
-//     than an ordinary word planted anywhere. This asks the same question of
-//     every one of those columns directly, with a run that has neither a
-//     space nor a hyphen to break at - and under a monospace fallback, a
-//     portable stand-in for "a font wide enough to find the margin", rather
-//     than depending on which font happens to be installed on whichever host
-//     runs this.
+// 10c. 10b plants a long run into the columns the renderer gives a paragraph.
+//     This plants one into EVERY column of EVERY table on the page, header and
+//     body alike, because which column a long run can reach is a fact about
+//     some future plan and not about this sheet. A column KIND is one table's
+//     cells of one tag that start at one column and span the same number of
+//     columns - a phase row's full-width cell is its own kind, beside the
+//     seven ordinary columns of the task rows under it.
+//
+//     The token is made unbreakable by the planted element's own inline
+//     style, so the answer does not lean on any wrap rule the sheet carries:
+//     a wrap override is a first resort for a column the sheet happens to
+//     name, and the guarantee asked about here is the one that must hold for
+//     a column it does not. Measured at every rung of the ladder, under a
+//     monospace fallback - a portable stand-in for a font wide enough to find
+//     the margin, whichever host runs this.
+//
+//     NO KIND PRESENT ON THE PAGE MAY GO UNPLANTED. Every disclosure, view and
+//     collapsed task row is opened first, the way a reader could; a kind
+//     whose every cell is still not rendered after that is a failure by
+//     name, never a note, so a page that planted one kind cannot read as one
+//     that planted them all.
+//
+//     The same ladder is walked once BEFORE planting, because the containing
+//     frame has a second half: a table that fits is released by the script
+//     and keeps sticky column headers on a desktop width. Planting then makes
+//     every table outgrow its frame, which is the content change the script
+//     must follow by taking the release back.
 {
-  const styleHandle = await page.addStyleTag(
-    { content: 'table.phases,table.data{font-family:monospace}' });
-  const HOSTILE_ATOM = 'q9z7k2m4'.repeat(20);
-  const ATOM_SELECTORS = ['.chip', '.rchip', '.bandpill', '.dl', '.heldby',
-    '.tevn', '.tevf', '.ptev'];
-  await page.setViewportSize({ width: FRAMED_BELOW + 1, height: 945 });
-  await page.waitForTimeout(60);
-  const planted = await page.evaluate(({ selectors, token }) => {
-    const made = [];
-    const skipped = [];
-    for (const sel of selectors) {
-      const n = document.querySelector(`table.phases ${sel}, table.data ${sel}`);
-      if (!n || !n.checkVisibility()) { skipped.push(sel); continue; }
-      n.setAttribute('data-hostile-orig', n.textContent);
-      n.setAttribute('data-hostile-atom', '');
-      n.textContent = token;
-      made.push(sel);
-    }
-    return { made, skipped };
-  }, { selectors: ATOM_SELECTORS, token: HOSTILE_ATOM });
-  const after = await page.evaluate(() => {
-    const de = document.documentElement;
-    const atoms = [...document.querySelectorAll('[data-hostile-atom]')];
-    const painted = atoms.length > 0 && atoms.every((a) => a.checkVisibility()
-      && a.getBoundingClientRect().width > 0);
-    return { scrollWidth: de.scrollWidth, clientWidth: de.clientWidth, painted };
+  const styleHandle = await page.addStyleTag({ content: 'table{font-family:monospace}' });
+  const HOSTILE_RUN = 'q9z7k2m4'.repeat(20);
+  const view0 = await page.evaluate(() => {
+    const sel = document.getElementById('audit-view');
+    return sel ? sel.value : null;
   });
+  if (view0 !== null && view0 !== 'all') {
+    await page.selectOption('#audit-view', 'all');
+    await page.waitForTimeout(200);
+  }
+  const shut = await page.evaluate(() =>
+    [...document.querySelectorAll('tr.task')].every((r) => r.offsetParent === null));
+  if (shut) { await page.click('#audit-expand'); await page.waitForTimeout(250); }
   await page.evaluate(() => {
-    for (const n of document.querySelectorAll('[data-hostile-atom]')) {
-      n.textContent = n.getAttribute('data-hostile-orig');
-      n.removeAttribute('data-hostile-atom');
-      n.removeAttribute('data-hostile-orig');
+    for (const table of document.querySelectorAll('table')) {
+      for (let d = table.closest('details:not([open])'); d;
+        d = d.parentElement && d.parentElement.closest('details:not([open])')) {
+        d.open = true;
+        d.setAttribute('data-hostile-opened', '');
+      }
+    }
+  });
+  // The frame each table sits in is contained by the sheet alone, and the
+  // script releases the ones whose table fits - which is what gives their
+  // column headers back to the page. Read here the way a reader meets it: per
+  // rendered frame, whether its table fits (measured by this gate itself, with
+  // the frame released for the reading, not by asking the script), whether the
+  // frame carries the mark, and whether its first header is sticky. Both
+  // directions are held: a fitting frame above the tablet block must be marked
+  // and stick, and every other frame must be unmarked and must not stick,
+  // because a mark left on a table that has since outgrown its frame is how the
+  // page would widen again.
+  const fitState = () => page.evaluate(() =>
+    [...document.querySelectorAll('.tablewrap')].filter((w) => w.checkVisibility())
+      .map((w, i) => {
+        const t = w.querySelector('table');
+        const th = t && t.querySelector('thead th');
+        const prev = w.style.overflowX;
+        w.style.overflowX = 'visible';
+        const fits = Boolean(t) && t.scrollWidth <= w.clientWidth;
+        w.style.overflowX = prev;
+        return { label: `${t ? `table.${t.classList[0] || '(no class)'}` : '(no table)'}#${i}`,
+          fits, marked: w.hasAttribute('data-fits'),
+          sticky: th ? getComputedStyle(th).position === 'sticky' : null };
+      }));
+  const fitWrong = (w, frames) => frames.flatMap((f) => {
+    const stickWanted = w > FRAMED_BELOW && f.fits;
+    const out = [];
+    if (stickWanted && !f.marked) out.push('fits but is not marked');
+    if (!f.fits && f.marked) out.push('is marked but its table overflows the frame');
+    if (f.sticky !== null && f.sticky !== stickWanted) {
+      out.push(stickWanted ? 'fits but its header does not stick'
+        : 'has a sticky header in a contained frame');
+    }
+    return out.map((s) => `${w}px ${f.label} ${s}`);
+  });
+  const cleanWrong = [];
+  const cleanWidened = [];
+  let fitAtDesk = 0;
+  for (const w of RESPONSIVE_LADDER) {
+    await page.setViewportSize({ width: w, height: 945 });
+    await page.waitForTimeout(60);
+    const frames = await fitState();
+    const de = await page.evaluate(() => [document.documentElement.scrollWidth,
+      document.documentElement.clientWidth]);
+    if (de[0] > de[1] + 1) cleanWidened.push(`${w}px (${de[1]} -> ${de[0]})`);
+    if (w > FRAMED_BELOW) fitAtDesk += frames.filter((f) => f.fits && f.sticky !== null).length;
+    cleanWrong.push(...fitWrong(w, frames));
+  }
+  expect('every column kind of every table on the page is planted with an unbreakable '
+    + 'token and none widens the document, and a kind present on the page that cannot '
+    + 'be planted fails the leg (before any planting: at every rung the document does not '
+    + 'widen, and above the tablet block every frame whose table fits is marked and its '
+    + `column header is sticky - ${fitAtDesk} fitting frame(s) with a header measured)`,
+    [fitAtDesk ? '' : 'no table fits its frame at any desktop width, so stickiness was never measured',
+     cleanWidened.length ? `widened at ${cleanWidened.join(', ')}` : '',
+     cleanWrong.length ? cleanWrong.slice(0, 6).join('; ') : '']
+      .filter(Boolean).join('; ') || 'none', 'none');
+  const planted = await page.evaluate((token) => {
+    const kinds = [];
+    const unplanted = [];
+    const tables = [...document.querySelectorAll('table')];
+    tables.forEach((table, n) => {
+      const label = `table.${table.classList[0] || '(no class)'}#${n}`;
+      const byKind = new Map();
+      for (const row of table.rows) {
+        let col = 0;
+        for (const cell of row.cells) {
+          const key = `${cell.tagName.toLowerCase()}@${col}`
+            + (cell.colSpan > 1 ? `+${cell.colSpan}` : '');
+          if (!byKind.has(key)) byKind.set(key, []);
+          byKind.get(key).push(cell);
+          col += cell.colSpan;
+        }
+      }
+      if (!byKind.size) unplanted.push(`${label} (no cell at all)`);
+      for (const [key, cells] of byKind) {
+        const cell = cells.find((c) => c.checkVisibility());
+        if (!cell) { unplanted.push(`${label} ${key} (no cell of it rendered)`); continue; }
+        const run = document.createElement('span');
+        run.setAttribute('data-hostile-run', '');
+        run.style.cssText = 'white-space:nowrap;overflow-wrap:normal;word-break:keep-all';
+        run.textContent = token;
+        cell.append(run);
+        kinds.push(`${label} ${key}`);
+      }
+    });
+    return { tables: tables.length, kinds, unplanted };
+  }, HOSTILE_RUN);
+  const widened = [];
+  const unpainted = new Set();
+  const plantedWrong = [];
+  let overflowAtDesk = 0;
+  for (const w of RESPONSIVE_LADDER) {
+    await page.setViewportSize({ width: w, height: 945 });
+    await page.waitForTimeout(60);
+    const frames = await fitState();
+    if (w > FRAMED_BELOW) overflowAtDesk += frames.filter((f) => !f.fits && f.sticky !== null).length;
+    plantedWrong.push(...fitWrong(w, frames));
+    const m = await page.evaluate(() => {
+      const de = document.documentElement;
+      const runs = [...document.querySelectorAll('[data-hostile-run]')];
+      return {
+        sw: de.scrollWidth, cw: de.clientWidth,
+        unpainted: runs.filter((r) => !r.checkVisibility()
+          || r.getBoundingClientRect().width === 0)
+          .map((r) => r.closest('table').className || '(no class)'),
+      };
+    });
+    if (m.sw > m.cw + 1) widened.push(`${w}px (${m.cw} -> ${m.sw})`);
+    m.unpainted.forEach((t) => unpainted.add(`${w}px ${t}`));
+  }
+  await page.evaluate(() => {
+    for (const r of document.querySelectorAll('[data-hostile-run]')) r.remove();
+    for (const d of document.querySelectorAll('[data-hostile-opened]')) {
+      d.open = false;
+      d.removeAttribute('data-hostile-opened');
     }
   });
   await styleHandle.evaluate((el) => el.remove());
+  if (shut) { await page.click('#audit-expand'); await page.waitForTimeout(250); }
+  if (view0 !== null && view0 !== 'all') {
+    await page.selectOption('#audit-view', view0);
+    await page.waitForTimeout(200);
+  }
   await page.setViewportSize({ width: 1512, height: 945 });
   await page.waitForTimeout(200);
-  if (planted.skipped.length) {
-    notes.push(`ok   (no atom of kind ${planted.skipped.join(', ')} on this fixture)`);
-  }
-  expect(`an unbroken run with no space or hyphen, planted into every status/value atom `
-    + `(${planted.made.join(', ') || 'none found'}), widens nothing at the narrowest `
-    + `unframed width (${FRAMED_BELOW + 1}px) under a monospace fallback`,
-    after.scrollWidth > after.clientWidth + 1
-      ? `widened to ${after.scrollWidth} (viewport ${after.clientWidth})` : 'none', 'none');
-  expect('...and every planted atom was really on the page to be measured',
-    planted.made.length > 0 && after.painted, true);
+  expect('every column kind of every table on the page is planted with an unbreakable '
+    + 'token and none widens the document, and a kind present on the page that cannot '
+    + `be planted fails the leg (${planted.kinds.length} kind(s) across `
+    + `${planted.tables} table(s), at every rung of the ladder)`,
+    [planted.tables ? '' : 'no table on the page',
+     planted.unplanted.length ? `not planted: ${planted.unplanted.join(', ')}` : '',
+     widened.length ? `widened at ${widened.join(', ')}` : '',
+     unpainted.size ? `planted but not painted: ${[...unpainted].slice(0, 6).join(', ')}` : '']
+      .filter(Boolean).join('; ') || 'none', 'none');
+  expect('every column kind of every table on the page is planted with an unbreakable '
+    + 'token and none widens the document, and a kind present on the page that cannot '
+    + 'be planted fails the leg (once planted, a table that outgrew its frame loses the '
+    + 'mark and its sticky header at every rung, the re-measure following the content '
+    + `change - ${overflowAtDesk} overflowing frame(s) with a header measured above the `
+    + 'tablet block)',
+    [overflowAtDesk ? '' : 'no planted table overflowed its frame at a desktop width, so '
+      + 'the contained direction was never measured',
+     plantedWrong.length ? plantedWrong.slice(0, 6).join('; ') : '']
+      .filter(Boolean).join('; ') || 'none', 'none');
 }
 
 // --- the full-run line: the third place's verdict, as a reader gets it -------

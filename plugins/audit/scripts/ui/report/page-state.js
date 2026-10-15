@@ -134,6 +134,73 @@
   }
   window.addEventListener('resize', measureStack, { passive: true });
 
+  // --- the table frames, released where their table fits -----------------------
+
+  // The sheet contains every table in a frame that scrolls sideways inside
+  // itself, so with no script no table can widen the page. The cost is the
+  // column headers: a header sticks to its nearest scrolling ancestor, which is
+  // then the frame, and the frame never scrolls vertically. So a frame whose
+  // table fits it is marked, and the sheet answers the mark by releasing the
+  // frame and pinning its headers to the page again. The mark is only ever a
+  // measurement: a frame whose table grows past it - a narrower window, rows
+  // expanded, a filter or a view that brings a wider row in - loses it on the
+  // next measurement, and the frame is contained again.
+  const TABLE_FIT_ATTR = 'data-fits';
+
+  /**
+   * Mark each frame whose table fits it, and unmark every other one. The width
+   * is read with the frame's overflow released, because the question is how
+   * wide the table is when nothing holds it in; the frame's own value is put
+   * back before the next frame is read.
+   * @param {Element[]} wraps the `.tablewrap` frames to measure
+   * @returns {void}
+   */
+  const markTableFits = (wraps) => {
+    for (const w of wraps) {
+      const t = w.querySelector('table');
+      const held = w.style.overflowX;
+      w.style.overflowX = 'visible';
+      const fits = Boolean(t) && t.scrollWidth <= w.clientWidth;
+      w.style.overflowX = held;
+      if (fits) w.setAttribute(TABLE_FIT_ATTR, '');
+      else w.removeAttribute(TABLE_FIT_ATTR);
+    }
+  };
+
+  // Coalesced to a frame, like the scroll listener below: a drag-resize or a
+  // filter pass reports many changes, and one measurement per paint answers
+  // all of them. The frames are queried per pass rather than kept from load:
+  // it is one query, and the answer then never rests on a list taken earlier.
+  let tableFitQueued = false;
+
+  /**
+   * Ask for one re-measurement of every table frame on the next frame.
+   * @returns {void}
+   */
+  const queueTableFit = () => {
+    if (tableFitQueued) return;
+    tableFitQueued = true;
+    requestAnimationFrame(() => {
+      tableFitQueued = false;
+      markTableFits(Array.from(document.querySelectorAll('.tablewrap')));
+    });
+  };
+  // Observed rather than hooked event by event: a frame changes width with the
+  // window, and a table changes size with every expand, filter and view switch,
+  // so watching the two boxes follows each of those without a list of them to
+  // keep in step. The window's own resize is the fallback where no observer
+  // exists.
+  if (window.ResizeObserver) {
+    const fitRo = new ResizeObserver(queueTableFit);
+    for (const w of document.querySelectorAll('.tablewrap')) {
+      fitRo.observe(w);
+      const t = w.querySelector('table');
+      if (t) fitRo.observe(t);
+    }
+  }
+  window.addEventListener('resize', queueTableFit, { passive: true });
+  queueTableFit();
+
   // --- scroll position ---------------------------------------------------------
 
   // Scroll-spy. The links work without any of this — they are plain anchors

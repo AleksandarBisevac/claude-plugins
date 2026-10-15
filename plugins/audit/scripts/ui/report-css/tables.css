@@ -1,12 +1,32 @@
 /* ---- tables -------------------------------------------------------------- */
-.tablewrap{margin:.5rem 0 1rem}
+/* By default, and at every width, a table scrolls sideways INSIDE this frame,
+   so no table can widen the document whatever its columns hold. A table's narrowest width
+   is set by its longest unbreakable run, and which run that is belongs to the
+   plan, not to this sheet; the wrap overrides further down lower that floor for
+   the columns they name, and this frame is what holds for every column they do
+   not. The frame wears the border, the corners and the shadow rather than the
+   table, because a scroll container clips its content to its own padding box
+   and would cut a shadow drawn by the table inside it; the table keeps its own
+   corners as well, so its fill stays inside the frame's curve when the frame
+   below stops clipping it. One frame, drawn the same in both states.
+   The containment costs the column headers: a header can only stick to the
+   nearest ancestor that scrolls, which is this frame, and it never scrolls
+   vertically. So the script measures each frame and marks the ones whose table
+   fits, and above the tablet block (where every frame stays contained, as it
+   always has) a marked frame is released and its headers pin BELOW the filter
+   bar again - at --sticky-3, under it rather than over it, because at the old
+   hand-tuned offset they pinned higher than the bar and were painted out. A
+   frame the script never reached is simply unmarked: contained, headers in
+   flow, nothing wider than the page. */
+.tablewrap{margin:.5rem 0 1rem;overflow-x:auto;border:1px solid var(--border);
+  border-radius:var(--radius-lg);box-shadow:var(--shadow-sm)}
+@media (width>52rem){
+  .tablewrap[data-fits]{overflow:visible}
+  .tablewrap[data-fits] thead th{position:sticky;top:var(--sticky-3);z-index:var(--z-thead)}
+}
 table.phases,table.data{border-collapse:separate;border-spacing:0;width:100%;font-size:.92rem;
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
-  box-shadow:var(--shadow-sm);margin:0}
-/* Pinned BELOW the filter bar, not above it. At top:3.5rem these headers pinned
-   1.6px higher than the bar that filters them and, being the lower layer, were
-   painted out completely — the table scrolled with no headers at all. */
-thead th{position:sticky;top:var(--sticky-3);z-index:var(--z-thead);background:var(--surface-2);color:var(--muted);font-weight:700;
+  background:var(--surface);border-radius:var(--radius-lg);margin:0}
+thead th{background:var(--surface-2);color:var(--muted);font-weight:700;
   font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;text-align:left;
   padding:.5rem .75rem;border-bottom:1px solid var(--border)}
 /* Only headers that actually sort look and behave like controls. `role="button"` is
@@ -15,7 +35,7 @@ thead th{position:sticky;top:var(--sticky-3);z-index:var(--z-thead);background:v
    the heatmap) previously showed a pointer on headers that did nothing. */
 /* non-text-contrast: thead th[role="button"] - NOT an exception, and saying so
    matters. A measurement reports this header at 1.05:1, but what it measured is
-   the sticky header's --surface-2 FILL against the page: table furniture, not
+   the header's --surface-2 FILL against the page: table furniture, not
    the information that identifies the control. SC 1.4.11 asks for 3:1 on the
    visual information REQUIRED to identify a component and its states, and here
    that information is carried by three other things, each of which is checked:

@@ -2,52 +2,52 @@
   "note": "Written by tools/capture-screenshots.mjs. Each entry is the plugin version that was in the picture when that file was written, the hash of the bytes it was written as, the surface it is a picture of, and the digest of that surface's UI sources at the moment of the shutter (_output.ui_surface_digests). _refs.screenshot_capture_drift() compares all of them; an entry missing the digest is a finding, not silence.",
   "images": {
     "areas.png": {
-      "sha256": "e66a1fffcef903d6befd89e1fd53a8b4c11ba59cca1deb65dbf8f8459cad39b0",
+      "sha256": "938d7e5721d7efb8f52e3a083bb022c6a8cc71f460fa5ede63a080a53111f755",
       "version": "3.3.0",
       "surface": "report",
-      "uiDigest": "5dccc32a7ced5ee659bbe780bbe883ffc110dc669bf0004979488c0a8b96e406"
+      "uiDigest": "87a2c04faf4e3877bf1aea38caffe58aa4d936ee4c44eff66fcc9b172c2ed140"
     },
     "authors.png": {
-      "sha256": "d8df2080c6de556384aa6f3e2eb1d998ebe543dc338d259de828844cacb4d1d2",
+      "sha256": "bc4c0646668c22e950750bf5eb6cea7c3581d1560368dcfa2e8bd014bb7994a5",
       "version": "3.3.0",
       "surface": "report",
-      "uiDigest": "5dccc32a7ced5ee659bbe780bbe883ffc110dc669bf0004979488c0a8b96e406"
+      "uiDigest": "87a2c04faf4e3877bf1aea38caffe58aa4d936ee4c44eff66fcc9b172c2ed140"
     },
     "dark.png": {
-      "sha256": "c2383efc0fb26f9273f51f3a6090b7f2611364d6dd27a4ba01055bc54c899b8c",
+      "sha256": "8b51f878efd60eaff0b944f294d64726175e7a869032e057fcfca5c8596699b9",
       "version": "3.3.0",
       "surface": "report",
-      "uiDigest": "5dccc32a7ced5ee659bbe780bbe883ffc110dc669bf0004979488c0a8b96e406"
+      "uiDigest": "87a2c04faf4e3877bf1aea38caffe58aa4d936ee4c44eff66fcc9b172c2ed140"
     },
     "expanded.png": {
-      "sha256": "02f89c10d514ec64c60d3e5d62a509efeec4240e2c0e004ad9f2278687d39323",
+      "sha256": "94c5e1f9e0879e5ee131460c2f005bbaf1e9bec6a5a5350c8b8307cd76289b3c",
       "version": "3.3.0",
       "surface": "report",
-      "uiDigest": "5dccc32a7ced5ee659bbe780bbe883ffc110dc669bf0004979488c0a8b96e406"
+      "uiDigest": "87a2c04faf4e3877bf1aea38caffe58aa4d936ee4c44eff66fcc9b172c2ed140"
     },
     "filtered.png": {
-      "sha256": "51ba4d5ed933d70730bcb85e957187c4c9d1ef38489dadc7e1f4254c51a63588",
+      "sha256": "b8967727327103ae1d5da2eb051de1ab0e69ad5823c1bd7bd68e9936e68407fe",
       "version": "3.3.0",
       "surface": "report",
-      "uiDigest": "5dccc32a7ced5ee659bbe780bbe883ffc110dc669bf0004979488c0a8b96e406"
+      "uiDigest": "87a2c04faf4e3877bf1aea38caffe58aa4d936ee4c44eff66fcc9b172c2ed140"
     },
     "filters.png": {
-      "sha256": "76406a84e9c88bda24213da8d5b656f027f5fed6cbcdc96789bf49457c679f70",
+      "sha256": "8c8aca51c0cbd84ff39df944b1f9198b99204f8f830fa927b490a01f41758246",
       "version": "3.3.0",
       "surface": "report",
-      "uiDigest": "5dccc32a7ced5ee659bbe780bbe883ffc110dc669bf0004979488c0a8b96e406"
+      "uiDigest": "87a2c04faf4e3877bf1aea38caffe58aa4d936ee4c44eff66fcc9b172c2ed140"
     },
     "mobile.png": {
-      "sha256": "63381bc2b3d28b4f58724a01811cc4e403338bd4d9c82db41dc89a905ad3c570",
+      "sha256": "2c46149ddd5f930d3917a479e2f0080774c765fa817d44ed3d2ad3f12c01a172",
       "version": "3.3.0",
       "surface": "report",
-      "uiDigest": "5dccc32a7ced5ee659bbe780bbe883ffc110dc669bf0004979488c0a8b96e406"
+      "uiDigest": "87a2c04faf4e3877bf1aea38caffe58aa4d936ee4c44eff66fcc9b172c2ed140"
     },
     "overview.png": {
-      "sha256": "c7226bee53532cb77e308dc71877baed5f3ec9912ca7b454631ebdbb722fd385",
+      "sha256": "554f4266ae5a67611855c3a7e68a5e8fcdaa6432f7cf6efe37451fc39a457c12",
       "version": "3.3.0",
       "surface": "report",
-      "uiDigest": "5dccc32a7ced5ee659bbe780bbe883ffc110dc669bf0004979488c0a8b96e406"
+      "uiDigest": "87a2c04faf4e3877bf1aea38caffe58aa4d936ee4c44eff66fcc9b172c2ed140"
     },
     "panel-appearance.png": {
       "sha256": "4559f8c2a17261dffcdc7f2d284079c5944b7a14b6092ce04f56068a95b5f09d",

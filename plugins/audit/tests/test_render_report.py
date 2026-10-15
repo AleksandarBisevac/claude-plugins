@@ -40,6 +40,7 @@ import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
+import _output                                     # noqa: E402  (REPO_ROOT)
 import _loader                                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402  (as render-report imports it)
 import _report_html                                # noqa: E402
@@ -47,6 +48,78 @@ import _report_ui                                  # noqa: E402
 import _ui_theme as _theme                         # noqa: E402  (the token defaults)
 
 M = _loader.load_script("render-report.py", modname="render_report")
+
+
+# --- the table frame -----------------------------------------------------------
+def _top_level_rules(css):
+    """Every `selector{declarations}` pair of `css` that sits outside any
+    at-rule block, in source order. A rule inside `@media` holds at some widths
+    only, which is the property the caller is asking about, so those blocks are
+    skipped whole rather than read."""
+    text = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    rules, i = [], 0
+    while True:
+        brace = text.find("{", i)
+        if brace < 0:
+            return rules
+        prelude = text[i:brace].strip()
+        depth, j = 1, brace + 1
+        while depth and j < len(text):
+            depth += {"{": 1, "}": -1}.get(text[j], 0)
+            j += 1
+        if not prelude.startswith("@"):
+            rules.append((prelude, text[brace + 1:j - 1]))
+        i = j
+
+
+def _media_rules(css, prefix):
+    """`(query, selector, declarations)` for every rule inside a top-level
+    `@media` block whose selector starts with `prefix`, in source order, with
+    the query's spaces removed and each declaration list stripped of its
+    trailing `;`. A rule the caller expects under one query and finds under
+    another, or at the top level, therefore reads as a different list."""
+    text = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    out = []
+    for m in re.finditer(r"@media\s*([^{]+)\{", text):
+        depth, j = 1, m.end()
+        while depth and j < len(text):
+            depth += {"{": 1, "}": -1}.get(text[j], 0)
+            j += 1
+        query = re.sub(r"\s+", "", m.group(1))
+        for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", text[m.end():j - 1]):
+            if sel.strip().startswith(prefix):
+                out.append((query, sel.strip(), body.strip().rstrip(";")))
+    return out
+
+
+def _scroll_framed_classes(css):
+    """The classes whose LAST top-level `overflow-x` (or `overflow`) says the
+    element scrolls its own content, read off rules whose selector list names
+    that class alone."""
+    last = {}
+    for prelude, body in _top_level_rules(css):
+        for sel in prelude.split(","):
+            m = re.match(r"^\.([\w-]+)$", sel.strip())
+            if not m:
+                continue
+            for val in re.findall(r"(?<![\w-])overflow(?:-x)?\s*:\s*([^;]+)", body):
+                last[m.group(1)] = val.strip().split()[0]
+    return {c for c, v in last.items() if v in ("auto", "scroll")}
+
+
+def _tables_and_wrappers(markup):
+    """`(label, wrapper classes)` for every `<table>` in `markup`: the classes
+    of the element that opens immediately before it, or `[]` when the table's
+    parent is not an element this markup opens right there."""
+    out = []
+    for n, m in enumerate(re.finditer(r'<table\b([^>]*)>', markup)):
+        cls = re.search(r'class="([^"]*)"', m.group(1))
+        first = cls.group(1).split()[0] if cls and cls.group(1).split() else ""
+        before = re.search(r'<div\b[^>]*\bclass="([^"]*)"[^>]*>\s*$',
+                           markup[max(0, m.start() - 400):m.start()])
+        out.append(("table.%s #%d" % (first, n),
+                    before.group(1).split() if before else []))
+    return out
 
 
 # --- cases --------------------------------------------------------------------
@@ -305,7 +378,7 @@ def _cases(check):
     check("u4c and the date is not merely today's generation stamp "
           "(the trap this case sat in)",
           "rates as of %s" % time.strftime("%Y-%m-%d", time.gmtime()) not in uh)
-    check("u10 heatmap opts out of the sticky thead used by the phases table",
+    check("u10 heatmap headers are declared static, so they stay in flow",
           ".hm thead th{position:static" in uh)
     # A closed <details> clips its children in print media regardless of CSS, so
     # the PDF silently loses the detail block without this. Verified in-browser.
@@ -515,11 +588,20 @@ def _cases(check):
     _css_decl = re.sub(r"/\*.*?\*/", "", M._CSS, flags=re.S)
     check("sticky: no layer keeps a hand-tuned offset the bar can outgrow",
           not re.search(r"top:\s*(3\.4|3\.5|3\.6|4\.1|6\.6)rem", _css_decl))
-    check("sticky: the column headers pin BELOW the bar that filters them, and "
-          "paint under it rather than over it",
+    # The column headers are the third pinned layer, but only around a table the
+    # script has measured to fit its frame. A header sticks to its nearest
+    # scrolling ancestor, and an unmarked frame scrolls sideways - so a header
+    # pinned there would be pushed down over its own rows by the page's offset.
+    # Hence no BARE `thead th` rule may make a header sticky: only the fit
+    # attribute's rule, which releases the frame in the same breath.
+    check("sticky: the column headers pin BELOW the bar that filters them and paint "
+          "under it, and only where their table was measured to fit its frame",
           "--z-sectools:15" in M._CSS and "--z-thead:10" in M._CSS
           and "z-index:var(--z-thead)" in M._CSS
-          and "z-index:var(--z-sectools)" in M._CSS)
+          and "z-index:var(--z-sectools)" in M._CSS
+          and not re.search(r"(?:^|[},])\s*thead th\{[^}]*position:sticky", _css_decl)
+          and ".tablewrap[data-fits] thead th{position:sticky;top:var(--sticky-3);"
+              "z-index:var(--z-thead)}" in _css_decl)
     check("sticky: the stack is restated at runtime, because its height depends "
           "on the title, the width and the reader's font size",
           "measureStack" in M._SCRIPT and "--topbar-h" in M._SCRIPT
@@ -1482,7 +1564,7 @@ def _cases(check):
 
     # --- SC 1.4.11 for the sortable header: a pass, not an exemption ------------
     # A measurement reports thead th[role=button] at 1.05:1, and the honest read of
-    # that number is that it measured the sticky header's FILL, not the information
+    # that number is that it measured the header's FILL, not the information
     # that identifies the control. So this is recorded as met by other visual
     # information — and the three carriers are pinned, because the moment one of
     # them goes the verdict becomes false and nothing else would notice.
@@ -1599,6 +1681,42 @@ def _cases(check):
           _markup(html_out).count('class="tablewrap"') == 2
           and ".tablewrap{overflow-x:auto" in html_out
           and "@media (max-width:40rem)" in html_out)
+    # Every table, in the markup a renderer really emits: this fixture's phases
+    # and bugs tables, and the committed demo's usage tables and heatmap, which
+    # this fixture carries no ledger to produce. The frame has to be declared
+    # OUTSIDE every @media block, because a frame that exists only below a
+    # breakpoint leaves every wider screen to the column algorithm - and the
+    # column algorithm's floor is whatever the plan's longest token is.
+    _demo_html = os.path.join(_output.REPO_ROOT, "examples", "acme-store",
+                              "acme-store-audit.html")
+    with open(_demo_html, encoding="utf-8") as fh:
+        _demo_markup = _markup(fh.read())
+    _framed = _scroll_framed_classes(M._CSS)
+    _tables = (_tables_and_wrappers(_markup(html_out))
+               + _tables_and_wrappers(_demo_markup))
+    _unframed = [t for t, w in _tables if not (set(w) & _framed)]
+    check("every report table sits in a contained overflow fallback, so no table can "
+          "widen the page at any width (%d table(s) read, wrapped by %s; unframed: %r)"
+          % (len(_tables), sorted({c for _t, w in _tables for c in w} & _framed),
+             _unframed),
+          bool(_tables) and not _unframed
+          and {"table.phases", "table.data", "table.hm"}
+          <= {t.split(" ")[0] for t, _w in _tables})
+    # The other half of the hybrid. The frame above is contained with no script;
+    # the script marks a frame whose table fits, and this is the rule that
+    # answers the mark: the frame released and its headers pinned again, at the
+    # widths that pinned them before the frame existed (above the 52rem block,
+    # where the tablet rules keep every frame contained). A fit rule written at
+    # the top level would also outrank the tablet block's static header, so the
+    # media query is part of what is asserted.
+    _fit = _media_rules(M._CSS, ".tablewrap[data-fits]")
+    check("every report table sits in a contained overflow fallback, so no table can "
+          "widen the page at any width (and only a frame marked to fit is released, "
+          "with its sticky headers restored above 52rem: %r)" % (_fit,),
+          _fit == [("(width>52rem)", ".tablewrap[data-fits]", "overflow:visible"),
+                   ("(width>52rem)", ".tablewrap[data-fits] thead th",
+                    "position:sticky;top:var(--sticky-3);z-index:var(--z-thead)")]
+          and "data-fits" not in "".join(p + b for p, b in _top_level_rules(M._CSS)))
     check("m4 markdown twin has the done column with the completion date",
           "| done | ADO |" in md_out and "2026-07-09" in md_out)
     check("r1 ready list rendered", "P1.2" in md_out)
