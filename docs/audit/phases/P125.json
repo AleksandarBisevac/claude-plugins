@@ -4486,7 +4486,7 @@
     {
       "id": "P125.71-0h5",
       "title": "A case title is matched by one rule everywhere, and the legacy-locale pass's first find is fixed",
-      "status": "in_progress",
+      "status": "done",
       "description": "Three small items from closing the sweep's legacy-locale pass. (1) `python3 tools/sweep-selftests.py --encoding cp1252` now runs children under an ASCII locale on POSIX, and it found a real latent defect: plugins/audit/tests/test__panel_discovery.py `_cases` reads `open(M.__file__)` with no encoding (about line 94), raising UnicodeDecodeError after the 'MCP rows carry a name and a source' case so the cases after it never ran - fix it and every other unencoded text read in that file; then run the whole pass and fix any other suite it turns red the same way (name each). (2) Two readers of a test case's title disagree: the red-first helper's `--case NAME` (stamp-verification.py around line 1436) matches a label that ends at the name or continues with ' (', while `_filed_returns.tests_add_gaps` matches only the verbatim clause, so a title carrying its detail after ' (' - what the briefs now ask for - is reported 'no filed counterpart' at submit. One predicate both call, in the lower layer, with the briefs' wording unchanged. (3) CLAUDE.md's Tests list describes the encoding pass as 'again, on a legacy code page'; it now also sets a non-UTF-8 locale on POSIX - say both halves. The encoding lint stays scoped to shipped code (scripts/, hooks/, .claude/hooks/); state that boundary and why (the legacy-locale pass catches what a test or tool actually decodes) in the lint's docstring in _output.py.",
       "files": [
         "plugins/audit/tests/test__panel_discovery.py",
@@ -4524,19 +4524,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9e5b7849ae22",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added _filed_returns.title_names_clause (title == clause, or clause then ' ('); tests_add_gaps and stamp-verification._is_named (label branch) both call it; stamp-verification imports _filed_returns (floor layer, allowed). test__panel_discovery.py: every text open now names encoding utf-8 (the read at ~94 and all writes); the cp1252 pass then found no other red suite. CLAUDE.md Tests-list comment on the --encoding cp1252 line now says legacy code page for stdio AND non-UTF-8 locale on posix, one line changed. _output.text_encoding_violations docstring states the shipped-code scope and why (legacy-locale pass catches what tests/tools decode). OUTSIDE declared files: ran `_deps.py --write-map`, which regenerated the module-map fence in PLUGIN-BUILD-GUIDE.md because stamp-verification gained an import edge (test__deps g1 was red otherwise). Fixtures use a non-.py declared path so test__refs c5 stays green. Results: sweep 335/335 files ok, 16285 cases; cp1252 pass 335/335 ok; gate-parity exit 0; ruff clean.",
+        "descriptive": "One rule decides whether a case title names a declared test clause everywhere, and the legacy-locale pass is green with its first find fixed."
       },
       "startedAt": "2026-10-15T00:36:32Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T01:20:45Z",
+      "verifiedBy": [
+        "a filed case title that is the tests.add clause followed by its detail after an opening parenthesis counts as that clause's counterpart, and a title that only paraphrases it does not",
+        "the red-first helper's case match and the filed-counterpart check are the same function's answer"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-15T01:20:43Z.53aed7",
         "status": "passed",
         "at": "2026-10-15T01:20:43Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "9e5b7849ae22",
+        "at": "2026-10-15T01:20:45Z"
+      },
+      "redFirst": {
+        "at": "2026-10-15T01:00:35Z",
+        "basis": "`python3 plugins/audit/tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 94 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - a filed case title that is the tests.add clause followed by its detail after an opening parenthesis counts as that clause's counterpart, and a title that only paraphrases it does not ((['the-suite: a filed title carries its detail after a parenthesis'], [], ['the-suite: a filed title carries its detail after a parenthesis'], ['the-suite: a filed title carries its detail after a parenthesis'], ['the-suite: a filed title carries its detail after a parenthesis'])) (house FAIL): SELFTEST FAILED: 93/94 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
