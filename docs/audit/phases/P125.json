@@ -9098,6 +9098,52 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P125.122-0h5",
+      "title": "Fixture git runs no background auto-gc, measured first, so no repack races a clone or an add",
+      "status": "pending",
+      "description": "Register F690 (and possibly F679). CI 38792231809: a fixture git clone --no-hardlinks failed with ENOENT copying a loose object that vanished mid-copy. Hypothesis: git's detached gc --auto repacking the fixture repo in the background. Measure with GIT_TRACE first; if gc --auto spawns, set gc.auto=0 in _harness.GIT and every suite-local prefix, with a case; if not, report and leave the cause open.",
+      "files": [
+        "plugins/audit/tests/_harness.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test_hooks.py",
+        "plugins/audit/tests/test_integrate_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_commit_task_work.py: no fixture git call can spawn an auto gc - the shared prefix and every suite's own prefix carry gc.auto=0 - measured with GIT_TRACE on a heavy fixture"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
