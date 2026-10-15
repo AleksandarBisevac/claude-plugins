@@ -177,24 +177,30 @@
         "severity": "high",
         "file": "tools/release.py: STEPS, step_verify_release, step_commit (P125.11)",
         "issue": "verify-release (sh tools/verify.sh --release) runs BEFORE the release commit. verify.sh --release ends with 'HEAD carries the published pages' (check-rendered-artifacts.py --against-commit), and tools/check-rendered-artifacts.py / CONTRIBUTING.md state that this arm is red for as long as a re-rendered page is uncommitted. The bump and followers steps always re-render version-stamped pages, so on a real run verify-release cannot pass and the pipeline stops there every time. The selftest's FakeRunner returns (0, '') for the verify.sh call, so the order is never exercised.",
-        "resolution": "Run commit before verify-release (or run the --before-commit half before the commit and the full --release after it), and add a case whose fake verify.sh answer depends on whether a commit was recorded.",
-        "fixTask": "P125.74-0h5"
+        "resolution": "fixed in P125.74-0h5 (73b282eb86e4): Run commit before verify-release (or run the --before-commit half before the commit and the full --release after it), and add a case whose fake verify.sh answer depends on whether a commit was recorded.",
+        "fixTask": "P125.74-0h5",
+        "commit": "73b282eb86e4",
+        "status": "fixed"
       },
       {
         "id": "P125-R22",
         "severity": "high",
         "file": "tools/release.py: wait_ci (P125.11)",
         "issue": "wait_ci resolves the pushed branch with `git rev-parse ci/v<version>`, but step_push_ci_branch pushes `HEAD:refs/heads/ci/v<version>` and creates no local branch; only refs/remotes/origin/ci/v<version> exists. Checked in a scratch repo: after that push `git rev-parse ci/v1.2.3` exits 128 ('unknown revision') while `git rev-parse origin/ci/v1.2.3` resolves. So with --push the wait-ci step always stops 'could not resolve ci/v... to a commit'. rl3/rl4/rl5 stub `git rev-parse ci/v9.9.9` to succeed, so no case can fail on this.",
-        "resolution": "Resolve the SHA from HEAD at push time (store it in state with ciBranch) or use `git rev-parse origin/<branch>`/`git ls-remote origin refs/heads/<branch>`, and make the fake runner answer rev-parse of a bare ci/ ref with failure.",
-        "fixTask": "P125.74-0h5"
+        "resolution": "fixed in P125.74-0h5 (73b282eb86e4): Resolve the SHA from HEAD at push time (store it in state with ciBranch) or use `git rev-parse origin/<branch>`/`git ls-remote origin refs/heads/<branch>`, and make the fake runner answer rev-parse of a bare ci/ ref with failure.",
+        "fixTask": "P125.74-0h5",
+        "commit": "73b282eb86e4",
+        "status": "fixed"
       },
       {
         "id": "P125-R23",
         "severity": "high",
         "file": "tools/release.py: _skip_remote, run_pipeline, rl2b (P125.11)",
         "issue": "A run without --push records push-ci-branch, wait-ci, push-main-tag, gh-release and check-published as status 'done' ('skipped: no --push given'), and run_pipeline skips any step already done. A later `release.py run --version X --push` therefore finds every remote step done, publishes nothing and prints 'RELEASE vX COMPLETE'; the local tag step has already run too. rl2b asserts exactly this recording as intended. The documented dry-run-then-push use ends in a false success.",
-        "resolution": "Record a skipped remote step as 'skipped' (not 'done') and treat it as pending when --push is given, or refuse a --push resume over a state file whose remote steps were skipped; add a case that runs without --push and then with it and expects the push.",
-        "fixTask": "P125.74-0h5"
+        "resolution": "fixed in P125.74-0h5 (73b282eb86e4): Record a skipped remote step as 'skipped' (not 'done') and treat it as pending when --push is given, or refuse a --push resume over a state file whose remote steps were skipped; add a case that runs without --push and then with it and expects the push.",
+        "fixTask": "P125.74-0h5",
+        "commit": "73b282eb86e4",
+        "status": "fixed"
       },
       {
         "id": "P125-R24",
@@ -211,8 +217,10 @@
         "severity": "med",
         "file": "tools/release.py: _cases (P125.11)",
         "issue": "Clause 'including resume after a stop at each step' is met only for the CI step (rl3/rl4). No case stops at bump, changelog, followers, verify-release, commit, push, tag, push-main-tag or gh-release and resumes, which is how findings 1 to 3 survived a green selftest.",
-        "resolution": "Drive a table of steps, failing each in turn with the fake runner and resuming, asserting the earlier steps do not re-run and the failed one does.",
-        "fixTask": "P125.74-0h5"
+        "resolution": "fixed in P125.74-0h5 (73b282eb86e4): Drive a table of steps, failing each in turn with the fake runner and resuming, asserting the earlier steps do not re-run and the failed one does.",
+        "fixTask": "P125.74-0h5",
+        "commit": "73b282eb86e4",
+        "status": "fixed"
       },
       {
         "id": "P125-R26",
@@ -751,8 +759,10 @@
         "severity": "med",
         "file": "tools/release.py:756",
         "issue": "The task says 'rl8, and any case asserting on the fake runner's call list, prints the whole call list on failure ... Clip the message'. Only rl8 was clipped. rl2 still formats '%r' % (runner.calls,) unclipped (also the only other call-list print at :751-756). It is bounded by the new call_limit=200 but not clipped. The clause is contradicted for rl2.",
-        "resolution": "Route rl2's message through excerpt(repr(runner.calls)) like rl8 and rl8b. Optionally add a helper that every call-list message uses.",
-        "fixTask": "P125.74-0h5"
+        "resolution": "fixed in P125.74-0h5 (73b282eb86e4): Route rl2's message through excerpt(repr(runner.calls)) like rl8 and rl8b. Optionally add a helper that every call-list message uses.",
+        "fixTask": "P125.74-0h5",
+        "commit": "73b282eb86e4",
+        "status": "fixed"
       },
       {
         "id": "P125-R99",
@@ -950,7 +960,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 5 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 10 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -5631,11 +5641,103 @@
     {
       "id": "P125.74-0h5",
       "title": "fix the release pipeline: verify after the commit, the CI ref the push made, ski",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase-review findings fixed together (one theme, shared files).\n\nP125-R21: verify-release (sh tools/verify.sh --release) runs BEFORE the release commit. verify.sh --release ends with 'HEAD carries the published pages' (check-rendered-artifacts.py --against-commit), and tools/check-rendered-artifacts.py / CONTRIBUTING.md state that this arm is red for as long as a re-rendered page is uncommitted. The bump and followers steps always re-render version-stamped pages, so on a real run verify-release cannot pass and the pipeline stops there every time. The selftest's FakeRunner returns (0, '') for the verify.sh call, so the order is never exercised.\n\nResolution asked: Run commit before verify-release (or run the --before-commit half before the commit and the full --release after it), and add a case whose fake verify.sh answer depends on whether a commit was recorded.\n\nP125-R22: wait_ci resolves the pushed branch with `git rev-parse ci/v<version>`, but step_push_ci_branch pushes `HEAD:refs/heads/ci/v<version>` and creates no local branch; only refs/remotes/origin/ci/v<version> exists. Checked in a scratch repo: after that push `git rev-parse ci/v1.2.3` exits 128 ('unknown revision') while `git rev-parse origin/ci/v1.2.3` resolves. So with --push the wait-ci step always stops 'could not resolve ci/v... to a commit'. rl3/rl4/rl5 stub `git rev-parse ci/v9.9.9` to succeed, so no case can fail on this.\n\nResolution asked: Resolve the SHA from HEAD at push time (store it in state with ciBranch) or use `git rev-parse origin/<branch>`/`git ls-remote origin refs/heads/<branch>`, and make the fake runner answer rev-parse of a bare ci/ ref with failure.\n\nP125-R23: A run without --push records push-ci-branch, wait-ci, push-main-tag, gh-release and check-published as status 'done' ('skipped: no --push given'), and run_pipeline skips any step already done. A later `release.py run --version X --push` therefore finds every remote step done, publishes nothing and prints 'RELEASE vX COMPLETE'; the local tag step has already run too. rl2b asserts exactly this recording as intended. The documented dry-run-then-push use ends in a false success.\n\nResolution asked: Record a skipped remote step as 'skipped' (not 'done') and treat it as pending when --push is given, or refuse a --push resume over a state file whose remote steps were skipped; add a case that runs without --push and then with it and expects the push.\n\nP125-R25: Clause 'including resume after a stop at each step' is met only for the CI step (rl3/rl4). No case stops at bump, changelog, followers, verify-release, commit, push, tag, push-main-tag or gh-release and resumes, which is how findings 1 to 3 survived a green selftest.\n\nResolution asked: Drive a table of steps, failing each in turn with the fake runner and resuming, asserting the earlier steps do not re-run and the failed one does.\n\nP125-R98: The task says 'rl8, and any case asserting on the fake runner's call list, prints the whole call list on failure ... Clip the message'. Only rl8 was clipped. rl2 still formats '%r' % (runner.calls,) unclipped (also the only other call-list print at :751-756). It is bounded by the new call_limit=200 but not clipped. The clause is contradicted for rl2.\n\nResolution asked: Route rl2's message through excerpt(repr(runner.calls)) like rl8 and rl8b. Optionally add a helper that every call-list message uses.",
       "files": [
         "tools/release.py",
         "tools/release.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "73b282eb86e4",
+      "outcome": {
+        "technical": "tools/release.py only. (1) STEPS reordered so commit precedes verify-release; docstring says why (verify.sh --release's --against-commit arm is red while a re-render is uncommitted) and that a red verify leaves only a local commit to amend. (2) step_push_ci_branch reads `git rev-parse HEAD` before `git push origin HEAD:refs/heads/ci/v<v>` and records ciSha in the state; wait_ci(ctx, ref, sha=None) takes the known sha and resolves ref locally only when none is given (kept for `ci <ref>`); step_wait_ci uses state ciSha, falling back to `git rev-parse origin/<branch>`, never the bare ci/ name. (3) The no --push skip moved out of five step functions into run_pipeline: a remote step is recorded status 'skipped' (step_done does not count it), so a later --push run over the same state runs it; a run that skipped any remote step ends with 'release vX prepared locally and nothing was published: ... skipped' plus a publish command instead of COMPLETE. (4) FakeRunner results may be callables; new _new_world()/_faithful_responses(): bare `git rev-parse ci/...` fails 128, origin/ci/... resolves only after the push, `git rev-parse HEAD` returns the head, verify.sh --release is red until `git commit` was recorded, gh run list reports the pushed sha. rl3/rl4 moved onto it (they previously stubbed the bare ci ref to succeed). New cases: rl2b rewritten (skipped not done), rl2c (no-push run then --push run publishes ci branch, main, tag, release, prints COMPLETE), rl2d (no-push run does not print COMPLETE), rl2e (--push run does not redo commit/tag/verify), rl12 (verify once, after commit, full --push run green), rl13 (no bare ci/ rev-parse; waits on recorded ciSha), rl15 (table has one row per STEPS entry), rl14 x12 (each step failed in turn, resumed: earlier steps print 'skipped (already done)' and their signature commands are absent from the resume runner, the failed step re-runs, resume ends 0; bump-version row seeds preflight done because no fake answer can fail it while letting preflight read the same file). (5) rl2 and rl8 call-list messages go through _call_list() = excerpt(repr(runner.calls)). Runs: `python3 tools/release.py --selftest` -> ALL PASS 39/39, exit 0; `ruff check tools/release.py` exit 0; `vermin -t=3.8- --no-tips --violations tools/release.py` exit 0; `python3 tools/sweep-selftests.py` in the tree -> exit 0, 335/335 files ok. CONTRIBUTING.md's release section defers the step list to the module docstring, so it needed no edit and was not touched.",
+        "descriptive": "tools/release.py now verifies after the release commit, waits on the commit it actually pushed, keeps a no-push run's remote steps pending for a later --push, and its selftest resumes from a stop at every step against a fake that answers like real git."
+      },
+      "startedAt": "2026-10-15T04:32:32Z",
+      "completedAt": "2026-10-15T05:18:24Z",
+      "verifiedBy": [
+        "rl2c",
+        "rl2d",
+        "rl2e",
+        "rl12",
+        "rl13",
+        "rl14 (one per step, x12)",
+        "rl15",
+        "rl2b (rewritten)"
+      ],
+      "notes": [
+        {
+          "at": "2026-10-15T03:41:27Z",
+          "text": "scope: tools/release.py, every path the finding(s) P125-R21, P125-R22, P125-R23, P125-R25, P125-R98 name"
+        },
+        {
+          "at": "2026-10-15T04:45:34Z",
+          "text": "Red-first proved by the orchestrator, one reverting mutation per high finding in a scratch copy of the task's tools/release.py (inline cases, so the helper had no HEAD copy to hold them): verify-release back before commit -> 17/39, FAIL rl2/rl2b/rl2d; skipped remote steps recorded done -> 37/39, FAIL rl2b/rl2c; wait-ci asking the bare branch with no stored sha -> 22/39, FAIL rl2c/rl12/rl13; unmutated 39/39."
+        }
+      ],
+      "fixes": [
+        "P125-R21",
+        "P125-R22",
+        "P125-R23",
+        "P125-R25",
+        "P125-R98"
+      ],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T05:18:22Z.4e80b0",
+        "status": "passed",
+        "at": "2026-10-15T05:18:22Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "73b282eb86e4",
+        "at": "2026-10-15T05:18:24Z",
+        "basis": "a fix task for P125-R21, P125-R22, P125-R23, P125-R25, P125-R98: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "could-not-prove",
+        "at": "2026-10-15T04:44:41Z",
+        "basis": "P125.74-0h5 declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P125.74-0h5 declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P125.75-0h5",
+      "title": "every cost surface prints unpriced and states its rate mix and routing basis",
+      "status": "in_progress",
+      "description": "Phase-review findings fixed together (one theme, shared files).\n\nP125-R1: P125.3 clause 'every surface (audit-usage, the report, the panel) prints unpriced beside its tokens instead of a dollar figure' is contradicted. Only audit-usage.py gained `cost_cell` and the 'tokens unpriced' text. The panel still sums `float(r.get('costUSD') or 0.0)`, and neither file mentions 'unpriced' or `unpricedTokens` at HEAD. An unpriced model's spend therefore reads as free in the report and the panel. The executor's claim defers these to P125.4, whose diff did not touch them either.\n\nResolution asked: Carry `unpricedTokens` (already summed by `_usage_core.totals`/`_finish`) into the report payload (`window.AUDIT_USAGE`) and the panel facts. Render 'unpriced' beside the tokens of a model that has no price, and state how many tokens a cost total leaves out. Add cases in test__report_usage.py and test__panel_usage.py.\n\nP125-R2: P125.3 clause 'returns the count of each so every surface's rate phrase states the mix' is contradicted. `priced_at_read` returns only `pricedWhenWritten`, and that is now the count of unstamped, unpriceable rows only. The stamped and unstamped counts are not returned. The rate phrase still reads as 'costs priced at <resolved table>', although stamped rows are priced from their own stamp and are no longer touched by the table it names. That is a printed claim with no basis.\n\nResolution asked: Return `stamped` and `readPriced` (and `kept`) counts from `priced_at_read`. Have `rate_basis_phrase` say 'N rows at the rate stamped when written, M priced again at the rate in effect on their date'. Add a case pinning the phrase with a mixed ledger.\n\nP125-R3: P125.3 clause 'rows are priced at global routing and the basis says so' is not implemented. No text under plugins/audit says 'global' or 'inference-geo' (grep at HEAD), and the diff changes neither the basis phrase nor the README in that respect.\n\nResolution asked: Add the routing statement to the printed rate basis and to the README usage section ('priced at global routing; inference-geo pricing is not visible in the transcript'). Pin it with a case.",
+      "files": [
+        "plugins/audit/scripts/report/_report_usage.py",
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/scripts/usage/_usage_core.py",
+        "plugins/audit/scripts/usage/_usage_economics.py",
+        "plugins/audit/README.md",
+        "plugins/audit/tests/test__report_usage.py",
+        "plugins/audit/tests/test__panel_usage.py",
+        "plugins/audit/tests/test__usage_core.py",
+        "plugins/audit/tests/test__usage_economics.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -5665,80 +5767,7 @@
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-15T04:32:32Z",
-      "completedAt": null,
-      "verifiedBy": [],
-      "notes": [
-        {
-          "at": "2026-10-15T03:41:27Z",
-          "text": "scope: tools/release.py, every path the finding(s) P125-R21, P125-R22, P125-R23, P125-R25, P125-R98 name"
-        },
-        {
-          "at": "2026-10-15T04:45:34Z",
-          "text": "Red-first proved by the orchestrator, one reverting mutation per high finding in a scratch copy of the task's tools/release.py (inline cases, so the helper had no HEAD copy to hold them): verify-release back before commit -> 17/39, FAIL rl2/rl2b/rl2d; skipped remote steps recorded done -> 37/39, FAIL rl2b/rl2c; wait-ci asking the bare branch with no stored sha -> 22/39, FAIL rl2c/rl12/rl13; unmutated 39/39."
-        }
-      ],
-      "fixes": [
-        "P125-R21",
-        "P125-R22",
-        "P125-R23",
-        "P125-R25",
-        "P125-R98"
-      ],
-      "reviewPerTask": "phase",
-      "testEvidence": {
-        "runId": "2026-10-15T05:18:22Z.4e80b0",
-        "status": "passed",
-        "at": "2026-10-15T05:18:22Z"
-      }
-    },
-    {
-      "id": "P125.75-0h5",
-      "title": "every cost surface prints unpriced and states its rate mix and routing basis",
-      "status": "pending",
-      "description": "Phase-review findings fixed together (one theme, shared files).\n\nP125-R1: P125.3 clause 'every surface (audit-usage, the report, the panel) prints unpriced beside its tokens instead of a dollar figure' is contradicted. Only audit-usage.py gained `cost_cell` and the 'tokens unpriced' text. The panel still sums `float(r.get('costUSD') or 0.0)`, and neither file mentions 'unpriced' or `unpricedTokens` at HEAD. An unpriced model's spend therefore reads as free in the report and the panel. The executor's claim defers these to P125.4, whose diff did not touch them either.\n\nResolution asked: Carry `unpricedTokens` (already summed by `_usage_core.totals`/`_finish`) into the report payload (`window.AUDIT_USAGE`) and the panel facts. Render 'unpriced' beside the tokens of a model that has no price, and state how many tokens a cost total leaves out. Add cases in test__report_usage.py and test__panel_usage.py.\n\nP125-R2: P125.3 clause 'returns the count of each so every surface's rate phrase states the mix' is contradicted. `priced_at_read` returns only `pricedWhenWritten`, and that is now the count of unstamped, unpriceable rows only. The stamped and unstamped counts are not returned. The rate phrase still reads as 'costs priced at <resolved table>', although stamped rows are priced from their own stamp and are no longer touched by the table it names. That is a printed claim with no basis.\n\nResolution asked: Return `stamped` and `readPriced` (and `kept`) counts from `priced_at_read`. Have `rate_basis_phrase` say 'N rows at the rate stamped when written, M priced again at the rate in effect on their date'. Add a case pinning the phrase with a mixed ledger.\n\nP125-R3: P125.3 clause 'rows are priced at global routing and the basis says so' is not implemented. No text under plugins/audit says 'global' or 'inference-geo' (grep at HEAD), and the diff changes neither the basis phrase nor the README in that respect.\n\nResolution asked: Add the routing statement to the printed rate basis and to the README usage section ('priced at global routing; inference-geo pricing is not visible in the transcript'). Pin it with a case.",
-      "files": [
-        "plugins/audit/scripts/report/_report_usage.py",
-        "plugins/audit/scripts/panel/_panel_usage.py",
-        "plugins/audit/scripts/usage/_usage_core.py",
-        "plugins/audit/scripts/usage/_usage_economics.py",
-        "plugins/audit/README.md",
-        "plugins/audit/scripts/report/_report_usage.py",
-        "plugins/audit/scripts/panel/_panel_usage.py",
-        "plugins/audit/tests/test__report_usage.py",
-        "plugins/audit/tests/test__panel_usage.py",
-        "plugins/audit/scripts/usage/_usage_economics.py",
-        "plugins/audit/README.md"
-      ],
-      "tests": {
-        "mode": "tdd",
-        "add": [],
-        "expectRedFirst": true,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "phase-no-spelling"
-      },
-      "model": "sonnet",
-      "skills": [],
-      "risk": "low",
-      "blockedBy": [],
-      "dependsOn": [],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
+      "startedAt": "2026-10-15T05:18:25Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -5755,19 +5784,21 @@
         "P125-R1",
         "P125-R2",
         "P125-R3"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.76-0h5",
       "title": "the CLI cost figure is recorded per session and the session-start check reads th",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase-review findings fixed together (one theme, shared files).\n\nP125-R4: P125.4 clause 'The meter records the CLI's per-model figure per session beside the plugin's own reading' is contradicted. Nothing is recorded: the hook and the ledger writer are untouched, and `read_cost_state` is called at dashboard time. The clause 'audit-usage, the report and the panel print both wherever they differ' is also contradicted: report and panel have no `cli_cost` path at HEAD. A later commit (a7d1b5c4, P125.39) added a once-per-session note, which does not supply either.\n\nResolution asked: Either record the per-session CLI figure at meter time (a field on the cursor or a ledger row) and have the report and panel read it, or amend the task text to the render-time design and file the report/panel surfaces as an explicit follow-up task.\n\nP125-R5: The probe clause asked for modelUsage compared to the ledger's per-model sum for that session. The docstring answers 'modelUsage DOES fold in subagent spend' from the absence of sonnet in the main transcript. It then admits the two sides disagree 'by a wide margin, on every model' and attributes this to compaction, which is unverified. The stated answer is an inference, not a measured comparison.\n\nResolution asked: Re-run the probe as asked: per model, `modelUsage` costUSD against the ledger's per-model sum for that session id, with and without subagent rows. Record the numbers in the docstring, or reword the docstring to 'inferred, not measured'.\n\nP125-R73: Contradicts description clause (1) 'whether the session's model resolves in the price table' and the title 'when its model has no price': the check reads the previous session's last-turn model, not the new session's. A first-ever session, or one started on a newly unpriced model, is silent. The task only said 'previous' for check (2) (the CLI cost-state), not for check (1). The choice is not recorded as a choice in the return.\n\nResolution asked: Read the model off the SessionStart payload when it carries one (not verified here, no SessionStart payload sample was handed), falling back to the previous session's transcript only as a labelled fallback. Otherwise record the previous-session reading as a deliberate narrowing and say what it cannot see.",
       "files": [
         "plugins/audit/scripts/usage/audit-usage.py",
         "plugins/audit/hooks/meter-usage.py",
         "plugins/audit/scripts/usage/usage_ledger.py",
-        "plugins/audit/scripts/usage/audit-usage.py",
-        "plugins/audit/hooks/meter-usage.py"
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/tests/test_meter_usage.py",
+        "plugins/audit/tests/test_usage_ledger.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -5790,14 +5821,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T05:18:28Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -5810,7 +5841,8 @@
         "P125-R4",
         "P125-R5",
         "P125-R73"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.77-0h5",
@@ -5822,7 +5854,8 @@
         "plugins/audit/scripts/usage/_usage_core.py",
         "plugins/audit/tests/test__usage_core.py",
         "plugins/audit/hooks/_config.py",
-        "plugins/audit/hooks/_config.py"
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/tests/test__config.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -5871,13 +5904,12 @@
     {
       "id": "P125.78-0h5",
       "title": "the machine-path shapes: writer keeps relative repo paths, detector catches cut",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase-review findings fixed together (one theme, shared files).\n\nP125-R53: P125.27 makes the write scrub stricter. Before, `posix-home` fired at the writer only with a separator before the home word, and the removed comment justified that: a repository may hold its own `home/` directory and a writer refusing `home/<x>` would refuse its paths. Now a relative repo path with no leading separator such as `<outside-repo>` (home word plus two further segments, depth 3) fires. It reaches machine_path_shape at _machine_paths.py:599 and _journal_io.py:1313, so a plan, journal or evidence value holding it would be redacted to OUTSIDE_TOKEN or refused. Neither mp16 nor q2i pins that a deep relative `home/...` path is still accepted by the writer.\n\nResolution asked: Keep the writer's separator requirement, so the depth rule applies only on the detector path. Or add a case for `<outside-repo>` at the writer's door and an explicit decision that it is now refused.\n\nP125-R54: The detector's stated purpose is to catch a home directory whose leading separator was cut, but with _HOME_PATH_MIN_DEPTH=3 a cut `Users/alice`, `Users/alice/notes.txt` or `home/alice/.bashrc` (depth 1 or 2) no longer fires. Before this diff the detector flagged all of them. The comment claims the corpus 'carries at least two more' segments, but only the prose false positives were measured and recorded; nothing measures real cut paths. q2i pins only `Users/<user>/p/x.js`.\n\nResolution asked: Record a measurement of the true-positive side, or lower the threshold and tell prose apart another way. Add a case for a depth-2 cut path to say what is intended.\n\nP125-R106: The description asks for 'a segment shape no escape sequence has'. Requiring 2 or more characters per segment still reads a doubled-JSON escape followed by a word as a UNC path. I checked the shipped regex on the in-memory string with two doubled backslashes then `nfoo`, two then `nbar`, two then `n`. It matches, because `nfoo` and `nbar` are 2 or more characters. The same match comes from 'line' + two backslashes + 'nnext' + two + 'nmore' + two. Doubled-escaped multi-line text is the same class that produced the removed BASELINE rows, so the next occurrence will again need a baseline row or a shape change. The tests (4 quiet strings, all of lone one-letter escapes) do not cover this.\n\nResolution asked: Add a quiet case for a doubled-escaped newline immediately followed by a word and decide it explicitly. Either tighten the segment shape (for instance, reject a segment that starts with an escape letter n, r, t, b or f directly after exactly two backslashes and has prose after it) or document it as a known residual with a baseline-free test.",
       "files": [
         "plugins/audit/scripts/_machine_paths.py",
         "tools/check-committed-pii.py",
-        "plugins/audit/scripts/_machine_paths.py",
-        "tools/check-committed-pii.py"
+        "plugins/audit/tests/test__machine_paths.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -5900,14 +5932,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T05:18:30Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -5920,7 +5952,8 @@
         "P125-R53",
         "P125-R54",
         "P125-R106"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.79-0h5",
@@ -5986,7 +6019,7 @@
       "description": "Phase-review findings fixed together (one theme, shared files).\n\nP125-R44: Task names the 'is not exported' error; only the node ESM wording 'does not provide an export named' is read, the row is limited to runners vitest/jest/None (a playwright run is excluded), and se1/se2 exercise only that wording. A rollup/vite `\"x\" is not exported by \"y\"` error is still not an --introduces proof. Still true at HEAD (stamp-verification.py:687).\n\nResolution asked: Add the 'is not exported by' spelling (named group for the export) to the row and a case for it, or state the wording the testbed actually printed.\n\nP125-R45: playwright_line_cases marks every entry `assertion: True` ('playwright: failed'), so a line-reporter run failing on a timeout, a refused connection or a crash proves red as 'a task's own case failing an assertion'. The docstring admits it; the weakening is in the proof the red word rests on. Still true at HEAD (_runner_output.py:698).\n\nResolution asked: Mark line-reporter entries `assertion: None/unknown` and let red say it proved a failure, not an assertion, or require the JSON reporter for `proved`.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
-        "plugins/audit/scripts/governance/stamp-verification.py"
+        "plugins/audit/tests/test_stamp_verification.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -6154,7 +6187,7 @@
       "description": "dispatch_starts orders dispatches by file mtime and its docstring says that is 'the order a session actually spawned them in'. An mtime is the time of the last write, i.e. roughly when a dispatch finished, so a long first dispatch that ends after a second one starts swaps them. check_dispatch_cache then prints 'dispatch X read N cached token(s) at its start, served from <prev>'s' (lines 268-273), naming a predecessor as the cache's source on that ordering alone. The output asserts a cause that nothing in the reading establishes. Still true at HEAD (_doctor_trail.py:466-482).\n\nResolution asked: Order by the first entry's timestamp inside each transcript (the first usage block is already read), or drop the 'served from <prev>' attribution and print only the read/written tokens; correct the docstring either way.",
       "files": [
         "plugins/audit/scripts/status/_doctor_trail.py",
-        "plugins/audit/scripts/status/_doctor_trail.py"
+        "plugins/audit/tests/test__doctor_trail.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -6313,8 +6346,8 @@
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
         "plugins/audit/scripts/status/audit-lookup.py",
-        "plugins/audit/scripts/manifest/_filed_returns.py",
-        "plugins/audit/scripts/status/audit-lookup.py"
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test_audit_lookup.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -6364,7 +6397,7 @@
       "description": "The task rule is 'a task that adds or changes observable behaviour is tdd', but the new default is a keyword scan of title plus description checked refactor first, then config, else tdd. _CONFIG_TEXT now also matches 'document(s|ing|ation)' besides comment(s)/docs/config, so 'Add comments to posts' or 'Let users upload a document' is written gate-only with no red-first, and 'extract the CSV' text is written regression. This makes the misclassification the silent default for every `add` and batch task.\n\nResolution asked: Classify on the title only or require the signal word to head the title, and name the matched word in the note so a wrong arm is visible; add a case for a feature whose text contains 'comment' or 'document'.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
-        "plugins/audit/scripts/manifest/audit-task.py"
+        "plugins/audit/tests/test_audit_task.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -6414,7 +6447,7 @@
       "description": "The commit half of the task ('the commit treats them as records') matches only exact rels of the phase shard, the journal directory and the evidence directory. audit-task's _is_record_path also treats anything under those directories and the manifest index (sharded layout) as a record. A declared journal or evidence file, or the sharded index, is still a declared candidate (mine=True) and keeps the refusal F642 describes. The title names journal paths. No test_commit_task_work.py case was added.\n\nResolution asked: Share one record-path predicate (exact or under a record directory, index included) between audit-task and commit-task-work, and add a stage_targets case for a declared journal file and a declared shard.",
       "files": [
         "plugins/audit/scripts/governance/commit-task-work.py",
-        "plugins/audit/scripts/governance/commit-task-work.py"
+        "plugins/audit/tests/test_commit_task_work.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -6464,7 +6497,7 @@
       "description": "P125.30: task says to read 'each failing file's FAIL lines from the sweep's per-file output'; red_step_lines prints the row's recorded `failing` list, which _evidence_io already cut to MAX_FAILING=10 lines. A sweep with more failing lines still drops names, and no per-file output is read. bf54 uses seven padded lines, inside that bound.\n\nResolution asked: Read the failing files from the row's failingSuites (or the step output) and print each file's own FAIL lines, or state the ten-line bound in the brief. Add a bf54 variant with more than ten failing lines.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
-        "plugins/audit/scripts/status/audit-lookup.py"
+        "plugins/audit/tests/test_audit_lookup.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -6514,7 +6547,7 @@
       "description": "P125.30: the half that records the operator's --reason (apply_answer -> _mark(state, 'retryReason', ...)) has no test. test_drive_phase.py is in the task's files but untouched, and bf53 writes the state file by hand, so deleting the new apply_answer block leaves every added case green.\n\nResolution asked: Add a test_drive_phase case that answers `retry --reason X`, then reads the state for retryReason keyed to the new start and the generated brief, so the recording is the thing under test.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/scripts/governance/drive-phase.py"
+        "plugins/audit/tests/test_drive_phase.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -6564,7 +6597,7 @@
       "description": "P125.33 (still true at HEAD): refiling_refusal, the helper that names the first filing's journal row and which rj2 asserts on, is called by no production code. The drive's actual refusal (already_filed -> the 'already filed ... stays as filed' stop) does not name the row, so the tests.add entry 'refused, naming the journal row of the first filing' pins an unused function. The comment above RETURN_FILED_ACTION in _filed_returns.py says drive-phase 'calls refiling_refusal', which is false. No drive-level test files, deletes the file and files again, so deleting the journal branch of already_filed keeps every case green (ds7f/ds9x unjournal the return first).\n\nResolution asked: Have already_filed/submit use refiling_refusal so the stop names the row, add a test_drive_phase case for delete-then-refile, and correct the comment.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/scripts/governance/drive-phase.py"
+        "plugins/audit/tests/test_drive_phase.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -6614,7 +6647,7 @@
       "description": "P125.34: the clause 'one invariant for every commit carrying a plan record' is met for commit-task-work and commit-manifest-index only. commit-audit-state.py also commits a phase shard without the index and asks nothing; the executor left it, and no use of index_rows_owed exists there at HEAD. The grader exception in _invariants.commit_scope for the carry option was not made either.\n\nResolution asked: Call _scoped_commit.index_rows_owed from commit-audit-state.py (refuse naming the rows), with a case, or file a task that does.",
       "files": [
         "plugins/audit/scripts/governance/commit-audit-state.py",
-        "plugins/audit/scripts/governance/commit-audit-state.py"
+        "plugins/audit/tests/test_commit_audit_state.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -6664,7 +6697,7 @@
       "description": "P125.35: task says the refresh goes 'through that one definition' (integrate-task.record_paths) with 'no per-check special case', and covers 'any verb run in a member tree that reads records'. run-test-gate takes its own record set from _ev.recorded_paths (project-relative, from every shard stub) to filter the affected selection, a second definition that can drift from record_paths (one phase's shard, git-root-relative). The refresh is also called only from advance() before task_gate, not before other verbs run in the tree.\n\nResolution asked: Pass the drive's record list (wave.records / the --refresh-records answer) into run-test-gate instead of recomputing it, and say which other member-tree verbs read records and refresh before them, or narrow the task text.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
-        "plugins/audit/scripts/governance/run-test-gate.py"
+        "plugins/audit/tests/test_run_test_gate.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -6713,7 +6746,8 @@
       "status": "pending",
       "description": "`state[\"hasPhases\"] = True` is set before the calls that can raise (`mio.phase_running`, `signoff_due`, `effective_phase_status`), and the outer `except Exception: pass` returns the half-built state. The docstring still says 'On any error it reports the LEAST aggressive state, so a crash in here can only relax the gate, never invent a denial'. With the new ladder, an exception on a malformed phase after the first phase leaves exists=True, hasPhases=True, phaseRunning=False, so plan_gate_step returns nothing-running and the tier is deny. Before this diff the same error gave warn. A crash can now invent a denial.\n\nResolution asked: In the except branch, return a fresh least-aggressive state (exists kept, hasPhases False, phaseRunning False), or set hasPhases only after the phase has been processed. Add a selftest where a later phase raises and the tier stays warn.",
       "files": [
-        "plugins/audit/hooks/_config.py"
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -6762,12 +6796,7 @@
         "plugins/audit/scripts/panel/_panel_settings.py",
         "plugins/audit/templates/audit.config.example.json",
         "CLAUDE.md",
-        "README.md",
-        "QUICKSTART.md",
-        "plugins/audit/schema/audit-config.schema.json",
-        "plugins/audit/scripts/panel/_panel_settings.py",
-        "plugins/audit/templates/audit.config.example.json",
-        "CLAUDE.md"
+        "plugins/audit/tests/test__panel_settings.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -6867,7 +6896,7 @@
       "description": "P125.46 clause 'drain and close the rewrite's own tail handle before the replace' is unconditional, but the diff closes the handle only where REPLACE_PASSES_OPEN_FILE is false (os.name == 'nt'). On POSIX the descriptor is held across _replace_rows. The executor documents why: an unconditional close turns bw2, bw8, bw9, bw16, nm1, lf2 and lf3 red, because it drops the held-descriptor carry. The narrowing is deliberate and evidenced, but it is a scope difference from the task text. The Windows path is exercised only through an os.replace seam that emulates the platform, not on a real Windows run.\n\nResolution asked: Record the owner's acceptance of the platform-conditional close (amend the task description or note the decision), and confirm on the next Windows CI leg that bw14 and rs1 pass with the real platform.",
       "files": [
         "plugins/audit/scripts/usage/usage_ledger.py",
-        "plugins/audit/scripts/usage/usage_ledger.py"
+        "plugins/audit/tests/test_usage_ledger.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -6917,7 +6946,9 @@
       "description": "The task title says a return 'changed or deleted after filing cannot close a task'. A DELETED return is not refused. `read_filed_return_checked` returns (None, None, None, None) when the file is missing, with no problem and no unchecked note, even though a filing row exists. In `audit-task.py` only the executor sha-branch (`_close_evidence_refusal`, via `filed_mismatch`) turns a missing file into a mismatch. `_close_returns` reads the reviewer return and the `--from-return` executor return through the checked read and treats a deleted one as unfiled. A reviewer's recorded `diverges` return can therefore be deleted and the task closed with `--intent matches`. No case covers deletion.\n\nResolution asked: In `read_filed_return_checked`, when no file is present but `already_filed_row(rows, path, checkout)` finds a row, return a problem naming the row's recorded digest and the missing file. Add a case in test__filed_returns and test_audit_task for a deleted reviewer return and a deleted executor return.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
-        "plugins/audit/scripts/manifest/audit-task.py"
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test_audit_task.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -6961,7 +6992,7 @@
       "description": "The task asks the lint to read every source kind the tree ships through one table, but COMMENT_SYNTAXES has only .mjs, .js and .sh. The tree also ships .css (37 files, '/* */' comments), .yml/.yaml, .html and .toml. Citations survive there: .github/workflows/ci.yml:134,468,480,561,735,1068,1107 and plugins/audit/scripts/ui/panel-css/app-shell.css:48 (10 .css files match). The 'every source kind' clause is contradicted, and rc16c's green only covers the three kinds in the table.\n\nResolution asked: Add .css (block comment only) and .yml/.yaml (# line comment) rows, and decide .html and .toml explicitly. Fix the citations they find the same way, or record why a kind is excluded in the table.",
       "files": [
         "plugins/audit/scripts/_deps.py",
-        "plugins/audit/scripts/_deps.py"
+        "plugins/audit/tests/test__deps.py"
       ],
       "tests": {
         "mode": "tdd",
