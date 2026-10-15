@@ -801,8 +801,10 @@
         "severity": "med",
         "file": "plugins/audit/tests/test_commit_task_work.py:136-150, plugins/audit/tests/test_commit_manifest_index.py:107-121, plugins/audit/tests/test_commit_audit_state.py:105-119 (P125.64-0h5)",
         "issue": "The description says 'find their shared helper first and change it once'. The diff instead pastes an identical _git_checked() into three files. The shared fixture helper already existed, test__invariants.py:94 `_git(cwd, *args)`. All three suites import it as `TI` (the 'ONE git fixture'), and it already raises RuntimeError with git's merged output. So the clause is contradicted (changed three times, not once) and the same fix now has three copies to drift. Only the task_work copy has a test (ctw-fg1/ctw-fg2). The other two copies are unexercised.",
-        "resolution": "Delete the three _git_checked copies and have each _clone_at call TI._git(None, 'clone', ...) and TI._git(dest, 'checkout', ...). Keep ctw-fg1/ctw-fg2, which then cover the single shared path. If a different message shape is wanted, change test__invariants._git once.",
-        "fixTask": "P125.102-0h5"
+        "resolution": "fixed in P125.102-0h5 (3a19b3ae450d): Delete the three _git_checked copies and have each _clone_at call TI._git(None, 'clone', ...) and TI._git(dest, 'checkout', ...). Keep ctw-fg1/ctw-fg2, which then cover the single shared path. If a different message shape is wanted, change test__invariants._git once.",
+        "fixTask": "P125.102-0h5",
+        "commit": "3a19b3ae450d",
+        "status": "fixed"
       },
       {
         "id": "P125-R106",
@@ -940,7 +942,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -7045,7 +7047,12 @@
       "fixes": [
         "P125-R99"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T04:22:11Z.c07f06",
+        "status": "passed",
+        "at": "2026-10-15T04:22:11Z"
+      }
     },
     {
       "id": "P125.101-0h5",
@@ -7113,7 +7120,7 @@
     {
       "id": "P125.102-0h5",
       "title": "fix P125-R105: The description says 'find their shared helper first and chang...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The description says 'find their shared helper first and change it once'. The diff instead pastes an identical _git_checked() into three files. The shared fixture helper already existed, test__invariants.py:94 `_git(cwd, *args)`. All three suites import it as `TI` (the 'ONE git fixture'), and it already raises RuntimeError with git's merged output. So the clause is contradicted (changed three times, not once) and the same fix now has three copies to drift. Only the task_work copy has a test (ctw-fg1/ctw-fg2). The other two copies are unexercised.\n\nResolution asked: Delete the three _git_checked copies and have each _clone_at call TI._git(None, 'clone', ...) and TI._git(dest, 'checkout', ...). Keep ctw-fg1/ctw-fg2, which then cover the single shared path. If a different message shape is wanted, change test__invariants._git once.",
       "files": [
         "plugins/audit/tests/test_commit_task_work.py",
@@ -7146,13 +7153,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3a19b3ae450d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Deleted the identical _git_checked copy from test_commit_task_work.py, test_commit_manifest_index.py and test_commit_audit_state.py; each _clone_at now calls TI._git(None, 'clone', ...) and TI._git(dest, 'checkout', ...). test__invariants._git unchanged. ctw-fg1 asserted the word 'exited' from the deleted copy's message; TI._git says 'failed', so the assertion in test_commit_task_work.py now reads 'failed' (fatal: text still required). Removed the now-unused subprocess import from test_commit_manifest_index.py (ruff). Ran: python3 tools/sweep-selftests.py in the tree, 335/335 files ok, 16288 cases; ruff check plugins/audit tools passed; the three suites pass individually (117/117, 37/37, 46/46).",
+        "descriptive": "One shared git fixture helper instead of three pasted copies; the failure-message test now covers the single path."
       },
       "startedAt": "2026-10-15T03:42:15Z",
-      "completedAt": null,
+      "completedAt": "2026-10-15T04:11:59Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -7176,6 +7183,17 @@
         "runId": "2026-10-15T04:11:57Z.981635",
         "status": "passed",
         "at": "2026-10-15T04:11:57Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "3a19b3ae450d",
+        "at": "2026-10-15T04:11:59Z",
+        "basis": "a fix task for P125-R105: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression-mode refactor, expectRedFirst false, tests.add none; existing ctw-fg1/ctw-fg2 kept and now cover the shared TI._git path",
+        "at": "n/a"
       }
     },
     {

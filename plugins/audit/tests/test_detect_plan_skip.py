@@ -506,7 +506,7 @@ def _bypass_cases(check):
         _sh.rmtree(str(proj), ignore_errors=True)
 
 
-def prompt_readers(source):
+def prompt_readers(source, fields=_PROMPT_FIELDS):
     """Names of every place `source` reads a prompt field off a payload itself:
     a `.get("prompt")`-shaped call or a `["prompt"]` subscript on any of the
     payload's prompt keys, or a call to the retired `_prompt_text`. Reading
@@ -517,11 +517,11 @@ def prompt_readers(source):
         if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
                 and node.func.attr == "get" and node.args
                 and isinstance(node.args[0], ast.Constant)
-                and node.args[0].value in _PROMPT_FIELDS):
+                and node.args[0].value in fields):
             found.append("line %d: .get(%r)" % (node.lineno, node.args[0].value))
         elif (isinstance(node, ast.Subscript)
               and isinstance(node.slice, ast.Constant)
-              and node.slice.value in _PROMPT_FIELDS):
+              and node.slice.value in fields):
             found.append("line %d: [%r]" % (node.lineno, node.slice.value))
         elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
               and node.func.id == "_prompt_text"):
@@ -554,11 +554,66 @@ def _one_reader_cases(check):
                                         prompt_readers(second), prompt_readers(sub)))
 
 
+def repo_prompt_readers(repo_root):
+    """`{relative path: [readers]}` for every hook this repo keeps, the
+    plugin's and the repo's own under `.claude/hooks`, minus `_config.py`,
+    which is where `owner_prompt` reads the field. The `message` key is left
+    out of the fields here: the plugin's guard rules carry a `message` of
+    their own, so reading it there is not reading a prompt. A tree with no
+    hook files at all is an error, never an empty pass."""
+    found = {}
+    scanned = 0
+    for rel in (os.path.join("plugins", "audit", "hooks"),
+                os.path.join(".claude", "hooks")):
+        folder = os.path.join(repo_root, rel)
+        for name in sorted(os.listdir(folder)):
+            if not name.endswith(".py") or name == "_config.py":
+                continue
+            scanned += 1
+            with open(os.path.join(folder, name), encoding="utf-8") as fh:
+                hits = prompt_readers(fh.read(), ("prompt", "user_prompt"))
+            if hits:
+                found[os.path.join(rel, name)] = hits
+    if not scanned:
+        raise ValueError("no hook files under %s" % repo_root)
+    return found
+
+
+def _repo_wide_reader_cases(check):
+    import tempfile
+    import shutil
+    import _output
+    real = repo_prompt_readers(_output.REPO_ROOT)
+    tmp = tempfile.mkdtemp()
+    try:
+        # THE FIRING DIRECTION on a tree carrying the old reader, and the
+        # allow direction on a hook that reads through owner_prompt.
+        for rel, src in (
+                (os.path.join("plugins", "audit", "hooks"),
+                 "t = _config.owner_prompt(d)\nr = d.get('message')\n"),
+                (os.path.join(".claude", "hooks"),
+                 "p = str(payload.get('prompt') or '')\n")):
+            os.makedirs(os.path.join(tmp, rel))
+            with open(os.path.join(tmp, rel, "h.py"), "w",
+                      encoding="utf-8") as fh:
+                fh.write(src)
+        planted = repo_prompt_readers(tmp)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    check("one2 every hook the repo keeps, the plugin's and .claude/hooks, "
+          "reads prompt text only through _config.owner_prompt (a second "
+          "reader anywhere is reported by file)",
+          real == {}
+          and list(planted) == [os.path.join(".claude", "hooks", "h.py")],
+          "real=%r planted=%r" % (real, planted))
+
+
 def _all_cases(check):
     _cases(check)
     _standing_cases(check)
     _bypass_cases(check)
     _one_reader_cases(check)
+    _repo_wide_reader_cases(check)
 
 
 def _selftest():

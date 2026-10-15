@@ -191,12 +191,26 @@ def message(bug_read, held_read, armed):
             % ("; and ".join(parts), TTL_SECONDS // 60))
 
 
+def typed_prompt(payload, project):
+    """What the owner typed, read through the plugin's `_config.owner_prompt`
+    like every other keyword that arms something by being typed. That reader
+    answers "" for a subagent's payload, whose prompt the model wrote, and for
+    any event but a prompt submission. When `_config` cannot be loaded the
+    answer is "" as well: a switch that cannot tell who typed the word stays
+    unarmed rather than arming on text anyone could have written."""
+    guard = _load_guard()
+    cfg_mod = guard._hooks_config(project) if guard is not None else None
+    if cfg_mod is None:
+        return ""
+    return cfg_mod.owner_prompt(payload)
+
+
 def main():
     try:
         payload = json.load(sys.stdin)
     except Exception:
         return 0
-    prompt = str(payload.get("prompt") or "")
+    prompt = typed_prompt(payload, project_dir())
     # Case-insensitive and whole-word, so `#release-with-bugs-later` in a
     # sentence about the keyword does not arm anything.
     if not re.search(r"(?i)(?:^|\s)" + re.escape(KEYWORD) + r"(?:\s|$|[.,!])",
@@ -340,7 +354,8 @@ def _selftest():
         env["CLAUDE_PROJECT_DIR"] = tmp
         proc = subprocess.run(
             [sys.executable, os.path.abspath(__file__)],
-            input=json.dumps({"prompt": KEYWORD, "session_id": "s9"}),
+            input=json.dumps({"hook_event_name": "UserPromptSubmit",
+                              "prompt": KEYWORD, "session_id": "s9"}),
             capture_output=True, text=True, encoding="utf-8", cwd=tmp,
             env=env, timeout=120)
         try:
