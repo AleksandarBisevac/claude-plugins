@@ -9242,7 +9242,7 @@
     {
       "id": "P125.122-0h5",
       "title": "Fixture git runs no background auto-gc, measured first, so no repack races a clone or an add",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F690 (and possibly F679). CI 38792231809: a fixture git clone --no-hardlinks failed with ENOENT copying a loose object that vanished mid-copy. Hypothesis: git's detached gc --auto repacking the fixture repo in the background. Measure with GIT_TRACE first; if gc --auto spawns, set gc.auto=0 in _harness.GIT and every suite-local prefix, with a case; if not, report and leave the cause open.",
       "files": [
         "plugins/audit/tests/_harness.py",
@@ -9276,19 +9276,32 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "99942ee0e202",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Hardening, not a fix. The cause of the CI 38792231809 clone ENOENT and of the Windows add -A flake is STILL NOT ESTABLISHED. This change removes one measured background process and nothing more. MEASUREMENT (git 2.53.0, macOS, GIT_TRACE to a file, scratch under tempfile.mkdtemp and removed in finally). In the or-block of test_commit_task_work (15/15 cases), git spawned a DETACHED `git maintenance run --auto` 14 times. None of those runs started gc, repack, pack-objects or prune. Fixture repos held 45/28/28/27 loose objects and 0 packs, against gc.auto 6700 (sampled at more than 27 entries in objects/17) and gc.autoPackLimit 50. So the auto-gc repack hypothesis is refuted. CHANGE: _harness.NO_AUTO_MAINTENANCE = ('-c','maintenance.auto=false','-c','gc.auto=0'), carried by _harness.GIT and by a new _harness.WORKTREE_PAIR_GIT (the worktree_pair builder's former local prefix). It is also carried by test_hooks._GIT, test_integrate_task.GIT, test_run_test_gate._PLAIN_GIT and test_run_test_gate._SM_GIT (now a full prefix, a tuple). The one direct subprocess git call in test_commit_task_work's branch block (the fixture's stash-pop step) now runs through _harness.GIT. NEW STAGE nm-block in test_commit_task_work: ctw-nm1 reads all six prefixes off their modules and asserts both settings on each. It also traces a fixture commit made with _harness.GIT and asserts a commit was traced and no maintenance or gc was spawned. ctw-nm2 is the second-direction control: the same commit without the switch, run with maintenance.autoDetach=false so it leaves nothing in the background, must show a spawn. AFTER, by trace: test_hooks went from 12 maintenance spawns at base (git archive HEAD export) to 0 (232/232 cases). test_integrate_task went from 13 to 0 (30/30 cases). LIMIT: the or-block still spawns 14 times, because 12 come from test__invariants.build's own _git (plain 'git'; that file is outside this task's files) and 2 from the product's commit-task-work commits. The clone that failed in CI also runs through test__invariants._git, so this change does not touch that call's repository. Making it reach there needs test__invariants.py in a task's files. Gates in the task tree: `python3 tools/sweep-selftests.py` exit 0 (335/335 files ok, 16449 cases). `python3 tools/sweep-selftests.py --encoding cp1252` exit 0 (335/335 files ok, both halves ran). `ruff check plugins/audit/tests` exit 0. `vermin -t=3.8- --no-tips --violations plugins/audit/tests` exit 0.",
+        "descriptive": "Fixture git prefixes in the declared suites now start no detached background maintenance (measured 12 and 13 spawns down to 0), a pinned case guards them, and the cause of the clone and add flakes stays open."
       },
       "startedAt": "2026-10-15T22:16:19Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T23:18:38Z",
+      "verifiedBy": [
+        "ctw-nm1 no fixture git call can spawn an auto gc - the shared prefix and every suite's own prefix carry gc.auto=0 - measured with GIT_TRACE on a heavy fixture (and maintenance.auto=false beside it: every fixture git prefix carries both settings, and a fixture commit traced with the shared prefix spawns no background maintenance)",
+        "ctw-nm2 SECOND-DIRECTION CASE: the same traced commit WITHOUT the switch does spawn maintenance"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-15T23:18:36Z.6a0134",
         "status": "passed",
         "at": "2026-10-15T23:18:36Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "99942ee0e202",
+        "at": "2026-10-15T23:18:38Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "Regression mode with expectRedFirst false, and the submit carries no test command. The mutation red was watched by hand in a scratch COPY of plugins/ (never in the task tree). First mutation: NO_AUTO_MAINTENANCE dropped from test_hooks._GIT, then `python3 plugins/audit/tests/test_commit_task_work.py --selftest --stage nm-block` exited 1 with ctw-nm1 FAIL naming 'test_hooks._GIT'. Second mutation: maintenance.auto=false dropped from _harness.NO_AUTO_MAINTENANCE, keeping gc.auto=0. That also exited 1: ctw-nm1 listed all six prefixes as missing a setting, and the traced commit recorded a spawned `git maintenance run --auto --quiet --detach`, so gc.auto=0 alone does not stop the spawn. ctw-nm2 stayed PASS under both mutations.",
+        "at": "2026-10-16, scratch copy, before filing"
       }
     },
     {
@@ -9401,7 +9414,12 @@
       "startedAt": "2026-10-15T22:16:22Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T23:29:02Z.278b7a",
+        "status": "passed",
+        "at": "2026-10-15T23:29:02Z"
+      }
     },
     {
       "id": "P125.125-0h5",

@@ -51,6 +51,74 @@ import _manifest_vocab as _vocab                   # noqa: E402  (as _help impor
 import _help as M                                  # noqa: E402
 
 
+# --- the payload under another platform's conventions --------------------------
+# `GET /api/help` is fetched once per drawer session and parsed whole, so its size
+# is a serving cost that has a ceiling. The ceiling stays fixed; HEADROOM is the
+# margin that has to stay free under it at all times. It is larger than the whole
+# config table, so no single schema addition can be the byte that crosses the
+# line: crossing it has to be a decision to spend the margin, made in this file,
+# not a paragraph that happened to land last.
+PAYLOAD_CAP = 200000
+PAYLOAD_HEADROOM = 40000
+
+
+def _payload_bytes(root=None):
+    return len(json.dumps(M.payload(root)))
+
+
+def _crlf_root():
+    """A plugin root whose schemas and agent files end every line in CRLF - the
+    sources `payload()` reads, as a checkout that ignored `.gitattributes` would
+    write them."""
+    import shutil
+    root = _harness.fixture_root("help-crlf-")
+    src = M.plugin_root()
+    for sub in ("schema", "agents"):
+        shutil.copytree(os.path.join(src, sub), os.path.join(root, sub))
+        for dirpath, _dirs, names in os.walk(os.path.join(root, sub)):
+            for name in names:
+                path = os.path.join(dirpath, name)
+                with open(path, "rb") as fh:
+                    data = fh.read().replace(b"\r\n", b"\n")
+                with open(path, "wb") as fh:
+                    fh.write(data.replace(b"\n", b"\r\n"))
+    return root
+
+
+def _backslash_payload_bytes():
+    """The payload as built where `os.sep` is a backslash and `os.path.join`
+    is Windows' own. Only the module under test sees the swap - its `os` and its
+    `open` are replaced for the call and put back - and every real file access is
+    handed a forward-slash path, which both platforms open, so the fixture
+    changes how a path is SPELLED and never which file is read."""
+    import ntpath
+    import types
+    real_os = M.os
+
+    def fwd(path):
+        return path.replace("\\", "/") if isinstance(path, str) else path
+
+    shim_path = types.ModuleType("shim_path")
+    shim_path.__dict__.update(real_os.path.__dict__)
+    shim_path.join = ntpath.join
+    shim_path.sep = "\\"
+    for name in ("isfile", "isdir", "exists", "lexists"):
+        shim_path.__dict__[name] = (lambda f: lambda p: f(fwd(p)))(
+            getattr(real_os.path, name))
+    shim_os = types.ModuleType("shim_os")
+    shim_os.__dict__.update(real_os.__dict__)
+    shim_os.path = shim_path
+    shim_os.sep = "\\"
+    shim_os.listdir = lambda p=".": real_os.listdir(fwd(p))
+    M.os = shim_os
+    M.open = lambda p, *a, **k: open(fwd(p), *a, **k)
+    try:
+        return _payload_bytes()
+    finally:
+        M.os = real_os
+        del M.open
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     # --- extraction ---------------------------------------------------------------
@@ -119,6 +187,45 @@ def _cases(check):
           cfg["guardEdits.customRules[].message"])
     check("l3 an unknown path is None rather than a guess",
           M.lookup(cfg, "nothing.like.this") is None)
+
+    # --- folding a repeated shape ---------------------------------------------------
+    # Every lookup below goes through `.get` and `getattr`: a build without the
+    # fold must fail these cases by name, not abort the suite before the payload
+    # cases run.
+    _built = M.tables()
+    _fields = _built.get("fields") or {}
+    _aliases = _built.get("aliases") or {}
+    _fold = getattr(M, "fold_repeats", lambda *a: None)
+    _unalias = getattr(M, "unalias", lambda *a: None)
+    _lost = ["this build serves no aliases"] if not _aliases else [
+        (d, p) for d, full in (("config", cfg), ("manifest", man))
+        for p, e in full.items()
+        if {k: v for k, v in (M.lookup(_fields.get(d) or {}, p,
+                                       _aliases.get(d)) or {}).items()
+            if k not in ("topic", "default")} != e]
+    check("fo1 folding loses nothing: every path the full extraction documents "
+          "resolves through the served table and its aliases to the same words "
+          "and shape", not _lost and _aliases.get("manifest"), repr(_lost[:5]))
+    _twin = {"a": {"description": "A"}, "a.x": {"description": "X", "default": 1},
+             "b": {"description": "B"}, "b.x": {"description": "X", "default": 1}}
+    _sites = [("shape", "a"), ("shape", "b")]
+    _diff = dict(_twin, **{"b.x": {"description": "X", "default": 2}})
+    check("fo2 an equal second mount folds below its own entry, which keeps the "
+          "referrer's words",
+          _fold(_twin, _sites) == {
+              "fields": {"a": _twin["a"], "a.x": _twin["a.x"], "b": _twin["b"]},
+              "aliases": {"b": "a"}})
+    # The other direction: a fold that ignored the subtree's contents would
+    # serve the first mount's default for the second path.
+    check("fo3 ...but a mount whose subtree differs - here a default - stays "
+          "expanded", _fold(_diff, _sites) == {"fields": _diff, "aliases": {}})
+    check("fo4 an alias rewrite that lands under another alias follows it, and "
+          "the prefix's own entry is not rewritten",
+          _unalias("p.q.s.u", {"p.q": "r", "r.s": "t"}) == "t.u"
+          and _unalias("p.q", {"p.q": "r"}) == "p.q")
+    _fo5 = M.entry_for("proposals.0.payload.phase.status", "manifest") or {}
+    check("fo5 a folded path says which shape documents it",
+          _fo5.get("key") == "phases[].status", repr(_fo5.get("key")))
 
     # `entry_for` is the ONE resolver, reachable over HTTP. The drawer asks it
     # instead of carrying a second copy of normalise_path in the browser.
@@ -642,7 +749,8 @@ def _cases(check):
     # --- the payload --------------------------------------------------------------
     pay = M.payload()
     check("p1 the payload carries both schemas' fields, the topics and the agent",
-          set(pay) == {"fields", "composition", "topics", "agent", "schemas"}
+          set(pay) == {"fields", "aliases", "composition", "topics", "agent",
+                       "schemas"}
           and pay["fields"]["config"] and pay["fields"]["manifest"]
           and len(pay["topics"]) == 4
           and (pay["agent"] or {}).get("name") == M.GUIDE)
@@ -663,8 +771,18 @@ def _cases(check):
                + list(pay["fields"]["manifest"].items())
                if e.get("topic") and e["topic"] not in
                {t["id"] for t in pay["topics"]}])
-    check("p5 the whole payload is JSON, and small enough to serve on every open "
-          "of a drawer", len(json.dumps(pay)) < 200000, len(json.dumps(pay)))
+    # Three builds, one size: natively, from CRLF sources, and with a backslash
+    # separator. A payload a few bytes larger on one platform is how the cap was
+    # crossed on one CI leg while the other read under it.
+    _p5 = (_payload_bytes(), _payload_bytes(_crlf_root()),
+           _backslash_payload_bytes())
+    check("p5 the help payload measures the same on every platform and stays "
+          "under its budget with stated headroom (native, CRLF sources and a "
+          "backslash os.sep build one size, and at least PAYLOAD_HEADROOM bytes "
+          "of PAYLOAD_CAP stay free)",
+          len(set(_p5)) == 1 and _p5[0] <= PAYLOAD_CAP - PAYLOAD_HEADROOM,
+          "native/crlf/backslash %r, cap %d, headroom owed %d"
+          % (_p5, PAYLOAD_CAP, PAYLOAD_HEADROOM))
     check("p6 it names where the field text came from, so a reader can go read "
           "the source", pay["schemas"]["config"].endswith(".json"))
 

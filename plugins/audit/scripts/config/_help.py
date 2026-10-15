@@ -235,13 +235,27 @@ def fields(doc, max_depth=12):
     Arrays are spelled `customRules[].message` and open maps `pricing.<name>.in`,
     which is how the panel's own paths read and how a reader would say them aloud.
     """
+    return _walk_schema(doc, max_depth)["fields"]
+
+
+def _walk_schema(doc, max_depth=12):
+    """`{"fields": …, "sites": [(def name, path), …]}` — the table, and every path
+    at which a `$def`'s body was expanded, in walk order.
+
+    The sites are what `fold_repeats` needs: one `$def` reached from two places is
+    expanded twice, and the second expansion is a byte-for-byte copy of the first
+    under a different prefix."""
     out = {}
+    sites = []
     defs = doc.get("$defs") if isinstance(doc.get("$defs"), dict) else {}
 
     def walk(node, prefix, seen, depth):
         if depth > max_depth:
             return
-        node, seen = _deref(node, defs, seen)
+        node, reached = _deref(node, defs, seen)
+        if len(reached) > len(seen):
+            sites.append((reached[-1], prefix))
+        seen = reached
         if not isinstance(node, dict):
             return
         props = node.get("properties")
@@ -260,7 +274,68 @@ def fields(doc, max_depth=12):
             walk(items, prefix + "[]", seen, depth + 1)
 
     walk(doc, "", (), 0)
-    return out
+    return {"fields": out, "sites": sites}
+
+
+def _under(path, prefix):
+    return path.startswith(prefix + ".") or path.startswith(prefix + "[")
+
+
+def _subtree(table, prefix, ignore=()):
+    """The entries below `prefix`, keyed by what follows it — so two expansions of
+    one shape compare equal whatever they are mounted under."""
+    return {k[len(prefix):]: {f: v for f, v in e.items() if f not in ignore}
+            for k, e in table.items() if _under(k, prefix)}
+
+
+def fold_repeats(table, sites, ignore=("topic",)):
+    """`{"fields": folded table, "aliases": {copy prefix: canonical prefix}}`.
+
+    A `$def` mounted at several paths is the same documentation at each of them,
+    and served expanded it is paid for once per mount: the plan's `phase` shape
+    reappears whole under every proposal. The first expansion stays; a later one
+    is dropped below its own entry, which is kept because it carries the
+    referrer's description of its use, and an alias says where its children are
+    documented.
+
+    A copy folds only when its subtree is EQUAL to the first one, so a mount the
+    depth bound or the recursion guard cut short stays expanded, and so does a
+    config path whose default differs from its twin's - a default is the fallback
+    for that exact path. `topic` is ignored in the comparison: it is attached by
+    path prefix, and a shared shape is the same concept wherever a reader meets
+    it, so a folded path answers with the canonical path's page."""
+    first = {}
+    aliases = {}
+    out = dict(table)
+    for name, prefix in sites:
+        if any(prefix == a or _under(prefix, a) for a in aliases):
+            continue
+        if name not in first:
+            first[name] = prefix
+            continue
+        canon = first[name]
+        copy = _subtree(table, prefix, ignore)
+        if not copy or copy != _subtree(table, canon, ignore):
+            continue
+        out = {k: e for k, e in out.items() if not _under(k, prefix)}
+        aliases[prefix] = canon
+    return {"fields": out, "aliases": aliases}
+
+
+def unalias(path, aliases):
+    """`path` rewritten through the aliases whose prefixes it sits under, or as is.
+
+    Repeated, because one rewrite can land under another alias: a proposal's
+    phase maps onto `phases[]`, whose tasks' `ado` maps onto the phase's own.
+    The passes are bounded by the number of aliases, so no alias map can hang a
+    lookup."""
+    order = sorted(aliases or {}, key=len, reverse=True)
+    for _ in range(len(order)):
+        hit = next((p for p in order if _under(path, p)), None)
+        if hit is None:
+            break
+        path = aliases[hit] + path[len(hit):]
+    return path
 
 
 def config_fields(root=None):
@@ -310,19 +385,19 @@ def normalise_path(path):
     return ".".join(out)
 
 
-def lookup(table, path):
-    """The entry for `path`, exactly or through the shape it is an instance of."""
-    if path in table:
-        return table[path]
+def lookup(table, path, aliases=None):
+    """The entry for `path`, exactly or through the shape it is an instance of —
+    and, over a folded table, through the alias that says where a repeated
+    shape's children are documented."""
     norm = normalise_path(path)
-    if norm in table:
-        return table[norm]
-    # An open map's concrete key: `usage.pricing.opus` -> `usage.pricing.<name>`.
     parts = norm.split(".")
-    for i in range(len(parts) - 1, 0, -1):
-        probe = ".".join(parts[:i] + ["<name>"] + parts[i + 1:])
-        if probe in table:
-            return table[probe]
+    # An open map's concrete key: `usage.pricing.opus` -> `usage.pricing.<name>`.
+    probes = [path, norm] + [".".join(parts[:i] + ["<name>"] + parts[i + 1:])
+                             for i in range(len(parts) - 1, 0, -1)]
+    for probe in probes:
+        for key in (probe, unalias(probe, aliases)):
+            if key in table:
+                return table[key]
     return None
 
 
@@ -677,7 +752,10 @@ def agent_cards(root=None):
             "tools": tools,
             "model": front.get("model"),
             "effort": front.get("effort"),
-            "file": os.path.join("agents", name),
+            # Plugin-relative and "/"-separated on every platform, like the
+            # topics' `sources`: it is shown to a reader, never opened, and an
+            # os.sep join made the served payload a byte larger on Windows.
+            "file": "agents/" + name,
         })
     return out
 
@@ -1395,28 +1473,37 @@ def command_choice_drift(root=None):
 DOCS = ("config", "manifest")
 
 
-def tables(root=None):
-    """`{"config": {…}, "manifest": {…}}` — every field, ready to serve.
-
-    The enrichment (a config field's default, either field's concept page) lives
-    here rather than inside `payload()` so a single-path lookup answers with
-    exactly what the whole payload would have said about that path. Two builders
-    would be two answers, and the drawer shows one right after the other."""
-    root = plugin_root(root)
-    cfg = config_fields(root)
-    man = manifest_fields(root)
-    defaults = config_defaults()
-    for path, entry in cfg.items():
+def _enriched(which, root, defaults):
+    """One schema's table with each entry's default and concept page attached,
+    folded so a repeated shape is served once."""
+    walked = _walk_schema(load_schema(which, root))
+    table = {}
+    for path, entry in walked["fields"].items():
+        entry = dict(entry)
         if path in defaults:
             entry["default"] = defaults[path]
         topic = topic_of(path)
         if topic:
             entry["topic"] = topic
-    for path, entry in man.items():
-        topic = topic_of(path)
-        if topic:
-            entry["topic"] = topic
-    return {"config": cfg, "manifest": man}
+        table[path] = entry
+    return fold_repeats(table, walked["sites"])
+
+
+def tables(root=None):
+    """`{"fields": {"config": {…}, "manifest": {…}}, "aliases": {…same keys…}}` —
+    every field, ready to serve, and where each folded copy's children live.
+
+    The enrichment (a config field's default, either field's concept page) lives
+    here rather than inside `payload()` so a single-path lookup answers with
+    exactly what the whole payload would have said about that path. Two builders
+    would be two answers, and the drawer shows one right after the other. The
+    fold lives here for the same reason: `entry_for` resolves through the very
+    aliases the payload serves."""
+    root = plugin_root(root)
+    defaults = {"config": config_defaults(), "manifest": {}}
+    built = {which: _enriched(which, root, defaults[which]) for which in DOCS}
+    return {"fields": {which: built[which]["fields"] for which in DOCS},
+            "aliases": {which: built[which]["aliases"] for which in DOCS}}
 
 
 def entry_for(path, doc="config", root=None):
@@ -1429,8 +1516,9 @@ def entry_for(path, doc="config", root=None):
     worse than one that says it has no entry for this."""
     if doc not in DOCS:
         return None
-    table = tables(root)[doc]
-    entry = lookup(table, path)
+    built = tables(root)
+    table = built["fields"][doc]
+    entry = lookup(table, path, built["aliases"][doc])
     if entry is None:
         return None
     # Identity, not equality: `lookup` hands back the table's own object, and two
@@ -1445,11 +1533,16 @@ def payload(root=None):
     Project-independent on purpose. This is documentation, not state — the live
     verdicts belong to `/api/policy`, the live trail to `/api/journal`, and a help
     drawer that quietly mixed the two would let a reader believe a worked example
-    was their own repository."""
+    was their own repository.
+
+    `fields` is folded: a path below an `aliases` prefix is documented under the
+    canonical prefix it maps to, and `lookup(table, path, aliases)` is the one
+    reader that knows it — which is why the drawer asks `entry_for` per field."""
     root = plugin_root(root)
     tbl = tables(root)
     return {
-        "fields": tbl,
+        "fields": tbl["fields"],
+        "aliases": tbl["aliases"],
         "composition": dict(COMPOSITION_PATHS),
         "topics": topics(root),
         "agent": guide_card(root),
