@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "sweep-selftests": "pass",
+    "sweep-selftests --encoding cp1252": "pass",
+    "own-test": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T10:02:07Z",
+    "basis": "`python3 plugins/audit/tests/test__doctor_trail.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 155 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dispatches are ordered by the first entry inside each transcript, not by file mtime, so a long first dispatch that finishes last is still first (order ['s2', 'l1'], unordered [], detail \"dispatch l1 was NOT served from s2's start - it wrote 4000 token(s) at its own instead\") (house FAIL) and 1 more: SELFTEST FAILED: 153/155 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "dispatch_starts now orders dispatches by ul.parse_ts of the first entry inside each transcript (ties by file name) and returns (ordered, unordered); transcripts with no readable first timestamp are excluded and check_dispatch_cache names them in its own row, so they are never a cache source or reader. Docstring corrected. _dispatch_first_usage returns startTs. Tests: _dispatch_line takes epoch; dt72/dt73 fixtures given distinct timestamps; two new cases in _dispatch_order_cases (long first dispatch with later mtime stays first and attribution follows; no-timestamp dispatch excluded and named). Own test 155/155 passed; full sweep exit 0 (335/335 files, 16376 cases); cp1252 pass exit 0 (335/335 files).",
+    "descriptive": "The dispatch-cache check orders dispatches by when each began, not by when its file was last written, and says so when it cannot order one."
+  },
+  "testsAdded": [
+    "dispatches are ordered by the first entry inside each transcript, not by file mtime, so a long first dispatch that finishes last is still first",
+    "a dispatch with no readable first timestamp is left out of the ordering and named, never given a place"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:103bee16261eb93c01e5f9134a486f72b5464946b52355055c9fd68ea42b4544\",\"dirtyDigest\":\"sha256:16619f1033a2f4b2c8d628839f371ebc270f2f6588a9262445db5f41dddb752a\",\"dirtyPaths\":{\"plugins/audit/scripts/status/_doctor_trail.py\":\"a0f5d21a87b5dd8c\",\"plugins/audit/tests/test__doctor_trail.py\":\"1d7ee5df8dc3e5db\"},\"head\":\"dbd9008f\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/status/_doctor_trail.py\",\"plugins/audit/tests/test__doctor_trail.py\"],\"scopeDigest\":\"sha256:889dbfb598030bf47a9aa07d82c8d4ff8fc5f11a546a0f848fa3f1e2b0392d07\",\"v\":2}"
+}

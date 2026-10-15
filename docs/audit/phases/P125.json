@@ -6388,7 +6388,12 @@
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
         "plugins/audit/tests/test_drive_phase.py",
-        "plugins/audit/tests/test_drive_phase.py"
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/commands/next.md",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/commands/resume.md",
+        "plugins/audit/commands/review.md",
+        "plugins/audit/commands/run.md"
       ],
       "tests": {
         "mode": "regression",
