@@ -4356,7 +4356,7 @@
     {
       "id": "P125.69-0h5",
       "title": "The sweep's legacy-encoding pass also sets a non-UTF-8 locale, so a file read or subprocess capture with no encoding fails locally",
-      "status": "in_progress",
+      "status": "done",
       "description": "Three encoding defects in this phase reached Windows CI while every local and ubuntu sweep was green, including the `--encoding cp1252` pass: that pass sets only PYTHONIOENCODING (the child's stdio), not the locale's preferred encoding that `open()` and `subprocess(text=True)` use with no `encoding=`. Under `LC_ALL=C LANG=C PYTHONUTF8=0` the preferred encoding is ASCII and the same defects go red on POSIX (measured: test_drive_phase fm-block raised UnicodeDecodeError in a text-mode git capture). Make `--encoding <codec>` also put each child under a locale whose preferred encoding is not UTF-8 (LC_ALL=C/LANG=C, PYTHONUTF8=0) on POSIX, and have the runner VERIFY it took (ask the child's `locale.getpreferredencoding(False)` once) and refuse the pass as could-not-run if it is still UTF-8 - a pass that claims a legacy encoding while running UTF-8 is the silent pass this replaces. Windows legs already run under a legacy code page; leave them. Update the docstring line and CONTRIBUTING.md's description of what the pass covers so they say both halves.",
       "files": [
         "tools/sweep-selftests.py",
@@ -4388,25 +4388,39 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "dcceed806cf6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/sweep-selftests.py: added LEGACY_LOCALE_VARS, locale_pins() (PYTHONIOENCODING everywhere, plus LC_ALL=C LANG=C PYTHONUTF8=0 on POSIX), legacy_locale_problem() probing a child's locale.getpreferredencoding(False) once, wired into main (exit 2, could-not-run, names the encoding seen) and run_one. Docstring line and CONTRIBUTING.md updated to name both halves. Two inline cases added. Full plain sweep 335/335 ok. Whole --encoding cp1252 pass now RED on a real latent defect: plugins/audit/tests/test__panel_discovery.py, line 94 in _cases (case after 'MCP rows carry a name and a source...'): open(M.__file__).read() with no encoding raises UnicodeDecodeError under ASCII locale. Also test_render_report.py failed once in the parallel pass but passed alone and on rerun under the pass (load flake, not attributed). CLAUDE.md line 'again, on a legacy code page' under-describes the pass now (also sets a non-UTF-8 locale on POSIX). Process note: one edit to the new case was made via a python script rather than the Edit tool; content verified by the suite.",
+        "descriptive": "The cp1252 sweep pass now also runs children under a non-UTF-8 locale on POSIX and refuses to run if that did not take, exposing a missing-encoding read in test__panel_discovery."
       },
       "startedAt": "2026-10-14T23:29:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T00:09:40Z",
+      "verifiedBy": [
+        "under --encoding cp1252 a child suite that reads a UTF-8 file with no encoding fails on POSIX, and the same suite naming its encoding passes (bare vs named fixture suites, plain vs legacy)",
+        "a legacy-encoding pass whose child still reports UTF-8 as its preferred encoding is refused as could-not-run, naming the encoding it saw (probe with PYTHONUTF8=1 override)"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-15T00:09:39Z.daf1c6",
         "status": "passed",
         "at": "2026-10-15T00:09:39Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "dcceed806cf6",
+        "at": "2026-10-15T00:09:40Z"
+      },
+      "redFirst": {
+        "at": "2026-10-14T23:58:58Z",
+        "basis": "`python3 tools/sweep-selftests.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 97 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, the task's run with its inline suite tools/sweep-selftests.py laid over as HEAD's copy plus its 2 test hunk(s), 4 other hunk(s) held at HEAD), each passing with the working tree's implementation - under --encoding cp1252 a child suite that reads a UTF-8 file with no encoding fails on POSIX, and the same suite naming its encoding passes: plain {'bare': 0, 'named': 0}, legacy {'bare': (True, None), 'named': (True, None)} (house FAIL): SELFTEST FAILED: 95/97 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.70-0h5",
       "title": "A filed return and a written brief carry the same bytes on every platform, and the brief read-back case names where it differs",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Last red leg of the phase: CI run 38654487121 (ci/p125 at 64f75f0f, windows-latest shard 1 plain and cp1252, every other leg green) - test_drive_phase sn6 `(4, [True, False, True, False])`: the reviewer briefs read back through `brief <id> --role reviewer` differ from the files the drive wrote; the executor briefs match. Not reproducible on POSIX under an ASCII locale. Known Windows-only difference on this path (P125.66's executor, from CPython's subprocess source): `drive-phase.run_verb` passes a verb's stdin as TEXT (`input=stdin` with `text=True`), and on Windows the text wrapper turns `\\n` into `\\r\\n`, so a return filed through `submit -> file-return` is CRLF on Windows and LF elsewhere - the same record differs by platform - and a reviewer brief embeds that return. Fix at the root: (1) stdin to a verb is sent as UTF-8 bytes with no newline translation, so a filed return's bytes are the same on every platform; (2) every brief is written with an explicit encoding and `newline=\"\"` and read back the same way; (3) sn6 reports, for each mismatching brief, the role, the first differing offset and a repr of both sides around it, so a red on a platform nobody can reproduce locally says what differed. Make (1) POSIX-visible: a case that hands run_verb's stdin path a text containing newlines through a stand-in that translates like Windows' text wrapper, and asserts the filed bytes are LF. Existing CRLF returns already committed stay readable (the checked read hashes bytes on disk).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -4434,6 +4448,56 @@
         "gateBasis": "phase-no-spelling"
       },
       "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-15T00:09:41Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
+    },
+    {
+      "id": "P125.71-0h5",
+      "title": "A case title is matched by one rule everywhere, and the legacy-locale pass's first find is fixed",
+      "status": "pending",
+      "description": "Three small items from closing the sweep's legacy-locale pass. (1) `python3 tools/sweep-selftests.py --encoding cp1252` now runs children under an ASCII locale on POSIX, and it found a real latent defect: plugins/audit/tests/test__panel_discovery.py `_cases` reads `open(M.__file__)` with no encoding (about line 94), raising UnicodeDecodeError after the 'MCP rows carry a name and a source' case so the cases after it never ran - fix it and every other unencoded text read in that file; then run the whole pass and fix any other suite it turns red the same way (name each). (2) Two readers of a test case's title disagree: the red-first helper's `--case NAME` (stamp-verification.py around line 1436) matches a label that ends at the name or continues with ' (', while `_filed_returns.tests_add_gaps` matches only the verbatim clause, so a title carrying its detail after ' (' - what the briefs now ask for - is reported 'no filed counterpart' at submit. One predicate both call, in the lower layer, with the briefs' wording unchanged. (3) CLAUDE.md's Tests list describes the encoding pass as 'again, on a legacy code page'; it now also sets a non-UTF-8 locale on POSIX - say both halves. The encoding lint stays scoped to shipped code (scripts/, hooks/, .claude/hooks/); state that boundary and why (the legacy-locale pass catches what a test or tool actually decodes) in the lint's docstring in _output.py.",
+      "files": [
+        "plugins/audit/tests/test__panel_discovery.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "CLAUDE.md",
+        "plugins/audit/scripts/_output.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__filed_returns.py: a filed case title that is the tests.add clause followed by its detail after an opening parenthesis counts as that clause's counterpart, and a title that only paraphrases it does not",
+          "plugins/audit/tests/test_stamp_verification.py: the red-first helper's case match and the filed-counterpart check are the same function's answer"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
       "skills": [],
       "risk": "low",
       "blockedBy": [],
