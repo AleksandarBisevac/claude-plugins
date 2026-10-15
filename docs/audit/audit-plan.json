@@ -3454,7 +3454,8 @@
       "P123.12",
       "P123.45-64p",
       "P123.58-64p",
-      "P125.34-0h5"
+      "P125.34-0h5",
+      "P125.118-0h5"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -3573,7 +3574,8 @@
       "P125.34-0h5",
       "P125.53-0h5",
       "P125.88-0h5",
-      "P125.114-0h5"
+      "P125.114-0h5",
+      "P125.118-0h5"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
       "P42.6",
@@ -5666,7 +5668,8 @@
       "P123.6-z4y",
       "P123.12",
       "P123.58-64p",
-      "P125.34-0h5"
+      "P125.34-0h5",
+      "P125.118-0h5"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
@@ -6160,7 +6163,8 @@
       "P125.53-0h5",
       "P125.64-0h5",
       "P125.102-0h5",
-      "P125.88-0h5"
+      "P125.88-0h5",
+      "P125.118-0h5"
     ],
     "plugins/audit/tests/test_detect_plan_skip.py": [
       "P72.1",
