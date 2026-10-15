@@ -2846,7 +2846,8 @@
       "P128.3-0h5",
       "P128.9-0h5",
       "P128.10-0h5",
-      "P125.95-0h5"
+      "P125.95-0h5",
+      "P125.124-0h5"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -3109,7 +3110,8 @@
       "P123.65-64p",
       "P125.6",
       "P125.40-0h5",
-      "P125.65-0h5"
+      "P125.65-0h5",
+      "P125.124-0h5"
     ],
     "plugins/audit/scripts/config/validate-config.py": [
       "P15.4",
@@ -5195,7 +5197,8 @@
       "P125.6",
       "P125.40-0h5",
       "P125.65-0h5",
-      "P125.106-0h5"
+      "P125.106-0h5",
+      "P125.124-0h5"
     ],
     "plugins/audit/tests/test__id_refs.py": [
       "P61.7",
