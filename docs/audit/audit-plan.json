@@ -6164,7 +6164,8 @@
       "P125.64-0h5",
       "P125.102-0h5",
       "P125.88-0h5",
-      "P125.118-0h5"
+      "P125.118-0h5",
+      "P125.122-0h5"
     ],
     "plugins/audit/tests/test_detect_plan_skip.py": [
       "P72.1",
@@ -6560,7 +6561,8 @@
       "P125.93-0h5",
       "P128.19-0h5",
       "P125.119-0h5",
-      "P125.121-0h5"
+      "P125.121-0h5",
+      "P125.122-0h5"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
@@ -7213,7 +7215,8 @@
       "P127.6-bgr",
       "P127.8-bgr",
       "P125.119-0h5",
-      "P125.121-0h5"
+      "P125.121-0h5",
+      "P125.122-0h5"
     ],
     "plugins/audit/scripts/status/_claude_home.py": [
       "P77.2",
@@ -8176,7 +8179,8 @@
       "P108.20-4gh",
       "P123.34",
       "P125.40-0h5",
-      "P125.119-0h5"
+      "P125.119-0h5",
+      "P125.122-0h5"
     ],
     "tools/ui-tests/capture-provenance.test.mjs": [
       "P103.8",
@@ -8871,7 +8875,8 @@
       "P125.109-0h5",
       "P125.111-0h5",
       "P125.110-0h5",
-      "P125.119-0h5"
+      "P125.119-0h5",
+      "P125.122-0h5"
     ],
     "plugins/audit/scripts/governance/_runner_collects.py": [
       "P124.9"
