@@ -743,16 +743,20 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:fit_clauses (diff lines ~2388-2408) and the sn8 case in test_drive_phase.py",
         "issue": "`fit_clauses` does `keep.pop()` over the clauses `did_events` reads (closed/started/landed/fix-added/signed/released) when they exceed the byte room. Those events vanish from the signal line, leaving only a `+N`. `tools/stream-cost.py:1218` reads these events for close, fix-task and sign-off spans. With ids such as `P125.54-0h5` the room for clauses is roughly 70 bytes, so two closes already overflow. sn8 accepts the loss: it asserts only that the close survives on more than half of the corpus lines (`len(kept) * 2 > len(read_back)`).",
-        "resolution": "Carry the did-events losslessly. Either keep the read clauses and shrink the basis or the `next:` field instead, or write the events to the `.explain` file and have `did_events` read them there. Make sn8 require every read clause to survive.",
-        "fixTask": "P125.82-0h5"
+        "resolution": "fixed in P125.82-0h5 (92e4c5340e08): Carry the did-events losslessly. Either keep the read clauses and shrink the basis or the `next:` field instead, or write the events to the `.explain` file and have `did_events` read them there. Make sn8 require every read clause to survive.",
+        "fixTask": "P125.82-0h5",
+        "commit": "92e4c5340e08",
+        "status": "fixed"
       },
       {
         "id": "P125-R92",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:DISPATCH_PROMPT / dispatch_prompt; plugins/audit/tests/test_drive_phase.py sn5/sn6",
         "issue": "The prompt every agent is dispatched with is `python3 \"<script>\" brief --role <role> <id>`, with no manifest and no `--project-dir`. `project_context` falls back to `CLAUDE_PROJECT_DIR` or the cwd. A wave member's tree holds a committed copy of the manifest, and `submit_command` spells the manifest absolutely and adds `--project-dir` for exactly that reason. The tests call `M.main([\"brief\", subject, mpath, \"--role\", role, \"--project-dir\", root])`, so they never run the command the agent is actually given. If the agent's environment lacks CLAUDE_PROJECT_DIR, the brief is looked up in the tree's own state directory and the agent gets 'no brief to print'. Unchanged at HEAD.",
-        "resolution": "Put `--project-dir <project>` (and the absolute manifest) into the fixed prompt sentence. It is identical across tasks, so the 'identical up to the id' property holds. Make sn5/sn6 run the command parsed out of the printed prompt, from a wave tree's cwd.",
-        "fixTask": "P125.82-0h5"
+        "resolution": "fixed in P125.82-0h5 (92e4c5340e08): Put `--project-dir <project>` (and the absolute manifest) into the fixed prompt sentence. It is identical across tasks, so the 'identical up to the id' property holds. Make sn5/sn6 run the command parsed out of the printed prompt, from a wave tree's cwd.",
+        "fixTask": "P125.82-0h5",
+        "commit": "92e4c5340e08",
+        "status": "fixed"
       },
       {
         "id": "P125-R93",
@@ -998,7 +1002,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 29 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 31 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6425,7 +6429,7 @@
     {
       "id": "P125.82-0h5",
       "title": "the signal line keeps every event stream-cost reads, and the dispatch prompt nam",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase-review findings fixed together (one theme, shared files).\n\nP125-R91: `fit_clauses` does `keep.pop()` over the clauses `did_events` reads (closed/started/landed/fix-added/signed/released) when they exceed the byte room. Those events vanish from the signal line, leaving only a `+N`. `tools/stream-cost.py:1218` reads these events for close, fix-task and sign-off spans. With ids such as `P125.54-0h5` the room for clauses is roughly 70 bytes, so two closes already overflow. sn8 accepts the loss: it asserts only that the close survives on more than half of the corpus lines (`len(kept) * 2 > len(read_back)`).\n\nResolution asked: Carry the did-events losslessly. Either keep the read clauses and shrink the basis or the `next:` field instead, or write the events to the `.explain` file and have `did_events` read them there. Make sn8 require every read clause to survive.\n\nP125-R92: The prompt every agent is dispatched with is `python3 \"<script>\" brief --role <role> <id>`, with no manifest and no `--project-dir`. `project_context` falls back to `CLAUDE_PROJECT_DIR` or the cwd. A wave member's tree holds a committed copy of the manifest, and `submit_command` spells the manifest absolutely and adds `--project-dir` for exactly that reason. The tests call `M.main([\"brief\", subject, mpath, \"--role\", role, \"--project-dir\", root])`, so they never run the command the agent is actually given. If the agent's environment lacks CLAUDE_PROJECT_DIR, the brief is looked up in the tree's own state directory and the agent gets 'no brief to print'. Unchanged at HEAD.\n\nResolution asked: Put `--project-dir <project>` (and the absolute manifest) into the fixed prompt sentence. It is identical across tasks, so the 'identical up to the id' property holds. Make sn5/sn6 run the command parsed out of the printed prompt, from a wave tree's cwd.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -6463,14 +6467,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "92e4c5340e08",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R91: drive-phase.py signal_line no longer drops the clauses did_events reads. New read_clauses() carries every start and close as one comma word per verb (join_ids: ids after the first that share its phase written from the '.', e.g. P125.54-0h5,.55-0h5), each fix-task added-for clause, and sign-off/landing/release once each; they are never dropped. The next: field falls back to the shorter --explain command and the basis and the other clauses (fit_rest, with +N) take what room is left. A step whose read events alone exceed SIGNAL_BYTES prints them whole past the bound (sn8b), documented in signal_line's docstring. did_tasks reads the comma word via split_ids and still reads plain did-lines (one id after the word); did_events shares _is_fix_added. The .explain route was rejected: tools/stream-cost.py reads did_events off the tool result in the transcript after the fact, and the .explain file is overwritten by the next signal, so stream-cost needed no change. R92: DISPATCH_PROMPT now carries --manifest \"<abs manifest>\" --project-dir \"<abs project>\" before --role <role> and the id; dispatch_prompt takes ctx; brief gains a --manifest option (the positional must come after the id, which must stay last), refusing two different manifests. Tests: sn8 now requires every read event on every corpus line (corpus done lines carry a sign-off did-line; expectations written out, not parsed); sn8b covers the over-bound case; sn2u asserts the absolute manifest/project; sn4's template carries <manifest>/<project>; sn6 runs the command parsed (shlex) from the --explain prompt line as a subprocess from a git worktree of the fixture with CLAUDE_PROJECT_DIR removed. Red on today's driver (before the fix): sn8 FAIL (decide-gate-coverage line kept closed P125.54-0h5 and started P125.55-0h5 then +6) and sn6 FAIL (all four briefs 'exit 2: drive-phase.py: no brief to print'), 10/12 in the sn-block+sn5-block stages. After: python3 plugins/audit/tests/test_drive_phase.py --selftest exit 0, ALL PASS 302/302; python3 tools/sweep-selftests.py exit 0, 335/335 files ok, 16375 cases; python3 tools/sweep-selftests.py --encoding cp1252 exit 0, 335/335 files ok, both halves ran. Outside the declared files: commands/phase.md (sn4 compares it to DISPATCH_PROMPT) and commands/next.md, run.md, review.md, resume.md, which state the same prompt sentence; the plan gate allowed each edit. Not edited: tools/measure-context.py and reference/orchestrator.md describe the command loosely as 'brief --role <role> <id>'. Not run: measure-context --gate (the command bodies grew by about 50 bytes each), ruff, vermin.",
+        "descriptive": "The signal line no longer drops the start/close/fix/sign-off/landing/release events stream-cost reads, and the dispatch prompt names the manifest and project so a brief prints from a wave tree with no CLAUDE_PROJECT_DIR."
       },
       "startedAt": "2026-10-15T09:47:21Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T11:32:36Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py: every event stream-cost reads survives on the signal line, at the longest task ids the corpus holds",
+        "plugins/audit/tests/test_drive_phase.py: the brief command parsed out of the printed dispatch prompt, run from a wave tree with no CLAUDE_PROJECT_DIR, prints that task's brief",
+        "sn8b a signal whose read events alone are past the bound carries every one of them, past the bound"
+      ],
       "notes": [
         {
           "at": "2026-10-15T03:41:27Z",
@@ -6494,6 +6502,18 @@
         "runId": "2026-10-15T11:32:22Z.cd59c7",
         "status": "passed",
         "at": "2026-10-15T11:32:22Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "92e4c5340e08",
+        "at": "2026-10-15T11:32:36Z",
+        "basis": "a fix task for P125-R91, P125-R92: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-15T10:22:59Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD: the run timed out after 256 s and its process group was torn down; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -6549,9 +6569,9 @@
       ],
       "reviewPerTask": "phase",
       "testEvidence": {
-        "runId": "2026-10-15T10:36:24Z.029b23",
-        "status": "failed",
-        "at": "2026-10-15T10:36:24Z"
+        "runId": "2026-10-15T11:43:02Z.aae0fd",
+        "status": "passed",
+        "at": "2026-10-15T11:43:02Z"
       }
     },
     {

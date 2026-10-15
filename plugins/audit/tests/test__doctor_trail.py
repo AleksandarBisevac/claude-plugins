@@ -2109,10 +2109,10 @@ def _ttl_trade_cases(check):
 
 # --- check_dispatch_cache --------------------------------------------------------
 def _dispatch_line(mid, cache_read=0, cache_w1h=0, cache_w5m=0,
-                   model="claude-sonnet-5"):
+                   model="claude-sonnet-5", epoch=_TTL_BASE_TS):
     return json.dumps({
         "type": "assistant",
-        "timestamp": _ttl_iso(_TTL_BASE_TS),
+        "timestamp": _ttl_iso(epoch),
         "message": {
             "id": mid, "model": model,
             "usage": {"input_tokens": 10, "output_tokens": 5,
@@ -2153,7 +2153,8 @@ def _dispatch_cache_cases(check):
 
         cached = os.path.join(sub_dir, "agent-b2.jsonl")
         with open(cached, "w", encoding="utf-8") as fh:
-            fh.write(_dispatch_line("m2", cache_read=3000) + "\n")
+            fh.write(_dispatch_line("m2", cache_read=3000,
+                                    epoch=_TTL_BASE_TS + 10) + "\n")
         os.utime(cached, (_TTL_BASE_TS + 10, _TTL_BASE_TS + 10))
 
         rep = base.Report()
@@ -2166,7 +2167,8 @@ def _dispatch_cache_cases(check):
 
         rewritten = os.path.join(sub_dir, "agent-c3.jsonl")
         with open(rewritten, "w", encoding="utf-8") as fh:
-            fh.write(_dispatch_line("m3", cache_w1h=1500) + "\n")
+            fh.write(_dispatch_line("m3", cache_w1h=1500,
+                                    epoch=_TTL_BASE_TS + 20) + "\n")
         os.utime(rewritten, (_TTL_BASE_TS + 20, _TTL_BASE_TS + 20))
 
         rep = base.Report()
@@ -2177,6 +2179,75 @@ def _dispatch_cache_cases(check):
               % (detail2,),
               "wrote 1500 token(s)" in detail2 and "c3" in detail2
               and "NOT served" in detail2)
+    finally:
+        _harness.remove_tree(tmp)
+
+    _dispatch_order_cases(check, ul)
+
+
+def _order_of(sub_dir, ul):
+    """`(agent names in order, unordered names)` from `dispatch_starts`, read
+    through its shape so a wrong shape fails the case, not the run."""
+    res = M.dispatch_starts(sub_dir, ul)
+    if isinstance(res, tuple) and len(res) == 2:
+        return [d["agent"] for d in res[0]], list(res[1])
+    return [d["agent"] for d in res], []
+
+
+def _dispatch_order_cases(check, ul):
+    tmp = _harness.fixture_root("doctor-trail-dispatch-order-")
+    try:
+        session = os.path.join(tmp, "s2.jsonl")
+        with open(session, "w", encoding="utf-8") as fh:
+            fh.write("")
+        sub_dir = ul.subagent_dir(session)
+        os.makedirs(sub_dir)
+
+        # The long first dispatch STARTS first but its file is written last,
+        # so its mtime is later than the second dispatch's.
+        long_first = os.path.join(sub_dir, "agent-l1.jsonl")
+        with open(long_first, "w", encoding="utf-8") as fh:
+            fh.write(_dispatch_line("m1", cache_w1h=4000,
+                                    epoch=_TTL_BASE_TS) + "\n")
+        os.utime(long_first, (_TTL_BASE_TS + 500, _TTL_BASE_TS + 500))
+        second = os.path.join(sub_dir, "agent-s2.jsonl")
+        with open(second, "w", encoding="utf-8") as fh:
+            fh.write(_dispatch_line("m2", cache_read=3000,
+                                    epoch=_TTL_BASE_TS + 60) + "\n")
+        os.utime(second, (_TTL_BASE_TS + 100, _TTL_BASE_TS + 100))
+
+        ordered, unordered = _order_of(sub_dir, ul)
+        rep = base.Report()
+        M.check_dispatch_cache(rep, session)
+        detail = _detail(rep, "dispatch cache")
+        check("dispatches are ordered by the first entry inside each "
+              "transcript, not by file mtime, so a long first dispatch that "
+              "finishes last is still first (order %r, unordered %r, "
+              "detail %r)" % (ordered, unordered, detail),
+              ordered == ["l1", "s2"]
+              and unordered == []
+              and "dispatch s2 read 3000" in detail
+              and "served from l1's" in detail)
+
+        # A transcript with no readable first timestamp is excluded and
+        # named, never placed by a guess (mtime here would make it the
+        # newest, i.e. a "successor" of both).
+        nots = os.path.join(sub_dir, "agent-n3.jsonl")
+        with open(nots, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({"type": "assistant", "message": {
+                "id": "m3", "usage": {"cache_read_input_tokens": 9}}}) + "\n")
+        os.utime(nots, (_TTL_BASE_TS + 900, _TTL_BASE_TS + 900))
+        ordered, unordered = _order_of(sub_dir, ul)
+        rep = base.Report()
+        M.check_dispatch_cache(rep, session)
+        details = [r["detail"] for r in rep.rows if r["check"] == "dispatch cache"]
+        check("a dispatch with no readable first timestamp is left out of the "
+              "ordering and named, never given a place (order %r, unordered "
+              "%r, details %r)" % (ordered, unordered, details),
+              ordered == ["l1", "s2"]
+              and unordered == ["n3"]
+              and sum(1 for d in details if "n3" in d) == 1
+              and not any("served from n3" in d for d in details))
     finally:
         _harness.remove_tree(tmp)
 

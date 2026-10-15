@@ -446,12 +446,17 @@ def check_ttl_trade(rep, transcript_path, pricing=None):
 def _dispatch_first_usage(path):
     """The FIRST usage block in a subagent transcript at `path`, or None when
     the file cannot be read or carries none - the one request that answers
-    whether THIS dispatch's start was served from a predecessor's cache."""
+    whether THIS dispatch's start was served from a predecessor's cache. The
+    result also carries `startTs`, the raw timestamp of the transcript's FIRST
+    entry of any type (None when that entry has none): it is what orders the
+    dispatches, and the first entry is read here anyway."""
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
             lines = fh.readlines()
     except OSError:
         return None
+    start_ts = None
+    seen_first = False
     for line in lines:
         line = line.strip()
         if not line:
@@ -460,6 +465,9 @@ def _dispatch_first_usage(path):
             entry = json.loads(line)
         except ValueError:
             continue                     # a malformed line must never abort the read
+        if isinstance(entry, dict) and not seen_first:
+            seen_first = True
+            start_ts = entry.get("timestamp")
         if not isinstance(entry, dict) or entry.get("type") != "assistant":
             continue
         message = entry.get("message")
@@ -474,36 +482,49 @@ def _dispatch_first_usage(path):
             w5m = _nonneg_int(detail.get("ephemeral_5m_input_tokens"))
             w1h = _nonneg_int(detail.get("ephemeral_1h_input_tokens"))
         return {"cacheRead": _nonneg_int(usage.get("cache_read_input_tokens")),
-               "cacheW1h": w1h, "cacheW5m": w5m}
+               "cacheW1h": w1h, "cacheW5m": w5m, "startTs": start_ts}
     return None
 
 
 def dispatch_starts(sub_dir, ul):
-    """One entry per subagent dispatch under `sub_dir`, in DISPATCH order -
-    by file mtime, which is the order a session actually spawned them in;
-    nothing INSIDE a subagent transcript carries that across files -
-    `[{"agent", "cacheRead", "cacheW1h", "cacheW5m"}, ...]`, or `[]` when the
+    """`(ordered, unordered)` for the subagent dispatches under `sub_dir`.
+
+    `ordered` is `[{"agent", "cacheRead", "cacheW1h", "cacheW5m", "startAt"},
+    ...]` in START order: by the timestamp of the first entry INSIDE each
+    transcript (ties broken by file name). A file's mtime is the time of its
+    last write, roughly when the dispatch FINISHED, so it cannot say which
+    dispatch began first - a long first dispatch that ends after a second one
+    starts would swap them. `unordered` is the agent names whose transcript
+    has no readable first timestamp: they are left out of `ordered` rather
+    than placed by a guess, and the caller says so. Both are `[]` when the
     directory cannot be listed or holds nothing readable.
 
     Only the FIRST usage block of each file is read: that is the dispatch's
     own start, which is the question this check is about. Everything the
     agent does afterwards is its own work and answers `check_ttl_trade`'s
     question, not this one. `ul` is the loaded `usage_ledger` module, for
-    `agent_id_of` - the one place a transcript's basename is turned into the
-    name a reader would recognise."""
+    `agent_id_of` and `parse_ts` - the one place a transcript's basename is
+    turned into the name a reader would recognise, and a timestamp into a
+    time."""
     try:
-        names = sorted(
-            (n for n in os.listdir(sub_dir) if n.endswith(".jsonl")),
-            key=lambda n: os.path.getmtime(os.path.join(sub_dir, n)))
+        names = sorted(n for n in os.listdir(sub_dir) if n.endswith(".jsonl"))
     except OSError:
-        return []
-    out = []
+        return [], []
+    timed = []
+    unordered = []
     for name in names:
         usage = _dispatch_first_usage(os.path.join(sub_dir, name))
         if usage is None:
             continue
-        out.append(dict(usage, agent=ul.agent_id_of(name)))
-    return out
+        agent = ul.agent_id_of(name)
+        start_at = ul.parse_ts(usage["startTs"])
+        if start_at is None:
+            unordered.append(agent)
+            continue
+        timed.append((start_at, name,
+                      dict(usage, agent=agent, startAt=start_at)))
+    timed.sort(key=lambda row: (row[0], row[1]))
+    return [row[2] for row in timed], unordered
 
 
 def check_dispatch_cache(rep, transcript_path):
@@ -523,11 +544,18 @@ def check_dispatch_cache(rep, transcript_path):
         return
     ul = _load("usage_ledger", "usage_ledger.py")
     sub_dir = ul.subagent_dir(transcript_path)
-    starts = dispatch_starts(sub_dir, ul)
+    starts, unordered = dispatch_starts(sub_dir, ul)
+    if unordered:
+        rep.ok("dispatch cache",
+               "%d dispatch(es) (%s) have no readable first timestamp, so "
+               "they are left out of the ordering and are never named as a "
+               "cache source or a reader of one"
+               % (len(unordered), ", ".join(unordered)))
     if len(starts) < 2:
         rep.ok("dispatch cache",
-               "%s carries fewer than two subagent dispatches, so no later "
-               "start can be compared against its predecessor" % (sub_dir,))
+               "%s carries fewer than two subagent dispatches with a readable "
+               "start, so no later start can be compared against its "
+               "predecessor" % (sub_dir,))
         return
     for prev, cur in zip(starts, starts[1:]):
         if cur["cacheRead"] > 0:
