@@ -108,15 +108,23 @@ def _kill(proc):
     question, and the two are kept apart because a kill command can fail for a
     tree that has already ended (`taskkill` exits non-zero, "not found") and can
     succeed on one that is still winding down. A seam: a case swaps this name to
-    make the kill fail on a platform whose real one would not."""
+    make the kill fail on a platform whose real one would not.
+
+    A PermissionError from `killpg` is a failed kill, not a crash: macOS answers
+    EPERM for a group whose only members are zombies, so a stop that is already
+    complete can raise it. False hands the judgement to `_gone` and the group
+    check in `tear_down`; the error alone is never read as a clean stop."""
     if hasattr(os, "killpg"):
         gid = os.getpgid(proc.pid)
-        os.killpg(gid, signal.SIGTERM)
         try:
-            proc.wait(timeout=GRACE_SECONDS)
-        except Exception:
-            os.killpg(gid, signal.SIGKILL)
-            proc.wait(timeout=GRACE_SECONDS)
+            os.killpg(gid, signal.SIGTERM)
+            try:
+                proc.wait(timeout=GRACE_SECONDS)
+            except Exception:
+                os.killpg(gid, signal.SIGKILL)
+                proc.wait(timeout=GRACE_SECONDS)
+        except PermissionError:
+            return False
         return True
     completed = subprocess.run(
         ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
@@ -161,6 +169,8 @@ def _reaped_group_empty(pid):
             os.killpg(pid, 0)
         except ProcessLookupError:
             return True
+        except PermissionError:
+            pass    # members that are zombies until reaped; the deadline bounds it
         except Exception:
             return False
         time.sleep(0.05)

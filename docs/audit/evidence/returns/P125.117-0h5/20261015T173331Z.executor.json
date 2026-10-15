@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "own-selftest x5 (test__proc_group.py --selftest)": "pass",
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --encoding cp1252": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T18:02:55Z",
+    "basis": "`python3 plugins/audit/tests/test__proc_group.py --selftest` in a throwaway tree at HEAD exited 1, but no case --case names failed an assertion as the task's own: pg24 (house FAIL), pg27 (house FAIL) - SELFTEST FAILED: 26/28 cases passed; --case a killpg that raises PermissionError during teardown does not escape names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Repro (scratch script, tempdir removed in finally, 3 runs identical): on macOS killpg(pgid,0) and killpg(pgid,SIGKILL) raise PermissionError EPERM for a group whose only member is a zombie leader (killed, not yet reaped); after proc.wait() it is ProcessLookupError. A live group with a zombie child orphan answered fine. _proc_group._kill: SIGTERM/SIGKILL killpg wrapped, PermissionError returns False (tear_down then judges via _gone/_reaped_group_empty). _reaped_group_empty: PermissionError in the confirmation loop now keeps waiting until the deadline (unconfirmed if EPERM never ends) - this was the real flake: a first cp1252 sweep failed pg21 with confirmed=False because the loop gave up on the zombie window. Test helper _group_alive: EPERM = alive (exists, cannot be signalled); pg21 now polls via _group_gone_within instead of one look. New cases pg24 (title carries tests.add clause; _kill returns False, no escape, tear_down False while child lives), pg25 (no-error teardown still True), pg26 (helper EPERM=alive), pg27 (EPERM window settles->True, endless->False). Selftest run 5x: exit 0 each, 28/28; plain sweep exit 0 (335/335 files); cp1252 sweep exit 0 (first attempt exit 1 on pg21 before the loop fix).",
+    "descriptive": "Teardown survives macOS EPERM from killpg and judges by group-gone confirmation; the test flake is fixed at its source."
+  },
+  "testsAdded": [
+    "pg24 a killpg that raises PermissionError during teardown does not escape",
+    "pg25",
+    "pg26",
+    "pg27"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:6996ad9e6c1317d79bc8341d2d57c404e3f4516025a3800d16a8c921bde9c35c\",\"dirtyDigest\":\"sha256:e243c843002c952d37e2f0834c6aac01e1125a5658c28c32e24e59c347060616\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_proc_group.py\":\"e0596f4f062e1d2d\",\"plugins/audit/tests/test__proc_group.py\":\"b80ced33b80739f7\"},\"head\":\"93a38a96\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_proc_group.py\",\"plugins/audit/tests/test__proc_group.py\"],\"scopeDigest\":\"sha256:5693cc7c6556e27addc2176d43813240bdebc91e95acf3c50284700881169086\",\"v\":2}"
+}

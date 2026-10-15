@@ -295,11 +295,116 @@ def _reaped_root(leave_grandchild, marks):
 
 
 def _group_alive(pgid):
+    """Whether a process with this pgid still exists. EPERM counts as ALIVE: macOS
+    answers it for a group whose members are all zombies (or that we may not
+    signal), and a process that exists but cannot be signalled is not gone."""
     try:
         os.killpg(pgid, 0)
     except ProcessLookupError:
         return False
+    except PermissionError:
+        return True
     return True
+
+
+def _group_gone_within(pgid, seconds):
+    """Poll until the group is gone: a killed member is a zombie (EPERM) until
+    its reaper runs, so a single look straight after the kill is a race."""
+    deadline = time.time() + seconds
+    while _group_alive(pgid) and time.time() < deadline:
+        time.sleep(0.05)
+    return not _group_alive(pgid)
+
+
+def _eperm_cases(check):
+    """A killpg that raises PermissionError must not escape a teardown."""
+    real_killpg = os.killpg
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            **M.group_kwargs())
+    calls = []
+
+    def eperm(gid, sig):
+        calls.append(sig)
+        raise PermissionError(1, "Operation not permitted")
+    escaped, killed, confirmed, alive_after = None, None, None, None
+    try:
+        os.killpg = eperm
+        try:
+            killed = M._kill(proc)
+        except PermissionError as exc:
+            escaped = exc
+        try:
+            confirmed = M.tear_down(proc)
+        except PermissionError as exc:
+            escaped = exc
+        alive_after = proc.poll() is None
+    finally:
+        os.killpg = real_killpg
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except Exception:
+            pass
+        proc.wait()
+    check("pg24 a killpg that raises PermissionError during teardown does not "
+          "escape; the teardown is judged by whether the tree is gone, never "
+          "reported clean on the error alone (the kill returns False, the "
+          "teardown is unconfirmed while the child still runs): escaped=%r "
+          "killed=%r confirmed=%r alive_after=%r calls=%r"
+          % (escaped, killed, confirmed, alive_after, calls),
+          escaped is None and killed is False and confirmed is False
+          and alive_after is True and len(calls) >= 1)
+
+    # the other direction: the error must not turn a working kill into False
+    ok = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                          **M.group_kwargs())
+    try:
+        ok_confirmed = M.tear_down(ok)
+    finally:
+        try:
+            os.killpg(ok.pid, signal.SIGKILL)
+        except Exception:
+            pass
+        ok.wait()
+    check("pg25 ...and without the error the same teardown still confirms: %r"
+          % (ok_confirmed,), ok_confirmed is True)
+
+    # zombie window in the confirmation loop: EPERM twice, then the group is gone
+    # -> confirmed; EPERM for ever -> unconfirmed (the other direction)
+    def window(count):
+        seen = []
+
+        def fake(gid, sig):
+            seen.append(sig)
+            if sig != 0:
+                return None
+            if len(seen) <= count:
+                raise PermissionError(1, "Operation not permitted")
+            raise ProcessLookupError(3, "No such process")
+        return fake
+    real_grace, M.GRACE_SECONDS = M.GRACE_SECONDS, 0.5
+    real_gid = os.getpgid(0)
+    try:
+        os.killpg = window(3)
+        settled = M._reaped_group_empty(real_gid + 1000000)
+        os.killpg = window(10 ** 9)
+        stuck = M._reaped_group_empty(real_gid + 1000000)
+    finally:
+        M.GRACE_SECONDS = real_grace
+        os.killpg = real_killpg
+    check("pg27 a group answering EPERM while its members are reaped is waited "
+          "on, not given up on - confirmed once it is gone, unconfirmed if the "
+          "EPERM never ends: settled=%r stuck=%r" % (settled, stuck),
+          settled is True and stuck is False)
+
+    os.killpg = eperm
+    try:
+        eperm_alive = _group_alive(os.getpid())
+    finally:
+        os.killpg = real_killpg
+    check("pg26 the test helper reads EPERM as alive (cannot be signalled), not "
+          "gone and not a crash: %r" % (eperm_alive,), eperm_alive is True)
 
 
 def _reaped_cases(check):
@@ -313,7 +418,7 @@ def _reaped_cases(check):
         live, began = _reaped_root(1, marks)
         seen = _group_alive(live.pid)
         confirmed = M.tear_down(live)
-        after = _group_alive(live.pid)
+        after = not _group_gone_within(live.pid, 5)
         dead, _b = _reaped_root(0, marks)
         empty_confirmed = M.tear_down(dead)
 
@@ -356,6 +461,7 @@ def _reaped_cases(check):
 def _cases(check):
     if hasattr(os, "killpg"):
         _reaped_cases(check)
+        _eperm_cases(check)
     _shell_cases(check)
     _beside_git_cases(check)
     shared = [(name, getattr(GATE, name) is getattr(M, target))
