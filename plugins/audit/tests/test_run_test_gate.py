@@ -40,6 +40,7 @@ from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402  (script_path: resolve by basename)
 import _proc_group as _pg                          # noqa: E402  (the teardown `_tear_down` is)
 import _journal_io                                 # noqa: E402  (the rows a stamp anchors)
+import _invariants                                 # noqa: E402  (record_rels: the one record set)
 import _tree_stamp                                 # noqa: E402  (the digest a row records)
 import _evidence_io as _ev_io                      # noqa: E402  (STEP_KEYS: what a row keeps)
 import _manifest_vocab                             # noqa: E402  (FULL_STATUS_WHOLE, for --full)
@@ -9809,6 +9810,107 @@ def _member_records_cases(check):
         _harness.remove_tree(root)
 
 
+def _shared_records_cases(check):
+    """The records a member tree's run leaves out of its changed paths are the
+    ones `_invariants.record_rels` names - git-root-relative - and not a list of
+    this runner's own. The fixture nests the project one directory under the
+    git root and runs over the git root as the tree, the way the drive hands a
+    member its worktree: a project-relative record list then names no changed
+    path at all, so a filter reading one keeps the plan's bytes as the task's
+    work."""
+    root = _harness.fixture_root("run-test-gate-shared-records-")
+    project = os.path.join(root, "app")
+    audit = os.path.join(project, "docs", "audit")
+    try:
+        for sub in ("phases", "journal"):
+            os.makedirs(os.path.join(audit, sub))
+        os.makedirs(os.path.join(project, ".claude"))
+        os.makedirs(os.path.join(project, "src"))
+        os.makedirs(os.path.join(root, "tests"))
+        with open(os.path.join(project, ".claude", "audit.config.json"),
+                  "w") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        mpath = os.path.join(audit, "audit-plan.json")
+        with open(mpath, "w") as fh:
+            json.dump({"meta": {"version": 3, "gitRoot": "..",
+                                "buildCommands": {"wide": "true"}},
+                       "phases": [{"id": "P1", "title": "one",
+                                   "shard": "phases/P1.json"},
+                                  {"id": "P2", "title": "two",
+                                   "shard": "phases/P2.json"}]}, fh)
+        with open(os.path.join(audit, "phases", "P1.json"), "w") as fh:
+            json.dump({"id": "P1", "title": "one", "status": "in_progress",
+                       "testGate": ["wide"], "tasks": [
+                           {"id": "P1.1", "title": "edit the source",
+                            "status": "in_progress", "files": ["src/a.txt"],
+                            "tests": {"mode": "regression",
+                                      "gate": ["sh tests/own_test.sh"]}}]},
+                      fh)
+        with open(os.path.join(audit, "phases", "P2.json"), "w") as fh:
+            json.dump({"id": "P2", "title": "two", "status": "pending",
+                       "tasks": []}, fh)
+        for rel, body in (("app/src/a.txt", "v0\n"),
+                          ("tests/own_test.sh", "exit 0\n")):
+            with open(os.path.join(root, rel), "w") as fh:
+                fh.write(body)
+        _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+        for arg in (["add", "--", "."],
+                    ["-c", "user.email=fixture@example.com",
+                     "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                     "commit", "-qm", "fixture"]):
+            _harness.git(root, *arg, prefix=_PLAIN_GIT)
+        # What a refresh brings into a member tree: a sibling phase's shard
+        # rewritten, and a journal file the tree did not have.
+        with open(os.path.join(audit, "phases", "P2.json"), "w") as fh:
+            json.dump({"id": "P2", "title": "two", "status": "in_progress",
+                       "tasks": []}, fh)
+        with open(os.path.join(audit, "journal", "2026-10.x.jsonl"), "w") as fh:
+            fh.write("{}\n")
+        shared = _invariants.record_rels(mpath, {"id": "P1"}, project, root)
+        refreshed = ["app/docs/audit/phases/P2.json",
+                     "app/docs/audit/journal/2026-10.x.jsonl"]
+        nothing = "the task changed no path, so nothing joins its gate"
+        # Printed only when the selection read a non-empty change: this plan
+        # records no related listing, so that arm says so.
+        selected = "related: no meta.phaseGate.derived.listing.related"
+
+        def run():
+            lines = []
+            M.main([mpath, "P1", "--task", "P1.1", "--project-dir", project,
+                    "--tree", root], out=lines.append)
+            return lines
+
+        def said(lines):
+            return [ln for ln in lines if ln.startswith("[run-test-gate]")]
+
+        only_records = run()
+        # The title is the task's declared clause verbatim, so no id leads it.
+        check("run-test-gate's record filter answers from the one shared "
+              "record-path definition, so a sibling shard or a path under the "
+              "journal is a record to it exactly as it is to integrate-task "
+              "(rs1: a member tree holding only a refreshed sibling shard and a "
+              "new journal file changed nothing of the task's: shared=%r "
+              "lines=%r)"
+              % (shared, said(only_records)),
+              all(_invariants.is_record_path(p, shared) for p in refreshed)
+              and sum(nothing in ln for ln in only_records) == 1
+              and not any(selected in ln for ln in only_records))
+        # The deny twin: a filter that read every path as a record would print
+        # the same line here, so a source edit beside the records must be the
+        # task's change.
+        with open(os.path.join(project, "src", "a.txt"), "w") as fh:
+            fh.write("v1\n")
+        with_source = run()
+        check("rs2 ...and a source path beside them is not a record - the task "
+              "changed it: shared=%r lines=%r"
+              % (shared, said(with_source)),
+              not _invariants.is_record_path("app/src/a.txt", shared)
+              and not any(nothing in ln for ln in with_source)
+              and sum(selected in ln for ln in with_source) == 1)
+    finally:
+        _harness.remove_tree(root)
+
+
 def _tree_cases(check):
     """`--tree DIR`: the commands, the tree bracket and the digests are taken over
     DIR, while the row, the pointer and the boundary land in the project the
@@ -10021,6 +10123,7 @@ def _selftest():
         _harness.stage(check, "sl-block", _success_line_cases)
         _harness.stage(check, "ag-block", _affected_cases)
         _harness.stage(check, "rp-block", _member_records_cases)
+        _harness.stage(check, "rs-block", _shared_records_cases)
         _group_cases(check)
         _crowd_cases(check)
         _full_scope_cases(check)

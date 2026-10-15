@@ -160,6 +160,9 @@ import _gate_derive  # noqa: E402  (version_facts/listing_fact: the one reading 
 import _affected_tests as _affected  # noqa: E402  (which suites a task's change
 #                                     can break, by which arm - pure; this file
 #                                     gathers its observations and runs them)
+import _invariants  # noqa: E402  (record_rels/is_record_path: the one definition of
+#                                  which paths are the plan's records, shared with
+#                                  integrate-task, audit-task and commit-task-work)
 
 E_OK, E_FAIL, E_ASK = 0, 1, 2
 # A `--record` run that measured and stored nothing. Its own code because it is
@@ -2327,14 +2330,35 @@ def _git_text(tree, args):
     return proc.stdout.decode("utf-8", "replace") if proc.returncode == 0 else None
 
 
+def member_records(project, manifest_path, manifest, phase_id, tree):
+    """Git-root-relative record paths for a run over a task's own `tree`:
+    `_invariants.record_rels` over the project's working index, plus the shards
+    the index at `tree`'s HEAD names - the commit its changed paths are diffed
+    against. Not a list of this runner's own, so a path is a record here
+    exactly when it is one to integrate-task, which carried it in."""
+    git_root = _invariants.git_root_for(manifest, project)
+    index_rel = _invariants._rel(manifest_path, git_root)
+    head_index = (_invariants.json_at(tree, "HEAD", index_rel)
+                  if index_rel is not None else None)
+    return _invariants.record_rels(
+        manifest_path, _phase_by_id(manifest, phase_id), project, git_root,
+        head_index=head_index)
+
+
 def task_changed_paths(tree, declared, own_tree, records=()):
     """`(paths, why)` - what the task changed against the head its tree is at:
     `git diff -M HEAD` (a rename both paths, a deletion its old one) plus the
-    untracked files. In the SHARED project tree a sibling's edits are there
-    too, so only the task's declared `files` are kept; its own worktree holds
-    nothing else of anybody's - but it does hold the phase tree's records,
-    which the drive brings in before the gate, so a path at or under one of
-    `records` is left out there: it is the plan's bytes, not the task's work."""
+    untracked files, relative to `tree`. In the SHARED project tree a sibling's
+    edits are there too, so only the task's declared `files` are kept; its own
+    worktree holds nothing else of anybody's - but it does hold the phase
+    tree's records, which the drive brings in before the gate, so a path that
+    `_invariants.is_record_path` puts at or under one of `records` is left out
+    there: it is the plan's bytes, not the task's work.
+
+    `records` are git-root-relative (`member_records`) and the listed paths are
+    `tree`-relative, so each path is asked about with `tree`'s own prefix in its
+    checkout (`git rev-parse --show-prefix`) in front of it - the same answer
+    whether `tree` is the checkout's root or the project's directory inside it."""
     diff = _git_text(tree, ["diff", "--relative", "--name-status", "-z", "-M",
                             "HEAD"])
     others = _git_text(tree, ["ls-files", "-z", "--others", "--exclude-standard"])
@@ -2344,11 +2368,16 @@ def task_changed_paths(tree, declared, own_tree, records=()):
     paths += [p for p in others.split("\0") if p and p not in paths]
     if not own_tree:
         keep = set(_declared_files(declared))
-        paths = [p for p in paths if p in keep]
-    else:
-        paths = [p for p in paths if not any(
-            p == r or p.startswith(r.rstrip("/") + "/") for r in records or ())]
-    return paths, None
+        return [p for p in paths if p in keep], None
+    if not records:
+        return paths, None
+    prefix = _git_text(tree, ["rev-parse", "--show-prefix"])
+    if prefix is None:
+        return None, ("git could not say where this tree sits in its checkout, "
+                      "so its records could not be told from its changes")
+    prefix = prefix.strip()
+    return [p for p in paths
+            if not _invariants.is_record_path(prefix + p, records)], None
 
 
 def _affected_facts(tree, meta, changed):
@@ -2395,8 +2424,8 @@ def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands,
     """`(steps, published, info)` - the steps that join a task's measured run,
     the manifest-published commands among them, and `{lines, suites, widen}`
     saying why. Nothing joins a gate that already carries the phase's wide one.
-    `records` is the recorder's own paths, left out of what a task's own tree
-    changed."""
+    `records` is `member_records`' answer, git-root-relative, left out of what
+    a task's own tree changed."""
     meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
     phase = _phase_by_id(manifest, phase_id) or {}
     task = ([t for t in (phase.get("tasks") or [])
@@ -5044,7 +5073,8 @@ def main(argv, out=print):
     if args.task is not None and not args.own and source == "task":
         extra, published_extra, affected_info = affected_steps(
             tree or project, tree is not None, manifest, args.phase, args.task,
-            commands, records=_ev.recorded_paths(project, args.manifest)[0]
+            commands, records=member_records(project, args.manifest, manifest,
+                                             args.phase, tree)
             if tree is not None else ())
         commands = commands + extra
         if not args.as_json:
