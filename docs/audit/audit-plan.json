@@ -6397,7 +6397,8 @@
       "P123.88-64p",
       "P123.90-64p",
       "P126.1",
-      "P125.26"
+      "P125.26",
+      "P125.81-0h5"
     ],
     "plugins/audit/tests/test_repair_commits.py": [
       "P59.13",
