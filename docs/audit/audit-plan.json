@@ -7042,7 +7042,8 @@
       "P86.2",
       "P80.16-rtb",
       "P123.52-64p",
-      "P125.68-0h5"
+      "P125.68-0h5",
+      "P125.100-0h5"
     ],
     "plugins/audit/tests/test_verify_invariants.py": [
       "P75.1",
@@ -8405,7 +8406,8 @@
       "P125.82-0h5",
       "P125.85-0h5",
       "P125.103-0h5",
-      "P128.17-0h5"
+      "P128.17-0h5",
+      "P125.101-0h5"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6",
