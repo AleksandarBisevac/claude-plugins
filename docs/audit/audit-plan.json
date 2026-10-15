@@ -1182,7 +1182,8 @@
       "P125.44-0h5",
       "P125.47-0h5",
       "P125.69-0h5",
-      "P125.72-0h5"
+      "P125.72-0h5",
+      "P128.34-0h5"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -1439,7 +1440,8 @@
       "P125.113-0h5",
       "P125.114-0h5",
       "P125.93-0h5",
-      "P125.95-0h5"
+      "P125.95-0h5",
+      "P128.34-0h5"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1467,7 +1469,8 @@
       "P112.1-uce",
       "P118.9",
       "P124.8",
-      "P125.95-0h5"
+      "P125.95-0h5",
+      "P128.34-0h5"
     ],
     "SECURITY.md": [
       "P2.2",
@@ -3111,7 +3114,8 @@
       "P125.6",
       "P125.40-0h5",
       "P125.65-0h5",
-      "P125.124-0h5"
+      "P125.124-0h5",
+      "P128.34-0h5"
     ],
     "plugins/audit/scripts/config/validate-config.py": [
       "P15.4",
@@ -5199,7 +5203,8 @@
       "P125.40-0h5",
       "P125.65-0h5",
       "P125.106-0h5",
-      "P125.124-0h5"
+      "P125.124-0h5",
+      "P128.34-0h5"
     ],
     "plugins/audit/tests/test__id_refs.py": [
       "P61.7",
@@ -9086,7 +9091,8 @@
       "P125.56-0h5"
     ],
     "tools/ui-checks/stage-tabs.mjs": [
-      "P125.56-0h5"
+      "P125.56-0h5",
+      "P128.34-0h5"
     ],
     "tools/ui-tests/armed-reason.test.mjs": [
       "P125.56-0h5"
@@ -9116,7 +9122,8 @@
       "P125.56-0h5"
     ],
     "plugins/audit/scripts/ui/panel/help-drawer.js": [
-      "P125.56-0h5"
+      "P125.56-0h5",
+      "P128.34-0h5"
     ],
     "plugins/audit/scripts/ui/panel/version-banner.js": [
       "P125.56-0h5"
