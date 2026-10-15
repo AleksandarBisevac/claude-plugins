@@ -877,6 +877,79 @@ def _staging_cases(check, repos):
               root, "show", "--name-only", "--pretty=format:", after))
 
 
+# --- the committed pair ---------------------------------------------------------
+WIDENED = "src/new.py"
+OWED_CLAUSE = ("a records commit whose phase shard owes index rows HEAD lacks is "
+               "refused naming the rows and the commit-manifest-index remedy, as "
+               "commit-task-work refuses")
+
+
+def _declare(fx, tid, path, new_task=False):
+    """The shard gives `tid` the file `path`, as `/audit:task scope` (or, with
+    `new_task`, `/audit:task add`) leaves it, and the WORKING index gains the
+    row - nothing of either committed, so HEAD's index lacks the row."""
+    shard = _mio.read_json(fx["shard"])
+    if new_task:
+        task = json.loads(json.dumps(shard["tasks"][1]))
+        task.update({"id": tid, "title": tid, "files": [path]})
+        shard["tasks"].append(task)
+    else:
+        [t for t in shard["tasks"] if t["id"] == tid][0]["files"].append(path)
+    TI._write_json(fx["shard"], shard)
+    index = _mio.read_json(fx["manifest"])
+    index.setdefault("fileIndex", {})[path] = [tid]
+    TI._write_json(fx["manifest"], index)
+
+
+def _index_row_cases(check):
+    repos = Repos()
+    try:
+        fx = repos.make(leave_dirty=True)
+        _exhaust(fx)
+        _declare(fx, "P1.2", WIDENED)
+        before = _head(fx)
+        code, text = _run(fx)
+        _jcode, jtext = _run(fx, "--json")
+        rows = json.loads(jtext).get("indexRows") if jtext.startswith("{") else None
+        check("%s (P1.2, which HEAD's shard holds, now declares %s and the "
+              "index HEAD holds has no row for it: exit 1, the row and "
+              "commit-manifest-index.py named, HEAD unmoved and nothing staged): "
+              "%r / %r" % (OWED_CLAUSE, WIDENED, (code, text[-400:]), rows),
+              code == 1 and "%s (P1.2)" % (WIDENED,) in text
+              and "commit-manifest-index.py" in text
+              and "commit-audit-state.py" in text
+              and _head(fx) == before and _staged(fx) == []
+              and rows == [[WIDENED, "P1.2"]])
+
+        # THE SECOND DIRECTION: a guard that fired unconditionally would refuse
+        # every records commit, and only a shard owing nothing can show it.
+        clean = repos.make(leave_dirty=True)
+        _exhaust(clean)
+        was = _head(clean)
+        code, text = _run(clean)
+        check("cas61 ...and a shard owing no index rows commits as it did before "
+              "the check existed - no refusal, no remedy named: %r"
+              % ((code, text[-300:]),),
+              code == 0 and _head(clean) != was
+              and "commit-manifest-index.py" not in text)
+
+        # THE FILTER: a row for a task this very commit adds cannot go first,
+        # because the index commit refuses an index naming a task no committed
+        # shard holds - refusing it here would leave no order that commits either.
+        fresh = repos.make(leave_dirty=True)
+        _exhaust(fresh)
+        _declare(fresh, "P1.3", WIDENED, new_task=True)
+        was = _head(fresh)
+        code, text = _run(fresh)
+        check("cas62 ...and a row owed only for a task new in this commit (P1.3, "
+              "absent from HEAD's shard) is not refused - the shard commits: %r"
+              % ((code, text[-300:]),),
+              code == 0 and _head(fresh) != was
+              and "commit-manifest-index.py" not in text)
+    finally:
+        repos.close()
+
+
 def _as_command(fx, *extra):
     """`(exitCode, stdout)` of the script run as the command `/audit:resume`
     runs on every resume - through its `__main__`, which is where the one-line
@@ -948,6 +1021,7 @@ def _selftest():
         # Each block staged, so one that raises still lets the other run.
         _harness.stage(check, "cas-block", _cases)
         _harness.stage(check, "terse-block", _terse_cases)
+        _harness.stage(check, "index-row-block", _index_row_cases)
     return _harness.run(body)
 
 

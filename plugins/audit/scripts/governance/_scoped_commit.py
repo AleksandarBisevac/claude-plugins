@@ -1141,6 +1141,62 @@ def rows_named(rows):
     return ", ".join("%s (%s)" % (path, tid) for path, tid in rows)
 
 
+def owed_index_rows(phase, manifest_path, git_root):
+    """`(owed, unheld)` - the fileIndex rows the working shard needs and the
+    index HEAD holds lacks, and the part of them the working index lacks too.
+    Both empty in the single-file layout, where one file carries both halves,
+    and when HEAD holds no index or no stub for this phase, since then no
+    committed pair reads this shard at all.
+
+    ONLY ROWS OF TASKS HEAD'S SHARD ALREADY HOLDS. A row for a task the shard
+    adds in this very commit cannot go first: `commit-manifest-index.py`
+    refuses an index naming a task no committed shard holds, so refusing it
+    here too would leave no order that commits either file.
+
+    SHARED BY EVERY COMMIT THAT CARRIES A SHARD WITHOUT THE INDEX, so they
+    refuse the same rows: a second filter is how one of them comes to commit
+    the plan the other refuses.
+    """
+    index_abs, phase_file_abs = _invariants.manifest_files(manifest_path, phase)
+    if os.path.abspath(index_abs) == os.path.abspath(phase_file_abs):
+        return [], []
+    index_rel = _invariants._rel(index_abs, git_root)
+    shard_rel = _invariants._rel(phase_file_abs, git_root)
+    head_index = _invariants.json_at(git_root, "HEAD", index_rel)
+    if head_index is None or str(phase.get("id")) not in [
+            str(s.get("id")) for s in (head_index.get("phases") or [])
+            if isinstance(s, dict)]:
+        return [], []
+    held = set(t.get("id") for t in ((_invariants.json_at(
+        git_root, "HEAD", shard_rel) or {}).get("tasks") or [])
+        if isinstance(t, dict))
+    try:
+        body = _mio.read_json(phase_file_abs)
+        index_now = _mio.read_json(index_abs)
+    except Exception:
+        return [], []
+    owed = [row for row in index_rows_owed(head_index, body) if row[1] in held]
+    lacking = index_rows_owed(index_now, body)
+    return owed, [row for row in owed if row in lacking]
+
+
+def index_rows_refusal(owed, unheld, manifest_path, phase_id, command):
+    """The sentence a shard owing the committed index rows earns, or None.
+    `command` is the script the caller runs again once the index is in."""
+    if not owed:
+        return None
+    first = ("The working index lacks %s as well, so re-derive it "
+             "(audit-task.py reindex), then commit"
+             % (rows_named(unheld),) if unheld else "Commit")
+    return ("the shard this commit carries declares %s, and the index HEAD "
+            "holds has no fileIndex row for %s - committed now, it would "
+            "record a plan that does not validate ('missing from fileIndex'). "
+            "%s the index first (commit-manifest-index.py %s %s), then run "
+            "%s again. Nothing was staged"
+            % (rows_named(owed), "it" if len(owed) == 1 else "them", first,
+               manifest_path, phase_id, command))
+
+
 # --- what happened ------------------------------------------------------------
 def answer(skipped, committed=False, commit=None, staged=None, refused="",
            foreign=None, journalled=False, quiet="", done=None):

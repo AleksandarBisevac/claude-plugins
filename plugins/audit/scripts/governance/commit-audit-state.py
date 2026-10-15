@@ -30,6 +30,13 @@ committed, and a verb that could sweep it in on the way to preserving a record
 would be a commit nobody reviewed, made on the one path where nobody was going to
 look.
 
+THE INDEX IS NOT ON IT EITHER, SO A SHARD OWING THE INDEX ROWS IS REFUSED. The
+index is committed alone, by `commit-manifest-index.py`. A shard whose tasks
+declare a file the index HEAD holds has no row for would leave a plan at HEAD
+that fails "missing from fileIndex", so it is refused before anything is staged,
+naming each row and that command - `_scoped_commit.owed_index_rows`, the same
+question and the same filter the task commit asks.
+
 HOW THE EXCLUSION IS ENFORCED RATHER THAN INTENDED. Paths are staged
 EXPLICITLY, each by what git holds for it and never `git add -A`, the index is
 read back and compared against the same allow-list BEFORE anything is
@@ -442,6 +449,19 @@ def commit_state(manifest, phase, manifest_path, project, git_root, subject=None
     if not pending:
         return E_OK, _answer(skipped, quiet=NOTHING_UNCOMMITTED)
 
+    # THE COMMITTED PAIR, still before staging, asked as the task commit asks
+    # it: this commit carries the shard and never the index, so a shard whose
+    # declared files grew past the rows HEAD's index holds would leave a plan at
+    # HEAD that does not validate. The index goes first, alone.
+    phase_id = _phase_id(phase)
+    owed, unheld = _scoped_commit.owed_index_rows(phase, manifest_path, git_root)
+    refusal = _scoped_commit.index_rows_refusal(
+        owed, unheld, manifest_path, phase_id, "commit-audit-state.py")
+    if refusal:
+        answer = _answer(skipped, refused=refusal)
+        answer["indexRows"] = [list(row) for row in owed]
+        return E_FAIL, answer
+
     # STAGED, READ BACK AND COMMITTED BY `_scoped_commit.commit_with_rows`, the
     # one sequence every scoped commit shares: the row naming the commit
     # written first and carried, each path staged by what git holds for it, the
@@ -454,7 +474,6 @@ def commit_state(manifest, phase, manifest_path, project, git_root, subject=None
     # NO SECOND EMPTY-INDEX GUARD. `pending` above already answered "is there
     # anything to commit"; `git commit` refuses an empty index on its own, and
     # that refusal is reported like any other.
-    phase_id = _phase_id(phase)
     done = _scoped_commit.commit_with_rows(
         git_root, allowed, targets["kinds"],
         commit_message(phase_id, subject, _coauthor(manifest)),

@@ -644,8 +644,10 @@
         "severity": "med",
         "file": "plugins/audit/hooks/_config.py:manifest_state (13263a4d, ~3596-3600)",
         "issue": "`state[\"hasPhases\"] = True` is set before the calls that can raise (`mio.phase_running`, `signoff_due`, `effective_phase_status`), and the outer `except Exception: pass` returns the half-built state. The docstring still says 'On any error it reports the LEAST aggressive state, so a crash in here can only relax the gate, never invent a denial'. With the new ladder, an exception on a malformed phase after the first phase leaves exists=True, hasPhases=True, phaseRunning=False, so plan_gate_step returns nothing-running and the tier is deny. Before this diff the same error gave warn. A crash can now invent a denial.",
-        "resolution": "In the except branch, return a fresh least-aggressive state (exists kept, hasPhases False, phaseRunning False), or set hasPhases only after the phase has been processed. Add a selftest where a later phase raises and the tier stays warn.",
-        "fixTask": "P125.94-0h5"
+        "resolution": "fixed in P125.94-0h5 (822c6e535b08): In the except branch, return a fresh least-aggressive state (exists kept, hasPhases False, phaseRunning False), or set hasPhases only after the phase has been processed. Add a selftest where a later phase raises and the tier stays warn.",
+        "fixTask": "P125.94-0h5",
+        "commit": "822c6e535b08",
+        "status": "fixed"
       },
       {
         "id": "P125-R77",
@@ -1016,7 +1018,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 38 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 39 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -7262,7 +7264,7 @@
     {
       "id": "P125.94-0h5",
       "title": "fix P125-R76: `state[\"hasPhases\"] = True` is set before the calls that can ra...",
-      "status": "in_progress",
+      "status": "done",
       "description": "`state[\"hasPhases\"] = True` is set before the calls that can raise (`mio.phase_running`, `signoff_due`, `effective_phase_status`), and the outer `except Exception: pass` returns the half-built state. The docstring still says 'On any error it reports the LEAST aggressive state, so a crash in here can only relax the gate, never invent a denial'. With the new ladder, an exception on a malformed phase after the first phase leaves exists=True, hasPhases=True, phaseRunning=False, so plan_gate_step returns nothing-running and the tier is deny. Before this diff the same error gave warn. A crash can now invent a denial.\n\nResolution asked: In the except branch, return a fresh least-aggressive state (exists kept, hasPhases False, phaseRunning False), or set hasPhases only after the phase has been processed. Add a selftest where a later phase raises and the tier stays warn.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -7293,14 +7295,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "822c6e535b08",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "manifest_state in hooks/_config.py: the except branch now returns a fresh copy of a new module constant _NO_PHASE_STATE with only exists kept, instead of the half-built state; the initial state is built from the same constant. Chosen over setting hasPhases late because it holds the docstring promise for any raise at any point. SECURITY.md (plan gate graded, fails open; unreadable manifest -> advisory) agrees with the docstring, no conflict. Tests: seam replaces M._load_scripts_module with a module whose phase_running raises on the second phase -> exists True, hasPhases False, warn/no-phase; deny twin with the seam not raising -> deny/nothing-running. Gates: test__config 345/345; bench-hooks --gate exit 0 (only 3.14.7 measured); sweep-selftests exit 0 (335/335 files); --encoding cp1252 exit 0 (335/335). No new imports.",
+        "descriptive": "A crash while reading a later phase can no longer push the plan gate into deny; it falls to warn."
       },
       "startedAt": "2026-10-15T18:14:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T18:53:02Z",
+      "verifiedBy": [
+        "a phase after the first that raises while the plan state is read leaves the gate at the least aggressive tier the plan supports, never deny",
+        "f4f SECOND DIRECTION: the same well-formed plan with nothing running still answers deny on the nothing-running step"
+      ],
       "fixes": [
         "P125-R76"
       ],
@@ -7309,6 +7314,18 @@
         "runId": "2026-10-15T18:53:00Z.018b39",
         "status": "passed",
         "at": "2026-10-15T18:53:00Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "822c6e535b08",
+        "at": "2026-10-15T18:53:02Z",
+        "basis": "a fix task for P125-R76: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-15T18:29:47Z",
+        "basis": "`python3 plugins/audit/tests/test__config.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 345 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - a phase after the first that raises while the plan state is read leaves the gate at the least aggressive tier the plan supports, never deny (f4e state {'exists': True, 'hasPhases': True, 'phaseRunning': False, 'runningPhase': None, 'staleClosedPhase': None, 'signoffDuePhase': None, 'signoffDueStatus': None}) (house FAIL): SELFTEST FAILED: 344/345 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -8902,7 +8919,12 @@
       "startedAt": "2026-10-15T18:13:57Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T19:03:22Z.80474d",
+        "status": "passed",
+        "at": "2026-10-15T19:03:22Z"
+      }
     },
     {
       "id": "P125.119-0h5",

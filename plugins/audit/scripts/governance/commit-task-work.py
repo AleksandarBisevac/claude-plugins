@@ -36,7 +36,7 @@ the bug's `taskId` live one in each file and the validator refuses either
 alone, so that commit carries the index or records a manifest that does not
 validate; the output names the link.
 
-THE COMMITTED PAIR VALIDATES (`owed_index_rows`). A shard whose tasks declare a
+THE COMMITTED PAIR VALIDATES (`_scoped_commit.owed_index_rows`). A shard whose tasks declare a
 file the index HEAD holds has no fileIndex row for - a scope widened during the
 attempt - would leave a plan at HEAD that fails "missing from fileIndex", so
 the commit is refused before anything is staged, naming each row, and the
@@ -432,59 +432,6 @@ def bug_links(index_abs, phase_file_abs, index_rel, git_root):
         return []
     return _invariants.completed_bug_links(
         index_now, _invariants.json_at(git_root, "HEAD", index_rel), body)
-
-
-def owed_index_rows(phase, manifest_path, git_root):
-    """`(owed, unheld)` - the fileIndex rows the shard this commit carries
-    needs and the index HEAD holds lacks, and the part of them the working
-    index lacks too. Both empty in the single-file layout, where one file
-    carries both halves, and when HEAD holds no index or no stub for this
-    phase, since then no committed pair reads this shard at all.
-
-    ONLY ROWS OF TASKS HEAD'S SHARD ALREADY HOLDS. A row for a task the shard
-    adds in this very commit cannot go first: `commit-manifest-index.py`
-    refuses an index naming a task no committed shard holds, so refusing it
-    here too would leave no order that commits either file.
-    """
-    index_abs, phase_file_abs = _invariants.manifest_files(manifest_path, phase)
-    if os.path.abspath(index_abs) == os.path.abspath(phase_file_abs):
-        return [], []
-    index_rel = _invariants._rel(index_abs, git_root)
-    shard_rel = _invariants._rel(phase_file_abs, git_root)
-    head_index = _invariants.json_at(git_root, "HEAD", index_rel)
-    if head_index is None or str(phase.get("id")) not in [
-            str(s.get("id")) for s in (head_index.get("phases") or [])
-            if isinstance(s, dict)]:
-        return [], []
-    held = set(t.get("id") for t in ((_invariants.json_at(
-        git_root, "HEAD", shard_rel) or {}).get("tasks") or [])
-        if isinstance(t, dict))
-    try:
-        body = _mio.read_json(phase_file_abs)
-        index_now = _mio.read_json(index_abs)
-    except Exception:
-        return [], []
-    owed = [row for row in _scoped_commit.index_rows_owed(head_index, body)
-            if row[1] in held]
-    lacking = _scoped_commit.index_rows_owed(index_now, body)
-    return owed, [row for row in owed if row in lacking]
-
-
-def index_rows_refusal(owed, unheld, manifest_path, phase_id):
-    """The sentence a shard owing the committed index rows earns, or None."""
-    if not owed:
-        return None
-    first = ("The working index lacks %s as well, so re-derive it "
-             "(audit-task.py reindex), then commit"
-             % (_scoped_commit.rows_named(unheld),) if unheld else "Commit")
-    return ("the shard this commit carries declares %s, and the index HEAD "
-            "holds has no fileIndex row for %s - committed now, it would "
-            "record a plan that does not validate ('missing from fileIndex'). "
-            "%s the index first (commit-manifest-index.py %s %s), then run "
-            "this again. Nothing was staged"
-            % (_scoped_commit.rows_named(owed),
-               "it" if len(owed) == 1 else "them", first, manifest_path,
-               phase_id))
 
 
 def foreign_refusal(foreign, targets):
@@ -933,10 +880,12 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
     # that does not validate, so the index goes first and the refusal names
     # each row it owes. A commit that carries the working index for a bug link
     # carries the rows that index holds, so only the ones it lacks are owed.
-    owed, unheld = owed_index_rows(phase, manifest_path, git_root)
+    owed, unheld = _scoped_commit.owed_index_rows(phase, manifest_path,
+                                                  git_root)
     if targets["bugLinks"]:
         owed = unheld
-    refusal = index_rows_refusal(owed, unheld, manifest_path, phase_id)
+    refusal = _scoped_commit.index_rows_refusal(
+        owed, unheld, manifest_path, phase_id, "commit-task-work.py")
     if refusal:
         answer = _scoped_commit.answer(skipped, refused=refusal)
         answer["indexRows"] = [list(row) for row in owed]
