@@ -6329,7 +6329,14 @@
         "tools/check-report-interactive.mjs",
         "plugins/audit/scripts/ui/report-css/tables.css",
         "tools/check-report-interactive.mjs",
-        "plugins/audit/tests/test_render_report.py"
+        "plugins/audit/tests/test_render_report.py",
+        "plugins/audit/scripts/ui/report/page-state.js",
+        "tools/ui-tests/table-fit.test.mjs",
+        "examples/acme-store/acme-store-audit.html",
+        "examples/acme-store/acme-store-audit.md",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots/captured-at.json"
       ],
       "tests": {
         "mode": "tdd",
@@ -6338,7 +6345,8 @@
           "plugins/audit/scripts/ui/report-css/tables.css: .shacopy interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
           "plugins/audit/scripts/ui/report-css/tables.css: tr interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
           "tools/check-report-interactive.mjs: every column kind of every table on the page is planted with an unbreakable token and none widens the document, and a kind present on the page that cannot be planted fails the leg",
-          "plugins/audit/tests/test_render_report.py: every report table sits in a contained overflow fallback, so no table can widen the page at any width"
+          "plugins/audit/tests/test_render_report.py: every report table sits in a contained overflow fallback, so no table can widen the page at any width",
+          "tools/ui-tests/table-fit.test.mjs: a table that fits its frame is marked to fit and keeps sticky column headers, a table that would widen the page stays contained, and the mark follows a resize"
         ],
         "expectRedFirst": true,
         "gate": [
