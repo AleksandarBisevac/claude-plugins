@@ -1,0 +1,33 @@
+{
+  "gates": {
+    "selftests": "pass",
+    "lint": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T05:44:04Z",
+    "basis": "`python3 plugins/audit/tests/test_meter_usage.py --selftest` in a throwaway tree at HEAD exited 1 with 6 of 62 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - c2 (house FAIL), ss6 (house FAIL), ss7 (house FAIL), ss8 (house FAIL), ss9 (house FAIL), ss10 (house FAIL): SELFTEST FAILED: 56/62 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "R4: usage_ledger._scan_file now captures the main transcript's cost-state entries (never a subagent's) and scan_transcripts lifts the last one onto the session cursor as `cliCost`, so the meter records the CLI's per-session figure at meter time; a quiet later scan keeps it, a session with none has no key. New cost_state_of() is the one normaliser shared with read_cost_state; new recorded_cost_state(ledger_dir, sid) reads it back. audit-usage: new collect_cli_cost(sessions, ledger_dir, transcripts) prefers the cursor's figure (source=meter) and reads the transcript only for a session whose cursor holds none (source=transcript); cli_cost_lines names which in the CLI side's basis via _cli_basis(). LEFT OUT (sibling file set): the HTML report and the panel still have no cli_cost path, and audit-usage's --json payload does not carry cli_cost either. R5: read_cost_state docstring reworded to INFERRED, NOT MEASURED. The probe could not be made: this repo's project directory holds one session, fb1bddcc-aedf-4720-99d2-ec2a15fdf289, whose .jsonl carries no cost-state entry (a Python type Counter over it showed none; grep -l '\"type\":\"cost-state\"' found none); the docstring's cited session 0a7c2fcc... is not on disk (ls <outside-repo>*/0a7c2fcc* -> no matches). Running a probe on other projects' sessions that do carry one was refused by the host, verbatim: 'Permission for this action was denied by the Claude Code auto mode classifier. Reason: [PII Data Handling].' The compaction explanation is also marked a guess in read_cost_state and in session_start_check's docstring. R73: meter-usage._start_model reads the payload's `model` (cited to https://code.claude.com/docs/en/hooks.md, SessionStart input, optional field beside source) as the new session's model, keyed on that session; only when absent falls back to the previous session's last model, the line labelled as a fallback, keyed on the previous session. Dedupe lives in <ledgerDir>/.notices/<sid>.json (usage_ledger.start_notice_given / mark_start_notice), deliberately not in a cursor: rewriting another live session's cursor could write back a stale offset and double-count. Tests: test_usage_ledger cm1-cm4, test_audit_usage cc-cli6..cc-cli9, test_meter_usage c2, ss6-ss10; all new cases except cm3 (second-direction, passes on old code by construction) were seen FAIL before the fix: ledger 123/126, audit-usage 176/180, meter 56/62. After: 126/126, 180/180, 62/62. Full sweep `python3 tools/sweep-selftests.py` in the tree exit 0, 335/335 files ok; a first sweep run failed gate-parity on a new module-level dict (_CLI_SOURCE_PHRASE read as an unclassified reason table) - replaced by a function - and test__proc_group with a PermissionError under the sweep (not my file; passes alone 24/24, and on the re-run). ruff check plugins/audit tools exit 0; vermin -t=3.8- exit 0.",
+    "descriptive": "The CLI's per-session cost is recorded when metered and read back by /audit:usage, the SessionStart unpriced-model notice reads the new session's model once per session and model, and the cost-state subagent claim is now marked inferred."
+  },
+  "testsAdded": [
+    "test_usage_ledger.py cm1 (scan records the main transcript's last cost-state as cursor cliCost)",
+    "test_usage_ledger.py cm2 (a later quiet scan keeps the recorded figure)",
+    "test_usage_ledger.py cm3 (no cost-state means no cliCost key)",
+    "test_usage_ledger.py cm4 (recorded_cost_state reads it back, None otherwise)",
+    "test_audit_usage.py cc-cli6 (cursor figure preferred, source=meter)",
+    "test_audit_usage.py cc-cli7 (transcript fallback, source=transcript)",
+    "test_audit_usage.py cc-cli8 (neither answers None)",
+    "test_audit_usage.py cc-cli9 (CLI line names where its figure came from)",
+    "test_meter_usage.py c2 (meter run records cliCost on the saved cursor)",
+    "test_meter_usage.py ss6 (payload's unpriced model named as this session's)",
+    "test_meter_usage.py ss7 (payload's priced model wins over an unpriced previous)",
+    "test_meter_usage.py ss8 (no payload model: labelled fallback to previous)",
+    "test_meter_usage.py ss9 (once per session and model across compact/resume)",
+    "test_meter_usage.py ss10 (fallback once per previous session and model)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:505049c865b420c099f65116f03cdf72e405e6c54d12d880514bf8d02c78e368\",\"dirtyDigest\":\"sha256:43deac5f50863a6a6988e1ff5727273fd6aa6d86a1435e9756230758465bfab8\",\"dirtyPaths\":{\"plugins/audit/hooks/meter-usage.py\":\"b7c25dd813205554\",\"plugins/audit/scripts/usage/audit-usage.py\":\"b4036c153983152b\",\"plugins/audit/scripts/usage/usage_ledger.py\":\"745b7328e175eb78\",\"plugins/audit/tests/test_audit_usage.py\":\"877ce5bb3286b50a\",\"plugins/audit/tests/test_meter_usage.py\":\"0bec75addd822975\",\"plugins/audit/tests/test_usage_ledger.py\":\"6c17b9fbf30bb939\"},\"head\":\"73b282eb\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/hooks/meter-usage.py\",\"plugins/audit/scripts/usage/audit-usage.py\",\"plugins/audit/scripts/usage/usage_ledger.py\",\"plugins/audit/tests/test_audit_usage.py\",\"plugins/audit/tests/test_meter_usage.py\",\"plugins/audit/tests/test_usage_ledger.py\"],\"scopeDigest\":\"sha256:04a1c985970ee18653541676b0bff50921c19adce1ef9d5a8cc5d33db360bf09\",\"v\":2}"
+}

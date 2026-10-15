@@ -5932,7 +5932,9 @@
       ],
       "tests": {
         "mode": "tdd",
-        "add": [],
+        "add": [
+          "tools/check-committed-pii.py: the writer keeps a relative home/ repository path, the detector still finds a shallow cut home path, and an escaped newline before a word is not a UNC path"
+        ],
         "expectRedFirst": true,
         "gate": [
           "selftests",
