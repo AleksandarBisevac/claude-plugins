@@ -436,16 +436,20 @@
         "severity": "med",
         "file": "plugins/audit/scripts/_machine_paths.py:508-525",
         "issue": "P125.27 makes the write scrub stricter. Before, `posix-home` fired at the writer only with a separator before the home word, and the removed comment justified that: a repository may hold its own `home/` directory and a writer refusing `home/<x>` would refuse its paths. Now a relative repo path with no leading separator such as `<outside-repo>` (home word plus two further segments, depth 3) fires. It reaches machine_path_shape at _machine_paths.py:599 and _journal_io.py:1313, so a plan, journal or evidence value holding it would be redacted to OUTSIDE_TOKEN or refused. Neither mp16 nor q2i pins that a deep relative `home/...` path is still accepted by the writer.",
-        "resolution": "Keep the writer's separator requirement, so the depth rule applies only on the detector path. Or add a case for `<outside-repo>` at the writer's door and an explicit decision that it is now refused.",
-        "fixTask": "P125.78-0h5"
+        "resolution": "fixed in P125.78-0h5 (fb4031beca8e): Keep the writer's separator requirement, so the depth rule applies only on the detector path. Or add a case for `<outside-repo>` at the writer's door and an explicit decision that it is now refused.",
+        "fixTask": "P125.78-0h5",
+        "commit": "fb4031beca8e",
+        "status": "fixed"
       },
       {
         "id": "P125-R54",
         "severity": "med",
         "file": "plugins/audit/scripts/_machine_paths.py:296; tools/check-committed-pii.py:377",
         "issue": "The detector's stated purpose is to catch a home directory whose leading separator was cut, but with _HOME_PATH_MIN_DEPTH=3 a cut `Users/alice`, `Users/alice/notes.txt` or `home/alice/.bashrc` (depth 1 or 2) no longer fires. Before this diff the detector flagged all of them. The comment claims the corpus 'carries at least two more' segments, but only the prose false positives were measured and recorded; nothing measures real cut paths. q2i pins only `Users/<user>/p/x.js`.",
-        "resolution": "Record a measurement of the true-positive side, or lower the threshold and tell prose apart another way. Add a case for a depth-2 cut path to say what is intended.",
-        "fixTask": "P125.78-0h5"
+        "resolution": "fixed in P125.78-0h5 (fb4031beca8e): Record a measurement of the true-positive side, or lower the threshold and tell prose apart another way. Add a case for a depth-2 cut path to say what is intended.",
+        "fixTask": "P125.78-0h5",
+        "commit": "fb4031beca8e",
+        "status": "fixed"
       },
       {
         "id": "P125-R55",
@@ -839,8 +843,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/_machine_paths.py:241-250 (P125.67-0h5)",
         "issue": "The description asks for 'a segment shape no escape sequence has'. Requiring 2 or more characters per segment still reads a doubled-JSON escape followed by a word as a UNC path. I checked the shipped regex on the in-memory string with two doubled backslashes then `nfoo`, two then `nbar`, two then `n`. It matches, because `nfoo` and `nbar` are 2 or more characters. The same match comes from 'line' + two backslashes + 'nnext' + two + 'nmore' + two. Doubled-escaped multi-line text is the same class that produced the removed BASELINE rows, so the next occurrence will again need a baseline row or a shape change. The tests (4 quiet strings, all of lone one-letter escapes) do not cover this.",
-        "resolution": "Add a quiet case for a doubled-escaped newline immediately followed by a word and decide it explicitly. Either tighten the segment shape (for instance, reject a segment that starts with an escape letter n, r, t, b or f directly after exactly two backslashes and has prose after it) or document it as a known residual with a baseline-free test.",
-        "fixTask": "P125.78-0h5"
+        "resolution": "fixed in P125.78-0h5 (fb4031beca8e): Add a quiet case for a doubled-escaped newline immediately followed by a word and decide it explicitly. Either tighten the segment shape (for instance, reject a segment that starts with an escape letter n, r, t, b or f directly after exactly two backslashes and has prose after it) or document it as a known residual with a baseline-free test.",
+        "fixTask": "P125.78-0h5",
+        "commit": "fb4031beca8e",
+        "status": "fixed"
       },
       {
         "id": "P125-R107",
@@ -972,7 +978,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 16 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 19 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -5980,7 +5986,7 @@
     {
       "id": "P125.77-0h5",
       "title": "pricing reads one loader, labels a declared _default, and the doctor's unpriced",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase-review findings fixed together (one theme, shared files).\n\nP125-R6: The doctor's remedy is 'add a usage.pricing row'. After P125.3 a row stamped `rate: None` stays unpriced forever, because `priced_at_read` never re-resolves a stamped row (rs2). Only `--backfill` rewrites it. `check_unpriced_models` asks `rates_for(model, pricing)`, not the rows' own `unpriced` flag, so after the row is added the doctor goes green while every dollar total still leaves those tokens out.\n\nResolution asked: Make the check count rows that carry `unpriced: True` or `rate: None`, and have the remedy name `/audit:usage --backfill` as the second step. Or let `priced_at_read` re-resolve a row whose stamp is None.\n\nP125-R7: P125.2 clause (1) names `_loader.load_hooks_config()` as the route. The diff adds a raw `importlib` loader (`_load_hooks_config_module`), another hand-rolled loader copy, with a comment arguing layering. The clause is not followed and the task's own openChoices alternative is not recorded as taken.\n\nResolution asked: Either route through `_loader` (moving `_usage_core`'s layer if needed) or record the layering decision in the manifest and the task text so the clause matches the code.\n\nP125-R8: The declared case 'DEFAULT_PRICING is the hooks/_config table read through _loader, not a second literal (an edit to hooks/_config alone changes it)' cannot fail on the mutation it names. dp4 loads an edited scratch copy with `_loader.load` and checks that module, so it never touches `_usage_core.DEFAULT_PRICING`. dp1 only checks that `M._hooks_config` exists, and dp2 compares equal content, which a hand-copied literal that kept `_hooks_config` would also satisfy. The comment in hooks/_config.py says 'the `dp` case asserts an edit here alone moves the copy', which dp does not.\n\nResolution asked: Make dp4 load a scratch hooks/_config.py through the same function `_usage_core` uses at import (or reload `_usage_core` against it) and assert `DEFAULT_PRICING` moved. Or correct the hooks/_config.py comment.\n\nP125-R9: P125.2 clause (4) says a project-declared `_default` is 'still honoured and labelled'. Honoured, yes. Nothing labels a row or cost priced through a declared `_default`; it prints like any priced row.\n\nResolution asked: Have `rate_for_stamp` / the rate basis note when the answering entry was `_default` (for example `rateVia: '_default'` on the stamp and a phrase on the surfaces), or amend the task.",
       "files": [
         "plugins/audit/scripts/status/_doctor_trail.py",
@@ -6011,14 +6017,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T06:52:10Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -6032,12 +6038,13 @@
         "P125-R7",
         "P125-R8",
         "P125-R9"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.78-0h5",
       "title": "the machine-path shapes: writer keeps relative repo paths, detector catches cut",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase-review findings fixed together (one theme, shared files).\n\nP125-R53: P125.27 makes the write scrub stricter. Before, `posix-home` fired at the writer only with a separator before the home word, and the removed comment justified that: a repository may hold its own `home/` directory and a writer refusing `home/<x>` would refuse its paths. Now a relative repo path with no leading separator such as `<outside-repo>` (home word plus two further segments, depth 3) fires. It reaches machine_path_shape at _machine_paths.py:599 and _journal_io.py:1313, so a plan, journal or evidence value holding it would be redacted to OUTSIDE_TOKEN or refused. Neither mp16 nor q2i pins that a deep relative `home/...` path is still accepted by the writer.\n\nResolution asked: Keep the writer's separator requirement, so the depth rule applies only on the detector path. Or add a case for `<outside-repo>` at the writer's door and an explicit decision that it is now refused.\n\nP125-R54: The detector's stated purpose is to catch a home directory whose leading separator was cut, but with _HOME_PATH_MIN_DEPTH=3 a cut `Users/alice`, `Users/alice/notes.txt` or `home/alice/.bashrc` (depth 1 or 2) no longer fires. Before this diff the detector flagged all of them. The comment claims the corpus 'carries at least two more' segments, but only the prose false positives were measured and recorded; nothing measures real cut paths. q2i pins only `Users/<user>/p/x.js`.\n\nResolution asked: Record a measurement of the true-positive side, or lower the threshold and tell prose apart another way. Add a case for a depth-2 cut path to say what is intended.\n\nP125-R106: The description asks for 'a segment shape no escape sequence has'. Requiring 2 or more characters per segment still reads a doubled-JSON escape followed by a word as a UNC path. I checked the shipped regex on the in-memory string with two doubled backslashes then `nfoo`, two then `nbar`, two then `n`. It matches, because `nfoo` and `nbar` are 2 or more characters. The same match comes from 'line' + two backslashes + 'nnext' + two + 'nmore' + two. Doubled-escaped multi-line text is the same class that produced the removed BASELINE rows, so the next occurrence will again need a baseline row or a shape change. The tests (4 quiet strings, all of lone one-letter escapes) do not cover this.\n\nResolution asked: Add a quiet case for a doubled-escaped newline immediately followed by a word and decide it explicitly. Either tighten the segment shape (for instance, reject a segment that starts with an escape letter n, r, t, b or f directly after exactly two backslashes and has prose after it) or document it as a known residual with a baseline-free test.",
       "files": [
         "plugins/audit/scripts/_machine_paths.py",
@@ -6069,14 +6076,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fb4031beca8e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/_machine_paths.py: split the posix-home predicate. _writer_fires (read by machine_path_shape, so by check_free_text, redacted_free_text and executed_value_refusal) requires a separator before the home word again, so a relative path under a repository's own home directory is stored as typed at any depth. shape_fires (the detector's, read by tools/check-committed-pii.py and mp16) is the writer's answer plus _cut_home_fires: depth >= _HOME_PATH_MIN_DEPTH (unchanged at 3), or below it, the macOS capitalised Users root or a hidden entry (separator, dot, name char) beneath the user segment. The measurement of both sides sits beside the rule with the command that re-derives it. The UNC arm of windows-user-path now requires one escaping depth: two backslashes then one (raw), or four then two (JSON); the two-or-more-character server/share requirement is kept and pinned. tools/check-committed-pii.py: new _reader_split_cases with the writer-door case (title opens with the tests.add clause; deep relative home path stored by check_free_text/redacted_free_text/machine_path_shape, separator-led twin still refused, detector still reports it), q2k (shallow cut paths found, the recorded prose plus a file and a parent reference beneath a user stay quiet), q2l (doubled-escaped newline followed by a word, and one-letter escapes at a single depth, quiet; raw share, escaped share and escaped C: Users home found). BASELINE: removed the P82 windows-user-path row (octal git-quoted file name), now dead because the share needs one escaping depth; added four posix-home rows for the review finding text that quotes the shallow cut spellings under a placeholder user (reviewer return line 378, journal fb1bddcc line 475, two P125.json line anchors), verified by reading the matched segment as the placeholder, never printing it. Comments that called shape_fires the one predicate both readers call were rewritten. Runs: check-committed-pii --selftest 49/49; check-committed-pii live scan exit 0, every finding accounted for; test__machine_paths 21/21; test__journal_io 262/262; test__output 269/269; test__deps 320/320; ruff clean; vermin clean; python3 tools/sweep-selftests.py exit 0, 335/335 files ok (run before the title rename; the suite re-ran 49/49 after it).",
+        "descriptive": "The writer stores a repository's own relative home paths again, the PII check finds shallow cut home paths without flagging prose, and an escaped newline followed by a word is no longer read as a Windows share."
       },
       "startedAt": "2026-10-15T05:18:30Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T06:52:06Z",
+      "verifiedBy": [
+        "the writer keeps a relative home/ repository path, the detector still finds a shallow cut home path, and an escaped newline before a word is not a UNC path",
+        "q2k a cut home path one or two segments deep is found when it carries a home directory's own mark, and words a slash joins in prose are not",
+        "q2l a doubled-escaped newline followed by a word is no share, and neither is a one-letter escape at a single depth, while a raw share, an escaped share and an escaped user home are all found"
+      ],
       "notes": [
         {
           "at": "2026-10-15T03:41:27Z",
@@ -6093,12 +6104,24 @@
         "runId": "2026-10-15T06:52:04Z.f64d73",
         "status": "passed",
         "at": "2026-10-15T06:52:04Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "fb4031beca8e",
+        "at": "2026-10-15T06:52:06Z",
+        "basis": "a fix task for P125-R53, P125-R54, P125-R106: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-15T05:47:18Z",
+        "basis": "`python3 tools/check-committed-pii.py --selftest` in a throwaway tree at HEAD exited 1 on \"NameError: name '_reader_split_cases' is not defined\" (read as python), and the task introduces '_reader_split_cases': absent from HEAD's plugins/audit/scripts/_machine_paths.py, tools/check-committed-pii.py and present in the working tree's tools/check-committed-pii.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.79-0h5",
       "title": "the executor and reviewer briefs are pinned and their stable prefix is real",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase-review findings fixed together (one theme, shared files).\n\nP125-R39: This commit rewrites compose_reviewer_brief and compose_phase_brief (clause-quoting section, tests.add lines, claim-last order) and the declared tests.add names the brief cases, but no case in the diff pins them (test_audit_lookup.py, test_drive_phase.py and test__filed_returns.py are unchanged here and at HEAD no case asserts CLAUSE_QUOTING_LINES, _tests_add_review_lines or the ordering). Deleting those lines leaves the swept suites green.\n\nResolution asked: Add cases asserting both briefs contain the clause rule and tests.add, and that '## Task' then '## Claim under review' are the last section.\n\nP125-R90: The docstring claims that two briefs 'open on the same bytes up to the task's id, which is the prefix a prompt cache can reuse'. The task asks for 'stable text first, task-specific part last'. `## Your return`, placed right after the rules line, holds the `submit <taskId> ... --project-dir ... -- <the task's red-first command>` block, so the id and the task's own command appear in the first block and the shared prefix is the rules line only. bo1 tests only that headings appear in order, so it certifies the contract section as stable when it is not. Still true at HEAD.\n\nResolution asked: Make the return contract text stable, with the submit command's task-specific line (id, tail command) placed after the task sections or given as a placeholder. Add a case asserting that two briefs for different tasks share a byte prefix of useful length.",
       "files": [
         "plugins/audit/tests/test_audit_lookup.py",
@@ -6127,14 +6150,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T06:52:13Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -6150,7 +6173,8 @@
       "fixes": [
         "P125-R39",
         "P125-R90"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.80-0h5",
@@ -7571,7 +7595,7 @@
     {
       "id": "P125.105-0h5",
       "title": "The last cost surfaces say unpriced and show the CLI's own figure: panel browse dialog, report range line, report and panel",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Completes phase-review findings P125-R1 and P125-R4 on the surfaces their fix tasks named as left out. (1) The panel's browse dialog (plugins/audit/scripts/ui/panel/browse-dialog.js) shows $0.00 in its cost column for a model no rate covers - it must say 'unpriced' through the same rule the other surfaces use (_usage_economics.all_unpriced / unpriced_phrase, mirrored in the panel JS by uUnpricedPhrase). (2) The report's range line does not say how many tokens are unpriced - it must, from window.AUDIT_USAGE.unpricedTokens (null means the totals never counted them: say nothing then, not zero). (3) The CLI's own per-session cost figure, now recorded on the session cursor as cliCost and read by audit-usage, is printed by neither the report nor the panel; print it beside the plugin's own reading wherever they differ, labelled as the CLI's estimate. Read the refactoring-the-assembled-ui skill and run tools/count-ui-pins.py first; vitest and the browser gates must stay green; screenshots are captured by the orchestrator, never by the executor.",
       "files": [
         "plugins/audit/scripts/ui/panel/browse-dialog.js",
@@ -7586,6 +7610,53 @@
         "mode": "tdd",
         "add": [
           "plugins/audit/tests/test__panel_usage.py: a session whose CLI cost figure differs from the plugin's reading is shown with both figures, labelled, and a model no rate covers reads unpriced in every panel cost column"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-15T06:52:08Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
+    },
+    {
+      "id": "P125.106-0h5",
+      "title": "Every agent the plugin ships runs at effort high or above, held by a case",
+      "status": "pending",
+      "description": "Owner decision (2026-10-15): whatever model an agent runs, its effort is at least high. Today audit-executor and audit-explorer declare `effort: medium` and guide declares `effort: low`; only audit-reviewer is high. Set every agent under plugins/audit/agents/ to `effort: high` (keep each `model:` as it is), and add a case that reads every agent file's frontmatter and fails when an effort is missing or below high, naming the file - so a new agent cannot ship at a lower effort. If any document states an agent's effort (README, PLUGIN-BUILD-GUIDE.md, the agents' own text), it must say high.",
+      "files": [
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/agents/audit-explorer.md",
+        "plugins/audit/agents/guide.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__refs.py: every agent under plugins/audit/agents declares effort high or above, and an agent declaring medium or none is reported by file"
         ],
         "expectRedFirst": true,
         "gate": [
