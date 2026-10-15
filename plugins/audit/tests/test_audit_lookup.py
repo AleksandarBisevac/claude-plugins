@@ -1025,6 +1025,42 @@ def _brief_cases(check):
           and all(p.split(":", 1)[0] in retry_section_s
                   for p in pad_before + pad_after))
 
+    # bf54 variant: more failing lines than the row's bound, over many files.
+    # The row cuts `failing` to MAX_FAILING lines but keeps the file list, so
+    # the files are read from `failingSuites`; the last files have no line.
+    many = ["plugins/audit/tests/test_many%02d.py" % (i,)
+            for i in range(1, _evio.MAX_FAILING + 6)]
+    many_failing = ["FAIL  %s: rc1 at a%d" % (p, i)
+                    for i, p in enumerate(many)]
+    many_row = {"status": "failed", "durationMs": 10, "failed": ["selftests"],
+                "ranTotal": 2, "coverageBasis": None, "treeBasis": "b",
+                "treeMutated": [], "overlap": None,
+                "steps": [{"name": "selftests", "command": sweep_cmd,
+                           "exit": 1, "failing": many_failing,
+                           "failingSuites": many,
+                           "failingSuitesBasis": "the sweep named them"}]}
+    sweep_task["testEvidence"] = {"runId": "run-many", "status": "failed",
+                                  "at": "z"}
+    projm, mpathm = project("bf-retry-many", retry)
+    _evio.append_row(projm, _evio.row_for(
+        projm, many_row, "task", {"taskId": "P1.1"},
+        {"runId": "run-many", "ts": "2026-01-01T00:00:00Z", "attempt": 1,
+         "via": "cli"}, published=[sweep_cmd]))
+    brief(projm, mpathm, "P1.1", "executor")
+    textm = read(brief_file(projm, "P1.1", "20260101T000000Z.executor.md")) or ""
+    retry_section_m = textm[textm.find("Retry"):]
+    check("a red gate step with more failing lines than the recorded bound "
+          "still names every failing file, each with its own FAIL lines, "
+          "read from the row's failing suites (named %d of %d, own lines "
+          "%d, unrecorded notes %d)"
+          % (sum(1 for p in many if p in retry_section_m), len(many),
+             retry_section_m.count("rc1 at a"),
+             retry_section_m.count("no FAIL line recorded")),
+          all(p in retry_section_m for p in many)
+          and retry_section_m.count("rc1 at a") == _evio.MAX_FAILING
+          and retry_section_m.count("no FAIL line recorded")
+          == len(many) - _evio.MAX_FAILING)
+
     # ---- the retry section reads the FILED return, not the task's own -----
     # fields - `task.outcome`/`task.redFirst` move only at `done`
     # (`audit-task.py`'s `close_task`), so a retried attempt that was never

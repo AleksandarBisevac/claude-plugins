@@ -729,7 +729,10 @@ def red_step_lines(ctx, manifest, phase, task, evidence):
                    or "%s (command not stored)" % (step.get("program") or "?",))
         out.append("red step %s: %s" % (name, command))
         failing = [str(x) for x in step.get("failing") or []]
-        if failing:
+        suites = [str(x) for x in step.get("failingSuites") or []]
+        if suites:
+            out += failing_suite_lines(suites, failing)
+        elif failing:
             # EACH RECORDED LINE, VERBATIM - `_evio`/`run-test-gate.py` already
             # bound this list (`MAX_FAILING`) before it ever reached the row,
             # so joining it back into one string and excerpting it a SECOND
@@ -738,10 +741,36 @@ def red_step_lines(ctx, manifest, phase, task, evidence):
             # a bare "(+N more)" count. Printing every line this step named is
             # no wider than what the row already carries.
             out += ["  - %s" % (line,) for line in failing]
+            if len(failing) >= _evio.MAX_FAILING:
+                out.append("  (the row keeps at most %d failing lines and "
+                           "names no failing files: any further failing file "
+                           "is not recorded)" % (_evio.MAX_FAILING,))
         else:
             printed = _excerpt.reason_of(step.get("outcomeBasis") or "")
             out.append("  printed: %s"
                        % (printed or "nothing recorded for this step"))
+    return out
+
+
+def failing_suite_lines(suites, failing):
+    """One entry per failing file the row names, each followed by the recorded
+    FAIL lines that mention it. The row's line list is cut shorter than its
+    file list, so a file can be named with no line of its own; that is printed
+    as such, and a file list that itself reached its bound says further files
+    are not recorded. Lines naming none of the files follow, unchanged."""
+    out = []
+    for suite in suites:
+        own = [line for line in failing if suite in line]
+        out.append("  - %s" % (suite,))
+        out += ["      %s" % (line,) for line in own]
+        if not own:
+            out.append("      (no FAIL line recorded for this file: the row "
+                       "keeps at most %d lines)" % (_evio.MAX_FAILING,))
+    out += ["  - %s" % (line,) for line in failing
+            if not any(suite in line for suite in suites)]
+    if len(suites) >= _evio.MAX_PATHS:
+        out.append("  (the row keeps at most %d failing files: any further "
+                   "failing file is not recorded)" % (_evio.MAX_PATHS,))
     return out
 
 

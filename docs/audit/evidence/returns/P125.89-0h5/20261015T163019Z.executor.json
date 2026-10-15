@@ -1,0 +1,19 @@
+{
+  "gates": {
+    "selftests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T17:02:12Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_lookup.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 104 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - a red gate step with more failing lines than the recorded bound still names every failing file, each with its own FAIL lines, read from the row's failing suites (named 10 of 15, own lines 10, unrecorded notes 0) (house FAIL): SELFTEST FAILED: 103/104 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "red_step_lines now reads failingSuites: new failing_suite_lines prints every failing file with its own recorded FAIL lines, notes 'no FAIL line recorded for this file' where the row's MAX_FAILING cut dropped them, and states the MAX_PATHS bound when the file list reached it; with no failingSuites it prints the lines as before and states the MAX_FAILING bound when reached. Case added with 15 files over the 10-line bound. Full sweep exit 0 (335/335 files), cp1252 sweep exit 0. First sweep was red on prose-number lint over my fixture text, fixed by rewording.",
+    "descriptive": "A retry brief over a red sweep names every failing file, saying so when the record cannot hold their lines."
+  },
+  "testsAdded": [
+    "a red gate step with more failing lines than the recorded bound still names every failing file, each with its own FAIL lines, read from the row's failing suites"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:0c1ad58d106ee67f39383261349d3f2e083b21c213dfd56e43c41957b43c9e46\",\"dirtyDigest\":\"sha256:35533deff6699b43a274f4348f8e808aa40ae14bd8ef660d86a649a9c7be1efb\",\"dirtyPaths\":{\"plugins/audit/scripts/status/audit-lookup.py\":\"9b0ae56b8db49218\",\"plugins/audit/tests/test_audit_lookup.py\":\"660409138e306ae5\"},\"head\":\"307c61d4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/tests/test_audit_lookup.py\"],\"scopeDigest\":\"sha256:68b2c1b30900df4fc1449c2c4546662562f66250db5790267463692e1856ce68\",\"v\":2}"
+}
