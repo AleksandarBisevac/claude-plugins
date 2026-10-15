@@ -56,8 +56,9 @@ import contextlib as _ctx
 M = _loader.load_script("run-test-gate.py", "rtg")
 _AT = _loader.load_script("audit-task.py", "rtg_audit_task")  # its parser, for the remedy pins
 # This suite's fixtures name an identity on the commit that needs one and leave
-# the branch name to git, so the fixture helper is handed git with no flags.
-_PLAIN_GIT = ("git",)
+# the branch name to git, so the fixture helper is handed git with no flags
+# beyond the shared switch that keeps background maintenance out of fixtures.
+_PLAIN_GIT = ("git",) + _harness.NO_AUTO_MAINTENANCE
 
 # --- which half of a platform split a case may assert -------------------------
 # READ THE WAY THE PRODUCT READS IT, never off `sys.platform`. `_tear_down`
@@ -9118,12 +9119,13 @@ say("at e2e/cart.spec.ts:3")
 sys.exit(1)
 """
 
-_SM_GIT = ["-c", "user.email=fixture@example.com", "-c", "user.name=Fixture",
-           "-c", "commit.gpgsign=false"]
+_SM_GIT = ("git",) + _harness.NO_AUTO_MAINTENANCE + (
+    "-c", "user.email=fixture@example.com", "-c", "user.name=Fixture",
+    "-c", "commit.gpgsign=false")
 
 
 def _sm_git(root, *args):
-    return _harness.git(root, *args, prefix=["git"] + _SM_GIT).strip()
+    return _harness.git(root, *args, prefix=_SM_GIT).strip()
 
 
 def _sm_fixture():

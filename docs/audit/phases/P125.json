@@ -682,8 +682,10 @@
         "severity": "med",
         "file": "PLUGIN-BUILD-GUIDE.md:150",
         "issue": "P125.45 clause 'Documentation stops naming coupling as a selection source' is contradicted. The tree line for _affected_tests.py still lists the arms as '(related listing, Python imports, e2e listing, coupling, e2e widening)', although the coupling arm is removed from ARMS. The commit touched the README but not this file, and HEAD still has the line.",
-        "resolution": "Edit the tree line to '(related listing, Python imports, e2e listing, e2e widening)'. Widen scope through the drive, since the file is outside the task's files.",
-        "fixTask": "P125.96-0h5"
+        "resolution": "fixed in P125.96-0h5 (c15d26f976b2): Edit the tree line to '(related listing, Python imports, e2e listing, e2e widening)'. Widen scope through the drive, since the file is outside the task's files.",
+        "fixTask": "P125.96-0h5",
+        "commit": "c15d26f976b2",
+        "status": "fixed"
       },
       {
         "id": "P125-R81",
@@ -1024,7 +1026,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 42 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 43 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -7472,7 +7474,7 @@
     {
       "id": "P125.96-0h5",
       "title": "fix P125-R80: P125.45 clause 'Documentation stops naming coupling as a select...",
-      "status": "in_progress",
+      "status": "done",
       "description": "P125.45 clause 'Documentation stops naming coupling as a selection source' is contradicted. The tree line for _affected_tests.py still lists the arms as '(related listing, Python imports, e2e listing, coupling, e2e widening)', although the coupling arm is removed from ARMS. The commit touched the README but not this file, and HEAD still has the line.\n\nResolution asked: Edit the tree line to '(related listing, Python imports, e2e listing, e2e widening)'. Widen scope through the drive, since the file is outside the task's files.",
       "files": [
         "PLUGIN-BUILD-GUIDE.md",
@@ -7504,14 +7506,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c15d26f976b2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added a case to test__affected_tests.py that reads the guide's _affected_tests.py tree line and compares its arm list to M.ARMS, via a map from arm id to guide wording defined in the test (ARMS holds ids only). Saw it FAIL (21/22) against the guide still listing coupling; removed 'coupling' from PLUGIN-BUILD-GUIDE.md line 150; own selftest 22/22 exit 0; test__deps 330/330; full tools/sweep-selftests.py exit 0 (335/335 files ok, 16448 cases). Files changed in tree: PLUGIN-BUILD-GUIDE.md, plugins/audit/tests/test__affected_tests.py (imports os, re, _output added).",
+        "descriptive": "The guide's arm list for _affected_tests is now held equal to ARMS by a case, and the stale 'coupling' is gone."
       },
       "startedAt": "2026-10-15T22:16:24Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T23:08:11Z",
+      "verifiedBy": [
+        "the build guide's tree line for _affected_tests names exactly the arms ARMS holds, so a removed arm cannot stay documented"
+      ],
       "notes": [
         {
           "at": "2026-10-15T03:41:27Z",
@@ -7526,6 +7530,18 @@
         "runId": "2026-10-15T23:08:09Z.6cee38",
         "status": "passed",
         "at": "2026-10-15T23:08:09Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "c15d26f976b2",
+        "at": "2026-10-15T23:08:11Z",
+        "basis": "a fix task for P125-R80: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-15T22:27:31Z",
+        "basis": "`python3 plugins/audit/tests/test__affected_tests.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 22 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - the build guide's tree line for _affected_tests names exactly the arms ARMS holds, so a removed arm cannot stay documented (tree lines 1, documented ['related listing', 'Python imports', 'e2e listing', 'coupling', 'e2e widening'], ARMS ['related listing', 'Python imports', 'e2e listing', 'e2e widening'], unmapped []) (house FAIL): SELFTEST FAILED: 21/22 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -9268,7 +9284,12 @@
       "startedAt": "2026-10-15T22:16:19Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T23:18:36Z.6a0134",
+        "status": "passed",
+        "at": "2026-10-15T23:18:36Z"
+      }
     },
     {
       "id": "P125.123-0h5",

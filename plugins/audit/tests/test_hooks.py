@@ -673,8 +673,9 @@ def combine(decisions):
 
 
 # --- fixtures: one git project per tier -------------------------------------------
-_GIT = ("git", "-c", "user.email=corpus@example.invalid", "-c", "user.name=corpus",
-        "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main")
+_GIT = ("git",) + _harness.NO_AUTO_MAINTENANCE + (
+    "-c", "user.email=corpus@example.invalid", "-c", "user.name=corpus",
+    "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main")
 
 
 def _write(root, rel, text):

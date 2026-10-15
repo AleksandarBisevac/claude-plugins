@@ -1802,7 +1802,7 @@ def _branch_cases(check, repos):
     TI._git(fx["root"], "stash", "-q")
     _write(os.path.join(fx["root"], OWNED), "a = other\n")
     TI._git(fx["root"], "commit", "-q", "-m", "fixture: other", "--", OWNED)
-    subprocess.run(["git", "-C", fx["root"], "stash", "pop", "-q"],
+    subprocess.run(list(_harness.GIT) + ["-C", fx["root"], "stash", "pop", "-q"],
                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     conflicted = TI._git(fx["root"], "ls-files", "-s", "--", OWNED).count(OWNED)
     _write(os.path.join(fx["root"], OWNED), "a = resolved\n")
@@ -2240,7 +2240,87 @@ def _fixture_git_cases(check, repos):
           os.path.isdir(_clone_at(fx, _head(fx), repos.scratch("fg-ok"))))
 
 
-STAGES = (("fg-block", "_fixture_git_cases"), ("or-block", "_ordinary_cases"),("dc-block", "_declared_cases"),
+def _fixture_git_prefixes():
+    """`{label: argv prefix}` for every fixture git prefix the suites declare.
+
+    Read off the modules themselves rather than restated here, so a prefix
+    rewritten without the switch is seen by its value. A suite whose fixture
+    git gains a new prefix owes a row here."""
+    import test_hooks
+    import test_integrate_task
+    import test_run_test_gate
+    return {"_harness.GIT": _harness.GIT,
+            "_harness.WORKTREE_PAIR_GIT": _harness.WORKTREE_PAIR_GIT,
+            "test_hooks._GIT": test_hooks._GIT,
+            "test_integrate_task.GIT": test_integrate_task.GIT,
+            "test_run_test_gate._PLAIN_GIT": test_run_test_gate._PLAIN_GIT,
+            "test_run_test_gate._SM_GIT": test_run_test_gate._SM_GIT}
+
+
+def _carries(prefix, setting):
+    """Whether `prefix` passes `-c <setting>` as one adjacent pair."""
+    words = list(prefix)
+    return any(words[i] == "-c" and words[i + 1] == setting
+               for i in range(len(words) - 1))
+
+
+def _traced_commit_spawns(prefix, scratch):
+    """`(commit traced, maintenance spawns)` for one fixture commit made with
+    `prefix` under GIT_TRACE - the first so a trace that recorded nothing
+    cannot read as a commit that spawned nothing."""
+    repo = os.path.join(scratch, "repo")
+    trace = os.path.join(scratch, "trace.log")
+    _harness.git(None, "init", "-q", repo, prefix=prefix)
+    _write(os.path.join(repo, "a.txt"), "a\n")
+    _harness.git(repo, "add", "a.txt", prefix=prefix)
+    env = dict(os.environ)
+    env["GIT_TRACE"] = trace
+    subprocess.run(list(prefix) + ["commit", "-q", "-m", "traced"], cwd=repo,
+                   env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                   stdin=subprocess.DEVNULL, timeout=_harness.GIT_TIMEOUT)
+    lines = (_read(trace) or "").splitlines()
+    committed = any("built-in: git" in ln and " commit " in ln for ln in lines)
+    spawns = [ln for ln in lines if "run_command:" in ln
+              and ("maintenance run" in ln or " gc " in ln)]
+    return committed, spawns
+
+
+def _no_maintenance_cases(check):
+    """Fixture git starts no background maintenance in a fixture repository."""
+    import tempfile
+    prefixes = _fixture_git_prefixes()
+    missing = sorted(label for label, prefix in prefixes.items()
+                     if not (_carries(prefix, "maintenance.auto=false")
+                             and _carries(prefix, "gc.auto=0")))
+    switched = tempfile.mkdtemp(prefix="ctw-nm-")
+    plain = tempfile.mkdtemp(prefix="ctw-nm-")
+    try:
+        committed, spawns = _traced_commit_spawns(_harness.GIT, switched)
+        # The same commit without the switch, run in the foreground so the
+        # control leaves no background process of its own behind.
+        bare = (("git", "-c", "maintenance.autoDetach=false")
+                + _harness.GIT[1 + len(_harness.NO_AUTO_MAINTENANCE):])
+        bare_committed, bare_spawns = _traced_commit_spawns(bare, plain)
+    finally:
+        _harness.remove_tree(switched)
+        _harness.remove_tree(plain)
+    check("ctw-nm1 no fixture git call can spawn an auto gc - the shared prefix "
+          "and every suite's own prefix carry gc.auto=0 - measured with "
+          "GIT_TRACE on a heavy fixture (and maintenance.auto=false beside it: "
+          "every fixture git prefix carries both settings, and a fixture commit "
+          "traced with the shared prefix spawns no background maintenance; "
+          "prefixes missing a setting %r, commit traced %r, spawns %r)"
+          % (missing, committed, spawns),
+          len(prefixes) == 6 and missing == [] and committed and spawns == [])
+    check("ctw-nm2 SECOND-DIRECTION CASE: the same traced commit WITHOUT the "
+          "switch does spawn maintenance, so the trace reading in ctw-nm1 can "
+          "see a spawn and its empty list is not a trace that read nothing: "
+          "commit traced %r, spawns %r" % (bare_committed, bare_spawns),
+          bare_committed and len(bare_spawns) >= 1)
+
+
+STAGES = (("nm-block", "_no_maintenance_cases"),
+          ("fg-block", "_fixture_git_cases"),("or-block", "_ordinary_cases"),("dc-block", "_declared_cases"),
           ("rc-block", "_records_cases"), ("ix-block", "_index_cases"),
           ("dr-block", "_declared_record_cases"),
           ("vd-block", "_verdict_cases"), ("sc-block", "_scope_cases"),

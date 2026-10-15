@@ -238,8 +238,7 @@ def worktree_pair(prefix):
         fh.write(".claude/\n")
     with open(os.path.join(main, rel), "w", encoding="utf-8") as fh:
         json.dump(running_plan("P41", ["src/other.ts"], "P48"), fh, indent=2)
-    flags = ("git", "-c", "user.email=t@t.t", "-c", "user.name=t",
-             "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main")
+    flags = WORKTREE_PAIR_GIT
     for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "init"],
                  ["worktree", "add", "-q", wt, "-b", "chore/p48"]):
         git(main, *argv, prefix=flags, timeout=30)
@@ -254,8 +253,23 @@ def worktree_pair(prefix):
 # A fixture's git: an identity and a signing switch of its own, because a sweep
 # pins HOME and refuses a guessed identity, and a branch name that does not
 # depend on the host's git version.
-GIT = ("git", "-c", "user.email=fixture@example.com", "-c", "user.name=Fixture",
-       "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main")
+#
+# NO BACKGROUND HOUSEKEEPING. A commit, merge or fetch ends by spawning a
+# DETACHED `git maintenance run --auto`, which outlives the command that
+# started it - so it can still be running in a fixture repository while the
+# suite goes on reading that repository, and while the suite deletes it.
+# Traced over one ordinary fixture it was spawned after most commits and never
+# found work to do, so this removes an uncontrolled process; it is not a
+# proven cure for any failure. Both keys, because `maintenance.auto` stops the
+# spawn and `gc.auto` stops the direct `gc --auto` an older git runs instead.
+# Every suite-local fixture prefix carries `NO_AUTO_MAINTENANCE` too.
+NO_AUTO_MAINTENANCE = ("-c", "maintenance.auto=false", "-c", "gc.auto=0")
+GIT = ("git",) + NO_AUTO_MAINTENANCE + (
+    "-c", "user.email=fixture@example.com", "-c", "user.name=Fixture",
+    "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main")
+WORKTREE_PAIR_GIT = ("git",) + NO_AUTO_MAINTENANCE + (
+    "-c", "user.email=t@t.t", "-c", "user.name=t",
+    "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main")
 GIT_TIMEOUT = 60
 
 

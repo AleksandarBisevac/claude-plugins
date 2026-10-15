@@ -39,8 +39,9 @@ import _loader                                     # noqa: E402
 M = _loader.load_script("integrate-task.py")
 MW = _loader.load_script("manage-worktrees.py")
 
-GIT = ("git", "-c", "user.email=t@t.t", "-c", "user.name=t",
-       "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main")
+GIT = ("git",) + _harness.NO_AUTO_MAINTENANCE + (
+    "-c", "user.email=t@t.t", "-c", "user.name=t",
+    "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main")
 
 TEN = "".join("line %d\n" % n for n in range(1, 11))
 
