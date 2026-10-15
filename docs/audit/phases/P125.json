@@ -370,8 +370,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py:2896-2945",
         "issue": "The task rule is 'a task that adds or changes observable behaviour is tdd', but the new default is a keyword scan of title plus description checked refactor first, then config, else tdd. _CONFIG_TEXT now also matches 'document(s|ing|ation)' besides comment(s)/docs/config, so 'Add comments to posts' or 'Let users upload a document' is written gate-only with no red-first, and 'extract the CSV' text is written regression. This makes the misclassification the silent default for every `add` and batch task.",
-        "resolution": "Classify on the title only or require the signal word to head the title, and name the matched word in the note so a wrong arm is visible; add a case for a feature whose text contains 'comment' or 'document'.",
-        "fixTask": "P125.87-0h5"
+        "resolution": "fixed in P125.87-0h5 (dbbbb2fd93ff): Classify on the title only or require the signal word to head the title, and name the matched word in the note so a wrong arm is visible; add a case for a feature whose text contains 'comment' or 'document'.",
+        "fixTask": "P125.87-0h5",
+        "commit": "dbbbb2fd93ff",
+        "status": "fixed"
       },
       {
         "id": "P125-R43",
@@ -1008,7 +1010,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 34 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 35 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6803,7 +6805,7 @@
     {
       "id": "P125.87-0h5",
       "title": "fix P125-R42: The task rule is 'a task that adds or changes observable behavi...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The task rule is 'a task that adds or changes observable behaviour is tdd', but the new default is a keyword scan of title plus description checked refactor first, then config, else tdd. _CONFIG_TEXT now also matches 'document(s|ing|ation)' besides comment(s)/docs/config, so 'Add comments to posts' or 'Let users upload a document' is written gate-only with no red-first, and 'extract the CSV' text is written regression. This makes the misclassification the silent default for every `add` and batch task.\n\nResolution asked: Classify on the title only or require the signal word to head the title, and name the matched word in the note so a wrong arm is visible; add a case for a feature whose text contains 'comment' or 'document'.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -6834,14 +6836,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "dbbbb2fd93ff",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: _REFACTOR_TEXT/_CONFIG_TEXT replaced by title-head regexes _REFACTOR_HEAD/_CONFIG_HEAD (first word of the title, which also covers conventional-commit types); description no longer read; note names the matched word and arm; document/comment dropped from signals, bump/chore added so 'Bump the lint config' stays gate-only. test_audit_task.py: four cases in _change_kind_discipline_cases titled with the tests.add clause. sweep-selftests.py exit 0 (335/335 files, 16394 cases); --encoding cp1252 exit 0 (335/335). COMPATIBILITY.md: grep for tests-mode/test mode/keyword found no promise about the default test mode.",
+        "descriptive": "A task adds-or-changes-behaviour is tdd unless its title leads with a refactor or config word, and the note says which word chose."
       },
       "startedAt": "2026-10-15T13:00:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T14:07:43Z",
+      "verifiedBy": [
+        "a feature whose text mentions comments or a document stays tdd; only a signal word heading the title chooses gate-only or regression, and the note names the word that chose it"
+      ],
       "notes": [
         {
           "at": "2026-10-15T03:41:27Z",
@@ -6856,20 +6860,39 @@
         "runId": "2026-10-15T13:55:32Z.9b22a0",
         "status": "passed",
         "at": "2026-10-15T13:55:32Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "dbbbb2fd93ff",
+        "at": "2026-10-15T14:07:43Z",
+        "basis": "a fix task for P125-R42: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-15T13:34:46Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest` in a throwaway tree at HEAD exited 1 with 4 of 1045 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - a feature whose text mentions comments or a document stays tdd; only a signal word heading the title chooses gate-only or regression, and the note names the word that chose it (feature titles mentioning comments or a document stay tdd: ((0, 'gate-only', \"gate-only, not tdd: no mode was named and the task's own text names a config/docs/mechanical change\"), (0, 'gate-only', \"gate-only, not tdd: no mode was named and the task's own text names a config/docs/mechanical change\"))) (house FAIL) and 3 more: SELFTEST FAILED: 1041/1045 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.88-0h5",
       "title": "fix P125-R55: The commit half of the task ('the commit treats them as records...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The commit half of the task ('the commit treats them as records') matches only exact rels of the phase shard, the journal directory and the evidence directory. audit-task's _is_record_path also treats anything under those directories and the manifest index (sharded layout) as a record. A declared journal or evidence file, or the sharded index, is still a declared candidate (mine=True) and keeps the refusal F642 describes. The title names journal paths. No test_commit_task_work.py case was added.\n\nResolution asked: Share one record-path predicate (exact or under a record directory, index included) between audit-task and commit-task-work, and add a stage_targets case for a declared journal file and a declared shard.",
       "files": [
         "plugins/audit/scripts/governance/commit-task-work.py",
-        "plugins/audit/tests/test_commit_task_work.py"
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/tests/test__invariants.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/git/integrate-task.py"
       ],
       "tests": {
         "mode": "tdd",
-        "add": [],
+        "add": [
+          "plugins/audit/tests/test_commit_task_work.py: a declared journal file, a declared phase shard and the sharded index are staged as records, not refused as declared work",
+          "plugins/audit/tests/test__invariants.py: one record-path definition - the index, every phase file the index names, the journal and the evidence directories, and anything under them - answers audit-task, commit-task-work and integrate-task alike"
+        ],
         "expectRedFirst": true,
         "gate": [
           "selftests",
@@ -6888,14 +6911,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T14:07:49Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -6906,7 +6929,8 @@
       ],
       "fixes": [
         "P125-R55"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.89-0h5",
@@ -8310,7 +8334,7 @@
     {
       "id": "P125.111-0h5",
       "title": "The locale-pinned integrate run reports the error it failed on (diagnosability for the intermittent git add failure)",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F679, re-added from cancelled P125.109 as regression: every declared file is a test, so the defect is in the tests and a red-first run at HEAD passes with them. CI run 38715590987 (dbd9008f, windows plain 1) failed once in test_integrate_task _world's git add -A under LC_ALL=C/PYTHONUTF8=0 and re-ran green. _integrate_ascii_case clipped the child's stderr from the head, and _run printed git's stderr as a bytes repr. The case reports the tail; _run decodes. Cause not established (candidates read from the code: the 30 s timeout over a freshly copied 302-file tree, antivirus on just-written files); the next failure will print it.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py",
@@ -8339,21 +8363,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T14:07:44Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.112-0h5",
       "title": "docs: the record-set comment in audit-task says record_paths also names every phase file the index names",
-      "status": "pending",
+      "status": "cancelled",
       "description": "Found at P125.110's return: audit-task.py around line 3050 says integrate-task's record_paths is 'the one definition of these three' record paths; after P125.110 it also names every phase file the index names (on disk and at HEAD). Correct the comment; no behaviour change.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py"
@@ -8379,16 +8404,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: folded into P125.88: one shared record-path definition replaces the comment block this task would have corrected"
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-15T14:07:47Z",
+      "completedAt": "2026-10-15T14:08:45Z",
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.113-0h5",
