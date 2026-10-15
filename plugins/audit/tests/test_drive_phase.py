@@ -6360,6 +6360,36 @@ def _ascii_locale_cases(check):
               _output.clip_bytes(res["err"], 600))),
           res["report"] is not None and bool(cases) and not failed)
     _integrate_ascii_case(check, preferred)
+    _integrate_tail_case(check, preferred)
+
+
+def _tail_bytes(text, limit):
+    """The END of `text`, at most `limit` bytes of UTF-8, never inside a
+    character. A failing child prints the exception that stopped it last, so
+    the head `_output.clip_bytes` keeps is the half without the answer."""
+    raw = text.encode("utf-8")
+    if len(raw) <= limit:
+        return text
+    return raw[len(raw) - max(limit, 0):].decode("utf-8", "ignore")
+
+
+def _integrate_ascii_verdict(argv, preferred):
+    """`argv` run as a child under `ASCII_ENV`, judged as the integrate suite
+    is judged: exit 0 and a tally whose every case passed.
+    -> (label, ok, clipped stderr)."""
+    done = subprocess.run(
+        argv, env=dict(os.environ, **ASCII_ENV),
+        capture_output=True, encoding="utf-8", errors="replace",
+        stdin=subprocess.DEVNULL, timeout=600)
+    tally = re.findall(r"(\d+)/(\d+) cases passed", done.stdout)
+    passed, total = (int(tally[-1][0]), int(tally[-1][1])) if tally else (0, 0)
+    err = _tail_bytes(done.stderr, 600)
+    label = ("plugins/audit/tests/test_drive_phase.py: under a locale whose "
+             "preferred encoding is ASCII, the integrate suite runs whole and "
+             "every case it reports passes (%s, %r, preferred encoding %r): %r"
+             % (INTEGRATE_SUITE, ASCII_ENV, preferred,
+                (done.returncode, passed, total, err)))
+    return label, done.returncode == 0 and total > 0 and passed == total, err
 
 
 def _integrate_ascii_case(check, preferred):
@@ -6371,19 +6401,51 @@ def _integrate_ascii_case(check, preferred):
     on every platform this suite runs on."""
     suite = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                          INTEGRATE_SUITE)
-    done = subprocess.run(
-        [sys.executable, suite, "--selftest"], env=dict(os.environ, **ASCII_ENV),
-        capture_output=True, encoding="utf-8", errors="replace",
-        stdin=subprocess.DEVNULL, timeout=600)
-    tally = re.findall(r"(\d+)/(\d+) cases passed", done.stdout)
-    passed, total = (int(tally[-1][0]), int(tally[-1][1])) if tally else (0, 0)
-    check("plugins/audit/tests/test_drive_phase.py: under a locale whose "
-          "preferred encoding is ASCII, the integrate suite runs whole and "
-          "every case it reports passes (%s, %r, preferred encoding %r): %r"
-          % (INTEGRATE_SUITE, ASCII_ENV, preferred,
-             (done.returncode, passed, total,
-              _output.clip_bytes(done.stderr, 600))),
-          done.returncode == 0 and total > 0 and passed == total)
+    label, ok, _err = _integrate_ascii_verdict(
+        [sys.executable, suite, "--selftest"], preferred)
+    check(label, ok)
+
+
+# A child that fails the way the integrate suite once did on a CI runner: a
+# long stretch of stderr, then the integrate suite's own `_run` raising on a
+# git call. The verb is one no git has, so the call fails the same way inside
+# a repository and outside one, and never touches whatever repository holds
+# the scratch directory.
+_TAIL_CHILD = (
+    "import importlib.util, os, sys\n"
+    "tests, scratch = sys.argv[1], sys.argv[2]\n"
+    "sys.path.insert(0, tests)\n"
+    "spec = importlib.util.spec_from_file_location(\n"
+    "    'integrate_suite', os.path.join(tests, %r))\n"
+    "mod = importlib.util.module_from_spec(spec)\n"
+    "spec.loader.exec_module(mod)\n"
+    "sys.stderr.write('noise before the failure\\n' * 200)\n"
+    "sys.stderr.flush()\n"
+    "mod._run(scratch, 'no-such-verb')\n" % (INTEGRATE_SUITE,))
+# The raised error's own line as `_run` must word it: git's message decoded,
+# not the bytes repr of it.
+_TAIL_NEEDLE = ("RuntimeError: git no-such-verb failed: git: 'no-such-verb' "
+                "is not a git command")
+
+
+def _integrate_tail_case(check, preferred):
+    """A failing child is reported by the END of its stderr - where Python
+    prints the exception that stopped it - and the integrate suite's `_run`
+    words git's error as text. The fixture's head alone outruns the byte
+    budget, so a report clipped from the front cannot hold the needle."""
+    scratch = _harness.fixture_root("drive-tail-")
+    try:
+        label, ok, err = _integrate_ascii_verdict(
+            [sys.executable, "-c", _TAIL_CHILD,
+             os.path.dirname(os.path.abspath(__file__)), scratch], preferred)
+    finally:
+        _harness.remove_tree(scratch)
+    check("plugins/audit/tests/test_drive_phase.py: a child suite that fails "
+          "under the pinned locale is reported by the tail of its stderr, so "
+          "the raised error's own line is in the message: %r"
+          % ((ok, err[-300:]),),
+          not ok and _TAIL_NEEDLE in err and repr(err) in label
+          and len(err.encode("utf-8")) <= 600)
 
 
 def _stage_cases(check):

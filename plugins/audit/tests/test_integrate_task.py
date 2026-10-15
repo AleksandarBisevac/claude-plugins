@@ -48,7 +48,10 @@ TEN = "".join("line %d\n" % n for n in range(1, 11))
 def _run(cwd, *argv):
     done = subprocess.run(GIT + list(argv), cwd=cwd, capture_output=True, timeout=30)
     if done.returncode != 0:
-        raise RuntimeError("git %s failed: %s" % (" ".join(argv), done.stderr))
+        # Decoded rather than repr'd: a bytes repr folds git's lines into one
+        # escaped string, and a non-UTF-8 byte is replaced, never fatal here.
+        raise RuntimeError("git %s failed: %s" % (
+            " ".join(argv), done.stderr.decode("utf-8", "replace").strip()))
     return done.stdout.decode("utf-8")
 
 
