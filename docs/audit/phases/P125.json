@@ -7521,7 +7521,12 @@
       "fixes": [
         "P125-R80"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T23:08:09Z.6cee38",
+        "status": "passed",
+        "at": "2026-10-15T23:08:09Z"
+      }
     },
     {
       "id": "P125.97-0h5",

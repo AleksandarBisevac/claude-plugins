@@ -14,9 +14,12 @@ as "nothing affected", and e2e specs selected wholesale when nothing recorded
 can say which of them a source change reaches.
 """
 
+import os
+import re
 import sys
 
 import _harness                                   # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402
 from _output import safe_stdio                     # noqa: E402
 import _affected_tests as M                        # noqa: E402
 
@@ -241,6 +244,25 @@ def _cases(check):
     check("af21 no spelling to run them under WIDENS, with the reason: %r"
           % (why,),
           none == [] and why is not None and "phase gate" in why)
+
+    # ARMS carries machine ids, not human labels, so the guide's wording for
+    # each id is mapped here; an arm with no entry fails by name rather than
+    # being skipped, and a guide phrase with no arm behind it fails too.
+    labels = {"related": "related listing", "python": "Python imports",
+              "e2e-changed": "e2e listing", "e2e-widening": "e2e widening"}
+    unmapped = [a for a in M.ARMS if a not in labels]
+    guide_path = os.path.join(_output.REPO_ROOT, "PLUGIN-BUILD-GUIDE.md")
+    with open(guide_path, encoding="utf-8") as fh:
+        lines = [ln for ln in fh.read().splitlines()
+                 if ln.lstrip().startswith("_affected_tests.py ")]
+    found = re.search(r"by arm \(([^)]*)\)", lines[0]) if len(lines) == 1 else None
+    documented = [x.strip() for x in found.group(1).split(",")] if found else None
+    wanted = [labels.get(a, a) for a in M.ARMS]
+    check("the build guide's tree line for _affected_tests names exactly "
+          "the arms ARMS holds, so a removed arm cannot stay documented "
+          "(tree lines %d, documented %r, ARMS %r, unmapped %r)"
+          % (len(lines), documented, wanted, unmapped),
+          not unmapped and documented == wanted)
 
 
 def _selftest():

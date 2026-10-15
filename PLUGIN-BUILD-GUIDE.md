@@ -147,7 +147,7 @@ claude-plugins/                           # this repo (personal, public)
           _journal_io.py                  # the audit trail: row shape, hash chain, read/append/verify
           _evidence_io.py                 # the test-evidence record: where it lives, what a row may say, and the chain over it
           _gate_derive.py                 # the gate helpers' one home (is_shared_key/path_scoped_sibling/repointed) and a pure derive() for a phase's sign-off gate
-          _affected_tests.py              # which suites a task's change can break, by arm (related listing, Python imports, e2e listing, coupling, e2e widening) - pure; run-test-gate adds them to a task's run
+          _affected_tests.py              # which suites a task's change can break, by arm (related listing, Python imports, e2e listing, e2e widening) - pure; run-test-gate adds them to a task's run
           audit-journal.py                # the CLI over both records: append/verify/show/archive, plus merge and sessions
           _invariants.py                  # the orchestrator's rules, re-derived from git + shard + journal + ledger
           verify-invariants.py            # the CLI over it: one phase or --all, breach = exit 1
