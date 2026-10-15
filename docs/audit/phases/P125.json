@@ -7115,15 +7115,18 @@
     {
       "id": "P125.91-0h5",
       "title": "fix P125-R64: P125.33 (still true at HEAD): refiling_refusal, the helper that...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P125.33 (still true at HEAD): refiling_refusal, the helper that names the first filing's journal row and which rj2 asserts on, is called by no production code. The drive's actual refusal (already_filed -> the 'already filed ... stays as filed' stop) does not name the row, so the tests.add entry 'refused, naming the journal row of the first filing' pins an unused function. The comment above RETURN_FILED_ACTION in _filed_returns.py says drive-phase 'calls refiling_refusal', which is false. No drive-level test files, deletes the file and files again, so deleting the journal branch of already_filed keeps every case green (ds7f/ds9x unjournal the return first).\n\nResolution asked: Have already_filed/submit use refiling_refusal so the stop names the row, add a test_drive_phase case for delete-then-refile, and correct the comment.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/tests/test_drive_phase.py"
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py"
       ],
       "tests": {
         "mode": "tdd",
-        "add": [],
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a return deleted after filing and submitted again is refused through refiling_refusal, and the refusal names the journal row of the first filing"
+        ],
         "expectRedFirst": true,
         "gate": [
           "selftests",
@@ -7142,14 +7145,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T20:57:14Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -7160,7 +7163,8 @@
       ],
       "fixes": [
         "P125-R64"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.92-0h5",
@@ -9070,7 +9074,7 @@
     {
       "id": "P125.120-0h5",
       "title": "A case pins that answering retry with --reason records the reason for the new start and the brief carries it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Finding P125-R60 (re-added from cancelled P125.90 as regression: the behaviour exists, the test was missing). The case drives a fixture to a decision, answers retry --reason X through next, asserts retryReason keyed to the new start and the brief line. Proved by mutation: replacing the _mark(state, 'retryReason', ...) and write_state lines with pass turns it red (0/1, recorded {}).",
       "files": [
         "plugins/audit/tests/test_drive_phase.py"
@@ -9100,25 +9104,37 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d7ed0d8e310e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Applied p90.diff to plugins/audit/tests/test_drive_phase.py: added _retry_reason_cases and STAGES row (rrs-block); no hunk needed porting (case runs no git). Stage run 1/1 pass. Mutation on scratch copy: FAIL 'answering retry with --reason records the reason keyed to the new start, and the generated brief carries it (... recorded {}; brief exit 0, reason lines [\"operator's reason for --answer retry: none recorded\"])' SELFTEST FAILED: 0/1. Full sweep exit 0 (335/335 files ok, 16439 cases); cp1252 sweep exit 0.",
+        "descriptive": "Locks that answering retry with --reason records the reason for the new start and the brief carries it."
       },
       "startedAt": "2026-10-15T19:13:49Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T20:57:07Z",
+      "verifiedBy": [
+        "answering retry with --reason records the reason keyed to the new start, and the generated brief carries it"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-15T20:57:05Z.34dff0",
         "status": "passed",
         "at": "2026-10-15T20:57:05Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "d7ed0d8e310e",
+        "at": "2026-10-15T20:57:07Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task: behaviour already exists; mutation proof run on a scratch copy outside the tree (replacing _mark(state, 'retryReason', ...) and write_state with pass gave FAIL ... recorded {}; ... 0/1 cases passed), copy deleted",
+        "at": "2026-10-15"
       }
     },
     {
       "id": "P125.121-0h5",
       "title": "A killed process's liveness is read by one deadline helper on the product's liveness rule, never by one look after a sleep",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F689. CI 38792231809 (316b40b0, ubuntu cp1252 2): test_run_test_gate is4 slept 0.4 s and called os.kill(grandchild, 0) once; a not-yet-reaped zombie reads as alive. Second instance of the class P125.117 fixed in test__proc_group alone. Invariant: a _harness wait-until-gone helper on _locks.pid_alive (verify it counts a zombie as gone), used by both suites, and a scan failing on single-look liveness after a kill.",
       "files": [
         "plugins/audit/tests/_harness.py",
@@ -9148,16 +9164,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T20:57:09Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.122-0h5",
@@ -9208,7 +9225,7 @@
     {
       "id": "P125.123-0h5",
       "title": "The filed-counterpart check accepts the house case label, a case id before the clause",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F682. title_names_clause accepts only the clause or clause plus ' (detail'; the suites label cases '<id> <title>', so correctly titled cases are reported as unfiled (P125.80, .107, .108).",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -9237,21 +9254,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T20:57:12Z",
       "completedAt": null,
       "verifiedBy": [],
       "movedFrom": {
         "id": "P128.26-0h5",
         "phase": "P128",
         "at": "2026-10-15T20:04:42Z"
-      }
+      },
+      "reviewPerTask": "phase"
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
