@@ -7858,13 +7858,34 @@
         "examples/acme-store/acme-store-audit.html",
         "examples/acme-store/acme-store-audit.md",
         "docs/index.html",
-        "docs/demo-large.html"
+        "docs/demo-large.html",
+        "plugins/audit/scripts/report/_usage_markdown.py",
+        "plugins/audit/tests/test__usage_markdown.py",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
       ],
       "tests": {
         "mode": "tdd",
         "add": [
           "plugins/audit/tests/test__usage_economics.py: a row priced by a declared _default is stamped so and the rate basis names how many rows and which models it priced",
-          "plugins/audit/tests/test__report_usage.py: a session whose CLI figure differs from the plugin's reading carries both into the report payload, labelled from the one label home"
+          "plugins/audit/tests/test__report_usage.py: a session whose CLI figure differs from the plugin's reading carries both into the report payload, labelled from the one label home",
+          "plugins/audit/tests/test__usage_markdown.py: the Markdown twin carries the CLI's own figure beside the plugin's, under the same label",
+          "plugins/audit/tests/test__report_usage.py: a comparison that cannot be made says it could not be compared, with the reason"
         ],
         "expectRedFirst": true,
         "gate": [
