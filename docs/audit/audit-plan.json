@@ -1080,7 +1080,8 @@
       "P127.2-bgr",
       "P127.6-bgr",
       "P125.11",
-      "P128.7-0h5"
+      "P128.7-0h5",
+      "P125.71-0h5"
     ],
     "COMPATIBILITY.md": [
       "P18.8",
@@ -2978,7 +2979,8 @@
       "P123.65-64p",
       "P123.70-64p",
       "P125.38-0h5",
-      "P125.68-0h5"
+      "P125.68-0h5",
+      "P125.71-0h5"
     ],
     "plugins/audit/scripts/_refs.py": [
       "P23.1",
@@ -3653,7 +3655,8 @@
       "P125.48-0h5",
       "P125.57-0h5",
       "P125.63-0h5",
-      "P125.68-0h5"
+      "P125.68-0h5",
+      "P125.71-0h5"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -6480,7 +6483,8 @@
       "P125.36-0h5",
       "P125.48-0h5",
       "P125.57-0h5",
-      "P125.63-0h5"
+      "P125.63-0h5",
+      "P125.71-0h5"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
@@ -7111,7 +7115,8 @@
       "P74.9-qq5"
     ],
     "plugins/audit/tests/test__panel_discovery.py": [
-      "P85.1"
+      "P85.1",
+      "P125.71-0h5"
     ],
     "plugins/audit/scripts/report/_usage_viz.py": [
       "P85.2",
@@ -8368,7 +8373,8 @@
       "P125.33-0h5",
       "P125.53-0h5",
       "P125.60-0h5",
-      "P125.62-0h5"
+      "P125.62-0h5",
+      "P125.71-0h5"
     ],
     "plugins/audit/tests/test__filed_returns.py": [
       "P118.3",
@@ -8393,7 +8399,8 @@
       "P125.33-0h5",
       "P125.53-0h5",
       "P125.60-0h5",
-      "P125.62-0h5"
+      "P125.62-0h5",
+      "P125.71-0h5"
     ],
     "plugins/audit/agents/guide.md": [
       "P118.9",
