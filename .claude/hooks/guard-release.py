@@ -105,6 +105,12 @@ _GIT_AT = _BOUNDARY + r"git(?P<copts>" + _C_OPTS + r")\s+"
 _TAG_AT = re.compile(_GIT_AT + r"tag\b(?P<rest>[^;&|\n]*)")
 _PUSH_AT = re.compile(_GIT_AT + r"push\b(?P<rest>[^;&|\n]*)")
 _GH_AT = re.compile(_BOUNDARY + r"gh\s+release\s+create\b")
+# The release pipeline publishes only when it is told to push; without
+# `--push` it stops before every remote step, so only that form is a release.
+_RELEASE_AT = re.compile(_BOUNDARY + r"(?:\S*python[0-9.]*\s+(?:-\S+\s+)*)?"
+                         r"\S*tools/release\.py\b(?P<rest>[^;&|\n]*)")
+_RELEASE_SCRIPT = "tools/release.py"
+_PYTHON_VALUE = ("-W", "-X", "-Q")
 _PUSH_PUBLISHES = re.compile(
     r"(?:--tags\b|--follow-tags\b|\brefs/tags/|\sv\d+\.\d+)")
 _C_OPERAND = re.compile(r"-C(?:\s+(\"[^\"]*\"|'[^']*'|\S+)|\S*)")
@@ -379,6 +385,26 @@ def _git_verb(words):
     return None
 
 
+def _release_push(cfg_mod, rest):
+    """Whether `rest` (the words the shell runs) is the release pipeline told
+    to push: `tools/release.py` run directly or by a Python interpreter, with
+    `--push` among its own arguments. The interpreter's options before the
+    script are stepped over, a value-taking one with its value."""
+    program = cfg_mod.program_name(rest[0])
+    index = 0
+    if re.match(r"^python(?:3(?:\.\d+)?)?$", program):
+        index = 1
+        while index < len(rest) and rest[index].startswith("-"):
+            index += 2 if rest[index] in _PYTHON_VALUE else 1
+        if index >= len(rest):
+            return False
+    script = _unquote(rest[index]).replace("\\", "/")
+    if not (script == _RELEASE_SCRIPT or script.endswith("/" + _RELEASE_SCRIPT)):
+        return False
+    return any(word == "--push" or word.startswith("--push=")
+               for word in rest[index + 1:])
+
+
 def _words_publishers(cfg_mod, words, depth=0):
     """Publishing invocations read off one command's shell words.
 
@@ -394,6 +420,8 @@ def _words_publishers(cfg_mod, words, depth=0):
     rest, _candidates = cfg_mod.program_candidates(words)
     if not rest:
         return []
+    if _release_push(cfg_mod, rest):
+        return [("runs the release pipeline with --push", [])]
     program = cfg_mod.program_name(rest[0])
     if program == "gh":
         args = rest[1:]
@@ -450,6 +478,10 @@ def _publishers(command, cfg_mod=None, depth=0):
             found.append(("pushes a tag", _c_operands(match.group("copts"))))
         if _GH_AT.match(clause):
             found.append(("publishes a GitHub Release", []))
+        match = _RELEASE_AT.match(clause)
+        if match and re.search(r"(?:^|\s)--push(?:=|\s|$)",
+                               match.group("rest") or ""):
+            found.append(("runs the release pipeline with --push", []))
     return found
 
 
@@ -1021,6 +1053,28 @@ def _selftest():
     check("gr3 --tags is publishing", publishing("git push --tags"))
     check("gr4 a GitHub Release is publishing",
           publishing("gh release create v2.0.2 --verify-tag"))
+    release_runs = (
+        "python3 tools/release.py run --version 3.4.0 --push",
+        "python3 -u tools/release.py run --push --version 3.4.0",
+        "tools/release.py run --version 3.4.0 --push",
+        "cd x && python3 /repo/tools/release.py run --push",
+        "sh -c 'python3 tools/release.py run --push'",
+    )
+    check("gr4r python3 tools/release.py --push is classified as a publishing "
+          "command, and release.py without --push is not (pushing forms: %r)"
+          % ([(c, publishing(c)) for c in release_runs],),
+          all(publishing(c) == "runs the release pipeline with --push"
+              for c in release_runs)
+          and not publishing("python3 tools/release.py run --version 3.4.0")
+          and not publishing("python3 tools/release.py --selftest"))
+    check("gr4s ALLOW-TWIN: another script's --push, and release.py named only "
+          "as text, are not the release pipeline: %r"
+          % ([publishing(c) for c in ("python3 tools/x.py --push",
+                                      'echo "python3 tools/release.py --push"',
+                                      "python3 tools/release_notes.py --push")],),
+          not publishing("python3 tools/x.py --push")
+          and not publishing('echo "python3 tools/release.py --push"')
+          and not publishing("python3 tools/release_notes.py --push"))
     check("gr5 a release typed as ONE line is caught in its second half - this "
           "is how a release is actually typed, and a guard reading only the "
           "head of the line would wave it through",
