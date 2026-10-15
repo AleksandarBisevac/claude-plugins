@@ -3758,6 +3758,23 @@ def _cases(check):
           and min(len(_product_doc(r)) for r in _SO_QUIET) > 400
           and _reason_blocks(_so_phase, "no token any document carries") == [])
 
+    # A step is a line of the numbered list under "## Run a phase", not prose
+    # beside it; the drive's own chain line is the wording to agree with.
+    _cn_run = _md_section(_so_phase, "## Run a phase")
+    _cn_steps = [_squash(s.replace("`", "")) for s in
+                 re.split(r"(?m)^(?=\d+\. )", _cn_run) if re.match(r"\d+\. ", s)]
+    _cn_m = re.search(r'"chain: ([^"%]*?) %\(phase\)s',
+                      _product_doc("scripts/governance/drive-phase.py"))
+    _cn_drive = _cn_m.group(1) if _cn_m else ""
+    _cn_hits = [s for s in _cn_steps
+                if "/audit:phase <next id>" in s and _cn_drive and _cn_drive in s]
+    check("commands/phase.md states as a step, not a tip, that the next phase starts "
+          "in a fresh context - clear, then re-enter with /audit:phase and the next id"
+          " (a numbered step of the run list, not a note beside it, carrying the "
+          "wording of the drive's chain line; drive wording read %r from %d steps, "
+          "%d carry it)" % (_cn_drive, len(_cn_steps), len(_cn_hits)),
+          len(_cn_drive) > 20 and len(_cn_steps) >= 4 and len(_cn_hits) == 1)
+
 
     # --- the route a sign-off finding takes (`fr*`) ---
     # Sign-off runs when every task is `done` and the plan gate opens a file only

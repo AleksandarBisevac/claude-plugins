@@ -8079,7 +8079,7 @@
     {
       "id": "P125.108-0h5",
       "title": "Layer numbers in the build guide are checked against the import graph, or stated relatively",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F676. PLUGIN-BUILD-GUIDE.md states absolute layer numbers beside module names (grep -nE '[Ll]ayer [0-9]+' PLUGIN-BUILD-GUIDE.md); at f6403a16 usage_ledger sat at index 4 and _live_copy at 7 while the prose said 3 and 6, and giving _loader its own layer shifted every layer above it again. No lint reads the shape. The fix is an invariant: either a lint that compares every 'layer N' bound to a module against _deps.LAYERS, or relative wording plus a lint refusing absolute layer numbers; then correct the guide so the lint is green. Red-first against today's guide.",
       "files": [
         "PLUGIN-BUILD-GUIDE.md",
@@ -8111,19 +8111,41 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "655860f426a4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Option (b), the class fix in the existing mechanism: `_deps.layer_mention_drift()` (which already refuses every layer numeral, right or wrong, in docstrings and comments) now also reads markdown prose - every paragraph and heading of the derived .md set `doc_prose_numbers()` reads (`_output.prose_scan_set`, so the same PROSE_SCAN_EXEMPT rows apply: CHANGELOG history stays legal), fenced blocks skipped so the generated module map is untouched. It reuses the same numeral reader (`_layer_numeral_hits`, split out of `_layer_numerals`, which reads `_output._numeral_span`) and `_layer_ordinals`; no second walker. A document finding names the module the numeral is bound to (the last LAYERS name backticked before it in its own sentence, else the module its section heading names, else 'no module'), the numeral as written and the index LAYERS holds, and says whether it agrees today or disagrees; a right number is refused too. New keyword `doc_paths` hands fixture documents in; a call aimed at a fixture script_dir reads no document. The ordinal message became one constant `_ORDINAL_PROBLEM` shared by both halves. Measurement over the whole tree before the guide rewrite: 113 findings, all in PLUGIN-BUILD-GUIDE.md, none in the other scanned .md files; a cross-check grep for layer-N / L-N / layer-word over every tracked .md found nothing the lint missed except the module-map fence lines (excluded on purpose) and one CHANGELOG.md history line (exempt from the prose scan). No false positives: every finding was a real layer number. Of the 113, only four agreed with LAYERS. Binding imprecision measured: a numeral right after a door's target module (`The door onto `_ado_connect` (layer 7)`) binds to the target, not the door script; the numeral is refused either way, and the docstring says so under WHAT THE BINDING CANNOT SEE. Guide rewritten: every absolute layer number deleted or said relationally, each relational claim checked against `_deps.LAYERS` indices (e.g. `usage_ledger` a layer above the four usage passes; `_live_copy` a layer above `_scoped_commit`; `_verdict_binding` the first layer above `_evidence_io`/`_tree_stamp`); `layer_mention_drift()` now returns [] over the real tree. Tests: ldoc1-ldoc10 in test__deps.py (330/330). Mutation probes run in a scratch copy of the worktree (never the worktree): fence skip removed -> ldoc6 red; heading fallback dropped -> ldoc4 red; sentence scope dropped -> ldoc4 red (after the fixture was strengthened, it first survived); agree verdict inverted -> ldoc1, ldoc3 red; default reads no docs -> ldoc10 red; fixture call reads the real docs -> ldoc9 red (it first survived, fixed by asserting `_layer_doc_names`); over-fire on every 'layer' word -> ldoc2 (deny twin) red; doc half not appended -> ldoc1 red; restore verified byte-equal. prove-gates.py: `--list` exit 0, every row anchored; no new public gate name, so the existing layer_mention_drift rows and coverage reach it and prove-gates.py needed no change. A row planting a numeral into a .md would strengthen it and is a follow-up for whoever owns tools/prove-gates.py. Full sweep `python3 tools/sweep-selftests.py` exit 0 (335/335 files); `python3 tools/sweep-selftests.py --encoding cp1252` exit 0 (both halves ran); ruff and vermin on the two .py files exit 0. A first sweep had found test__refs c5 red on a fixture heading path in my own test; I marked it with `# refs: fixture` and both suites passed after.",
+        "descriptive": "The build guide no longer carries layer numbers, and the existing layer-numeral lint now reads every markdown document too, naming the module, the stated layer and the real one."
       },
       "startedAt": "2026-10-15T11:43:07Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T12:59:41Z",
+      "verifiedBy": [
+        "ldoc1 a document that binds a module name to an absolute layer number disagreeing with _deps.LAYERS fails the lint, naming the module, the stated layer and the real one (one finding, labelled by the document and line, quoting `_other`, 'layer 1' and the index LAYERS holds)",
+        "ldoc2 a document whose layer wording is relative only - a layer above a named module, the render command as the pointer - passes",
+        "ldoc3 a numeral LAYERS agrees with is still refused in a document, and the finding says it agrees today rather than calling it wrong",
+        "ldoc4 a numeral whose sentence names no module is bound to the module its section heading names, not to one an earlier sentence named",
+        "ldoc5 each numeral binds to the nearest module named before it in its sentence, across a wrapped line, and each is one finding",
+        "ldoc6 a fenced block is not prose - the generated module map is the one place the numbering is meant to be printed",
+        "ldoc7 a numeral bound to no module is refused all the same, and the finding says it found no module",
+        "ldoc8 an unreadable document is NAMED rather than skipped",
+        "ldoc9 a fixture tree with no documents handed in reads none - the derived set is the real repository's and belongs to the default call",
+        "ldoc10 the default call reads every seed document, the guide among them, and the shipped documents carry no layer numeral"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-15T12:59:28Z.f21258",
         "status": "passed",
         "at": "2026-10-15T12:59:28Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "655860f426a4",
+        "at": "2026-10-15T12:59:41Z"
+      },
+      "redFirst": {
+        "at": "2026-10-15T12:33:06Z",
+        "basis": "`python3 plugins/audit/tests/test__deps.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 54/55 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_MD_FENCE': TypeError: layer_mention_drift() got an unexpected keyword argument 'doc_paths'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_MD_HEADING': TypeError: layer_mention_drift() got an unexpected keyword argument 'doc_paths'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_MD_HEADING_MODULE': TypeError: layer_mention_drift() got an unexpected keyword argument 'doc_paths'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_MD_SENTENCE_END': TypeError: layer_mention_drift() got an unexpected keyword argument 'doc_paths'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_ORDINAL_PROBLEM': TypeError: layer_mention_drift() got an unexpected keyword argument 'doc_paths'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_bound_module': TypeError: layer_mention_drift() got an unexpected keyword argument 'doc_paths'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_doc_layer_mentions': TypeError: layer_mention_drift() got an unexpected keyword argument 'doc_paths'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_doc_numeral_problem': TypeError: layer_mention_drift() got an unexpected keyword argument 'doc_paths'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_layer_doc_names': TypeError: layer_mention_drift() got an unexpected keyword argument 'doc_paths'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_layer_numeral_hits': TypeError: layer_mention_drift() got an unexpected keyword argument 'doc_paths'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_md_blocks': TypeError: layer_mention_drift() got an unexpected keyword argument 'doc_paths'; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {

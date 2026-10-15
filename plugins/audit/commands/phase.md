@@ -32,7 +32,7 @@ phase id to run. A phase whose id is that word: ask (AskUserQuestion) which one.
    answer; `stop` → relay it whole.
 4. `done` → report what landed and where. **Phase sign-off** (orchestrator) is the drive's last
    step: a fix task comes first, because its edits invalidate a gate taken before them. Nothing measures whether you held the order when a gate
-   is run by hand.
+   is run by hand. A `chain:` line: clear context, then re-enter with `/audit:phase <next id>`.
 
 ## Subcommand: `add "<title>" --outcome "<what success looks like>"`
 
