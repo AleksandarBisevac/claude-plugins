@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "own-tests: test_run_test_gate.py --selftest": "pass",
+    "test__proc_group.py --selftest x5": "pass",
+    "test__refs.py --selftest": "pass",
+    "tools/sweep-selftests.py": "pass",
+    "tools/sweep-selftests.py --encoding cp1252": "pass",
+    "ruff check plugins/audit/tests": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression mode, expectRedFirst false; mutations run in a scratch copy of plugins/audit instead (see outcome)",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Added _harness.gone_within(target, seconds, group=False) (polls, >=1 look; pid judged by _locks.pid_alive plus a zombie reading via /proc/<pid>/stat state Z or `ps -o stat=`; group judged by killpg(0) plus `ps -A -o pgid=,stat=` members not Z). VERIFIED: _locks.pid_alive (scripts/governance/_locks.py:150) is os.kill(pid,0) so it counts a zombie ALIVE; the zombie reading is test-side knowledge, product rule untouched (case asserts product pid_alive is True for the unreaped zombie). is4 now uses gone_within(grandchild,10); test__proc_group drops _group_gone_within and uses gone_within(...,group=True). New case lv0 in test_run_test_gate.py, titled with the tests.add clause verbatim plus detail after ' (': fixtures = unreaped child exiting 0.6s later (first look sees running, helper returns True), group fixture, own pid not gone; AST scan _single_look_reads over every tests/*.py flags os.kill/os.killpg(x,0) in a scope (function or module body, nested functions excluded) that calls a kill-shaped name on an earlier line; reads in scopes with no earlier kill are allowed, as are _harness._pid_present/_group_present; synthetic bad/fine/home sources pin both directions. Mutations in scratch copy (restore asserted: real tree green 540/540 and deadline line present): helper looks once -> case red; is4 reverted to sleep+single os.kill -> case red with offenders={'test_run_test_gate.py': [...]}. Runs: test__proc_group x5 exit 0 each; test_run_test_gate 540/540 exit 0; test__refs 351/351 after replacing a literal /proc path (ar1 caught it); full sweep exit 0 (335/335 files); cp1252 sweep exit 0. Plan gate refused a python heredoc write, so all repo edits were via Edit.",
+    "descriptive": "A killed process is judged gone by one polling helper that counts zombies as gone, and a scan fails any suite that reads liveness once after a kill."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_run_test_gate.py: a torn-down group's grandchild is judged gone by one deadline helper on the product's liveness rule, a zombie counts as gone, and no suite reads a killed process's liveness once after a fixed sleep"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:df82694c2c609027bd354f34a79cdd7fd23e63abe2738649168b18753e8c7b6f\",\"dirtyDigest\":\"sha256:2ab86fd5e70da36ee7b137805fe4dc1b4e6595708991046b61b7b575e3ff784c\",\"dirtyPaths\":{\"plugins/audit/tests/_harness.py\":\"20cfd69947d30b3d\",\"plugins/audit/tests/test__proc_group.py\":\"ef9617447ce6366c\",\"plugins/audit/tests/test_run_test_gate.py\":\"7ee0ea093b014aad\"},\"head\":\"d7ed0d8e\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/_harness.py\",\"plugins/audit/tests/test__proc_group.py\",\"plugins/audit/tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:9b2d5a305ccbf676a59e68bbe7fb24cbef412fad79f22df132de0cb635b59fb2\",\"v\":2}"
+}

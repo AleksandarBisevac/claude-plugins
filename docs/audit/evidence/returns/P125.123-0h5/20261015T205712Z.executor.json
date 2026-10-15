@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "own-test: test__filed_returns.py --selftest": "pass",
+    "sweep-selftests.py (full)": "pass",
+    "sweep-selftests.py --encoding cp1252": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T21:18:30Z",
+    "basis": "`python3 plugins/audit/tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_filed_returns' has no attribute '_CASE_ID_TOKEN'\" (read as python), and the task introduces '_CASE_ID_TOKEN': absent from HEAD's plugins/audit/scripts/manifest/_filed_returns.py and present in the working tree's plugins/audit/scripts/manifest/_filed_returns.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "title_names_clause in _filed_returns.py now also accepts exactly one leading case-id token plus one space before the clause (clause then end or ' ('). Id shape _CASE_ID_TOKEN copies the runner's _HOUSE_CASE_ID regex (the token the house FAIL/PASS line prints first); the case pins the two patterns equal. Added helpers _after_case_id and _names_at. Refused: paraphrase, two ids, glued id, double space, non-id first word, run-on clause, bare id. Helper path: stamp-verification.py _is_named calls _filed_returns.title_names_clause (line 1452), so --case shares the predicate; no separate matcher. Own test 96/96. Full sweep exit 0 (335/335 files, 16445 cases); cp1252 sweep exit 0 (335/335 files; printed 0 cases, so which half ran is unconfirmed beyond the exit code). Comment near RETURN_FILED_ACTION untouched.",
+    "descriptive": "A case titled '<id> <clause> (detail)' now counts as the clause's filed counterpart and as a --case name."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__filed_returns.py: a filed title of one case-id token, then the clause verbatim, then its detail, names that clause; a paraphrase or an id glued to the clause does not"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:0a60acaffbcbf55bd42b0f0f30e87efd7209b4c762613787316153cf45954c72\",\"dirtyDigest\":\"sha256:65442558d0a33ec581c3fc4a170282efe9acda6739c41c2f6fdbf450e57103bb\",\"dirtyPaths\":{\"plugins/audit/scripts/manifest/_filed_returns.py\":\"248796ed6208762a\",\"plugins/audit/tests/test__filed_returns.py\":\"90d7754181a10683\"},\"head\":\"d7ed0d8e\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/_filed_returns.py\",\"plugins/audit/tests/test__filed_returns.py\"],\"scopeDigest\":\"sha256:ad7acd24076ba31b56dbf2ee883b1681b16d38438b001e2b8b4c2f9110c7c9aa\",\"v\":2}"
+}

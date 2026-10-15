@@ -1434,6 +1434,49 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P128.33-0h5",
+      "title": "The product liveness rule counts an unreaped zombie as gone",
+      "status": "pending",
+      "description": "Register F693. _locks.pid_alive is os.kill(pid, 0), true for a zombie; callers asking about pids they do not own read a dead process as alive until reaped.",
+      "files": [
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/tests/test__locks.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__locks.py: pid_alive reads an unreaped zombie as gone and a live process as alive"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }
