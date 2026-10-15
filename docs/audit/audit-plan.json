@@ -6837,7 +6837,8 @@
       "P127.8-bgr",
       "P125.44-0h5",
       "P125.69-0h5",
-      "P125.72-0h5"
+      "P125.72-0h5",
+      "P125.73-0h5"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
