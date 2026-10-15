@@ -791,6 +791,44 @@ def _resume_cases(check):
           _attempts(mpath2, "P1.1") == (b2 or 0) + 1)
 
 
+def _retry_reason_cases(check):
+    """The reason typed beside `--answer retry` is recorded by the driver itself
+    and reaches the next attempt's brief. The state is read after a real `next`,
+    never written by hand, so removing the recording turns this red."""
+    M, why = _load("drive_phase_retry_reason")
+    if M is None:
+        check("answering retry with --reason records the reason keyed to the new "
+              "start, and the generated brief carries it (the driver loads): %r"
+              % (why,), False)
+        return
+    root, mpath = _repo("retry-reason", task_ids=TASKS[:1])
+    _next(M, root, mpath)                       # dispatches the executor
+    _code, text = _next(M, root, mpath)         # it filed nothing
+    old_start = tasks_of(mpath).get("P1.1", {}).get("startedAt")
+    reason = "flaky-infra-rr7 rerun as-is"
+    code, said = _next(M, root, mpath, "--answer", "retry", "--reason", reason)
+    new_start = tasks_of(mpath).get("P1.1", {}).get("startedAt")
+    entry = (_drive_state(root).get("retryReason") or {}).get("P1.1") or {}
+    want_key = M.start_key({"startedAt": new_start})
+    brc, _printed = _verb(root, "audit-lookup.py",
+                          [mpath, "brief", "P1.1", "--role", "executor",
+                           "--project", root])
+    brief = _read(os.path.join(root, ".claude", "state", "briefs", "P1.1",
+                               "%s.executor.md" % (want_key,))
+                  ).decode("utf-8", "replace")
+    line = "operator's reason for --answer retry: %s" % (reason,)
+    check("answering retry with --reason records the reason keyed to the new "
+          "start, and the generated brief carries it (the decision was %r; "
+          "answered code %r; start %r -> %r; recorded %r; brief exit %r, "
+          "reason lines %r)"
+          % (instruction(text)[1], code, old_start, new_start, entry, brc,
+             [ln for ln in brief.splitlines() if "reason for" in ln]),
+          instruction(text)[1] == "no-executor-return" and code == 0
+          and bool(new_start) and bool(want_key)
+          and entry == {"start": want_key, "value": reason}
+          and brc == 0 and brief.count(line) == 1)
+
+
 def _gate_calls(module):
     """Wrap `module.run_verb` so each `run-test-gate.py` call is kept as
     `(args, output)` - which flags it was given, and what it printed."""
@@ -6333,6 +6371,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("dr-block", "_refusal_cases"),
           ("dd-block", "_decide_cases"), ("ct-block", "_continue_cases"),
           ("dd3-block", "_rerun_cases"), ("rs-block", "_resume_cases"),
+          ("rrs-block", "_retry_reason_cases"),
           ("rm-block", "_rerun_measures_cases"),
           ("fx-block", "_fix_batch_cases"), ("ht-block", "_handed_triage_cases"),
           ("dt-block", "_single_task_cases"), ("dl-block", "_lock_stop_cases"),

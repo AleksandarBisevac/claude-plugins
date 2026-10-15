@@ -656,8 +656,10 @@
         "severity": "med",
         "file": "README.md:34,141; QUICKSTART.md:21,83; plugins/audit/schema/audit-config.schema.json:96; plugins/audit/scripts/panel/_panel_settings.py:150; plugins/audit/templates/audit.config.example.json:6; CLAUDE.md:8 (all still at HEAD)",
         "issue": "The diff changes the ladder (a plan holding phases with none running now denies past the free file) but leaves other user-facing statements of it saying 'warns with a manifest/plan but nothing running'. The config schema description and the panel Settings help for planGate are product surfaces read by users, and the root README and QUICKSTART tell new users installing it 'does not start refusing edits'. The task named only the plugin README, but the outcome claims 'every reader of the tier names that step the same way'. These readers contradict the new behaviour.",
-        "resolution": "Update the schema description, _panel_settings.py help text, config template, root README, QUICKSTART and CLAUDE.md to the three-step ladder. Derive from PLAN_GATE_LADDER where a surface is code.",
-        "fixTask": "P125.95-0h5"
+        "resolution": "fixed in P125.95-0h5 (9bcb55ddc874): Update the schema description, _panel_settings.py help text, config template, root README, QUICKSTART and CLAUDE.md to the three-step ladder. Derive from PLAN_GATE_LADDER where a surface is code.",
+        "fixTask": "P125.95-0h5",
+        "commit": "9bcb55ddc874",
+        "status": "fixed"
       },
       {
         "id": "P125-R78",
@@ -1020,7 +1022,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 40 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 41 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -7361,7 +7363,7 @@
     {
       "id": "P125.95-0h5",
       "title": "fix P125-R77: The diff changes the ladder (a plan holding phases with none ru...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The diff changes the ladder (a plan holding phases with none running now denies past the free file) but leaves other user-facing statements of it saying 'warns with a manifest/plan but nothing running'. The config schema description and the panel Settings help for planGate are product surfaces read by users, and the root README and QUICKSTART tell new users installing it 'does not start refusing edits'. The task named only the plugin README, but the outcome claims 'every reader of the tier names that step the same way'. These readers contradict the new behaviour.\n\nResolution asked: Update the schema description, _panel_settings.py help text, config template, root README, QUICKSTART and CLAUDE.md to the three-step ladder. Derive from PLAN_GATE_LADDER where a surface is code.",
       "files": [
         "README.md",
@@ -7398,14 +7400,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9bcb55ddc874",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added plan_gate_ladder_phrase() to _panel_settings.py, read off _config.PLAN_GATE_LADDER via _loader.load_hooks_config(); FIELD_HELP['planGate'] gets it by placeholder replace (a concatenation inside the dict literal made gate-parity lose FIELD_HELP as a table). Schema description, config template, root README (two sites), QUICKSTART (two sites) now state the ladder in the plugin README's words: observe (no manifest) -> warn (no phase) -> deny past the free file (phases, none running) -> deny (a phase running). CLAUDE.md: corrected only the false sentence 'warn with a manifest but nothing running, deny once a phase is in_progress' (describes the ladder, asserts no tier). Added PLUGIN-BUILD-GUIDE.md module-map line (_panel_settings -> _loader) required by the new import edge (the Edit was allowed). Schema wording kept short because test__help p5 payload cap has ~12 bytes headroom at HEAD. NOTE: I made the first _panel_settings.py edit with a python heredoc rather than Edit (rule slip); all later edits used Edit. Left: docs/essays/enforcement-over-persuasion.md:95 still states the old second rung (not in files; historical essay). No config key removed. No step count in prose.",
+        "descriptive": "Every user-facing statement of the plan gate ladder now reads deny past the free file for a plan holding phases with none running, derived from PLAN_GATE_LADDER where code."
       },
       "startedAt": "2026-10-15T19:13:54Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T20:46:43Z",
+      "verifiedBy": [
+        "the panel's planGate help and the config schema's description state the ladder derived from PLAN_GATE_LADDER, so a plan with phases and none running reads as deny past the free file on every surface (each surface carries the ladder rebuilt step by step from the table)",
+        "...and neither surface keeps the old second rung, 'warn' for a manifest with nothing running, which the ladder no longer has",
+        "...the helper has words for every step the ladder holds, so a step added there cannot be rendered under its bare identifier"
+      ],
       "notes": [
         {
           "at": "2026-10-15T03:41:27Z",
@@ -7424,6 +7430,18 @@
         "runId": "2026-10-15T20:46:40Z.92c9cd",
         "status": "passed",
         "at": "2026-10-15T20:46:40Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "9bcb55ddc874",
+        "at": "2026-10-15T20:46:43Z",
+        "basis": "a fix task for P125-R77: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-15T20:02:41Z",
+        "basis": "`python3 plugins/audit/tests/test__panel_settings.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 64 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - the panel's planGate help and the config schema's description state the ladder derived from PLAN_GATE_LADDER, so a plan with phases and none running reads as deny past the free file on every surface (each surface carries the ladder rebuilt step by step from the table) (expect='observe (no manifest) -> warn (no phase) -> deny past the free file (phases, none running) -> deny (a phase running)' help-has=False schema-has=False) (house FAIL): SELFTEST FAILED: 61/64 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -9090,7 +9108,12 @@
       "startedAt": "2026-10-15T19:13:49Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T20:57:05Z.34dff0",
+        "status": "passed",
+        "at": "2026-10-15T20:57:05Z"
+      }
     },
     {
       "id": "P125.121-0h5",
