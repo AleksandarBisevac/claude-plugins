@@ -4613,10 +4613,19 @@ def _follower_map_cases(check):
           and fresh is not None and "a map from before" not in fresh
           and held == fresh)
 
-    # An owner whose recipe needs a browser, standing at the path the protocol
-    # asks: its bytes cannot be reproduced, so the orchestrator is told to run it.
-    root, mpath = _wave_repo("followshotwave", 2)
-    recipe = "git show HEAD:map.fresh > docs/shot.png"
+
+# --- an undeclared path only a browser recipe writes -----------------------------
+_SHOT_RECIPE = "git show HEAD:map.fresh > docs/shot.png"
+
+
+def _shot_owner_wave(M, prefix):
+    """A two-member wave whose second member's tree holds `docs/shot.png`
+    undeclared, as its executor wrote it, and a follower owner that claims that
+    path with a browser recipe copying `map.fresh` over it. The two byte strings
+    differ, so whether the recipe ran is visible in the tree. `(root, mpath,
+    tree)`, the tree None when the wave made none."""
+    root, mpath = _wave_repo(prefix, 2)
+    recipe = _SHOT_RECIPE
     _write_lf(os.path.join(root, "map.fresh"), "captured\n")
     os.makedirs(os.path.join(root, "tools"))
     os.makedirs(os.path.join(root, "docs"), exist_ok=True)
@@ -4637,17 +4646,43 @@ def _follower_map_cases(check):
         _write_lf(os.path.join(tree, "docs", "shot.png"), "by the executor\n")
     for t in _dispatched(first):
         _file_wave_executor(root, mpath, t)
-    prints, ran = [], False
+    return root, mpath, tree
+
+
+def _drive_shot_wave(M, root, mpath, tree, run_recipe):
+    """Up to six drives of that wave. On the first follow print the recipe is
+    run in the member's tree when `run_recipe`, and left unrun otherwise; the
+    loop ends on a decision or when every task is done. `(prints, followed,
+    ran)`."""
+    prints, followed, ran = [], False, False
     for _ in range(6):
         said = []
         with _Env(root):
             M.main(["next", PHASE, mpath, "--project-dir", root], out=said.append)
         prints.append("\n".join(said))
-        if "follow P1.2: run `%s`" % (recipe,) in prints[-1] and tree and not ran:
-            subprocess.run(recipe, shell=True, cwd=tree, check=True, timeout=60)
-            ran = True
+        if "follow P1.2: run `%s`" % (_SHOT_RECIPE,) in prints[-1] and not followed:
+            followed = True
+            if run_recipe and tree:
+                subprocess.run(_SHOT_RECIPE, shell=True, cwd=tree, check=True,
+                               timeout=60)
+                ran = True
+        elif instruction(prints[-1])[0] == "decide":
+            break
         elif all(t.get("status") == "done" for t in tasks_of(mpath).values()):
             break
+    return prints, followed, ran
+
+
+def _follower_shot_cases(check):
+    """An owner whose recipe needs a browser, standing at the path the protocol
+    asks: its bytes cannot be reproduced, so the orchestrator is told to run it,
+    and only what that run moved is widened."""
+    M, why = _load("drive_phase_follower_shot")
+    if M is None:
+        check("fs0 the driver loads", False, why)
+        return
+    root, mpath, tree = _shot_owner_wave(M, "followshotwave")
+    prints, _followed, ran = _drive_shot_wave(M, root, mpath, tree, True)
     task = tasks_of(mpath)["P1.2"]
     notes = " ".join(str(n) for n in task.get("notes") or [])
     check("fm2 an undeclared path whose owner's recipe needs a browser is never run "
@@ -4659,6 +4694,48 @@ def _follower_map_cases(check):
           and "on the drive's follow" in notes
           and "undeclared-change" not in "\n".join(prints)
           and _read(os.path.join(root, "docs", "shot.png")) == b"captured\n")
+
+    # The same follow, and the orchestrator calls the drive again without
+    # running the recipe: the executor's bytes never moved, so nothing vouches
+    # for them and the path is put to the human like any other undeclared one.
+    root, mpath, tree = _shot_owner_wave(M, "followshotunrun")
+    prints, followed, _ran = _drive_shot_wave(M, root, mpath, tree, False)
+    task = tasks_of(mpath)["P1.2"]
+    last = prints[-1] if prints else ""
+    check("fm3 a browser path whose bytes did not move under the recipe stays the "
+          "undeclared-change decision (the follow printed, the drive called again "
+          "with the recipe unrun: the decision names the path, the scope is not "
+          "widened and the task is not closed): %r"
+          % ((task.get("status"), task.get("files"), prints),),
+          followed and instruction(last) == ("decide", "undeclared-change", None)
+          and "docs/shot.png" in last
+          and "docs/shot.png" not in (task.get("files") or [])
+          and task.get("status") != "done"
+          and tree is not None
+          and _read(os.path.join(tree, "docs", "shot.png")) == b"by the executor\n")
+
+    # The browser owner the protocol actually names, asked the way integration
+    # asks it. A sibling directory sharing the capture directory's name as a
+    # prefix is in the set, so a match on the bare prefix would claim it too.
+    node = shutil.which("node")
+    if node is None:
+        print("SKIP fm4 (node is not on PATH; the capture owner is a node script)")
+        return
+    asked = ["docs/screenshots/x.png", "docs/screenshots-old/x.png", "docs/x.png",
+             "README.md"]
+    done = subprocess.run([node, os.path.join(_output.REPO_ROOT, "tools",
+                                              "capture-screenshots.mjs"),
+                           "--follower-for"] + asked,
+                          cwd=_output.REPO_ROOT, capture_output=True, timeout=120)
+    records, unread = _evio.followers_in(done.stdout.decode("utf-8", "replace"))
+    check("fm4 capture-screenshots.mjs --follower-for claims docs/screenshots/x.png "
+          "and nothing outside (one browser record for the capture path; the "
+          "prefix sibling, a docs path and README.md unclaimed): %r"
+          % ((done.returncode, records, unread, done.stderr[-300:]),),
+          done.returncode == 0 and unread == 0
+          and records == [{"path": "docs/screenshots/x.png",
+                           "recipe": "node tools/capture-screenshots.mjs",
+                           "owner": "capture-screenshots", "needsBrowser": True}])
 
 
 # --- a wave member's tree outlives a crash, a failed setup and a block ----------
@@ -5922,6 +5999,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("wz-block", "_wave_width_cases"),
           ("fw-block", "_follower_cases"), ("fh-block", "_follower_wave_cases"),
           ("fm-block", "_follower_map_cases"),
+          ("fm2-block", "_follower_shot_cases"),
           ("al-block", "_ascii_locale_cases"),
           ("wt-block", "_wave_resume_cases"), ("wt5-block", "_wave_adopt_cases"),
           ("wt7-block", "_wave_review_discard_cases"),

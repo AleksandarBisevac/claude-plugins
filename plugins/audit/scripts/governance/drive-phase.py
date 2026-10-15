@@ -1775,19 +1775,64 @@ def _is_record(path, records):
                for r in records or ())
 
 
+def _path_digest(tree, rel):
+    """`_journal_io.file_hash` of `rel` in `tree`: None when there is no such
+    file. The driver opens no file to hash it itself - `_filed_returns`'
+    `file_digest_sites` reads this module for such a site and a case fails on
+    one."""
+    return _journal_io.file_hash(os.path.join(tree, *rel.split("/")))
+
+
+def _shot_follow(tree, paths, recipes):
+    """The mark a browser follow leaves: the tree, and each path's bytes as the
+    follow found them, so the next drive can tell whether the recipe ran."""
+    return {"tree": tree, "paths": list(paths), "recipes": list(recipes),
+            "before": dict((p, _path_digest(tree, p)) for p in paths)}
+
+
+def _after_shot_follow(ctx, state, task, followed):
+    """`(word, stop)` on the drive after a browser follow. Every path whose
+    bytes moved since the follow is the recipe's work and is widened on that
+    basis; a path whose bytes did not move was not vouched for by anything, so
+    the whole set is the undeclared-change decision, as it would be with no
+    owner at all."""
+    tree, paths = followed.get("tree") or ctx["gitRoot"], followed.get("paths") or []
+    before = followed.get("before") or {}
+    still = [p for p in paths if _path_digest(tree, p) == before.get(p)]
+    if still:
+        return None, decision(ctx, state, "undeclared-change", task, _clip(
+            "%s (bytes unchanged since the follow asked for `%s`)" % (
+                ", ".join(still), "`, `".join(followed.get("recipes") or [])), 120),
+            extra={"paths": paths})
+    word = {"answer": "widen", "paths": paths,
+            "basis": "written by `%s` on the drive's follow" % (
+                "`, `".join(followed.get("recipes") or []),)}
+    _mark(state, "undeclared", task, word)
+    write_state(ctx, state)
+    return word, None
+
+
 def integrate_member(ctx, state, phase, task):
     """Carry a wave member's tree into the phase tree once per start, and
     re-gate on the phase tree where the integration overlapped a sibling, cannot
     say whether it did, or widened the scope. A follower the integration
     reproduced is widened on its owner's basis; undeclared paths only a browser
-    recipe writes are the orchestrator's follow, then widened. None when the
-    close may run, else the decision or the stop."""
+    recipe writes are the orchestrator's follow, and on the next drive the paths
+    whose bytes that run moved are widened - one it left unmoved makes the set
+    the undeclared-change decision. None when the close may run, else the
+    decision or the stop."""
     held = _marked(state, "integrated", task)
     if held is None:
         prior = (state.get("integrated") or {}).get(task["id"])
         if prior:
             reopen_integration(ctx, task["id"])
         word = _marked(state, "undeclared", task) or {}
+        followed = None if word else _spend(state, "shotFollow", task)
+        if followed:
+            write_state(ctx, state)
+            word, stop = _after_shot_follow(ctx, state, task, followed)
+            if stop is not None:
+                return stop
         if word.get("answer") == "widen":
             stop = widen_task(ctx, state, task, word.get("paths") or [],
                               word.get("basis") or "widened by the integration answer")
@@ -1809,12 +1854,11 @@ def integrate_member(ctx, state, phase, task):
             shots = [r for r in asked.get("browser") or [] if r.get("path") in paths]
             if shots and len(shots) == len(paths) and not word:
                 # Bytes a browser wrote cannot be reproduced here: the recipe is
-                # the orchestrator's to run in the member's tree, and what it
-                # wrote is then widened on that basis.
+                # the orchestrator's to run in the member's tree. Nothing is
+                # widened yet - the next drive reads which bytes that run moved.
                 recipes = sorted(set(r["recipe"] for r in shots))
-                _mark(state, "undeclared", task, {"answer": "widen", "paths": paths,
-                                                  "basis": "written by `%s` on the "
-                                                  "drive's follow" % ("`, `".join(recipes),)})
+                _mark(state, "shotFollow", task, _shot_follow(os.path.join(
+                    ctx["gitRoot"], answer.get("tree") or ctx["gitRoot"]), paths, recipes))
                 write_state(ctx, state)
                 return follow_said(ctx, task["id"], recipes, project_relative(
                     ctx, answer.get("tree") or ctx["gitRoot"]))

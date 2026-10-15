@@ -757,8 +757,10 @@
         "severity": "med",
         "file": "plugins/audit/tests/test_detect_plan_skip.py:535-562",
         "issue": "The task invariant is 'every keyword a human arms by typing it is read through _config.owner_prompt'. The diff makes that true for detect-plan-skip.py only. .claude/hooks/arm-release-bypass.py:199 reads `payload.get('prompt')` itself, with no event or agent_id check, for the owner-typed #release-with-bugs keyword. one1 lints only detect-plan-skip.py, so nothing holds the repo-wide invariant. The claim covers only the plan-first bypass.",
-        "resolution": "Route arm-release-bypass.py through owner_prompt, loaded by path as that hook already loads _config. Or extend prompt_readers to .claude/hooks and the plugin hooks, and record the exception in the task if the hook cannot import it.",
-        "fixTask": "P125.100-0h5"
+        "resolution": "fixed in P125.100-0h5 (15aecf0eb6d3): Route arm-release-bypass.py through owner_prompt, loaded by path as that hook already loads _config. Or extend prompt_readers to .claude/hooks and the plugin hooks, and record the exception in the task if the hook cannot import it.",
+        "fixTask": "P125.100-0h5",
+        "commit": "15aecf0eb6d3",
+        "status": "fixed"
       },
       {
         "id": "P125-R100",
@@ -942,7 +944,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 1 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 2 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6989,7 +6991,7 @@
     {
       "id": "P125.100-0h5",
       "title": "fix P125-R99: The task invariant is 'every keyword a human arms by typing it ...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The task invariant is 'every keyword a human arms by typing it is read through _config.owner_prompt'. The diff makes that true for detect-plan-skip.py only. .claude/hooks/arm-release-bypass.py:199 reads `payload.get('prompt')` itself, with no event or agent_id check, for the owner-typed #release-with-bugs keyword. one1 lints only detect-plan-skip.py, so nothing holds the repo-wide invariant. The claim covers only the plan-first bypass.\n\nResolution asked: Route arm-release-bypass.py through owner_prompt, loaded by path as that hook already loads _config. Or extend prompt_readers to .claude/hooks and the plugin hooks, and record the exception in the task if the hook cannot import it.",
       "files": [
         "plugins/audit/tests/test_detect_plan_skip.py",
@@ -7018,14 +7020,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "15aecf0eb6d3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "arm-release-bypass.py now reads the owner's prompt through _config.owner_prompt (new typed_prompt, reaching _config via guard-release's _hooks_config; unloadable _config leaves it unarmed). Its rb16 subprocess payload gained hook_event_name. test_detect_plan_skip.py: prompt_readers takes a fields argument; new repo_prompt_readers scans plugins/audit/hooks and .claude/hooks except _config.py (message key excluded as guard rules carry one) and errors on an empty tree; case one2 holds real tree clean and a planted old-style reader reported. Hook selftest 19/19, test_detect_plan_skip 45/45. Full sweep: 334/335 files ok; the one failure, plugins/audit/tests/test__proc_group.py, raised PermissionError from os.killpg(pgid, 0) (sandbox), a file outside my files, left unfixed. Plan gate did not refuse the .claude/hooks edit.",
+        "descriptive": "The release-bypass keyword is now read only from a real owner prompt, and a repo-wide lint holds that invariant for all hooks."
       },
       "startedAt": "2026-10-15T03:42:10Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T04:22:13Z",
+      "verifiedBy": [
+        "one2 every hook the repo keeps, the plugin's and .claude/hooks, reads prompt text only through _config.owner_prompt (a second reader anywhere is reported by file)"
+      ],
       "notes": [
         {
           "at": "2026-10-15T03:41:27Z",
@@ -7052,6 +7056,18 @@
         "runId": "2026-10-15T04:22:11Z.c07f06",
         "status": "passed",
         "at": "2026-10-15T04:22:11Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "15aecf0eb6d3",
+        "at": "2026-10-15T04:22:13Z",
+        "basis": "a fix task for P125-R99: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-15T03:52:13Z",
+        "basis": "`python3 plugins/audit/tests/test_detect_plan_skip.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases one2 (house FAIL), but with the working tree's implementation the task's tests do not all pass (SELFTEST FAILED: 44/45 cases passed), so the red is not one the fix turns green - SELFTEST FAILED: 44/45 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -7115,7 +7131,12 @@
       "fixes": [
         "P125-R101"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T04:32:24Z.895dea",
+        "status": "passed",
+        "at": "2026-10-15T04:32:24Z"
+      }
     },
     {
       "id": "P125.102-0h5",
