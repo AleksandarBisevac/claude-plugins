@@ -8119,7 +8119,7 @@
     {
       "id": "P125.109-0h5",
       "title": "The locale-pinned integrate run reports the error it failed on, and its intermittent git add failure is found and fixed",
-      "status": "in_progress",
+      "status": "cancelled",
       "description": "Register F679. CI run 38715590987 (dbd9008f, windows-latest plain 1) failed once in test_integrate_task _world's git add -A under LC_ALL=C/PYTHONUTF8=0; the job re-ran green. _integrate_ascii_case clips the child's stderr from the head (clip_bytes(done.stderr, 600)), so the error line is lost, and _run prints git's stderr as a bytes repr. Make the failure diagnosable (tail of stderr, decoded git message), then find and fix the intermittent cause, or bound it with a reported retry - never a silent one.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py",
@@ -8153,10 +8153,10 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: every declared file is a test, so tdd's red-first run at HEAD passes with the fixed tests; re-added as regression with the same work"
       },
       "startedAt": "2026-10-15T11:43:10Z",
-      "completedAt": null,
+      "completedAt": "2026-10-15T12:03:40Z",
       "verifiedBy": [],
       "reviewPerTask": "phase"
     },
@@ -8175,6 +8175,49 @@
           "plugins/audit/tests/test_drive_phase.py: a task added to a sibling phase while a wave member is in flight leaves that member's records valid and its gate green"
         ],
         "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.111-0h5",
+      "title": "The locale-pinned integrate run reports the error it failed on (diagnosability for the intermittent git add failure)",
+      "status": "pending",
+      "description": "Register F679, re-added from cancelled P125.109 as regression: every declared file is a test, so the defect is in the tests and a red-first run at HEAD passes with them. CI run 38715590987 (dbd9008f, windows plain 1) failed once in test_integrate_task _world's git add -A under LC_ALL=C/PYTHONUTF8=0 and re-ran green. _integrate_ascii_case clipped the child's stderr from the head, and _run printed git's stderr as a bytes repr. The case reports the tail; _run decodes. Cause not established (candidates read from the code: the 30 s timeout over a freshly copied 302-file tree, antivirus on just-written files); the next failure will print it.",
+      "files": [
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_integrate_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a child suite that fails under the pinned locale is reported by the tail of its stderr, so the raised error's own line is in the message"
+        ],
+        "expectRedFirst": false,
         "gate": [
           "selftests",
           "validate",

@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "own-tests test__refs --selftest": "pass",
+    "sweep-selftests": "pass",
+    "measure-context --gate": "pass",
+    "test_drive_phase --stage sn-block": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T11:54:00Z",
+    "basis": "`python3 plugins/audit/tests/test__refs.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 351 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - commands/phase.md states as a step, not a tip, that the next phase starts in a fresh context - clear, then re-enter with /audit:phase and the next id (a numbered step of the run list, not a note beside it, carrying the wording of the drive's chain line; drive wording read 'clear context, then re-enter with /audit:phase' from 5 steps, 0 carry it) (house FAIL): SELFTEST FAILED: 350/351 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "phase.md step 4 (done) gains: 'A `chain:` line: clear context, then re-enter with `/audit:phase <next id>`.' Folded into step 4 rather than a step 5 because pv8 pins five numbered steps (0-4). No trim was needed: measure-context run form went 3844/3980 to 3921/3980 on the post-P125.82 tree, gate exit 0 before and after; no other line trimmed. New case in test__refs.py (after so6) reads the drive's chain wording from drive-phase.py by regex, splits the Run a phase section into numbered steps, and requires exactly one step carrying both the drive wording and '/audit:phase <next id>'. Checked: test__refs 351/351; measure-context --gate exit 0; test_drive_phase --stage sn-block 7/7 (sn4 pass); tools/sweep-selftests.py exit 0, 335/335 files ok.",
+    "descriptive": "phase.md now states the fresh-context chain as part of the run steps in the drive's own wording, locked by a case."
+  },
+  "testsAdded": [
+    "commands/phase.md states as a step, not a tip, that the next phase starts in a fresh context - clear, then re-enter with /audit:phase and the next id"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:dee42a00f8dba3bf41d330479af8411efe345012d366f81b9558c87b94931ffb\",\"dirtyDigest\":\"sha256:b42a5d7a486c41cb2bf639fab5318fbd95a04896f51e8946f955726f9c4b5132\",\"dirtyPaths\":{\"plugins/audit/commands/phase.md\":\"cf6ca0a0b43e61bc\",\"plugins/audit/tests/test__refs.py\":\"d0dcef43b8a8c469\"},\"head\":\"7539f557\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/commands/phase.md\",\"plugins/audit/tests/test__refs.py\"],\"scopeDigest\":\"sha256:8a4c4057d3dad4c8c2c017fa972dc78e70e6da2bc7cb2ecb9ad8d2e648e14df4\",\"v\":2}"
+}
