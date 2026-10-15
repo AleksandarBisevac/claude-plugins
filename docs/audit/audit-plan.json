@@ -3346,7 +3346,8 @@
       "P123.85-64p",
       "P123.92-64p",
       "P126.7",
-      "P125.32-0h5"
+      "P125.32-0h5",
+      "P125.88-0h5"
     ],
     "plugins/audit/scripts/governance/_journal_io.py": [
       "P29.3",
@@ -4080,7 +4081,8 @@
       "P125.113-0h5",
       "P128.23-0h5",
       "P128.24-0h5",
-      "P125.112-0h5"
+      "P125.112-0h5",
+      "P125.88-0h5"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -5215,7 +5217,8 @@
       "P123.21",
       "P123.81-64p",
       "P126.7",
-      "P125.32-0h5"
+      "P125.32-0h5",
+      "P125.88-0h5"
     ],
     "plugins/audit/tests/test__journal_io.py": [
       "P29.3",
@@ -8828,7 +8831,8 @@
       "P125.35-0h5",
       "P125.61-0h5",
       "P125.68-0h5",
-      "P125.110-0h5"
+      "P125.110-0h5",
+      "P125.88-0h5"
     ],
     "plugins/audit/tests/test_integrate_task.py": [
       "P124.4",
