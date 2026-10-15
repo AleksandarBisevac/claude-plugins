@@ -8869,6 +8869,52 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P125.119-0h5",
+      "title": "Every fixture git call and every locale-pinned child run reports the error it failed on, through one helper",
+      "status": "pending",
+      "description": "Register F679, second occurrence (CI 38778512513 at 2a13b801, windows cp1252 shards): the fm-block re-run under LC_ALL=C failed in _drive_follower_map's git add -A / commit (subprocess.run(..., check=True)), and the case clipped the child's stderr from the head (test_drive_phase ~6592), so git's message was lost again. P125.111 fixed one case; the class needs an invariant: a _harness helper for fixture git calls that raises with git's decoded stderr (CalledProcessError hides it), used by every fixture that runs git, and one tail-clip reporter for every locale-pinned child case. Then the next failure names its cause.",
+      "files": [
+        "plugins/audit/tests/_harness.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_integrate_task.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test_hooks.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a fixture git call that fails raises with git's own decoded message, and every locale-pinned child case reports the tail of the child's stderr, through one helper each"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
