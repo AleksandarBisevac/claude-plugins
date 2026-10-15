@@ -919,6 +919,177 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P128.18-0h5",
+      "title": "A fix task made from a finding carries its test file and a tests.add clause",
+      "status": "pending",
+      "description": "Register F674. `add --fixes` takes files from the finding text only and writes no tests.add, yet the task is tdd with expectRedFirst, so every fix executor stops for a widening. Read paths from path:symbol spellings, add the suite that tests each declared source, and write a tests.add clause from the resolution.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a fix task built from a finding whose file is spelled path:symbol declares that path, the suite that tests it, and a tests.add clause from the resolution"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P128.19-0h5",
+      "title": "A hand-run task gate measures the task tree, and the record names the tree it measured",
+      "status": "pending",
+      "description": "Register F675. run-test-gate --task --record with no --tree measured the project checkout for a task with its own wave tree and recorded GATE GREEN as its evidence; testedState carries no tree.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: a task gate recorded without --tree, for a task with a registered wave tree, is refused or measured in that tree, and testedState names the tree it measured"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P128.20-0h5",
+      "title": "The encoding pass summary says what it graded, not case counts it never took",
+      "status": "pending",
+      "description": "Register F677. The --encoding pass grades by exit code and debris only, yet prints \"0 migrated to tests/, 0 cases\" as if it had counted.",
+      "files": [
+        "tools/sweep-selftests.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/sweep-selftests.py: the encoding pass's summary names cases and migrated files as not counted, and the plain pass's summary still counts both"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P128.21-0h5",
+      "title": "The red-first helper judges an introduced attribute by its owner module, not a bare name anywhere",
+      "status": "pending",
+      "description": "Register F678. introduced() matched cli_basis as a local variable in audit-usage.py and refused a proof whose error named usage_ledger, which HEAD did not carry.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: an AttributeError naming module X is judged introduced from X's module-level bindings, so a same-named local in a sibling file does not veto the proof"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }
