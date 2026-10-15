@@ -321,6 +321,54 @@ def _cases(check):
               and M.plan_gate_step({}, st) == "nothing-running",
               repr((M.plan_gate_mode({}, st), M.plan_gate_step({}, st))))
 
+        # A crash while reading a later phase must relax the gate, never invent a
+        # denial: the half-built state used to carry hasPhases without a verdict
+        # on running, which is the deny rung. The seam is the loader, so a phase
+        # the real module would accept can be made to raise.
+        write_manifest({"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "done", "tasks": []},
+            {"id": "P2", "title": "q", "status": "pending", "tasks": []}]})
+
+        class _Seam(object):
+            TERMINAL = ("done",)
+
+            @staticmethod
+            def effective_phase_status(phase):
+                return phase.get("status")
+
+            @staticmethod
+            def signoff_due(phase):
+                return False
+
+            @staticmethod
+            def phase_running(phase):
+                if phase.get("id") == "P2":
+                    raise ValueError("malformed phase")
+                return False
+
+        _real_loader = M._load_scripts_module
+        M._load_scripts_module = lambda *_a, **_k: _Seam
+        try:
+            st_boom = M.manifest_state(tmp_f, rel)
+            # deny twin: the same plan, nothing raising, still answers deny.
+            _Seam.phase_running = staticmethod(lambda phase: False)
+            st_ok = M.manifest_state(tmp_f, rel)
+        finally:
+            M._load_scripts_module = _real_loader
+        check("a phase after the first that raises while the plan state is "
+              "read leaves the gate at the least aggressive tier the plan "
+              "supports, never deny (f4e state %r)" % (st_boom,),
+              st_boom["exists"] is True and st_boom["hasPhases"] is False
+              and st_boom["phaseRunning"] is False
+              and M.plan_gate_mode({}, st_boom) == "warn"
+              and M.plan_gate_step({}, st_boom) == "no-phase")
+        check("f4f SECOND DIRECTION: the same well-formed plan with nothing "
+              "running still answers deny on the nothing-running step: %r"
+              % (st_ok,),
+              st_ok["hasPhases"] is True
+              and M.plan_gate_mode({}, st_ok) == "deny"
+              and M.plan_gate_step({}, st_ok) == "nothing-running")
+
         write_manifest({"meta": {"version": 2}, "phases": []})
         st = M.manifest_state(tmp_f, rel)
         check("f4b a manifest holding NO phase says so, and keeps the warn "

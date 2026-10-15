@@ -7304,7 +7304,12 @@
       "fixes": [
         "P125-R76"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T18:53:00Z.018b39",
+        "status": "passed",
+        "at": "2026-10-15T18:53:00Z"
+      }
     },
     {
       "id": "P125.95-0h5",

@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_commit_audit_state.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T18:37:27Z",
+    "basis": "`python3 plugins/audit/tests/test_commit_audit_state.py --selftest` in a throwaway tree at HEAD exited 1, but no case --case names failed an assertion as the task's own: cas60 (house FAIL) - SELFTEST FAILED: 48/49 cases passed; --case a records commit whose phase shard owes index rows HEAD lacks is refused naming the rows and the commit-manifest-index remedy, as commit-task-work refuses names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Moved owed_index_rows (the HEAD-shard-held filter) and index_rows_refusal from commit-task-work.py into _scoped_commit.py; the refusal now takes the command to re-run as an argument. commit-task-work calls the shared pair; its sentence now says 'then run commit-task-work.py again' where it said 'then run this again', and nothing else changed. commit-audit-state.commit_state now asks _scoped_commit.owed_index_rows after the pending check and before staging; when rows are owed it refuses with the shared sentence (naming each row, commit-manifest-index.py <manifest> <phase>, and commit-audit-state.py) and adds answer.indexRows. Module docstring says why. Added three cases to test_commit_audit_state.py in a new staged block, index-row-block: cas60 (tests.add clause verbatim, then detail: owed row refused, exit 1, HEAD unmoved, nothing staged, indexRows == [[src/new.py, P1.2]]), cas61 (a shard owing none commits; the guard-always-fires twin), cas62 (a row owed only for a task new in this commit, P1.3, is not refused). Results: test_commit_audit_state 49/49, test_commit_task_work 120/120, test__scoped_commit 31/31, test_commit_manifest_index 37/37, test__invariants 134/134, all exit 0. tools/sweep-selftests.py exit 0 (335/335 files, 16434 cases). tools/sweep-selftests.py --encoding cp1252 exit 0 (both halves ran). ruff and vermin on the changed files exit 0. Neither sweep is the brief's own-tests gate; they ran because the orchestrator asked for them.",
+    "descriptive": "commit-audit-state now refuses a shard owing index rows HEAD lacks, through the same shared filter and sentence as commit-task-work, so no records commit can leave a plan at HEAD that fails 'missing from fileIndex'."
+  },
+  "testsAdded": [
+    "cas60 a records commit whose phase shard owes index rows HEAD lacks is refused naming the rows and the commit-manifest-index remedy, as commit-task-work refuses",
+    "cas61 a shard owing no index rows commits as before",
+    "cas62 a row owed only for a task new in this commit is not refused"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:2ea10a775ab58fcbf5a4a0b704eb600a57a9d0d7ff2ae8823d234e7f0fbace4d\",\"dirtyDigest\":\"sha256:e59496e561c60e76fe92d557d41494c6cc958e8a6ed03f4301ffa6288c917f42\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_scoped_commit.py\":\"73c522b46a974f67\",\"plugins/audit/scripts/governance/commit-audit-state.py\":\"a6de1d3362411932\",\"plugins/audit/scripts/governance/commit-task-work.py\":\"8b40f64e6e870a3d\",\"plugins/audit/tests/test_commit_audit_state.py\":\"8308ee34fe337fe4\"},\"head\":\"896b8d5e\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_scoped_commit.py\",\"plugins/audit/scripts/governance/commit-audit-state.py\",\"plugins/audit/scripts/governance/commit-task-work.py\",\"plugins/audit/tests/test__scoped_commit.py\",\"plugins/audit/tests/test_commit_audit_state.py\",\"plugins/audit/tests/test_commit_task_work.py\"],\"scopeDigest\":\"sha256:e6ff726f9cfd7257537c357074af557c5e250dc835a53ea18974e53f540320cf\",\"v\":2}"
+}

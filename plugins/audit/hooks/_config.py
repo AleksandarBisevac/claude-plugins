@@ -3529,6 +3529,11 @@ def declaring_tasks(root, manifest_rel, rel):
     return out
 
 
+_NO_PHASE_STATE = {"exists": False, "hasPhases": False, "phaseRunning": False,
+                   "runningPhase": None, "staleClosedPhase": None,
+                   "signoffDuePhase": None, "signoffDueStatus": None}
+
+
 def manifest_state(root, manifest_rel):
     """How much the plan gate actually knows:
     {"exists": bool, "hasPhases": bool, "phaseRunning": bool,
@@ -3583,9 +3588,7 @@ def manifest_state(root, manifest_rel):
 
     Never raises. On any error it reports the LEAST aggressive state, so a crash in
     here can only relax the gate, never invent a denial."""
-    state = {"exists": False, "hasPhases": False, "phaseRunning": False,
-             "runningPhase": None, "staleClosedPhase": None,
-             "signoffDuePhase": None, "signoffDueStatus": None}
+    state = dict(_NO_PHASE_STATE)
     try:
         path = Path(root) / manifest_rel
         if not path.exists():
@@ -3619,7 +3622,11 @@ def manifest_state(root, manifest_rel):
                 state["signoffDuePhase"] = phase.get("id")
                 state["signoffDueStatus"] = phase.get("status")
     except Exception:
-        pass
+        # Rebuilt rather than returned half-built: by this point `hasPhases`
+        # may be set with no verdict on running, and that pair is the deny rung.
+        # Only `exists` survives, since it was established before anything
+        # could raise, so the tier falls to the no-phase step.
+        return dict(_NO_PHASE_STATE, exists=state["exists"])
     return state
 
 

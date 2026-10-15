@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "own-test test__config.py --selftest": "pass",
+    "bench-hooks --gate": "pass",
+    "sweep-selftests": "pass",
+    "sweep-selftests --encoding cp1252": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T18:29:47Z",
+    "basis": "`python3 plugins/audit/tests/test__config.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 345 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - a phase after the first that raises while the plan state is read leaves the gate at the least aggressive tier the plan supports, never deny (f4e state {'exists': True, 'hasPhases': True, 'phaseRunning': False, 'runningPhase': None, 'staleClosedPhase': None, 'signoffDuePhase': None, 'signoffDueStatus': None}) (house FAIL): SELFTEST FAILED: 344/345 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "manifest_state in hooks/_config.py: the except branch now returns a fresh copy of a new module constant _NO_PHASE_STATE with only exists kept, instead of the half-built state; the initial state is built from the same constant. Chosen over setting hasPhases late because it holds the docstring promise for any raise at any point. SECURITY.md (plan gate graded, fails open; unreadable manifest -> advisory) agrees with the docstring, no conflict. Tests: seam replaces M._load_scripts_module with a module whose phase_running raises on the second phase -> exists True, hasPhases False, warn/no-phase; deny twin with the seam not raising -> deny/nothing-running. Gates: test__config 345/345; bench-hooks --gate exit 0 (only 3.14.7 measured); sweep-selftests exit 0 (335/335 files); --encoding cp1252 exit 0 (335/335). No new imports.",
+    "descriptive": "A crash while reading a later phase can no longer push the plan gate into deny; it falls to warn."
+  },
+  "testsAdded": [
+    "a phase after the first that raises while the plan state is read leaves the gate at the least aggressive tier the plan supports, never deny",
+    "f4f SECOND DIRECTION: the same well-formed plan with nothing running still answers deny on the nothing-running step"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:77e9d388f76e4673449cf66322514f44674da5d5d696797753e28b02df9ced0a\",\"dirtyDigest\":\"sha256:efe8101805ba1873b3cf3e354d08eb7efcd3fffb14ef95864c114e2949304a18\",\"dirtyPaths\":{\"plugins/audit/hooks/_config.py\":\"2619a5e08de0ec1f\",\"plugins/audit/tests/test__config.py\":\"b8cbea11f4750c5a\"},\"head\":\"896b8d5e\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/hooks/_config.py\",\"plugins/audit/tests/test__config.py\"],\"scopeDigest\":\"sha256:a04d88a2e364c5e25d49e4ea40eb384acf2e0499c9d493b2d101869356d03006\",\"v\":2}"
+}
