@@ -6394,7 +6394,12 @@
         "P125-R48",
         "P125-R49"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T11:10:31Z.407a05",
+        "status": "failed",
+        "at": "2026-10-15T11:10:31Z"
+      }
     },
     {
       "id": "P125.82-0h5",
@@ -8056,6 +8061,49 @@
         "mode": "tdd",
         "add": [
           "plugins/audit/tests/test_drive_phase.py: a child suite that fails under the pinned locale is reported by the tail of its stderr, so the raised error's own line is in the message"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.110-0h5",
+      "title": "A wave member's records are carried whole: the index and every phase it names, at one project commit",
+      "status": "pending",
+      "description": "Register F681, a regression from P125.35 (the records-of step). The drive carried the shared audit-plan.json fileIndex into a member's tree without the sibling phase file it references, so adding P128 tasks mid-wave made validate-manifest red in every member tree (14 findings on P125.81), each tree inconsistent in a different way. Carry all records at one project commit, or have the member's validate step read the project's records.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a task added to a sibling phase while a wave member is in flight leaves that member's records valid and its gate green"
         ],
         "expectRedFirst": true,
         "gate": [
