@@ -340,8 +340,10 @@
         "severity": "med",
         "file": "plugins/audit/tests/test_audit_lookup.py",
         "issue": "This commit rewrites compose_reviewer_brief and compose_phase_brief (clause-quoting section, tests.add lines, claim-last order) and the declared tests.add names the brief cases, but no case in the diff pins them (test_audit_lookup.py, test_drive_phase.py and test__filed_returns.py are unchanged here and at HEAD no case asserts CLAUSE_QUOTING_LINES, _tests_add_review_lines or the ordering). Deleting those lines leaves the swept suites green.",
-        "resolution": "Add cases asserting both briefs contain the clause rule and tests.add, and that '## Task' then '## Claim under review' are the last section.",
-        "fixTask": "P125.79-0h5"
+        "resolution": "fixed in P125.79-0h5 (f6403a168ad7): Add cases asserting both briefs contain the clause rule and tests.add, and that '## Task' then '## Claim under review' are the last section.",
+        "fixTask": "P125.79-0h5",
+        "commit": "f6403a168ad7",
+        "status": "fixed"
       },
       {
         "id": "P125-R40",
@@ -723,8 +725,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/status/audit-lookup.py:607-626 compose_executor_brief and executor_return_lines/submit_command; plugins/audit/tests/test_audit_lookup.py bo1",
         "issue": "The docstring claims that two briefs 'open on the same bytes up to the task's id, which is the prefix a prompt cache can reuse'. The task asks for 'stable text first, task-specific part last'. `## Your return`, placed right after the rules line, holds the `submit <taskId> ... --project-dir ... -- <the task's red-first command>` block, so the id and the task's own command appear in the first block and the shared prefix is the rules line only. bo1 tests only that headings appear in order, so it certifies the contract section as stable when it is not. Still true at HEAD.",
-        "resolution": "Make the return contract text stable, with the submit command's task-specific line (id, tail command) placed after the task sections or given as a placeholder. Add a case asserting that two briefs for different tasks share a byte prefix of useful length.",
-        "fixTask": "P125.79-0h5"
+        "resolution": "fixed in P125.79-0h5 (f6403a168ad7): Make the return contract text stable, with the submit command's task-specific line (id, tail command) placed after the task sections or given as a placeholder. Add a case asserting that two briefs for different tasks share a byte prefix of useful length.",
+        "fixTask": "P125.79-0h5",
+        "commit": "f6403a168ad7",
+        "status": "fixed"
       },
       {
         "id": "P125-R91",
@@ -986,7 +990,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 23 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 25 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6157,7 +6161,7 @@
     {
       "id": "P125.79-0h5",
       "title": "the executor and reviewer briefs are pinned and their stable prefix is real",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase-review findings fixed together (one theme, shared files).\n\nP125-R39: This commit rewrites compose_reviewer_brief and compose_phase_brief (clause-quoting section, tests.add lines, claim-last order) and the declared tests.add names the brief cases, but no case in the diff pins them (test_audit_lookup.py, test_drive_phase.py and test__filed_returns.py are unchanged here and at HEAD no case asserts CLAUSE_QUOTING_LINES, _tests_add_review_lines or the ordering). Deleting those lines leaves the swept suites green.\n\nResolution asked: Add cases asserting both briefs contain the clause rule and tests.add, and that '## Task' then '## Claim under review' are the last section.\n\nP125-R90: The docstring claims that two briefs 'open on the same bytes up to the task's id, which is the prefix a prompt cache can reuse'. The task asks for 'stable text first, task-specific part last'. `## Your return`, placed right after the rules line, holds the `submit <taskId> ... --project-dir ... -- <the task's red-first command>` block, so the id and the task's own command appear in the first block and the shared prefix is the rules line only. bo1 tests only that headings appear in order, so it certifies the contract section as stable when it is not. Still true at HEAD.\n\nResolution asked: Make the return contract text stable, with the submit command's task-specific line (id, tail command) placed after the task sections or given as a placeholder. Add a case asserting that two briefs for different tasks share a byte prefix of useful length.",
       "files": [
         "plugins/audit/tests/test_audit_lookup.py",
@@ -6188,14 +6192,18 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f6403a168ad7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-lookup.py: executor_return_lines() is now the stable contract text (no id, no command) at the top; the task-specific submit block moved to a closing section after Retry (executor_submit_lines, SUBMIT_SECTION); docstring corrected. test_audit_lookup.py: bf3c adapted; added bo3 (two briefs for different tasks share a prefix covering the rules line plus return contract, id absent), bo4 (reviewer brief: clause rule once, tests.add section, last headings Task, Claim under review, Your return), bo5 (phase brief: clause rule once, tests.add per task, Task followed by Claim under review). Attempt 2: fixed two E225 lint errors (missing whitespace around = / ==) in test_audit_lookup.py. Evidence: ruff check plugins/audit tools -> All checks passed; vermin clean (min 3.7, no violations); test_audit_lookup.py --selftest 103/103; python3 tools/sweep-selftests.py 335/335 files ok.",
+        "descriptive": "Executor/reviewer briefs now have a genuinely stable shared prefix, and cases pin the clause rule, tests.add and claim-last ordering."
       },
       "startedAt": "2026-10-15T07:53:19Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T08:09:25Z",
+      "verifiedBy": [
+        "bo3",
+        "bo4",
+        "bo5"
+      ],
       "notes": [
         {
           "at": "2026-10-15T03:41:27Z",
@@ -6215,20 +6223,37 @@
         "runId": "2026-10-15T08:09:23Z.cdffd7",
         "status": "passed",
         "at": "2026-10-15T08:09:23Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "f6403a168ad7",
+        "at": "2026-10-15T08:09:25Z",
+        "basis": "a fix task for P125-R39, P125-R90: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-15T07:58:58Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_lookup.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 103 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bf3c (house FAIL), bo3 (house FAIL): SELFTEST FAILED: 101/103 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.80-0h5",
       "title": "the red-first helper reads every missing-export spelling and a line-reporter fai",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase-review findings fixed together (one theme, shared files).\n\nP125-R44: Task names the 'is not exported' error; only the node ESM wording 'does not provide an export named' is read, the row is limited to runners vitest/jest/None (a playwright run is excluded), and se1/se2 exercise only that wording. A rollup/vite `\"x\" is not exported by \"y\"` error is still not an --introduces proof. Still true at HEAD (stamp-verification.py:687).\n\nResolution asked: Add the 'is not exported by' spelling (named group for the export) to the row and a case for it, or state the wording the testbed actually printed.\n\nP125-R45: playwright_line_cases marks every entry `assertion: True` ('playwright: failed'), so a line-reporter run failing on a timeout, a refused connection or a crash proves red as 'a task's own case failing an assertion'. The docstring admits it; the weakening is in the proof the red word rests on. Still true at HEAD (_runner_output.py:698).\n\nResolution asked: Mark line-reporter entries `assertion: None/unknown` and let red say it proved a failure, not an assertion, or require the JSON reporter for `proved`.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
-        "plugins/audit/tests/test_stamp_verification.py"
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/scripts/governance/_runner_output.py",
+        "plugins/audit/tests/test__runner_output.py"
       ],
       "tests": {
         "mode": "tdd",
-        "add": [],
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: a rollup 'is not exported by' message is read as a missing export",
+          "plugins/audit/tests/test__runner_output.py: a Playwright line-reporter failure is not marked an assertion"
+        ],
         "expectRedFirst": true,
         "gate": [
           "selftests",
@@ -6247,14 +6272,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T08:09:31Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -6266,7 +6291,8 @@
       "fixes": [
         "P125-R44",
         "P125-R45"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.81-0h5",
@@ -7739,14 +7765,16 @@
     {
       "id": "P125.106-0h5",
       "title": "Every agent the plugin ships runs at effort high or above, held by a case",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Owner decision (2026-10-15): whatever model an agent runs, its effort is at least high. Today audit-executor and audit-explorer declare `effort: medium` and guide declares `effort: low`; only audit-reviewer is high. Set every agent under plugins/audit/agents/ to `effort: high` (keep each `model:` as it is), and add a case that reads every agent file's frontmatter and fails when an effort is missing or below high, naming the file - so a new agent cannot ship at a lower effort. If any document states an agent's effort (README, PLUGIN-BUILD-GUIDE.md, the agents' own text), it must say high.",
       "files": [
         "plugins/audit/agents/audit-executor.md",
         "plugins/audit/agents/audit-explorer.md",
         "plugins/audit/agents/guide.md",
         "plugins/audit/agents/audit-reviewer.md",
-        "plugins/audit/tests/test__refs.py"
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/tests/test__help.py",
+        "docs/research/token-efficiency-audit.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -7771,21 +7799,27 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T08:34:54Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T08:34:36Z.5173c8",
+        "status": "passed",
+        "at": "2026-10-15T08:34:36Z"
+      }
     },
     {
       "id": "P125.107-0h5",
       "title": "The pricing and CLI-cost remainder: one loader, a recorded _default, the CLI figure on every surface, one label",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Finishes phase-review findings P125-R7, R9 and R4 where their fix tasks stopped at their files. (R7) `_usage_core` loads hooks/_config through a hand-rolled importlib copy because `_deps.LAYERS` puts `_loader` one layer above it. `_loader` is a generic helper: if it imports nothing above `_usage_core`'s layer, move it down so `_usage_core` uses it, delete the copy, regenerate the module map (`_deps.py --write-map`); if it cannot move, record the reason on the task and beside the copy. (R9) `_usage_core._rate_via` already answers '_default' when the table's own _default priced a model, and `priced_at_read` reports viaDefault in its mix; nothing writes `rateVia` on the stamp (usage_ledger.py, around line 825) and no surface says it - write it at meter time and have `rate_basis_phrase` state how many rows a declared _default priced, naming the models. (R4) the CLI's own per-session figure (cursor `cliCost`, read by audit-usage and the panel browse dialog) is still not printed by the report (`_usage_load.py` must carry it into the payload, `_report_usage.py` render it) nor by the panel's main usage view (`usage-view.js`); print it beside the plugin's reading wherever they differ, labelled as the CLI's estimate. One home for the label text ('the CLI's estimate, recorded at meter time'), today copied in audit-usage._cli_basis and _panel_usage._CLI_BASIS. Screenshots are the orchestrator's to capture; name them if stale.",
       "files": [
         "plugins/audit/scripts/_loader.py",
@@ -7837,16 +7871,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T08:09:29Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
