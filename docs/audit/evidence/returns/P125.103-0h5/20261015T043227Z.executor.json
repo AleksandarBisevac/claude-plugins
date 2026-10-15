@@ -1,0 +1,18 @@
+{
+  "gates": {
+    "selftests": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task with expectRedFirst false; the added check widens an existing case to a second child suite and was run green",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Chose (a). tools/sweep-selftests.py locale_decision pins no locale on Windows (nt) and drops the pin when a child reports non-UTF-8 file names, so the sweep's --encoding pass is not a whole-suite ASCII cover on every platform; (b) alone would leave those with no ASCII run. Added _integrate_ascii_case to plugins/audit/tests/test_drive_phase.py (constant INTEGRATE_SUITE), called from _ascii_locale_cases: runs test_integrate_task.py --selftest whole as a child under ASCII_ENV, checks exit 0 and tally passed==total>0. Manually confirmed that suite gives 27/27 under LC_ALL=C LANG=C PYTHONUTF8=0 (rc 0, ~24s). Full sweep python3 tools/sweep-selftests.py: 335/335 files ok. Only file changed: plugins/audit/tests/test_drive_phase.py. The drive suite's other blocks are still not re-run under ASCII; only fm-block and the integrate suite are.",
+    "descriptive": "The ASCII-locale case now also runs the whole integrate suite, closing the clause-3 gap."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_drive_phase.py: under a locale whose preferred encoding is ASCII, the integrate suite runs whole and every case it reports passes"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:238cb326f03e44c65c67f56d3fa4993b95139cbacf9d5d588a1e7ec6e712ded2\",\"dirtyDigest\":\"sha256:c77cb05772f2f258100317a5cbbd99801348c0f6b2a677e2a211847f1a6a9c32\",\"dirtyPaths\":{\"plugins/audit/tests/test_drive_phase.py\":\"92b1b7881b90bba1\"},\"head\":\"baf36eaf\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:839d202817596de9e37a82f04241ddef1ded105be2578e7cf6c5b3b485bf05b4\",\"v\":2}"
+}

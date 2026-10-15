@@ -774,8 +774,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:1757-1770",
         "issue": "For needsBrowser owners, integrate_member marks {answer: 'widen', paths: all undeclared paths} and prints follow_said before any byte check. The next drive widens and integrates whatever the member's tree holds under docs/screenshots/, whether or not the orchestrator ran the recipe. This differs from the clause that a path whose bytes the recipe does not reproduce stays the undeclared-change decision, and it is the one follower class with no verification. The capture-screenshots.mjs --follower-for branch (tools/capture-screenshots.mjs:8455-8485) has no test in this commit; tests.add and ra31/g11 cover the Python owners only.",
-        "resolution": "Mark the widen only after the orchestrator's run is recorded, or compare the tree's bytes before and after the recipe. Add a test that drives capture-screenshots.mjs --follower-for (claims docs/screenshots/x.png, nothing outside) and one where a browser path stays a decision if the recipe was not run.",
-        "fixTask": "P125.101-0h5"
+        "resolution": "fixed in P125.101-0h5 (baf36eaf65e2): Mark the widen only after the orchestrator's run is recorded, or compare the tree's bytes before and after the recipe. Add a test that drives capture-screenshots.mjs --follower-for (claims docs/screenshots/x.png, nothing outside) and one where a browser path stays a decision if the recipe was not run.",
+        "fixTask": "P125.101-0h5",
+        "commit": "baf36eaf65e2",
+        "status": "fixed"
       },
       {
         "id": "P125-R102",
@@ -944,7 +946,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 2 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 3 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -5625,7 +5627,7 @@
     {
       "id": "P125.74-0h5",
       "title": "fix the release pipeline: verify after the commit, the CI ref the push made, ski",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase-review findings fixed together (one theme, shared files).\n\nP125-R21: verify-release (sh tools/verify.sh --release) runs BEFORE the release commit. verify.sh --release ends with 'HEAD carries the published pages' (check-rendered-artifacts.py --against-commit), and tools/check-rendered-artifacts.py / CONTRIBUTING.md state that this arm is red for as long as a re-rendered page is uncommitted. The bump and followers steps always re-render version-stamped pages, so on a real run verify-release cannot pass and the pipeline stops there every time. The selftest's FakeRunner returns (0, '') for the verify.sh call, so the order is never exercised.\n\nResolution asked: Run commit before verify-release (or run the --before-commit half before the commit and the full --release after it), and add a case whose fake verify.sh answer depends on whether a commit was recorded.\n\nP125-R22: wait_ci resolves the pushed branch with `git rev-parse ci/v<version>`, but step_push_ci_branch pushes `HEAD:refs/heads/ci/v<version>` and creates no local branch; only refs/remotes/origin/ci/v<version> exists. Checked in a scratch repo: after that push `git rev-parse ci/v1.2.3` exits 128 ('unknown revision') while `git rev-parse origin/ci/v1.2.3` resolves. So with --push the wait-ci step always stops 'could not resolve ci/v... to a commit'. rl3/rl4/rl5 stub `git rev-parse ci/v9.9.9` to succeed, so no case can fail on this.\n\nResolution asked: Resolve the SHA from HEAD at push time (store it in state with ciBranch) or use `git rev-parse origin/<branch>`/`git ls-remote origin refs/heads/<branch>`, and make the fake runner answer rev-parse of a bare ci/ ref with failure.\n\nP125-R23: A run without --push records push-ci-branch, wait-ci, push-main-tag, gh-release and check-published as status 'done' ('skipped: no --push given'), and run_pipeline skips any step already done. A later `release.py run --version X --push` therefore finds every remote step done, publishes nothing and prints 'RELEASE vX COMPLETE'; the local tag step has already run too. rl2b asserts exactly this recording as intended. The documented dry-run-then-push use ends in a false success.\n\nResolution asked: Record a skipped remote step as 'skipped' (not 'done') and treat it as pending when --push is given, or refuse a --push resume over a state file whose remote steps were skipped; add a case that runs without --push and then with it and expects the push.\n\nP125-R25: Clause 'including resume after a stop at each step' is met only for the CI step (rl3/rl4). No case stops at bump, changelog, followers, verify-release, commit, push, tag, push-main-tag or gh-release and resumes, which is how findings 1 to 3 survived a green selftest.\n\nResolution asked: Drive a table of steps, failing each in turn with the fake runner and resuming, asserting the earlier steps do not re-run and the failed one does.\n\nP125-R98: The task says 'rl8, and any case asserting on the fake runner's call list, prints the whole call list on failure ... Clip the message'. Only rl8 was clipped. rl2 still formats '%r' % (runner.calls,) unclipped (also the only other call-list print at :751-756). It is bounded by the new call_limit=200 but not clipped. The clause is contradicted for rl2.\n\nResolution asked: Route rl2's message through excerpt(repr(runner.calls)) like rl8 and rl8b. Optionally add a helper that every call-list message uses.",
       "files": [
         "tools/release.py",
@@ -5652,20 +5654,24 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T04:32:32Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
         {
           "at": "2026-10-15T03:41:27Z",
           "text": "scope: tools/release.py, every path the finding(s) P125-R21, P125-R22, P125-R23, P125-R25, P125-R98 name"
+        },
+        {
+          "at": "2026-10-15T04:45:34Z",
+          "text": "Red-first proved by the orchestrator, one reverting mutation per high finding in a scratch copy of the task's tools/release.py (inline cases, so the helper had no HEAD copy to hold them): verify-release back before commit -> 17/39, FAIL rl2/rl2b/rl2d; skipped remote steps recorded done -> 37/39, FAIL rl2b/rl2c; wait-ci asking the bare branch with no stored sha -> 22/39, FAIL rl2c/rl12/rl13; unmutated 39/39."
         }
       ],
       "fixes": [
@@ -5674,7 +5680,8 @@
         "P125-R23",
         "P125-R25",
         "P125-R98"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.75-0h5",
@@ -7073,7 +7080,7 @@
     {
       "id": "P125.101-0h5",
       "title": "fix P125-R101: For needsBrowser owners, integrate_member marks {answer: 'wide...",
-      "status": "in_progress",
+      "status": "done",
       "description": "For needsBrowser owners, integrate_member marks {answer: 'widen', paths: all undeclared paths} and prints follow_said before any byte check. The next drive widens and integrates whatever the member's tree holds under docs/screenshots/, whether or not the orchestrator ran the recipe. This differs from the clause that a path whose bytes the recipe does not reproduce stays the undeclared-change decision, and it is the one follower class with no verification. The capture-screenshots.mjs --follower-for branch (tools/capture-screenshots.mjs:8455-8485) has no test in this commit; tests.add and ra31/g11 cover the Python owners only.\n\nResolution asked: Mark the widen only after the orchestrator's run is recorded, or compare the tree's bytes before and after the recipe. Add a test that drives capture-screenshots.mjs --follower-for (claims docs/screenshots/x.png, nothing outside) and one where a browser path stays a decision if the recipe was not run.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -7102,14 +7109,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "baf36eaf65e2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py integrate_member: a browser-only undeclared-change no longer marks {answer: widen} at the follow. It leaves a `shotFollow` mark (_shot_follow) holding the member tree and each path's file_hash as the follow found it, and prints the follow. On the next drive, with no human word, _after_shot_follow spends that mark and re-hashes each path: if every path's bytes moved it marks widen on the follow basis (old path continues: widen_task, integrate --undeclared widen, re-gate); if any path is unchanged the whole set becomes the undeclared-change decision, its why naming the unchanged paths. _path_digest reuses _journal_io.file_hash (a local sha256 site in drive-phase.py turned test__filed_returns ds1 red on the first sweep; fixed by reuse). test_drive_phase.py (outside the declared files; the plan gate allowed the Edit): fm2 moved out of fm-block into a new fm2-block (_follower_shot_cases, registered in STAGES) with its fixture lifted into _shot_owner_wave/_drive_shot_wave; added fm3 (recipe left unrun -> decision names docs/shot.png, scope not widened, task not closed, executor bytes still in the tree) and fm4 (node tools/capture-screenshots.mjs --follower-for over docs/screenshots/x.png, docs/screenshots-old/x.png, docs/x.png, README.md yields exactly one browser record for docs/screenshots/x.png; SKIP printed when node is absent, the convention test__refs uses). fm4 passes on HEAD, since the .mjs branch already exists; it was shown able to fail by a mutation in a scratch copy of tools/ (filter on the prefix without its trailing slash -> a second record for docs/screenshots-old/x.png). capture-screenshots.mjs not edited. Runs: --stage fm2-block on fixed code 3/3; fm2/fm/fw/fh blocks 7/7; test__filed_returns 94/94; full sweep python3 tools/sweep-selftests.py exit 0, 335/335 files ok; ruff and vermin clean on both files.",
+        "descriptive": "A browser follower is widened only when the drive sees the recipe moved its bytes; an unrun recipe leaves the path an undeclared-change decision."
       },
       "startedAt": "2026-10-15T03:42:12Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T04:32:26Z",
+      "verifiedBy": [
+        "fm3 a browser path whose bytes did not move under the recipe stays the undeclared-change decision (the follow printed, the drive called again with the recipe unrun)",
+        "fm4 capture-screenshots.mjs --follower-for claims docs/screenshots/x.png and nothing outside (one browser record for the capture path)"
+      ],
       "notes": [
         {
           "at": "2026-10-15T03:41:27Z",
@@ -7136,6 +7146,18 @@
         "runId": "2026-10-15T04:32:24Z.895dea",
         "status": "passed",
         "at": "2026-10-15T04:32:24Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "baf36eaf65e2",
+        "at": "2026-10-15T04:32:26Z",
+        "basis": "a fix task for P125-R101: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "could-not-prove",
+        "at": "2026-10-15T04:00:56Z",
+        "basis": "P125.101-0h5 declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P125.101-0h5 declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+        "source": "red-first-helper"
       }
     },
     {
@@ -7220,7 +7242,7 @@
     {
       "id": "P125.103-0h5",
       "title": "fix P125-R108: Clause (3) says 'run the drive and integrate suites with LC_AL...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Clause (3) says 'run the drive and integrate suites with LC_ALL=C PYTHONUTF8=0 ... and add that run as a case'. The al-block case runs one block of one suite (ASCII_BLOCK = 'fm-block') under the ASCII locale. The integrate suite (test_integrate_task.py) and the other drive blocks have no case. The executor's 27/27 integrate run was a one-off command, not a case. The scope is narrowed against the clause.\n\nResolution asked: Either add the integrate suite's stage to the ASCII re-run, or record in the case's docstring that the sweep's --encoding pass (P125.69) is the whole-suite cover. If the latter, cite it, because it is a different gate.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py",
@@ -7247,14 +7269,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T04:32:27Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -7273,12 +7295,13 @@
       ],
       "fixes": [
         "P125-R108"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.104-0h5",
       "title": "fix P125-R24: guard-release treats a tools/release.py invocation as a publishing command",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase-review finding P125-R24 (P125.11's clause 'guard-release learns to treat an invocation of tools/release.py as a publishing command so the #release-with-bugs bypass still governs it' was not implemented; the declared test was not written). Command-reading code in a guard hook: written by the orchestrator, not an agent. Add the release.py arm to the guard's publisher classification - an invocation of tools/release.py whose arguments include --push - with a deny case and the allow twin (a release.py run without --push, and an unrelated python3 tools/x.py --push).",
       "files": [
         ".claude/hooks/guard-release.py",
@@ -7307,14 +7330,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T04:32:29Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -7325,7 +7348,8 @@
       ],
       "fixes": [
         "P125-R24"
-      ]
+      ],
+      "reviewPerTask": "phase"
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",

@@ -1,0 +1,28 @@
+{
+  "gates": {
+    "own-tests: python3 tools/release.py --selftest": "pass",
+    "selftests: python3 tools/sweep-selftests.py": "pass",
+    "lint (ruff check tools/release.py; vermin -t=3.8- tools/release.py)": "pass"
+  },
+  "redFirst": {
+    "status": "could-not-prove",
+    "at": "2026-10-15T04:44:41Z",
+    "basis": "P125.74-0h5 declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P125.74-0h5 declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/release.py only. (1) STEPS reordered so commit precedes verify-release; docstring says why (verify.sh --release's --against-commit arm is red while a re-render is uncommitted) and that a red verify leaves only a local commit to amend. (2) step_push_ci_branch reads `git rev-parse HEAD` before `git push origin HEAD:refs/heads/ci/v<v>` and records ciSha in the state; wait_ci(ctx, ref, sha=None) takes the known sha and resolves ref locally only when none is given (kept for `ci <ref>`); step_wait_ci uses state ciSha, falling back to `git rev-parse origin/<branch>`, never the bare ci/ name. (3) The no --push skip moved out of five step functions into run_pipeline: a remote step is recorded status 'skipped' (step_done does not count it), so a later --push run over the same state runs it; a run that skipped any remote step ends with 'release vX prepared locally and nothing was published: ... skipped' plus a publish command instead of COMPLETE. (4) FakeRunner results may be callables; new _new_world()/_faithful_responses(): bare `git rev-parse ci/...` fails 128, origin/ci/... resolves only after the push, `git rev-parse HEAD` returns the head, verify.sh --release is red until `git commit` was recorded, gh run list reports the pushed sha. rl3/rl4 moved onto it (they previously stubbed the bare ci ref to succeed). New cases: rl2b rewritten (skipped not done), rl2c (no-push run then --push run publishes ci branch, main, tag, release, prints COMPLETE), rl2d (no-push run does not print COMPLETE), rl2e (--push run does not redo commit/tag/verify), rl12 (verify once, after commit, full --push run green), rl13 (no bare ci/ rev-parse; waits on recorded ciSha), rl15 (table has one row per STEPS entry), rl14 x12 (each step failed in turn, resumed: earlier steps print 'skipped (already done)' and their signature commands are absent from the resume runner, the failed step re-runs, resume ends 0; bump-version row seeds preflight done because no fake answer can fail it while letting preflight read the same file). (5) rl2 and rl8 call-list messages go through _call_list() = excerpt(repr(runner.calls)). Runs: `python3 tools/release.py --selftest` -> ALL PASS 39/39, exit 0; `ruff check tools/release.py` exit 0; `vermin -t=3.8- --no-tips --violations tools/release.py` exit 0; `python3 tools/sweep-selftests.py` in the tree -> exit 0, 335/335 files ok. CONTRIBUTING.md's release section defers the step list to the module docstring, so it needed no edit and was not touched.",
+    "descriptive": "tools/release.py now verifies after the release commit, waits on the commit it actually pushed, keeps a no-push run's remote steps pending for a later --push, and its selftest resumes from a stop at every step against a fake that answers like real git."
+  },
+  "testsAdded": [
+    "rl2c",
+    "rl2d",
+    "rl2e",
+    "rl12",
+    "rl13",
+    "rl14 (one per step, x12)",
+    "rl15",
+    "rl2b (rewritten)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:25cd6e75870fe6a3964fa599e2aca97935dcca9c2f1f1f33600c4b590dfd5dec\",\"dirtyDigest\":\"sha256:c39b27ad8fdc1369274244736dd6fff6f5efc6e955ec7e98a1a5942bc4fc9e22\",\"dirtyPaths\":{\"tools/release.py\":\"24490ab350489ef0\"},\"head\":\"baf36eaf\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/release.py\"],\"scopeDigest\":\"sha256:22833e972e97fc00f679e655b45b7dcfb9ce3164e3a404cd8c402320b9683936\",\"v\":2}"
+}

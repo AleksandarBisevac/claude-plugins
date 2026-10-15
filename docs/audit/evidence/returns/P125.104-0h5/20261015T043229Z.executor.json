@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "python3 .claude/hooks/guard-release.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py .claude/hooks/guard-release.py plugins/audit/tests/test__output.py plugins/audit/tests/test__deps.py plugins/audit/tests/test__refs.py": "pass",
+    "ruff check .claude/hooks/guard-release.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T04:37:08Z",
+    "basis": "`python3 .claude/hooks/guard-release.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 103 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code, the task's run with its inline suite .claude/hooks/guard-release.py laid over as HEAD's copy plus its 1 test hunk(s), 4 other hunk(s) held at HEAD), each passing with the working tree's implementation - gr4r (house FAIL): SELFTEST FAILED: 102/103 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "guard-release.py gains _release_push(cfg_mod, rest): the words the shell runs are tools/release.py run directly or by a Python interpreter (interpreter options stepped over, -W/-X/-Q with their value), with --push or --push=... among the script's own arguments. _words_publishers asks it first and reports 'runs the release pipeline with --push'; the anchored fallback for an unbalanced clause gets the same arm through _RELEASE_AT. Without --push the pipeline stops before every remote step, so that form is not a publisher. Cases gr4r (five pushing forms incl. -u, a direct run, an absolute path and sh -c, plus two non-pushing forms) and gr4s (another script's --push, release.py inside an echo string, release_notes.py) were proven by mutation in a scratch copy: dropping the arm turns gr4r red, accepting any --push turns gr4s red; 103/103 with the change. Written by the orchestrator, since this is command-reading code in a guard hook.",
+    "descriptive": "The release guard now treats `tools/release.py ... --push` as a publishing command, so the open-bug check and the #release-with-bugs bypass govern the release pipeline the same way they govern git tag and gh release."
+  },
+  "testsAdded": [
+    ".claude/hooks/guard-release.py: python3 tools/release.py --push is classified as a publishing command, and release.py without --push is not"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:539f86afada9b78f55896c437b32061915de340f69586f5672c48f4ee53efce3\",\"dirtyDigest\":\"sha256:0ddde4d0eb8f5843ed79b4283ac898a685164aae7f29c47e82abedc4e38f8c2d\",\"dirtyPaths\":{\".claude/hooks/guard-release.py\":\"10982184d4752851\"},\"head\":\"baf36eaf\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".claude/hooks/guard-release.py\"],\"scopeDigest\":\"sha256:c3a6b32f74444b8800a63d6556eac72d75f63a5a7d9ae515a2654d4ff2d4095b\",\"v\":2}"
+}
