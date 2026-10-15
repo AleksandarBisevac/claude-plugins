@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "selftests": "fail"
+  },
+  "redFirst": {
+    "at": "2026-10-15T03:52:13Z",
+    "basis": "`python3 plugins/audit/tests/test_detect_plan_skip.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases one2 (house FAIL), but with the working tree's implementation the task's tests do not all pass (SELFTEST FAILED: 44/45 cases passed), so the red is not one the fix turns green - SELFTEST FAILED: 44/45 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "arm-release-bypass.py now reads the owner's prompt through _config.owner_prompt (new typed_prompt, reaching _config via guard-release's _hooks_config; unloadable _config leaves it unarmed). Its rb16 subprocess payload gained hook_event_name. test_detect_plan_skip.py: prompt_readers takes a fields argument; new repo_prompt_readers scans plugins/audit/hooks and .claude/hooks except _config.py (message key excluded as guard rules carry one) and errors on an empty tree; case one2 holds real tree clean and a planted old-style reader reported. Hook selftest 19/19, test_detect_plan_skip 45/45. Full sweep: 334/335 files ok; the one failure, plugins/audit/tests/test__proc_group.py, raised PermissionError from os.killpg(pgid, 0) (sandbox), a file outside my files, left unfixed. Plan gate did not refuse the .claude/hooks edit.",
+    "descriptive": "The release-bypass keyword is now read only from a real owner prompt, and a repo-wide lint holds that invariant for all hooks."
+  },
+  "testsAdded": [
+    "one2 every hook the repo keeps, the plugin's and .claude/hooks, reads prompt text only through _config.owner_prompt (a second reader anywhere is reported by file)"
+  ],
+  "claims": "claims:\n- the invariant now holds repo-wide: evidence is one2 passing on the real tree and prompt_readers reporting line 199 on HEAD's hook\n- the unproved part: the hook's selftest has no agent_id case of its own; that path is covered by _config.owner_prompt's tests only",
+  "stamp": "audit-stamp: {\"content\":\"sha256:bf0cd1637c6af05e716aaca0c5368a24c4bd725bc87bc29808f4c5b6cd3af9a2\",\"dirtyDigest\":\"sha256:dbcb05d2053fd8def4e4247d24b9b955c9fb33a651784f6330eec99f2191625e\",\"dirtyPaths\":{\".claude/hooks/arm-release-bypass.py\":\"b35d7c227e1fc441\",\"plugins/audit/tests/test_detect_plan_skip.py\":\"bf96d7fab68b336d\"},\"head\":\"7233e6f3\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/test_detect_plan_skip.py\"],\"scopeDigest\":\"sha256:1728aa447ee4d907212d95bfbfc4086314e78ed1620ba8e5308989230b70e0bb\",\"v\":2}"
+}

@@ -1,0 +1,16 @@
+{
+  "gates": {
+    "selftests": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression-mode refactor, expectRedFirst false, tests.add none; existing ctw-fg1/ctw-fg2 kept and now cover the shared TI._git path",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Deleted the identical _git_checked copy from test_commit_task_work.py, test_commit_manifest_index.py and test_commit_audit_state.py; each _clone_at now calls TI._git(None, 'clone', ...) and TI._git(dest, 'checkout', ...). test__invariants._git unchanged. ctw-fg1 asserted the word 'exited' from the deleted copy's message; TI._git says 'failed', so the assertion in test_commit_task_work.py now reads 'failed' (fatal: text still required). Removed the now-unused subprocess import from test_commit_manifest_index.py (ruff). Ran: python3 tools/sweep-selftests.py in the tree, 335/335 files ok, 16288 cases; ruff check plugins/audit tools passed; the three suites pass individually (117/117, 37/37, 46/46).",
+    "descriptive": "One shared git fixture helper instead of three pasted copies; the failure-message test now covers the single path."
+  },
+  "testsAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:d5cbf1c5f24d3a64aeb9720be49107e4346d2c14853ef8a7a73018b62f977b6d\",\"dirtyDigest\":\"sha256:2475ad9a8062c8744d1fe299f613f90e6a45e0c791accf948ac869cd178c0667\",\"dirtyPaths\":{\"plugins/audit/tests/test_commit_audit_state.py\":\"0598fcda288765a2\",\"plugins/audit/tests/test_commit_manifest_index.py\":\"3009a877dded1835\",\"plugins/audit/tests/test_commit_task_work.py\":\"d3251c488e796ec2\"},\"head\":\"7233e6f3\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/test_commit_audit_state.py\",\"plugins/audit/tests/test_commit_manifest_index.py\",\"plugins/audit/tests/test_commit_task_work.py\"],\"scopeDigest\":\"sha256:462ec213c30366a5ad50f77fabdcf2b98cac1ebe9287b672824ba20cd9946aac\",\"v\":2}"
+}

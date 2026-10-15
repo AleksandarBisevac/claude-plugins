@@ -6987,11 +6987,11 @@
     {
       "id": "P125.100-0h5",
       "title": "fix P125-R99: The task invariant is 'every keyword a human arms by typing it ...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The task invariant is 'every keyword a human arms by typing it is read through _config.owner_prompt'. The diff makes that true for detect-plan-skip.py only. .claude/hooks/arm-release-bypass.py:199 reads `payload.get('prompt')` itself, with no event or agent_id check, for the owner-typed #release-with-bugs keyword. one1 lints only detect-plan-skip.py, so nothing holds the repo-wide invariant. The claim covers only the plan-first bypass.\n\nResolution asked: Route arm-release-bypass.py through owner_prompt, loaded by path as that hook already loads _config. Or extend prompt_readers to .claude/hooks and the plugin hooks, and record the exception in the task if the hook cannot import it.",
       "files": [
         "plugins/audit/tests/test_detect_plan_skip.py",
-        "plugins/audit/tests/test_detect_plan_skip.py"
+        ".claude/hooks/arm-release-bypass.py"
       ],
       "tests": {
         "mode": "regression",
@@ -7014,14 +7014,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T03:42:10Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -7036,20 +7036,25 @@
         {
           "at": "2026-10-15T03:41:27Z",
           "text": "no test runner in this task's gate for the test P125-R99 asks for: the gate is ['selftests', 'validate', 'plugin-validate', 'gate', 'report', 'lint', 'shots', 'interactive'], derived as the phase's testGate, wide -- no sibling task in P125 declares a path-scoped gate entry to read this project's spelling off; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        },
+        {
+          "at": "2026-10-15T03:52:56Z",
+          "text": "Red-first proved by the orchestrator: wave base plus the new test_detect_plan_skip.py, Claude session variables unset, __pycache__ purged -> exit 1, 44/45, FAIL one2 (the repo-wide one-reader case names arm-release-bypass.py's own prompt read); with the task's arm-release-bypass.py -> 45/45, and the hook's own selftest 19/19. Scope widened with .claude/hooks/arm-release-bypass.py."
         }
       ],
       "fixes": [
         "P125-R99"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.101-0h5",
       "title": "fix P125-R101: For needsBrowser owners, integrate_member marks {answer: 'wide...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "For needsBrowser owners, integrate_member marks {answer: 'widen', paths: all undeclared paths} and prints follow_said before any byte check. The next drive widens and integrates whatever the member's tree holds under docs/screenshots/, whether or not the orchestrator ran the recipe. This differs from the clause that a path whose bytes the recipe does not reproduce stays the undeclared-change decision, and it is the one follower class with no verification. The capture-screenshots.mjs --follower-for branch (tools/capture-screenshots.mjs:8455-8485) has no test in this commit; tests.add and ra31/g11 cover the Python owners only.\n\nResolution asked: Mark the widen only after the orchestrator's run is recorded, or compare the tree's bytes before and after the recipe. Add a test that drives capture-screenshots.mjs --follower-for (claims docs/screenshots/x.png, nothing outside) and one where a browser path stays a decision if the recipe was not run.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/scripts/governance/drive-phase.py"
+        "plugins/audit/tests/test_drive_phase.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -7072,14 +7077,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T03:42:12Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -7094,16 +7099,21 @@
         {
           "at": "2026-10-15T03:41:27Z",
           "text": "no test runner in this task's gate for the test P125-R101 asks for: the gate is ['selftests', 'validate', 'plugin-validate', 'gate', 'report', 'lint', 'shots', 'interactive'], derived as the phase's testGate, wide -- no sibling task in P125 declares a path-scoped gate entry to read this project's spelling off; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        },
+        {
+          "at": "2026-10-15T04:02:07Z",
+          "text": "Red-first proved by the orchestrator: wave base plus the new test_drive_phase.py -> --stage fm2-block exit 1, 2/3, FAIL fm3 (a browser path whose bytes did not move under the recipe was widened and closed); with the task's drive-phase.py -> 3/3. Scope widened with plugins/audit/tests/test_drive_phase.py."
         }
       ],
       "fixes": [
         "P125-R101"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.102-0h5",
       "title": "fix P125-R105: The description says 'find their shared helper first and chang...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The description says 'find their shared helper first and change it once'. The diff instead pastes an identical _git_checked() into three files. The shared fixture helper already existed, test__invariants.py:94 `_git(cwd, *args)`. All three suites import it as `TI` (the 'ONE git fixture'), and it already raises RuntimeError with git's merged output. So the clause is contradicted (changed three times, not once) and the same fix now has three copies to drift. Only the task_work copy has a test (ctw-fg1/ctw-fg2). The other two copies are unexercised.\n\nResolution asked: Delete the three _git_checked copies and have each _clone_at call TI._git(None, 'clone', ...) and TI._git(dest, 'checkout', ...). Keep ctw-fg1/ctw-fg2, which then cover the single shared path. If a different message shape is wanted, change test__invariants._git once.",
       "files": [
         "plugins/audit/tests/test_commit_task_work.py",
@@ -7134,14 +7144,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T03:42:15Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -7160,7 +7170,8 @@
       ],
       "fixes": [
         "P125-R105"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.103-0h5",
