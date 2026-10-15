@@ -90,6 +90,12 @@ function renderUsage(){closeCombo();const c=$('#usage');
  if(USAGE.showCost&&pb.basis==='config'&&!pb.asOf)ctx.append(' - ',
    settingsLink('date them in Settings','usage.pricingAsOf'));
  card.append(ctx);
+ // The CLI's own per-session figure beside the plugin's, wherever they differ,
+ // right under the basis the plugin's side is priced at. The browse dialog's
+ // note is the one rendering of it: a model is what both sides price, so it is
+ // asked for the model dimension, and it answers null with dollars off.
+ const cliNote=browseCliNote('model');
+ if(cliNote)card.append(cliNote);
 
  // Active filters FIRST, above the fold that holds the controls. This row is not
  // decoration: the fold is shut on arrival, so it is the only statement of what

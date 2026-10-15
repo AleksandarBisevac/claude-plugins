@@ -142,6 +142,9 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _manifest_io  # noqa: E402  (one home for reading a manifest's shape)
+# The module itself as well, for its private `_rate_via`: the `from` list below
+# must name exactly the public names it re-exports, which a suite reads by AST.
+import _usage_core as _core  # noqa: E402
 
 # The re-export. These names were defined in this file until the split and are read
 # off this module by audit-usage.py, _report_usage.py, _panel_state.py,
@@ -827,6 +830,14 @@ def scan_transcripts(transcript_path, session_id, cursor, manifest, opts):
             row["rateEffectiveFrom"] = effective_from
             row["rateAsOf"] = pricing_as_of
             row["rateSource"] = pricing_source
+            # Which entry answered, when it was the table's own `_default`
+            # rather than a rate named for this model - the one stamp a reader
+            # cannot recover later, since the table that priced the row may
+            # have gained a named entry since. Written only then, the way
+            # `priced_at_read` reports it: a row without the key was priced
+            # at a named rate, or by a meter older than the key.
+            if rate is not None and _core._rate_via(model, pricing) == "_default":
+                row["rateVia"] = "_default"
             usd = price(counts, model, pricing, at=at_date)
             if usd is None:
                 row["costUSD"] = None
@@ -993,6 +1004,27 @@ def cli_cost_divergences(rows, cost_state, tolerance=CLI_COST_TOLERANCE_USD):
                if not v["agrees"])
 
 
+# The CLI side's label, by where its figure came from. One home for the words,
+# because `/audit:usage`, the report and the panel all print them beside a CLI
+# figure, and the CLI's figure is called its estimate on every one of them -
+# never the bill.
+CLI_BASIS_METER = "the CLI's estimate, recorded at meter time"
+CLI_BASIS_TRANSCRIPT = "the CLI's estimate, read from the transcript"
+CLI_BASIS_UNTAGGED = "the CLI's estimate"
+
+
+def cli_basis(source):
+    """The label for a CLI figure whose reading came from `source` - `meter`
+    (the cursor the meter wrote) or `transcript` (read from the session's
+    file now). Anything else is the bare name, never a guess at where the
+    figure came from."""
+    if source == "meter":
+        return CLI_BASIS_METER
+    if source == "transcript":
+        return CLI_BASIS_TRANSCRIPT
+    return CLI_BASIS_UNTAGGED
+
+
 # --- ledger I/O -----------------------------------------------------------------
 def _session_file(ledger_dir, sub, session_id):
     safe = "".join(c if (c.isalnum() or c in "._-") else "_" for c in str(session_id))
@@ -1023,6 +1055,47 @@ def recorded_cost_state(ledger_dir, session_id):
     recorded'."""
     recorded = load_cursor(ledger_dir, session_id).get("cliCost")
     return recorded if isinstance(recorded, dict) else None
+
+
+def cli_cost_entries(ledger_dir, rows):
+    """`[{session, model, cliCostUSD, pluginCostUSD, pluginUnpriced, basis}]`
+    - one entry per session and model where the CLI's own recorded figure
+    (`recorded_cost_state`, the cursor's `cliCost`) and the plugin's reading
+    of the same session's priced `rows` differ, through `cli_cost_divergences`.
+    A model they agree on yields nothing, and so does a session whose cursor
+    recorded no figure. `pluginUnpriced` says the plugin's side has no figure
+    because no rate covers that model's tokens, which a reader must not take
+    for a model the plugin never saw.
+
+    Only the RECORDED figure: the report and the panel read this, and
+    re-reading a transcript per render is the second parse the cursor exists
+    to save. `/audit:usage` falls back to the transcript itself and labels the
+    figure accordingly through `cli_basis`. Raises on what it cannot read; the
+    caller decides whether a comparison going wrong costs its surface a line."""
+    by_session = {}
+    for r in rows:
+        if r.get("sessionId"):
+            by_session.setdefault(r["sessionId"], []).append(r)
+    out = []
+    for sid in sorted(by_session):
+        state = recorded_cost_state(ledger_dir, sid)
+        if not state:
+            continue
+        session_rows = by_session[sid]
+        diffs = cli_cost_divergences(session_rows, state)
+        for model in sorted(diffs):
+            # Matched on the base name the comparison keys by: a ledger
+            # model with the long-prompt tier suffix is the same model.
+            model_rows = [r for r in session_rows
+                          if (r.get("model") or "") in
+                          (model, model + LONG_PROMPT_SUFFIX)]
+            out.append({
+                "session": sid, "model": model,
+                "cliCostUSD": diffs[model]["cliCostUSD"],
+                "pluginCostUSD": diffs[model]["pluginCostUSD"],
+                "pluginUnpriced": all_unpriced(totals(model_rows)),
+                "basis": cli_basis("meter")})
+    return out
 
 
 def start_notice_given(ledger_dir, session_id, model):

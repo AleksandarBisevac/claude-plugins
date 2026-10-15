@@ -95,6 +95,20 @@ def _project_pricing(manifest, manifest_path, project_dir, ul):
     return ul.project_pricing(manifest, manifest_path, project_dir)
 
 
+def _cli_cost(ul, ledger_dir, rows):
+    """`(entries, reason)` - `ul.cli_cost_entries` over the priced rows and
+    None, or None and why the comparison could not be made. None, not `[]`:
+    an empty list says every recorded CLI figure agreed, and a comparison
+    that raised has said nothing of the kind. The reason is the exception
+    itself, because a surface saying only that something failed leaves its
+    reader nothing to look at. Contained here so that one failing read costs
+    the section that line rather than the whole Usage block."""
+    try:
+        return ul.cli_cost_entries(ledger_dir, rows), None
+    except Exception as exc:
+        return None, "%s: %s" % (type(exc).__name__, exc)
+
+
 def _hourly(rows, ul):
     """rows -> {"YYYY-MM-DD": [24 ints]} — tokens per hour per calendar date.
 
@@ -224,6 +238,7 @@ def load_usage(manifest, manifest_path, project_dir=None):
         if until:
             t = ul.parse_ts(until + "T00:00:00Z")
             since = ul.hour_bucket(_iso_day(t - 29 * 86400))[:10] if t else None
+        cli_cost, cli_cost_reason = _cli_cost(ul, ledger_dir, rows)
 
         return {
             "totals": ul.totals(rows),
@@ -290,6 +305,12 @@ def load_usage(manifest, manifest_path, project_dir=None):
             # `pricingAsOf` beside no manifest table dates nothing that priced
             # a row, so it cannot raise a notice either.
             "pricingStale": _pricing_stale(pricing["asOf"], until),
+            # The CLI's own per-session figure beside the plugin's reading of
+            # the same rows, wherever the two differ - the same entries the
+            # panel ships, labelled from the ledger's one label home.
+            # `cliCostReason` is None unless `cliCost` is, and then says why.
+            "cliCost": cli_cost,
+            "cliCostReason": cli_cost_reason,
             # Orientation, not metrics. These answer "how big is the thing I am
             # looking at" — a question the tiles cannot answer, and one that would
             # cost five more tiles to answer badly.

@@ -67,6 +67,44 @@ def _md(v):
     return str(v if v is not None else "—").replace("|", "\\|").replace("\n", " ")
 
 
+# --- the CLI's own figure beside the plugin's ----------------------------------
+def _cli_cost_text(u):
+    """The CLI comparison as plain lines, for this twin and for the HTML
+    block in `_report_usage`, which escapes them - one wording on both.
+
+    `[]` with dollars off, with no comparison in the payload, or when every
+    recorded figure agreed (`cliCost == []`). A comparison that could not be
+    made (`cliCost` None) is one sentence carrying `cliCostReason`, and says
+    that no reason was recorded when the payload holds none. Otherwise a
+    header and one line per entry, each naming the CLI side by the `basis`
+    the entry carries - `usage_ledger.cli_basis`'s label, the one home for
+    those words - and the plugin's side at the rate basis stated above."""
+    if not u.get("showCost", True) or "cliCost" not in u:
+        return []
+    entries = u.get("cliCost")
+    if entries is None:
+        return ["The CLI's own per-session figure could not be compared with "
+                "the plugin's reading for this ledger: %s."
+                % (u.get("cliCostReason") or "no reason was recorded")]
+    if not entries:
+        return []
+
+    def side(usd):
+        return "no reading" if usd is None else _fmt_cost(usd)
+
+    def plugin_side(c):
+        return "unpriced" if c.get("pluginUnpriced") else side(
+            c.get("pluginCostUSD"))
+
+    return (["Where the CLI's own figure differs from the plugin's (plugin: "
+             "at the rate basis above):"]
+            + ["session %s · %s: CLI %s (%s) vs plugin %s" % (
+                c.get("session") or "", c.get("model") or "",
+                side(c.get("cliCostUSD")), c.get("basis") or "",
+                plugin_side(c))
+               for c in entries])
+
+
 # --- the table view ------------------------------------------------------------
 def _usage_md(u):
     """The table view of the Usage section. This is not decoration: three light-mode
@@ -85,6 +123,11 @@ def _usage_md(u):
     if show_cost:                       # the same phrase _usage_context prints
         head += " · %s" % rate_basis_phrase(u.get("pricingBasis"))
     lines += [head, ""]
+    # Under the head line, as the HTML block sits under the context line its
+    # "rate basis above" points at; a list, so each entry keeps its own line.
+    cli = _cli_cost_text(u)
+    if cli:
+        lines += [cli[0]] + ["- %s" % line for line in cli[1:]] + [""]
 
     def block(title, data, key_label):
         if not data:

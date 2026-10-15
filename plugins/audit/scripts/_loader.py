@@ -54,6 +54,12 @@ from. Hooks stay import-light and self-contained by design (see `_output.py`'s
 docstring for the parallel reasoning about why hooks skip `safe_stdio()`); this
 module is for `scripts/`-to-`scripts/` (and `scripts/`-to-`hooks/`) loading only.
 
+IT IMPORTS NOTHING BUT `_output`, AND THAT IS A CONSTRAINT, NOT AN ACCIDENT.
+`_deps.LAYERS` gives this module a layer of its own directly above the anchor,
+because `_usage_core` - which sits under the journal - loads `hooks/_config.py`
+through it. A sibling import added here would lift this module above the modules
+that depend on it, and the import-layer lint would refuse the tree by name.
+
 This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test__loader.py` - see `plugins/audit/tests/_harness.py`. The
 eleven that migrated kept byte-identical labels; the block that proves the basename

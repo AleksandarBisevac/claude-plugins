@@ -1063,6 +1063,116 @@ def _cases(check):
                                              "msgs": 1}},
                    phaseModel={"P1": {"<script>": 5}})))
 
+    _cli_cost_case(check)
+
+
+def _cli_cost_case(check):
+    """The CLI's own per-session figure, carried from the cursor the meter
+    wrote into the report's payload and onto the page.
+
+    Two sessions over the same priced tokens: `sx`'s cursor records a figure
+    the plugin's reading does not match, `sy`'s one it does. So a payload that
+    carried every session, or none, or a page that printed the agreeing one,
+    each disagree with the expected list. The label is asked of its one home,
+    and the two surfaces that used to spell it are read to hold that they no
+    longer do - a copy left behind is the defect the home exists to end."""
+    import json
+    import shutil
+    import tempfile
+
+    tmp = tempfile.mkdtemp(prefix="report-usage-cli-")
+    try:
+        led = os.path.join(tmp, ".claude", "usage")
+        os.makedirs(led)
+        with open(os.path.join(led, "2026-08.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            for sid in ("sx", "sy"):
+                # One million input tokens on opus-5: the shipped table's
+                # five dollars, which is the plugin's side of both sessions.
+                fh.write(json.dumps({
+                    "ts": "2026-08-01T10", "sessionId": sid,
+                    "model": "claude-opus-5", "author": "a@x.io",
+                    "phaseId": "P1", "taskId": "P1.1", "attr": "task",
+                    "msgs": 1, "in": 1000000, "out": 0, "cacheW5m": 0,
+                    "cacheW1h": 0, "cacheR": 0, "costUSD": 5.0}) + "\n")
+        for sid, usd in (("sx", 7.25), ("sy", 5.0)):
+            _ul.save_cursor(led, sid, {"files": {}, "cliCost": {
+                "totalCostUSD": usd, "perModel": {"claude-opus-5": usd},
+                "hasUnknownModelCost": False}})
+        u = M.load_usage({"meta": {}, "phases": [], "bugs": []},
+                         os.path.join(tmp, "m.json"), tmp)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    label = _ul.cli_basis("meter")
+    got = (u or {}).get("cliCost")
+    page = M._usage_section(u) if u else ""
+    line = ("session sx · claude-opus-5: CLI $7.25 (%s) vs plugin $5.00"
+            % (M.e(label),))
+    copies = []
+    for name in ("audit-usage.py", "_panel_usage.py"):
+        with open(_loader.script_path(name), encoding="utf-8") as fh:
+            if "recorded at meter time\"" in fh.read():
+                copies.append(name)
+    check("a session whose CLI figure differs from the plugin's reading "
+          "carries both into the report payload, labelled from the one label "
+          "home (sx ships CLI 7.25 beside plugin 5.00 once, sy agrees and "
+          "ships nothing, the page prints the sx line once, and neither former "
+          "copy of the label remains): %r" % ((got, copies),),
+          label == "the CLI's estimate, recorded at meter time"
+          and got == [{"session": "sx", "model": "claude-opus-5",
+                       "cliCostUSD": 7.25, "pluginCostUSD": 5.0,
+                       "pluginUnpriced": False, "basis": label}]
+          and page.count(line) == 1
+          and "session sy" not in page
+          and copies == [])
+    _cli_cost_uncomparable_case(check)
+
+
+def _cli_cost_uncomparable_case(check):
+    """A cursor whose recorded CLI figure is not a number: the comparison
+    raises, and the report must say it could not compare and why, rather
+    than read as agreement (an empty list) or blank the whole Usage block.
+
+    The reason is the exception the comparison raised, so the case asks the
+    payload for its type name and the page for the same words; a branch that
+    printed the bare sentence, or a payload that dropped the reason, fails."""
+    import json
+    import shutil
+    import tempfile
+
+    tmp = tempfile.mkdtemp(prefix="report-usage-cli-bad-")
+    try:
+        led = os.path.join(tmp, ".claude", "usage")
+        os.makedirs(led)
+        with open(os.path.join(led, "2026-08.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(json.dumps({
+                "ts": "2026-08-01T10", "sessionId": "sx",
+                "model": "claude-opus-5", "author": "a@x.io",
+                "phaseId": "P1", "taskId": "P1.1", "attr": "task",
+                "msgs": 1, "in": 1000000, "out": 0, "cacheW5m": 0,
+                "cacheW1h": 0, "cacheR": 0, "costUSD": 5.0}) + "\n")
+        _ul.save_cursor(led, "sx", {"files": {}, "cliCost": {
+            "totalCostUSD": "seven", "perModel": {"claude-opus-5": "seven"},
+            "hasUnknownModelCost": False}})
+        u = M.load_usage({"meta": {}, "phases": [], "bugs": []},
+                         os.path.join(tmp, "m.json"), tmp)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    u = u or {}
+    reason = u.get("cliCostReason") or ""
+    page = M._usage_section(u) if u else ""
+    check("a comparison that cannot be made says it could not be compared, "
+          "with the reason (a non-numeric recorded CLI figure: the payload "
+          "carries None and a reason naming the TypeError, and the page "
+          "prints the sentence once with that reason, inside a Usage section "
+          "that still rendered): %r" % ((u.get("cliCost", "absent"), reason),),
+          "cliCost" in u and u.get("cliCost") is None
+          and "TypeError" in reason
+          and page.count("could not be compared") == 1
+          and bool(reason) and M.e(reason) in page
+          and "Usage</h2>" in page)
+
 
 def _selftest():
     return _harness.run(_cases)

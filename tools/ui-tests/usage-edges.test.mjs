@@ -587,7 +587,7 @@ describe('with showCost off the tab prints no per-task dollar figure', () => {
       const rows = all(root, hasClass('urow')).map(text);
       const tile = all(root, hasClass('utile')).filter((t) => all(t, hasClass('k'))
         .some((k) => text(k) === 'equivalent cost')).map(text);
-      return { ctx, rows, tile };
+      return { ctx, root, rows, tile };
     }
 
     it('words the unpriced tokens exactly as Python unpriced_phrase() does', () => {
@@ -685,6 +685,30 @@ describe('with showCost off the tab prints no per-task dollar figure', () => {
       expect(cliLines(browseUnpriced('model',
         { cliCost, showCost: false }).lines)).toEqual([]);
       expect(cliLines(browseUnpriced('model', { cliCost: [] }).lines)).toEqual([]);
+    });
+
+    // The tab itself, not the dialog: the same lines on first paint, once each.
+    // Counted rather than found, because the tab and an open dialog are two
+    // places the same note could land.
+    const tabCli = (extra) => {
+      const { root } = renderUnpriced(true, extra);
+      return all(root, (n) => n.hasAttribute('data-cli-cost')).map(text);
+    };
+
+    it('the Usage tab prints the CLI\'s own figure beside the plugin\'s, '
+      + 'labelled, wherever the two differ', () => {
+      const notes = tabCli({ cliCost, rateBasis: 'rates as of X' });
+      expect(notes.length).toBe(1);
+      expect(notes[0]).toContain('session sx · opus: CLI $7.25 (' + CLI
+        + ') vs plugin $5.00');
+      expect(notes[0]).toContain('session sx · mystery: CLI $0.40 (' + CLI
+        + ') vs plugin unpriced');
+    });
+
+    it('...and the tab prints none of it with showCost off, or with nothing '
+      + 'that differs [the twin: a note that always prints fails here]', () => {
+      expect(tabCli({ cliCost, showCost: false })).toEqual([]);
+      expect(tabCli({ cliCost: [] })).toEqual([]);
     });
   });
 });

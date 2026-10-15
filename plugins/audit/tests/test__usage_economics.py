@@ -18,9 +18,10 @@ undoing. What is shared here is the subject, not the scaffolding.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import os
 import sys
 
-import _harness                                    # sets sys.path for scripts/ + hooks/
+import _harness                                   # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _usage_economics as M                       # noqa: E402
 
@@ -270,6 +271,8 @@ def _cases(check):
           and M.all_unpriced({"tokens": 5, "unpricedTokens": 2}) is False
           and M.all_unpriced({"tokens": 0, "unpricedTokens": 0}) is False
           and M.all_unpriced({"tokens": 5}) is False)
+
+    _default_basis_case(check)
 
     # cost_bands: the same sample gate, and a name that does not collide
     cb = M.cost_bands(man, ar)
@@ -577,6 +580,78 @@ def _cases(check):
           set(pc.keys()) == {"gateScope", "gateReuse", "siblingSpend"}
           and pc["gateScope"]["verdict"] == "compared"
           and pc["siblingSpend"]["verdict"] == "compared")
+
+
+def _default_basis_case(check):
+    """A table declaring its own `_default`, read end to end: the meter's scan
+    writes the stamp and the phrase reads the count `priced_at_read` takes off
+    it.
+
+    The fixture's choices are what make it able to fail. Two models no named
+    entry answers and one that a named entry does, so a stamp written on every
+    row and a stamp written on none both disagree with the expected count. The
+    table handed to `priced_at_read` carries NO `_default`, so the count can
+    only come from the stamp the scan wrote, never from re-resolving the row
+    against the table at read time. And the second phrase is built from a mix
+    with no such rows, which is the twin: a clause that always fires prints
+    `_default` there."""
+    import json
+    import shutil
+    import tempfile
+    import usage_ledger as ul
+
+    rate = {"in": 5.0, "out": 25.0, "cacheW5m": 6.25, "cacheW1h": 10.0,
+            "cacheR": 0.5}
+    table = {"claude-opus-5": dict(rate), "_default": dict(rate, out=50.0)}
+
+    def entry(mid, ts, model):
+        return json.dumps({
+            "type": "assistant", "timestamp": ts, "gitBranch": "main",
+            "message": {"id": mid, "model": model, "usage": {
+                "input_tokens": 10, "output_tokens": 20,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0}}})
+
+    tmp = tempfile.mkdtemp(prefix="usage-economics-default-")
+    try:
+        main = os.path.join(tmp, "sess-default.jsonl")
+        with open(main, "w", encoding="utf-8") as fh:
+            for line in (entry("m1", "2026-09-01T10:00:00Z", "claude-opus-5"),
+                         entry("m2", "2026-09-01T10:05:00Z", "claude-nonesuch-1"),
+                         entry("m3", "2026-09-01T11:00:00Z", "claude-nonesuch-1"),
+                         entry("m4", "2026-09-01T11:05:00Z", "claude-mystery-2")):
+                fh.write(line + "\n")
+        rows, _cur = ul.scan_transcripts(
+            main, "sess-default", {}, {},
+            {"backfillOnFirstRun": True, "pricing": table,
+             "pricingAsOf": "2026-09-01"})
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    stamped = sorted((r.get("model"), r.get("rateVia")) for r in rows)
+    named_only = {"claude-opus-5": dict(rate)}
+    mix = ul.priced_at_read(rows, named_only)["mix"]
+    phrase = M.rate_basis_phrase(dict(
+        {"basis": "config", "asOf": "2026-09-01", "source": None}, **mix))
+    clean = M.rate_basis_phrase(dict(
+        {"basis": "config", "asOf": "2026-09-01", "source": None},
+        **ul.priced_at_read([r for r in rows
+                             if r.get("model") == "claude-opus-5"],
+                            named_only)["mix"]))
+    check("a row priced by a declared _default is stamped so and the rate "
+          "basis names how many rows and which models it priced (three rows "
+          "over two unnamed models carry rateVia, the named one carries none, "
+          "and a ledger no _default priced says nothing of it): %r"
+          % ((stamped, phrase, clean),),
+          stamped == [("claude-mystery-2", "_default"),
+                      ("claude-nonesuch-1", "_default"),
+                      ("claude-nonesuch-1", "_default"),
+                      ("claude-opus-5", None)]
+          and "rateVia" not in [r for r in rows
+                                if r.get("model") == "claude-opus-5"][0]
+          and phrase.count("_default") == 1
+          and "3 row(s) priced at the table's declared _default rate" in phrase
+          and "(claude-mystery-2, claude-nonesuch-1)" in phrase
+          and "_default" not in clean)
 
 
 def _selftest():

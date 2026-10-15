@@ -328,50 +328,17 @@ def _usage_derived(ul, manifest, rows, pricing):
 
 
 # --- the CLI's own figure beside the plugin's -------------------------------------
-# The label `/audit:usage` prints beside a figure the meter recorded on the
-# session's cursor. The panel reads only that recorded figure: re-reading a
-# transcript per GET /api/usage is the second parse the cursor exists to save.
-_CLI_BASIS = "the CLI's estimate, recorded at meter time"
-
-
 def _cli_cost_payload(ul, ledger_dir, rows):
-    """`[{session, model, cliCostUSD, pluginCostUSD, pluginUnpriced, basis}]`
-    - one entry per session and model where the CLI's own recorded figure
-    (`ul.recorded_cost_state`, the cursor's `cliCost`) and the plugin's
-    reading of the same session's priced `rows` differ, through the same
-    `ul.cli_cost_divergences` `/audit:usage` compares with. A model they agree
-    on ships nothing, and a session whose cursor recorded no figure ships
-    nothing. `pluginUnpriced` says the plugin's side has no figure because no
-    rate covers that model's tokens (`ul.all_unpriced`), which a reader must
-    not take for a model the plugin never saw.
+    """`ul.cli_cost_entries` - the CLI's own recorded figure beside the
+    plugin's reading, one entry per session and model where they differ,
+    labelled from `ul.cli_basis`. The report carries the same list, so the two
+    surfaces cannot disagree about which sessions differ or what the CLI's
+    side is called.
 
     Fail-soft to `[]`, like each derived block: one comparison going wrong
     costs the tab that line, never the tab."""
     try:
-        by_session = {}
-        for r in rows:
-            if r.get("sessionId"):
-                by_session.setdefault(r["sessionId"], []).append(r)
-        out = []
-        for sid in sorted(by_session):
-            state = ul.recorded_cost_state(ledger_dir, sid)
-            if not state:
-                continue
-            session_rows = by_session[sid]
-            diffs = ul.cli_cost_divergences(session_rows, state)
-            for model in sorted(diffs):
-                # Matched on the base name the comparison keys by: a ledger
-                # model with the long-prompt tier suffix is the same model.
-                model_rows = [r for r in session_rows
-                              if (r.get("model") or "") in
-                              (model, model + ul.LONG_PROMPT_SUFFIX)]
-                out.append({
-                    "session": sid, "model": model,
-                    "cliCostUSD": diffs[model]["cliCostUSD"],
-                    "pluginCostUSD": diffs[model]["pluginCostUSD"],
-                    "pluginUnpriced": ul.all_unpriced(ul.totals(model_rows)),
-                    "basis": _CLI_BASIS})
-        return out
+        return ul.cli_cost_entries(ledger_dir, rows)
     except Exception:
         return []
 

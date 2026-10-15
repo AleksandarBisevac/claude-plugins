@@ -192,6 +192,30 @@ def _usage_payload(u):
     return "<script>window.AUDIT_USAGE=%s;</script>" % blob
 
 
+# --- the CLI's own figure beside the plugin's ---------------------------------------
+def _cli_cost_block(u):
+    """The CLI's own per-session figure, one line per session and model where
+    it differs from the plugin's reading, each side with its own basis - the
+    report's half of what the panel's Usage tab prints from the same entries.
+
+    The CLI's side is called its estimate, in the label the entry carries
+    (`usage_ledger.cli_basis`), and never the bill; the plugin's side is
+    priced at the rate basis the context line above states. Nothing with
+    dollars off, and nothing when every recorded figure agreed. A comparison
+    that could not be made (`cliCost` None beside a ledger) says so, with its
+    reason, rather than reading as agreement.
+
+    The words are `_usage_markdown._cli_cost_text`'s, escaped here: the
+    Markdown twin prints the same lines, so they have one author."""
+    lines = _md_view._cli_cost_text(u)
+    if not lines:
+        return ""
+    if u.get("cliCost") is None:
+        return '<p class="muted small" data-cli-cost>%s</p>' % e(lines[0])
+    return '<div class="muted small" data-cli-cost>%s</div>' % "".join(
+        "<div>%s</div>" % e(line) for line in lines)
+
+
 # --- section assembly ---------------------------------------------------------
 def _usage_section(u):
     """The Usage block.
@@ -207,6 +231,7 @@ def _usage_section(u):
     out = ['<h2 id="usage">Usage</h2>']
     out.append(_usage_notices(u))
     out.append(_usage_context(u))
+    out.append(_cli_cost_block(u))
     out.append(_usage_tiles(u))
     # The active date range, said in one line (C1). Filled by report.js when a
     # range is on: it names the span, gives that span's own totals, and says

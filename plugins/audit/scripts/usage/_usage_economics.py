@@ -155,8 +155,11 @@ def rate_basis_phrase(pricing_basis):
     priced again, because a stamped row is never re-resolved against the
     table the phrase names. `unpricedTokens`/`unpricedModels` say what no
     rate covers, in `unpriced_phrase`'s words, because those tokens are in no
-    cost figure at all. A caller that carries none of these keys gets none of
-    these clauses - a count it did not take is not a count of zero.
+    cost figure at all. `viaDefault`/`viaDefaultModels` say how many rows the
+    table's own declared `_default` priced, and for which models: a rate
+    nobody named for those models, which a reader of the total must be told.
+    A caller that carries none of these keys gets none of these clauses - a
+    count it did not take is not a count of zero.
 
     Every recorded basis also names the routing its rates assume. The ledger
     keeps a transcript's token counts and its model and never its
@@ -166,6 +169,7 @@ def rate_basis_phrase(pricing_basis):
     basis = pb.get("basis")
     tail = (_mix_clause(pb.get("stamped"), pb.get("readPriced"))
             + _kept_clause(pb.get("pricedWhenWritten"))
+            + _default_clause(pb.get("viaDefault"), pb.get("viaDefaultModels"))
             + _unpriced_clause(pb.get("unpricedTokens"),
                                pb.get("unpricedModels")))
     if basis not in _core.PRICING_BASES:
@@ -208,6 +212,19 @@ def _kept_clause(kept):
         return ""
     return ("; %d row(s) keep the cost stored when written, at no recorded "
             "rate" % kept)
+
+
+def _default_clause(count, models):
+    """The rate phrase's tail for rows a declared `_default` priced, naming
+    their models when the caller carried them; "" for none, or for a count
+    that is not a positive int."""
+    count = _count(count)
+    if count is None or count <= 0:
+        return ""
+    named = [m for m in (models or []) if isinstance(m, str) and m]
+    return ("; %d row(s) priced at the table's declared _default rate, not one "
+            "named for their model%s"
+            % (count, " (%s)" % ", ".join(named) if named else ""))
 
 
 def _mix_clause(stamped, read_priced):

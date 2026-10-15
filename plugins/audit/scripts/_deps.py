@@ -128,6 +128,14 @@ import _output  # noqa: E402  (py_files: the ONE recursive `.py` walk, shared no
 # --- layer table --------------------------------------------------------------
 LAYERS = (
     ("_output",),
+    # `_loader` is the one way a script loads a sibling or `hooks/_config.py` by
+    # path. It reaches nothing but `_output`, and it gets a layer of its own,
+    # directly above the anchor, because `_usage_core` - at the floor of the
+    # usage modules, below the journal - loads the hooks' config to derive the
+    # shipped price table. Beside its layer-mates it could not be imported by
+    # them, and one layer up it forced `_usage_core` to carry a raw `importlib`
+    # copy of the very thing this module exists to be the only home of.
+    ("_loader",),
     # `_machine_paths` is what counts as machine identity in a string and how to
     # take it out. It reaches nothing but `_output` and gets a layer of its own
     # because BOTH committed writers need it - `_manifest_io` for the plan and
@@ -142,12 +150,13 @@ LAYERS = (
     # It reaches nothing but `_output`, and it is down here because `_journal_io`,
     # which sits in the layer above, sizes a field from it, while the git wrappers
     # and the ADO calls quote through it.
-    # `_usage_core` joins them: it reaches only `_output`, and the journal reads
-    # a row's moment through its `parse_ts`, so it sits below `_journal_io`.
+    # `_usage_core` joins them: it reaches only `_output` and `_loader`, and the
+    # journal reads a row's moment through its `parse_ts`, so it sits below
+    # `_journal_io`.
     ("_machine_paths", "_excerpt", "_usage_core"),
     # _deps (this module) imports only _output, the safe_stdio guard - same as every
     # other member of this layer - so it belongs beside them, not in a layer of its own.
-    ("_ui_theme", "_loader", "_fmt", "_cli_fmt", "_manifest_io", "_areas", "_policy",
+    ("_ui_theme", "_fmt", "_cli_fmt", "_manifest_io", "_areas", "_policy",
      "_deps", "_refs",
      # `_branch` answers where a phase's branch forks from and what it is called.
      # It reaches nothing but `_output` - it is arithmetic over the manifest dict
@@ -6401,7 +6410,7 @@ KNOWN_LAYER_DEBT = (
     # carrying twenty-one upward runtime edges - and `rt6`/`bw4` keep that
     # version red on purpose. The edge is real; the spelling is what is unusual.
     ("panel/_panel_state.py",
-     "runtime-loads render-report (layer 8) from layer 6 - not strictly downward"),
+     "runtime-loads render-report (layer 9) from layer 7 - not strictly downward"),
 )
 
 

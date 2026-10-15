@@ -365,7 +365,9 @@ def cli_cost_lines(rows, cli_cost, pricing, md=False):
         if not cost_state:
             continue
         compared = ul.cli_cost_compare(by_session.get(sid) or [], cost_state)
-        cli_basis = _cli_basis(cost_state)
+        # Where the figure came from, when `collect_cli_cost` tagged it, in
+        # the words `ul.cli_basis` keeps for every surface.
+        cli_basis = ul.cli_basis(cost_state.get("source"))
         for model in sorted(compared):
             pair = compared[model]
             cli_usd, plugin_usd = pair["cliCostUSD"], pair["pluginCostUSD"]
@@ -411,17 +413,6 @@ def collect_cli_cost(sessions, ledger_dir, transcripts):
             source = "transcript"
         out[sid] = dict(state, source=source) if state else None
     return out
-
-
-def _cli_basis(cost_state):
-    """The CLI side's basis as its line prints it: where the figure came
-    from when `collect_cli_cost` tagged it, the bare name when nothing did."""
-    source = cost_state.get("source")
-    if source == "meter":
-        return "the CLI's estimate, recorded at meter time"
-    if source == "transcript":
-        return "the CLI's estimate, read from the transcript"
-    return "the CLI's estimate"
 
 
 def render(rows, args, manifest, window, show_cost, pt=None, pricing=None,

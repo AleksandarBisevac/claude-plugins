@@ -281,6 +281,48 @@ def _cases(check):
           "object, which is what makes the floor parity above structural "
           "rather than coincidental: %r" % (_drift,), _drift == [])
 
+    _cli_cost_case(check)
+
+
+def _cli_cost_case(check):
+    """The CLI's own per-session figure in the Markdown twin.
+
+    Two entries, so a twin that printed only the first disagrees with the
+    count. The label is the one `usage_ledger.cli_basis` answers, and the
+    line the twin prints must be the line the HTML block prints, unescaped -
+    the twin is the relief for the page, so it may not word the comparison
+    differently. Dollars off and an all-agreeing ledger print nothing, and a
+    comparison that could not be made carries the same reason on both
+    surfaces."""
+    import usage_ledger as _ul
+    label = _ul.cli_basis("meter")
+    entries = [{"session": "sx", "model": "claude-opus-5", "cliCostUSD": 7.25,
+                "pluginCostUSD": 5.0, "pluginUnpriced": False, "basis": label},
+               {"session": "sy", "model": "mystery", "cliCostUSD": 0.4,
+                "pluginCostUSD": None, "pluginUnpriced": True, "basis": label}]
+    out = M._usage_md(_u(cliCost=entries))
+    html = _RU._cli_cost_block(_u(cliCost=entries))
+    want = ["session sx · claude-opus-5: CLI $7.25 (%s) vs plugin $5.00" % label,
+            "session sy · mystery: CLI $0.40 (%s) vs plugin unpriced" % label]
+    counts = [out.count(w) for w in want]
+    in_html = [_viz.e(w) in html for w in want]
+    off = M._usage_md(_u(cliCost=entries, showCost=False))
+    agreed = M._usage_md(_u(cliCost=[]))
+    why = "TypeError: a reason the comparison raised"
+    failed_md = M._usage_md(_u(cliCost=None, cliCostReason=why))
+    failed_html = _RU._cli_cost_block(_u(cliCost=None, cliCostReason=why))
+    check("the Markdown twin carries the CLI's own figure beside the plugin's, "
+          "under the same label (each differing session once, worded as the "
+          "HTML block words it, the label `cli_basis('meter')` answers, "
+          "nothing with dollars off or when every figure agreed, and the "
+          "could-not-compare reason on both surfaces): %r"
+          % ((counts, in_html, label),),
+          label == "the CLI's estimate, recorded at meter time"
+          and counts == [1, 1] and in_html == [True, True]
+          and "CLI $" not in off and "CLI $" not in agreed
+          and "could not be compared" in failed_md and why in failed_md
+          and _viz.e(why) in failed_html)
+
 
 def _selftest():
     return _harness.run(_cases)

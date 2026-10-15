@@ -36,7 +36,6 @@ This module carries no `--selftest` of its own any more; its cases live in
 """
 import calendar
 import copy
-import importlib.util
 import os
 import re
 import sys
@@ -64,6 +63,8 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _loader  # noqa: E402  (hooks/_config.py, loaded by path off the one anchor)
+
 # --- pricing --------------------------------------------------------------------
 # USD per MILLION tokens. DERIVED from hooks/_config.py DEFAULTS["usage"]["pricing"],
 # not a second literal: hooks/ may import nothing from scripts/, so hooks/_config.py
@@ -72,18 +73,13 @@ _output.install_path()
 # an edit to hooks/_config.py ALONE moves this copy, by running
 # `_load_hooks_config_module` and `_shipped_pricing_from` over a scratch file.
 #
-# LOADED BY RAW `importlib`, NOT THROUGH `_loader.load_hooks_config()` - this
-# module sits at the FLOOR of scripts/'s import graph (it reaches only `_output`,
-# on purpose: `_journal_io`, one layer up, reads a row's moment through its
-# `parse_ts`), and `_loader` sits one layer above that floor. Reaching for it here
-# would be an upward edge the import-layer lint refuses, for a win (a shared
-# loader's caching policy) this one call site, taken once at import time and
-# never again, has no use for. The THING `_loader` exists to fix - roughly
-# fourteen hand-rolled `importlib` copies, each a fresh chance to get the caching
-# policy or the module name wrong - does not reappear here: this is the SECOND
-# such copy in the whole tree (the first is the hooks' own loader in
-# `hooks/_config.py`, which has the same "may not import scripts/" constraint),
-# not a third ad-hoc one.
+# LOADED THROUGH `_loader`, the one way scripts/ loads a file by path. `_loader`
+# reaches nothing but `_output`, so `_deps.LAYERS` gives it a layer directly
+# above the anchor and below this module - which sits under `_journal_io`,
+# because the journal reads a row's moment through `parse_ts`. Uncached
+# (`cache=False`): this runs once, at import time, and the constants below are
+# what every later reader uses, so a process-wide entry would only be a second
+# module object nobody asks for.
 #
 # Every rate is copied from the page, not derived: the cache writes follow the
 # published 1.25x (5-minute TTL) and 2x (1-hour TTL) multipliers off base input,
@@ -99,17 +95,16 @@ _output.install_path()
 # that declares its own `usage.pricing._default` is still honoured, because the
 # lookup reads whatever `_default` the TABLE carries, never a module constant.
 def _load_hooks_config_module(path=None):
-    """`hooks/_config.py`, loaded by path - never cached process-wide (unlike
-    `_loader.load()`), because this runs exactly once, at import time, and the
-    constants below are what every later reader actually uses. `path` exists
-    so a suite can run THIS function over a scratch copy and watch the
-    constants it feeds move; nothing else passes it."""
-    path = path or os.path.join(_output.HOOKS_DIR, "_config.py")
-    spec = importlib.util.spec_from_file_location(
-        "audit_usage_core_hooks_config", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    """`hooks/_config.py`, through `_loader` and never cached process-wide,
+    because this runs exactly once, at import time, and the constants below
+    are what every later reader actually uses. `path` exists so a suite can
+    run THIS function over a scratch copy and watch the constants it feeds
+    move; nothing else passes it."""
+    if path is None:
+        return _loader.load_hooks_config(
+            modname="audit_usage_core_hooks_config", cache=False)
+    return _loader.load(path, modname="audit_usage_core_hooks_config",
+                        cache=False)
 
 
 def _shipped_pricing_from(mod):
