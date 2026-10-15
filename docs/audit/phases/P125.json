@@ -8858,7 +8858,11 @@
       "description": "Finding P125-R66 (re-added from cancelled P125.92). commit-audit-state commits a phase shard without checking _scoped_commit.index_rows_owed. Refuse before staging, naming the rows, with commit-task-work's HEAD-shard-held filter and wording, so all three record commits agree with commit-manifest-index's design (the index is committed alone). Cases: owed rows refused; a shard owing none commits as today; a row owed only for a task new in this commit is not refused.",
       "files": [
         "plugins/audit/scripts/governance/commit-audit-state.py",
-        "plugins/audit/tests/test_commit_audit_state.py"
+        "plugins/audit/tests/test_commit_audit_state.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/test__scoped_commit.py"
       ],
       "tests": {
         "mode": "tdd",
