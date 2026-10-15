@@ -561,16 +561,28 @@ LOCALE_PROBE = ("import locale, sys; "
                 "print(sys.getfilesystemencoding())")
 
 
-def locale_pins(encoding, locale_vars=None):
+def host_os():
+    """The one place the machine running the sweep names itself; everything
+    below takes an `os_name` and `main` hands this in."""
+    return os.name
+
+
+def locale_pins(os_name, encoding, locale_vars=None):
     """The environment additions a `--encoding` pass makes: the child's stdio
-    codec everywhere, and on POSIX the locale pins - `LEGACY_LOCALE_VARS` when
-    `locale_vars` is None, and none at all when it is empty, which is what
-    `locale_decision` hands a platform the pins would misrepresent."""
+    codec everywhere, plus the locale pins `locale_vars` names - which, when
+    it is None, are `LEGACY_LOCALE_VARS` on POSIX and none on windows, and
+    when it is empty are none, which is what `locale_decision` hands a
+    platform the pins would misrepresent.
+
+    A function of the `os_name` it is asked about and never of the machine
+    running it; the host's own value is passed in once, from `main`."""
     if not encoding:
         return {}
     pins = {"PYTHONIOENCODING": encoding}
-    if os.name != "nt":
-        pins.update(LEGACY_LOCALE_VARS if locale_vars is None else locale_vars)
+    if locale_vars is not None:
+        pins.update(locale_vars)
+    elif os_name != "nt":
+        pins.update(LEGACY_LOCALE_VARS)
     return pins
 
 
@@ -625,7 +637,7 @@ def locale_decision(os_name, reported, encoding, locale_vars=None):
 
 
 def legacy_locale_verdict(environ=None, locale_vars=None, interpreter=None,
-                          encoding="cp1252"):
+                          encoding="cp1252", os_name=None):
     """`locale_decision`'s answer for a child of this machine, plus `reported`:
     the `(preferred, filesystem)` pair it gave, or None where none was asked.
 
@@ -635,11 +647,12 @@ def legacy_locale_verdict(environ=None, locale_vars=None, interpreter=None,
     environment a suite does. Windows is not probed - it is not given the pins.
     A probe that cannot answer refuses the pass as could-not-run.
     """
-    if os.name == "nt":
+    os_name = host_os() if os_name is None else os_name
+    if os_name == "nt":
         return dict(locale_decision("nt", None, encoding, locale_vars),
                     reported=None)
     env = ambient_env(os.environ if environ is None else environ)
-    env.update(locale_pins(encoding, locale_vars))
+    env.update(locale_pins(os_name, encoding, locale_vars))
     try:
         done = subprocess.run([interpreter or sys.executable, "-c",
                                LOCALE_PROBE], env=env,
@@ -656,13 +669,13 @@ def legacy_locale_verdict(environ=None, locale_vars=None, interpreter=None,
                            "%r, not a preferred and a filesystem encoding"
                            % (done.returncode, " ".join(said))}
     reported = (said[0], said[1])
-    return dict(locale_decision(os.name, reported, encoding, locale_vars),
+    return dict(locale_decision(os_name, reported, encoding, locale_vars),
                 reported=reported)
 
 
 def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
             pycache=None, environ=None, spaced=False, grant=1,
-            locale_vars=None):
+            locale_vars=None, os_name=None):
     """Run one file's `--selftest` in a scratch directory and report what happened.
 
     Split from `grade` on purpose: everything below this line is a decision about
@@ -717,7 +730,8 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     """
     repo = repo or REPO
     env = ambient_env(os.environ if environ is None else environ)
-    env.update(locale_pins(encoding, locale_vars))
+    env.update(locale_pins(host_os() if os_name is None else os_name,
+                           encoding, locale_vars))
     env[STAGE_GRANT_VAR] = str(grant)
     env[FILE_TIMEOUT_VAR] = str(timeout)
     # A SHORT PREFIX, deliberately. This directory becomes the root of every fixture
@@ -1147,7 +1161,7 @@ def exempt_row(rel_path, reason):
 
 def sweep(paths, covered, jobs=None, repo=None, encoding=None,
           timeout=DEFAULT_TIMEOUT, spaced=False, exempt=None, costs=None,
-          deadline=None, locale_vars=None):
+          deadline=None, locale_vars=None, os_name=None):
     """Run every path and return one graded row per file, sorted by path.
 
     `locale_vars` is the encoding pass's locale pins as `locale_decision`
@@ -1198,7 +1212,7 @@ def sweep(paths, covered, jobs=None, repo=None, encoding=None,
                            file_timeout(path, costs, timeout, weight,
                                         staged=path in staged, cap=left),
                            pycache, None, spaced, weight,
-                           locale_vars=locale_vars)
+                           locale_vars=locale_vars, os_name=os_name)
         finally:
             done(weight)
     pycache = tempfile.mkdtemp(prefix="sp-run-")
@@ -1553,8 +1567,9 @@ def main(argv):
                              % (index, count))
             return 2
     locale_vars = None
+    os_name = host_os()
     if encoding:
-        verdict = legacy_locale_verdict(encoding=encoding)
+        verdict = legacy_locale_verdict(encoding=encoding, os_name=os_name)
         if verdict["problem"]:
             sys.stderr.write("sweep-selftests: %s\n" % (verdict["problem"],))
             return 2
@@ -1566,7 +1581,7 @@ def main(argv):
     sys.stdout.write(budget_line(paths, jobs, costs, timeout, deadline=deadline))
     rows = sweep(paths, covered, jobs=jobs, encoding=encoding, timeout=timeout,
                  spaced=spaced, costs=costs, deadline=deadline,
-                 locale_vars=locale_vars)
+                 locale_vars=locale_vars, os_name=os_name)
     if record:
         record_costs(record, rows, swept, jobs)
     return (render_quiet if quiet else render)(rows, jobs, encoding=encoding,
@@ -2862,7 +2877,8 @@ def _cases(check):
         "windows": locale_decision("nt", None, "cp1252"),
         "utf8": locale_decision("posix", ("UTF-8", "utf-8"), "cp1252"),
     }
-    ll_pins = dict((k, locale_pins("cp1252", v["locale"]))
+    ll_os = {"macos": "posix", "linux": "posix", "windows": "nt", "utf8": "posix"}
+    ll_pins = dict((k, locale_pins(ll_os[k], "cp1252", v["locale"]))
                    for k, v in ll_rows.items() if v["problem"] is None)
     ll_live = legacy_locale_verdict(environ=os.environ)
     check("%s (%r; pins %r; this machine %r)" % (ll_title_c, ll_rows, ll_pins,
@@ -2885,6 +2901,30 @@ def _cases(check):
           and "could-not-run" in ll_rows["utf8"]["problem"]
           and (os.name == "nt" or (ll_live["reported"] is not None
                                    and len(ll_live["reported"]) == 2)))
+
+
+    # --- the pins are a function of the platform asked about ------------------
+    # Each platform's pins computed for every os_name the table holds, so a
+    # host that is one of them cannot stand in for another. The windows asking
+    # for a macOS-shaped verdict is the row that goes red when the host's own
+    # os.name leaks back in; the posix asking for windows's empty verdict is
+    # the other direction, where pins must not appear from nowhere.
+    ll_mac = locale_decision("posix", ("US-ASCII", "utf-8"), "cp1252")
+    ll_posix_default = locale_pins("posix", "cp1252")
+    ll_mac_on_nt = locale_pins("nt", "cp1252", ll_mac["locale"])
+    ll_mac_on_posix = locale_pins("posix", "cp1252", ll_mac["locale"])
+    ll_win_on_posix = locale_pins("posix", "cp1252",
+                                  locale_decision("nt", None, "cp1252")["locale"])
+    ll_win_default = locale_pins("nt", "cp1252")
+    check("the pins for a platform are the same whichever host computes them "
+          "(%r %r %r %r %r)" % (ll_posix_default, ll_mac_on_nt, ll_mac_on_posix,
+                                ll_win_on_posix, ll_win_default),
+          ll_mac_on_nt == ll_mac_on_posix
+          and ll_mac_on_nt == dict(LEGACY_LOCALE_VARS, PYTHONIOENCODING="cp1252")
+          and ll_posix_default == ll_mac_on_posix
+          and ll_win_on_posix == {"PYTHONIOENCODING": "cp1252"}
+          and ll_win_default == {"PYTHONIOENCODING": "cp1252"}
+          and locale_pins("nt", None) == {})
 
 
 def _selftest():

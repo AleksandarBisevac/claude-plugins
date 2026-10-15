@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --encoding cp1252": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T02:59:14Z",
+    "basis": "`python3 tools/sweep-selftests.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 97/98 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'host_os': TypeError: locale_pins() takes from 1 to 2 positional arguments but 3 were given; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/sweep-selftests.py: locale_pins now takes (os_name, encoding, locale_vars=None) and is pure; explicit locale_vars are applied whatever the os_name, the None default is LEGACY_LOCALE_VARS on posix and none on nt. Added host_os() as the single os.name read for this path; main calls it once and passes os_name through sweep, run_one and legacy_locale_verdict (each defaults None to host_os() so existing callers are unchanged). Existing pins case updated to the new signature; new case 'the pins for a platform are the same whichever host computes them' asserts macos pins on nt equal those on posix, windows pins carry no locale, and nt default is empty. Runs: --selftest 99/99 exit 0; plain sweep 335/335 files ok exit 0; --encoding cp1252 335/335 ok. Deviation: the defaults None -> host_os() in run_one/legacy_locale_verdict mean the host is read in a helper, not strictly only in main.",
+    "descriptive": "The legacy-locale pins no longer depend on the host's os.name, so the pins case holds on windows legs."
+  },
+  "testsAdded": [
+    "tools/sweep-selftests.py: the pins for a platform are the same whichever host computes them"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:6d3e7a38c6616dee158bbc0c1ab51b5337d53966f38d1396660652c75282d941\",\"dirtyDigest\":\"sha256:5c51a1bd1b36b41af28a116b9a27a391565cfc4d383b70bb14492fedbfb7923f\",\"dirtyPaths\":{\"tools/sweep-selftests.py\":\"0c78b8f49a6cf0a1\"},\"head\":\"4b1e4aae\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/sweep-selftests.py\"],\"scopeDigest\":\"sha256:408da94be4cd3a652379c78c0c760a2d3ee1dd0b01bde52737b97ae24a44b2fd\",\"v\":2}"
+}
