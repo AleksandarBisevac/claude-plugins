@@ -6147,6 +6147,7 @@ def unencoded_text_opens(source):
 # a follower and closes, so every decode between the verbs and this suite is
 # on its path.
 ASCII_BLOCK = "fm-block"
+INTEGRATE_SUITE = "test_integrate_task.py"
 # What makes a locale's preferred encoding ASCII on POSIX; on Windows the
 # variables are ignored and the ANSI code page stands in, which spells no more.
 ASCII_ENV = {"LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0"}
@@ -6193,6 +6194,31 @@ def _ascii_locale_cases(check):
              (len(cases), failed, res["why"],
               _output.clip_bytes(res["err"], 600))),
           res["report"] is not None and bool(cases) and not failed)
+    _integrate_ascii_case(check, preferred)
+
+
+def _integrate_ascii_case(check, preferred):
+    """The integrate suite, whole, as a child under the same pinned locale: it
+    exits 0 and its tally says every case it ran passed. The sweep's encoding
+    pass also runs every suite under a legacy locale, but only where the sweep
+    can pin one - it pins nothing on Windows and falls back to the stdio half
+    where file names would turn non-UTF-8 - so this run is the one that holds
+    on every platform this suite runs on."""
+    suite = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         INTEGRATE_SUITE)
+    done = subprocess.run(
+        [sys.executable, suite, "--selftest"], env=dict(os.environ, **ASCII_ENV),
+        capture_output=True, encoding="utf-8", errors="replace",
+        stdin=subprocess.DEVNULL, timeout=600)
+    tally = re.findall(r"(\d+)/(\d+) cases passed", done.stdout)
+    passed, total = (int(tally[-1][0]), int(tally[-1][1])) if tally else (0, 0)
+    check("plugins/audit/tests/test_drive_phase.py: under a locale whose "
+          "preferred encoding is ASCII, the integrate suite runs whole and "
+          "every case it reports passes (%s, %r, preferred encoding %r): %r"
+          % (INTEGRATE_SUITE, ASCII_ENV, preferred,
+             (done.returncode, passed, total,
+              _output.clip_bytes(done.stderr, 600))),
+          done.returncode == 0 and total > 0 and passed == total)
 
 
 def _stage_cases(check):
