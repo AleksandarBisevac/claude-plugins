@@ -1900,7 +1900,8 @@
       "P128.6-0h5",
       "P125.19",
       "P125.22",
-      "P125.50-0h5"
+      "P125.50-0h5",
+      "P125.106-0h5"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -1909,7 +1910,8 @@
       "P32.2",
       "P34.6",
       "P124.11",
-      "P128.11-0h5"
+      "P128.11-0h5",
+      "P125.106-0h5"
     ],
     "plugins/audit/agents/audit-reviewer.md": [
       "P4.1",
@@ -1938,7 +1940,8 @@
       "P125.5",
       "P128.11-0h5",
       "P128.6-0h5",
-      "P125.19"
+      "P125.19",
+      "P125.106-0h5"
     ],
     "plugins/audit/commands/audit.md": [
       "P1.6",
@@ -5566,7 +5569,8 @@
       "P128.11-0h5",
       "P125.11",
       "P125.51-0h5",
-      "P125.54-0h5"
+      "P125.54-0h5",
+      "P125.106-0h5"
     ],
     "plugins/audit/tests/test__report_html.py": [
       "P25.1",
@@ -8548,7 +8552,8 @@
     ],
     "plugins/audit/agents/guide.md": [
       "P118.9",
-      "P128.11-0h5"
+      "P128.11-0h5",
+      "P125.106-0h5"
     ],
     "plugins/audit/commands/guide.md": [
       "P118.9"
