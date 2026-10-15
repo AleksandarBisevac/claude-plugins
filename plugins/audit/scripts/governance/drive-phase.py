@@ -3899,8 +3899,8 @@ def already_filed(ctx, task):
         rows = _journal_io.read_all(ctx["project"], ctx["config"])
     except Exception:                                          # noqa: BLE001
         return None
-    return (project_relative(ctx, path)
-           if _fr.already_filed_row(rows, path, ctx["project"]) else None)
+    why = _fr.refiling_refusal(rows, path, ctx["project"])
+    return ("%s: %s" % (project_relative(ctx, path), why)) if why else None
 
 
 def _journal_filed_return(ctx, task, role, path, red_status):

@@ -1423,6 +1423,19 @@ def _submit_cases(check):
           "stays byte-identical: %r" % (text,),
           code == 1 and "already filed" in text and "stamp taken" not in text
           and first is not None and _read(path) == first)
+    os.remove(path)
+    code, text = _submit(None, root, mpath, "P1.1", _executor_body("P1.1"))
+    row_ts = (journaled[0].get("ts") if journaled else None) or "-"
+    row_hash = (journaled[0].get("stateHash") if journaled else None) or "-"
+    check("a return deleted after filing and submitted again is refused through "
+          "refiling_refusal, and the refusal names the journal row of the first "
+          "filing (the file is gone, the stop still quotes the row's %s and "
+          "stateHash): %r" % (_fr.RETURN_FILED_ACTION, text),
+          code == 1 and not os.path.exists(path)
+          and "stamp taken" not in text
+          and "a %s row already filed this return" % (_fr.RETURN_FILED_ACTION,)
+          in text
+          and row_ts in text and row_hash in text and row_hash != "-")
 
     # A malformed return: the shape is checked before anything runs.
     root, mpath, _t = _started(M, "malformed")

@@ -573,8 +573,10 @@ def claims_from_return(evidence_dir, task, journal_rows, checkout):
 # must match to read clean) and never calls `_journal_io` itself: `drive-phase.py
 # submit` is the one caller that writes the file (through `audit-task.py
 # file-return`) AND can reach the journal, so it is the one that reads the rows
-# in, calls `refiling_refusal` before asking the filing verb to write, and
-# appends `filed_return_row`'s entry once that write succeeds. A closer reads the
+# in, asks `refiling_refusal` (through its `already_filed`) before asking the
+# filing verb to write and puts that refusal, which names the first filing's
+# row, into its stop, and appends `filed_return_row`'s entry once that write
+# succeeds. A closer reads the
 # rows in the same way and hands them to `read_filed_return_checked`.
 RETURN_FILED_ACTION = "task.return.filed"
 
