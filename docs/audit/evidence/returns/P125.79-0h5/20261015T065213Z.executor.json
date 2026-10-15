@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "selftests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T07:01:47Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_lookup.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 103 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bf3c (house FAIL), bo3 (house FAIL): SELFTEST FAILED: 101/103 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-lookup.py: executor_return_lines() is now the stable contract text (no id, no command) at the top; the task-specific submit block moved to a closing section 'Your return - the submit block' (executor_submit_lines, SUBMIT_SECTION), after Retry. Docstring corrected. test_audit_lookup.py: bf3c adapted to the closing section; added bo3 (two briefs for different tasks share a prefix at least the length of the rules line plus return contract, measured from the text itself, id absent from it), bo4 (reviewer brief: clause rule once, tests.add section, last headings Task, Claim under review, Your return), bo5 (phase brief: clause rule once, tests.add per task, each Task heading followed by Claim under review). Ran python3 tools/sweep-selftests.py in the worktree: 335/335 files ok, exit 0 (before a cosmetic one-token test edit; test_audit_lookup.py selftest 103/103 after the cases). measure-context ceilings: briefs are per-task and not measured there; DISPATCH_PROMPT untouched. Not run: the red proof of bo4/bo5 on HEAD (they pin existing behaviour so are expected green; only bo3 is red on HEAD).",
+    "descriptive": "The executor brief's contract is now a task-independent prefix with the submit command last, and reviewer/phase brief clause-rule, tests.add and claim-last order are pinned."
+  },
+  "testsAdded": [
+    "bo3 stable prefix",
+    "bo4 reviewer brief clause rule and order",
+    "bo5 phase brief clause rule and order"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:0d6fc1570069fd74961d0a7776f49ff97d94a8af38f3e1d08e043092efe419c2\",\"dirtyDigest\":\"sha256:35533deff6699b43a274f4348f8e808aa40ae14bd8ef660d86a649a9c7be1efb\",\"dirtyPaths\":{\"plugins/audit/scripts/status/audit-lookup.py\":\"488e475c853ef050\",\"plugins/audit/tests/test_audit_lookup.py\":\"027a83dd6762b1a4\"},\"head\":\"fb4031be\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/tests/test_audit_lookup.py\"],\"scopeDigest\":\"sha256:6c544bcaeaaddbae8f66d20475cde3e29fbf18ba8d09d128399ad33087390ace\",\"v\":2}"
+}

@@ -1,0 +1,31 @@
+{
+  "gates": {
+    "selftests": "pass",
+    "selftests-cp1252": "pass",
+    "ruff": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T07:17:24Z",
+    "basis": "`python3 plugins/audit/tests/test__usage_core.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 48/49 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_rate_via': TypeError: _load_hooks_config_module() takes 0 positional arguments but 1 was given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_shipped_pricing_from': TypeError: _load_hooks_config_module() takes 0 positional arguments but 1 was given; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "R8 done: _usage_core._load_hooks_config_module takes an optional path and the new _shipped_pricing_from reads (table copy, asOf, url) off a loaded module; dp4 now runs both over a scratch hooks/_config.py edited on its own and asserts the figure moved (4321.5) while live DEFAULT_PRICING did not; dp5 (unedited file reproduces DEFAULT_PRICING/PRICING_AS_OF/URL) and dp6 (copy) added. hooks/_config.py comment corrected. R6 done: _doctor_trail.unpriced_model_tokens counts rows with unpriced True or a rate stamp of None as well as models with no table row; check_unpriced_models names /audit:usage --backfill in both remedies (add-a-row-then-backfill, or backfill alone when the table already prices the model); cases dt-up3b, dt-up6, dt-up7 in test__doctor_trail.py. R9 PARTIAL: _usage_core._rate_via answers '_default' when the table's own _default answered; priced_at_read reads a stamped row's rateVia, or computes it for a read-priced row, and adds viaDefault/viaDefaultModels to mix only when non-zero (rv1-rv4). NOT done for R9: nothing writes rateVia on the stamp (scripts/usage/usage_ledger.py row stamp, ~line 825) and rate_basis_phrase in scripts/usage/_usage_economics.py prints no phrase for viaDefault - both outside the declared files; _rate_via is private because usage_ledger.py must re-export every public _usage_core name (rx1 went red when public), so the follow-up must expose it there. R7 NOT done: _loader sits in the layer above _usage_core and _journal_io (which imports _usage_core) is above that, so routing through _loader needs a new layer in scripts/_deps.py LAYERS plus the module-map fence in PLUGIN-BUILD-GUIDE.md, or a recorded decision in the manifest; none are in this task's files. The raw loader remains, and its existing comment still states the layering reason. Sweep: python3 tools/sweep-selftests.py -> 335/335 files ok, 16359 cases; --encoding cp1252 -> 335/335 files ok; ruff check plugins/audit tools -> All checks passed. Red-first note: the helper is given only the usage_core suite; the doctor cases (dt-up3b, dt-up6, dt-up7) were not red-proved by the helper.",
+    "descriptive": "dp now fails on the mutation it names, the doctor counts rows stamped unpriced and points at --backfill, and a declared _default is counted in the read mix; the stamp writer, the surface phrase and the loader layering need files outside this task."
+  },
+  "testsAdded": [
+    "dp4",
+    "dp5",
+    "dp6",
+    "rv1",
+    "rv2",
+    "rv3",
+    "rv4",
+    "dt-up3b",
+    "dt-up6",
+    "dt-up7"
+  ],
+  "claims": "claims: R8 fixed - dp4 calls M._load_hooks_config_module(scratch) and M._shipped_pricing_from, observed in plugins/audit/tests/test__usage_core.py; sweep 335/335 ok. R6 fixed - doctor_trail.unpriced_model_tokens and check_unpriced_models, cases dt-up6/dt-up7 pass in the sweep. R9 and R7 are NOT fixed, reasons in outcome.technical; nothing here claims them.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:58f4ce587dd200fdb00d73692f91b0af04b564562b6eb5a84bfa61146020bcc4\",\"dirtyDigest\":\"sha256:872b8c817f12ff99c6e9e5d9ae32b183ea3dee4f7d177990019baca27113f15f\",\"dirtyPaths\":{\"plugins/audit/hooks/_config.py\":\"b1bd09ce73706899\",\"plugins/audit/scripts/status/_doctor_trail.py\":\"e6abe5d9fe577d26\",\"plugins/audit/scripts/usage/_usage_core.py\":\"62fd198848ef023f\",\"plugins/audit/tests/test__doctor_trail.py\":\"3b891ff12c018019\",\"plugins/audit/tests/test__usage_core.py\":\"a4b412620bef938b\"},\"head\":\"fb4031be\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/hooks/_config.py\",\"plugins/audit/scripts/status/_doctor_trail.py\",\"plugins/audit/scripts/usage/_usage_core.py\",\"plugins/audit/tests/test__config.py\",\"plugins/audit/tests/test__doctor_trail.py\",\"plugins/audit/tests/test__usage_core.py\"],\"scopeDigest\":\"sha256:8e2d3f87ad6194a9f721ca7f1627b75db24ebad2c46a2e05560e75187641848b\",\"v\":2}"
+}
