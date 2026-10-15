@@ -875,6 +875,50 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P128.17-0h5",
+      "title": "The falsifier ('must fail if' per planned test) is wired into the drive or retired, decided in the orchestration plan",
+      "status": "pending",
+      "description": "Carried from P125's phase review (P125-R38, merged with the orchestrator's earlier note): P125.19's clause (5) asked that every planned test carry a `must fail if <small code change>` line the drive applies in a temporary tree after the executor files, a surviving test being a finding with file:line. `run_falsifier` exists in drive-phase.py with no caller, and phase-signoff.md was rewritten to say a planned test MAY carry a falsifier and nothing calls it. Decide in the consolidated orchestration plan whether the falsifier stays; if it stays, add the schema field, the planning-time line, and the drive's post-filing run with a case that a surviving mutant is a finding; if it goes, delete run_falsifier and the documentation of it.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a planned test whose must-fail-if patch it survives is a finding naming the test, and a patch it fails on is not"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }
