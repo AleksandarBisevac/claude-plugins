@@ -6930,7 +6930,12 @@
       "fixes": [
         "P125-R55"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T14:46:14Z.d6549f",
+        "status": "passed",
+        "at": "2026-10-15T14:46:14Z"
+      }
     },
     {
       "id": "P125.89-0h5",

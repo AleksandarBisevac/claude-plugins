@@ -3048,33 +3048,16 @@ def _bug_for_add(assembled, bug_id):
     return bug, None
 
 
-# --- record paths: the manifest pair, the journal, the evidence --------------------
-# `integrate-task.py`'s `record_paths` is the one definition of these three - the
-# manifest pair, the journal directory and the evidence directory - but an entry
-# point may not import another, so what is composed here is the SAME primitives
-# that function reads (`_invariants.manifest_files`, `_journal_io.journal_dir`,
-# `_evidence_io.evidence_dir`) rather than a second list of the three names.
-# `commit-task-work.py`'s `stage_targets` reads the same three for the same reason.
+# --- record paths: the index, every shard, the journal, the evidence ---------------
+# The set and its membership test are `_invariants.record_rels` and
+# `_invariants.is_record_path` - the one definition, which integrate-task.py and
+# commit-task-work.py read as well. It lives in that helper because an entry point
+# may not import another; nothing here composes a list of its own.
 def _record_rels(assembled, phase, mpath, project):
-    """Git-root-relative paths that are RECORD, not work: the manifest pair, the
-    journal directory and the evidence directory - the paths a task commit
-    stages beside its declared `files` and never as one of them."""
-    config = _journal_io.load_config(project)
-    git_root = _invariants.git_root_for(assembled, project)
-    index_abs, phase_abs = _invariants.manifest_files(mpath, phase)
-    found = []
-    for absolute in (index_abs, phase_abs, _journal_io.journal_dir(project, config),
-                     _evidence_io.evidence_dir(project, config)):
-        rel = _invariants._rel(absolute, git_root)
-        if rel is not None and rel not in found:
-            found.append(rel)
-    return found
-
-
-def _is_record_path(path, records):
-    """Whether `path` is one of `records`, or lives under one of them - a
-    record directory's own tree (the journal, the evidence) is still a record."""
-    return any(path == r or path.startswith(r.rstrip("/") + "/") for r in records)
+    """Git-root-relative paths that are RECORD, not work, for this plan's git
+    root: `_invariants.record_rels` over the working index."""
+    return _invariants.record_rels(mpath, phase, project,
+                                   _invariants.git_root_for(assembled, project))
 
 
 # --- what a fix task's scope is built from -----------------------------------------
@@ -3256,7 +3239,7 @@ def _fix_scope(targets, project, records=()):
                 mine.append(found[0])
         mine, kept = [], mine
         for p in kept:
-            if _is_record_path(p, records):
+            if _invariants.is_record_path(p, records):
                 if p not in dropped:
                     dropped.append(p)
             else:
@@ -8560,12 +8543,12 @@ def _locked_scope(args, project, config, mpath, tid, out):
         return E_USAGE
     if files:
         records = _record_rels(assembled, phase, mpath, project)
-        hit = [f for f in files if _is_record_path(f, records)]
+        hit = [f for f in files if _invariants.is_record_path(f, records)]
         if hit:
-            out("[audit-task] --files may not take %s: %s a record this "
-                "commit already carries beside a task's own files - the "
-                "phase's manifest file, the journal directory or the evidence "
-                "directory - and not a task's own work. Scoping a task onto it "
+            out("[audit-task] --files may not take %s: %s a record - the "
+                "manifest index, a phase's manifest file, the journal "
+                "directory or the evidence directory - and not a task's own "
+                "work. Scoping a task onto it "
                 "would have every verb that rewrites the record read as this "
                 "task's own change. Nothing written."
                 % (", ".join(repr(h) for h in hit),

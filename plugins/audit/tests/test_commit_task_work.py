@@ -587,6 +587,51 @@ def _declared_cases(check, repos):
 
 
 @_own_repos
+def _declared_record_cases(check, repos):
+    """A declared entry that is a record is carried as the record, never as the
+    task's own work - the declared half is what the attempt check grades."""
+    fx = repos.make()
+    journal_file = RECORD_DIRS[1] + "/2026-10.declared.jsonl"
+    sibling = "docs/audit/phases/P2.json"
+    os.makedirs(os.path.join(fx["root"], RECORD_DIRS[1]), exist_ok=True)
+    _write(os.path.join(fx["root"], journal_file), "{}\n")
+    _set_task(fx, files=[OWNED, journal_file, SHARD_REL, INDEX_REL, sibling],
+              rows=False)
+    manifest, phase, task = _phase_and_task(fx)
+    targets = M.stage_targets(manifest, phase, task, fx["manifest"],
+                              fx["root"], fx["root"])
+    check("a declared journal file, a declared phase shard and the sharded "
+          "index are staged as records, not refused as declared work (none of "
+          "them is in `declared`, which is the half the attempt check grades "
+          "for older dirt; the journal file travels in its record directory "
+          "and the shard as the phase's file): %r" % (targets,),
+          journal_file not in targets["declared"]
+          and SHARD_REL not in targets["declared"]
+          and INDEX_REL not in targets["declared"]
+          and RECORD_DIRS[1] in targets["paths"]
+          and journal_file not in targets["paths"]
+          and targets["paths"].count(SHARD_REL) == 1)
+    check("a declared journal file, a declared phase shard and the sharded "
+          "index are staged as records, not refused as declared work (the "
+          "index rides the record rule, which carries it only for a bug link "
+          "it completes, and another phase's shard is not this commit's at "
+          "all - each passed over by name, not in silence): %r" % (targets,),
+          INDEX_REL not in targets["paths"]
+          and targets["indexRel"] == INDEX_REL
+          and sibling not in targets["paths"]
+          and sibling not in targets["declared"]
+          and any(sibling in line for line in targets["skipped"])
+          and any(INDEX_REL in line for line in targets["skipped"]))
+    # The other direction: a rule that read every declared entry as a record
+    # would pass both cases above and commit none of the task's work.
+    check("a declared journal file, a declared phase shard and the sharded "
+          "index are staged as records, not refused as declared work (ALLOW: "
+          "the task's own file beside them is still its declared work, the "
+          "only entry there): %r" % (targets["declared"],),
+          targets["declared"] == [OWNED] and OWNED in targets["paths"])
+
+
+@_own_repos
 def _records_cases(check, repos):
     """The records carried, the single-file layout, usage and the message."""
     # --- the single-file layout --------------------------------------------
@@ -2197,6 +2242,7 @@ def _fixture_git_cases(check, repos):
 
 STAGES = (("fg-block", "_fixture_git_cases"), ("or-block", "_ordinary_cases"),("dc-block", "_declared_cases"),
           ("rc-block", "_records_cases"), ("ix-block", "_index_cases"),
+          ("dr-block", "_declared_record_cases"),
           ("vd-block", "_verdict_cases"), ("sc-block", "_scope_cases"),
           ("br-block", "_branch_cases"), ("eg-block", "_empty_gate_cases"),
           ("rr-block", "_retired_red_cases"),

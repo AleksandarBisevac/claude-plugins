@@ -90,9 +90,9 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
-import _evidence_io  # noqa: E402  (a record path; the follower protocol and its owners)
-import _invariants  # noqa: E402  (the git root and the manifest file pair)
-import _journal_io  # noqa: E402  (where the journal lives: a record path)
+import _evidence_io  # noqa: E402  (the follower protocol and its owners)
+import _invariants  # noqa: E402  (the git root, and the one record-path definition)
+import _journal_io  # noqa: E402,F401  (not read here: test_integrate_task.py finds the journal through it)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader)
 import _task_outputs  # noqa: E402  (the ONE rule for what a declared entry covers)
 import _wave  # noqa: E402  (which path classes a text merge cannot be trusted with)
@@ -166,15 +166,6 @@ def _save_state(path, tasks):
                                             indent=2, sort_keys=True) + "\n")
 
 
-def _shard_files(raw_index, index_abs):
-    """Absolute paths of every shard a raw index's phase stubs name, in stub
-    order; none for the single-file layout or an index that is not a dict."""
-    stubs = raw_index.get("phases") if isinstance(raw_index, dict) else None
-    base = os.path.dirname(index_abs)
-    return [os.path.abspath(os.path.join(base, str(stub["shard"])))
-            for stub in stubs or [] if isinstance(stub, dict) and stub.get("shard")]
-
-
 def _index_at(git_root, rev, manifest_path):
     """The raw index as commit `rev` holds it, or None when that commit has no
     such file or it does not parse - the working copy's index still names its
@@ -192,34 +183,13 @@ def _index_at(git_root, rev, manifest_path):
 
 
 def record_paths(manifest, phase, manifest_path, project, git_root, head_index=None):
-    """Git-root-relative paths (files or directories) that are RECORD, not work: the
-    manifest pair, every other shard the index names, the journal directory and
-    the evidence directory. `head_index` is a second raw index - the one at the
-    commit a refresh copies from - whose shards are record too.
-
-    Every shard, not only this phase's: the index's `fileIndex` names tasks of
-    every phase, so an index carried without the sibling shards it references is
-    a plan that fails validation in the tree it lands in, and a sibling shard a
-    carry put there must not then read as the task's own change."""
-    config = _journal_io.load_config(project)
-    index_abs, phase_abs = _invariants.manifest_files(manifest_path, phase)
-    try:
-        raw = _mio.read_json(index_abs)
-    except (OSError, ValueError):
-        raw = None
-    shards = _shard_files(raw, index_abs) + _shard_files(head_index, index_abs)
-    found = []
-    for absolute in [index_abs, phase_abs] + shards + [
-            _journal_io.journal_dir(project, config),
-            _evidence_io.evidence_dir(project, config)]:
-        rel = os.path.relpath(absolute, git_root).replace(os.sep, "/")
-        if not rel.startswith("..") and rel not in found:
-            found.append(rel)
-    return found
-
-
-def _is_record(path, records):
-    return any(path == r or path.startswith(r.rstrip("/") + "/") for r in records)
+    """Git-root-relative paths (files or directories) that are RECORD, not work -
+    `_invariants.record_rels`, the one definition audit-task and
+    commit-task-work read too. `head_index` is a second raw index - the one at
+    the commit a refresh copies from - whose shards are record too. `manifest`
+    is not read: the set comes from the index on disk and `head_index`."""
+    return _invariants.record_rels(manifest_path, phase, project, git_root,
+                                   head_index=head_index)
 
 
 def task_tree(git_root, task_id):
@@ -442,7 +412,7 @@ def _integrate(manifest, phase, task, manifest_path, project, git_root, undeclar
     records = record_paths(manifest, phase, manifest_path, project, git_root)
 
     changes = {p: s for p, s in task_changes(tree, base).items()
-               if not _is_record(p, records)}
+               if not _invariants.is_record_path(p, records)}
     paths = sorted(changes)
     answer["paths"] = paths
     if not paths:
@@ -473,14 +443,16 @@ def _integrate(manifest, phase, task, manifest_path, project, git_root, undeclar
                                    "a re-gate is unknown - re-gate)" % (task_id,))
 
     stray = sorted(p for p in dirty_paths(git_root)
-                   if not _is_record(p, records) and p not in accounted)
+                   if not _invariants.is_record_path(p, records)
+                   and p not in accounted)
     if stray:
         return _refuse(answer, "dirty", stray, [task_id],
                        "the phase tree holds changes that are neither record paths "
                        "nor another integration's: %s" % (", ".join(stray),))
 
     moved = changed_since(git_root, base)
-    clash = sorted(p for p in paths if p in moved and not _is_record(p, records)
+    clash = sorted(p for p in paths if p in moved
+                   and not _invariants.is_record_path(p, records)
                    and (p not in set(own.get("paths") or [])
                         or attribution(entries, task_id, base, p)))
     siblings = {}

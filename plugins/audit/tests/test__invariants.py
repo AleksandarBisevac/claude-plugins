@@ -41,6 +41,7 @@ import _invariants as M                            # noqa: E402
 import _output                                     # noqa: E402
 import _evidence_io                                # noqa: E402
 import _journal_io                                 # noqa: E402
+import _loader                                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402
 
 BRANCH = "audit/p1-demo"
@@ -2152,6 +2153,118 @@ def _landing_cases(check):
         _harness.remove_tree(tmp)
 
 
+# --- which paths are records, asked of every caller ------------------------------
+RECORD_CLAUSE = ("one record-path definition - the index, every phase file the "
+                 "index names, the journal and the evidence directories, and "
+                 "anything under them - answers audit-task, commit-task-work and "
+                 "integrate-task alike")
+
+
+def _guarded(fn, *args, **kwargs):
+    """`fn(...)`, or the error it raised as a string: a definition a caller
+    cannot reach is a failing case, not a crashed block."""
+    try:
+        return fn(*args, **kwargs)
+    except Exception as exc:                                   # noqa: BLE001
+        return "%s: %s" % (type(exc).__name__, exc)
+
+
+def _record_world(root):
+    """A sharded plan whose working index names P1 and P2, and the index at
+    the commit a refresh copies from, which names P3 as well."""
+    os.makedirs(os.path.join(root, ".claude"))
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"))
+    _write_json(os.path.join(root, ".claude", "audit.config.json"),
+                {"manifestPath": "docs/audit/audit-plan.json"})
+    stubs = [{"id": "P1", "shard": "phases/P1.json"},
+             {"id": "P2", "shard": "phases/P2.json"}]
+    index = {"meta": {}, "phases": stubs, "fileIndex": {}}
+    index_path = os.path.join(root, "docs", "audit", "audit-plan.json")
+    _write_json(index_path, index)
+    for pid in ("P1", "P2"):
+        _write_json(os.path.join(root, "docs", "audit", "phases",
+                                 "%s.json" % pid), _phase(pid, []))
+    head = dict(index, phases=stubs + [{"id": "P3", "shard": "phases/P3.json"}])
+    return index, index_path, head
+
+
+def _record_rel_cases(check):
+    IT = _loader.load_script("integrate-task.py", "it_for_records")
+    AT = _loader.load_script("audit-task.py", "at_for_records")
+    CTW = _loader.load_script("commit-task-work.py", "ctw_for_records")
+    root = os.path.realpath(_harness.fixture_root("invariants-records-"))
+    try:
+        index, index_path, head = _record_world(root)
+        phase = {"id": "P1", "shard": "phases/P1.json"}
+        config = _journal_io.load_config(root)
+        rel = lambda p: _output.posix_rel(p, root)
+        journal = rel(_journal_io.journal_dir(root, config))
+        evidence = rel(_evidence_io.evidence_dir(root, config))
+        expected = ["docs/audit/audit-plan.json", "docs/audit/phases/P1.json",
+                    "docs/audit/phases/P2.json", "docs/audit/phases/P3.json",
+                    journal, evidence]
+        got = _guarded(getattr, M, "record_rels")
+        got = _guarded(got, index_path, phase, root, root, head_index=head) \
+            if callable(got) else got
+        check("%s (the set itself: the index, this phase's shard, the sibling "
+              "the working index names, the sibling named only at HEAD, the "
+              "journal and the evidence - each once, nothing else): %r"
+              % (RECORD_CLAUSE, got), got == expected)
+        disk_only = expected[:3] + expected[4:]
+        via_it = _guarded(IT.record_paths, index, phase, index_path, root, root,
+                          head_index=head)
+        check("%s (integrate-task's carry reads the same set, the HEAD-only "
+              "sibling included): %r" % (RECORD_CLAUSE, via_it),
+              via_it == expected)
+        via_at = _guarded(AT._record_rels, index, phase, index_path, root)
+        check("%s (audit-task's checks read the same set from the working "
+              "index, so a task may not be scoped onto a sibling's shard): %r"
+              % (RECORD_CLAUSE, via_at), via_at == disk_only)
+
+        # commit-task-work: every record entry a task declares stays out of its
+        # declared work, and only the non-record entries are declared.
+        _git(root, "init", "-q")
+        os.makedirs(os.path.join(root, "src"))
+        os.makedirs(os.path.join(root, journal), exist_ok=True)
+        os.makedirs(os.path.join(root, "docs", "audit", "journal-notes"))
+        for name in ("src/a.py", journal + "/2026-10.x.jsonl",
+                     "docs/audit/journal-notes/n.md"):
+            _write(os.path.join(root, name), "x\n")
+        files = expected[:3] + [journal + "/2026-10.x.jsonl", "src/a.py",
+                                "docs/audit/journal-notes/n.md"]
+        task = {"id": "P1.1", "files": files}
+        targets = _guarded(CTW.stage_targets, index, phase, task, index_path,
+                           root, root)
+        declared = targets.get("declared") if isinstance(targets, dict) else targets
+        check("%s (commit-task-work's staging declares only the entries the "
+              "same predicate calls work): %r" % (RECORD_CLAUSE, declared),
+              declared == ["src/a.py", "docs/audit/journal-notes/n.md"])
+
+        # The predicate, both directions. The deny twins are a path outside
+        # every record, a directory sharing only a prefix with the journal, a
+        # shard no index names, and a name sharing only a prefix with the index.
+        records = expected
+        inside = list(expected) + [journal + "/2026-10.x.jsonl",
+                                   evidence + "/2026-10.y.jsonl"]
+        outside = ["src/a.py", "docs/audit/journal-notes/n.md",
+                   "docs/audit/phases/P9.json", "docs/audit/audit-plan.json.bak"]
+        pred = getattr(M, "is_record_path", None)
+        said_in = [p for p in inside if callable(pred) and pred(p, records)]
+        said_out = [p for p in outside if callable(pred) and pred(p, records)]
+        check("%s (the predicate: each record and anything under a record "
+              "directory is a record): %r" % (RECORD_CLAUSE, said_in),
+              said_in == inside)
+        check("%s (DENY: a non-record path under the repo is not a record, "
+              "nor one sharing only a prefix with a record): %r / %r"
+              % (RECORD_CLAUSE, pred, said_out),
+              callable(pred) and said_out == [])
+        check("%s (and no caller keeps a predicate of its own beside it)"
+              % (RECORD_CLAUSE,),
+              not hasattr(IT, "_is_record") and not hasattr(AT, "_is_record_path"))
+    finally:
+        _harness.remove_tree(root)
+
+
 def _scrubbed_baseline_cases(check):
     """A baseline is written through the scrubbing writer, so a breach whose
     subject or line names a machine path is stored rewritten; the next run
@@ -2210,6 +2323,7 @@ def _selftest():
         _scrubbed_baseline_cases(check)
         _cases(check)
         _harness.stage(check, "ln-block", _landing_cases)
+        _harness.stage(check, "rp-block", _record_rel_cases)
     return _harness.run(body)
 
 

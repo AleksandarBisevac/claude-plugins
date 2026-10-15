@@ -309,12 +309,16 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
     index_abs, phase_file_abs = _invariants.manifest_files(manifest_path, phase)
     candidates, skipped = [], []
 
-    # RECORD RELS COME FIRST, so a declared file that happens to BE one of
-    # these three - the phase's own shard, say, named in a fix task's `files` -
-    # is recognised as the record it is before the loop below would otherwise
-    # read it as the task's own work. A commit grading a record path's changes
+    # RECORD RELS COME FIRST, so a declared entry that is a record - the phase's
+    # own shard named in a fix task's `files`, a journal file, the index - is
+    # recognised as the record it is before the loop below would otherwise read
+    # it as the task's own work. A commit grading a record path's changes
     # against the attempt's own edits would refuse a close for changes this
-    # task never made - every verb rewrites the phase's shard.
+    # task never made - every verb rewrites the phase's shard. Which paths are
+    # records is `_invariants.record_rels`, the set integrate-task and
+    # audit-task read; the three below are the ones this commit carries.
+    records = _invariants.record_rels(manifest_path, phase, project, git_root,
+                                      config=config)
     record_abs = ((MANIFEST_LABEL, phase_file_abs),
                   (JOURNAL_LABEL, _journal_io.journal_dir(project, config)),
                   (EVIDENCE_LABEL, _evidence_io.evidence_dir(project, config)))
@@ -337,7 +341,14 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
             skipped.append("%s %s lives outside the git root, so it cannot be "
                            "committed at all" % (DECLARED_LABEL, name))
             continue
-        if rel in [r for r, _label, _abs in record_rels]:
+        if _invariants.is_record_path(rel, [r for r, _label, _abs in record_rels]):
+            continue
+        if _invariants.is_record_path(rel, records):
+            skipped.append("%s %s is a record, not the task's work - the "
+                           "manifest index rides a task commit only for a bug "
+                           "link it completes, and another phase's shard never "
+                           "does - so it is not staged as declared"
+                           % (DECLARED_LABEL, name))
             continue
         if rel in [c[0] for c in candidates]:
             continue

@@ -304,6 +304,61 @@ def manifest_files(manifest_path, phase):
         os.path.join(os.path.dirname(index_abs), str(shard)))
 
 
+# --- which paths are records --------------------------------------------------
+def _shard_files(raw_index, index_abs):
+    """Absolute paths of every shard a raw index's phase stubs name, in stub
+    order; none for the single-file layout or an index that is not a dict."""
+    stubs = raw_index.get("phases") if isinstance(raw_index, dict) else None
+    base = os.path.dirname(index_abs)
+    return [os.path.abspath(os.path.join(base, str(stub["shard"])))
+            for stub in stubs or [] if isinstance(stub, dict) and stub.get("shard")]
+
+
+def record_rels(manifest_path, phase, project, git_root, head_index=None,
+                config=None):
+    """Git-root-relative paths (files or directories) that are RECORD, not work:
+    the index, this phase's file, every other shard the index names, the journal
+    directory and the evidence directory - each once, in that order. A path
+    outside `git_root` is left out, since nothing there can be committed.
+    `head_index` is a second raw index - the one a commit holds - whose shards
+    are record too.
+
+    THE ONE DEFINITION, because the commands that ask it act on the answer in
+    different ways and must not disagree: integrate-task carries these paths and
+    exempts their changes from a member's own, audit-task refuses them as a
+    task's `files` or a fix's scope, and commit-task-work stages them as records
+    rather than as the task's declared work. While each composed its own list, a
+    declared journal file or the sharded index was a record to one and the
+    task's work to another.
+
+    Every shard, not only this phase's: the index's `fileIndex` names tasks of
+    every phase, so an index carried without the sibling shards it references is
+    a plan that fails validation in the tree it lands in, and a sibling shard a
+    carry put there must not then read as the task's own change."""
+    config = _journal_io.load_config(project) if config is None else config
+    index_abs, phase_abs = manifest_files(manifest_path, phase)
+    try:
+        raw = _mio.read_json(index_abs)
+    except (OSError, ValueError):
+        raw = None
+    found = []
+    for absolute in ([index_abs, phase_abs] + _shard_files(raw, index_abs)
+                     + _shard_files(head_index, index_abs)
+                     + [_journal_io.journal_dir(project, config),
+                        _evidence_io.evidence_dir(project, config)]):
+        rel = _rel(absolute, git_root)
+        if rel is not None and rel not in found:
+            found.append(rel)
+    return found
+
+
+def is_record_path(path, records):
+    """Whether git-root-relative `path` is one of `records` or lives under one
+    - a record directory's own tree (the journal, the evidence) is still a
+    record, and a sibling sharing only a prefix with one is not."""
+    return any(_under(path, rel) for rel in records or ())
+
+
 # --- where to look ------------------------------------------------------------
 def git_root_for(manifest, project):
     """Where git runs: `project`, plus `meta.gitRoot` when the workspace nests.
