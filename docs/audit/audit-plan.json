@@ -4905,7 +4905,9 @@
       "P123.72-64p",
       "P125.2",
       "P125.6",
-      "P125.40-0h5"
+      "P125.40-0h5",
+      "P125.77-0h5",
+      "P125.94-0h5"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
@@ -4947,7 +4949,8 @@
       "P128.4-0h5",
       "P125.54-0h5",
       "P125.56-0h5",
-      "P125.61-0h5"
+      "P125.61-0h5",
+      "P125.99-0h5"
     ],
     "plugins/audit/tests/test__deps.py: a field added to one copy of the explorer return contract and not the other is a finding": [
       "P32.5"
@@ -5036,7 +5039,9 @@
       "P123.62-64p",
       "P125.4",
       "P125.12",
-      "P125.52-0h5"
+      "P125.52-0h5",
+      "P125.77-0h5",
+      "P125.83-0h5"
     ],
     "plugins/audit/tests/test__evidence_io.py": [
       "P32.7",
@@ -5646,7 +5651,8 @@
       "P104.3",
       "P104.4",
       "P104.11-tog",
-      "P104.13-tog"
+      "P104.13-tog",
+      "P125.75-0h5"
     ],
     "plugins/audit/tests/test__warning_groups.py": [
       "P51.5"
@@ -5743,7 +5749,9 @@
       "P125.66-0h5",
       "P125.70-0h5",
       "P125.72-0h5",
-      "P125.79-0h5"
+      "P125.79-0h5",
+      "P125.86-0h5",
+      "P125.89-0h5"
     ],
     "plugins/audit/tests/test_audit_status.py": [
       "P25.2",
@@ -5931,7 +5939,9 @@
       "P125.60-0h5",
       "P125.51-0h5",
       "P125.65-0h5",
-      "P125.66-0h5"
+      "P125.66-0h5",
+      "P125.87-0h5",
+      "P125.98-0h5"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -5956,7 +5966,8 @@
       "P125.3",
       "P125.4",
       "P125.2",
-      "P125.46-0h5"
+      "P125.46-0h5",
+      "P125.76-0h5"
     ],
     "plugins/audit/tests/test_audit_version.py": [
       "P67.1",
@@ -6029,7 +6040,8 @@
       "P118.8",
       "P118.14-v7t",
       "P125.64-0h5",
-      "P125.102-0h5"
+      "P125.102-0h5",
+      "P125.92-0h5"
     ],
     "plugins/audit/tests/test_commit_manifest_index.py": [
       "P29.5",
@@ -6071,7 +6083,8 @@
       "P125.34-0h5",
       "P125.53-0h5",
       "P125.64-0h5",
-      "P125.102-0h5"
+      "P125.102-0h5",
+      "P125.88-0h5"
     ],
     "plugins/audit/tests/test_detect_plan_skip.py": [
       "P72.1",
@@ -6277,7 +6290,8 @@
       "P104.18-tog",
       "P125.3",
       "P125.39-0h5",
-      "P125.52-0h5"
+      "P125.52-0h5",
+      "P125.76-0h5"
     ],
     "plugins/audit/tests/test_migrate_manifest.py": [
       "P50.6",
@@ -6459,7 +6473,8 @@
       "P125.35-0h5",
       "P125.49-0h5",
       "P125.54-0h5",
-      "P125.61-0h5"
+      "P125.61-0h5",
+      "P125.93-0h5"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
@@ -6526,7 +6541,8 @@
       "P125.48-0h5",
       "P125.57-0h5",
       "P125.63-0h5",
-      "P125.71-0h5"
+      "P125.71-0h5",
+      "P125.80-0h5"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
@@ -6548,7 +6564,9 @@
       "P125.18",
       "P125.39-0h5",
       "P125.46-0h5",
-      "P125.52-0h5"
+      "P125.52-0h5",
+      "P125.76-0h5",
+      "P125.97-0h5"
     ],
     "plugins/audit/tests/test_validate_config.py": [
       "P47.1",
@@ -8028,7 +8046,8 @@
       "P104.13-tog",
       "P125.2",
       "P125.3",
-      "P125.77-0h5"
+      "P125.77-0h5",
+      "P125.75-0h5"
     ],
     "plugins/audit/scripts/report/_usage_overview.py": [
       "P104.4",
@@ -8157,7 +8176,8 @@
       "P118.6",
       "P124.7",
       "P124.13-k2x",
-      "P125.6"
+      "P125.6",
+      "P125.95-0h5"
     ],
     "tools/demo-gate.tape": [
       "P112.1-uce",
@@ -8407,7 +8427,9 @@
       "P125.85-0h5",
       "P125.103-0h5",
       "P128.17-0h5",
-      "P125.101-0h5"
+      "P125.101-0h5",
+      "P125.90-0h5",
+      "P125.91-0h5"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6",
@@ -8467,7 +8489,9 @@
       "P125.53-0h5",
       "P125.60-0h5",
       "P125.62-0h5",
-      "P125.71-0h5"
+      "P125.71-0h5",
+      "P125.86-0h5",
+      "P125.98-0h5"
     ],
     "plugins/audit/agents/guide.md": [
       "P118.9",
@@ -8608,7 +8632,8 @@
       "P126.6",
       "P126.16-13q",
       "P125.27",
-      "P125.67-0h5"
+      "P125.67-0h5",
+      "P125.78-0h5"
     ],
     "plugins/audit/scripts/governance/_wave.py": [
       "P124.1"
