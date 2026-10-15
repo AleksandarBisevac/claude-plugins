@@ -53,14 +53,14 @@ def _cases(check):
     home = os.path.join(tmp, "home")
     # a project skill + agent
     os.makedirs(os.path.join(proj, ".claude", "skills", "proj-skill"))
-    with open(os.path.join(proj, ".claude", "skills", "proj-skill", "SKILL.md"), "w") as fh:
+    with open(os.path.join(proj, ".claude", "skills", "proj-skill", "SKILL.md"), "w", encoding="utf-8") as fh:
         fh.write("---\nname: proj-skill\ndescription: Project skill.\n---\n")
     os.makedirs(os.path.join(proj, ".claude", "agents"))
-    with open(os.path.join(proj, ".claude", "agents", "proj-agent.md"), "w") as fh:
+    with open(os.path.join(proj, ".claude", "agents", "proj-agent.md"), "w", encoding="utf-8") as fh:
         fh.write("---\nname: proj-agent\ndescription: Project agent.\n---\n")
     # a user-global skill
     os.makedirs(os.path.join(home, ".claude", "skills", "user-skill"))
-    with open(os.path.join(home, ".claude", "skills", "user-skill", "SKILL.md"), "w") as fh:
+    with open(os.path.join(home, ".claude", "skills", "user-skill", "SKILL.md"), "w", encoding="utf-8") as fh:
         fh.write("---\nname: user-skill\n---\n")
 
     reg = M.discover(proj, home=home)
@@ -75,7 +75,7 @@ def _cases(check):
 
     # --- isolation cases: moved-module boundaries stay real --------------------
     _long = os.path.join(tmp, "long-skill.md")
-    with open(_long, "w") as fh:
+    with open(_long, "w", encoding="utf-8") as fh:
         fh.write("---\nname: long\ndescription: " + ("x" * 5000) + "\n---\nbody")
     check("_fm_of's fallback read actually parses a fence past the 4096-byte cap",
           M._fm_of(_long).get("name") == "long")
@@ -91,7 +91,7 @@ def _cases(check):
           "and no env block, because those carry tokens",
           all(set(e) == {"name", "source", "description"}
               for e in M._mcp_entries(home, proj, [])))
-    _src_lines = [l for l in open(M.__file__).read().split("\n")
+    _src_lines = [l for l in open(M.__file__, encoding="utf-8").read().split("\n")
                   if l.startswith("import ") or l.startswith("from ")]
     check("this module never imports panel-server or _panel_settings - it sits at "
           "the bottom of the panel's own import graph",
@@ -152,10 +152,10 @@ def _cases(check):
     # claim about work skipped rather than work that never existed.
     _pkg_a = os.path.join(home, ".claude", "plugins", "marketplace", "pkg-a")
     os.makedirs(os.path.join(_pkg_a, "skills", "plug-skill"))
-    with open(os.path.join(_pkg_a, "skills", "plug-skill", "SKILL.md"), "w") as fh:
+    with open(os.path.join(_pkg_a, "skills", "plug-skill", "SKILL.md"), "w", encoding="utf-8") as fh:
         fh.write("---\nname: plug-skill\ndescription: From a plugin.\n---\n")
     os.makedirs(os.path.join(_pkg_a, "agents"))
-    with open(os.path.join(_pkg_a, "agents", "plug-agent.md"), "w") as fh:
+    with open(os.path.join(_pkg_a, "agents", "plug-agent.md"), "w", encoding="utf-8") as fh:
         fh.write("---\nname: plug-agent\ndescription: From a plugin.\n---\n")
     _age(tmp)
 
@@ -180,7 +180,7 @@ def _cases(check):
     _root_before = os.stat(os.path.join(home, ".claude", "plugins")).st_mtime_ns
     _pkg_b = os.path.join(home, ".claude", "plugins", "marketplace", "pkg-b")
     os.makedirs(os.path.join(_pkg_b, "skills", "deep-skill"))
-    with open(os.path.join(_pkg_b, "skills", "deep-skill", "SKILL.md"), "w") as fh:
+    with open(os.path.join(_pkg_b, "skills", "deep-skill", "SKILL.md"), "w", encoding="utf-8") as fh:
         fh.write("---\nname: deep-skill\ndescription: Installed after the scan.\n---\n")
     _r3, _n3 = _counted(lambda: M.discover(proj, home=home))
     check("cache: a plugin installed BELOW the root invalidates — and the root's "
@@ -193,7 +193,7 @@ def _cases(check):
     _age(tmp)
     M.discover(proj, home=home)                     # re-warm on the new tree
     _edited = os.path.join(proj, ".claude", "skills", "proj-skill", "SKILL.md")
-    with open(_edited, "w") as fh:
+    with open(_edited, "w", encoding="utf-8") as fh:
         fh.write("---\nname: proj-skill\ndescription: Edited in place.\n---\n")
     _r4, _n4 = _counted(lambda: M.discover(proj, home=home))
     check("cache: a description EDITED IN PLACE invalidates — no directory's "
@@ -213,7 +213,7 @@ def _cases(check):
 
     _age(tmp)
     M.discover(proj, home=home)
-    with open(os.path.join(proj, ".mcp.json"), "w") as fh:
+    with open(os.path.join(proj, ".mcp.json"), "w", encoding="utf-8") as fh:
         fh.write('{"mcpServers": {"late-server": {"command": "x"}}}')
     _r6, _n6 = _counted(lambda: M.discover(proj, home=home))
     check("cache: a file that did not EXIST when the scan ran invalidates when it "
@@ -229,7 +229,7 @@ def _cases(check):
     os.makedirs(os.path.join(_fresh_home, ".claude", "skills", "s1"))
     os.makedirs(_fresh_proj)
     with open(os.path.join(_fresh_home, ".claude", "skills", "s1", "SKILL.md"),
-              "w") as fh:
+              "w", encoding="utf-8") as fh:
         fh.write("---\nname: s1\n---\n")
     M.discover(_fresh_proj, home=_fresh_home)
     _r7, _n7 = _counted(lambda: M.discover(_fresh_proj, home=_fresh_home))
@@ -402,7 +402,7 @@ def _cases(check):
                     if s["name"] == "plug-skill"]
     _age(tmp)
     M.discover(proj, home=home)
-    with open(os.path.join(proj, ".claude", "settings.json"), "w") as fh:
+    with open(os.path.join(proj, ".claude", "settings.json"), "w", encoding="utf-8") as fh:
         fh.write('{"enabledPlugins": {"pkg-a@marketplace": true},'
                  ' "extraKnownMarketplaces": {"marketplace": {"source": {}}}}')
     _plug_after = [s for s in M.discover(proj, home=home)["skills"]

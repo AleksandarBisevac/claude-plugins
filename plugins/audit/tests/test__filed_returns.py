@@ -801,8 +801,28 @@ def _same_second_cases(check):
         _harness.remove_tree(root)
 
 
+def _case_title_cases(check):
+    clause = "a filed title carries its detail after a parenthesis"
+    task = {"tests": {"add": ["the-suite: " + clause]}}
+    declared = task["tests"]["add"][0]
+    detail = M.tests_add_gaps(task, [clause + " (sr1 counted 3 of 3)"])
+    bare = M.tests_add_gaps(task, [clause])
+    # The deny twin: a title that only STARTS with the clause, or paraphrases it,
+    # is no counterpart - it is what makes the rule unconditional-proof.
+    run_on = M.tests_add_gaps(task, [clause + "s and more"])
+    spaced = M.tests_add_gaps(task, [clause + " extra words"])
+    paraphrase = M.tests_add_gaps(task, ["detail follows a bracket in a filed title"])
+    check("a filed case title that is the tests.add clause followed by its detail "
+          "after an opening parenthesis counts as that clause's counterpart, and a "
+          "title that only paraphrases it does not (%r)"
+          % ((detail, bare, run_on, spaced, paraphrase),),
+          detail == [] and bare == [] and run_on == [declared]
+          and spaced == [declared] and paraphrase == [declared])
+
+
 def _selftest():
     def body(check):
+        _harness.stage(check, "ct-block", _case_title_cases)
         _harness.stage(check, "fr-block", _cases)
         _harness.stage(check, "ss-block", _same_second_cases)
         _harness.stage(check, "um-block", _um_cases)

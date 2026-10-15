@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --encoding cp1252": "pass",
+    "python3 tools/gate-parity.py": "pass",
+    "ruff check plugins/audit tools": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T01:00:35Z",
+    "basis": "`python3 plugins/audit/tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 94 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - a filed case title that is the tests.add clause followed by its detail after an opening parenthesis counts as that clause's counterpart, and a title that only paraphrases it does not ((['the-suite: a filed title carries its detail after a parenthesis'], [], ['the-suite: a filed title carries its detail after a parenthesis'], ['the-suite: a filed title carries its detail after a parenthesis'], ['the-suite: a filed title carries its detail after a parenthesis'])) (house FAIL): SELFTEST FAILED: 93/94 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added _filed_returns.title_names_clause (title == clause, or clause then ' ('); tests_add_gaps and stamp-verification._is_named (label branch) both call it; stamp-verification imports _filed_returns (floor layer, allowed). test__panel_discovery.py: every text open now names encoding utf-8 (the read at ~94 and all writes); the cp1252 pass then found no other red suite. CLAUDE.md Tests-list comment on the --encoding cp1252 line now says legacy code page for stdio AND non-UTF-8 locale on posix, one line changed. _output.text_encoding_violations docstring states the shipped-code scope and why (legacy-locale pass catches what tests/tools decode). OUTSIDE declared files: ran `_deps.py --write-map`, which regenerated the module-map fence in PLUGIN-BUILD-GUIDE.md because stamp-verification gained an import edge (test__deps g1 was red otherwise). Fixtures use a non-.py declared path so test__refs c5 stays green. Results: sweep 335/335 files ok, 16285 cases; cp1252 pass 335/335 ok; gate-parity exit 0; ruff clean.",
+    "descriptive": "One rule decides whether a case title names a declared test clause everywhere, and the legacy-locale pass is green with its first find fixed."
+  },
+  "testsAdded": [
+    "a filed case title that is the tests.add clause followed by its detail after an opening parenthesis counts as that clause's counterpart, and a title that only paraphrases it does not",
+    "the red-first helper's case match and the filed-counterpart check are the same function's answer"
+  ],
+  "claims": "claims:\n1 _filed_returns.py title_names_clause is the predicate; stamp-verification.py _is_named and tests_add_gaps both call it\n2 both new cases red before the fix (93/94 and 0/1); not re-mutated after the fix\n3 grep of unencoded open in test__panel_discovery.py: every hit now has encoding; cp1252 pass over whole tree: no other suite red\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:1dc926518a5ed27e848690741ff10354f54e78350f16b81e3a5dda20e8504612\",\"dirtyDigest\":\"sha256:747369a98d1e8ceaab27c37b32f1a24dfae7588b946591591b67cc76b400a977\",\"dirtyPaths\":{\"CLAUDE.md\":\"413f2cdd618ee3ea\",\"PLUGIN-BUILD-GUIDE.md\":\"110562df3c6c3c2d\",\"plugins/audit/scripts/_output.py\":\"1ce4ca55a056b70e\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"4100eb063415ede0\",\"plugins/audit/scripts/manifest/_filed_returns.py\":\"cfd20fc00f2e5285\",\"plugins/audit/tests/test__filed_returns.py\":\"23a85493fb732847\",\"plugins/audit/tests/test__panel_discovery.py\":\"c8b858c404ecf34f\",\"plugins/audit/tests/test_stamp_verification.py\":\"96f8d8dd4ca4fdb3\"},\"head\":\"2f68c4f9\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CLAUDE.md\",\"plugins/audit/scripts/_output.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/scripts/manifest/_filed_returns.py\",\"plugins/audit/tests/test__filed_returns.py\",\"plugins/audit/tests/test__panel_discovery.py\",\"plugins/audit/tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:4ff37878c039c6339f2c564d1faa81b06741630269d70d21dd7a4aef9800e376\",\"v\":2}"
+}

@@ -194,7 +194,7 @@ out here is left out on the record and not by omission:
 ```bash
 python3 tools/sweep-selftests.py           # hooks, scripts, tests, tools/ AND .claude/hooks/, each in a scratch dir
 python3 tools/sweep-selftests.py --selftest
-python3 tools/sweep-selftests.py --encoding cp1252   # again, on a legacy code page; --fast skips it
+python3 tools/sweep-selftests.py --encoding cp1252   # again, on a legacy code page for stdio AND a non-UTF-8 locale on posix; --fast skips it
 python3 tools/sweep-selftests.py --spaced            # again, TMPDIR spaced + symlinked; posix only; --fast skips it
 python3 tools/gate-parity.py               # every description of the gate set, compared
 python3 tools/bench-hooks.py --gate        # the hook import budget; no flag prints the measurement

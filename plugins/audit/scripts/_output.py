@@ -2473,6 +2473,14 @@ def text_encoding_violations(dirs=None, pending=None):
     another name, and any file outside `dirs`, which defaults to
     `ENCODING_DIRS`. So a clean result means "none of this shape here", not
     "every byte this plugin reads is decoded as UTF-8".
+
+    WHY ONLY SHIPPED CODE: `ENCODING_DIRS` is `scripts/`, `hooks/` and
+    `.claude/hooks/` - what runs on a user's machine - and stays that way. A
+    test or a tool under `tests/` or `tools/` is not walked here; what one of
+    them actually decodes is caught by the sweep's legacy-locale pass
+    (`tools/sweep-selftests.py --encoding cp1252`), which runs each child under
+    a legacy code page and, on posix, a non-UTF-8 locale, so a read with no
+    encoding fails where it runs instead of being guessed at by name.
     """
     dirs = dirs if dirs is not None else ENCODING_DIRS
     pending = set(ENCODING_PENDING if pending is None else pending)

@@ -369,25 +369,40 @@ def claim_section(task, filed_return):
         "## Claim under review (the executor's filed return)", body])
 
 
+def title_names_clause(title, clause):
+    """Whether a case's printed title is `clause`, or `clause` followed by its
+    detail after ` (` - the one reading of a title, shared by the red-first
+    helper's `--case NAME` and `tests_add_gaps`, so a title one accepts is never
+    one the other reports as unfiled. A paraphrase, a title that merely starts
+    with the clause's letters, and an empty clause do not match. Read in place,
+    so a long detail costs no prefix copy."""
+    if not clause or not title:
+        return False
+    return title == clause or (title.startswith(clause)
+                               and title.startswith(" (", len(clause)))
+
+
 def tests_add_gaps(task, filed_titles):
     """Declared `tests.add` entries with no filed counterpart in
     `filed_titles` (a return's `testsAdded`). A case is matched by its
-    VERBATIM title - the executor reuses the clause the plan declares - or by
+    title - the executor reuses the clause the plan declares, with or without
+    its detail after ` (` (`title_names_clause`) - or by
     an explicit `tests.addMap` entry the task itself carries (declared path ->
     filed title), never by a fuzzy compare: scored as one string diff, this
     flagged most of the danuvia tasks, mostly Serbian plan text against
     English test titles."""
     tests = (task or {}).get("tests") or {}
     declared = [str(e) for e in tests.get("add") or []]
-    titles = set(str(t).strip() for t in filed_titles or [])
+    titles = [str(t).strip() for t in filed_titles or []]
     add_map = tests.get("addMap") if isinstance(tests.get("addMap"), dict) else {}
     gaps = []
     for entry in declared:
         clause = entry.split(":", 1)[1].strip() if ":" in entry else entry.strip()
         mapped = add_map.get(entry) or add_map.get(clause)
-        if entry.strip() in titles or clause in titles:
-            continue
-        if mapped and str(mapped).strip() in titles:
+        wanted = [entry.strip(), clause]
+        if mapped:
+            wanted.append(str(mapped).strip())
+        if any(title_names_clause(t, w) for t in titles for w in wanted):
             continue
         gaps.append(entry)
     return gaps

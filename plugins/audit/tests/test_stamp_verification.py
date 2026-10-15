@@ -47,6 +47,7 @@ import _loader                                     # noqa: E402
 import _tree_stamp                                 # noqa: E402
 import _proc_group                                 # noqa: E402
 import _runner_output                              # noqa: E402
+import _filed_returns                              # noqa: E402
 import _worktrees as _wt                           # noqa: E402
 
 M = _loader.load_script("stamp-verification.py", modname="stamp_verification")
@@ -5262,6 +5263,7 @@ STAGES = (
     ("sr-final", "_final_pass_cases"),
     ("sr-budget", "_budget_cases"),
     ("sl-block", "_success_line_cases"),
+    ("ct-block", "_case_title_cases"),
 )
 
 
@@ -5272,6 +5274,24 @@ def _cases(check, only=()):
     unknown = sorted(set(only) - set(label for label, _fn in STAGES))
     if unknown:
         check(_harness.unknown_stage_label(unknown), False)
+
+
+def _case_title_cases(check):
+    """`--case NAME` and the submit-time filed-counterpart check read one title
+    with one predicate, so no label is named by one and not the other."""
+    clause = "the red-first helper reads a title"
+    task = {"tests": {"add": ["the-suite: " + clause]}}
+    labels = [clause, clause + " (detail 2/2)", clause + "s", clause + " extra",
+              "something else entirely", ""]
+    cases = [(lab,
+              M._is_named({"id": None, "label": lab}, clause),
+              _filed_returns.tests_add_gaps(task, [lab]) == [])
+             for lab in labels]
+    disagree = [lab for lab, named, counted in cases if named != counted]
+    check("the red-first helper's case match and the filed-counterpart check are "
+          "the same function's answer (%r)" % (cases,),
+          not disagree and [c[1] for c in cases] == [True, True, False, False, False, False]
+          and M._filed_returns.title_names_clause is _filed_returns.title_names_clause)
 
 
 def _cli(argv, stdin_text=None):

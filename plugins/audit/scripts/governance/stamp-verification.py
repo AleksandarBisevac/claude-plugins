@@ -342,6 +342,7 @@ import _proc_group  # noqa: E402  (a child tree stopped whole; a stop signal as 
 import _locks  # noqa: E402  (pid_alive: whether a leftover throwaway's owner still runs)
 import _worktrees  # noqa: E402  (git's worktree list read, and two spellings of one tree compared)
 import _runner_output  # noqa: E402  (every reading of what a test runner printed, shared with run-test-gate)
+import _filed_returns  # noqa: E402  (title_names_clause: the one reading of a case title)
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 
 USAGE = ("usage: stamp-verification.py take|compare|red [--project DIR] ...\n")
@@ -1444,7 +1445,7 @@ def _is_named(failure, name):
     # sentence label is not a name.
     first = first if first and re.search(r"[-_]", first) else None
     return (name == failure.get("id") or name == label or name == first
-            or (label.startswith(name) and label.startswith(" (", len(name))))
+            or _filed_returns.title_names_clause(label, name))
 
 
 _RUNNER_MODULES = ("unittest", "pytest")

@@ -4420,7 +4420,7 @@
     {
       "id": "P125.70-0h5",
       "title": "A filed return and a written brief carry the same bytes on every platform, and the brief read-back case names where it differs",
-      "status": "in_progress",
+      "status": "done",
       "description": "Last red leg of the phase: CI run 38654487121 (ci/p125 at 64f75f0f, windows-latest shard 1 plain and cp1252, every other leg green) - test_drive_phase sn6 `(4, [True, False, True, False])`: the reviewer briefs read back through `brief <id> --role reviewer` differ from the files the drive wrote; the executor briefs match. Not reproducible on POSIX under an ASCII locale. Known Windows-only difference on this path (P125.66's executor, from CPython's subprocess source): `drive-phase.run_verb` passes a verb's stdin as TEXT (`input=stdin` with `text=True`), and on Windows the text wrapper turns `\\n` into `\\r\\n`, so a return filed through `submit -> file-return` is CRLF on Windows and LF elsewhere - the same record differs by platform - and a reviewer brief embeds that return. Fix at the root: (1) stdin to a verb is sent as UTF-8 bytes with no newline translation, so a filed return's bytes are the same on every platform; (2) every brief is written with an explicit encoding and `newline=\"\"` and read back the same way; (3) sn6 reports, for each mismatching brief, the role, the first differing offset and a repr of both sides around it, so a red on a platform nobody can reproduce locally says what differed. Make (1) POSIX-visible: a case that hands run_verb's stdin path a text containing newlines through a stand-in that translates like Windows' text wrapper, and asserts the filed bytes are LF. Existing CRLF returns already committed stay readable (the checked read hashes bytes on disk).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -4454,25 +4454,39 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2f68c4f99906",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.run_verb now runs the verb in bytes mode: stdin is sent as stdin.encode('utf-8') (None stays None) with no text wrapper, so Windows can no longer turn its newlines into CRLF; captured stdout/stderr go through a new _verb_text(), which decodes UTF-8 with 'replace' and applies the same \\r\\n / \\r -> \\n translation text mode applied (the body of CPython's Popen._translate_newlines, read with inspect on 3.14.7), so every caller keeps the str it parsed before. Every run_verb caller passes str stdin (json.dumps or the submit text) and reads str back. audit-lookup.write_brief and read_brief already open with encoding='utf-8', newline='' (lines 1437 and 1474), and write_exact already writes UTF-8 bytes to the buffer, so audit-lookup.py and test_audit_lookup.py were left unchanged. test_drive_phase.py: new _windows_text_run stand-in, which applies Windows' text-mode stdin translation to str input and passes bytes through; new case _stdin_bytes_case, run at the end of the dsm-block, which swaps the driver copy's subprocess for the stand-in, files a return through submit in-process, and asserts the filed file and the bytes file-return received are LF with no \\r. On HEAD's driver it was red: the filed bytes began b'{\\r\\n  \"gates\"...'. New _brief_difference(role, wrote, shown) returns None or (role, first differing offset, repr of 20 chars either side, written and shown). sn6 now reads the written brief as bytes and reports every mismatch through it. New _brief_difference_case runs at the head of sn5-block on a CRLF-vs-LF pair. In the shared tree it went red against a stub that returned only (role,), before the helper was written. On HEAD it is green, because what it tests lives in the test file itself. Runs: --stage dsm-block --stage sn5-block, 10/10 cases (8/10 before the fix). Full test_drive_phase --selftest, 297/297, exit 0. Plain sweep exit 0, 335/335 files ok. cp1252 sweep exit 1: the only failure is plugins/audit/tests/test__panel_discovery.py (UnicodeDecodeError: 'ascii' codec can't decode byte 0xe2 in position 107), a file outside this task. test_drive_phase.py and test_audit_lookup.py were ok in that pass. ruff exit 0. vermin exit 0.",
+        "descriptive": "A return filed through submit now has the same LF bytes on every platform, and sn6 says which brief differs, where, and how."
       },
       "startedAt": "2026-10-15T00:09:41Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T00:36:31Z",
+      "verifiedBy": [
+        "a verb's stdin reaches it as the exact UTF-8 bytes it was given, with no newline translation, so a return filed through submit is byte-identical on every platform",
+        "a brief read back that differs from the written brief is reported with its role, the first differing offset and both sides around it"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-15T00:36:30Z.f4b5c4",
         "status": "passed",
         "at": "2026-10-15T00:36:30Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "2f68c4f99906",
+        "at": "2026-10-15T00:36:31Z"
+      },
+      "redFirst": {
+        "at": "2026-10-15T00:26:14Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage dsm-block --stage sn5-block` in a throwaway tree at HEAD exited 1 with 1 of 10 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - plugins/audit/tests/test_drive_phase.py: a verb's stdin reaches it as the exact UTF-8 bytes it was given, with no newline translation, so a return filed through submit is byte-identical on every platform ((0, '[drive-phase] P1: P1.1 executor return filed at docs/audit/evidence/returns/P1.1/20261015T002542Z.executor.json; stamp taken\\nhand back the line above as your whole reply', b'{\\r\\n  \"gates\": {},\\r\\n  \"outcome\": {\\r\\n    \"technical\": \"edited the file\",\\r\\n    \"des', [b'{\\r\\n  \"gates\": {},\\r\\n  \"outcome\": {\\r\\n    \"technical\": \"edited the file\",\\r\\n    \"des'])) (house FAIL): SELFTEST FAILED: 9/10 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.71-0h5",
       "title": "A case title is matched by one rule everywhere, and the legacy-locale pass's first find is fixed",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Three small items from closing the sweep's legacy-locale pass. (1) `python3 tools/sweep-selftests.py --encoding cp1252` now runs children under an ASCII locale on POSIX, and it found a real latent defect: plugins/audit/tests/test__panel_discovery.py `_cases` reads `open(M.__file__)` with no encoding (about line 94), raising UnicodeDecodeError after the 'MCP rows carry a name and a source' case so the cases after it never ran - fix it and every other unencoded text read in that file; then run the whole pass and fix any other suite it turns red the same way (name each). (2) Two readers of a test case's title disagree: the red-first helper's `--case NAME` (stamp-verification.py around line 1436) matches a label that ends at the name or continues with ' (', while `_filed_returns.tests_add_gaps` matches only the verbatim clause, so a title carrying its detail after ' (' - what the briefs now ask for - is reported 'no filed counterpart' at submit. One predicate both call, in the lower layer, with the briefs' wording unchanged. (3) CLAUDE.md's Tests list describes the encoding pass as 'again, on a legacy code page'; it now also sets a non-UTF-8 locale on POSIX - say both halves. The encoding lint stays scoped to shipped code (scripts/, hooks/, .claude/hooks/); state that boundary and why (the legacy-locale pass catches what a test or tool actually decodes) in the lint's docstring in _output.py.",
       "files": [
         "plugins/audit/tests/test__panel_discovery.py",
@@ -4481,7 +4495,8 @@
         "plugins/audit/scripts/governance/stamp-verification.py",
         "plugins/audit/tests/test_stamp_verification.py",
         "CLAUDE.md",
-        "plugins/audit/scripts/_output.py"
+        "plugins/audit/scripts/_output.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -4507,16 +4522,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T00:36:32Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T01:20:43Z.53aed7",
+        "status": "passed",
+        "at": "2026-10-15T01:20:43Z"
+      }
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
