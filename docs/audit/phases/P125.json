@@ -7262,7 +7262,7 @@
     {
       "id": "P125.94-0h5",
       "title": "fix P125-R76: `state[\"hasPhases\"] = True` is set before the calls that can ra...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "`state[\"hasPhases\"] = True` is set before the calls that can raise (`mio.phase_running`, `signoff_due`, `effective_phase_status`), and the outer `except Exception: pass` returns the half-built state. The docstring still says 'On any error it reports the LEAST aggressive state, so a crash in here can only relax the gate, never invent a denial'. With the new ladder, an exception on a malformed phase after the first phase leaves exists=True, hasPhases=True, phaseRunning=False, so plan_gate_step returns nothing-running and the tier is deny. Before this diff the same error gave warn. A crash can now invent a denial.\n\nResolution asked: In the except branch, return a fresh least-aggressive state (exists kept, hasPhases False, phaseRunning False), or set hasPhases only after the phase has been processed. Add a selftest where a later phase raises and the tier stays warn.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -7270,7 +7270,9 @@
       ],
       "tests": {
         "mode": "tdd",
-        "add": [],
+        "add": [
+          "plugins/audit/tests/test__config.py: a phase after the first that raises while the plan state is read leaves the gate at the least aggressive tier the plan supports, never deny"
+        ],
         "expectRedFirst": true,
         "gate": [
           "selftests",
@@ -7289,19 +7291,20 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T18:14:01Z",
       "completedAt": null,
       "verifiedBy": [],
       "fixes": [
         "P125-R76"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.95-0h5",
@@ -8781,7 +8784,7 @@
     {
       "id": "P125.117-0h5",
       "title": "Process teardown survives a PermissionError from killpg, judged by the confirmation step",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F686. test__proc_group raised PermissionError on os.killpg twice under loaded macOS sweeps; _kill does not handle it. Capture the line, confirm the cause (hypothesis: EPERM for a group of zombies), then handle it through the confirmation step.",
       "files": [
         "plugins/audit/scripts/governance/_proc_group.py",
@@ -8812,14 +8815,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "896b8d5e231c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Repro (scratch script, tempdir removed in finally, 3 runs identical): on macOS killpg(pgid,0) and killpg(pgid,SIGKILL) raise PermissionError EPERM for a group whose only member is a zombie leader (killed, not yet reaped); after proc.wait() it is ProcessLookupError. A live group with a zombie child orphan answered fine. _proc_group._kill: SIGTERM/SIGKILL killpg wrapped, PermissionError returns False (tear_down then judges via _gone/_reaped_group_empty). _reaped_group_empty: PermissionError in the confirmation loop now keeps waiting until the deadline (unconfirmed if EPERM never ends) - this was the real flake: a first cp1252 sweep failed pg21 with confirmed=False because the loop gave up on the zombie window. Test helper _group_alive: EPERM = alive (exists, cannot be signalled); pg21 now polls via _group_gone_within instead of one look. New cases pg24 (title carries tests.add clause; _kill returns False, no escape, tear_down False while child lives), pg25 (no-error teardown still True), pg26 (helper EPERM=alive), pg27 (EPERM window settles->True, endless->False). Selftest run 5x: exit 0 each, 28/28; plain sweep exit 0 (335/335 files); cp1252 sweep exit 0 (first attempt exit 1 on pg21 before the loop fix).",
+        "descriptive": "Teardown survives macOS EPERM from killpg and judges by group-gone confirmation; the test flake is fixed at its source."
       },
       "startedAt": "2026-10-15T17:33:31Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T18:13:55Z",
+      "verifiedBy": [
+        "pg24 a killpg that raises PermissionError during teardown does not escape",
+        "pg25",
+        "pg26",
+        "pg27"
+      ],
       "movedFrom": {
         "id": "P128.30-0h5",
         "phase": "P128",
@@ -8830,12 +8838,23 @@
         "runId": "2026-10-15T18:13:53Z.571cc9",
         "status": "passed",
         "at": "2026-10-15T18:13:53Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "896b8d5e231c",
+        "at": "2026-10-15T18:13:55Z"
+      },
+      "redFirst": {
+        "at": "2026-10-15T18:02:55Z",
+        "basis": "`python3 plugins/audit/tests/test__proc_group.py --selftest` in a throwaway tree at HEAD exited 1, but no case --case names failed an assertion as the task's own: pg24 (house FAIL), pg27 (house FAIL) - SELFTEST FAILED: 26/28 cases passed; --case a killpg that raises PermissionError during teardown does not escape names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.118-0h5",
       "title": "commit-audit-state refuses a shard whose index rows HEAD lacks, naming the rows and the index-first remedy, as commit-task-work does",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Finding P125-R66 (re-added from cancelled P125.92). commit-audit-state commits a phase shard without checking _scoped_commit.index_rows_owed. Refuse before staging, naming the rows, with commit-task-work's HEAD-shard-held filter and wording, so all three record commits agree with commit-manifest-index's design (the index is committed alone). Cases: owed rows refused; a shard owing none commits as today; a row owed only for a task new in this commit is not refused.",
       "files": [
         "plugins/audit/scripts/governance/commit-audit-state.py",
@@ -8864,21 +8883,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T18:13:57Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.119-0h5",
       "title": "Every fixture git call and every locale-pinned child run reports the error it failed on, through one helper",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F679, second occurrence (CI 38778512513 at 2a13b801, windows cp1252 shards): the fm-block re-run under LC_ALL=C failed in _drive_follower_map's git add -A / commit (subprocess.run(..., check=True)), and the case clipped the child's stderr from the head (test_drive_phase ~6592), so git's message was lost again. P125.111 fixed one case; the class needs an invariant: a _harness helper for fixture git calls that raises with git's decoded stderr (CalledProcessError hides it), used by every fixture that runs git, and one tail-clip reporter for every locale-pinned child case. Then the next failure names its cause.",
       "files": [
         "plugins/audit/tests/_harness.py",
@@ -8910,16 +8930,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T18:13:59Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.120-0h5",
