@@ -820,6 +820,34 @@ def _case_title_cases(check):
           and spaced == [declared] and paraphrase == [declared])
 
 
+def _case_id_title_cases(check):
+    import _loader                                 # noqa: E402  (load_script)
+    clause = ("a filed title of one case-id token, then the clause verbatim, "
+              "then its detail, names that clause; a paraphrase or an id glued "
+              "to the clause does not")
+    names = M.title_names_clause
+    task = {"tests": {"add": ["the-suite: " + clause]}}
+    accepted = [names("se3 " + clause, clause),
+                names("ldoc1 " + clause + " (3 of 3)", clause),
+                names("cas60 " + clause, clause)]
+    refused = [names("se3 a paraphrase of the clause", clause),
+               names("se3 ldoc1 " + clause, clause),
+               names("se3" + clause, clause),
+               names("se3  " + clause, clause),
+               names("plain " + clause, clause),
+               names("se3 " + clause + "s and more", clause),
+               names("se3 " + clause + " extra", clause),
+               names("se3 ", clause)]
+    gaps = M.tests_add_gaps(task, ["se3 " + clause + " (detail)"])
+    runner = _loader.load_script("_runner_output.py")
+    shared = M._CASE_ID_TOKEN.pattern == runner._HOUSE_CASE_ID.pattern
+    check(clause + " (id-prefixed titles accepted, paraphrase, two ids, glued "
+          "id, run-on clause refused, id shape is the runner's own: %r)"
+          % ((accepted, refused, gaps, shared),),
+          accepted == [True] * 3 and refused == [False] * 8 and gaps == []
+          and shared)
+
+
 def _clause_marker_cases(check):
     import _loader                                 # noqa: E402  (load_script)
     lookup = _loader.load_script("audit-lookup.py")
@@ -843,6 +871,7 @@ def _selftest():
     def body(check):
         _harness.stage(check, "cm-block", _clause_marker_cases)
         _harness.stage(check, "ct-block", _case_title_cases)
+        _harness.stage(check, "ci-block", _case_id_title_cases)
         _harness.stage(check, "fr-block", _cases)
         _harness.stage(check, "ss-block", _same_second_cases)
         _harness.stage(check, "um-block", _um_cases)

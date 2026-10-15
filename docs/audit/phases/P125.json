@@ -9155,7 +9155,7 @@
     {
       "id": "P125.121-0h5",
       "title": "A killed process's liveness is read by one deadline helper on the product's liveness rule, never by one look after a sleep",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F689. CI 38792231809 (316b40b0, ubuntu cp1252 2): test_run_test_gate is4 slept 0.4 s and called os.kill(grandchild, 0) once; a not-yet-reaped zombie reads as alive. Second instance of the class P125.117 fixed in test__proc_group alone. Invariant: a _harness wait-until-gone helper on _locks.pid_alive (verify it counts a zombie as gone), used by both suites, and a scan failing on single-look liveness after a kill.",
       "files": [
         "plugins/audit/tests/_harness.py",
@@ -9187,19 +9187,31 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9144966538ad",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added _harness.gone_within(target, seconds, group=False) (polls, >=1 look; pid judged by _locks.pid_alive plus a zombie reading via /proc/<pid>/stat state Z or `ps -o stat=`; group judged by killpg(0) plus `ps -A -o pgid=,stat=` members not Z). VERIFIED: _locks.pid_alive (scripts/governance/_locks.py:150) is os.kill(pid,0) so it counts a zombie ALIVE; the zombie reading is test-side knowledge, product rule untouched (case asserts product pid_alive is True for the unreaped zombie). is4 now uses gone_within(grandchild,10); test__proc_group drops _group_gone_within and uses gone_within(...,group=True). New case lv0 in test_run_test_gate.py, titled with the tests.add clause verbatim plus detail after ' (': fixtures = unreaped child exiting 0.6s later (first look sees running, helper returns True), group fixture, own pid not gone; AST scan _single_look_reads over every tests/*.py flags os.kill/os.killpg(x,0) in a scope (function or module body, nested functions excluded) that calls a kill-shaped name on an earlier line; reads in scopes with no earlier kill are allowed, as are _harness._pid_present/_group_present; synthetic bad/fine/home sources pin both directions. Mutations in scratch copy (restore asserted: real tree green 540/540 and deadline line present): helper looks once -> case red; is4 reverted to sleep+single os.kill -> case red with offenders={'test_run_test_gate.py': [...]}. Runs: test__proc_group x5 exit 0 each; test_run_test_gate 540/540 exit 0; test__refs 351/351 after replacing a literal /proc path (ar1 caught it); full sweep exit 0 (335/335 files); cp1252 sweep exit 0. Plan gate refused a python heredoc write, so all repo edits were via Edit.",
+        "descriptive": "A killed process is judged gone by one polling helper that counts zombies as gone, and a scan fails any suite that reads liveness once after a kill."
       },
       "startedAt": "2026-10-15T20:57:09Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T21:55:33Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_run_test_gate.py: a torn-down group's grandchild is judged gone by one deadline helper on the product's liveness rule, a zombie counts as gone, and no suite reads a killed process's liveness once after a fixed sleep"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-15T21:55:30Z.a6c439",
         "status": "passed",
         "at": "2026-10-15T21:55:30Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "9144966538ad",
+        "at": "2026-10-15T21:55:33Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression mode, expectRedFirst false; mutations run in a scratch copy of plugins/audit instead (see outcome)",
+        "at": "n/a"
       }
     },
     {
@@ -9295,7 +9307,12 @@
         "phase": "P128",
         "at": "2026-10-15T20:04:42Z"
       },
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T22:16:17Z.b94715",
+        "status": "passed",
+        "at": "2026-10-15T22:16:17Z"
+      }
     },
     {
       "id": "P125.124-0h5",

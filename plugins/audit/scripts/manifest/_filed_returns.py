@@ -375,11 +375,38 @@ def title_names_clause(title, clause):
     helper's `--case NAME` and `tests_add_gaps`, so a title one accepts is never
     one the other reports as unfiled. A paraphrase, a title that merely starts
     with the clause's letters, and an empty clause do not match. Read in place,
-    so a long detail costs no prefix copy."""
+    so a long detail costs no prefix copy.
+
+    The suites print a case as `<id> <title>`, so exactly one leading case-id
+    token and one space may come before the clause. The id shape is the one
+    the runner's output reader treats as a case id (`_CASE_ID_TOKEN`); a second
+    token, an id glued to the clause and a paraphrase still do not match."""
     if not clause or not title:
         return False
-    return title == clause or (title.startswith(clause)
-                               and title.startswith(" (", len(clause)))
+    return (_names_at(title, clause, 0)
+            or _names_at(title, clause, _after_case_id(title)))
+
+
+# The shape of a case id as the runner's output reader reads one.
+_CASE_ID_TOKEN = re.compile(r"^[A-Za-z][A-Za-z_-]*[0-9][A-Za-z0-9_-]*$")
+
+
+def _after_case_id(title):
+    """Offset just past a leading `<id> `, or -1 when the title opens with no
+    case-id token followed by one space."""
+    gap = title.find(" ")
+    if gap < 1 or not _CASE_ID_TOKEN.match(title[:gap]):
+        return -1
+    return gap + 1
+
+
+def _names_at(title, clause, start):
+    """Whether `title` carries `clause` at `start`, ending the title or
+    followed by ` (`."""
+    if start < 0 or not title.startswith(clause, start):
+        return False
+    end = start + len(clause)
+    return end == len(title) or title.startswith(" (", end)
 
 
 def tests_add_gaps(task, filed_titles):
