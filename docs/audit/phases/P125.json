@@ -7214,7 +7214,7 @@
     {
       "id": "P125.93-0h5",
       "title": "fix P125-R68: P125.35: task says the refresh goes 'through that one definitio...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P125.35: task says the refresh goes 'through that one definition' (integrate-task.record_paths) with 'no per-check special case', and covers 'any verb run in a member tree that reads records'. run-test-gate takes its own record set from _ev.recorded_paths (project-relative, from every shard stub) to filter the affected selection, a second definition that can drift from record_paths (one phase's shard, git-root-relative). The refresh is also called only from advance() before task_gate, not before other verbs run in the tree.\n\nResolution asked: Pass the drive's record list (wave.records / the --refresh-records answer) into run-test-gate instead of recomputing it, and say which other member-tree verbs read records and refresh before them, or narrow the task text.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -7222,7 +7222,9 @@
       ],
       "tests": {
         "mode": "tdd",
-        "add": [],
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: run-test-gate's record filter answers from the one shared record-path definition, so a sibling shard or a path under the journal is a record to it exactly as it is to integrate-task"
+        ],
         "expectRedFirst": true,
         "gate": [
           "selftests",
@@ -7241,14 +7243,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T19:13:52Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -7259,7 +7261,8 @@
       ],
       "fixes": [
         "P125-R68"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.94-0h5",
@@ -7331,7 +7334,7 @@
     {
       "id": "P125.95-0h5",
       "title": "fix P125-R77: The diff changes the ladder (a plan holding phases with none ru...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The diff changes the ladder (a plan holding phases with none running now denies past the free file) but leaves other user-facing statements of it saying 'warns with a manifest/plan but nothing running'. The config schema description and the panel Settings help for planGate are product surfaces read by users, and the root README and QUICKSTART tell new users installing it 'does not start refusing edits'. The task named only the plugin README, but the outcome claims 'every reader of the tier names that step the same way'. These readers contradict the new behaviour.\n\nResolution asked: Update the schema description, _panel_settings.py help text, config template, root README, QUICKSTART and CLAUDE.md to the three-step ladder. Derive from PLAN_GATE_LADDER where a surface is code.",
       "files": [
         "README.md",
@@ -7344,7 +7347,9 @@
       ],
       "tests": {
         "mode": "tdd",
-        "add": [],
+        "add": [
+          "plugins/audit/tests/test__panel_settings.py: the panel's planGate help and the config schema's description state the ladder derived from PLAN_GATE_LADDER, so a plan with phases and none running reads as deny past the free file on every surface"
+        ],
         "expectRedFirst": true,
         "gate": [
           "selftests",
@@ -7363,14 +7368,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T19:13:54Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -7381,7 +7386,8 @@
       ],
       "fixes": [
         "P125-R77"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.96-0h5",
@@ -8944,7 +8950,7 @@
     {
       "id": "P125.119-0h5",
       "title": "Every fixture git call and every locale-pinned child run reports the error it failed on, through one helper",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F679, second occurrence (CI 38778512513 at 2a13b801, windows cp1252 shards): the fm-block re-run under LC_ALL=C failed in _drive_follower_map's git add -A / commit (subprocess.run(..., check=True)), and the case clipped the child's stderr from the head (test_drive_phase ~6592), so git's message was lost again. P125.111 fixed one case; the class needs an invariant: a _harness helper for fixture git calls that raises with git's decoded stderr (CalledProcessError hides it), used by every fixture that runs git, and one tail-clip reporter for every locale-pinned child case. Then the next failure names its cause.",
       "files": [
         "plugins/audit/tests/_harness.py",
@@ -8978,25 +8984,38 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "316b40b0b0c7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/tests/_harness.py: added GIT (the fixture prefix: fixture identity, gpgsign off, init.defaultBranch=main), GIT_TIMEOUT=60, git(cwd, *argv, prefix=GIT, timeout=GIT_TIMEOUT) which raises RuntimeError 'git <argv> failed: <git stderr decoded utf-8/replace> (exit N)' on non-zero exit and 'git <argv> did not finish within <timeout>s; stderr so far: ...' on timeout, and returns decoded stdout; added tail_bytes(text, limit) (moved from test_drive_phase._tail_bytes); worktree_pair and the selftest's rev-parse probe use git(). Migrated every checked fixture git call: test_drive_phase (_repo init/add/commit, _drive_follower_map and every other fixture's add/commit loops, tdd fixtures, _commit_plan, worktree add, CRLF commit, _head, the dd4 status read), test_integrate_task (_run now delegates to _harness.git with its own t@t.t prefix and timeout=30; message format kept so _TAIL_NEEDLE still matches), test_hooks (_git with its corpus prefix), test_run_test_gate (every init/-C add/commit/checkout/rev-parse/status fixture call and _sm_git, all with prefix=_PLAIN_GIT=('git',) or ['git']+_SM_GIT so the environment is byte-identical: these fixtures name identity per commit and leave the branch name to git). Locale-pinned reporters: fm-block re-run case now reports _harness.tail_bytes(res['err'], 600) (was the head clip), _integrate_ascii_verdict uses _harness.tail_bytes. Kept their own shape on purpose: test_drive_phase _git_out (reads output of calls that legitimately exit non-zero, e.g. config --get of a missing key), the to_signed add -A/commit pair (unchecked: the signoff verb may already have committed), the wq2m RED TWIN's checkout inside a product override (deliberately unchecked), and the shell recipe 'git show HEAD:map.fresh > ...' (a recipe string, not a fixture argv). Two run_test_gate commits that previously had NO check (tmp 'base' commit before the retry-head comparison, sigroot 'base' commit before is6) are now checked through the helper, as are the is6 head/porcelain reads that were unchecked; on success behaviour and assertions are unchanged, on failure they now raise with git's message instead of comparing two empty heads. New cases in test_drive_phase al-block (_fixture_git_case, called from _ascii_locale_cases): the titled case asserts a failing call's message carries git's own line and '(exit ', a hung prefix names 'did not finish within 1s', a child under ASCII_ENV failing in _harness.git after 200 noise lines is reported with the RuntimeError line within 600 bytes, no suite in (_harness, test_drive_phase, test_integrate_task, test_run_test_gate, test_hooks) has a subprocess.run naming git with check=True (AST scan bare_git_calls), and the pinned-child block has no head clip and both tail reporters; fg1m RED TWIN pins the scanner both ways ([1, 2] on a five-line twin). Runs: al-block stage 5/5 pass exit 0; ruff 0; vermin 0; python3 tools/sweep-selftests.py exit 0 (335/335 files ok, 16433 cases); --encoding cp1252 exit 0 (335/335 files ok, both halves ran).",
+        "descriptive": "A fixture git call that fails now raises with git's own message, and a locale-pinned child is reported by the tail of its stderr, through one harness helper each."
       },
       "startedAt": "2026-10-15T18:13:59Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T19:13:48Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py: a fixture git call that fails raises with git's own decoded message, and every locale-pinned child case reports the tail of the child's stderr, through one helper each (the failing call's message, ...)",
+        "fg1m RED TWIN: a checked `subprocess.run` naming git through a prefix or the literal word is reported by line, while an unchecked git call, a checked call of anything else and the helper are not"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-15T19:13:46Z.7435b6",
         "status": "passed",
         "at": "2026-10-15T19:13:46Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "316b40b0b0c7",
+        "at": "2026-10-15T19:13:48Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression mode, expectRedFirst false: no helper red was owed and none was run (no -- command given). The proof is a mutation probe run in throwaway copies of the task tree (shared tree never mutated; each mutation asserted to land exactly once): m1 helper made check=True so CalledProcessError hides stderr -> titled case FAIL (said shows 'returned non-zero exit status 1.'); m2 tail_bytes made a head clip -> FAIL (reported err is only 'noise before the failure' lines); m3 fm-block reporter reverted to _output.clip_bytes(res[\"err\"], 600) -> FAIL (heads=1, missing reporter listed); m4 test_hooks _git reverted to subprocess.run(..., check=True) -> FAIL (bare={'test_hooks.py': [688]}). All four: al-block stage exit 1. Restore asserted in the task tree by grep counts: the helper's subprocess.run has no check=True (only the docstring mentions it), tail_bytes slices raw[len(raw) - limit:], the fm-block reporter calls _harness.tail_bytes, test_hooks _git calls _harness.git.",
+        "at": "2026-10-15, mutation probe run after the fix, before the sweeps"
       }
     },
     {
       "id": "P125.120-0h5",
       "title": "A case pins that answering retry with --reason records the reason for the new start and the brief carries it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Finding P125-R60 (re-added from cancelled P125.90 as regression: the behaviour exists, the test was missing). The case drives a fixture to a decision, answers retry --reason X through next, asserts retryReason keyed to the new start and the brief line. Proved by mutation: replacing the _mark(state, 'retryReason', ...) and write_state lines with pass turns it red (0/1, recorded {}).",
       "files": [
         "plugins/audit/tests/test_drive_phase.py"
@@ -9024,16 +9043,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T19:13:49Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
