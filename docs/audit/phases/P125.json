@@ -6675,7 +6675,7 @@
     {
       "id": "P125.85-0h5",
       "title": "fix P125-R35: The task's micro-test (two trivial phases driven back to back a...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The task's micro-test (two trivial phases driven back to back as the command directs; the second phase's first orchestrator request carries no more context than a fresh entry within a stated margin, offline fixture over recorded transcript rows) contradicts task clause: it is absent. cn1/cn2 only check that finish() prints a chain line; no margin is stated or measured.\n\nResolution asked: Add the offline fixture over recorded transcript rows with a named margin, or record the omission on the task.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py",
@@ -6683,7 +6683,9 @@
       ],
       "tests": {
         "mode": "regression",
-        "add": [],
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: two trivial phases driven back to back as the command directs, over recorded transcript rows offline, the second phase's first orchestrator request carries no more context than a fresh entry, within a margin the case states"
+        ],
         "expectRedFirst": false,
         "gate": [
           "selftests",
@@ -6702,14 +6704,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T14:56:42Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -6728,7 +6730,8 @@
       ],
       "fixes": [
         "P125-R35"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.86-0h5",
@@ -8356,7 +8359,7 @@
     {
       "id": "P125.111-0h5",
       "title": "The locale-pinned integrate run reports the error it failed on (diagnosability for the intermittent git add failure)",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F679, re-added from cancelled P125.109 as regression: every declared file is a test, so the defect is in the tests and a red-first run at HEAD passes with them. CI run 38715590987 (dbd9008f, windows plain 1) failed once in test_integrate_task _world's git add -A under LC_ALL=C/PYTHONUTF8=0 and re-ran green. _integrate_ascii_case clipped the child's stderr from the head, and _run printed git's stderr as a bytes repr. The case reports the tail; _run decodes. Cause not established (candidates read from the code: the 30 s timeout over a freshly copied 302-file tree, antivirus on just-written files); the next failure will print it.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py",
@@ -8387,19 +8390,31 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c69e50414dd7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Applied the p109 diff by hand with Edit; all hunks' context matched the newer base, no porting needed. test_drive_phase.py: added _tail_bytes, _integrate_ascii_verdict (stderr clipped from the tail), _integrate_ascii_case delegates to it, new _integrate_tail_case (+ _TAIL_CHILD, _TAIL_NEEDLE) called from _ascii_locale_cases in stage al-block. test_integrate_task.py: _run decodes git stderr. Runs: al-block selftest 3/3 pass; test_integrate_task 30/30 pass; full sweep exit 0 (335/335 files, 16400 cases); sweep --encoding cp1252 exit 0 (both halves ran, 335/335). Cause of the original intermittent git add failure: NOT established. Candidates read from the code: the 30 s _run timeout over the freshly copied 302-file tree that _follower_cases seeds (_seed_map_owner); antivirus on just-written files. Ruled out: index.lock, autocrlf/safecrlf, non-ASCII names (per the task brief, not re-derived).",
+        "descriptive": "The locale-pinned integrate run now reports the tail of the child's stderr and git errors as text, so the next intermittent git add failure prints its cause."
       },
       "startedAt": "2026-10-15T14:07:44Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T14:56:35Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py: a child suite that fails under the pinned locale is reported by the tail of its stderr, so the raised error's own line is in the message"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-15T14:56:33Z.7bc5db",
         "status": "passed",
         "at": "2026-10-15T14:56:33Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "c69e50414dd7",
+        "at": "2026-10-15T14:56:35Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task (expectRedFirst false): every declared file is a test, so a red at HEAD cannot be made; the helper run with the command after -- passed at HEAD with the task's test files (3/3), as the task states. The previous executor watched by hand: --stage al-block exited 1 with 2/3, and the new case failed with only noise lines in the clipped stderr.",
+        "at": "n/a"
       }
     },
     {
@@ -8446,7 +8461,7 @@
     {
       "id": "P125.113-0h5",
       "title": "A fix task made from a finding carries its test file and a tests.add clause",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F674. `add --fixes` takes files from the finding text only and writes no tests.add, yet the task is tdd with expectRedFirst, so every fix executor stops for a widening. Read paths from path:symbol spellings, add the suite that tests each declared source, and write a tests.add clause from the resolution.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -8475,26 +8490,27 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T14:56:37Z",
       "completedAt": null,
       "verifiedBy": [],
       "movedFrom": {
         "id": "P128.18-0h5",
         "phase": "P128",
         "at": "2026-10-15T13:32:45Z"
-      }
+      },
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.114-0h5",
       "title": "The drive and the attempt check read the shared record-path definition too",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Found at P125.88's return: drive-phase.py (~1803) keeps its own _is_record, and commit-task-work.attempt_refusal's undeclared-change check skips neither sibling shards nor HEAD-only records. Both move onto _invariants.record_rels / is_record_path so the one definition is the only one; extend rp-block's 'no caller keeps a predicate' case to cover them.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -8524,16 +8540,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T14:56:40Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
