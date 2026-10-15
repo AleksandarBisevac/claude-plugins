@@ -222,7 +222,6 @@ def worktree_pair(prefix):
     directory. Removed at exit through `fixture_root`. Raises when git cannot
     build it - a caller that cannot run without git says so through `skip`.
     """
-    import subprocess
     root = os.path.realpath(fixture_root(prefix))
     main = os.path.join(root, "main")
     wt = os.path.join(root, "main-P48")
@@ -237,17 +236,72 @@ def worktree_pair(prefix):
         fh.write(".claude/\n")
     with open(os.path.join(main, rel), "w", encoding="utf-8") as fh:
         json.dump(running_plan("P41", ["src/other.ts"], "P48"), fh, indent=2)
-    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
-           "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+    flags = ("git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+             "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main")
     for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "init"],
                  ["worktree", "add", "-q", wt, "-b", "chore/p48"]):
-        subprocess.run(git + argv, cwd=main, check=True, capture_output=True,
-                       timeout=30)
+        git(main, *argv, prefix=flags, timeout=30)
     with open(os.path.join(wt, rel), "w", encoding="utf-8") as fh:
         json.dump(running_plan("P48", ["src/app.ts"], "P41"), fh, indent=2)
     return {"root": root, "main": main, "wt": wt,
             "manifest_rel": rel.replace(os.sep, "/"),
             "sources": ["src/" + n for n in sources]}
+
+
+# --- fixture git and child reports --------------------------------------------
+# A fixture's git: an identity and a signing switch of its own, because a sweep
+# pins HOME and refuses a guessed identity, and a branch name that does not
+# depend on the host's git version.
+GIT = ("git", "-c", "user.email=fixture@example.com", "-c", "user.name=Fixture",
+       "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main")
+GIT_TIMEOUT = 60
+
+
+def _decoded(raw):
+    """Bytes git wrote, as text whatever the locale: git writes UTF-8, and a
+    byte the codec cannot read is replaced rather than raised over."""
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        return raw
+    return raw.decode("utf-8", "replace")
+
+
+def git(cwd, *argv, prefix=GIT, timeout=GIT_TIMEOUT):
+    """git's stdout, decoded, for one call a fixture needs to succeed - raising
+    `RuntimeError` naming the argv and carrying git's own message when it does
+    not, and naming the timeout when it hangs.
+
+    `subprocess.run(..., check=True)` is not that: its `CalledProcessError`
+    names the command and the exit code and keeps stderr in an attribute its
+    message never prints, so a fixture failing on a CI runner reported that
+    git exited and nothing about why. `cwd` None runs where the caller stands,
+    for an `init` that names its own directory. A caller that reads a non-zero
+    exit as an answer keeps its own `subprocess.run`."""
+    import subprocess
+    words = [str(a) for a in argv]
+    try:
+        done = subprocess.run(list(prefix) + words, cwd=cwd, capture_output=True,
+                              stdin=subprocess.DEVNULL, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("git %s did not finish within %ss; stderr so far: %s"
+                           % (" ".join(words), timeout,
+                              _decoded(exc.stderr).strip()))
+    if done.returncode != 0:
+        raise RuntimeError("git %s failed: %s (exit %d)" % (
+            " ".join(words), _decoded(done.stderr).strip(), done.returncode))
+    return _decoded(done.stdout)
+
+
+def tail_bytes(text, limit):
+    """The END of `text`, at most `limit` bytes of UTF-8, never inside a
+    character - how a failing child's stderr is reported. A child prints the
+    exception that stopped it last, so the head `_output.clip_bytes` keeps is
+    the half without the answer."""
+    raw = text.encode("utf-8")
+    if len(raw) <= limit:
+        return text
+    return raw[len(raw) - max(limit, 0):].decode("utf-8", "ignore")
 
 
 # --- the shared runner --------------------------------------------------------
@@ -1546,13 +1600,12 @@ def _cases(check):
     # repository and really do disagree: a pair of unrelated repos, or a
     # worktree whose manifest is the committed copy, would leave every case
     # built on it green for the wrong reason.
-    import subprocess as _wp_sp
     _wp_ok, _wp = attempt(worktree_pair, "harness-wp-")
     if _wp_ok:
         def _wp_common(d):
-            out = _wp_sp.run(["git", "-C", d, "rev-parse", "--git-common-dir"],
-                             capture_output=True, text=True, timeout=10)
-            return os.path.realpath(os.path.join(d, out.stdout.strip()))
+            out = git(d, "rev-parse", "--git-common-dir", prefix=("git",),
+                      timeout=10)
+            return os.path.realpath(os.path.join(d, out.strip()))
 
         def _wp_running(d):
             with open(os.path.join(d, _wp["manifest_rel"]), "r",

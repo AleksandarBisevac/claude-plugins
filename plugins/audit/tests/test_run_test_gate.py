@@ -53,6 +53,9 @@ import contextlib as _ctx
 
 M = _loader.load_script("run-test-gate.py", "rtg")
 _AT = _loader.load_script("audit-task.py", "rtg_audit_task")  # its parser, for the remedy pins
+# This suite's fixtures name an identity on the commit that needs one and leave
+# the branch name to git, so the fixture helper is handed git with no flags.
+_PLAIN_GIT = ("git",)
 
 # --- which half of a platform split a case may assert -------------------------
 # READ THE WAY THE PRODUCT READS IT, never off `sys.platform`. `_tear_down`
@@ -1554,12 +1557,10 @@ def _cases(check):
     # and CI's windows leg caught it through the sweep's own isolation guard -
     # the removal had simply never worked there.
     tmp = _harness.fixture_root("run-test-gate-selftest-")
-    subprocess.run(["git", "init", "-q", tmp], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", tmp, prefix=_PLAIN_GIT)
     with open(os.path.join(tmp, "tracked.txt"), "w") as fh:
         fh.write("x\n")
-    subprocess.run(["git", "-C", tmp, "add", "tracked.txt"], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(tmp, "add", "tracked.txt", prefix=_PLAIN_GIT)
 
     # --- the gate resolves through meta.buildCommands, once ----------------
     man = {"meta": {"version": 2,
@@ -1666,15 +1667,13 @@ def _cases(check):
     # measurement window opens: the day-one shape of a repository nobody has
     # committed yet, and of a new source directory in one that has.
     unt = _harness.fixture_root("run-test-gate-untracked-")
-    subprocess.run(["git", "init", "-q", unt], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", unt, prefix=_PLAIN_GIT)
     with open(os.path.join(unt, "committed.txt"), "w") as fh:
         fh.write("base\n")
     for arg in (["add", "--", "committed.txt"],
                 ["-c", "user.email=t@example.invalid", "-c", "user.name=t",
                  "-c", "commit.gpgsign=false", "commit", "-qm", "base"]):
-        subprocess.run(["git", "-C", unt] + arg, check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(unt, *arg, prefix=_PLAIN_GIT)
     os.makedirs(os.path.join(unt, "newdir"))
     with open(os.path.join(unt, "newdir", "already-here.txt"), "w") as fh:
         fh.write("present before the window\n")
@@ -1753,8 +1752,7 @@ def _cases(check):
     # from INSIDE the runner seam, which is the gate's own hand. `ow1` is the one
     # that writes something the work under test does not declare.
     own = _harness.fixture_root("run-test-gate-owned-")
-    subprocess.run(["git", "init", "-q", own], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", own, prefix=_PLAIN_GIT)
     os.makedirs(os.path.join(own, "src"))
     os.makedirs(os.path.join(own, "other"))
     with open(os.path.join(own, "base.txt"), "w") as fh:
@@ -1762,8 +1760,7 @@ def _cases(check):
     for arg in (["add", "--", "base.txt"],
                 ["-c", "user.email=t@example.invalid", "-c", "user.name=t",
                  "-c", "commit.gpgsign=false", "commit", "-qm", "base"]):
-        subprocess.run(["git", "-C", own] + arg, check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(own, *arg, prefix=_PLAIN_GIT)
 
     def _sibling_writes(project, _command, _timeout=None):
         # A READ-ONLY gate -- `vitest run` names nothing it writes -- while a
@@ -2706,8 +2703,7 @@ def _cases(check):
     # the row said KNOWN CLEAN. The evidence was in the BEFORE snapshot, which no
     # verdict looked at.
     attrib = _harness.fixture_root("run-test-gate-attribution-")
-    subprocess.run(["git", "init", "-q", attrib], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", attrib, prefix=_PLAIN_GIT)
     os.makedirs(os.path.join(attrib, "src"))
     os.makedirs(os.path.join(attrib, "other"))
     with open(os.path.join(attrib, "base.txt"), "w") as fh:
@@ -2715,8 +2711,7 @@ def _cases(check):
     for arg in (["add", "--", "base.txt"],
                 ["-c", "user.email=t@example.invalid", "-c", "user.name=t",
                  "-c", "commit.gpgsign=false", "commit", "-qm", "base"]):
-        subprocess.run(["git", "-C", attrib] + arg, check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(attrib, *arg, prefix=_PLAIN_GIT)
     _sibling_half = os.path.join(attrib, "other", "sibling.ts")
 
     def _reported_gate(_project, command, _timeout=None):
@@ -4477,10 +4472,9 @@ def _cases(check):
     # the comparison something real to be about. Identity is passed per command
     # rather than written into the repo config, so the fixture keeps no state a
     # later case could read.
-    subprocess.run(["git", "-C", tmp, "-c", "user.email=fixture@example.com",
-                    "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
-                    "commit", "-q", "-m", "base"],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(tmp, "-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-q", "-m", "base", prefix=_PLAIN_GIT)
 
     scope_a = os.path.join(tmp, "scope_a.py")
     owns = ["scope_a.py"]
@@ -4712,15 +4706,13 @@ def _cases(check):
     # breakages, and the entry that asks the behaviour question has to run on
     # every run that could pass.
     ordroot = _harness.fixture_root("run-test-gate-order-")
-    subprocess.run(["git", "init", "-q", ordroot], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", ordroot, prefix=_PLAIN_GIT)
     with open(os.path.join(ordroot, "src.py"), "w") as fh:
         fh.write("x = 1\n")
     for arg in (["add", "--", "src.py"],
                 ["-c", "user.email=t@example.invalid", "-c", "user.name=t",
                  "-c", "commit.gpgsign=false", "commit", "-qm", "base"]):
-        subprocess.run(["git", "-C", ordroot] + arg, check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(ordroot, *arg, prefix=_PLAIN_GIT)
 
     # A DIFFERENT CHECK COUNT PER ENTRY, so a prefix sum and a total sum are
     # different numbers. With equal counts both readings produce the same
@@ -4870,8 +4862,7 @@ def _cases(check):
                        {"id": "P1.4", "title": "own gate", "status": "pending",
                         "files": [], "tests": {"mode": "gate-only",
                                                "gate": ["ok"]}}]}, fh)
-    subprocess.run(["git", "init", "-q", recroot], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", recroot, prefix=_PLAIN_GIT)
     # AND THE FIXTURE IS COMMITTED, which is load-bearing here rather than tidy.
     # `git status --porcelain` collapses an UNTRACKED directory to one
     # `?? docs/` line, so on an uncommitted fixture a write into
@@ -4885,8 +4876,7 @@ def _cases(check):
                 ["-c", "user.email=fixture@example.com",
                  "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
                  "commit", "-qm", "fixture"]):
-        subprocess.run(["git", "-C", recroot] + arg, check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(recroot, *arg, prefix=_PLAIN_GIT)
 
     lines = []
     code = M.main([rmpath, "P1", "--project-dir", recroot, "--record"],
@@ -5054,8 +5044,7 @@ def _cases(check):
                    "testGate": ["ok"], "tasks": [
                        {"id": "P1.1", "title": "t", "status": "in_progress",
                         "files": []}]}, fh)
-    subprocess.run(["git", "init", "-q", bdroot], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", bdroot, prefix=_PLAIN_GIT)
     # AND THE FIXTURE IS COMMITTED, for the reason spelled out at `recroot`'s
     # own commit above: an uncommitted fixture is one `?? docs/` line, so a write
     # inside the measurement window moves no porcelain line and bd2 could never
@@ -5063,8 +5052,7 @@ def _cases(check):
     for arg in (["add", "-A"],
                 ["-c", "user.email=t@example.invalid", "-c", "user.name=t",
                  "commit", "-qm", "fixture"]):
-        subprocess.run(["git", "-C", bdroot] + arg, check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(bdroot, *arg, prefix=_PLAIN_GIT)
     bd_before = json.loads(open(bdpath).read())["meta"]
 
     bd1_lines = []
@@ -5461,8 +5449,7 @@ def _no_verdict_cases(check):
         return _runner
 
     root = _harness.fixture_root("run-test-gate-noverdict-")
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
     res_sh = M.run_gate(root, [("lint,format,typecheck,test",
                                 "lint,format,typecheck,test")],
                         runner=_canned([(127, SH_NOT_FOUND)]),
@@ -5643,8 +5630,7 @@ def _no_verdict_cases(check):
     for arg in (["init", "-q"], ["add", "--", "."],
                 ["-c", "user.email=fixture@example.com", "-c", "user.name=Fixture",
                  "-c", "commit.gpgsign=false", "commit", "-qm", "fixture"]):
-        subprocess.run(["git", "-C", root] + arg, check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
 
     def _main(*extra):
         lines = []
@@ -5774,8 +5760,7 @@ def _empty_and_retry_cases(check):
         return _runner
 
     root = _harness.fixture_root("run-test-gate-empty-")
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
     res_long = M.run_gate(root, [("test", "jest")],
                           runner=_canned([(1, long_text), (1, long_text)]),
                           owns=["src/a.ts"])
@@ -6016,8 +6001,7 @@ def _suite_files_cases(check):
 def _mini_repo(prefix):
     """A real, empty git repository: `run_gate` asks git for the tree bracket."""
     root = _harness.fixture_root(prefix)
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
     return root
 
 
@@ -6599,8 +6583,7 @@ def _remedy_cases(check):
     in hand, and printed nothing that used either.
     """
     root = _harness.fixture_root("run-test-gate-remedy-")
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
     say = os.path.join(root, "say.py")
     with open(say, "w") as fh:
         fh.write("import sys\n"
@@ -6670,8 +6653,7 @@ def _remedy_cases(check):
     # does not exist - on every platform, not only on Windows.
     spaced = os.path.join(root, "with space")
     os.mkdir(spaced)
-    subprocess.run(["git", "init", "-q", spaced], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", spaced, prefix=_PLAIN_GIT)
     # Written fresh and not copied from `mp`: rv2's command saved `mp` through
     # the plan writer, which spells every path inside ITS checkout
     # repo-relative, and a step reading `say.py` from `root` runs nothing from
@@ -6739,8 +6721,7 @@ def _record_order_cases(check):
     verdict banner, so a run cut off mid-render still leaves its row.
     """
     root = _harness.fixture_root("run-test-gate-order-")
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
     say = os.path.join(root, "say.py")
     with open(say, "w") as fh:
         fh.write("import sys\n"
@@ -6785,8 +6766,7 @@ def _excluded_cases(check):
     statement that nothing here could tell a suite from a hook list.
     """
     root = _harness.fixture_root("run-test-gate-excluded-")
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
     lint_out = os.path.join(root, "lint.txt")
     with open(lint_out, "w") as fh:
         fh.write("check yaml.................................."
@@ -6921,8 +6901,7 @@ def _derived_gate_cases(check):
 
     # --- dg3: a derived (enforce) run that skipped a listed suite ----------
     root = _harness.fixture_root("run-test-gate-derived-")
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
     say = os.path.join(root, "say.py")
     with open(say, "w") as fh:
         fh.write("import sys\n"
@@ -6970,8 +6949,7 @@ def _derived_gate_cases(check):
     # narrowed sign-off's measured line still prints exactly as before, which
     # is the direction `dg3n` above must not have broken.
     root1b = _harness.fixture_root("run-test-gate-derived-full-")
-    subprocess.run(["git", "init", "-q", root1b], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root1b, prefix=_PLAIN_GIT)
     say1b = os.path.join(root1b, "say.py")
     with open(say1b, "w") as fh:
         fh.write("import sys\n"
@@ -7007,8 +6985,7 @@ def _derived_gate_cases(check):
           and "shadow" not in (rows_derived[0] if rows_derived else {}))
 
     root2 = _harness.fixture_root("run-test-gate-derived-narrow-off-")
-    subprocess.run(["git", "init", "-q", root2], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root2, prefix=_PLAIN_GIT)
     say2 = os.path.join(root2, "say.py")
     with open(say2, "w") as fh:
         fh.write("import sys\n"
@@ -7031,8 +7008,7 @@ def _derived_gate_cases(check):
 
     # --- dg19: a wide (shadow) run over two failing suites, one listed -----
     root3 = _harness.fixture_root("run-test-gate-shadow-")
-    subprocess.run(["git", "init", "-q", root3], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root3, prefix=_PLAIN_GIT)
     say3 = os.path.join(root3, "say.py")
     with open(say3, "w") as fh:
         fh.write("import sys\n"
@@ -7066,8 +7042,7 @@ def _derived_gate_cases(check):
 
     # --- dg19-allow: a plan with no meta.phaseGate.mode records no shadow --
     root4 = _harness.fixture_root("run-test-gate-shadow-off-")
-    subprocess.run(["git", "init", "-q", root4], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root4, prefix=_PLAIN_GIT)
     say4 = os.path.join(root4, "say.py")
     with open(say4, "w") as fh:
         fh.write("import sys\n"
@@ -7095,8 +7070,7 @@ def _derived_gate_cases(check):
     # fixture sets mode to `shadow` so the FIRST guard cannot be what is
     # doing the work, and isolates the second one alone.
     root5 = _harness.fixture_root("run-test-gate-shadow-derived-")
-    subprocess.run(["git", "init", "-q", root5], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root5, prefix=_PLAIN_GIT)
     say5 = os.path.join(root5, "say.py")
     with open(say5, "w") as fh:
         fh.write("import sys\n"
@@ -7131,8 +7105,7 @@ def _derived_gate_cases(check):
     # among `_evidence_io.STEP_KEYS`, so a committed row is the wrong place
     # to read it back from.
     root6 = _harness.fixture_root("run-test-gate-derived-gap-keeps-")
-    subprocess.run(["git", "init", "-q", root6], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root6, prefix=_PLAIN_GIT)
     say6 = os.path.join(root6, "say6.py")
     with open(say6, "w") as fh:
         fh.write("import sys\n"
@@ -7163,8 +7136,7 @@ def _own_cases(check):
     is ever recorded.
     """
     root = _harness.fixture_root("run-test-gate-own-")
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
     big_n = _ev_io.MAX_FAILING + 20
     big_script = os.path.join(root, "big_fail.py")
     with open(big_script, "w") as fh:
@@ -7419,14 +7391,12 @@ def _unrecorded_cases(check):
                            {"id": pid + ".1", "title": "t",
                             "status": "in_progress", "files": ["src/a.py"]}]},
                       fh)
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
     for arg in (["add", "--", "docs", ".claude", "src", "emit.py"],
                 ["-c", "user.email=fixture@example.com",
                  "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
                  "commit", "-qm", "fixture"]):
-        subprocess.run(["git", "-C", root] + arg, check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
     evdir = os.path.join(root, "docs", "audit", "evidence")
 
     def _run(phase, *extra):
@@ -7578,14 +7548,12 @@ def _reuse_cases(check):
                             "files": ["src/a.py"]}]}, fh)
 
     _plan(["ok"], {"ok": "true", "other": "true", "red": "false"})
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
     for arg in (["add", "--", "docs", ".claude", "src"],
                 ["-c", "user.email=fixture@example.com",
                  "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
                  "commit", "-qm", "fixture"]):
-        subprocess.run(["git", "-C", root] + arg, check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
     evdir = os.path.join(root, "docs", "audit", "evidence")
 
     def _run(*extra):
@@ -7708,8 +7676,7 @@ def _reuse_cases(check):
         # read as one tree. What must not move (the brief's own words) is that
         # a reused verdict is still refused for a tree that genuinely differs.
         _other_root = _harness.fixture_root("run-test-gate-reuse-other-")
-        subprocess.run(["git", "init", "-q", _other_root], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(None, "init", "-q", _other_root, prefix=_PLAIN_GIT)
         os.makedirs(os.path.join(_other_root, "src"))
         with open(os.path.join(_other_root, "src", "a.py"), "w") as fh:
             fh.write("declared = 999\n")
@@ -7717,8 +7684,7 @@ def _reuse_cases(check):
                     ["-c", "user.email=fixture@example.com",
                      "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
                      "commit", "-qm", "fixture"]):
-            subprocess.run(["git", "-C", _other_root] + arg, check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _harness.git(_other_root, *arg, prefix=_PLAIN_GIT)
         _other_link = _other_root + "-link"
         os.symlink(_other_root, _other_link)
         _other_mp = os.path.join(_other_link, "audit-plan.json")
@@ -7752,8 +7718,7 @@ def _reuse_cases(check):
           and _dropped_outside[0][0] == os.path.abspath(_outside_mp))
 
     _sibling_root = _harness.fixture_root("run-test-gate-sibling-")
-    subprocess.run(["git", "init", "-q", _sibling_root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", _sibling_root, prefix=_PLAIN_GIT)
     _sibling_lines = []
     M.main([mp, "P1", "--project-dir", _sibling_root], out=_sibling_lines.append)
     _sibling_text = "\n".join(_sibling_lines)
@@ -8180,17 +8145,13 @@ def _interrupt_cases(check):
                    "testGate": ["quick", "slow"],
                    "tasks": [{"id": "P1.1", "title": "t",
                               "status": "in_progress", "files": []}]}, fh)
-    subprocess.run(["git", "init", "-q", sigroot], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["git", "-C", sigroot, "add", "--", "docs", ".claude"],
-                   check=True, stdout=subprocess.DEVNULL,
-                   stderr=subprocess.DEVNULL)
-    subprocess.run(["git", "-C", sigroot, "-c", "user.email=fixture@example.com",
-                    "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
-                    "commit", "-q", "-m", "base"],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    head_before = subprocess.run(["git", "-C", sigroot, "rev-parse", "HEAD"],
-                                 stdout=subprocess.PIPE).stdout.decode().strip()
+    _harness.git(None, "init", "-q", sigroot, prefix=_PLAIN_GIT)
+    _harness.git(sigroot, "add", "--", "docs", ".claude", prefix=_PLAIN_GIT)
+    _harness.git(sigroot, "-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-q", "-m", "base", prefix=_PLAIN_GIT)
+    head_before = _harness.git(sigroot, "rev-parse", "HEAD",
+                               prefix=_PLAIN_GIT).strip()
 
     child = subprocess.Popen(
         [sys.executable, _loader.script_path("run-test-gate.py"),
@@ -8263,10 +8224,9 @@ def _interrupt_cases(check):
           child.returncode == M.E_FAIL and "GATE CANCELLED" in child_out
           and "GATE GREEN" not in child_out)
 
-    head_after = subprocess.run(["git", "-C", sigroot, "rev-parse", "HEAD"],
-                                stdout=subprocess.PIPE).stdout.decode().strip()
-    porcelain = subprocess.run(["git", "-C", sigroot, "status", "--porcelain"],
-                               stdout=subprocess.PIPE).stdout.decode()
+    head_after = _harness.git(sigroot, "rev-parse", "HEAD",
+                              prefix=_PLAIN_GIT).strip()
+    porcelain = _harness.git(sigroot, "status", "--porcelain", prefix=_PLAIN_GIT)
     check("is6 AND NOTHING WAS COMMITTED. The interrupt path writes and returns; "
           "HEAD has not moved and the row is sitting in the working tree, which "
           "is exactly the state `commit-audit-state.py` sweeps at the next "
@@ -8389,10 +8349,8 @@ def _group_cases(check):
                         ["-c", "user.email=f@e", "-c", "user.name=F",
                          "-c", "commit.gpgsign=false", "commit", "-qm", "fixture",
                          "--allow-empty"]):
-                subprocess.run(["git", "-C", root] + arg, check=True,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(["git", "init", "-q", root], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                _harness.git(root, *arg, prefix=_PLAIN_GIT)
+        _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
         reset()
 
         def run_json(argv):
@@ -8404,8 +8362,7 @@ def _group_cases(check):
                 return code, {"raw": "\n".join(lines)}
         code, alone = run_json([mpath, "P1", "--project-dir", root, "--json",
                                 "--no-reuse"])
-        subprocess.run(["git", "-C", root, "checkout", "-q", "--", "src"],
-                       check=True)
+        _harness.git(root, "checkout", "-q", "--", "src", prefix=_PLAIN_GIT)
         code_g, grp = run_json([mpath, "P1", "--also", "P2", "--project-dir", root,
                                 "--json", "--no-reuse"])
         check("gg1 a gate run for P1 with --also P2 owns P2's files too, so the "
@@ -8424,8 +8381,7 @@ def _group_cases(check):
                                "--json"])
         check("gg4 an --also member the plan does not carry is refused, not "
               "skipped: exit %r" % (code_u,), code_u == M.E_ASK)
-        subprocess.run(["git", "-C", root, "checkout", "-q", "--", "src"],
-                       check=True)
+        _harness.git(root, "checkout", "-q", "--", "src", prefix=_PLAIN_GIT)
         with open(mpath) as fh:
             _gg = json.load(fh)
         _gg["meta"]["buildCommands"]["rw"] = "true"
@@ -8600,16 +8556,13 @@ def _full_repo(name, fullgate=("ok",), buildcommands=None, mergedhead=None,
     phases.extend(extra_phases)
     with open(mpath, "w") as fh:
         json.dump({"meta": meta, "phases": phases}, fh)
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
     for arg in (["add", "--", "docs", ".claude"],
                 ["-c", "user.email=fixture@example.com",
                  "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
                  "commit", "-qm", "fixture"]):
-        subprocess.run(["git", "-C", root] + arg, check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    head = subprocess.run(["git", "-C", root, "rev-parse", "HEAD"],
-                          capture_output=True, text=True, check=True).stdout.strip()
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+    head = _harness.git(root, "rev-parse", "HEAD", prefix=_PLAIN_GIT).strip()
     return root, mpath, head
 
 
@@ -9066,9 +9019,7 @@ _SM_GIT = ["-c", "user.email=fixture@example.com", "-c", "user.name=Fixture",
 
 
 def _sm_git(root, *args):
-    return subprocess.run(["git", "-C", root] + _SM_GIT + list(args),
-                          check=True, capture_output=True,
-                          text=True).stdout.strip()
+    return _harness.git(root, *args, prefix=["git"] + _SM_GIT).strip()
 
 
 def _sm_fixture():
@@ -9094,8 +9045,7 @@ def _sm_fixture():
           "command": _step(sys.executable, script, mode)}
     _sm_plan(fx, [])
     top = _sm_track_suite(root)
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
     _sm_git(root, "add", "--", "docs", ".claude", top)
     _sm_git(root, "commit", "-qm", "fixture")
     fx["first"] = _sm_git(root, "rev-parse", "HEAD")
@@ -9205,8 +9155,7 @@ def _sm_pair():
     """`(root, first, second)` - a real repository with two commits, `first`
     a real ancestor of `second`, so both ancestry questions go to git."""
     root = _harness.fixture_root("run-test-gate-miss-pair-")
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
     shas = []
     for suite in (_SM_SUITE, _SM_SIBLING_A, _SM_SIBLING_B):
         _sm_git(root, "add", "--", _sm_track_suite(root, suite))
@@ -9752,14 +9701,12 @@ def _affected_cases(check):
                       ("tests/i18n_test.sh", "exit 0\n")):
         with open(os.path.join(root, rel), "w") as fh:
             fh.write(body)
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
     for arg in (["add", "--", "."],
                 ["-c", "user.email=fixture@example.com",
                  "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
                  "commit", "-qm", "fixture"]):
-        subprocess.run(["git", "-C", root] + arg, check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
     os.makedirs(os.path.join(root, "app", "[locale]"))
     os.rename(os.path.join(root, "app", "page.tsx"),
               os.path.join(root, "app", "[locale]", "page.tsx"))
@@ -9835,8 +9782,7 @@ def _member_records_cases(check):
                     ["-c", "user.email=fixture@example.com",
                      "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
                      "commit", "-qm", "fixture"]):
-            subprocess.run(["git", "-C", root] + arg, check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _harness.git(root, *arg, prefix=_PLAIN_GIT)
         for rel in ("docs/audit/audit-plan.json", "docs/audit/journal/a.jsonl",
                     "src/a.py"):
             with open(os.path.join(root, rel), "w") as fh:

@@ -673,8 +673,8 @@ def combine(decisions):
 
 
 # --- fixtures: one git project per tier -------------------------------------------
-_GIT = ["git", "-c", "user.email=corpus@example.invalid", "-c", "user.name=corpus",
-        "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+_GIT = ("git", "-c", "user.email=corpus@example.invalid", "-c", "user.name=corpus",
+        "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main")
 
 
 def _write(root, rel, text):
@@ -685,8 +685,7 @@ def _write(root, rel, text):
 
 
 def _git(root, *argv):
-    return subprocess.run(_GIT + list(argv), cwd=root, check=True,
-                          capture_output=True, text=True, timeout=60).stdout.strip()
+    return _harness.git(root, *argv, prefix=_GIT).strip()
 
 
 def _plan(head, phase_status):

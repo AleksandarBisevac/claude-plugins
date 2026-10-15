@@ -39,20 +39,14 @@ import _loader                                     # noqa: E402
 M = _loader.load_script("integrate-task.py")
 MW = _loader.load_script("manage-worktrees.py")
 
-GIT = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
-       "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+GIT = ("git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+       "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main")
 
 TEN = "".join("line %d\n" % n for n in range(1, 11))
 
 
 def _run(cwd, *argv):
-    done = subprocess.run(GIT + list(argv), cwd=cwd, capture_output=True, timeout=30)
-    if done.returncode != 0:
-        # Decoded rather than repr'd: a bytes repr folds git's lines into one
-        # escaped string, and a non-UTF-8 byte is replaced, never fatal here.
-        raise RuntimeError("git %s failed: %s" % (
-            " ".join(argv), done.stderr.decode("utf-8", "replace").strip()))
-    return done.stdout.decode("utf-8")
+    return _harness.git(cwd, *argv, prefix=GIT, timeout=30)
 
 
 def _write(root, rel, text):

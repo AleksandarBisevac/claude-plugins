@@ -43,6 +43,7 @@ that each block runs in exactly one stage, since a cut half-made runs cases
 twice or never and a green run looks the same either way.
 """
 import argparse
+import ast
 import contextlib
 import io
 import json
@@ -68,8 +69,7 @@ TASKS = ("P1.1", "P1.2", "P1.3")
 SESSION = "drive-fixture-session"
 BOUND = 300
 
-_GIT = ["git", "-c", "user.email=fixture@example.com", "-c", "user.name=Fixture",
-        "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+_GIT = list(_harness.GIT)
 # What a fixture repository's own config adds after `init`: the identity and the
 # signing switch the verbs' commits read, since they run without `_GIT`'s flags.
 _FIXTURE_IDENTITY = ("[user]\n\temail = fixture@example.com\n\tname = Fixture\n"
@@ -143,14 +143,12 @@ def _repo(prefix, task_ids=TASKS, gate=("true",), per_task="always",
     # `init` wrote rather than set with one `git config` per key: every fixture
     # pays for each process it starts, and on the windows leg a start is what a
     # full run is made of. `fx1` asks git itself whether it reads the identity.
-    subprocess.run(_GIT + ["init", "-q"], cwd=root, check=True,
-                   capture_output=True, timeout=60)
+    _harness.git(root, "init", "-q")
     with open(os.path.join(root, ".git", "config"), "a", encoding="utf-8",
               newline="\n") as fh:
         fh.write(_FIXTURE_IDENTITY)
     for argv in (["add", "-A"], ["commit", "-qm", "fixture"]):
-        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
-                       timeout=60)
+        _harness.git(root, *argv)
     return root, mpath
 
 
@@ -697,9 +695,8 @@ def _decide_cases(check):
           again == 0 and instruction("\n".join(said))[1] == "gate-red"
           and bad == M.E_USAGE and unreasoned == M.E_USAGE
           and blocked == 0 and status == "blocked")
-    dirty = subprocess.run(["git", "status", "--porcelain", "--", "docs/audit"],
-                           cwd=root, capture_output=True, encoding="utf-8",
-                           errors="replace").stdout
+    dirty = _harness.git(root, "status", "--porcelain", "--", "docs/audit",
+                         prefix=("git",))
     check("dd4 a task blocked over its red gate keeps the record of that gate: the "
           "rows the gate wrote and the block are committed through the audit-state "
           "verb, since no task commit is coming to carry them: %r" % (dirty,),
@@ -980,8 +977,7 @@ def _single_task_cases(check):
     plan["phases"][0]["tasks"][1]["ado"] = {"id": 4242}
     with open(mpath_a, "w", encoding="utf-8") as fh:
         json.dump(plan, fh, indent=2)
-    subprocess.run(_GIT + ["commit", "-qam", "board"], cwd=root_a, check=True,
-                   capture_output=True, timeout=60)
+    _harness.git(root_a, "commit", "-qam", "board")
     run_a = drive(M, root_a, mpath_a, target="P1.2")
     owed = [t for _c, t in run_a["prints"] if "ado echo owed: P1.2" in t]
     rule_a = list((M.STEPS.get("ado-echo") or {}).get("rule") or ())
@@ -1316,9 +1312,7 @@ def _submit(M, root, mpath, task_id, body, role="executor", tail=()):
 
 
 def _head(root):
-    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True,
-                          capture_output=True, encoding="utf-8",
-                          errors="replace").stdout.strip()
+    return _harness.git(root, "rev-parse", "HEAD", prefix=("git",)).strip()
 
 
 def _stamp_head(line):
@@ -1442,9 +1436,8 @@ def _submit_cases(check):
             fh.write(text)
     with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(plan, fh, indent=2)
-    subprocess.run(_GIT + ["add", "-A"], cwd=root, check=True, capture_output=True)
-    subprocess.run(_GIT + ["commit", "-qm", "tdd"], cwd=root, check=True,
-                   capture_output=True)
+    _harness.git(root, "add", "-A")
+    _harness.git(root, "commit", "-qm", "tdd")
     with _Env(root):
         M.main(["next", PHASE, mpath, "--project-dir", root], out=[].append)
     with open(os.path.join(root, "src", "mine.py"), "w", encoding="utf-8") as fh:
@@ -1502,9 +1495,8 @@ def _submit_cases(check):
             fh.write(text)
     with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(plan, fh, indent=2)
-    subprocess.run(_GIT + ["add", "-A"], cwd=root, check=True, capture_output=True)
-    subprocess.run(_GIT + ["commit", "-qm", "tdd"], cwd=root, check=True,
-                   capture_output=True)
+    _harness.git(root, "add", "-A")
+    _harness.git(root, "commit", "-qm", "tdd")
     with _Env(root):
         M.main(["next", PHASE, mpath, "--project-dir", root], out=[].append)
     with open(os.path.join(root, "src", "mine.py"), "w", encoding="utf-8") as fh:
@@ -2191,8 +2183,7 @@ def _commit_plan(root, mpath, edit, message):
     edit(plan)
     with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(plan, fh, indent=2)
-    subprocess.run(_GIT + ["commit", "-qam", message], cwd=root, check=True,
-                   capture_output=True, timeout=60)
+    _harness.git(root, "commit", "-qam", message)
 
 
 def _answer_lines(text):
@@ -4020,8 +4011,7 @@ def _wave_repo(prefix, width, red=(), per_task="phase", setup=None,
     with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(plan, fh, indent=2)
     for argv in (["add", "-A"], ["commit", "-qm", "wave fixture"]):
-        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
-                       timeout=60)
+        _harness.git(root, *argv)
     return root, mpath
 
 
@@ -4238,8 +4228,7 @@ def _wave_records_repo(prefix):
     with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(plan, fh, indent=2)
     for argv in (["add", "-A"], ["commit", "-qm", "the record check"]):
-        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
-                       timeout=60)
+        _harness.git(root, *argv)
     return root, mpath
 
 
@@ -4275,8 +4264,7 @@ def _records_wave(M, prefix):
                                                  "--record", "--project-dir", root])
     for argv in (["add", "--", "docs/audit"],
                  ["commit", "-qm", "record-only: a task add"]):
-        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
-                       timeout=60)
+        _harness.git(root, *argv)
     committed = [p for p in _git_out(root, "show", "--name-only", "--format=",
                                      "HEAD").splitlines() if p.strip()]
     for t in sent:
@@ -4396,8 +4384,7 @@ def _sibling_records_repo(prefix):
     os.remove(mpath)
     _mio.save_sharded(mpath, plan)
     for argv in (["add", "-A"], ["commit", "-qm", "sharded, with a sibling phase"]):
-        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
-                       timeout=60)
+        _harness.git(root, *argv)
     return root, mpath
 
 
@@ -4415,8 +4402,7 @@ def _sibling_add(root, mpath):
         added = "(add exit %d: %s)" % (code, out[:200])
     for argv in (["add", "--", "docs/audit"],
                  ["commit", "-qm", "record-only: a sibling phase's task add"]):
-        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
-                       timeout=60)
+        _harness.git(root, *argv)
     committed = [p for p in _git_out(root, "show", "--name-only", "--format=",
                                      "HEAD").splitlines() if p.strip()]
     return added, committed
@@ -4522,8 +4508,7 @@ def _preflight_repo(prefix, include, tasks=1):
     with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(plan, fh, indent=2)
     for argv in (["add", "-A"], ["commit", "-qm", "preflight fixture"]):
-        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
-                       timeout=60)
+        _harness.git(root, *argv)
     return root, mpath
 
 
@@ -4700,8 +4685,7 @@ def _follower_repo(prefix, rel, recipe, owner, wave=False, browser=False):
     with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(plan, fh, indent=2)
     for argv in (["add", "-A"], ["commit", "-qm", "follower fixture"]):
-        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
-                       timeout=60)
+        _harness.git(root, *argv)
     return root, mpath
 
 
@@ -4830,8 +4814,7 @@ def _drive_follower_map(M, prefix, sharded=False):
     with open(os.path.join(root, ".gitignore"), "a", encoding="utf-8") as fh:
         fh.write("__pycache__/\n")
     for argv in (["add", "-A"], ["commit", "-qm", "the module map's owner"]):
-        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
-                       timeout=60)
+        _harness.git(root, *argv)
     _code, first = _next_wave(M, root, mpath)
     tree, fresh = _tree_of(root, "P1.2"), None
     if tree:
@@ -4900,13 +4883,11 @@ def _follower_retire_cases(check):
         tree, phase_tree = os.path.join(base, "member"), os.path.join(base, "phase")
         os.makedirs(phase_tree)
         os.makedirs(tree)
-        subprocess.run(_GIT + ["init", "-q"], cwd=tree, check=True,
-                       capture_output=True, timeout=60)
+        _harness.git(tree, "init", "-q")
         for rel in ("map.md", "src.txt"):
             _write_lf(os.path.join(tree, rel), "base\n")
         for argv in (["add", "-A"], ["commit", "-qm", "base"]):
-            subprocess.run(_GIT + argv, cwd=tree, check=True, capture_output=True,
-                           timeout=60)
+            _harness.git(tree, *argv)
         _write_lf(os.path.join(tree, "map.md"), "the member's map\n")
         _write_lf(os.path.join(phase_tree, "map.md"), "the phase tree's map\n")
         _write_lf(os.path.join(phase_tree, "src.txt"), "base\n")
@@ -4960,8 +4941,7 @@ def _shot_owner_wave(M, prefix):
         "        print('FOLLOWER-OWED ' + json.dumps({'path': rel, 'recipe': %r,\n"
         "              'owner': 'shots', 'needsBrowser': True}))\n" % (recipe,)))
     for argv in (["add", "-A"], ["commit", "-qm", "a browser owner"]):
-        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
-                       timeout=60)
+        _harness.git(root, *argv)
     _code, first = _next_wave(M, root, mpath)
     tree = _tree_of(root, "P1.2")
     if tree:
@@ -5377,8 +5357,7 @@ def _width_one_run(M, prefix, width, trees=None):
         with open(cfg_path, "w", encoding="utf-8") as fh:
             json.dump(cfg, fh)
         for argv in (["add", "-A"], ["commit", "-qm", "width"]):
-            subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
-                           timeout=60)
+            _harness.git(root, *argv)
     run = drive(M, root, mpath)
     did = []
     for _code, text in run["prints"]:
@@ -5445,8 +5424,7 @@ def _wave_redo_cases(check):
     with open(os.path.join(root, "moved.txt"), "w", encoding="utf-8") as fh:
         fh.write("the phase tree moved on\n")
     for argv in (["add", "moved.txt"], ["commit", "-qm", "the phase tree moved"]):
-        subprocess.run(_GIT + argv, cwd=root, check=True, capture_output=True,
-                       timeout=60)
+        _harness.git(root, *argv)
     head = _git_out(root, "rev-parse", "HEAD").strip()
     made = len([a for a in _actions(root) if a == "task.worktree"])
     code, after = _answer_wave(M, root, mpath, "--answer", "redo")
@@ -5686,10 +5664,8 @@ def _close_evidence_cases(check):
     root, mpath = _repo("ce-tracked", task_ids=TASKS[:1], per_task="phase")
     with open(os.path.join(root, "notes.txt"), "w", encoding="utf-8") as fh:
         fh.write("v0\n")
-    subprocess.run(_GIT + ["add", "notes.txt"], cwd=root, check=True,
-                   capture_output=True, timeout=60)
-    subprocess.run(_GIT + ["commit", "-qm", "fixture: notes"], cwd=root,
-                   check=True, capture_output=True, timeout=60)
+    _harness.git(root, "add", "notes.txt")
+    _harness.git(root, "commit", "-qm", "fixture: notes")
     _next(M, root, mpath)
     with open(os.path.join(root, "notes.txt"), "w", encoding="utf-8") as fh:
         fh.write("an allowlist the gate needed\n")
@@ -5707,10 +5683,8 @@ def _close_evidence_cases(check):
     root, mpath = _repo("ce-older", task_ids=TASKS[:1], per_task="phase")
     with open(os.path.join(root, "notes.txt"), "w", encoding="utf-8") as fh:
         fh.write("v0\n")
-    subprocess.run(_GIT + ["add", "notes.txt"], cwd=root, check=True,
-                   capture_output=True, timeout=60)
-    subprocess.run(_GIT + ["commit", "-qm", "fixture: notes"], cwd=root,
-                   check=True, capture_output=True, timeout=60)
+    _harness.git(root, "add", "notes.txt")
+    _harness.git(root, "commit", "-qm", "fixture: notes")
     with open(os.path.join(root, "notes.txt"), "w", encoding="utf-8") as fh:
         fh.write("dirty before the start\n")
     _next(M, root, mpath)
@@ -6178,8 +6152,7 @@ def _signal_drive_cases(check):
     trees = os.path.realpath(_harness.fixture_root("drive-signal-tree-"))
     tree = os.path.join(trees, "member")
     try:
-        subprocess.run(_GIT + ["worktree", "add", "-q", "--detach", tree],
-                       cwd=root, check=True, capture_output=True, timeout=60)
+        _harness.git(root, "worktree", "add", "-q", "--detach", tree)
         printed, prompts, briefs = [], {}, []
         reply = []
         with _Env(root):
@@ -6296,8 +6269,7 @@ def _brief_crlf_cases(check):
     try:
         with open(os.path.join(root, "src", "f1.txt"), "wb") as fh:
             fh.write(b"v0\r\nkept\r\n")
-        subprocess.run(_GIT + ["commit", "-qam", "fixture: a CRLF source"],
-                       cwd=root, check=True, capture_output=True, timeout=60)
+        _harness.git(root, "commit", "-qam", "fixture: a CRLF source")
         _next(M, root, mpath)
         _file_executor(root, mpath, "P1.1")
         _code, dispatched = _next(M, root, mpath)
@@ -6589,20 +6561,11 @@ def _ascii_locale_cases(check):
           "passes): %r"
           % (ASCII_BLOCK, ASCII_ENV, preferred,
              (len(cases), failed, res["why"],
-              _output.clip_bytes(res["err"], 600))),
+              _harness.tail_bytes(res["err"], 600))),
           res["report"] is not None and bool(cases) and not failed)
     _integrate_ascii_case(check, preferred)
     _integrate_tail_case(check, preferred)
-
-
-def _tail_bytes(text, limit):
-    """The END of `text`, at most `limit` bytes of UTF-8, never inside a
-    character. A failing child prints the exception that stopped it last, so
-    the head `_output.clip_bytes` keeps is the half without the answer."""
-    raw = text.encode("utf-8")
-    if len(raw) <= limit:
-        return text
-    return raw[len(raw) - max(limit, 0):].decode("utf-8", "ignore")
+    _fixture_git_case(check, preferred)
 
 
 def _integrate_ascii_verdict(argv, preferred):
@@ -6615,7 +6578,7 @@ def _integrate_ascii_verdict(argv, preferred):
         stdin=subprocess.DEVNULL, timeout=600)
     tally = re.findall(r"(\d+)/(\d+) cases passed", done.stdout)
     passed, total = (int(tally[-1][0]), int(tally[-1][1])) if tally else (0, 0)
-    err = _tail_bytes(done.stderr, 600)
+    err = _harness.tail_bytes(done.stderr, 600)
     label = ("plugins/audit/tests/test_drive_phase.py: under a locale whose "
              "preferred encoding is ASCII, the integrate suite runs whole and "
              "every case it reports passes (%s, %r, preferred encoding %r): %r"
@@ -6678,6 +6641,111 @@ def _integrate_tail_case(check, preferred):
           % ((ok, err[-300:]),),
           not ok and _TAIL_NEEDLE in err and repr(err) in label
           and len(err.encode("utf-8")) <= 600)
+
+
+# The suites whose fixtures run git, every one of them read for a git call that
+# bypasses the fixture helper.
+_GIT_FIXTURE_SUITES = ("_harness.py", "test_drive_phase.py",
+                       "test_integrate_task.py", "test_run_test_gate.py",
+                       "test_hooks.py")
+# A child that fails the way the fm-block re-run did on a CI runner: a long
+# stretch of stderr, then a fixture's git call raising through the helper.
+_GIT_CHILD = (
+    "import sys\n"
+    "sys.path.insert(0, sys.argv[1])\n"
+    "import _harness\n"
+    "sys.stderr.write('noise before the failure\\n' * 200)\n"
+    "sys.stderr.flush()\n"
+    "_harness.git(sys.argv[2], 'no-such-verb')\n")
+# Built rather than written, so this block's own text cannot satisfy or trip
+# the reading of the locale-pinned reporters below.
+_HEAD_CLIP = "clip" + "_bytes("
+_TAIL_REPORTERS = ("_harness.tail_" + 'bytes(res["err"], ',
+                   "_harness.tail_" + "bytes(done.stderr, ")
+
+
+def _names_git(node):
+    """Whether a command expression spells git: the literal word, or a name
+    ending in GIT, the spelling every fixture prefix in these suites uses."""
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Constant) and sub.value == "git":
+            return True
+        if isinstance(sub, ast.Name) and sub.id.endswith("GIT"):
+            return True
+    return False
+
+
+def bare_git_calls(source):
+    """The line of every `subprocess.run(<git ...>, check=True)` in `source`,
+    sorted: a fixture git call whose failure would raise without git's own
+    message. A call with no `check` reads its own exit and is not one."""
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if not (isinstance(node, ast.Call) and node.args
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "run"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "subprocess"):
+            continue
+        checked = any(kw.arg == "check" and isinstance(kw.value, ast.Constant)
+                      and kw.value.value is True for kw in node.keywords)
+        if checked and _names_git(node.args[0]):
+            found.append(node.lineno)
+    return sorted(found)
+
+
+def _fixture_git_case(check, preferred):
+    """A fixture git call that fails raises with git's own message and the argv,
+    one that hangs names its timeout, a child failing in one under the pinned
+    locale is reported by the tail that holds the raised line, and no suite
+    whose fixtures run git reaches it around the helper or reports a pinned
+    child by its head."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    scratch = _harness.fixture_root("drive-fixture-git-")
+    try:
+        failed, said = _harness.attempt(_harness.git, scratch, "no-such-verb")
+        hung, waited = _harness.attempt(
+            _harness.git, scratch, "status",
+            prefix=(sys.executable, "-c", "import time; time.sleep(30)"),
+            timeout=1)
+        _label, ok, err = _integrate_ascii_verdict(
+            [sys.executable, "-c", _GIT_CHILD, here, scratch], preferred)
+    finally:
+        _harness.remove_tree(scratch)
+    bare = {}
+    for name in _GIT_FIXTURE_SUITES:
+        with open(os.path.join(here, name), "r", encoding="utf-8") as fh:
+            lines = bare_git_calls(fh.read())
+        if lines:
+            bare[name] = lines
+    with open(os.path.abspath(__file__), "r", encoding="utf-8") as fh:
+        pinned = _harness.between(fh.read(), 'ASCII_BLOCK = "fm-block"',
+                                  "def _stage_cases(")
+    heads = pinned.count(_HEAD_CLIP)
+    tails = [r for r in _TAIL_REPORTERS if r not in pinned]
+    check("plugins/audit/tests/test_drive_phase.py: a fixture git call that "
+          "fails raises with git's own decoded message, and every "
+          "locale-pinned child case reports the tail of the child's stderr, "
+          "through one helper each (the failing call's message, the hung "
+          "call's, the pinned child's reported tail, git calls around the "
+          "helper by suite and line, head clips and missing tail reporters in "
+          "the pinned-child block): %r"
+          % ((said, waited, err[-300:], bare, heads, tails),),
+          not failed and _TAIL_NEEDLE in said and "(exit " in said
+          and not hung and "did not finish within 1s" in waited
+          and not ok and _TAIL_NEEDLE in err
+          and len(err.encode("utf-8")) <= 600
+          and bare == {} and heads == 0 and tails == [])
+    twin = ("subprocess.run(_GIT + argv, cwd=root, check=True)\n"
+            "subprocess.run(['git', '-C', root, 'add', '-A'], check=True)\n"
+            "subprocess.run(_GIT + argv, cwd=root, capture_output=True)\n"
+            "subprocess.run([sys.executable, 'x.py'], check=True)\n"
+            "_harness.git(root, 'add', '-A')\n")
+    check("fg1m RED TWIN: a checked `subprocess.run` naming git through a "
+          "prefix or the literal word is reported by line, while an unchecked "
+          "git call, a checked call of anything else and the helper are not: %r"
+          % (bare_git_calls(twin),),
+          bare_git_calls(twin) == [1, 2])
 
 
 def _stage_cases(check):
