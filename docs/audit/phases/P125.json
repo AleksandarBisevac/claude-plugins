@@ -7478,6 +7478,53 @@
         "status": "proved",
         "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P125.105-0h5",
+      "title": "The last cost surfaces say unpriced and show the CLI's own figure: panel browse dialog, report range line, report and panel",
+      "status": "pending",
+      "description": "Completes phase-review findings P125-R1 and P125-R4 on the surfaces their fix tasks named as left out. (1) The panel's browse dialog (plugins/audit/scripts/ui/panel/browse-dialog.js) shows $0.00 in its cost column for a model no rate covers - it must say 'unpriced' through the same rule the other surfaces use (_usage_economics.all_unpriced / unpriced_phrase, mirrored in the panel JS by uUnpricedPhrase). (2) The report's range line does not say how many tokens are unpriced - it must, from window.AUDIT_USAGE.unpricedTokens (null means the totals never counted them: say nothing then, not zero). (3) The CLI's own per-session cost figure, now recorded on the session cursor as cliCost and read by audit-usage, is printed by neither the report nor the panel; print it beside the plugin's own reading wherever they differ, labelled as the CLI's estimate. Read the refactoring-the-assembled-ui skill and run tools/count-ui-pins.py first; vitest and the browser gates must stay green; screenshots are captured by the orchestrator, never by the executor.",
+      "files": [
+        "plugins/audit/scripts/ui/panel/browse-dialog.js",
+        "plugins/audit/scripts/report/_report_usage.py",
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/tests/test__report_usage.py",
+        "plugins/audit/tests/test__panel_usage.py",
+        "tools/ui-tests/usage-edges.test.mjs"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__panel_usage.py: a session whose CLI cost figure differs from the plugin's reading is shown with both figures, labelled, and a model no rate covers reads unpriced in every panel cost column"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",

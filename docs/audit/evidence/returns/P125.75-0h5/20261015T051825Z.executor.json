@@ -1,0 +1,45 @@
+{
+  "gates": {
+    "selftests": "pass",
+    "selftests-cp1252": "pass",
+    "lint": "pass",
+    "vitest": "pass",
+    "interactive": "pass",
+    "rendered-artifacts-before-commit": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T06:10:54Z",
+    "basis": "`python3 plugins/audit/tests/test__usage_economics.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 27 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rb8 (house FAIL), rb10 (house FAIL): SELFTEST FAILED: 24/27 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "priced_at_read (_usage_core) now returns mix {stamped, readPriced, unpriced, unpricedTokens, unpricedModels} beside pricedWhenWritten. _usage_economics: rate_basis_phrase adds ROUTING_BASIS ('rows are priced at global routing; the ledger does not read a request's inference geo') after the table name on every recorded basis, then a mix clause ('N row(s) at the rate stamped when written, M priced again at the rate in effect on their date'), the kept-row clause and an unpriced clause; new unpriced_phrase (the one wording) and all_unpriced (the one cost-cell rule); usage_ledger re-exports all three. audit-usage, audit-status, _panel_usage and _usage_load merge mix into the basis and ship it in pricingBasis, so every surface states the mix. Report: byModel/byPhase rows keep unpricedTokens; _ranked and the Markdown tables print 'unpriced' for a wholly unpriced group; window.AUDIT_USAGE carries unpricedTokens (null when totals never counted). Panel: facts gain a trailing 'unpriced' column; uBars rows and hover say 'unpriced'; the cost tile sub-line uses uUnpricedPhrase, pinned to Python via pyCall. README Token usage section states the routing basis (pinned by rb11b); the inference_geo measurement (grep command, 1047 global / 34782 not_available on 2026-10-15) sits in the rb10 case comment. _UNTIMED rows for the two helpers; module map regenerated (_usage_economics -> _fmt); examples, docs/index.html and docs/demo-large.html re-rendered; screenshots captured by the orchestrator, left as-is. Not covered, by declared scope: the panel browse dialog (browse-dialog.js) still shows a $0.00 cost column for an unpriced model, and the report's range line (report JS) does not state unpriced tokens. Gates: sweep-selftests exit 0 (335/335 files ok, 16333 cases); --encoding cp1252 exit 0 (335/335); ruff exit 0; vermin exit 0; npx vitest run 813 passed; check-report-interactive 187 checks passed; check-rendered-artifacts --before-commit OK.",
+    "descriptive": "Every cost surface now prints 'unpriced' instead of a free-looking $0.00, states how many tokens a total leaves out, and its rate phrase names the stamped/re-priced mix and the global-routing basis."
+  },
+  "testsAdded": [
+    "test__usage_core rt10",
+    "test__usage_economics rb8",
+    "test__usage_economics rb9",
+    "test__usage_economics rb10",
+    "test__usage_economics rb11",
+    "test__usage_economics rb11b",
+    "test__usage_economics rb12",
+    "test__usage_economics rb13",
+    "test__usage_economics rb14",
+    "test__report_usage ug4c",
+    "test__report_usage ug4d",
+    "test__report_usage ug4e",
+    "test__usage_overview uo35",
+    "test__usage_overview uo36",
+    "test__usage_markdown um11b",
+    "test__usage_load ul13b",
+    "test__usage_load ul13c",
+    "test__panel_usage rt3",
+    "test__panel_usage rt4",
+    "test_audit_usage ua5",
+    "test_audit_status rt3",
+    "usage-edges: a model no rate covers (4 cases)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:bbb8514f69a18054ad4afc8793079bddef5a7d42219ec310e6dc5f10b0ea342c\",\"dirtyDigest\":\"sha256:c47a8dcf58da0e3f472fecba88da8d7eb9e723cdc1577c256a907244cfee8875\",\"dirtyPaths\":null,\"head\":\"73b282eb\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"docs/demo-large.html\",\"docs/index.html\",\"docs/screenshots/areas.png\",\"docs/screenshots/authors.png\",\"docs/screenshots/captured-at.json\",\"docs/screenshots/dark.png\",\"docs/screenshots/expanded.png\",\"docs/screenshots/filtered.png\",\"docs/screenshots/filters.png\",\"docs/screenshots/mobile.png\",\"docs/screenshots/overview.png\",\"docs/screenshots/panel-appearance.png\",\"docs/screenshots/panel-blocks.png\",\"docs/screenshots/panel-composition-expanded.png\",\"docs/screenshots/panel-composition.png\",\"docs/screenshots/panel-confirm.png\",\"docs/screenshots/panel-dark.png\",\"docs/screenshots/panel-gate.png\",\"docs/screenshots/panel-guards.png\",\"docs/screenshots/panel-help.png\",\"docs/screenshots/panel-mobile.png\",\"docs/screenshots/panel-monthly.png\",\"docs/screenshots/panel-overview.png\",\"docs/screenshots/panel-person.png\",\"docs/screenshots/panel-policy-expanded.png\",\"docs/screenshots/panel-policy.png\",\"docs/screenshots/panel-proposals.png\",\"docs/screenshots/panel-usage.png\",\"examples/acme-store/acme-store-audit.html\",\"examples/acme-store/acme-store-audit.md\",\"plugins/audit/README.md\",\"plugins/audit/scripts/panel/_panel_usage.py\",\"plugins/audit/scripts/report/_report_usage.py\",\"plugins/audit/scripts/report/_usage_load.py\",\"plugins/audit/scripts/report/_usage_markdown.py\",\"plugins/audit/scripts/report/_usage_overview.py\",\"plugins/audit/scripts/status/audit-status.py\",\"plugins/audit/scripts/ui/panel/usage-cards.js\",\"plugins/audit/scripts/ui/panel/usage-charts.js\",\"plugins/audit/scripts/ui/panel/usage-metrics.js\",\"plugins/audit/scripts/ui/panel/usage-model.js\",\"plugins/audit/scripts/ui/panel/usage-view.js\",\"plugins/audit/scripts/usage/_usage_core.py\",\"plugins/audit/scripts/usage/_usage_economics.py\",\"plugins/audit/scripts/usage/audit-usage.py\",\"plugins/audit/scripts/usage/usage_ledger.py\",\"plugins/audit/tests/test__panel_usage.py\",\"plugins/audit/tests/test__report_usage.py\",\"plugins/audit/tests/test__usage_bench.py\",\"plugins/audit/tests/test__usage_core.py\",\"plugins/audit/tests/test__usage_economics.py\",\"plugins/audit/tests/test__usage_load.py\",\"plugins/audit/tests/test__usage_markdown.py\",\"plugins/audit/tests/test__usage_overview.py\",\"plugins/audit/tests/test_audit_status.py\",\"plugins/audit/tests/test_audit_usage.py\",\"tools/ui-tests/usage-edges.test.mjs\"],\"scopeDigest\":\"sha256:5280048031e6f4f2e7981e36919a54035e4c7709d8d2e0fe1cb6819aefb3b4f3\",\"v\":2}"
+}
