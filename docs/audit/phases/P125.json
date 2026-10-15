@@ -304,8 +304,10 @@
         "severity": "med",
         "file": "plugins/audit/commands/phase.md",
         "issue": "The task clause 'the command body (commands/phase.md and the run/drive reference) directs a fresh context per phase ... stated as the step, not a tip' contradicts task clause: phase.md is not edited by the diff and still has no clear-context text at HEAD. The direction exists only as a drive STEPS line (drive-phase.py:374-385) and orchestrator.md prose, which the executor chose because phase.md sat at its measured byte ceiling.",
-        "resolution": "Add the one-sentence directive to commands/phase.md (making room by trimming another line under measure-context.py's ceiling), or have the plan owner amend the clause to say the drive print is the step.",
-        "fixTask": "P125.84-0h5"
+        "resolution": "fixed in P125.84-0h5 (6cb3e5fd58d1): Add the one-sentence directive to commands/phase.md (making room by trimming another line under measure-context.py's ceiling), or have the plan owner amend the clause to say the drive print is the step.",
+        "fixTask": "P125.84-0h5",
+        "commit": "6cb3e5fd58d1",
+        "status": "fixed"
       },
       {
         "id": "P125-R35",
@@ -1004,7 +1006,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 32 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 33 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6594,7 +6596,7 @@
     {
       "id": "P125.84-0h5",
       "title": "fix P125-R34: The task clause 'the command body (commands/phase.md and the ru...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The task clause 'the command body (commands/phase.md and the run/drive reference) directs a fresh context per phase ... stated as the step, not a tip' contradicts task clause: phase.md is not edited by the diff and still has no clear-context text at HEAD. The direction exists only as a drive STEPS line (drive-phase.py:374-385) and orchestrator.md prose, which the executor chose because phase.md sat at its measured byte ceiling.\n\nResolution asked: Add the one-sentence directive to commands/phase.md (making room by trimming another line under measure-context.py's ceiling), or have the plan owner amend the clause to say the drive print is the step.",
       "files": [
         "plugins/audit/commands/phase.md",
@@ -6626,14 +6628,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6cb3e5fd58d1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "phase.md step 4 (done) gains: 'A `chain:` line: clear context, then re-enter with `/audit:phase <next id>`.' Folded into step 4 rather than a step 5 because pv8 pins five numbered steps (0-4). No trim was needed: measure-context run form went 3844/3980 to 3921/3980 on the post-P125.82 tree, gate exit 0 before and after; no other line trimmed. New case in test__refs.py (after so6) reads the drive's chain wording from drive-phase.py by regex, splits the Run a phase section into numbered steps, and requires exactly one step carrying both the drive wording and '/audit:phase <next id>'. Checked: test__refs 351/351; measure-context --gate exit 0; test_drive_phase --stage sn-block 7/7 (sn4 pass); tools/sweep-selftests.py exit 0, 335/335 files ok.",
+        "descriptive": "phase.md now states the fresh-context chain as part of the run steps in the drive's own wording, locked by a case."
       },
       "startedAt": "2026-10-15T11:43:12Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T12:59:54Z",
+      "verifiedBy": [
+        "commands/phase.md states as a step, not a tip, that the next phase starts in a fresh context - clear, then re-enter with /audit:phase and the next id"
+      ],
       "notes": [
         {
           "at": "2026-10-15T03:41:27Z",
@@ -6648,6 +6652,18 @@
         "runId": "2026-10-15T12:48:35Z.8ea16c",
         "status": "passed",
         "at": "2026-10-15T12:48:35Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "6cb3e5fd58d1",
+        "at": "2026-10-15T12:59:54Z",
+        "basis": "a fix task for P125-R34: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-15T11:54:00Z",
+        "basis": "`python3 plugins/audit/tests/test__refs.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 351 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - commands/phase.md states as a step, not a tip, that the next phase starts in a fresh context - clear, then re-enter with /audit:phase and the next id (a numbered step of the run list, not a note beside it, carrying the wording of the drive's chain line; drive wording read 'clear context, then re-enter with /audit:phase' from 5 steps, 0 carry it) (house FAIL): SELFTEST FAILED: 350/351 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -6711,7 +6727,7 @@
     {
       "id": "P125.86-0h5",
       "title": "fix P125-R37: The task's clause (8) that a contradicted clause carries a MED ...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The task's clause (8) that a contradicted clause carries a MED floor contradicts task clause in effect: CLAUSE_QUOTING_LINES tells the reviewer a finding 'names a contradicted task clause' is floored, but floor_contradicted_clause matches only the literal substring 'contradicts task clause' (_CONTRADICTED_CLAUSE_MARKER). The brief's wording does not contain it, so a low finding saying 'contradicted' or 'diverges from the clause' is not raised. Still true at HEAD.\n\nResolution asked: State the exact marker in CLAUSE_QUOTING_LINES ('start the issue with \"contradicts task clause\"'), or match several spellings, and add a case on the brief text.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -6721,7 +6737,9 @@
       ],
       "tests": {
         "mode": "tdd",
-        "add": [],
+        "add": [
+          "plugins/audit/tests/test__filed_returns.py: the reviewer brief's clause-quoting lines state the contradicted-clause marker built from the constant the floor matches, so a finding written as the brief directs is floored to med"
+        ],
         "expectRedFirst": true,
         "gate": [
           "selftests",
@@ -6740,14 +6758,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T12:59:58Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -6758,12 +6776,13 @@
       ],
       "fixes": [
         "P125-R37"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.87-0h5",
       "title": "fix P125-R42: The task rule is 'a task that adds or changes observable behavi...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The task rule is 'a task that adds or changes observable behaviour is tdd', but the new default is a keyword scan of title plus description checked refactor first, then config, else tdd. _CONFIG_TEXT now also matches 'document(s|ing|ation)' besides comment(s)/docs/config, so 'Add comments to posts' or 'Let users upload a document' is written gate-only with no red-first, and 'extract the CSV' text is written regression. This makes the misclassification the silent default for every `add` and batch task.\n\nResolution asked: Classify on the title only or require the signal word to head the title, and name the matched word in the note so a wrong arm is visible; add a case for a feature whose text contains 'comment' or 'document'.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -6771,7 +6790,9 @@
       ],
       "tests": {
         "mode": "tdd",
-        "add": [],
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a feature whose text mentions comments or a document stays tdd; only a signal word heading the title chooses gate-only or regression, and the note names the word that chose it"
+        ],
         "expectRedFirst": true,
         "gate": [
           "selftests",
@@ -6790,14 +6811,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T13:00:01Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -6808,7 +6829,8 @@
       ],
       "fixes": [
         "P125-R42"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.88-0h5",
@@ -8195,7 +8217,7 @@
     {
       "id": "P125.110-0h5",
       "title": "A wave member's records are carried whole: the index and every phase it names, at one project commit",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F681, a regression from P125.35 (the records-of step). The drive carried the shared audit-plan.json fileIndex into a member's tree without the sibling phase file it references, so adding P128 tasks mid-wave made validate-manifest red in every member tree (14 findings on P125.81), each tree inconsistent in a different way. Carry all records at one project commit, or have the member's validate step read the project's records.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -8224,16 +8246,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T12:59:56Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.111-0h5",
