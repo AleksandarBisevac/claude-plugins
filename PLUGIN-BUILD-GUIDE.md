@@ -969,7 +969,7 @@ taste: adding a pin to one phase must not re-sort the rest, and a plan with no `
 must order exactly as it did before the field existed. That last one is the case that goes red if
 `sort_key` ever becomes unconditional.
 
-Layer 1, for `_branch`'s reason and in the same words: four surfaces need the same answer —
+A layer-mate of `_branch`, for its reason and in the same words: four surfaces need the same answer —
 `_status_facts` for the ready list, `_manifest_crossrefs` for the warnings, `_panel_composition`
 for the control and `set-priority.py` for the write — and a second expression of the order would
 *be* a second order. It reaches nothing but `_output`. Two things it deliberately does not own:
@@ -1037,7 +1037,7 @@ says "never merged" about that branch, and `detail` carries the sentence that ex
 and `sweep_plan()` take the observations as arguments and return the argv a caller would run, so
 their cases drive the exit-128 and could-not-ask branches without a repository. `_branch` is a
 layer-mate and cannot be imported, so branch and parent names arrive as arguments too — which is
-what keeps this module at L1 where four surfaces can share the one answer.
+what keeps this module low enough that four surfaces can share the one answer.
 
 **Two refusals are the plugin's own and say so.** Git fast-forwards over unrelated dirt in the
 parent worktree and exits 0; git also removes the worktree the calling process is standing in,
@@ -1382,7 +1382,7 @@ would read as compliant.
 **`ui_surface_digests()` answers which files a surface's pictures are OF**, and it lives at
 the anchor for the same reason the kept-files walk does: two readers at two layers, and a copy in
 either would be the second implementation of "which files" this design exists to remove.
-`_refs.screenshot_capture_drift()` at layer 1 holds the rule; `tools/capture-screenshots.mjs`
+`_refs.screenshot_capture_drift()` holds the rule; `tools/capture-screenshots.mjs`
 asks over a pipe and records the answer beside each image rather than computing its own. Membership
 is **derived from the filing convention** by `ui_surfaces_of()` — `panel/`, `panel-css/`, `report/`
 and `report-css/` name their surface, `panel.html` names it in its stem, `shared/` ships in every
@@ -1847,10 +1847,10 @@ module does exactly what its section did:
   layers resolved (a dashboard that is 90% `unattributed` says so), and the ONE computation site
   behind the 12-month overview's three surfaces.
 
-All four sit at layer 2 and read `_usage_core` and nothing else — which is what lets
-`usage_ledger` (layer 3) import all four for its re-export. The three readers they share
-(`task_index`, `_tokens`, `_cost`) went DOWN into `_usage_core` rather than into a shared layer-2
-base, because a layer-2 module may not import a peer. `--selftest` on each.
+All four are layer-mates and read `_usage_core` and nothing else — which is what lets
+`usage_ledger`, a layer above them, import all four for its re-export. The three readers they
+share (`task_index`, `_tokens`, `_cost`) went DOWN into `_usage_core` rather than into a shared
+base beside them, because a module may not import a layer-mate. `--selftest` on each.
 
 ### `plugins/audit/scripts/usage/_usage_bench.py`
 The `--bench` mode of the four modules above, and the fixture it runs them on: a computed plan
@@ -1858,7 +1858,7 @@ and `n` deterministic rows, timed best-of-N at 1k / 10k / 50k so the interesting
 SHAPE of the per-row cost) is visible rather than a single number. It prints; it never fails —
 a shared runner's noise floor is wider than the regressions worth catching, and a gate that flaps
 teaches people to ignore it. It opens no file, so it can neither read nor grow this machine's own
-ledger. It sits at layer 3 rather than beside the passes because it calls all four of them, and
+ledger. It sits a layer above the passes rather than beside them because it calls all four, and
 `render-report.py --bench` loads it through `_loader` for `_time_best` so that the two benches in
 this tree share one definition of best-of-N. `--selftest`.
 
@@ -1878,12 +1878,12 @@ consumer loads `usage_ledger.py` by path and reads attributes off the module obj
 module object has to keep serving all of them, and the `rx` cases assert it does.
 
 ### `plugins/audit/scripts/governance/_journal_io.py` (v0.29.0)
-The trail itself (layer 1): `journal_dir`, `read_file`/`read_all`/`journal_files`,
+The trail itself: `journal_dir`, `read_file`/`read_all`/`journal_files`,
 `append(project, entry) -> path|False`, `verify`, the divergence half behind
 `audit-journal.py merge` (`merge_rows`/`merge_text`/`write_merged`, and `anchor_verdict`
 behind `verify`'s git anchor), `session_index` behind `sessions`, and the row/hash
 vocabulary underneath them. It sits at the bottom because two modules that are not commands
-need it — `_help` (layer 3) normalises one row to show a reader what a row looks like,
+need it — `_help`, a layer above it, normalises one row to show a reader what a row looks like,
 `audit-doctor` reads
 and verifies — and because `hooks/_config.py` asks it for `journal_dir` on every tool call,
 where executing an argument parser and four subcommand bodies to resolve one path is cost
@@ -2055,7 +2055,7 @@ a manifest's illustrative model tier to the concrete ledger model id the runtime
 records. `--selftest` pins determinism and referential integrity against the manifest.
 
 ### `plugins/audit/scripts/demo/_demo_cast.py`
-Three fictional `.example` identities (layer 1), and the smallest module in the tree. Both
+Three fictional `.example` identities, and the smallest module in the tree. Both
 demo generators must attribute to the SAME people: `gen-demo-usage.py` stamps them on every
 synthetic ledger row and `gen-demo-manifest.py` hands them out as `meta.areas[*].owner`,
 precisely so the shipped demo shows `/audit:doctor`'s owner-versus-ledger join succeeding.
@@ -2089,8 +2089,8 @@ The order is the one thing that could not move into a piece: `_walk_phases` buil
 the five checks after it read, so it runs once and first. Everything else is one of the five
 modules below, each re-exported here as a thin alias so no consumer had to learn a new
 import; a case pins every alias with `is`, so a pasted-back copy fails by name. It moved
-**layer 2 → layer 3**, which is the whole structural cost: the four pieces sit at layer 2
-above `_manifest_vocab` at layer 1, and a consumer AT layer 2 is still not strictly
+**up one layer**, which is the whole structural cost: the four pieces sit a layer above
+`_manifest_vocab`, and a consumer at the pieces' own layer is still not strictly
 downward.
 
 **`_check_muted` grades `meta.muted`.** A mute naming no bug, or a bug `bugs[]` does not hold, is a
@@ -2113,15 +2113,15 @@ read, so a write is refused rather than let through on the fallback's warning.
 `_proposals._revalidate` validate through it.
 
 ### `plugins/audit/scripts/manifest/_manifest_vocab.py`
-The manifest's **words** (layer 1), and the four shape checks every level of it shares.
+The manifest's **words**, and the four shape checks every level of it shares.
 The status/tests/risk/bug enums, the `BUG-`/`PROP-` id patterns, the known-key set per level
 (root, `meta`, `meta.ado`, phase, task, bug, proposal), and `_unknown_keys`,
 `_require_fields`, `_safe_list`, `_strip_line_suffix`, `_check_ado` — asked of a phase, a
 task and a bug alike. It holds **no rule** and reaches nothing but `_output`, which is why
-it can sit at the floor where all four layer-2 pieces import it; a vocabulary copied into
-four files is four vocabularies that disagree the first time one learns a word. `TERMINAL`
-is deliberately **not** here — it is `_manifest_io`'s, and holding it would put this module
-at layer 2 and its consumers at layer 3.
+it can sit at the floor where all four pieces, a layer above it, import it; a vocabulary
+copied into four files is four vocabularies that disagree the first time one learns a word.
+`TERMINAL` is deliberately **not** here — it is `_manifest_io`'s, and holding it would put
+this module a layer above `_manifest_io` and its consumers a layer above that.
 
 The `KNOWN_*` sets restate vocabulary `schema/audit-plan.schema.json` already owns, and they
 are now **checked against it rather than trusted**. `SCHEMA_ANCHORS` records where each set
@@ -2139,7 +2139,7 @@ express "equal to" but not "wider" — see the `SCHEMA_ANCHORS` comment for that
 why the comparison had to live with the walk, a layer up.
 
 ### `plugins/audit/scripts/manifest/_json_schema.py`
-The published `schema/audit-plan.schema.json`, **applied** by something a verb runs (layer 1).
+The published `schema/audit-plan.schema.json`, **applied** by something a verb runs.
 Before it, the schema was applied by CI's `ajv` step over the committed plans and by nothing
 local, so a verb could write a plan the schema refuses. It is a stdlib reader for the keyword
 set the schema is written in — `SUPPORTED` — and an honest word for every other keyword:
@@ -2158,8 +2158,8 @@ that refuses them, per `COMPATIBILITY.md`; `validate-manifest.py --strict` reads
 the schema gains is a red build before it is a warning at a user's site.
 
 ### `plugins/audit/scripts/manifest/_filed_returns.py`
-Where an agent's **filed return** lives, what shape it must have, and how it is read
-(layer 1). `audit-task.py file-return` writes a return, `audit-task.py done` and
+Where an agent's **filed return** lives, what shape it must have, and how it is read.
+`audit-task.py file-return` writes a return, `audit-task.py done` and
 `audit-lookup.py brief` read it, and `commit-task-work.py` reads its `claims` — three entry
 points at one layer that may not import each other, so the facts they must agree on live
 here once. `return_rel`/`return_path` derive `<evidence dir>/returns/<taskId>/<start>.<role>.json`
@@ -2193,7 +2193,7 @@ module runs (`rd1`-`rd4`). What it cannot hold: the task
 id and role a caller files under are the caller's word. Cases in `plugins/audit/tests/test__filed_returns.py`.
 
 ### `plugins/audit/scripts/manifest/_task_outputs.py`
-What a task's **`outputs`** pattern may be, and what an honoured one reaches (layer 1).
+What a task's **`outputs`** pattern may be, and what an honoured one reaches.
 `files` names what a task *edits* and is enumerated, so every entry can owe a `fileIndex`
 row; `outputs` names what a run *produces* — the documents it writes, the evidence rows it
 appends — which cannot be enumerated before the run makes them. So it is patterns, and a
@@ -2221,11 +2221,11 @@ the gate louder, never wider.
 module's `SCHEMA_ANCHORS` comment declines to derive its enums from the schema partly because
 nothing on the per-tool-call hook path loads it — a premise `mv37` walks the real import graph
 to hold — and a rule the plan gate must ask spent that premise for an unrelated reason. It
-sits at layer 1 for `_locks`' argument word for word: the smaller the module a hook resolves
+sits beside `_locks` for `_locks`' argument word for word: the smaller the module a hook resolves
 by path on every tool call, the better.
 
 ### `plugins/audit/scripts/manifest/_manifest_phases.py`
-The **one walk** over every phase and every task (layer 2), and the three checks it makes on
+The **one walk** over every phase and every task, and the three checks it makes on
 the way. `_walk_phases` visits each object once and returns a five-key **index**
 (`phase_ids`, `task_ids`, `task_by_id`, `task_files`, `bug_links`) that every check in
 `_manifest_crossrefs` then reads — naming that index is what let the walk be cut out at all.
@@ -2244,11 +2244,11 @@ them when more than one is, saying so; none when there is none, saying so). User
 bring every file of the one locale directory the layout shows (`messages/<tag>.json`,
 `locales/<tag>/...`); two candidate directories or none add nothing. A test path for which
 `_runner_collects.collects` answers `NOT_COLLECTED` brings the runner config; `COLLECTED` and
-`COULD_NOT_TELL` add nothing and say which. Layer 2. Its cases are in
+`COULD_NOT_TELL` add nothing and say which. Its cases are in
 `plugins/audit/tests/test__scope_companions.py`.
 
 ### `plugins/audit/scripts/manifest/_proposals.py`
-The proposal lifecycle itself (layer 4): the refusals in `commands/propose.md`'s own order,
+The proposal lifecycle itself: the refusals in `commands/propose.md`'s own order,
 the id allocation that counts live AND still-parked ids, the collision remap, the dependency
 closure, `plan_for`, `run()` — which takes the index lock, applies, revalidates and writes —
 and `proposal_rows`/`list_view`, the READ side.
@@ -2279,7 +2279,7 @@ refuses while the answer is undecided, because a rule that stops to interview ca
 from an HTTP endpoint, and a rule that guesses is worse than one that refuses.
 
 ### `plugins/audit/scripts/manifest/materialize-proposal.py`
-The proposal lifecycle, as a script instead of as prose (layer 7). `commands/propose.md`
+The proposal lifecycle, as a script instead of as prose. `commands/propose.md`
 specified all of it and executed it by reading itself, which was fine while that command was
 the only caller. The panel can materialize and drop now, and two readings of one rule are two
 answers the first time either is edited — so the rule lives here, with cases, and the command
@@ -2319,7 +2319,7 @@ ever declined has lost the only thing the archive was for. A materialized propos
 dropped, because its phase is live and the record is the history trail.
 
 ### `plugins/audit/scripts/manifest/_ado_connect.py`
-Every decision `/audit:sync connect` makes on the way to a first working connector (layer 1).
+Every decision `/audit:sync connect` makes on the way to a first working connector.
 Four rungs, each with its own stop: which **transport** is available, which **auth path** is
 in effect for this organization, what a read-only **probe** proved, and which **process** the
 board runs.
@@ -2365,7 +2365,7 @@ instead is which auth PATH was in effect the last time access was proven, which 
 a later 401 into an expired token rather than a broken configuration.
 
 ### `plugins/audit/scripts/manifest/ado-connect.py`
-The door onto `_ado_connect` (layer 7), the same shape `check-ado-item.py` has over
+The door onto `_ado_connect`, the same shape `check-ado-item.py` has over
 `_ado_conventions` and for the same two reasons: a `python3 -c` one-liner naming a source path
 is what `guard-secrets-read` refuses, and the rule belongs somewhere it can be tested.
 
@@ -2393,7 +2393,7 @@ testability reason above. Its suite pins that seam, so stubbing it cannot quietl
 of testing a path production never takes.
 
 ### `plugins/audit/scripts/manifest/check-ado-item.py`
-The gate `/audit:sync push` runs an item through **before** it creates it (layer 7).
+The gate `/audit:sync push` runs an item through **before** it creates it.
 `_ado_conventions` holds the rule; this is the door the orchestrator knocks on, and it is a
 real command rather than a `python3 -c` one-liner for a reason that is not style: a one-liner
 naming a source path is the shape `guard-secrets-read` refuses, so the check would
@@ -2436,7 +2436,7 @@ connector cannot supply, which is a sentence its operator is entitled to. Exit c
 `conforms` are untouched; `--json` carries it as `parentRuleExemption`.
 
 ### `plugins/audit/scripts/manifest/_ado_drift.py`
-Who wrote a linked work item **last**, and whether pushing would overwrite them (layer 2).
+Who wrote a linked work item **last**, and whether pushing would overwrite them.
 `/audit:sync status` used to offer a difference two readings — our side is right (`push`), or
 ADO is right (edit the manifest). On a board with several teams and several legitimate sources
 of work items, the commonest reading is the third: somebody else moved this card after we last
@@ -2460,7 +2460,7 @@ one adopted through `pull` — which the provenance tag cannot, since `meta.ado.
 onto every item a push touches.
 
 ### `plugins/audit/scripts/manifest/explain-ado-drift.py`
-The door onto `_ado_drift` (layer 7), same shape as `check-ado-item.py` over
+The door onto `_ado_drift`, same shape as `check-ado-item.py` over
 `_ado_conventions`: a real command because the caller is orchestrator prose reaching Python
 through Bash, and a `python3 -c` one-liner naming a source path is what `guard-secrets-read`
 refuses.
@@ -2474,7 +2474,7 @@ reads as a clean board. The caller keeps its existing confirm gate; this only ma
 gate is asked with the truth in hand.
 
 ### `plugins/audit/scripts/manifest/_ado_fetch.py`
-Reading the linked side of a board in **one query per chunk**, with a bound on each (layer 3).
+Reading the linked side of a board in **one query per chunk**, with a bound on each.
 `sync.md` step 3 said "batch-fetch the ADO side" and then named `az boards work-item show`,
 which takes a single `--id` and rejects a comma list. An instruction that asks for a batch and
 names a per-item command cannot be obeyed, so the run looped — one CLI start-up per linked
@@ -2497,7 +2497,7 @@ rows" and "the board did not answer" are different answers and only the first is
 on — a hang says nothing at all, which is worse than a failure.
 
 ### `plugins/audit/scripts/manifest/fetch-ado-items.py`
-The door onto `_ado_fetch` (layer 7), same shape as `explain-ado-drift.py` over `_ado_drift`: a
+The door onto `_ado_fetch`, same shape as `explain-ado-drift.py` over `_ado_drift`: a
 real command because the caller is orchestrator prose reaching Python through Bash, and a
 `python3 -c` one-liner naming a source path is what `guard-secrets-read` refuses.
 
@@ -2511,7 +2511,7 @@ other; `--dry-run` prints the queries without spending a call, and exits 1 when 
 refused, because finding that out before the calls is the point of printing the plan.
 
 ### `plugins/audit/scripts/manifest/read-ado-links.py`
-The **manifest** side of the question `fetch-ado-items.py` asks the board (layer 7): which
+The **manifest** side of the question `fetch-ado-items.py` asks the board: which
 items carry an `ado` link, and what ADO state each one's status means. It calls no board at
 all, and it exists because `/audit:sync` was telling the orchestrator to do both halves by
 hand, in prose, and prose got both wrong on a real board.
@@ -2556,7 +2556,7 @@ usage error rather than a preview, because a run that reported a translation and
 file is one forgotten flag away from the unstamped payload reaching the drift door.
 
 ### `plugins/audit/scripts/manifest/_ado_conventions.py`
-`meta.ado.conventions` — what a work item must look like to **belong** on a board (layer 1).
+`meta.ado.conventions` — what a work item must look like to **belong** on a board.
 The connector could always write a *correct* work item and could not write a *conforming*
 one, and the difference only shows on a board that has a standard: measured 2026-08-19
 against a real one, whose own script enforces a description skeleton, a mandatory "Done
@@ -2588,7 +2588,7 @@ board, so reading it the other way would change the meaning of a manifest somebo
 wrote, which is a major release rather than a fix.
 
 ### `plugins/audit/scripts/manifest/_ado_fields.py`
-`meta.ado.fields` — what this project **supplies** to a governed board's fields (layer 1), and
+`meta.ado.fields` — what this project **supplies** to a governed board's fields, and
 the half `_ado_conventions` could not be. That module grades a payload and can only *refuse*;
 the connector's create payload is title, description, state, area, iteration, tags and a parent
 link, so on a board whose Task really owes an Activity and an Original Estimate the honest
@@ -2625,8 +2625,8 @@ become a string, when an estimate has to stay a number. A value that *looks* lik
 is warned about, because writing those characters onto a board is visible garbage.
 
 ### `plugins/audit/scripts/manifest/_ado_parent.py`
-Where **one** audit item hangs on somebody else's board, and whether that place can be true
-(layer 1). `meta.ado.parentWorkItem` is a single integer for the whole manifest, so every phase
+Where **one** audit item hangs on somebody else's board, and whether that place can be true.
+`meta.ado.parentWorkItem` is a single integer for the whole manifest, so every phase
 an audit creates was forced under one Feature — the plugin overriding a product owner's decision
 about where work belongs. A phase (and a task, when `phaseWorkItems` is false) may now declare its
 own `adoParent`, and that key becomes the fallback it always described itself as. Nothing is
@@ -2640,9 +2640,9 @@ explicit `null` hangs under nothing *even when the fallback is set*, which is wh
 uncategorised a **declared** outcome rather than an accident. The same shape `meta.ado.tag` and
 every `stateMap` value already read.
 
-**Why layer 1, and why everything arrives as an argument.** `_manifest_crossrefs` and
-`_manifest_ado` are both layer 2, so neither can import the other while both need the same answer —
-as do `resolve-ado-parent.py` at layer 7 and the panel after it. A second expression of "which
+**Why a layer below the validator's pieces, and why everything arrives as an argument.**
+`_manifest_crossrefs` and `_manifest_ado` are layer-mates, so neither can import the other while
+both need the same answer — as do the `resolve-ado-parent.py` entry point and the panel after it. A second expression of "which
 parent" would *be* a second parent. It is also why the module owns its own unknown-key loop:
 `_manifest_vocab` is a layer-mate, and `ap9` pins the two loops to one answer rather than a comment
 claiming they agree.
@@ -2685,7 +2685,7 @@ back `not verified`. `resolve-ado-parent.py --hierarchy-from` is the door that r
 function had no caller at all while three documents carried the rule instead.
 
 ### `plugins/audit/scripts/manifest/resolve-ado-parent.py`
-The door onto `_ado_parent` (layer 7), same shape as `check-ado-item.py` over `_ado_conventions`:
+The door onto `_ado_parent`, same shape as `check-ado-item.py` over `_ado_conventions`:
 a real command because the caller is orchestrator prose reaching Python through Bash, and a
 `python3 -c` one-liner naming a source path is what `guard-secrets-read` refuses.
 
@@ -2721,7 +2721,7 @@ came from two separate walks while this file was being written, which is exactly
 lets a command exit 1 over something it never printed.
 
 ### `plugins/audit/scripts/manifest/_ado_tracked.py`
-Whether one audit item belongs on the shared board **at all** (layer 1) — the question one step
+Whether one audit item belongs on the shared board **at all** — the question one step
 before `_ado_parent`'s. `/audit:sync status` could not tell **deliberately untracked** from
 **drift**: a phase nobody ever intended to put on Azure DevOps reported as `unlinked` on every run,
 for ever, so the drift lens grew one permanent false positive per such phase — and a lens carrying
@@ -2749,11 +2749,12 @@ calling that tracked would be the plugin claiming a card it never created. So `t
 `is_untracked()` named so no caller decides for itself what a falsy `None` meant. A truthiness read
 files an unanswered item as deliberately untracked, which is the exact collapse the feature undoes.
 
-**Why layer 1, and why the manifest arrives assembled.** `_ado_parent`'s argument exactly: the push
-plan, the status lens, the validator's neighbours at layer 2 and `resolve-ado-tracked.py` at layer 7
-all need the same answer, and two of those are layer-mates that cannot import each other. Reading
-the file here would mean importing `_manifest_io`, a layer-mate, and would push the module to layer
-2 where half its consumers could not reach it.
+**Why a layer below the validator's pieces, and why the manifest arrives assembled.**
+`_ado_parent`'s argument exactly: the push plan, the status lens, the validator's neighbours a
+layer above it and the `resolve-ado-tracked.py` entry point all need the same answer, and two of
+those are layer-mates that cannot import each other. Reading the file here would mean importing
+`_manifest_io`, a layer-mate, and would push the module up beside the validator's neighbours,
+where half its consumers could not reach it.
 
 **And it detects the un-assembled sharded index rather than trusting its caller.** In the sharded
 layout the file at `manifestPath` is an *index* whose phases are stubs, while `adoTracked` and
@@ -2765,7 +2766,7 @@ basis and a missing basis is the thing to say. `at31` is that case and `at33` is
 direction.
 
 ### `plugins/audit/scripts/manifest/resolve-ado-tracked.py`
-The door onto `_ado_tracked` (layer 7), same shape as `resolve-ado-parent.py` over `_ado_parent`: a
+The door onto `_ado_tracked`, same shape as `resolve-ado-parent.py` over `_ado_parent`: a
 real command because the caller is orchestrator prose reaching Python through Bash, and a
 `python3 -c` one-liner naming a source path is what `guard-secrets-read` refuses. It renders a
 human block and `--json`, and `--all` is the default because the push plan needs the whole picture
@@ -2794,7 +2795,7 @@ index carries neither the declaration nor a task — two computations, so the pa
 than a value compared with itself.
 
 ### `plugins/audit/scripts/manifest/_manifest_ado.py`
-`meta.ado` — the Azure DevOps connector's config, checked offline (layer 2). **ONE front
+`meta.ado` — the Azure DevOps connector's config, checked offline. **ONE front
 door**: `validate()` calls `check_ado_meta` for the manifest and the panel's `write_ado`
 (PUT `/api/ado`) calls it for a candidate save, so the CLI and the panel cannot disagree
 about what a valid connector config is. Wrong **types** are findings (a config that would be
@@ -2804,7 +2805,7 @@ exactly the silence worth naming, and a typo'd `stateMap` status key silently ne
 warning, because one person can legitimately hold two ledger identities.
 
 ### `plugins/audit/scripts/manifest/_manifest_typos.py`
-The **did-you-mean** detectors (layer 2): a model id or a skill name used exactly **once**
+The **did-you-mean** detectors: a model id or a skill name used exactly **once**
 while a near-miss neighbour is used often. Warnings only, `findings` always empty — a near
 miss is a guess about intent, not a structural defect. A spelling used twice is an
 established choice and is never flagged, which is what keeps this off two models a project
@@ -2816,7 +2817,7 @@ neither. `_check_skills` is gated on `_skills_in_use`, so a manifest that never 
 feature gets zero new lines.
 
 ### `plugins/audit/scripts/manifest/_manifest_crossrefs.py`
-Every question about how one part of the manifest **refers** to another (layer 2): unique
+Every question about how one part of the manifest **refers** to another: unique
 ids across the one phase/task/bug namespace, `blockedBy`/`dependsOn` resolution, dependency
 cycles, `fileIndex` integrity in **both** directions, the reciprocal `bug ↔ task` link,
 parked `proposals[]` (reserved ids, staged refs, the `materializedAs`/status pair), and a
@@ -2827,7 +2828,7 @@ or both, and returns its own `(findings, warnings)` — no accumulator shared, n
 on, so a case can call any of them with a hand-built argument and no file anywhere near it.
 
 ### `plugins/audit/scripts/manifest/_warning_groups.py`
-The **shape** a repeated warning prints in (layer 2), and the reason it is not inside the rule
+The **shape** a repeated warning prints in, and the reason it is not inside the rule
 that produced it. On a real plan the unresolved-skills advisory printed one line per task —
 every mutating command, every run — and what it cost was not the verbosity but the signal
 those lines buried: a priority warning naming a phase that waits on work nobody has done sat
@@ -2869,7 +2870,7 @@ check, `crossrefs.bugs.schema-*` from the bug values) from the warnings to the f
 command rejects exactly where `ajv` rejects - the reading `COMPATIBILITY.md` announces for 4.0.0.
 
 ### `plugins/audit/scripts/status/_status_facts.py`
-What the manifest SAYS, as a machine-readable answer (layer 2) — the half of status that
+What the manifest SAYS, as a machine-readable answer — the half of status that
 nobody prints: `rollup`, `ready_tasks`, `unmet_refs`, `_status_index`, the submodule
 preflight (`parse_gitmodules`, `submodule_conflicts`), the high-severity vocabulary, the
 test-evidence vocabulary (`NO_SIGN_OFF_EVIDENCE`, `evidence_status`, `evidence_rows`,
@@ -2885,15 +2886,15 @@ reading a phase in flight elsewhere: `_live_copy` reads the copies, and these la
 plan and name each row's copy, the same way for every surface that shows one.
 
 ### `plugins/audit/scripts/status/_live_copy.py`
-Which copy holds a phase in flight live (layer 6): a phase run under a lock, or worked on in
+Which copy holds a phase in flight live: a phase run under a lock, or worked on in
 a linked worktree whose branch is not merged here, is read from that worktree's file -
 uncommitted edits included - or from its branch's committed copy, and each read names the
 copy it came from. `/audit:status`, the panel and the rendered report all show such a phase,
 so the reader (`in_flight`, `flight_for`, `live_reads`) lives here and nowhere else, and
 `_status_facts.live_view` is its pure half: it lays the reads over the plan and returns the
-copy note for each row. At layer 6 because it asks git through `_scoped_commit` (layer 5);
-`audit-status`, `render-report` and `panel-server` import it, and `_panel_state` (layer 5)
-takes it as `build_state(live=...)` from the server. What certifies stays on this checkout's
+copy note for each row. A layer above `_scoped_commit`, because it asks git through it;
+`audit-status`, `render-report` and `panel-server` import it, and `_panel_state`, a layer below
+it, takes it as `build_state(live=...)` from the server. What certifies stays on this checkout's
 own plan on every surface: the gate, the bug counts and the bug table.
 
 ### `plugins/audit/scripts/status/audit-status.py` (v0.5.0)
@@ -2937,8 +2938,8 @@ one import.
 The piece all six check modules sit on, and the only one with no check in it: the `Report`
 collector (rows of level/check/detail/fix, plus `counts()` and `exit_code()`), the `_load`
 wrapper every check reaches a sibling or a hook through, and the two constants two modules
-each read (`LAUNCHER_INTERPRETERS`, `RECENT_DAYS`). Layer 2 — it imports `_loader` and
-nothing else — which is what lets consumers as high as layer 5 share it. `_load` fixes
+each read (`LAUNCHER_INTERPRETERS`, `RECENT_DAYS`). It imports `_loader` and nothing
+else, which is what lets every check module above it share it. `_load` fixes
 `cache=False` on purpose: `tests/test_audit_doctor.py` re-`diagnose()`s ONE fixture it mutates
 between calls, in one process, and a cached module would be indistinguishable from a
 regression. Sharing the wrapper across files is also why `_deps._borrowed_wrapper_names`
@@ -2951,7 +2952,7 @@ git root the orchestrator will run git against, whether the config parses and va
 which plan-gate tier it produces, whether the manifest assembles and validates, whether a
 sharded layout's shards are intact (the assertion that moved out of `ci.yml` so CI and this
 command call one implementation), and whether any `task.files` entry lives inside a submodule
-the parent repo cannot stage. Layer 4, set by `_manifest_rules` at layer 3.
+the parent repo cannot stage. A layer above `_manifest_rules`, which is what sets it.
 
 **`plugin_integrity` asks a marketplace-cache install too.** A copy Claude Code installed into
 its plugin cache is a plain directory, not a clone, so the checkout question has no answer
@@ -3023,7 +3024,7 @@ phoned ADO would be a doctor that needs credentials. The SHAPE of `meta.ado` is
 what a shape-checker cannot see: whether `az` and its `azure-devops` extension are installed,
 which switches are in effect, that the shipped `stateMap` defaults name Agile states a Scrum
 project does not have, that `onComplete.remainingWork` degrades to state-only under both
-stock processes, and what the manifest's links actually prove. Layer 3.
+stock processes, and what the manifest's links actually prove.
 
 ### `plugins/audit/scripts/status/_doctor_trail.py`
 Has anything run here, and does what it wrote still hold? Hook state files are the only local
@@ -3058,7 +3059,7 @@ instead of a guessed cause.
 
 `_journal_never_committed` rides `audit-journal`'s porcelain seam for the 7-day
 uncommitted-file warning, keyed by journal-relative path so a live and an archived month
-cannot read as one another. Layer 4, set by the `usage_ledger` load.
+cannot read as one another. A layer above `usage_ledger`, which its load of it sets.
 
 `check_running_plugin` answers the question beside it — **which copy of the plugin ran
 them.** `CLAUDE_PLUGIN_ROOT` is fixed when a session starts, so a session that began
@@ -3126,7 +3127,7 @@ the only record of a close the hook did not watch, such as one run in a linked w
 `task.complete` carrying no `completedAt` still receipts its task id alone. A done task inside the record era with neither is positive evidence the manifest was
 edited outside the pipeline — a FINDING, as is a SHA git has never heard of; everything the
 check merely could not look up is a WARNING. The era is the WATERMARK with no config knob: the
-first receipt's `ts`. `--deep` adds the journal-in-commit cross-check. Layer 4.
+first receipt's `ts`. `--deep` adds the journal-in-commit cross-check.
 
 ### `plugins/audit/scripts/status/_doctor_hygiene.py`
 The two questions about the working copy itself: what is HELD, and what is LEAKING.
@@ -3135,7 +3136,7 @@ called anything older than 60 minutes stale, which told the human a healthy 90-m
 run had crashed. `check_local_artifacts` (v0.35) catches what the self-ignoring writers
 cannot reach: the ledger, stateDir, logsDir or panel pidfile committed BEFORE the markers
 existed. The journal is deliberately not in that list — it is the opposite kind of artifact
-and must stay tracked, which is the reverse warning `_doctor_trail` carries. Layer 3.
+and must stay tracked, which is the reverse warning `_doctor_trail` carries.
 
 ### `plugins/audit/scripts/status/_gate_feed.py`
 The plan-gate events feed (`<logsDir>/plan-gate-events.jsonl`) as something that can be
@@ -3172,8 +3173,7 @@ cannot resolve a path must answer *inside*, and a writer that cannot must not pr
 
 `prune()` is the whole action, and both doors run it — `audit-logs.py` and the panel's
 `POST /api/gate-events/prune`. It writes nothing when nothing was removed, so a prune that
-changes nothing leaves the mtime alone. Layer 2 (it reaches `_loader` and `_usage_core`, both
-layer 1). `--selftest`.
+changes nothing leaves the mtime alone. It reaches `_loader` and `_usage_core`. `--selftest`.
 
 ### `plugins/audit/scripts/status/audit-logs.py`
 `/audit:logs` — argument parsing, the render and the exit code over `_gate_feed`. It is its
@@ -3194,7 +3194,7 @@ about rows an older release wrote — and only where there is history for it to 
 feed that exists with rows left in it. "Nothing to remove" is otherwise a true statement about
 the rule and a misleading one about the file. The verb is `prune`, and it is mandatory: a bare
 invocation must not prune, which is why the positional takes one choice rather than defaulting
-to it. Exit 0 the prune ran, 1 it could not, 2 a usage error. Layer 7. `--selftest`.
+to it. Exit 0 the prune ran, 1 it could not, 2 a usage error. `--selftest`.
 
 ### `plugins/audit/scripts/status/audit-version.py`
 Which build of the plugin is running, and whether a newer one is published - the question
@@ -3211,8 +3211,8 @@ only outbound call, one unauthenticated GET to the GitHub API with a short timeo
 `SECURITY.md` states. The verdict is drawn only from what was read: an unanswered feed is
 "could not be asked", never "up to date"; the update commands (`claude plugin marketplace
 update`, `claude plugin update`, a restart) print only when a newer release is known and the
-marketplace is. Exit 0, 1 when a newer release is published, 2 a usage error. Layer 7 (an
-entry point); its cases are in `plugins/audit/tests/test_audit_version.py`.
+marketplace is. Exit 0, 1 when a newer release is published, 2 a usage error. An entry
+point; its cases are in `plugins/audit/tests/test_audit_version.py`.
 
 ### `plugins/audit/scripts/status/_claude_home.py`
 The readers of Claude Code's own install records, moved down from `audit-version.py` so
@@ -3229,8 +3229,8 @@ parser's `error` so every usage error also names this copy's version and path an
 `applicable_copy`, the installed copy Claude Code would load for this project (project or
 local scope recorded for it before user scope, another project's never) when that copy is
 newer, with `/reload-plugins` as the way to it; an unreadable record is said to be unreadable.
-It sits here, at layer 1, so every entry point can reach the one hook; `stamp-verification.py`
-carries it. Layer 1; its cases are in `plugins/audit/tests/test__claude_home.py`.
+It sits here, beside the shared base modules, so every entry point can reach the one hook;
+`stamp-verification.py` carries it. Its cases are in `plugins/audit/tests/test__claude_home.py`.
 
 ### `plugins/audit/scripts/status/audit-lookup.py`
 One question, one answer, with the pointer that lets a reader check it — instead of the
@@ -3287,12 +3287,12 @@ nearest id or a similar path — when the manifest does not carry an answer; an 
 the question (a task that was never cancelled) is a different, legitimate answer and not a
 miss. Read-only over the record (a brief is the one file it writes), exit 0 on a match, 1 on
 a miss, 2 a usage error, 3 a config `brief` refuses to read, 4 a brief whose inputs are not on
-the record yet. Layer 7 (an entry point reaching `_manifest_io`/`_journal_io`/`_loader`/`_areas` at layer 1
-and `_evidence_io` at layer 2, for the project/config resolution `boundary_for` already
+the record yet. An entry point (reaching `_manifest_io`/`_journal_io`/`_loader`/`_areas`
+and `_evidence_io`, for the project/config resolution `boundary_for` already
 shares). `--selftest`.
 
 ### `plugins/audit/scripts/governance/_locks.py`
-The lock library (layer 1): where a lock lives (`lock_dir`), what it may be called
+The lock library: where a lock lives (`lock_dir`), what it may be called
 (`valid_name`), whether its holder is alive (`pid_alive`, `judge`), what is held
 (`read_lock`, `collect`), and taking or giving one back (`acquire`, `release`). Liveness,
 not age, decides a stale lock, and every verdict carries the BASIS sentence that makes it
@@ -3336,7 +3336,7 @@ a caller that must know whether this call took the lock is the one reader that c
 the two apart. `--session`/`--pid` override the identity written into the lock for testing.
 
 ### `plugins/audit/scripts/governance/_invariants.py`
-The post-hoc reader of `reference/orchestrator.md` (layer 4). Both READMEs split the
+The post-hoc reader of `reference/orchestrator.md`. Both READMEs split the
 plugin's rules into what a hook ENFORCES and what the model FOLLOWS, and the second table's
 last column names, per row, what evidence would catch a breach — `post-hoc` where git, the
 shard, the journal or the ledger already holds it. This module reads that evidence, check by
@@ -3743,7 +3743,7 @@ reset.
 
 **No command can import another** — nothing may import a hyphenated entry point — so this
 module is the only place they meet, and a second spelling of a refusal rule is how one commit
-comes to carry what another forbids. Layer 5: it reads `_invariants` (L4) for `_under`,
+comes to carry what another forbids. It sits a layer above `_invariants` and reads it for `_under`,
 which is the one answer to "is this path inside that entry" that the writer and the after-the-fact
 checker both have to give.
 
@@ -4515,8 +4515,8 @@ supports a verdict from), `never-failed` (past the floor, no failure — a candi
 or `catches-things` (past the floor, has failed — a candidate for every plan). `historyAvailable`
 is the repo-wide flag stated once rather than left for a reader to re-derive from every entry,
 but the basis is still per-command: a candidate this repo has never run under any spelling reads
-`tree` even in a project full of history for other commands. Read-only, exit 0/2. Layer 7 (reaches
-`_evidence_io` at layer 2 and nothing else). `--selftest`.
+`tree` even in a project full of history for other commands. Read-only, exit 0/2. An entry point
+that reaches `_evidence_io` and nothing else. `--selftest`.
 
 ### `plugins/audit/scripts/governance/record-risk-confirmation.py`
 `record-risk-confirmation.py <manifest> <phaseId> --confirm-high-risk "<their words>"` —
@@ -4558,7 +4558,7 @@ are still what this file records; what moved them down is that the same fingerpr
 claim carried in *prose*, and a second expression of "which tree was this" would **be** a second
 tree identity. The module holds `porcelain()`, `HEAD_BASIS`, `scope_digest()`, `dirty_digest()` and
 `tested_state()` unchanged. An entry point reaching another entry point is the `KNOWN_LAYER_DEBT`
-shape that table exists to keep rare, which is why the shared half came down to L2 rather than the
+shape that table exists to keep rare, which is why the shared half came down into `_tree_stamp` rather than the
 new command reaching up.
 
 ### `plugins/audit/scripts/governance/_verdict_binding.py`
@@ -4570,7 +4570,7 @@ run of the phase's gate (a group's carrier, over every member's files); `audit-t
 of the rule in the sign-off verb had fewer arms than the task commit's: it graded a repeated
 verdict by the repeat's own empty stamp and refused it on an unchanged tree, compared a digest the
 recorder took with its own writes left out against one taken with them in, and accepted an
-`empty-gate` row under a gate that had since gained entries. So the rule moved here, at L3 - the
+`empty-gate` row under a gate that had since gained entries. So the rule moved here, to the
 first layer above `_evidence_io` (the ledger) and `_tree_stamp` (the digest), which are peers and
 cannot hold it. `binding()` takes the subject's ids, the gate entries that measure it and their
 source, its declared files and the caller's own sentences, and answers `bound`, `no-gate` or
@@ -4656,7 +4656,7 @@ being written twice. `group_kwargs` gives the child a session of its own, `tear_
 group SIGTERM then SIGKILL and says whether that could be confirmed (`shares_our_group` keeps it
 from aiming at its own caller), `drain` reads what was written after the group is gone, and
 `arm_interrupt`/`disarm_interrupt` install and restore handlers that raise `KeyboardInterrupt`
-naming the signal. What it cannot cover is SIGKILL, which no handler sees. Layer 1; its cases are
+naming the signal. What it cannot cover is SIGKILL, which no handler sees. Its cases are
 in `plugins/audit/tests/test__proc_group.py`, and `run-test-gate.py`'s names are this module's
 objects.
 
@@ -4687,7 +4687,7 @@ translate) is `COULD_NOT_TELL`. The runner's own listing is asked first - `vites
 `jest --listTests`, `pytest --collect-only -q` (a binary already in the project, never downloaded;
 pytest's list can prove a file collected but never that one is not); otherwise a literal `include`, `testMatch`/`roots`
 or pytest default is read from the config TEXT, which is tokenised and never executed. `match_glob`
-holds the picomatch forms it translates and answers `None` for the rest. Layer 1; it reaches
+holds the picomatch forms it translates and answers `None` for the rest. It reaches
 nothing but `_output`. Its cases are in `plugins/audit/tests/test__runner_collects.py`.
 
 ### `plugins/audit/scripts/governance/_runner_output.py`
@@ -4697,7 +4697,7 @@ and `_FAILURE_READERS`, `jest_failures` and `_VITEST_FAIL_LINE` for which checks
 written in `run-test-gate.py`; `stamp-verification.py red` asks the same output the same questions,
 and an entry point may not import another, so they moved here rather than being written twice.
 `failing_suites` and its path filters stayed in the gate, because they read `_evidence_io`'s
-limits and that module sits above this one. Layer 1; it reaches nothing but `_output`. Its cases
+limits and that module sits above this one. It reaches nothing but `_output`. Its cases
 are in `plugins/audit/tests/test__runner_output.py`, and `run-test-gate.py`'s names are this
 module's objects.
 
@@ -5386,7 +5386,7 @@ default — that would silently render some other plan than the one the project 
 a list tail - a phase, a task, a bug, a `fileIndex` row - so two branches that each add a different
 record write the same lines and git's line merge stops, in either layout: sharding moves a phase
 RUN into its own shard, but every record that is ADDED still lands in the index. `_manifest_merge`
-(L1, pure) merges three parsed documents: records matched by `id`, a `fileIndex` row as a set of
+(pure) merges three parsed documents: records matched by `id`, a `fileIndex` row as a set of
 task ids, fields three-way. What stays a conflict is what a human must decide - one field changed
 two ways, delete against change, and the same id added twice with different content, which is never
 renumbered. The order is symmetric - base order, a side's additions after the record they followed,
@@ -5421,9 +5421,9 @@ layout has cost: the recent merges whose two sides both changed the plan, replay
 `git merge-tree --write-tree` and the driver swapped for `git merge-file`, which is what a
 clone without it runs - a phase-count threshold would be a proxy for this number, and the
 history can simply count it. It refuses `git log -- <plan>` on purpose: that history
-simplification drops a merge resolved by taking one side. `_merge_install` (L1) names the install's pieces once and reads them
+simplification drops a merge resolved by taking one side. `_merge_install` names the install's pieces once and reads them
 back, because `merge-manifest status` and the doctor's `merge driver` line must give one answer and
-a layer-4 module may not reach an entry point. Cases: `tests/test__manifest_merge.py` (the merge) and
+a doctor module may not reach an entry point. Cases: `tests/test__manifest_merge.py` (the merge) and
 `tests/test__merge_install.py` (locating, and a quoted root read back), `tests/test_merge_manifest.py` (real git: the field report reproduced as a control, both
 directions byte-identical, sharded, a stale shim, a driver that dies before writing).
 
@@ -5496,12 +5496,12 @@ The report as a whole document, moved out of `render-report.py`: the report's vo
 phase-row builder, and `render_html` itself — the function that glues `_report_html`'s
 fragments and `_report_usage`'s section into one self-contained page, or (with
 `fragment=True`) into the same page with no document wrapper, for a Claude Code Artifact
-whose host supplies its own. Layer 6, which its own edges decide. The verdict at the top of
+whose host supplies its own. Its place in the table is what its own edges decide. The verdict at the top of
 the report is `/audit:status`'s own word, so `render_html` takes `verdict` as an INJECTED
 callable and `render-report.py` supplies `_verdict`. That injection used to be forced by the
 module map — the gate was reached through `_loader` as an entry point, so calling it from
 here would have been a helper reaching up — and it has not been since the gate's conditions
-came down to `_status_facts` at layer 2, which this module already imports for one
+came down to `_status_facts`, which this module already imports for one
 predicate. What keeps it is the stronger half: a renderer computing the verdict out of the
 same facts would be a second opinion beside the command's, free to disagree with the word a
 reader was given on the terminal. With no verdict supplied
@@ -5548,13 +5548,13 @@ here is the **order**: `_usage_section` assembles the block, and `_usage_payload
 navigation both need, in a page with no server to ask). Two rules shape the whole section, which
 is why they are stated here rather than in a piece: **restraint on first paint** (one dominant
 chart plus three ranked lists, the rest behind a disclosure), and **every number states its
-basis** (rate date, attribution coverage, sample size) or it does not render. It moved layer 4 →
-layer 5, which is the whole structural cost of the cut; `_report_md` reads the Markdown twin
+basis** (rate date, attribution coverage, sample size) or it does not render. It moved up one
+layer, which is the whole structural cost of the cut; `_report_md` reads the Markdown twin
 directly for that reason. Every name the five pieces hold is re-exported here as the same
 object, so `render-report`, `_report_page` and this section's suite kept their imports.
 
 ### `plugins/audit/scripts/report/_usage_viz.py`
-How the Usage section formats a number and draws a bar (layer 3) — the primitives all four other
+How the Usage section formats a number and draws a bar — the primitives all four other
 pieces read, and nothing in it knows what a phase or an author is. The **one divide rule in two
 answers** lives here: `_fill_pct` and `_hover_share` answer "there is no whole to divide by"
 differently on purpose, because a bar never travels alone (its count is printed beside the track,
@@ -5566,7 +5566,7 @@ categorical slot assignment (by NAME, so re-sorting a chart cannot repaint the s
 (written once, used as both the native `title` and the styled tooltip payload), and the sparkline.
 
 ### `plugins/audit/scripts/report/_usage_load.py`
-The Usage section's **only** read (layer 4): `load_usage()` turns the ledger into the dict every
+The Usage section's **only** read: `load_usage()` turns the ledger into the dict every
 other piece renders from, and returns `None` when there is no ledger — the section then renders
 as nothing at all rather than as an empty frame. Deliberately not taken from `audit-status.rollup`
 (the rollup is printed into a model's context, so the bulky series are computed here instead of
@@ -5575,7 +5575,7 @@ last day**, not the wall clock, so a committed example report is byte-stable acr
 and a shipped fixture cannot rot into a staleness warning on its own.
 
 ### `plugins/audit/scripts/report/_evidence_view.py`
-The test-gate column's **only** read (layer 3): `load_evidence()` turns the evidence ledger and
+The test-gate column's **only** read: `load_evidence()` turns the evidence ledger and
 the plan's `testEvidence` pointers into one view per task and per phase, and returns `None` when
 the plan points at no recorded run — the badge column is then not earned, the drawer grows no
 third group, and a manifest written before the field existed renders byte for byte as it did.
@@ -5598,7 +5598,7 @@ fetches one block and gives the same object to both halves; `None` is the third 
 nobody computed one, which is exactly what every caller rendered before the parameter existed.
 
 ### `plugins/audit/scripts/report/_usage_overview.py`
-What the Usage section shows on **first paint** (layer 4): the context line, the five-tile metric
+What the Usage section shows on **first paint**: the context line, the five-tile metric
 strip, the notices, the one dominant trend chart, the budget block, the author chips and the three
 ranked lists. The context line is where the rate basis lives: every cost in the section is
 priced at read time by the resolved table (`priced_at_read`), so the phrase names that table and
@@ -5611,7 +5611,7 @@ and names unbudgeted phases in a footnote rather than drawing them at 0% — an 
 not a phase at zero.
 
 ### `plugins/audit/scripts/report/_usage_detail.py`
-Everything the section folds behind its `Detail` disclosure (layer 4): the per-author small
+Everything the section folds behind its `Detail` disclosure: the per-author small
 multiples, the calendar-month table, the risk-band routing table and its advisory, unit economics
 and the cost-band note, the phase-composition stacks and the day×hour heatmap. These are the
 blocks that make **claims**, so each states what it refuses to say: models are compared only
@@ -5622,7 +5622,7 @@ thresholds came from, or that it is still waiting for a sample; retried spend is
 the same as wasted spend, because the ledger buckets by hour rather than by attempt.
 
 ### `plugins/audit/scripts/report/_usage_markdown.py`
-The Usage section's Markdown twin (layer 4) — not decoration and not a summary. Three light-mode
+The Usage section's Markdown twin — not decoration and not a summary. Three light-mode
 categorical slots sit under 3:1 contrast and this table **is** the documented relief, so it holds
 every number the charts encode in colour, shares every gate with the HTML (a twin must not know a
 month the page does not), and applies the same `<1%` floor — a `0%` here where the page says
@@ -5704,9 +5704,9 @@ substitution and *before* the theme one, and case `pg1` is what goes red if it m
 holds the selftest cases that assert about the CSS and JavaScript in
 `scripts/ui/panel-css/` and `scripts/ui/panel/` — three quarters of `panel-server.py` before
 the split, and claims
-about the front end rather than about an HTTP server. Layer 4: it reaches `usage_ledger` (L3,
-for `COST_BAND_PARAMS`), `_help` (L3, selftest only), `_panel_ui`/`_panel_settings` (L2) and
-`_ui_theme`/`_loader` (L1), and never `_panel_state`, `_panel_write`, `_panel_discovery` or
+about the front end rather than about an HTTP server. It reaches `usage_ledger` (for
+`COST_BAND_PARAMS`), `_help` (selftest only), `_panel_ui`/`_panel_settings` and
+`_ui_theme`/`_loader`, and never `_panel_state`, `_panel_write`, `_panel_discovery` or
 `panel-server` — a selftest case asserts that.
 
 ### `plugins/audit/scripts/panel/_panel_discovery.py`
@@ -5750,9 +5750,9 @@ The floor the panel's read side stands on: `CONFIG_REL`, `_within`/`_config_path
 `_manifest_path`/`_read_json`/`read_config`, the `_load` wrapper, and the
 three accessors `hooks_config()`/`config_rules()`/`status_facts()`. Those three replaced
 `_cores()`'s positional 4-tuple, and that is the whole reason the U3.1 split fits: the tuple
-also carried `_manifest_rules` (layer 3), so a base module holding it could only sit at layer 4
-— leaving nowhere for the five modules that read it, and forcing an eighth layer that would
-have recorded a grab-bag accessor rather than a dependency. `hooks_config()` is the only one
+also carried `_manifest_rules`, so a base module holding it could only sit a layer above
+`_manifest_rules` — leaving nowhere for the five modules that read it, and forcing a new layer
+that would have recorded a grab-bag accessor rather than a dependency. `hooks_config()` is the only one
 that loads anything and the only one that memoizes; `_panel_state._cores()` still assembles the
 same tuple in the same order for `_panel_write` and `audit-task`, which read it positionally.
 
@@ -5818,9 +5818,9 @@ ONCE per request for all five of its manifest-derived fields. Every branch retur
 The panel's READ side, moved out of `panel-server.py` and split six ways at U3.1. What is left
 is the journal, the help endpoints, the report export and `build_state`, which assembles one
 payload out of all of them; the six modules above are where the rest went. `render_report`
-stays here deliberately — it runtime-loads `render-report.py` at layer 7, the single entry in
-`_deps.KNOWN_LAYER_DEBT`, and moving it into a layer-4 module would have made that recorded
-edge span three layers instead of one. Nothing here writes. It re-exports all 35 names
+stays here deliberately — it runtime-loads the `render-report.py` entry point, an edge
+`_deps.KNOWN_LAYER_DEBT` records, and moving it into a lower module would have made that
+recorded edge span more layers than it does. Nothing here writes. It re-exports all 35 names
 `panel-server` and `_panel_write` alias, so the split is invisible to both — and a selftest
 case asserts it never imports `panel-server` back, plus three more that no module the split
 produced imports back up.
@@ -5844,7 +5844,7 @@ policy precedence from a worked `_policy.resolve` example) and are pointers, not
 where the rule lives only in prose. `guide_card()` reads `agents/guide.md`'s frontmatter
 so the panel cannot advertise a tool that agent does not hold. Because it owns the schema walk
 that keys by DOCUMENT PATH it also owns `schema_vocab_drift()`, which holds `_manifest_vocab`'s
-`KNOWN_*` sets to `audit-plan.schema.json` — the vocabulary is at layer 1 and could not reach up
+`KNOWN_*` sets to `audit-plan.schema.json` — the vocabulary sits below this module and could not reach up
 for the walk, and another walk written down there would have moved the duplication rather than
 removed it. This is not the tree's only schema walk: `gen-demo-manifest.schema_fields()` keys a
 field by `$def` NAME instead, so an INLINE level such as `meta.ado` has no owner to attribute a
@@ -5854,7 +5854,7 @@ sub-key to and is outside its reach — which is why the two are not interchange
 fixtures instead of by mutating the shipped vocabulary.
 
 ### `plugins/audit/scripts/config/_config_rules.py`
-The rules for `.claude/audit.config.json` (layer 2), and the vocabulary the config is held
+The rules for `.claude/audit.config.json`, and the vocabulary the config is held
 to. Complements `schema/audit-config.schema.json` with checks a
 schema pass doesn't surface nicely (regex compilability of custom rules, positive
 thresholds) and hands the control panel a machine-usable findings list. Permissive: unknown
@@ -5873,12 +5873,12 @@ was not, and `ui` was live in four files and missing from the schema for its who
 `root_vocab_drift()` is the comparison on plain arguments, so its own failure modes are tested
 from fixtures rather than by mutating the shipped vocabulary — the same split
 `_help.vocab_drift()` is on, and the reason this lives here rather than beside that one is that
-`_help` is a PEER at layer 2, so neither may import the other. It also owns the four enum tuples (`PLAN_GATE_MODES`,
+`_help` is a PEER, a layer-mate, so neither may import the other. It also owns the four enum tuples (`PLAN_GATE_MODES`,
 `AUTHOR_MODES`, `IN_PROGRESS_POLICY`, `STRICT_MANIFEST_STATE`) the panel's Settings form
 reads, so the form can never offer a value the validator rejects. Three modules needed it
 and all three used to load `validate-config.py` through `_loader` — including
-`_panel_settings` from LAYER 2, the deepest inversion `KNOWN_LAYER_DEBT`
-then carried, which is why `_panel_settings` moved up to layer 3 in the same change.
+`_panel_settings` from beside this module, the deepest inversion `KNOWN_LAYER_DEBT`
+then carried, which is why `_panel_settings` moved up a layer in the same change.
 
 ### `plugins/audit/scripts/config/validate-config.py`
 The command over those rules: read the file, print `WARNING:`/`FINDING:` lines, exit 0

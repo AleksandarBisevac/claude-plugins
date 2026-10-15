@@ -6643,7 +6643,12 @@
       "fixes": [
         "P125-R34"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T12:48:35Z.8ea16c",
+        "status": "passed",
+        "at": "2026-10-15T12:48:35Z"
+      }
     },
     {
       "id": "P125.85-0h5",
@@ -8114,7 +8119,12 @@
       "startedAt": "2026-10-15T11:43:07Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T12:59:28Z.f21258",
+        "status": "passed",
+        "at": "2026-10-15T12:59:28Z"
+      }
     },
     {
       "id": "P125.109-0h5",

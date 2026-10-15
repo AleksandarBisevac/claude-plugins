@@ -2549,11 +2549,11 @@ def _layer_ordinals(text):
     return [m.group(0) for m in _LAYER_ORDINAL.finditer(joined)]
 
 
-def _layer_numerals(text, names):
-    """Every layer numeral in one prose block, in reading order, as written.
+def _layer_numeral_hits(text, names):
+    """`[(position, numeral as written), ...]` for one prose block, in reading order.
 
-    An ordinal phrase is a position claim, not a numeral; `_layer_ordinals` reads
-    those and `layer_mention_drift` words them apart."""
+    The position is what lets a markdown finding name the line it sits on and the
+    module it is bound to; the docstring and comment scan reads only the numerals."""
     found = _layer_word_numerals(text)
     found += [(m.start(2), m.group(2)) for m in _LAYER_PAREN_NUMERAL.finditer(text)
               if m.group(1) in names]
@@ -2561,7 +2561,150 @@ def _layer_numerals(text, names):
                   or any(name in names for name in _BACKTICK_NAME.findall(text)))
     found += [(m.start(), m.group(0)) for m in _LAYER_L_NUMERAL.finditer(text)
               if in_context or _LAYER_L_LEAD.search(text[:m.start()])]
-    return [numeral for _pos, numeral in sorted(found)]
+    return sorted(found)
+
+
+def _layer_numerals(text, names):
+    """Every layer numeral in one prose block, in reading order, as written.
+
+    An ordinal phrase is a position claim, not a numeral; `_layer_ordinals` reads
+    those and `layer_mention_drift` words them apart."""
+    return [numeral for _pos, numeral in _layer_numeral_hits(text, names)]
+
+
+# Markdown prose, read for the same numerals. A fenced block is not prose: the
+# guide's generated module map is the one place the numbering is meant to be
+# printed, and a fence elsewhere is a command or an output sample.
+_MD_FENCE = re.compile(r"^\s*(?:```|~~~)")
+_MD_HEADING = re.compile(r"^\s{0,3}#{1,6}\s")
+# The module a section is about, as the guide's file-by-file headings name it: a
+# backticked path whose basename is a `.py` file.
+_MD_HEADING_MODULE = re.compile(r"`(?:[^`]*/)?([A-Za-z_][A-Za-z_0-9-]*)\.py`")
+# Where a sentence ends, for binding a numeral to the module named before it in
+# the same sentence; the full stop inside `_x.py` has no space after it.
+_MD_SENTENCE_END = re.compile(r"[.!?;:](?=\s)")
+
+
+def _md_blocks(text):
+    """`[(lines, heading module or None), ...]` - every paragraph and heading.
+
+    `lines` is `[(lineno, line), ...]`; a heading is a block of its own and sets
+    the module the paragraphs under it are bound to when their own sentence names
+    none. A heading naming no `.py` file clears it, so a numeral is never bound to
+    a module two sections back."""
+    blocks = []
+    current = []
+    module = None
+    in_fence = False
+    for lineno, line in enumerate(text.split("\n"), 1):
+        if _MD_FENCE.match(line):
+            if current:
+                blocks.append((current, module))
+            current = []
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if _MD_HEADING.match(line):
+            if current:
+                blocks.append((current, module))
+            named = _MD_HEADING_MODULE.findall(line)
+            module = named[-1] if named else None
+            blocks.append(([(lineno, line)], module))
+            current = []
+            continue
+        if not line.strip():
+            if current:
+                blocks.append((current, module))
+            current = []
+            continue
+        current.append((lineno, line))
+    if current:
+        blocks.append((current, module))
+    return blocks
+
+
+def _bound_module(text, pos, names, fallback):
+    """The module a numeral at `pos` is about: the last LAYERS name backticked
+    before it in its own sentence, else the section's module, else None."""
+    starts = [m.end() for m in _MD_SENTENCE_END.finditer(text, 0, pos)]
+    sentence = text[starts[-1] if starts else 0:pos]
+    named = [name for name in _BACKTICK_NAME.findall(sentence) if name in names]
+    if named:
+        return named[-1]
+    return fallback if fallback in names else None
+
+
+def _doc_numeral_problem(numeral, module, layers):
+    """The finding for one numeral in a document, naming what it is bound to."""
+    repair = ("`_deps.py --render` prints every module's layer, so delete the "
+              "number and keep the module's name and the reasoning, or say it "
+              "relationally (`a layer above `_x``)")
+    if module is None:
+        return ("writes the layer numeral %r bound to no module LAYERS holds - %s"
+                % (numeral, repair))
+    real = _layer_of(module, layers)
+    digits = re.sub(r"\D", "", numeral)
+    verdict = ("agrees today, and the next layer inserted below it makes it wrong"
+               if digits and int(digits) == real else "disagrees")
+    return ("binds `%s` to %r while LAYERS holds it at L%d, which %s - %s"
+            % (module, numeral, real, verdict, repair))
+
+
+def _layer_doc_names(doc_paths, script_dir):
+    """`(names, problem)` - the documents `layer_mention_drift` reads.
+
+    Handed paths are read as given. With none handed, the default call reads the
+    derived markdown set `doc_prose_numbers()` reads; a call aimed at a fixture
+    tree reads no document, because that set is the real repository's."""
+    if doc_paths is not None:
+        return (list(doc_paths), None)
+    if script_dir is not None:
+        return ([], None)
+    scan = _output.prose_scan_set((".md",))
+    return (list(scan["paths"]), scan["problem"])
+
+
+def _doc_layer_mentions(doc_paths, script_dir, layers):
+    """`[(label:line, problem), ...]` - every layer numeral and ordinal in prose
+    markdown. `layer_mention_drift`'s document half; see its docstring."""
+    names_in_layers = set(name for members in layers for name in members)
+    paths, problem = _layer_doc_names(doc_paths, script_dir)
+    if problem is not None:
+        return [(".gitignore", problem)]
+    out = []
+    for name in paths:
+        path = name if os.path.isabs(name) else os.path.join(_output.REPO_ROOT, name)
+        label = os.path.basename(path) if os.path.isabs(name) else name
+        try:
+            with io.open(path, "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except (OSError, UnicodeDecodeError) as exc:
+            out.append((label, "could not be read to check its layer mentions: %s"
+                        % exc))
+            continue
+        for lines, module in _md_blocks(text):
+            joined = ""
+            starts = []
+            for lineno, line in lines:
+                starts.append((len(joined), lineno))
+                joined += line + " "
+            for pos, numeral in _layer_numeral_hits(joined, names_in_layers):
+                lineno = [ln for off, ln in starts if off <= pos][-1]
+                bound = _bound_module(joined, pos, names_in_layers, module)
+                out.append(("%s:%d" % (label, lineno),
+                            _doc_numeral_problem(numeral, bound, layers)))
+            for phrase in _layer_ordinals(" ".join(joined.split())):
+                out.append(("%s:%d" % (label, lines[0][0]),
+                            _ORDINAL_PROBLEM % phrase))
+    return out
+
+
+_ORDINAL_PROBLEM = (
+    "claims a position with %r - that is the table's row in words and goes stale "
+    "the same way; rewrite it relationally (`a layer above `_x``, `the floor of "
+    "what it imports`) or follow it with what the layer reaches (`that`, `which`, "
+    "`it can`, `strictly above`)")
 
 
 def _prose_blocks(source):
@@ -2600,8 +2743,9 @@ def _prose_blocks(source):
     return blocks
 
 
-def layer_mention_drift(script_dir=None, hooks_dir=None, layers=None):
-    """[(relname:line, problem), ...] - every layer numeral in a docstring or comment.
+def layer_mention_drift(script_dir=None, hooks_dir=None, layers=None, doc_paths=None):
+    """[(relname:line, problem), ...] - every layer numeral in a docstring, a
+    comment or a markdown document's prose.
 
     An absolute ordinal position (an ordinal word, then "layer") is the same
     claim and is refused too, with its own message, unless a closed set of
@@ -2619,6 +2763,24 @@ def layer_mention_drift(script_dir=None, hooks_dir=None, layers=None):
     (`_layer_numerals` says which is which). The repair keeps the module's name
     and the reasoning and drops the number; "a layer above `_x`" says what the
     number said, and stays true when the table moves.
+
+    THE DOCUMENTS ARE THE SAME RULE, not a second one. The build guide carried
+    the most copies, written beside each module's section, and they had drifted
+    from LAYERS in both directions with nothing reading them. Every paragraph and
+    heading of a markdown document is read with the same numeral reader; a fenced
+    block is not prose, which is what leaves the guide's generated module map
+    alone. A document finding also names the module the numeral is bound to - the
+    last LAYERS name backticked before it in its own sentence, else the module
+    its section heading names - the numeral as written and the index LAYERS
+    holds, because that is what the repair needs; a right number is still
+    refused, and its finding says it agrees today. The default call reads the
+    derived markdown set `doc_prose_numbers()` reads; `doc_paths` hands fixture
+    documents in, and a call aimed at a fixture `script_dir` reads none.
+
+    WHAT THE BINDING CANNOT SEE: a numeral whose sentence names its module only
+    in plain words (no backticks) under a heading naming another module binds to
+    the heading's. The numeral is refused either way; only the name in the
+    finding can be wrong.
 
     `layers` only names the modules a backticked name is read against.
     """
@@ -2640,14 +2802,8 @@ def layer_mention_drift(script_dir=None, hooks_dir=None, layers=None):
                             "delete the number and keep the module's name and the "
                             "reasoning" % numeral))
             for phrase in _layer_ordinals(text):
-                out.append(("%s:%d" % (rel, lineno),
-                            "claims a position with %r - that is the table's row "
-                            "in words and goes stale the same way; rewrite it "
-                            "relationally (`a layer above `_x``, `the floor of "
-                            "what it imports`) or follow it with what the layer "
-                            "reaches (`that`, `which`, `it can`, `strictly "
-                            "above`)" % phrase))
-    return out
+                out.append(("%s:%d" % (rel, lineno), _ORDINAL_PROBLEM % phrase))
+    return out + _doc_layer_mentions(doc_paths, script_dir, layers)
 
 
 # --- uncalled_helper_claims: a docstring naming a consumer nothing is ------------

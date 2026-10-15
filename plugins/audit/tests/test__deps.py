@@ -694,8 +694,105 @@ def _cases(check):
               and "a layer above" in ord_hit[0][1]
               and "delete the number" not in ord_hit[0][1]
               and len(num_hit) == 1 and "delete the number" in num_hit[0][1])
+
+        # THE DOCUMENTS. The same numeral, written into markdown beside a module's
+        # name, is the same second copy of the table, and the guide carried the most
+        # of them. The rule is the one above - the numeral is refused, right or
+        # wrong - and the finding names the module it is bound to, the layer as
+        # written and the index LAYERS holds, because that triple is what a reader
+        # repairing the sentence needs and what tells a stale copy from a lucky one.
+        def _ld(text):
+            """Judge one fixture document against the small LAYERS above."""
+            doc = os.path.join(lm_tmp, "GUIDE.md")
+            with open(doc, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            return M.layer_mention_drift(lm_tmp, hooks_dir=os.path.join(lm_tmp, "none"),
+                                         layers=lm_layers, doc_paths=[doc])
+
+        # The fixture's module file is reset to a clean body, so every finding
+        # below comes from the document and none from the probe module.
+        with open(os.path.join(lm_tmp, "_probe_mention.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write('"""Nothing about layers here."""\n')
+        stale = _ld("# Guide\n\nThe reader `_other` sits at layer 1, beside the plan.\n")
+        check("ldoc1 a document that binds a module name to an absolute layer number "
+              "disagreeing with _deps.LAYERS fails the lint, naming the module, the "
+              "stated layer and the real one (one finding, labelled by the document "
+              "and line, quoting `_other`, 'layer 1' and the index LAYERS holds): %r"
+              % (stale,),
+              len(stale) == 1 and stale[0][0] == "GUIDE.md:3"
+              and "`_other`" in stale[0][1] and "'layer 1'" in stale[0][1]
+              and "holds it at L2" in stale[0][1] and "disagrees" in stale[0][1]
+              and "agrees today" not in stale[0][1])
+        # THE DENY TWIN. Relational wording says what the number said and stays
+        # true when the table moves, so it must pass - a lint that refused every
+        # sentence mentioning a layer would be routed around inside a day.
+        relational = _ld("# Guide\n\n`_other` sits a layer above `_manifest_io`, and "
+                         "the map is what `_deps.py --render` prints.\n\n"
+                         "Each layer owns its names; a layer below is read first.\n")
+        check("ldoc2 a document whose layer wording is relative only - a layer above "
+              "a named module, the render command as the pointer - passes: %r"
+              % (relational,), relational == [])
+        agreeing = _ld("# Guide\n\n`_other` sits at layer 2.\n")
+        check("ldoc3 a numeral LAYERS agrees with is still refused in a document, and "
+              "the finding says it agrees today rather than calling it wrong: %r"
+              % (agreeing,),
+              len(agreeing) == 1 and "agrees today" in agreeing[0][1]
+              and "disagrees" not in agreeing[0][1]
+              and "`_other`" in agreeing[0][1])
+        # The earlier sentence names a different module on purpose: a binding that
+        # read the whole paragraph rather than the numeral's own sentence would
+        # name `_manifest_io` here.
+        headed = _ld("## 2. Files\n\n### `plugins/audit/scripts/_other.py`\n"  # refs: fixture
+                     "Grades the config for `_manifest_io`. Layer 1. `--selftest`.\n")
+        check("ldoc4 a numeral whose sentence names no module is bound to the module "
+              "its section heading names, not to one an earlier sentence named: %r"
+              % (headed,),
+              len(headed) == 1 and "`_other`" in headed[0][1]
+              and "'Layer 1'" in headed[0][1] and headed[0][0] == "GUIDE.md:4")
+        nearest = _ld("Both read `_manifest_io` (layer 0), and `_other` (L1)\n"
+                      "imports it.\n")
+        check("ldoc5 each numeral binds to the nearest module named before it in its "
+              "sentence, across a wrapped line, and each is one finding: %r"
+              % (nearest,),
+              len(nearest) == 2
+              and "`_manifest_io`" in nearest[0][1] and "'layer 0'" in nearest[0][1]
+              and "`_other`" in nearest[1][1] and "'L1'" in nearest[1][1])
+        fenced = _ld("## 1a. Module map (generated)\n\n```\nL0:\n  _output\n\n"
+                     "L2:\n  _other -> _output\n```\n")
+        check("ldoc6 a fenced block is not prose - the generated module map is the "
+              "one place the numbering is meant to be printed: %r" % (fenced,),
+              fenced == [])
+        unbound = _ld("Nothing here names a module, yet it says layer 3.\n")
+        check("ldoc7 a numeral bound to no module is refused all the same, and the "
+              "finding says it found no module: %r" % (unbound,),
+              len(unbound) == 1 and "no module" in unbound[0][1])
+        gone = M.layer_mention_drift(lm_tmp, hooks_dir=os.path.join(lm_tmp, "none"),
+                                     layers=lm_layers,
+                                     doc_paths=[os.path.join(lm_tmp, "gone.md")])
+        check("ldoc8 an unreadable document is NAMED rather than skipped: %r" % (gone,),
+              len(gone) == 1 and "could not be read" in gone[0][1])
+        # Asked of the document list itself: the real documents are clean, so a
+        # fixture call that read them anyway would still return no finding.
+        check("ldoc9 a fixture tree with no documents handed in reads none - the "
+              "derived set is the real repository's and belongs to the default call",
+              M._layer_doc_names(None, lm_tmp) == ([], None)
+              and M.layer_mention_drift(lm_tmp, hooks_dir=os.path.join(lm_tmp, "none"),
+                                        layers=lm_layers) == [])
     finally:
         shutil.rmtree(lm_tmp, ignore_errors=True)
+
+    # The default call reads the derived documents too: the guide is where the
+    # class lived longest, so a default that stopped reaching it has gone blind,
+    # not clean.
+    _ldoc_real = [h for h in M.layer_mention_drift() if ".md:" in h[0]]
+    _ldoc_names = M._layer_doc_names(None, None)
+    check("ldoc10 the default call reads every seed document, the guide among "
+          "them, and the shipped documents carry no layer numeral: %r"
+          % (_ldoc_real[:3] or _ldoc_names[1],),
+          _ldoc_names[1] is None
+          and all(seed in _ldoc_names[0] for seed in M._PROSE_DOCS)
+          and _ldoc_real == [])
 
     # ------------------------------- uncalled_helper_claims: a consumer that is not
     # `_evidence_io.in_evidence` opened "needed for the same reason: a guard that
