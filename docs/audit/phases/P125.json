@@ -287,8 +287,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/status/_doctor_trail.py:217-242",
         "issue": "dispatch_starts orders dispatches by file mtime and its docstring says that is 'the order a session actually spawned them in'. An mtime is the time of the last write, i.e. roughly when a dispatch finished, so a long first dispatch that ends after a second one starts swaps them. check_dispatch_cache then prints 'dispatch X read N cached token(s) at its start, served from <prev>'s' (lines 268-273), naming a predecessor as the cache's source on that ordering alone. The output asserts a cause that nothing in the reading establishes. Still true at HEAD (_doctor_trail.py:466-482).",
-        "resolution": "Order by the first entry's timestamp inside each transcript (the first usage block is already read), or drop the 'served from <prev>' attribution and print only the read/written tokens; correct the docstring either way.",
-        "fixTask": "P125.83-0h5"
+        "resolution": "fixed in P125.83-0h5 (7539f5577ec0): Order by the first entry's timestamp inside each transcript (the first usage block is already read), or drop the 'served from <prev>' attribution and print only the read/written tokens; correct the docstring either way.",
+        "fixTask": "P125.83-0h5",
+        "commit": "7539f5577ec0",
+        "status": "fixed"
       },
       {
         "id": "P125-R33",
@@ -1002,7 +1004,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 31 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 32 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6519,7 +6521,7 @@
     {
       "id": "P125.83-0h5",
       "title": "fix P125-R32: dispatch_starts orders dispatches by file mtime and its docstri...",
-      "status": "in_progress",
+      "status": "done",
       "description": "dispatch_starts orders dispatches by file mtime and its docstring says that is 'the order a session actually spawned them in'. An mtime is the time of the last write, i.e. roughly when a dispatch finished, so a long first dispatch that ends after a second one starts swaps them. check_dispatch_cache then prints 'dispatch X read N cached token(s) at its start, served from <prev>'s' (lines 268-273), naming a predecessor as the cache's source on that ordering alone. The output asserts a cause that nothing in the reading establishes. Still true at HEAD (_doctor_trail.py:466-482).\n\nResolution asked: Order by the first entry's timestamp inside each transcript (the first usage block is already read), or drop the 'served from <prev>' attribution and print only the read/written tokens; correct the docstring either way.",
       "files": [
         "plugins/audit/scripts/status/_doctor_trail.py",
@@ -6550,14 +6552,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7539f5577ec0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "dispatch_starts now orders dispatches by ul.parse_ts of the first entry inside each transcript (ties by file name) and returns (ordered, unordered); transcripts with no readable first timestamp are excluded and check_dispatch_cache names them in its own row, so they are never a cache source or reader. Docstring corrected. _dispatch_first_usage returns startTs. Tests: _dispatch_line takes epoch; dt72/dt73 fixtures given distinct timestamps; two new cases in _dispatch_order_cases (long first dispatch with later mtime stays first and attribution follows; no-timestamp dispatch excluded and named). Own test 155/155 passed; full sweep exit 0 (335/335 files, 16376 cases); cp1252 pass exit 0 (335/335 files).",
+        "descriptive": "The dispatch-cache check orders dispatches by when each began, not by when its file was last written, and says so when it cannot order one."
       },
       "startedAt": "2026-10-15T09:47:23Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T11:43:06Z",
+      "verifiedBy": [
+        "dispatches are ordered by the first entry inside each transcript, not by file mtime, so a long first dispatch that finishes last is still first",
+        "a dispatch with no readable first timestamp is left out of the ordering and named, never given a place"
+      ],
       "notes": [
         {
           "at": "2026-10-15T03:41:27Z",
@@ -6572,20 +6577,35 @@
         "runId": "2026-10-15T11:43:02Z.aae0fd",
         "status": "passed",
         "at": "2026-10-15T11:43:02Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "7539f5577ec0",
+        "at": "2026-10-15T11:43:06Z",
+        "basis": "a fix task for P125-R32: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-15T10:02:07Z",
+        "basis": "`python3 plugins/audit/tests/test__doctor_trail.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 155 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dispatches are ordered by the first entry inside each transcript, not by file mtime, so a long first dispatch that finishes last is still first (order ['s2', 'l1'], unordered [], detail \"dispatch l1 was NOT served from s2's start - it wrote 4000 token(s) at its own instead\") (house FAIL) and 1 more: SELFTEST FAILED: 153/155 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.84-0h5",
       "title": "fix P125-R34: The task clause 'the command body (commands/phase.md and the ru...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The task clause 'the command body (commands/phase.md and the run/drive reference) directs a fresh context per phase ... stated as the step, not a tip' contradicts task clause: phase.md is not edited by the diff and still has no clear-context text at HEAD. The direction exists only as a drive STEPS line (drive-phase.py:374-385) and orchestrator.md prose, which the executor chose because phase.md sat at its measured byte ceiling.\n\nResolution asked: Add the one-sentence directive to commands/phase.md (making room by trimming another line under measure-context.py's ceiling), or have the plan owner amend the clause to say the drive print is the step.",
       "files": [
         "plugins/audit/commands/phase.md",
-        "plugins/audit/commands/phase.md"
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/tests/test__refs.py"
       ],
       "tests": {
         "mode": "tdd",
-        "add": [],
+        "add": [
+          "plugins/audit/tests/test__refs.py: commands/phase.md states as a step, not a tip, that the next phase starts in a fresh context - clear, then re-enter with /audit:phase and the next id"
+        ],
         "expectRedFirst": true,
         "gate": [
           "selftests",
@@ -6604,14 +6624,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T11:43:12Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -6622,7 +6642,8 @@
       ],
       "fixes": [
         "P125-R34"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.85-0h5",
@@ -8053,7 +8074,7 @@
     {
       "id": "P125.108-0h5",
       "title": "Layer numbers in the build guide are checked against the import graph, or stated relatively",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F676. PLUGIN-BUILD-GUIDE.md states absolute layer numbers beside module names (grep -nE '[Ll]ayer [0-9]+' PLUGIN-BUILD-GUIDE.md); at f6403a16 usage_ledger sat at index 4 and _live_copy at 7 while the prose said 3 and 6, and giving _loader its own layer shifted every layer above it again. No lint reads the shape. The fix is an invariant: either a lint that compares every 'layer N' bound to a module against _deps.LAYERS, or relative wording plus a lint refusing absolute layer numbers; then correct the guide so the lint is green. Red-first against today's guide.",
       "files": [
         "PLUGIN-BUILD-GUIDE.md",
@@ -8083,21 +8104,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T11:43:07Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.109-0h5",
       "title": "The locale-pinned integrate run reports the error it failed on, and its intermittent git add failure is found and fixed",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F679. CI run 38715590987 (dbd9008f, windows-latest plain 1) failed once in test_integrate_task _world's git add -A under LC_ALL=C/PYTHONUTF8=0; the job re-ran green. _integrate_ascii_case clips the child's stderr from the head (clip_bytes(done.stderr, 600)), so the error line is lost, and _run prints git's stderr as a bytes repr. Make the failure diagnosable (tail of stderr, decoded git message), then find and fix the intermittent cause, or bound it with a reported retry - never a silent one.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py",
@@ -8126,16 +8148,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T11:43:10Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.110-0h5",
