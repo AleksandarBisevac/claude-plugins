@@ -16173,6 +16173,44 @@ def _change_kind_discipline_cases(check):
               % ((code, t.get("tests")),),
               code == 0 and (t.get("tests") or {}).get("mode") == "tdd"
               and (t.get("tests") or {}).get("expectRedFirst") is True)
+
+        # The clause below is the task's tests.add text; each label starts
+        # with it and carries the observation after " (".
+        clause = ("a feature whose text mentions comments or a document stays "
+                  "tdd; only a signal word heading the title chooses "
+                  "gate-only or regression, and the note names the word that "
+                  "chose it")
+        got = {}
+        for key, title, desc in (
+                ("comments", "Add comments to posts", None),
+                ("document", "Let users upload a document", None),
+                ("refactor", "Refactor the loader", None),
+                ("docs", "docs: fix a typo", None),
+                ("desc", "Add an export button",
+                 "refactor the formatter and extract the CSV writer, update "
+                 "the docs and a comment")):
+            proj, mpath = project("head-" + key)
+            argv = ["add", title, "--phase", "P1"]
+            if desc:
+                argv += ["--description", desc]
+            code, text = verb(proj, *argv)
+            t = task(mpath)
+            got[key] = (code, (t.get("tests") or {}).get("mode"), notes(t))
+        check("%s (feature titles mentioning comments or a document stay "
+              "tdd: %r)" % (clause, (got["comments"], got["document"])),
+              got["comments"][:2] == (0, "tdd")
+              and got["document"][:2] == (0, "tdd"))
+        check("%s (a title headed by refactor is regression and the note "
+              "names the word: %r)" % (clause, got["refactor"]),
+              got["refactor"][:2] == (0, "regression")
+              and "'Refactor'" in got["refactor"][2])
+        check("%s (a title headed by the docs type is gate-only and the "
+              "note names the word: %r)" % (clause, got["docs"]),
+              got["docs"][:2] == (0, "gate-only")
+              and "'docs'" in got["docs"][2])
+        check("%s (a signal word only in the description of a feature title "
+              "stays tdd: %r)" % (clause, got["desc"]),
+              got["desc"][:2] == (0, "tdd"))
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

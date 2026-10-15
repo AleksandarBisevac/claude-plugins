@@ -2977,29 +2977,30 @@ def _inline_suite_discipline(paths):
            "its" if len(paths) == 1 else "their"))
 
 
-_REFACTOR_TEXT = re.compile(
-    r"\b(?:refactor(?:ing)?|restructur(?:e|ing)|reorgani[sz](?:e|ing)|"
-    r"renam(?:e|ing)|extract(?:ing|ed)?|simplif(?:y|ying)|clean[- ]?up|"
+# A signal word counts only as the title's first word, which is also where a
+# conventional-commit type (`docs:`, `refactor(scope):`) sits. Anywhere else
+# the same word is ordinary vocabulary of a feature ("Add comments to posts").
+_REFACTOR_HEAD = re.compile(
+    r"^\W*(refactor(?:ing)?|restructur(?:e|ing)|reorgani[sz](?:e|ing)|"
+    r"renam(?:e|ing)|extract(?:ing)?|simplif(?:y|ying)|clean[- ]?up|"
     r"harden(?:ing)?|deduplicat(?:e|ing))\b", re.IGNORECASE)
-_CONFIG_TEXT = re.compile(
-    r"\b(?:config(?:uration)?|docs?|document(?:s|ing|ation)?|typo|"
-    r"comment(?:s)?|formatting|mechanical|lint(?:ing)?|version bump|"
-    r"bump the version)\b", re.IGNORECASE)
+_CONFIG_HEAD = re.compile(
+    r"^\W*(config(?:uration)?|docs?|typo|formatting|lint(?:ing)?|chore|"
+    r"bump)\b", re.IGNORECASE)
 
 
 def _change_kind_discipline(title, description):
     """`(mode, note)` for a task whose caller named no `--tests-mode` of its
-    own: `init.md`'s mode rule, read off the task's own title and
-    description rather than left to a planner's guess. `regression` when the
-    text names a behaviour-preserving change (refactor/restructure/cleanup/
-    hardening), `gate-only` when it names a config/docs/mechanical change,
-    else `tdd` -- `init.md` used to state only bug -> tdd, refactor ->
-    regression and config -> gate-only, leaving the common case (a task that
-    adds or changes observable behaviour -- a feature) to fall through to
-    whatever a planner guessed; measured on a real plan, the guess landed on
-    `regression` more often than on `tdd`. A task naming neither signal is
-    assumed to add or change behaviour, because "no mode named" is not "no
-    behaviour change".
+    own: `init.md`'s mode rule, read off the task's own TITLE rather than
+    left to a planner's guess. `regression` when the title's first word names
+    a behaviour-preserving change (refactor/restructure/cleanup/hardening),
+    `gate-only` when it names a config/docs/mechanical change, else `tdd`.
+    The note names the word that chose the arm, so a wrong arm is visible.
+    `description` is accepted and not read: a scan of free text turned any
+    feature mentioning a comment or a document into a gate-only task with no
+    red-first. A task whose title does not lead with a signal word is assumed
+    to add or change behaviour, because "no mode named" is not "no behaviour
+    change".
 
     This is the DEFAULT, not an opt-in: a bug (`_bug_fix_discipline`), a
     `--fixes` target (`_fix_task_args`'s `_paths_discipline`) or an inline
@@ -3007,19 +3008,20 @@ def _change_kind_discipline(title, description):
     stronger signal before this is ever reached, and an explicit
     `--tests-mode` the caller typed always wins over all four -- this is
     only asked when none of them had an answer."""
-    text = "%s %s" % (title or "", description or "")
-    if _REFACTOR_TEXT.search(text):
+    head = _REFACTOR_HEAD.search(title or "")
+    if head:
         return "regression", (
-            "regression, not tdd: no mode was named and the task's own "
-            "text names a behaviour-preserving change")
-    if _CONFIG_TEXT.search(text):
+            "regression, not tdd: no mode was named and the title leads "
+            "with '%s', a behaviour-preserving change" % head.group(1))
+    head = _CONFIG_HEAD.search(title or "")
+    if head:
         return "gate-only", (
-            "gate-only, not tdd: no mode was named and the task's own "
-            "text names a config/docs/mechanical change")
+            "gate-only, not tdd: no mode was named and the title leads "
+            "with '%s', a config/docs/mechanical change" % head.group(1))
     return "tdd", (
         "tdd by default (init.md's mode rule): no mode was named and the "
-        "task's own text names neither a refactor nor a config change, so "
-        "it adds or changes observable behaviour")
+        "title leads with no refactor or config word, so it adds or "
+        "changes observable behaviour")
 
 
 def _bug_for_add(assembled, bug_id):
