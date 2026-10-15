@@ -1,0 +1,27 @@
+{
+  "gates": {
+    "own-test test__panel_settings --selftest": "pass (64/64)",
+    "tools/sweep-selftests.py": "pass (exit 0, 335/335 files)",
+    "tools/sweep-selftests.py --encoding cp1252": "pass (exit 0, 335/335 files)",
+    "tools/gate-parity.py": "pass (exit 0)",
+    "test__refs.py --selftest": "pass (351/351)",
+    "node tools/capture-screenshots.mjs --check": "pass (exit 0; preconditions hold, no screenshot reported stale; none captured)"
+  },
+  "redFirst": {
+    "at": "2026-10-15T20:02:41Z",
+    "basis": "`python3 plugins/audit/tests/test__panel_settings.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 64 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - the panel's planGate help and the config schema's description state the ladder derived from PLAN_GATE_LADDER, so a plan with phases and none running reads as deny past the free file on every surface (each surface carries the ladder rebuilt step by step from the table) (expect='observe (no manifest) -> warn (no phase) -> deny past the free file (phases, none running) -> deny (a phase running)' help-has=False schema-has=False) (house FAIL): SELFTEST FAILED: 61/64 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added plan_gate_ladder_phrase() to _panel_settings.py, read off _config.PLAN_GATE_LADDER via _loader.load_hooks_config(); FIELD_HELP['planGate'] gets it by placeholder replace (a concatenation inside the dict literal made gate-parity lose FIELD_HELP as a table). Schema description, config template, root README (two sites), QUICKSTART (two sites) now state the ladder in the plugin README's words: observe (no manifest) -> warn (no phase) -> deny past the free file (phases, none running) -> deny (a phase running). CLAUDE.md: corrected only the false sentence 'warn with a manifest but nothing running, deny once a phase is in_progress' (describes the ladder, asserts no tier). Added PLUGIN-BUILD-GUIDE.md module-map line (_panel_settings -> _loader) required by the new import edge (the Edit was allowed). Schema wording kept short because test__help p5 payload cap has ~12 bytes headroom at HEAD. NOTE: I made the first _panel_settings.py edit with a python heredoc rather than Edit (rule slip); all later edits used Edit. Left: docs/essays/enforcement-over-persuasion.md:95 still states the old second rung (not in files; historical essay). No config key removed. No step count in prose.",
+    "descriptive": "Every user-facing statement of the plan gate ladder now reads deny past the free file for a plan holding phases with none running, derived from PLAN_GATE_LADDER where code."
+  },
+  "testsAdded": [
+    "the panel's planGate help and the config schema's description state the ladder derived from PLAN_GATE_LADDER, so a plan with phases and none running reads as deny past the free file on every surface (each surface carries the ladder rebuilt step by step from the table)",
+    "...and neither surface keeps the old second rung, 'warn' for a manifest with nothing running, which the ladder no longer has",
+    "...the helper has words for every step the ladder holds, so a step added there cannot be rendered under its bare identifier"
+  ],
+  "claims": "claims:\n1 _panel_settings.py plan_gate_ladder_phrase builds the phrase from PLAN_GATE_LADDER; test compares it with an independently rebuilt string\n2 pre-fix run 61/64 (ladder case FAIL, AttributeError); post-fix 64/64\n3 grep 'nothing running|none running' and 'warns with a plan/manifest' over tree: remaining hits are code/tests/plugin README (already right); left because historical: docs/essays/enforcement-over-persuasion.md:95\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 no step count written; none added",
+  "stamp": "audit-stamp: {\"content\":\"sha256:4a168a166a37be059e42719a4095fc0ed0dbf50ddf1754ba633349044264eabc\",\"dirtyDigest\":\"sha256:7a7743ad5b5fbd8842315f9a1e8c4c2796a949b2a5e1cf83404c2a13a4b10d26\",\"dirtyPaths\":{\"CLAUDE.md\":\"f71642ae4c7472a7\",\"PLUGIN-BUILD-GUIDE.md\":\"076b4c64d493ad27\",\"QUICKSTART.md\":\"0b705ab1657f078b\",\"README.md\":\"898c488863678bec\",\"plugins/audit/schema/audit-config.schema.json\":\"305d72b19d08834a\",\"plugins/audit/scripts/panel/_panel_settings.py\":\"90cef24d60037985\",\"plugins/audit/templates/audit.config.example.json\":\"0f328c1d4b2419ad\",\"plugins/audit/tests/test__panel_settings.py\":\"0f62cabbe69d681c\"},\"head\":\"316b40b0\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CLAUDE.md\",\"QUICKSTART.md\",\"README.md\",\"plugins/audit/schema/audit-config.schema.json\",\"plugins/audit/scripts/panel/_panel_settings.py\",\"plugins/audit/templates/audit.config.example.json\",\"plugins/audit/tests/test__panel_settings.py\"],\"scopeDigest\":\"sha256:8c45d627ebfd6aeebf05ededca29e955aa4b321c54b74cd1537fcc8b123fc22e\",\"v\":2}"
+}

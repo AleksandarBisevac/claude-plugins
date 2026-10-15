@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "own-case: python3 plugins/audit/tests/test_drive_phase.py --selftest --stage rrs-block": "pass",
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --encoding cp1252": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task: behaviour already exists; mutation proof run on a scratch copy outside the tree (replacing _mark(state, 'retryReason', ...) and write_state with pass gave FAIL ... recorded {}; ... 0/1 cases passed), copy deleted",
+    "at": "2026-10-15"
+  },
+  "outcome": {
+    "technical": "Applied p90.diff to plugins/audit/tests/test_drive_phase.py: added _retry_reason_cases and STAGES row (rrs-block); no hunk needed porting (case runs no git). Stage run 1/1 pass. Mutation on scratch copy: FAIL 'answering retry with --reason records the reason keyed to the new start, and the generated brief carries it (... recorded {}; brief exit 0, reason lines [\"operator's reason for --answer retry: none recorded\"])' SELFTEST FAILED: 0/1. Full sweep exit 0 (335/335 files ok, 16439 cases); cp1252 sweep exit 0.",
+    "descriptive": "Locks that answering retry with --reason records the reason for the new start and the brief carries it."
+  },
+  "testsAdded": [
+    "answering retry with --reason records the reason keyed to the new start, and the generated brief carries it"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:a8a6d89174f769d2e6feb14cde150f3560749ecf0455d6b6fc96b1ec3f222d3e\",\"dirtyDigest\":\"sha256:c77cb05772f2f258100317a5cbbd99801348c0f6b2a677e2a211847f1a6a9c32\",\"dirtyPaths\":{\"plugins/audit/tests/test_drive_phase.py\":\"ef55ee3086ccbf53\"},\"head\":\"316b40b0\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:041e004232ddd62034e8d5e072ddffa69848a0b4cd2c6203b0b128c5df5f3eef\",\"v\":2}"
+}
