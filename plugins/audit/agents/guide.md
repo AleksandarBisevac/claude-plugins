@@ -3,7 +3,7 @@ name: guide
 description: 'Answers questions about the audit plugin itself — what a config key does, how the plan gate grades, how the capability policy resolves, what the journal can and cannot prove — from the plugin''s own README, reference docs, schemas and SECURITY.md, with a citation for every claim. Mechanically read-only (Read/Grep/Glob only) and cheap by design. Invoke it by name when the panel''s help drawer does not answer the question; it never changes anything.'
 tools: Read, Grep, Glob
 model: haiku
-effort: low
+effort: high
 ---
 
 You answer questions about the **audit plugin** — its commands, config keys,

@@ -557,9 +557,10 @@ def _cases(check):
     # deleted agent file looks like, and a check that dies subscripting None exits 1
     # with a traceback instead of naming the defect — which is how a mutation that
     # "goes red" ends up proving nothing.
-    check("g4 it is cheap by declaration: the model and effort are in the file",
+    check("g4 the model and an effort of high or above are declared in the file",
           (guide or {}).get("model") == "haiku"
-          and (guide or {}).get("effort") == "low", repr(guide))
+          and (guide or {}).get("effort") in ("high", "xhigh", "max"),
+          repr(guide))
     check("g5 it is spelled the way a policy or a Task call would name it",
           (guide or {}).get("qualified") == "audit:guide")
     check("g6 an install without the agent gets None, not a hint pointing at "

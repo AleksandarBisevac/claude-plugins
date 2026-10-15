@@ -4544,9 +4544,76 @@ def _split_literal_cases(check):
           "that exists", stale == [], repr(stale))
 
 
+# --- (ef) every shipped agent runs at effort high or above ----------------------
+_EFFORT_RANK = {"low": 0, "medium": 1, "high": 2, "xhigh": 3, "max": 4}
+
+
+def _effort_problems(agents_dir):
+    """One line per agent file whose frontmatter `effort` is absent, unknown or
+    below high. An empty directory is itself a problem: no agents read must not
+    look like every agent passing."""
+    names = sorted(n for n in os.listdir(agents_dir) if n.endswith(".md"))
+    if not names:
+        return ["%s: no agent files found" % agents_dir]
+    problems = []
+    for name in names:
+        with open(os.path.join(agents_dir, name), "r", encoding="utf-8") as fh:
+            text = fh.read()
+        head = text.split("\n---", 1)[0] if text.startswith("---") else ""
+        effort = _frontmatter(head, "effort")
+        if effort == "":
+            problems.append("%s: no effort declared" % name)
+        elif effort not in _EFFORT_RANK:
+            problems.append("%s: unknown effort %r" % (name, effort))
+        elif _EFFORT_RANK[effort] < _EFFORT_RANK["high"]:
+            problems.append("%s: effort %s is below high" % (name, effort))
+    return problems
+
+
+def _agent_effort_cases(check):
+    live = _effort_problems(os.path.join(
+        M.REPO_ROOT, M.PLUGIN_REL.replace("/", os.sep), "agents"))
+    check("every agent under plugins/audit/agents declares effort high or above, "
+          "and an agent declaring medium or none is reported by file (live: %r)"
+          % (live,), live == [])
+
+    def fixture(files):
+        tmp = tempfile.mkdtemp(prefix="qg-ef-")
+        for name, effort in files:
+            line = "" if effort is None else "effort: %s\n" % effort
+            _write(tmp, name, "---\nname: x\n%smodel: haiku\n---\nbody effort: low\n"
+                   % line)
+        return tmp
+
+    out = {}
+    for label, files in (
+            ("allow", [("a.md", "high"), ("b.md", "xhigh"), ("c.md", "max")]),
+            ("medium", [("a.md", "high"), ("m.md", "medium")]),
+            ("low", [("l.md", "low")]),
+            ("none", [("n.md", None)]),
+            ("typo", [("t.md", "hgih")]),
+            ("empty", [])):
+        tmp = fixture(files)
+        try:
+            out[label] = _effort_problems(tmp)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    check("ef2 THE ALLOW CASE: high, xhigh and max are quiet, so the ranking "
+         "is not a string compare: %r" % (out["allow"],), out["allow"] == [])
+    check("ef3 medium, low and a missing effort are each reported once, by file: "
+          "%r" % ((out["medium"], out["low"], out["none"]),),
+          len(out["medium"]) == 1 and out["medium"][0].startswith("m.md")
+          and len(out["low"]) == 1 and out["low"][0].startswith("l.md")
+          and len(out["none"]) == 1 and out["none"][0].startswith("n.md"))
+    check("ef4 an unknown effort word and an empty directory are problems, never "
+          "a clean pass: %r" % ((out["typo"], out["empty"]),),
+          len(out["typo"]) == 1 and len(out["empty"]) == 1)
+
+
 def _selftest():
     def body(check):
         _cases(check)
+        _harness.stage(check, "ef-block", _agent_effort_cases)
         _harness.stage(check, "prk-block", _phase_key_cases)
         _harness.stage(check, "fa-block", _followed_anchor_cases)
         _harness.stage(check, "sl-block", _split_literal_cases)

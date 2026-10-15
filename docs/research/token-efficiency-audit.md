@@ -224,12 +224,12 @@ The pipeline's per-unit spawn pattern, read out of `reference/orchestrator.md`:
 
 | Unit | Spawns | Agent | Frontmatter today |
 |---|---|---|---|
-| Per task | 1 | `audit-executor` | `effort: medium`, tools without `Agent` |
+| Per task | 1 | `audit-executor` | `effort: high`, tools without `Agent` |
 | Per task, when the gate came back green | 1 | `audit-reviewer` in `mode: task` | `effort: high` |
 | Per phase sign-off, when a review skill resolves | 1 | `audit-reviewer` in `mode: phase` | `effort: high` |
 | Per sign-off finding | 1 | `audit-executor` fix run | — |
-| Per `/audit:init` | up to 6, in one message | `audit-explorer` | `effort: medium` |
-| Per `/audit:guide` | 1 | `guide` | `model: haiku`, `effort: low` |
+| Per `/audit:init` | up to 6, in one message | `audit-explorer` | `effort: high` |
+| Per `/audit:guide` | 1 | `guide` | `model: haiku`, `effort: high` |
 
 What a spawn costs, `[measured-run]` over the release run's subagents:
 

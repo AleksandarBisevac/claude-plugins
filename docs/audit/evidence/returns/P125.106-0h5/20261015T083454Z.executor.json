@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "own-tests: python3 plugins/audit/tests/test__refs.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T08:47:32Z",
+    "basis": "`python3 plugins/audit/tests/test__refs.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 350 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - every agent under plugins/audit/agents declares effort high or above, and an agent declaring medium or none is reported by file (live: ['audit-executor.md: effort medium is below high', 'audit-explorer.md: effort medium is below high', 'guide.md: effort low is below high']) (house FAIL): SELFTEST FAILED: 349/350 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Attempt 2 edits: test__help.py g4 now asserts model haiku and effort in (high, xhigh, max), retitled 'the model and an effort of high or above are declared in the file'; docs/research/token-efficiency-audit.md section 2.7 three cells corrected to effort: high (executor, explorer, guide; haiku kept). Attempt 1 kept: three agent files effort: high, ef-block in test__refs.py. Full sweep python3 tools/sweep-selftests.py exit 0: 335/335 files ok, 16367 cases. Files changed: docs/research/token-efficiency-audit.md, plugins/audit/agents/{audit-executor,audit-explorer,guide}.md, plugins/audit/tests/test__help.py, plugins/audit/tests/test__refs.py.",
+    "descriptive": "Every shipped agent runs at effort high, held by a case, with the guide pin and the research table agreeing."
+  },
+  "testsAdded": [
+    "every agent under plugins/audit/agents declares effort high or above, and an agent declaring medium or none is reported by file"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:c98834247c09a46b1ec2274611c052e3ee04e3a6e329de2aa0f20551e792e446\",\"dirtyDigest\":\"sha256:4c103c6096afdba86a1eca2fb4a4bd0dd997a4276331a8b5f0ae079a149ec08f\",\"dirtyPaths\":{\"docs/research/token-efficiency-audit.md\":\"8233134bdae103fd\",\"plugins/audit/agents/audit-executor.md\":\"1e98c1eaaea739c6\",\"plugins/audit/agents/audit-explorer.md\":\"b8e1492dca3a2da2\",\"plugins/audit/agents/guide.md\":\"7d9ca3215edee61f\",\"plugins/audit/tests/test__help.py\":\"505a84a15294c40b\",\"plugins/audit/tests/test__refs.py\":\"2a2f5259dced5348\"},\"head\":\"f6403a16\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"docs/research/token-efficiency-audit.md\",\"plugins/audit/agents/audit-executor.md\",\"plugins/audit/agents/audit-explorer.md\",\"plugins/audit/agents/audit-reviewer.md\",\"plugins/audit/agents/guide.md\",\"plugins/audit/tests/test__help.py\",\"plugins/audit/tests/test__refs.py\"],\"scopeDigest\":\"sha256:c98e577bf964601885befb85773e6fba620d4094a6e76f8703addf1e4f2f0425\",\"v\":2}"
+}
