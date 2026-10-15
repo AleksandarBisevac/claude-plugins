@@ -8824,14 +8824,16 @@
       "P124.7",
       "P125.35-0h5",
       "P125.61-0h5",
-      "P125.68-0h5"
+      "P125.68-0h5",
+      "P125.110-0h5"
     ],
     "plugins/audit/tests/test_integrate_task.py": [
       "P124.4",
       "P124.7",
       "P125.61-0h5",
       "P125.109-0h5",
-      "P125.111-0h5"
+      "P125.111-0h5",
+      "P125.110-0h5"
     ],
     "plugins/audit/scripts/governance/_runner_collects.py": [
       "P124.9"
