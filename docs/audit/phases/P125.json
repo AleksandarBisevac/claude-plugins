@@ -8483,7 +8483,7 @@
     {
       "id": "P125.113-0h5",
       "title": "A fix task made from a finding carries its test file and a tests.add clause",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F674. `add --fixes` takes files from the finding text only and writes no tests.add, yet the task is tdd with expectRedFirst, so every fix executor stops for a widening. Read paths from path:symbol spellings, add the suite that tests each declared source, and write a tests.add clause from the resolution.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -8515,14 +8515,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b803e8362253",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: _finding_paths reads the head of a path:symbol token when the whole token is not path-shaped (308/and still name nothing; a drive letter has no extension before its colon). New _suites_for maps each declared source to the suite that tests it through _affected_tests._python_arm with only test files as graph nodes (direct importers/loaders); several reaching it is answered by the one named test_<stem>.py/<stem>_test.py, else unmapped with the reason (count + _output.some_of list); non-.py sources map to an EXISTING _colocated_test. _colocated_test refuses stylesheets (no report.test.css). _fix_scope returns byFinding; _fix_clauses writes one '<test path>: <resolution first sentence, capped>' clause per finding (named test, else placed test, else mapped suite; never a source or stylesheet); _fix_task_args adds mapped suites to files, notes each mapping with its basis and each unmapped source as 'no suite: ... none was guessed', notes findings left with no clause, writes tests.add unless the caller passed --tests-add or the mode is gate-only (a caller's --tests-mode no longer skips the clauses). All-test scope stays regression via _paths_discipline and still carries its clause. New cases cz22-cz25 in test_audit_task.py (_introduces_cases, stage cz-block). Red on HEAD code: cz-block 27/31 (cz22-cz25 FAIL). Green: cz-block 31/31; full test_audit_task.py --selftest exit 0. Full sweep `python3 tools/sweep-selftests.py` exit 0 (335/335 files ok); `--encoding cp1252` exit 0 (335/335 files ok). First sweep run had 3 reds: test__deps g1 (module map in PLUGIN-BUILD-GUIDE.md lacked the new audit-task -> _affected_tests edge), test__output lmd1 (a layer-numeral-shaped token in my docstring) and te11 (bounded list without some_of) - all fixed; test__proc_group raised PermissionError on os.killpg in that run (not my file; passed in the rerun). ruff and vermin clean on both changed .py files. PLUGIN-BUILD-GUIDE.md (outside files) edited by one line in the generated module-map fence; the plan gate allowed it. _deps.py's comment saying run-test-gate is _affected_tests's only consumer is now stale; the Edit was refused by require-plan (outside task, declared by other tasks) and is left for the orchestrator. COMPATIBILITY.md holds no promise about what add --fixes writes beyond tdd tests.add being '<path>: ...', which the clauses honour. Process deviation: one edit to the test file (swapping r.get(\"files\") for own(r) in the new cases) was made with a python one-liner rather than the Edit tool.",
+        "descriptive": "A fix task made from findings now declares the path in a path:symbol spelling, the suite that tests each source, and one tests.add clause per finding naming a real test file, never a stylesheet."
       },
       "startedAt": "2026-10-15T14:56:37Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T16:08:53Z",
+      "verifiedBy": [
+        "cz22",
+        "cz23",
+        "cz24",
+        "cz25"
+      ],
       "movedFrom": {
         "id": "P128.18-0h5",
         "phase": "P128",
@@ -8539,7 +8544,18 @@
           "at": "2026-10-15T15:58:22Z",
           "text": "files widened by PLUGIN-BUILD-GUIDE.md: written byte for byte at integration by `python3 plugins/audit/scripts/_deps.py --write-map` (_deps.map_drift)"
         }
-      ]
+      ],
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "b803e8362253",
+        "at": "2026-10-15T16:08:53Z"
+      },
+      "redFirst": {
+        "at": "2026-10-15T15:35:59Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest` in a throwaway tree at HEAD exited 1 with 4 of 1049 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cz22 (house FAIL): SELFTEST FAILED: 1045/1049 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
     },
     {
       "id": "P125.114-0h5",
@@ -8549,7 +8565,8 @@
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
         "plugins/audit/scripts/governance/commit-task-work.py",
-        "plugins/audit/tests/test__invariants.py"
+        "plugins/audit/tests/test__invariants.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -8584,7 +8601,18 @@
       "startedAt": "2026-10-15T14:56:40Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T16:29:35Z.c1003b",
+        "status": "passed",
+        "at": "2026-10-15T16:29:35Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-15T16:19:19Z",
+          "text": "files widened by PLUGIN-BUILD-GUIDE.md: written byte for byte at integration by `python3 plugins/audit/scripts/_deps.py --write-map` (_deps.map_drift)"
+        }
+      ]
     },
     {
       "id": "P125.115-0h5",
@@ -8598,6 +8626,49 @@
         "mode": "gate-only",
         "add": [],
         "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P125.116-0h5",
+      "title": "A task widened by a follower path at integration closes in the same run: the index it changed is committed first",
+      "status": "pending",
+      "description": "Register F687, a regression from P125.61 (43c4ec1e). The drive widens a member by a byte-for-byte follower path at integration, re-gates green, and then commit-task-work refuses because the index HEAD holds has no fileIndex row for the new path. Seen closing P125.113 and P125.114.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a wave member widened by a follower path at integration is committed and closed in one next, with no refusal for an uncommitted index"
+        ],
+        "expectRedFirst": true,
         "gate": [
           "selftests",
           "validate",
