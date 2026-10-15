@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "selftests": "pass",
+    "lint": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T07:58:58Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_lookup.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 103 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bf3c (house FAIL), bo3 (house FAIL): SELFTEST FAILED: 101/103 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-lookup.py: executor_return_lines() is now the stable contract text (no id, no command) at the top; the task-specific submit block moved to a closing section after Retry (executor_submit_lines, SUBMIT_SECTION); docstring corrected. test_audit_lookup.py: bf3c adapted; added bo3 (two briefs for different tasks share a prefix covering the rules line plus return contract, id absent), bo4 (reviewer brief: clause rule once, tests.add section, last headings Task, Claim under review, Your return), bo5 (phase brief: clause rule once, tests.add per task, Task followed by Claim under review). Attempt 2: fixed two E225 lint errors (missing whitespace around = / ==) in test_audit_lookup.py. Evidence: ruff check plugins/audit tools -> All checks passed; vermin clean (min 3.7, no violations); test_audit_lookup.py --selftest 103/103; python3 tools/sweep-selftests.py 335/335 files ok.",
+    "descriptive": "Executor/reviewer briefs now have a genuinely stable shared prefix, and cases pin the clause rule, tests.add and claim-last ordering."
+  },
+  "testsAdded": [
+    "bo3",
+    "bo4",
+    "bo5"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:6e4b59aaf453b92ad034b03b811d3d33269d357b6eeafeeab29112fa6f2382ee\",\"dirtyDigest\":\"sha256:35533deff6699b43a274f4348f8e808aa40ae14bd8ef660d86a649a9c7be1efb\",\"dirtyPaths\":{\"plugins/audit/scripts/status/audit-lookup.py\":\"488e475c853ef050\",\"plugins/audit/tests/test_audit_lookup.py\":\"8441f47992f1ba84\"},\"head\":\"fb4031be\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/tests/test_audit_lookup.py\"],\"scopeDigest\":\"sha256:1f16ba89057d7d76cd63084f8fb57d2fbff3c5e5515f128f85845af4f186179a\",\"v\":2}"
+}

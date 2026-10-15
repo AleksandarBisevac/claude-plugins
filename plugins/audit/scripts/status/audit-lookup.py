@@ -609,15 +609,15 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
     and `gate` the `executor.runsGate` reading with its basis.
 
     THE PART EVERY TASK SHARES COMES FIRST: the rules line and the return
-    contract, then the task's own sections. Two briefs then open on the same
-    bytes up to the task's id, which is the prefix a prompt cache can reuse;
-    the time and the task's record vary, so they come after it."""
+    contract (no id, no command), then the task's own sections, and the
+    task's `submit` command LAST. Two briefs then open on the same bytes up to
+    `## Brief for <id>`, which is the prefix a prompt cache can reuse; the
+    time and the task's record vary, so they come after it."""
     tid, pid = str(task.get("id")), str(phase.get("id"))
     attempts = task.get("attempts") or 0
     lines = ["# Executor brief", "",
              "The rules and the return shape are agents/audit-executor.md's."]
-    lines += _section("Your return", executor_return_lines(
-        manifest, phase, task, ctx))
+    lines += _section("Your return", executor_return_lines())
     lines += _section("Brief for %s" % (tid,), [
         "Computed by audit-lookup.py brief from %s at %s, plugin copy %s."
         % (ctx["manifest"], ctx["at"], ctx["plugin"]),
@@ -695,6 +695,8 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
                               if prior_red_first else "none recorded")]
             + red_step_lines(ctx, manifest, phase, task, evidence)
             + ["The working tree is the last attempt; this is what it answered."])
+    lines += _section(SUBMIT_SECTION,
+                      executor_submit_lines(manifest, phase, task, ctx))
     return lines
 
 
@@ -802,11 +804,26 @@ def submit_command(ctx, node_id, role, tail="", in_tree=False):
     return "\n".join(block)
 
 
-def executor_return_lines(manifest, phase, task, ctx):
-    """The executor's filing: one `submit`, which checks the shape, runs the
-    red-first helper when a test command follows `--`, takes the stamp and
-    files the return once. A tdd task owes the command; it is printed resolved
-    when a gate entry names a `tests.add` file, and asked for when none does."""
+SUBMIT_SECTION = "Your return - the submit block"
+
+
+def executor_return_lines():
+    """The return contract, with nothing of the task in it: the same bytes in
+    every executor brief, so it can sit in the prefix a prompt cache reuses.
+    The command itself (the id, the tail) is `executor_submit_lines`', printed
+    last."""
+    return ["Your last act files the return object agents/audit-executor.md "
+            "declares, with one `submit` call: it checks the shape, runs the "
+            "red-first helper on the command after `--`, takes the stamp and "
+            "files the return once. The command, resolved for this task, is "
+            "the last section of this brief (%s). %s."
+            % (SUBMIT_SECTION, RETURN_ON_STDIN)]
+
+
+def executor_submit_lines(manifest, phase, task, ctx):
+    """The executor's filing: one `submit`, as a block carrying the task's id.
+    A tdd task owes the test command after `--`; it is printed resolved when a
+    gate entry names a `tests.add` file, and asked for when none does."""
     tid = str(task.get("id"))
     tdd = (task.get("tests") or {}).get("mode") == "tdd"
     cmd = red_command(manifest, phase, task) if tdd else None
@@ -823,11 +840,7 @@ def executor_return_lines(manifest, phase, task, ctx):
             "Add `-- <test command>` to prove a regression test red in a "
             "throwaway tree; without it the `redFirst` you wrote is filed."]
     return ([submit_command(ctx, tid, "executor", tail,
-                            wave_tree(ctx, phase, task)[0] is not None),
-             "Your last act files the return object agents/audit-executor.md "
-             "declares - the block above checks the shape, runs the red-first "
-             "helper on the command after `--`, takes the stamp and files the "
-             "return once. %s." % (RETURN_ON_STDIN,)]
+                            wave_tree(ctx, phase, task)[0] is not None)]
             + note)
 
 

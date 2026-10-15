@@ -953,12 +953,12 @@ def _brief_cases(check):
           % (text2[text2.find("Retry"):][:600],),
           "red steps: not read" in text2 and "run-red" in text2.split(
               "red steps: not read")[1].splitlines()[0])
-    cut = text3.split("## Your return\n", 1)[-1]
-    check("bf3c the submit block is the FIRST thing in 'Your return' - before the "
-          "paragraph that says what it files: %r" % (cut[:200],),
+    cut = text3.split("## Your return - the submit block\n", 1)[-1]
+    check("bf3c the submit block is the FIRST thing in the closing submit "
+          "section, and the brief's last section: %r" % (cut[:200],),
           cut.startswith("```sh\n") and "submit P1.1 --role executor" in cut
           .split("```", 2)[1]
-          and cut.index("Your last act files") > cut.index("AUDIT_RETURN"))
+          and cut.count("\n## ") == 0)
 
     # ---- the retry section quotes the operator's own `--reason` -------------
     # `drive-phase.py` keys the reason it recorded to the attempt it belongs
@@ -1607,6 +1607,57 @@ def _brief_cases(check):
     check("bo1 every executor brief places the rules and return contract before "
           "the task-specific sections: %r" % (orders,),
           len(orders) == 3 and not bad_order)
+    # The prefix a prompt cache reuses: two executor briefs for DIFFERENT
+    # tasks must agree byte for byte up to the first task-specific heading.
+    # The floor is the rules line plus the whole return contract, measured
+    # from the text itself rather than written as a number: a brief that put
+    # the id or the task's command back into that block shortens the shared
+    # prefix to the rules line alone, which is below it.
+    two_manifest = _bf_manifest()
+    two_phase = two_manifest["phases"][0]
+    second = json.loads(json.dumps(two_phase["tasks"][0]))
+    second["id"] = "P1.2"
+    second["title"] = "a second, differently named task"
+    two_phase["tasks"].append(second)
+    proj_two, mpath_two = project("bf-two", two_manifest)
+    brief(proj_two, mpath_two, "P1.1", "executor")
+    brief(proj_two, mpath_two, "P1.2", "executor")
+    bytes_a = (read(brief_file(proj_two, "P1.1",
+                               "20260101T000000Z.executor.md")) or "").encode("utf-8")
+    bytes_b = (read(brief_file(proj_two, "P1.2",
+                               "20260101T000000Z.executor.md")) or "").encode("utf-8")
+    shared = len(os.path.commonprefix([bytes_a, bytes_b]))
+    contract_end = (bytes_a.find(b"\n## Brief for") if bytes_a else -1)
+    check("bo3 stable prefix (two executor briefs for different tasks share a byte prefix as "
+          "long as the whole stable part - the rules line and the return "
+          "contract, up to the first task heading - and the task's id is not "
+          "in it: %r" % ((shared, contract_end),),
+          bytes_a != bytes_b and contract_end > len(rules_line)
+          and shared >= contract_end
+          and b"P1.1" not in bytes_a[:shared] and b"submit P1.1" in bytes_a)
+
+    # ---- the reviewer and phase briefs carry the clause rule and tests.add --
+    def heads(body):
+        return [ln for ln in body.splitlines() if ln.startswith("## ")]
+
+    clause_marker = M.CLAUSE_QUOTING_LINES[0]
+    rev_heads = heads(rtext)
+    check("bo4 reviewer brief clause rule and order (the reviewer brief quotes the clause rule once, carries a "
+          "tests.add section, and ends on '## Task' then '## Claim under "
+          "review' directly before the return): %r" % (rev_heads,),
+          rtext.count(clause_marker) == 1 and "## tests.add" in rev_heads
+          and rev_heads[-3] == "## Task"
+          and rev_heads[-2].startswith("## Claim under review")
+          and rev_heads[-1] == "## Your return")
+    phase_heads = heads(ptext)
+    task_at = [i for i, h in enumerate(phase_heads) if h == "## Task"]
+    check("bo5 phase brief clause rule and order (the phase brief quotes the clause rule once and, for each of its "
+          "listed tasks, carries a tests.add line and a '## Task' heading "
+          "followed at once by '## Claim under review'): %r" % (phase_heads,),
+          ptext.count(clause_marker) == 1 and ptext.count("\ntests.add:") == len(signed)
+          and len(task_at) == len(signed)
+          and all(phase_heads[i + 1].startswith("## Claim under review")
+                  for i in task_at))
     proj_e = os.path.join(root, "bf-exec")
     mpath_e = os.path.join(proj_e, "docs", "audit", "audit-plan.json")
     out_r, err_r = io.StringIO(), io.StringIO()

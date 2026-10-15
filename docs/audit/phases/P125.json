@@ -6186,14 +6186,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-15T06:52:13Z",
+      "startedAt": "2026-10-15T07:53:19Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -6212,9 +6212,9 @@
       ],
       "reviewPerTask": "phase",
       "testEvidence": {
-        "runId": "2026-10-15T07:42:15Z.4192a5",
-        "status": "failed",
-        "at": "2026-10-15T07:42:15Z"
+        "runId": "2026-10-15T08:09:23Z.cdffd7",
+        "status": "passed",
+        "at": "2026-10-15T08:09:23Z"
       }
     },
     {
@@ -7636,7 +7636,7 @@
     {
       "id": "P125.105-0h5",
       "title": "The last cost surfaces say unpriced and show the CLI's own figure: panel browse dialog, report range line, report and panel",
-      "status": "in_progress",
+      "status": "done",
       "description": "Completes phase-review findings P125-R1 and P125-R4 on the surfaces their fix tasks named as left out. (1) The panel's browse dialog (plugins/audit/scripts/ui/panel/browse-dialog.js) shows $0.00 in its cost column for a model no rate covers - it must say 'unpriced' through the same rule the other surfaces use (_usage_economics.all_unpriced / unpriced_phrase, mirrored in the panel JS by uUnpricedPhrase). (2) The report's range line does not say how many tokens are unpriced - it must, from window.AUDIT_USAGE.unpricedTokens (null means the totals never counted them: say nothing then, not zero). (3) The CLI's own per-session cost figure, now recorded on the session cursor as cliCost and read by audit-usage, is printed by neither the report nor the panel; print it beside the plugin's own reading wherever they differ, labelled as the CLI's estimate. Read the refactoring-the-assembled-ui skill and run tools/count-ui-pins.py first; vitest and the browser gates must stay green; screenshots are captured by the orchestrator, never by the executor.",
       "files": [
         "plugins/audit/scripts/ui/panel/browse-dialog.js",
@@ -7702,19 +7702,38 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "5f951d727baa",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Changed (tree <outside-repo>): plugins/audit/scripts/panel/_panel_usage.py adds a 'cliCost' payload key (default [] in _usage_shape) filled by _cli_cost_payload(ul, ledger_dir, rows): per session, ul.recorded_cost_state (the cursor's cliCost, the reader audit-usage's collect_cli_cost uses, no transcript re-read) compared with that session's priced rows through ul.cli_cost_divergences; each entry {session, model, cliCostUSD, pluginCostUSD, pluginUnpriced (ul.all_unpriced over ul.totals), basis \"the CLI's estimate, recorded at meter time\"}. plugins/audit/scripts/ui/panel/browse-dialog.js: browseRows carries per-row unpriced tokens; the cost cell says 'unpriced' via uAllUnpriced; new browseCliNote(dim) prints, on the model browse with showCost on, one line per divergent session/model 'session S · M: CLI $X (basis) vs plugin $Y|unpriced|no reading' under a header naming USAGE.rateBasis. plugins/audit/scripts/ui/report/usage-range.js: new unpricedClause() appends ' (N tokens unpriced across all dates, in no cost here)' after the range line's cost from window.AUDIT_USAGE.unpricedTokens; nothing for 0, null, or showCost off. Tests: one case in test__panel_usage.py (43/43 pass); six vitest cases in tools/ui-tests/usage-edges.test.mjs (44/44 in file; 819/819 across 55 files). Re-rendered artifacts outside the declared files: examples/acme-store/acme-store-audit.html, examples/acme-store/acme-store-audit.md (timestamp only), docs/index.html (sh examples/report.sh), docs/demo-large.html (check-rendered-artifacts' printed recipe; then --before-commit OK: 3 committed artifact(s) match a fresh render). Sweep exit 1: 334/335 files ok, sole FAIL plugins/audit/tests/test__refs.py sc1/sc2 = the 25 docs/screenshots/*.png captured from older report/panel source digests - stale screenshots this change causes, left for the orchestrator to capture; the file is not mine. NOT DONE: the report does not print the CLI figure - the report's usage dict comes from plugins/audit/scripts/report/_usage_load.py (not in this task's files), which holds the per-session rows and ledger dir; it needs a cliCost key built the same way before _report_usage.py can render it. Also the panel's main Usage view (usage-view.js, not in files) does not show it; only the model browse dialog does. The label text duplicates audit-usage._cli_basis's 'meter' wording; moving that into usage_ledger would make it one copy.",
+        "descriptive": "The panel's browse dialog now says unpriced and shows the CLI's own per-session figure beside the plugin's, and the report's range line states the unpriced tokens; the report's CLI figure still needs _usage_load.py."
       },
       "startedAt": "2026-10-15T06:52:08Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T07:52:48Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__panel_usage.py: a session whose CLI cost figure differs from the plugin's reading is shown with both figures, labelled, and a model no rate covers reads unpriced in every panel cost column (the payload half ...)",
+        "tools/ui-tests/usage-edges.test.mjs: the browse dialog's cost column says unpriced for a model no rate covers, and keeps a dollar figure for a priced one",
+        "tools/ui-tests/usage-edges.test.mjs: ...and a group with any priced token keeps its figure there [the twin]",
+        "tools/ui-tests/usage-edges.test.mjs: the model browse prints the CLI's own figure beside the plugin's, labelled, wherever the two differ",
+        "tools/ui-tests/usage-edges.test.mjs: ...and prints none of it with showCost off, or with nothing that differs [the twin]",
+        "tools/ui-tests/usage-edges.test.mjs: the report's range line says how many tokens its cost leaves out, worded as Python's unpriced_phrase() words them",
+        "tools/ui-tests/usage-edges.test.mjs: ...and says nothing of it for none, for a count never taken (null), or with showCost off [the twin]"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-15T07:52:45Z.ff8254",
         "status": "passed",
         "at": "2026-10-15T07:52:45Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "5f951d727baa",
+        "at": "2026-10-15T07:52:48Z"
+      },
+      "redFirst": {
+        "at": "2026-10-15T07:16:03Z",
+        "basis": "`python3 plugins/audit/tests/test__panel_usage.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 43 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - a session whose CLI cost figure differs from the plugin's reading is shown with both figures, labelled, and a model no rate covers reads unpriced in every panel cost column (the payload half: session sx ships CLI 7.25 beside plugin 5.00 for opus and CLI 0.40 beside an unpriced nonesuch, each labelled as the CLI's estimate; session sy agrees and ships nothing; the nonesuch fact carries all its tokens as unpriced, which is what every cost column reads - the browse dialog's rendering is driven in usage-edges.test.mjs): [] (house FAIL): SELFTEST FAILED: 42/43 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
