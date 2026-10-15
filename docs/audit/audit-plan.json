@@ -7219,7 +7219,8 @@
       "P94.8-579",
       "P122.8-z4y",
       "P127.9-bgr",
-      "P127.10-bgr"
+      "P127.10-bgr",
+      "P128.30-0h5"
     ],
     "plugins/audit/tests/test__proc_group.py": [
       "P77.3-6u9",
@@ -7227,7 +7228,8 @@
       "P94.5-579",
       "P123.24",
       "P127.9-bgr",
-      "P127.10-bgr"
+      "P127.10-bgr",
+      "P128.30-0h5"
     ],
     "plugins/audit/scripts/governance/_verdict_binding.py": [
       "P74.3-qq5",
