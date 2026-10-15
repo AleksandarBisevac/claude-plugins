@@ -6559,7 +6559,8 @@
       "P125.61-0h5",
       "P125.93-0h5",
       "P128.19-0h5",
-      "P125.119-0h5"
+      "P125.119-0h5",
+      "P125.121-0h5"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
@@ -7211,7 +7212,8 @@
       "P127.5-bgr",
       "P127.6-bgr",
       "P127.8-bgr",
-      "P125.119-0h5"
+      "P125.119-0h5",
+      "P125.121-0h5"
     ],
     "plugins/audit/scripts/status/_claude_home.py": [
       "P77.2",
@@ -7242,7 +7244,8 @@
       "P123.24",
       "P127.9-bgr",
       "P127.10-bgr",
-      "P125.117-0h5"
+      "P125.117-0h5",
+      "P125.121-0h5"
     ],
     "plugins/audit/scripts/governance/_verdict_binding.py": [
       "P74.3-qq5",
