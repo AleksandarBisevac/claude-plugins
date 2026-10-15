@@ -18,9 +18,10 @@ In a Claude Code session:
 ```
 
 The guard hooks are now active in **all** your projects, by design — but the plan
-gate observes with no plan, warns with a plan and nothing running, and denies while a
-phase runs (`/audit:doctor` prints the active tier), so installing this does not start
-refusing edits in repos that never opted in.
+gate observes with no plan, warns with a plan that holds no phase, and denies past the
+session's free file once the plan holds phases (whether or not one is running)
+(`/audit:doctor` prints the active tier), so installing this does not start refusing
+edits in repos that never opted in.
 
 ## 2. Check the install actually works
 
@@ -80,8 +81,9 @@ writes the manifest — a schema-validated JSON file, by default at
 proposals rather than lost.
 
 This is the step that spends real tokens. It is also the step that moves the plan
-gate off observing: with a plan and nothing running it warns, and it denies while a
-phase runs, because from then on there is a plan to be outside of.
+gate off observing: a plan holding phases denies edits past the session's free file
+(whether or not a phase is running), because from then on there is a plan to be
+outside of.
 
 Nothing to audit yet, or just want the guards live before you decide what goes in
 the plan? `/audit:init` offers a cheaper first step: the smallest manifest that

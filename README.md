@@ -31,8 +31,8 @@ is the thing you approve once and the model is held to afterward.
   ([what that leaves open →](SECURITY.md#secrets-friction-and-evidence-not-containment)).
 
 **Enforced by hooks:** out-of-plan edits — the plan gate observes with no plan,
-warns with a plan and nothing running, and denies while a phase runs
-(`/audit:doctor` prints the active tier); secret-file reads, by name
+warns with a plan that holds no phase, and denies past the free file once the
+plan holds phases, running or not (`/audit:doctor` prints the active tier); secret-file reads, by name
 ([open classes](SECURITY.md#known-bypass-classes-accepted-documented)); token
 dumps. **Followed from instructions, not guaranteed:** branch per phase, red-first
 bug fixes, sign-off order.
@@ -138,9 +138,10 @@ a breach. [SECURITY.md](SECURITY.md) has the fail modes and the accepted bypass 
 ```
 
 > The guard hooks activate in **all** your projects, by design — but the plan gate
-> observes with no plan, warns with a plan and nothing running, and denies while a
-> phase runs (`/audit:doctor` prints the active tier), so installing it does not
-> start denying edits in repos that never opted in. See
+> observes with no plan, warns with a plan that holds no phase, and denies past the
+> session's free file once the plan holds phases, running or not (`/audit:doctor`
+> prints the active tier), so installing it does not start denying edits in repos
+> that never opted in. See
 > [installing arms global hooks](plugins/audit/README.md#installing-arms-global-hooks).
 > Requirements: Python 3.8+ reachable as `python3`, `python` or `py` (CI verifies on 3.12)
 > (on Windows: run inside Git Bash).

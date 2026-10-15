@@ -213,8 +213,43 @@ def _cases(check):
           and "both say the rates are undated" not in _help)
 
 
+def _ladder_cases(check):
+    # The expected phrase is rebuilt here from the hooks' own table, step by
+    # step, not read back from the helper under test; the words per step are the
+    # ones the plugin README's planGate row uses.
+    import os
+    _ladder = _loader.load_hooks_config().PLAN_GATE_LADDER
+    _words = {"no-manifest": "no manifest", "no-phase": "no phase",
+              "nothing-running": "phases, none running",
+              "phase-running": "a phase running"}
+    _expect = " -> ".join(
+        "%s%s (%s)" % (tier, " past the free file" if step == "nothing-running"
+                       else "", _words[step]) for step, tier in _ladder)
+    _help = M.FIELD_HELP["planGate"]
+    _schema = json.load(open(os.path.join(
+        M._output.PLUGIN_ROOT, "schema", "audit-config.schema.json"),
+        encoding="utf-8"))["properties"]["planGate"]["description"]
+    check("the panel's planGate help and the config schema's description state "
+          "the ladder derived from PLAN_GATE_LADDER, so a plan with phases and "
+          "none running reads as deny past the free file on every surface "
+          "(each surface carries the ladder rebuilt step by step from the table)",
+          _expect in _help and _expect in _schema
+          and M.plan_gate_ladder_phrase() == _expect,
+          "expect=%r help-has=%r schema-has=%r"
+          % (_expect, _expect in _help, _expect in _schema))
+    check("...and neither surface keeps the old second rung, 'warn' for a "
+          "manifest with nothing running, which the ladder no longer has",
+          "manifest, nothing running" not in _help + _schema
+          and "manifest but nothing running" not in _help + _schema,
+          "help=%r" % _help[:200])
+    check("...the helper has words for every step the ladder holds, so a step "
+          "added there cannot be rendered under its bare identifier",
+          all(step in _words for step, _t in _ladder)
+          and all(w in M.plan_gate_ladder_phrase() for w in _words.values()))
+
+
 def _selftest():
-    return _harness.run(_cases)
+    return _harness.run(lambda check: (_cases(check), _ladder_cases(check)))
 
 
 if __name__ == "__main__":

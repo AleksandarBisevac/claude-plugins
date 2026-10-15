@@ -57,6 +57,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _config_rules  # noqa: E402  (the rules that decide what this form may offer)
+import _loader  # noqa: E402  (load_hooks_config: the plan gate's ladder)
 
 # --- key allow-lists (composition write path) -------------------------------
 # Fields the composition patch is allowed to touch — the security allow-list.
@@ -124,6 +125,28 @@ _TASK_KEYS = ("model", "skills")
 # `kind` drives a generic renderer for the ordinary shapes; `custom` hands the path
 # to a bespoke renderer in the UI (lists of regexes, the rules table, the band pair,
 # the pricing rows). Either way the path appears here, so it counts as covered.
+# The words each PLAN_GATE_LADDER step is shown under. The tiers come off the
+# hooks' own table, so the ladder's order and tiers cannot be restated wrongly
+# here; only the label per step is written down, and a step this table lacks is
+# shown under its bare identifier, which is visible rather than dropped.
+_LADDER_STEP_WORDS = {"no-manifest": "no manifest", "no-phase": "no phase",
+                      "nothing-running": "phases, none running",
+                      "phase-running": "a phase running"}
+_LADDER_PAST_FREE_FILE = ("nothing-running",)
+
+
+def plan_gate_ladder_phrase():
+    """The graded plan-gate ladder as one sentence fragment, read off
+    `_config.PLAN_GATE_LADDER`: each step's tier, then what puts the repository
+    on that step. A step that denies only past the session's free file says so."""
+    ladder = _loader.load_hooks_config().PLAN_GATE_LADDER
+    return " -> ".join(
+        "%s%s (%s)" % (tier, " past the free file"
+                       if step in _LADDER_PAST_FREE_FILE else "",
+                       _LADDER_STEP_WORDS.get(step, step))
+        for step, tier in ladder)
+
+
 FIELD_HELP = {
     "manifestPath":
         "Path to the audit manifest JSON, relative to this project. "
@@ -145,10 +168,9 @@ FIELD_HELP = {
         "many lines. Anything larger needs a plan.",
     "planGate":
         "Pin the plan-first gate to one tier: observe records, warn advises, ask "
-        "holds each out-of-plan edit for your approval, deny refuses. On the "
-        "default it grades itself on evidence: observe (no manifest) -> warn (a "
-        "manifest, nothing running) -> deny (a phase is in_progress). Replaces "
-        "the legacy enforce flag - saving from here rewrites enforce as planGate. "
+        "holds each out-of-plan edit for your approval, deny refuses. Unpinned, "
+        "it grades itself on evidence: <ladder>. Saving here rewrites the "
+        "legacy enforce flag as planGate. "
         "The secret rules are never graded; they deny at every tier.",
     "exemptGlobs":
         "Globs whose edits skip the plan-first, TDD and shell-write guards — docs, "
@@ -320,6 +342,12 @@ FIELD_HELP = {
         "to three times as much per turn for reasons that have nothing to do "
         "with the task in front of it.",
 }
+
+# The ladder is read off the hooks' table when this module loads, so the help
+# cannot keep a step the table dropped. The placeholder keeps FIELD_HELP a plain
+# literal table.
+FIELD_HELP["planGate"] = FIELD_HELP["planGate"].replace(
+    "<ladder>", plan_gate_ladder_phrase())
 
 # The manifest levers the Composition tab edits. A separate dict on purpose: these
 # are not config paths, and the coverage selftest above would have to special-case

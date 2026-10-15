@@ -584,8 +584,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/run-test-gate.py:5039-5043",
         "issue": "P125.35: task says the refresh goes 'through that one definition' (integrate-task.record_paths) with 'no per-check special case', and covers 'any verb run in a member tree that reads records'. run-test-gate takes its own record set from _ev.recorded_paths (project-relative, from every shard stub) to filter the affected selection, a second definition that can drift from record_paths (one phase's shard, git-root-relative). The refresh is also called only from advance() before task_gate, not before other verbs run in the tree.",
-        "resolution": "Pass the drive's record list (wave.records / the --refresh-records answer) into run-test-gate instead of recomputing it, and say which other member-tree verbs read records and refresh before them, or narrow the task text.",
-        "fixTask": "P125.93-0h5"
+        "resolution": "fixed in P125.93-0h5 (d2b866ff3846): Pass the drive's record list (wave.records / the --refresh-records answer) into run-test-gate instead of recomputing it, and say which other member-tree verbs read records and refresh before them, or narrow the task text.",
+        "fixTask": "P125.93-0h5",
+        "commit": "d2b866ff3846",
+        "status": "fixed"
       },
       {
         "id": "P125-R69",
@@ -1018,7 +1020,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 39 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 40 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -7214,7 +7216,7 @@
     {
       "id": "P125.93-0h5",
       "title": "fix P125-R68: P125.35: task says the refresh goes 'through that one definitio...",
-      "status": "in_progress",
+      "status": "done",
       "description": "P125.35: task says the refresh goes 'through that one definition' (integrate-task.record_paths) with 'no per-check special case', and covers 'any verb run in a member tree that reads records'. run-test-gate takes its own record set from _ev.recorded_paths (project-relative, from every shard stub) to filter the affected selection, a second definition that can drift from record_paths (one phase's shard, git-root-relative). The refresh is also called only from advance() before task_gate, not before other verbs run in the tree.\n\nResolution asked: Pass the drive's record list (wave.records / the --refresh-records answer) into run-test-gate instead of recomputing it, and say which other member-tree verbs read records and refresh before them, or narrow the task text.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -7246,14 +7248,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d2b866ff3846",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "run-test-gate.py: new member_records(project, manifest_path, manifest, phase_id, tree) returns _invariants.record_rels over the project's working index plus the shards the index at the tree's HEAD names (head_index via _invariants.json_at(tree, 'HEAD', index_rel), git root from _invariants.git_root_for). main passes it to affected_steps in place of _ev.recorded_paths(project, manifest)[0]. task_changed_paths now asks _invariants.is_record_path(prefix + p, records) where prefix is `git -C tree rev-parse --show-prefix`: records are git-root-relative, the listed paths tree-relative (`git diff --relative`, `ls-files --others` from tree), so the tree's prefix in its checkout converts each path - correct whether tree is the checkout root (as the drive passes a member worktree) or the project's directory inside it; a prefix git cannot give returns (None, why), which widens the run to the phase gate rather than filtering nothing. _invariants.py needed no new parameter. _ev.recorded_paths is left in place: other callers are run-test-gate's own reuse_identity / full-scope exclusion / recorded= (content-identity exclusions, a different question), stamp-verification.py, _verdict_binding.py, drive-phase.standing_use, and tests in test_run_test_gate.py. PLUGIN-BUILD-GUIDE.md module-map line for run-test-gate gained _invariants (the follower test__deps g1 owes for the new import edge; the plan gate allowed the Edit). Tests: rs1 and rs2 in a new rs-block; suite 539/539, exit 0. Full sweep exit 0 (335/335 files, 16440 cases); cp1252 sweep exit 0 (335/335, both halves ran); ruff exit 0. Member-tree verbs with tree= in drive-phase.py: task_gate/record_gate and follow_red_gate's re-gate run after refresh_member_records in advance(), covered; grade_stamp (stamp-verification compare) and take_stamp (take) and red_block (red) read the tree's content with record paths excluded via _evidence_io.recorded_paths, so they need the exclusion, not a refresh - but that exclusion is project-relative over a tree the drive passes as the checkout root, the same drift in nested layouts; standing_use digests the declared files over the tree with the same recorded_paths exclusion and reads the journal from the project, needs no refresh; integrate_member reads records through integrate-task.record_paths; tree_holds_only_integrated/retire_member consume wave.records the refresh wrote. red_block and take_stamp run at submit, before the refresh: a test command reading the plan sees the wave base's records in both the HEAD and the fix run, so the proof's delta is unaffected. No verb other than the gate needs the refresh moved before it.",
+        "descriptive": "run-test-gate's member-tree record filter now uses the one shared record-path definition, so it agrees with integrate-task even when the project is nested under the git root."
       },
       "startedAt": "2026-10-15T19:13:52Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T20:25:50Z",
+      "verifiedBy": [
+        "rs1 run-test-gate's record filter answers from the one shared record-path definition, so a sibling shard or a path under the journal is a record to it exactly as it is to integrate-task (a member tree holding only a refreshed sibling shard and a new journal file changed nothing of the task's)",
+        "rs2 ...and a source path beside them is not a record - the task changed it"
+      ],
       "notes": [
         {
           "at": "2026-10-15T03:41:27Z",
@@ -7272,6 +7277,18 @@
         "runId": "2026-10-15T20:25:47Z.4ad96e",
         "status": "passed",
         "at": "2026-10-15T20:25:47Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "d2b866ff3846",
+        "at": "2026-10-15T20:25:50Z",
+        "basis": "a fix task for P125-R68: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-15T19:48:25Z",
+        "basis": "`python3 plugins/audit/tests/test_run_test_gate.py --selftest` in a throwaway tree at HEAD exited 1, but no case --case names failed an assertion as the task's own: rs1 (house FAIL) - SELFTEST FAILED: 538/539 cases passed; --case run-test-gate's record filter answers from the one shared record-path definition, so a sibling shard or a path under the journal is a record to it exactly as it is to integrate-task names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -7353,7 +7370,8 @@
         "plugins/audit/scripts/panel/_panel_settings.py",
         "plugins/audit/templates/audit.config.example.json",
         "CLAUDE.md",
-        "plugins/audit/tests/test__panel_settings.py"
+        "plugins/audit/tests/test__panel_settings.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -7392,12 +7410,21 @@
         {
           "at": "2026-10-15T03:41:27Z",
           "text": "scope: README.md, QUICKSTART.md, plugins/audit/schema/audit-config.schema.json, plugins/audit/scripts/panel/_panel_settings.py, plugins/audit/templates/audit.config.example.json, CLAUDE.md, every path the finding(s) P125-R77 name"
+        },
+        {
+          "at": "2026-10-15T20:36:19Z",
+          "text": "files widened by PLUGIN-BUILD-GUIDE.md: written byte for byte at integration by `python3 plugins/audit/scripts/_deps.py --write-map` (_deps.map_drift)"
         }
       ],
       "fixes": [
         "P125-R77"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T20:46:40Z.92c9cd",
+        "status": "passed",
+        "at": "2026-10-15T20:46:40Z"
+      }
     },
     {
       "id": "P125.96-0h5",

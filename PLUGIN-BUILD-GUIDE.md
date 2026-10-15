@@ -377,7 +377,7 @@ L5:
   _manifest_rules -> _branch, _json_schema, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output, _status_facts
   _panel_discovery -> _help, _manifest_io, _output, _policy
   _panel_paths -> _config_rules, _loader, _manifest_io, _output, _status_facts
-  _panel_settings -> _config_rules, _output
+  _panel_settings -> _config_rules, _loader, _output
   _usage_bench -> _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
   _usage_viz -> _fmt, _output, _report_html
   _verdict_binding -> _evidence_io, _journal_io, _manifest_io, _output, _tree_stamp

@@ -5,8 +5,8 @@ CLI scripts**, not a package: there is no `[project]` table, nothing is installe
 published. It dogfoods its own plugin, so its hooks fire on your edits.
 
 **Which tier the plan gate is in is not a property this file may assert.** The gate grades
-itself on evidence — observe with no manifest, warn with a manifest but nothing running, deny once
-a phase is `in_progress` — and this sentence used to say edits "run under" it, which reads as the
+itself on evidence — observe with no manifest, warn with a manifest holding no phase, deny past the
+free file once it holds phases, running or not — and this sentence used to say edits "run under" it, which reads as the
 denying tier while only the weakest reading was true: the dogfood manifest's phases were all
 finished when that was written, so the gate was advisory here and had been for releases. That is
 exactly the kind of fact a document cannot keep. A document that names a gate owes the reader its
