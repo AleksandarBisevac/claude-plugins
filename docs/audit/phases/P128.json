@@ -1477,6 +1477,54 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P128.34-0h5",
+      "title": "The help payload carries only what the drawer reads",
+      "status": "pending",
+      "description": "Register F694. payload.fields is read by nothing in the product (the drawer asks per path); one tool uses it as an oracle and three documents describe it.",
+      "files": [
+        "plugins/audit/scripts/config/_help.py",
+        "plugins/audit/tests/test__help.py",
+        "tools/ui-checks/stage-tabs.mjs",
+        "plugins/audit/scripts/ui/panel/help-drawer.js",
+        "README.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__help.py: the help payload carries no table the drawer does not read, and a field is answered through the per-path endpoint"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }

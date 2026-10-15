@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "own-test selftest": "pass",
+    "test__deps selftest": "pass",
+    "sweep-selftests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T22:27:31Z",
+    "basis": "`python3 plugins/audit/tests/test__affected_tests.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 22 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - the build guide's tree line for _affected_tests names exactly the arms ARMS holds, so a removed arm cannot stay documented (tree lines 1, documented ['related listing', 'Python imports', 'e2e listing', 'coupling', 'e2e widening'], ARMS ['related listing', 'Python imports', 'e2e listing', 'e2e widening'], unmapped []) (house FAIL): SELFTEST FAILED: 21/22 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added a case to test__affected_tests.py that reads the guide's _affected_tests.py tree line and compares its arm list to M.ARMS, via a map from arm id to guide wording defined in the test (ARMS holds ids only). Saw it FAIL (21/22) against the guide still listing coupling; removed 'coupling' from PLUGIN-BUILD-GUIDE.md line 150; own selftest 22/22 exit 0; test__deps 330/330; full tools/sweep-selftests.py exit 0 (335/335 files ok, 16448 cases). Files changed in tree: PLUGIN-BUILD-GUIDE.md, plugins/audit/tests/test__affected_tests.py (imports os, re, _output added).",
+    "descriptive": "The guide's arm list for _affected_tests is now held equal to ARMS by a case, and the stale 'coupling' is gone."
+  },
+  "testsAdded": [
+    "the build guide's tree line for _affected_tests names exactly the arms ARMS holds, so a removed arm cannot stay documented"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:d6e5a744a3db0bd84b21f9ec8e7825facea92be1e8d8ad4e20260b705ed37f88\",\"dirtyDigest\":\"sha256:6c70bd4da324d930bdf2bd3655a4635c0140e4c26e0cefd0bf2c5efb37919dd9\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"2b613f220bf20c83\",\"plugins/audit/tests/test__affected_tests.py\":\"8fa13f8a951f3539\"},\"head\":\"045c821f\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/tests/test__affected_tests.py\"],\"scopeDigest\":\"sha256:c02d9a081d239b9693a900d06acdd4add6ae8acc89e1565fcac463b26f7a784d\",\"v\":2}"
+}

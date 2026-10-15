@@ -1,0 +1,25 @@
+{
+  "gates": {
+    "selftests": "pass",
+    "own-tests: python3 plugins/audit/tests/test__help.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T22:40:48Z",
+    "basis": "`python3 plugins/audit/tests/test__help.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 12/13 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_enriched': KeyError: 'fields'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_subtree': KeyError: 'fields'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_under': KeyError: 'fields'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_walk_schema': KeyError: 'fields'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'fold_repeats': KeyError: 'fields'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'unalias': KeyError: 'fields'; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Measured: payload 199998 bytes on posix at the CI SHA f9849e9b and HEAD 045c821f; fields 189943 of it (config 25194, manifest 164723). Platform difference found: guide_card()'s 'file' was os.path.join('agents', name), serialised as agents\\\\guide.md on Windows (+1 byte, reproduced by the backslash os.sep simulation: 199999). CRLF ruled out: .gitattributes forces LF and a CRLF copy of schema/ and agents/ measured 199998 identically. The other 2 bytes of the CI 200001 were not reproduced by any simulation. The drawer never reads payload.fields (help-drawer.js only reads composition/topics/agent/schemas and asks /api/help?doc=&path= per field), but tools/ui-checks/stage-tabs.mjs uses payload.fields.config.trivialLineThreshold as an oracle. Duplication: one $def mounted at several paths was expanded at each (proposals[].payload.phase re-expanded the whole phase shape, about 57 KB; bugs[].ado, tasks testEvidence/ado, policy.agents/mcp copying policy.skills). Fix in _help.py: _walk_schema records $def mount sites; fold_repeats drops a later mount's subtree when it equals the first (comparison ignores topic, includes default) and records an alias; unalias/lookup(aliases)/entry_for resolve through it; payload gains an 'aliases' key; the agent card file is 'agents/' + name. Payload now 133604 bytes, 66396 under the cap, headroom 26396 above the 40000 owed. Tests: p5 replaced by the clause case (native, CRLF-root and backslash-os builds must be equal and <= cap - headroom); fo1-fo5 added (no-loss over every full-table path, equal mount folds, differing default does not, chained alias, canonical key named); p1 key set updated. Mutation probes in a scratch copy: always-fold -> fo3 red; lookup ignoring aliases -> fo1,fo5; single-pass unalias -> fo1,fo4; os.path.join file -> p5; no fold -> fo1,fo2,fo5,p5. test__help 110/110 exit 0; full sweep exit 0 (335/335 files, 16452 cases); cp1252 sweep exit 0 (335/335); ruff and vermin clean on both files.",
+    "descriptive": "The help payload is a third smaller, measures the same on every platform, and keeps 40 KB of free headroom under its cap."
+  },
+  "testsAdded": [
+    "p5 the help payload measures the same on every platform and stays under its budget with stated headroom (native, CRLF sources and a backslash os.sep build one size, and at least PAYLOAD_HEADROOM bytes of PAYLOAD_CAP stay free)",
+    "fo1",
+    "fo2",
+    "fo3",
+    "fo4",
+    "fo5"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:f143afc6dfe11331daa7ca3f79b5c358102dce819e7f4f57e7ce94e797689a72\",\"dirtyDigest\":\"sha256:530214dcced26d4657c438fe5b5edec3d3fdc9c6a4f4a0302a0dbd017d8c6100\",\"dirtyPaths\":{\"plugins/audit/scripts/config/_help.py\":\"c8732529e88d557d\",\"plugins/audit/tests/test__help.py\":\"8b0a0f316a68e7c2\"},\"head\":\"045c821f\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/schema/audit-config.schema.json\",\"plugins/audit/scripts/config/_help.py\",\"plugins/audit/tests/test__help.py\"],\"scopeDigest\":\"sha256:e08e29fd346210dcdd09c176c7f70793fc1759214544fc3880c2917a348b6b66\",\"v\":2}"
+}
