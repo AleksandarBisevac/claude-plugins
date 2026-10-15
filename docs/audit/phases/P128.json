@@ -1220,49 +1220,6 @@
       "verifiedBy": []
     },
     {
-      "id": "P128.26-0h5",
-      "title": "The filed-counterpart check accepts the house case label, a case id before the clause",
-      "status": "pending",
-      "description": "Register F682. title_names_clause accepts only the clause or clause plus ' (detail'; the suites label cases '<id> <title>', so correctly titled cases are reported as unfiled (P125.80, .107, .108).",
-      "files": [
-        "plugins/audit/scripts/manifest/_filed_returns.py",
-        "plugins/audit/tests/test__filed_returns.py"
-      ],
-      "tests": {
-        "mode": "tdd",
-        "add": [
-          "plugins/audit/tests/test__filed_returns.py: a filed title of one case-id token, then the clause verbatim, then its detail, names that clause; a paraphrase or an id glued to the clause does not"
-        ],
-        "expectRedFirst": true,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "phase-no-spelling"
-      },
-      "model": "sonnet",
-      "skills": [],
-      "risk": "low",
-      "blockedBy": [],
-      "dependsOn": [],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
-    },
-    {
       "id": "P128.27-0h5",
       "title": "A parked no-return decision is dropped once the return it is about is filed",
       "status": "pending",
@@ -1404,6 +1361,50 @@
         "mode": "tdd",
         "add": [
           "plugins/audit/tests/test_audit_task.py: a finding whose resolution only asks to add a test for named existing behaviour mints a regression task with a mutation-proof note, even when it names a source file"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P128.32-0h5",
+      "title": "Record exclusions in the stamp, standing-use and gate commands agree for a project nested under its git root",
+      "status": "pending",
+      "description": "Register F691 (found at P125.93's return). stamp-verification take/compare/red and drive-phase.standing_use exclude records through _evidence_io.recorded_paths (project-relative) while the member tree is the checkout root; the drive also passes the checkout root as run-test-gate's --tree, which runs commands there as if it were the project dir. Latent for nested projects; this repo is not nested.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: in a project nested under its git root, the stamp's record exclusion reads the shared git-root-relative record set, so a journal change in the member tree is not graded as the task's change"
         ],
         "expectRedFirst": true,
         "gate": [
