@@ -133,7 +133,7 @@ import _output  # noqa: E402  (install_path: the plugin's folders are labels)
 
 _output.install_path()
 import _journal_io  # noqa: E402  (the machine-path shapes the writer refuses on)
-import _machine_paths  # noqa: E402  (shape_fires: the one predicate both readers call)
+import _machine_paths  # noqa: E402  (shape_fires: the detector's home-path predicate)
 
 # --- the domain ---------------------------------------------------------------
 # What the plugin GENERATES and tells a user to commit. Everything else this
@@ -242,12 +242,14 @@ def tracked_paths(repo=None):
 # `_journal_io.MACHINE_PATH_SHAPES`, the same pattern objects - and the token
 # boundary with them. A copy here would agree with the writer until the day one
 # side was widened, and the row the other side missed would be the one already
-# committed. `_machine_paths.shape_fires` is read for the same reason, by the
-# same name, over a match either pattern set produced: a `posix-home` match
-# only fires when it is deep enough to be a home directory rather than a
-# sentence's words joined by slashes (or carries a leading separator, which
-# settles it either way) - the one answer to "is this a home path", asked here
-# and at the writer's door alike.
+# committed. `_machine_paths.shape_fires` is read for the same reason, kept
+# beside the writer's own predicate and built on it: it fires on every match
+# the writer refuses, and ALSO on a `posix-home` match whose leading separator
+# was cut, when that match is deep enough or carries a home directory's own
+# mark. That second half is the one deliberate difference between the two
+# readers - the writer stores a relative `home/...` path, because a
+# repository may hold such a directory, and this report is where a human
+# decides which of the two it is.
 DETECTORS = _journal_io.MACHINE_PATH_SHAPES
 
 # --- the contract checks ------------------------------------------------------
@@ -642,6 +644,13 @@ _BOUND_RETURN_WHY = (
     "`readReturns`; rewriting its machine paths would change the signature "
     "that recorded verdict is bound to, so it is recorded here rather than "
     "rewritten.")
+# The plan's copies are keyed by line text and the return's and journal's by
+# line, as every row above is, so one reason serves every copy.
+_CUT_QUOTE_WHY = (
+    "a review finding's text quoting the home paths with their leading "
+    "separator cut that this check was asked to catch, one or two segments "
+    "deep, each under a placeholder user name; no machine is named, and the "
+    "row is chained or signed, so it is recorded rather than rewritten.")
 
 BASELINE = (
     ("docs/audit/journal/2026-08.3f33caa7-c0c9-4a4e-9c3b.jsonl", 1,
@@ -701,11 +710,6 @@ BASELINE = (
      "a task's text listing the checkout layouts that make two absolute paths "
      "collide, one of them the hosted CI runner's standard work directory. That "
      "is the runner image's fixed layout, identical everywhere, not an operator."),
-    ("docs/audit/phases/P82.json", "line-sha256:6a79a0c4d37badc3",
-     "windows-user-path",
-     "a task's text quoting how git prints a non-ASCII test file name under its "
-     "default quoting: the octal bytes of a UTF-8 character, each behind an "
-     "escaped backslash. A repository-relative file name, not a user path."),
     ("docs/audit/phases/P82.json", "line-sha256:57a13209e18be434",
      "unexpanded-home",
      "a task's text naming two marker files a selftest writes and removes in the "
@@ -724,6 +728,18 @@ BASELINE = (
     (_BOUND_RETURN, 190, "posix-home", _BOUND_RETURN_WHY),
     (_BOUND_RETURN, 190, "unexpanded-home", _BOUND_RETURN_WHY),
     (_BOUND_RETURN, 196, "posix-home", _BOUND_RETURN_WHY),
+    # A REVIEW FINDING THAT QUOTES THE CUT SPELLINGS IT ASKED THIS CHECK TO
+    # CATCH. Each copy names a placeholder user, never a machine, and the
+    # detector finding them is the finding's own resolution working.
+    ("docs/audit/evidence/returns/P125/"
+     "8e7c5121ab3f4ee3f710bd452c9df40e9353bc08.reviewer.json", 378,
+     "posix-home", _CUT_QUOTE_WHY),
+    ("docs/audit/journal/2026-10.fb1bddcc-aedf-4720-99d2.jsonl", 475,
+     "posix-home", _CUT_QUOTE_WHY),
+    ("docs/audit/phases/P125.json", "line-sha256:c1b74c3b004d3949",
+     "posix-home", _CUT_QUOTE_WHY),
+    ("docs/audit/phases/P125.json", "line-sha256:af0e37e9f5439b28",
+     "posix-home", _CUT_QUOTE_WHY),
 )
 
 _MIN_REASON = 60          # a reason short enough to be a label is not a reason
@@ -1343,6 +1359,102 @@ def _moving_cases(check):
           quiet != [] and code3 == 0 and out3 == out0)
 
 
+def _shape_hits(name, text):
+    """The detector's `name` findings over one line, as (line, column) pairs -
+    never the matched text, which on a real tree is a person's home."""
+    return [(h[1], h[3]) for h in scan_text("f.jsonl", text, "evidence")
+            if h[2] == name]
+
+
+def _reader_split_cases(check):
+    """Where the writer and the detector are meant to answer differently, and
+    the escape spellings neither may read as a share. Every fixture names a
+    placeholder user, so a message quoting one names nobody."""
+    # THE WRITER KEEPS ITS SEPARATOR RULE. A repository may hold a `home`
+    # directory of its own, and a plan, journal or evidence value naming a
+    # file deep inside it is that repository's path: refusing or redacting it
+    # would cost the writer a row nobody can overrule. The detector still
+    # reports the same text - it is read by a human, who decides - which is
+    # the one place the two readers part, on purpose. The separator-led twin
+    # is the mutation where the writer stops judging home paths at all.
+    _deep = ("home/components/ui/Button.tsx",
+             "see home/components/ui/Button.tsx and home/a/b/c/d.ts")
+    _kept = [(v, _machine_paths.machine_path_shape(v),
+              _journal_io.check_free_text(REPO, "note", v) is None,
+              _machine_paths.redacted_free_text(REPO, v) == v) for v in _deep]
+    _led = _machine_paths.machine_path_shape("cwd=/home/someone/src")
+    check("the writer keeps a relative home/ repository path, the detector "
+          "still finds a shallow cut home path, and an escaped newline before "
+          "a word is not a UNC path (q2j: the writer stores a deep relative "
+          "path under a repository's own home directory as typed, still "
+          "refuses one led by a separator, and the detector alone reports the "
+          "relative one; writer=%r led=%r detector=%r)" % (_kept, _led,
+                            [len(_shape_hits("posix-home", v)) for v in _deep]),
+          all(k[1] is None and k[2] and k[3] for k in _kept)
+          and _led == "posix-home"
+          and [len(_shape_hits("posix-home", v)) for v in _deep] == [1, 2])
+
+    # A CUT HOME PATH SHALLOWER THAN THE DEPTH RULE, against the prose that
+    # rule was set to keep quiet. Below the depth a match fires only on a mark
+    # a home directory carries and a sentence does not: the capitalised macOS
+    # root, or a hidden entry beneath the user's segment. The quiet half is the
+    # prose the depth rule's measurement recorded, plus a file and a parent
+    # reference beneath a user segment - the mutations that fire at any depth,
+    # or on any dot below the user.
+    _cut = [
+        '{"b":"among them: %s"}' % "/".join(("Users", "someone")),
+        '{"b":"among them: %s"}' % "/".join(("Users", "someone", "notes.txt")),
+        '{"b":"among them: %s"}' % "/".join(("home", "someone", ".bashrc")),
+    ]
+    _prose = [
+        "green under the isolated %s, exit 1" % "/".join(("home", "TMPDIR")),
+        "callers pass %s directories" % "/".join(("home", "cwd", "project")),
+        "a quoted relative '%s' file" % "/".join(("home", "page.tsx")),
+        "a relative %s spelling" % "/".join(("home", "cwd")),
+        "a deep relative `%s` path" % "/".join(("home", "...")),
+        "beside %s here" % "/".join(("home", "cwd", "page.tsx")),
+        "up from %s again" % "/".join(("home", "cwd", "..")),
+    ]
+    _found = [len(_shape_hits("posix-home", v)) for v in _cut]
+    _loud = [i for i, v in enumerate(_prose) if _shape_hits("posix-home", v)]
+    check("q2k a cut home path one or two segments deep is found when it carries "
+          "a home directory's own mark, and words a slash joins in prose are not "
+          "(found per cut path %r, prose that fired %r)" % (_found, _loud),
+          _found == [1, 1, 1] and _loud == [])
+
+    # AN ESCAPED NEWLINE FOLLOWED BY A WORD IS NOT A SHARE. A share's
+    # separators all sit at ONE escaping depth - two then one in raw text, four
+    # then two in a JSON string - while a doubled escape followed by prose puts
+    # two before every segment. The one-character exclusion stays and is pinned
+    # by the two consistent-depth spellings whose segments are single letters,
+    # which only that exclusion keeps quiet: an escape is one letter at any
+    # depth. The found half is the mutation that stops the shape firing.
+    bs = chr(92)
+    dbl = bs + bs
+    _escaped = [
+        dbl + "nfoo" + dbl + "nbar" + dbl + "n",
+        "line" + dbl + "nnext" + dbl + "nmore" + dbl,
+        dbl + dbl + "r" + dbl + "n" + dbl,
+        dbl + "r" + bs + "n" + bs,
+    ]
+    _shares = [
+        "at " + dbl + "server" + bs + "share" + bs + "f",
+        "at " + dbl + dbl + "server" + dbl + "share" + dbl + "f",
+        "at C:" + dbl + "Users" + dbl + "someone" + dbl + "x",
+    ]
+    _read = [i for i, v in enumerate(_escaped)
+             if _shape_hits("windows-user-path", v)
+             or _machine_paths.machine_path_shape(v)]
+    _seen = [(len(_shape_hits("windows-user-path", v)),
+              _machine_paths.machine_path_shape(v)) for v in _shares]
+    check("q2l a doubled-escaped newline followed by a word is no share, and "
+          "neither is a one-letter escape at a single depth, while a raw share, "
+          "an escaped share and an escaped user home are all found (escapes "
+          "read as a share %r, shares %r)" % (_read, _seen),
+          _read == []
+          and _seen == [(1, "windows-user-path")] * len(_shares))
+
+
 def _cases(check):
     _user = "aleksandarbisevac"
     # ONE LEAK, EVERY SPELLING IT ARRIVES IN. A session directory reaches a
@@ -1414,15 +1526,13 @@ def _cases(check):
           "alone: the separator became optional, not absent, and a match has "
           "to start where a word starts: %r" % (_wrong,), _wrong == [])
 
-    # THE ONE PREDICATE BOTH READERS CALL. A reviewer's prose joining words
-    # with slashes used to trip this file's posix-home detector at any token
-    # start, while the write scrub (`_machine_paths`) refused only a match
-    # still carrying its separator - two answers to one question, and a
-    # BASELINE row here per copy of the prose every time it recurred. Both
-    # now ask `_machine_paths.shape_fires`: it still finds a home path whose
-    # leading separator was cut (q2a's own case, repeated here against the
-    # live DETECTORS pattern rather than a hand-built sample), and it leaves
-    # alone a phrase of ordinary words a slash happens to join.
+    # THE DETECTOR'S PREDICATE. A reviewer's prose joining words with slashes
+    # used to trip this file's posix-home detector at any token start, and
+    # cost a BASELINE row here per copy of the prose every time it recurred.
+    # `_machine_paths.shape_fires` still finds a home path whose leading
+    # separator was cut (q2a's own case, repeated here against the live
+    # DETECTORS pattern rather than a hand-built sample), and it leaves alone
+    # a phrase of ordinary words a slash happens to join.
     _posix_home = dict(_journal_io.MACHINE_PATH_SHAPES)["posix-home"]
     _cut = '{"coverageBasis":"among them: Users/%s/p/x.js"}' % _user
     _prose = ("the review finding says callers pass home/cwd/project "
@@ -1442,6 +1552,7 @@ def _cases(check):
                   for m in _posix_home.finditer(_cut))
           and not any(_machine_paths.shape_fires("posix-home", m)
                      for m in _posix_home.finditer(_prose)))
+    _reader_split_cases(check)
 
     # EVERY PLACE A REAL SLUG STANDS, each a whole path segment: at a token
     # start, under the harness's projects directory, under a scratch tempdir,

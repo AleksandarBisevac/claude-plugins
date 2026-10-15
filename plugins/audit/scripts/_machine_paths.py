@@ -198,11 +198,15 @@ def redacted_paths(project, text):
 # The token boundary is what keeps `docs/home/alice.md` and `src/users/x.ts`,
 # repo-relative paths that merely resemble a home directory, out of the set. The
 # leading separator is optional IN THE PATTERN because a producer that trimmed
-# it still left a home directory behind, and `shape_fires` is where that is
-# told apart from an ordinary relative path or a sentence's words joined by
-# slashes - by depth rather than by which reader asks: a repository may hold a
-# `home/` directory of its own, and a two- or three-word match beneath that
-# depth is read as the repository's own path or as prose, never refused.
+# it still left a home directory behind, and the two readers part over it on
+# purpose. The WRITER (`machine_path_shape`) takes a `posix-home` match only
+# with a separator before the home word: a repository may hold a `home/`
+# directory of its own, and a writer refusing `home/<x>/<y>/<z>` would refuse
+# that repository's paths with nobody to overrule it. The DETECTOR
+# (`shape_fires`) also reads a match whose separator was cut, and tells it
+# apart from prose by the rules beside `_HOME_PATH_MIN_DEPTH`; a human reads
+# what it reports, so a repository's own deep `home/` path costs a decision
+# there, never a lost row.
 # A character that may sit INSIDE a path token, so one standing before a
 # match means the match does not start a token. One class, two readers: the
 # lookbehind below, and the checkout-root search, which uses `str.find` and so
@@ -241,12 +245,20 @@ _SLUG_LONE_LEAD = r"(?<![^\n/\\\"'=:(])"
 _MACHINE_PATH_SHAPES = (
     ("posix-home", re.compile(MACHINE_PATH_TOKEN_START
                               + r"[/\\]?(?:Users|home)/[A-Za-z0-9._-]+")),
-    # The UNC arm needs a server and a share of two characters or more: a
-    # JSON-escaped `\r\n` is a run of one-character segments between doubled
-    # backslashes, and no server or share is named by a single character.
+    # The UNC arm reads a share's separators at ONE escaping depth: two then
+    # one in raw text, four then two inside a JSON string. No segment holds a
+    # backslash, so a run longer than the arm asks for between two segments
+    # ends the match. Escaped multi-line text is what that keeps out - a
+    # doubled escape puts two backslashes before EVERY segment, so an escaped
+    # newline followed by a word (`nfoo`, `nbar`) is two before the share as
+    # well as before the server, which no share is spelled with. A server and
+    # a share of two characters or more stays required on top: an escape is
+    # one letter at any depth, so a `\r\n` written once or doubled is a run of
+    # one-letter segments even where its depths happen to agree.
     ("windows-user-path", re.compile(
         r"[A-Za-z]:\\{1,2}Users\\"
-        r"|\\{2,4}[A-Za-z0-9._-]{2,}\\{1,2}[A-Za-z0-9._$-]{2,}\\")),
+        r"|\\{2}[A-Za-z0-9._-]{2,}\\[A-Za-z0-9._$-]{2,}\\"
+        r"|\\{4}[A-Za-z0-9._-]{2,}\\{2}[A-Za-z0-9._$-]{2,}\\{2}")),
     # A home directory flattened into one directory NAME, the way the
     # harness names a project's scratch and session directories. The slug is
     # a whole path segment, so its leading dash stands at a token start - or
@@ -293,7 +305,25 @@ _TAIL_SEGMENTS = re.compile(r"(?:[/\\][A-Za-z0-9._~$+-]+)+")
 # directories", a quoted relative "home/page.tsx") stopped at one or two
 # segments after the home word; the stripped-separator corpus this module is
 # built to catch ("Users/<name>/<dir>/<file>") carries at least two more.
+# The detector's rule only: the writer never reads a match with its separator
+# cut (`_writer_fires`).
 _HOME_PATH_MIN_DEPTH = 3
+# BELOW THAT DEPTH a cut match is still a home directory when it carries a
+# mark a home directory has and a sentence does not: the macOS root's own
+# capitalised `Users`, or a hidden entry (a dot then a name, as `.bashrc` or
+# `.ssh`) somewhere beneath the user's segment. Both hold for either home word,
+# and neither is a matter of depth, so a cut `Users/<name>` or
+# `home/<name>/.<rc>` is found while every prose phrase above stays quiet:
+# that prose is all `home`, lowercase, and none of it holds a dot-led
+# segment below the word after `home` - a parent reference (`..`) or a file
+# with an extension is not a hidden entry. MEASURED ON BOTH SIDES over the
+# same artifacts: every separator-less `Users/` match there quotes a home
+# path, never a sentence, and no prose `home/` match carries a hidden entry.
+# Re-derive it with `python3 tools/check-committed-pii.py`, which reports
+# every hit this rule adds; the ones it found are the BASELINE rows that
+# quote a cut home path, each with its reason.
+_HIDDEN_ENTRY = re.compile(r"[/\\]\.[A-Za-z0-9_]")
+_MACOS_HOME_WORD = "Users/"
 # The shape name a refusal gives for the checkout's own root, which is machine
 # layout whatever directory it sits under and so has no pattern of its own.
 _CHECKOUT_ROOT_SHAPE = "checkout-root"
@@ -498,31 +528,58 @@ def _root_at(flat, root):
     return False
 
 
-def _segments_after(match):
-    """How many more `/segment` pieces immediately continue `match`, with no
-    gap - see `_TAIL_SEGMENTS`."""
+def _tail_after(match):
+    """The `/segment` pieces that immediately continue `match`, with no gap -
+    see `_TAIL_SEGMENTS` - or "" when none do."""
     tail = _TAIL_SEGMENTS.match(match.string, match.end())
-    return tail.group(0).count("/") + tail.group(0).count("\\") if tail else 0
+    return tail.group(0) if tail else ""
+
+
+def _segments_after(match):
+    """How many more `/segment` pieces immediately continue `match`."""
+    tail = _tail_after(match)
+    return tail.count("/") + tail.count("\\")
+
+
+def _writer_fires(name, match):
+    """Whether one pattern match is machine identity AT THE WRITER'S DOOR.
+
+    `posix-home` fires only on a match carrying a separator before its home
+    word - first in the match, or after a file URL's host - so a relative
+    path under a repository's own `home/` directory is stored as typed,
+    however deep; the note above `_MACHINE_PATH_SHAPES` says why. Every other
+    shape fires unconditionally."""
+    if name != "posix-home":
+        return True
+    return _HOME_AFTER_SEPARATOR.search(match.group(0)) is not None
+
+
+def _cut_home_fires(match):
+    """Whether a `posix-home` match with its leading separator cut is still a
+    home directory: deep enough (`_HOME_PATH_MIN_DEPTH`), or carrying one of
+    the marks beside `_HIDDEN_ENTRY` that a sentence's words joined by slashes
+    never have."""
+    if 1 + _segments_after(match) >= _HOME_PATH_MIN_DEPTH:
+        return True
+    if match.group(0).startswith(_MACOS_HOME_WORD):
+        return True
+    return _HIDDEN_ENTRY.search(_tail_after(match)) is not None
 
 
 def shape_fires(name, match):
-    """Whether one pattern match is machine identity - the ONE predicate both
-    `tools/check-committed-pii.py` and this module's own writer's-door
-    functions read, so a home path answers the same question wherever it is
-    asked.
+    """Whether one pattern match is machine identity TO THE DETECTOR - the
+    predicate `tools/check-committed-pii.py` reads over the same pattern
+    objects the writer holds.
 
-    `posix-home` fires on a match carrying a separator before its home word -
-    first in the match, or after a file URL's host - the ordinary case. It
-    ALSO fires with no such separator when the match is deep enough
-    (`_HOME_PATH_MIN_DEPTH`) to be a home directory whose leading separator was
-    cut rather than a sentence's words joined by slashes: the home word's own
-    segment plus the further `/segment` pieces that continue it with no gap
-    must reach that depth. Every other shape fires unconditionally."""
-    if name != "posix-home":
+    It answers yes to everything the writer refuses (`_writer_fires`) and
+    ALSO to a `posix-home` match whose leading separator was cut, when
+    `_cut_home_fires` reads it as a home directory rather than a sentence's
+    words joined by slashes. That second half is the detector's alone: the
+    writer stores such a value, and a human reading this check's report
+    decides whether it names a machine or a repository's own `home/`."""
+    if _writer_fires(name, match):
         return True
-    if _HOME_AFTER_SEPARATOR.search(match.group(0)) is not None:
-        return True
-    return 1 + _segments_after(match) >= _HOME_PATH_MIN_DEPTH
+    return name == "posix-home" and _cut_home_fires(match)
 
 
 def machine_path_shape(text, roots=()):
@@ -536,7 +593,7 @@ def machine_path_shape(text, roots=()):
         if _root_at(flat, root):
             return _CHECKOUT_ROOT_SHAPE
     for name, pattern in _MACHINE_PATH_SHAPES:
-        if any(shape_fires(name, m) for m in pattern.finditer(text)):
+        if any(_writer_fires(name, m) for m in pattern.finditer(text)):
             return name
     return None
 
