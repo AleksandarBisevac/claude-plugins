@@ -205,6 +205,7 @@ import _manifest_io as _mio  # noqa: E402  (loader, phase resolver, TERMINAL)
 import _manifest_phases as _phases  # noqa: E402  (FINDING_FIELDS: what a finding is)
 import _evidence_io as _evio  # noqa: E402  (project_config_for, evidence_dir)
 import _excerpt  # noqa: E402  (a failing verb's output is quoted both ends, never head-cut)
+import _invariants  # noqa: E402  (is_record_path: which changed paths are records)
 import _journal_io  # noqa: E402  (read_all: a high-risk answer given before the run)
 import _filed_returns as _fr  # noqa: E402  (where a filed return lives, and its read;
 #                                            the per-task review key a task holds;
@@ -1800,12 +1801,6 @@ def refresh_member_records(ctx, state, task, tree):
     return None
 
 
-def _is_record(path, records):
-    """True for a path at or under one of `records` (git-root relative)."""
-    return any(path == r or path.startswith(r.rstrip("/") + "/")
-               for r in records or ())
-
-
 def _path_digest(tree, rel):
     """`_journal_io.file_hash` of `rel` in `tree`: None when there is no such
     file. The driver opens no file to hash it itself - `_filed_returns`'
@@ -1967,7 +1962,7 @@ def tree_holds_only_integrated(ctx, tree, records=()):
         return None
     for item in done.stdout.split(b"\0"):
         rel = item[3:].decode("utf-8", "replace")
-        if not rel or _is_record(rel, records):
+        if not rel or _invariants.is_record_path(rel, records):
             continue
         sides = []
         for root in (tree, ctx["gitRoot"]):

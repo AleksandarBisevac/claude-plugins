@@ -2258,11 +2258,67 @@ def _record_rel_cases(check):
               "nor one sharing only a prefix with a record): %r / %r"
               % (RECORD_CLAUSE, pred, said_out),
               callable(pred) and said_out == [])
+        DP = _loader.load_script("drive-phase.py", "dp_for_records")
         check("%s (and no caller keeps a predicate of its own beside it)"
               % (RECORD_CLAUSE,),
-              not hasattr(IT, "_is_record") and not hasattr(AT, "_is_record_path"))
+              not hasattr(IT, "_is_record") and not hasattr(AT, "_is_record_path")
+              and not hasattr(DP, "_is_record"))
+
+        # The drive's check of a member tree reads the same predicate: a change
+        # under a record directory is left out, one beside it is not. Both
+        # directions, so a predicate that always or never says "record" is
+        # caught.
+        ident = ("-c", "user.name=t", "-c", "user.email=t@t")
+        # HEAD's index names P3 and the working one does not, so P3 is a record
+        # only to a caller that reads the HEAD index too.
+        _write_json(index_path, head)
+        _write_json(os.path.join(root, "docs", "audit", "phases", "P3.json"),
+                    _phase("P3", []))
+        _git(root, *(ident + ("add", "-A")))
+        _git(root, *(ident + ("commit", "-q", "-m", "base")))
+        _write_json(index_path, index)
+        _write(os.path.join(root, journal, "2026-10.new.jsonl"), "y\n")
+        # The tree is compared with a second one holding none of these paths,
+        # so only the record predicate can leave a change out.
+        elsewhere = root + "-other"
+        os.makedirs(elsewhere)
+        ctx = {"gitRoot": elsewhere}
+        check("%s (the drive leaves a change under a record directory out of a "
+              "member tree's own changes)" % (RECORD_CLAUSE,),
+              DP.tree_holds_only_integrated(ctx, root, expected) is True)
+        notes_md = os.path.join(root, "docs", "audit", "journal-notes", "n.md")
+        _write(notes_md, "changed\n")
+        check("%s (DENY: ...and a change beside the journal, not under it, "
+              "still counts)" % (RECORD_CLAUSE,),
+              DP.tree_holds_only_integrated(ctx, root, expected) is False)
+        _write(notes_md, "x\n")
+
+        # The attempt check reads it too: a tree whose only changes are sibling
+        # shards (one named only at HEAD) and a journal file refuses nothing; a
+        # stray file beside them is still refused.
+        _write_json(os.path.join(root, "docs", "audit", "phases", "P2.json"),
+                    _phase("P2", [{"id": "P2.1"}]))
+        _write_json(os.path.join(root, "docs", "audit", "phases", "P3.json"),
+                    _phase("P3", [{"id": "P3.1"}]))
+        own = {"id": "P1.1", "status": "in_progress", "files": ["src/a.py"],
+               "startedAt": "2000-01-01T00:00:00Z", "attempts": 1}
+        manifest = {"phases": [dict(phase, tasks=[own])]}
+        targets = CTW.stage_targets(manifest, phase, own, index_path, root, root)
+        refusal, _notes, _attr = CTW.attempt_refusal(
+            manifest, own, root, root, config, targets, [])
+        check("%s (the attempt check: a tree whose only changes are sibling "
+              "shards and a journal file refuses nothing): %r"
+              % (RECORD_CLAUSE, refusal), refusal == "")
+        _write(os.path.join(root, "src", "stray.py"), "z\n")
+        refusal, _notes, _attr = CTW.attempt_refusal(
+            manifest, own, root, root, config, targets, [])
+        check("%s (DENY: ...and an undeclared file beside them is still "
+              "refused, the shards not named): %r" % (RECORD_CLAUSE, refusal),
+              "src/stray.py" in refusal and "phases/P2.json" not in refusal
+              and "phases/P3.json" not in refusal)
     finally:
         _harness.remove_tree(root)
+        _harness.remove_tree(root + "-other")
 
 
 def _scrubbed_baseline_cases(check):

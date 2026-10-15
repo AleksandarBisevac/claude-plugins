@@ -317,8 +317,11 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
     # task never made - every verb rewrites the phase's shard. Which paths are
     # records is `_invariants.record_rels`, the set integrate-task and
     # audit-task read; the three below are the ones this commit carries.
+    head_rel = _invariants._rel(index_abs, git_root)
+    head_index = (_invariants.json_at(git_root, "HEAD", head_rel)
+                  if head_rel is not None else None)
     records = _invariants.record_rels(manifest_path, phase, project, git_root,
-                                      config=config)
+                                      head_index=head_index, config=config)
     record_abs = ((MANIFEST_LABEL, phase_file_abs),
                   (JOURNAL_LABEL, _journal_io.journal_dir(project, config)),
                   (EVIDENCE_LABEL, _evidence_io.evidence_dir(project, config)))
@@ -411,7 +414,7 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
     return {"paths": paths, "declared": declared,
             "kinds": dict((rel, kinds[rel]) for rel in paths),
             "ignored": ignored, "ignoredRecords": ignored_records,
-            "skipped": skipped, "indexRel": index_rel,
+            "skipped": skipped, "indexRel": index_rel, "records": records,
             "bugLinks": links if index_rel in paths else []}
 
 
@@ -618,7 +621,8 @@ def attempt_refusal(manifest, task, project, git_root, config, targets,
     if mine["mixed"]:
         parts.append("%s - %s (basis: %s)" % (", ".join(mine["mixed"]), MIXED,
                                               mine["basis"]))
-    skip = (list(targets["paths"]) + run_state_rels(project, config, git_root)
+    skip = (list(targets["paths"]) + list(targets.get("records") or [])
+            + run_state_rels(project, config, git_root)
             + ([targets["indexRel"]] if targets.get("indexRel") else []))
     strays, why = _scoped_commit.attempt_strays(
         git_root, record, started,
