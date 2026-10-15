@@ -4686,6 +4686,24 @@ def _export_missing_cases(check):
     check("se2 THE DENY TWIN for se1: the error naming a DIFFERENT export than "
           "the one --introduces declares stays could-not-prove: %r" % (other,),
           other != M.E_PROVED)
+    rollup = ('Error: "subtract" is not exported by "src/math.mjs", imported '
+              'by "tests/math.test.mjs".\n')
+    reports = M.missing_reports(rollup, "vitest")
+    reports_other = M.missing_reports(rollup.replace("subtract", "divide"),
+                                      "vitest")
+    reports_none = M.missing_reports("Error: all fine, nothing exported\n",
+                                     "vitest")
+    check("se3 a rollup 'is not exported by' message is read as a missing "
+          "export (the \"x\" is not exported by \"y\" wording names x and the "
+          "module y): %r" % (reports,),
+          len(reports) == 1 and reports[0].get("name") == "subtract"
+          and reports[0].get("spec") == "src/math.mjs")
+    check("se4 THE DENY TWIN for se3: text without that wording reads no "
+          "missing export, and a different export name is carried as that "
+          "name (%r) so the symbol check can refuse it: %r"
+          % (reports_other, reports_none),
+          reports_none == [] and len(reports_other) == 1
+          and reports_other[0].get("name") == "divide")
 
 
 # A playwright spec file: `test.describe`/`test` calls read by the SAME
@@ -4763,23 +4781,22 @@ def _playwright_credit_cases(check):
           "exit=%r %r" % (code, basis[-220:]),
           code == M.E_PROVED and "adds numbers" in basis)
     basis_line = (block_line or {}).get("basis", "")
-    check("sp2 THE ALLOW TWIN for sp1: the SAME failure read off playwright's "
-          "line/list reporter instead of its JSON one proves too - the line "
-          "reporter carries no per-failure assertion detail, so every entry it "
-          "names is read as one: exit=%r %r" % (code_line, basis_line[-220:]),
-          code_line == M.E_PROVED and "adds numbers" in basis_line)
+    check("sp2 THE DENY TWIN for sp1: the SAME failure read off playwright's "
+          "line/list reporter instead of its JSON one is not proved - that "
+          "reporter carries no per-failure assertion detail, so the basis says "
+          "the JSON reporter is needed: exit=%r %r" % (code_line, basis_line[-260:]),
+          code_line == M.E_CANNOT_PROVE and "--reporter=json" in basis_line)
 
     # Mutating the shared reader must change the helper's verdict, and the
     # module must hold no reading of its own to fall back on.
-    mid = "Running 1 test\n\n  tests/example.spec.ts:4:7 \u203a math \u203a adds numbers\n\n  1 failed\n"
-    shared = _runner_output._FAILURE_READERS["playwright"]
+    mid = _pw_json()
+    shared = _runner_output._PW_ASSERTION
     before = M.classify_run(1, mid, None)[0]
-    _runner_output._FAILURE_READERS["playwright"] = _runner_output.re.compile(
-        r"^\Z(?!x)x")
+    _runner_output._PW_ASSERTION = _runner_output.re.compile(r"^\Z(?!x)x")
     try:
         mutated = M.classify_run(1, mid, None)[0]
     finally:
-        _runner_output._FAILURE_READERS["playwright"] = shared
+        _runner_output._PW_ASSERTION = shared
     own = [n for n in ("_PW_LINE_ENTRY", "_VITEST_JSON_ASSERTION", "_PW_ASSERTION",
                        "red_read_tally", "red_failing_cases", "_json_blob",
                        "playwright_line_cases", "vitest_json_cases")

@@ -6292,7 +6292,12 @@
         "P125-R44",
         "P125-R45"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T09:47:15Z.4d2202",
+        "status": "passed",
+        "at": "2026-10-15T09:47:15Z"
+      }
     },
     {
       "id": "P125.81-0h5",
@@ -7832,7 +7837,7 @@
     {
       "id": "P125.107-0h5",
       "title": "The pricing and CLI-cost remainder: one loader, a recorded _default, the CLI figure on every surface, one label",
-      "status": "in_progress",
+      "status": "done",
       "description": "Finishes phase-review findings P125-R7, R9 and R4 where their fix tasks stopped at their files. (R7) `_usage_core` loads hooks/_config through a hand-rolled importlib copy because `_deps.LAYERS` puts `_loader` one layer above it. `_loader` is a generic helper: if it imports nothing above `_usage_core`'s layer, move it down so `_usage_core` uses it, delete the copy, regenerate the module map (`_deps.py --write-map`); if it cannot move, record the reason on the task and beside the copy. (R9) `_usage_core._rate_via` already answers '_default' when the table's own _default priced a model, and `priced_at_read` reports viaDefault in its mix; nothing writes `rateVia` on the stamp (usage_ledger.py, around line 825) and no surface says it - write it at meter time and have `rate_basis_phrase` state how many rows a declared _default priced, naming the models. (R4) the CLI's own per-session figure (cursor `cliCost`, read by audit-usage and the panel browse dialog) is still not printed by the report (`_usage_load.py` must carry it into the payload, `_report_usage.py` render it) nor by the panel's main usage view (`usage-view.js`); print it beside the plugin's reading wherever they differ, labelled as the CLI's estimate. One home for the label text ('the CLI's estimate, recorded at meter time'), today copied in audit-usage._cli_basis and _panel_usage._CLI_BASIS. Screenshots are the orchestrator's to capture; name them if stale.",
       "files": [
         "plugins/audit/scripts/_loader.py",
@@ -7908,19 +7913,33 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "948caa72f6a9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Attempt 2, on top of attempt 1's work, which stays as it was. (1) Markdown twin: _usage_markdown gained _cli_cost_text(u), which returns plain lines. It gives [] when dollars are off, when the payload has no cliCost, or when every figure agreed. When cliCost is None it gives one could-not-compare sentence carrying cliCostReason, or 'no reason was recorded' if the payload has none. Otherwise it gives a header plus one 'session S · M: CLI $x (basis) vs plugin $y' line per entry. The label is the entry's basis, which usage_ledger.cli_basis produced, so no copy of the label exists. _usage_md prints those lines under the head line, entries as a list. _report_usage._cli_cost_block now only escapes _cli_cost_text's lines (<p> for the failure sentence, a <div> of <div>s otherwise), so the HTML and Markdown wording has a single author. (2) Could-not-compare reason: _usage_load._cli_cost now returns (entries, reason), where reason is '<ExceptionType>: <message>' when cli_cost_entries raises. The payload carries a new key cliCostReason beside cliCost. Before this, the branch dropped the reason: both new cases failed on the attempt-1 tree before the fix (test__usage_markdown 35/36 with counts [0, 0]; test__report_usage 110/111 with (None, '')). Tests added: test__usage_markdown _cli_cost_case (two entries; parity with the HTML block; dollars off and [] print nothing; the failure reason appears on both surfaces). test__report_usage _cli_cost_uncomparable_case (a cursor with a non-numeric perModel figure makes the comparison raise a TypeError; payload cliCost None plus a reason naming TypeError; the page prints the sentence once with the escaped reason, and the Usage section still renders). Runs: test__usage_markdown 36/36; test__report_usage 111/111; test__usage_load 30/30; test__panel_usage 43/43; test__deps 320/320; test__output 269/269. Full sweep exit 0: '335/335 files ok, 153 migrated to tests/, 16367 cases'. cp1252 pass exit 0: 'both halves ran', '335/335 files ok, 0 migrated to tests/, 0 cases'. The encoding pass prints 0 cases per file, as observed in its own output. npx vitest run exit 0: 55 files, 821 tests. ruff clean, vermin clean. sh examples/report.sh exit 0, and check-rendered-artifacts --before-commit exit 0 ('OK: 3 committed artifact(s) match a fresh render'). The re-render changed examples/acme-store/acme-store-audit.{html,md} and docs/index.html by 5 lines in total: the example ledger has no cursor with cliCost, so no CLI line appears there. Nothing under scripts/ui/ was edited in this attempt, so the screenshots the orchestrator captured stay current.",
+        "descriptive": "The report's Markdown twin now prints the CLI's per-session estimate beside the plugin's reading, in the same words as the HTML, and a failed comparison now says why on both surfaces."
       },
       "startedAt": "2026-10-15T09:03:00Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T09:36:46Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__usage_markdown.py: the Markdown twin carries the CLI's own figure beside the plugin's, under the same label",
+        "plugins/audit/tests/test__report_usage.py: a comparison that cannot be made says it could not be compared, with the reason"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-15T09:36:44Z.459186",
         "status": "passed",
         "at": "2026-10-15T09:36:44Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "948caa72f6a9",
+        "at": "2026-10-15T09:36:46Z"
+      },
+      "redFirst": {
+        "at": "2026-10-15T09:24:38Z",
+        "basis": "`python3 plugins/audit/tests/test__usage_markdown.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 35/36 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'CLI_BASIS_METER': AttributeError: module 'usage_ledger' has no attribute 'cli_basis'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'CLI_BASIS_TRANSCRIPT': AttributeError: module 'usage_ledger' has no attribute 'cli_basis'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'CLI_BASIS_UNTAGGED': AttributeError: module 'usage_ledger' has no attribute 'cli_basis'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'cli_cost_entries': AttributeError: module 'usage_ledger' has no attribute 'cli_basis'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_default_clause': AttributeError: module 'usage_ledger' has no attribute 'cli_basis'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_cli_cost': AttributeError: module 'usage_ledger' has no attribute 'cli_basis'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_cli_cost_block': AttributeError: module 'usage_ledger' has no attribute 'cli_basis'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_cli_cost_text': AttributeError: module 'usage_ledger' has no attribute 'cli_basis'; 'cli_basis' is not introduced by this task: HEAD already carries it in plugins/audit/scripts/usage/audit-usage.py; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     }
   ],

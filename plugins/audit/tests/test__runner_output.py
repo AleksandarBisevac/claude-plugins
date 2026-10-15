@@ -222,13 +222,19 @@ def _playwright_line_cases(check):
     tally = M.read_run_tally(text)
     cases = M.run_failing_cases(text, "playwright")
     check("ru15 a Playwright list-reporter output whose failing entries start "
-          "mid-text (not at offset 0) is read as red with each failing test "
-          "named, through _FAILURE_READERS['playwright']: %r / %r"
+          "mid-text (not at offset 0) is read as failed with each failing "
+          "test named, through _FAILURE_READERS['playwright']: %r / %r"
           % (found, tally),
           len(found) == 2 and tally is not None
           and tally["runner"] == "playwright" and tally["failed"] == 2
-          and tally["assertions"] == 2
+          and tally["assertions"] == 0
           and [c["id"] for c in cases] == ["adds numbers", "subtracts"])
+    check("ru16 a Playwright line-reporter failure is not marked an assertion "
+          "(it proves a failure, not an assertion: the tally counts none, the "
+          "JSON reporter is what names one): %r / %r"
+          % ([c["assertion"] for c in cases], tally),
+          len(cases) == 2 and not any(c["assertion"] for c in cases)
+          and tally["failed"] == 2 and tally["assertions"] == 0)
 
 
 def _layer_cases(check):

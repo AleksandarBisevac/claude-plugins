@@ -683,10 +683,11 @@ def playwright_line_cases(text):
     reporter instead of its JSON one: each entry `_FAILURE_READERS["playwright"]`
     locates (`<file>:<line>:<col> › <chain>`, a project prefix allowed), its
     chain split on playwright's own `' › '`. That reporter prints no
-    per-failure detail an assertion can be told from a timeout by, so every
-    entry here is `assertion: True`: playwright itself already decided the
-    test failed, and that is the claim this `why` carries, not a stronger one
-    about its cause."""
+    per-failure detail an assertion can be told from a timeout, a refused
+    connection or a crash by, so every entry here is `assertion: None`:
+    playwright decided the test failed, which proves a failure and no more.
+    Only the JSON reporter names an assertion, so a proof that rests on one
+    needs `--reporter=json`."""
     out = []
     for hit in _FAILURE_READERS["playwright"].finditer(plain_text(text)):
         entry = re.sub(r"^\[[^\]]+\][ \t]*›[ \t]*", "", hit.group(1))
@@ -695,7 +696,9 @@ def playwright_line_cases(text):
             continue
         chain = [c.strip() for c in rest.split(" › ")]
         case = {"id": chain[-1] if chain else None, "label": entry,
-                "assertion": True, "why": "playwright: failed",
+                "assertion": None,
+                "why": "playwright: failed (line reporter; --reporter=json "
+                       "is needed to tell an assertion)",
                 "suite": loc.split(":")[0], "chain": chain}
         if case not in out:
             out.append(case)
@@ -705,8 +708,8 @@ def playwright_line_cases(text):
 def playwright_line_tally(text):
     """The tally of playwright's line/list reporter, or None - `collected` and
     `failed` off its own summary line (`summary_readers`, already carrying a
-    `playwright` row), `assertions` the entries `playwright_line_cases` names
-    (all of them, per that function's own limit)."""
+    `playwright` row), `assertions` the entries `playwright_line_cases` marks
+    as one - none, since that reporter cannot tell."""
     rows = [(joined, words) for name, joined, words in
             summary_readers(plain_text(text)) if name == "playwright"]
     if not rows:
@@ -719,7 +722,7 @@ def playwright_line_tally(text):
     return {"runner": "playwright",
             "collected": sum(counts.get(w, 0) for w in words),
             "failed": counts.get("failed", 0) + counts.get("flaky", 0),
-            "assertions": len(cases)}
+            "assertions": len([c for c in cases if c["assertion"]])}
 
 
 def playwright_cases(text):

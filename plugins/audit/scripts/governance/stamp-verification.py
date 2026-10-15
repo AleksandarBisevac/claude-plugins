@@ -690,6 +690,10 @@ MISSING_SPELLINGS = (
     ("export", ("vitest", "jest", None), re.compile(
         r"[Tt]he requested module '(?P<spec>[^']+)' does not provide an "
         r"export named '(?P<name>[^']+)'")),
+    # The same absence in rollup's and vite's build wording, which quotes the
+    # name first: `"x" is not exported by "y"`. The module is the specifier.
+    ("export (rollup)", ("vitest", "jest", None), re.compile(
+        r'"(?P<name>[^"]+)" is not exported by "(?P<spec>[^"]+)"')),
 )
 # A house abort is read for one class more than a final error: a TypeError
 # naming the name - a keyword the task adds - is the same absence, and the
@@ -3105,6 +3109,10 @@ def red_verdict(run, ctx):
                                for r in tally["mixed"]),))
     elif verdict == V_COLLECT:
         reason = "no test was collected or none reached an assertion"
+        if tally and tally.get("runner") == "playwright":
+            reason += (" - playwright's line reporter cannot tell an assertion "
+                       "from a timeout or a crash, so run it with "
+                       "--reporter=json")
     else:
         reason = ("its output carries no test tally this command reads, so an "
                   "assertion failure cannot be told from a crash - no test is "
