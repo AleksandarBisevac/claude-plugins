@@ -621,23 +621,31 @@ def did_events(text):
 
 
 # --- running a verb ----------------------------------------------------------------
-def run_verb(ctx, script, args, stdin=None):
+def run_verb(ctx, script, args, stdin=None, record=False):
     """`(code, stdout, stderr)` of one verb run as a subprocess from the project,
     logged on `ctx` for `--verbose`.
 
     The run is in bytes. In text mode Windows writes `input` through a text
     wrapper that turns every "\\n" into "\\r\\n", so a return filed through
     `file-return` was CRLF there and LF elsewhere - one record, two byte
-    strings. `stdin` goes as its UTF-8 bytes instead, and the output is read
-    back as text mode read it: decoded, then newline-translated, so every
-    caller keeps the str it parsed before."""
+    strings. `stdin` goes as its UTF-8 bytes instead.
+
+    TWO READINGS OF WHAT COMES BACK, by what the verb prints. A MESSAGE - a
+    did-line, a refusal, a `written:` path, everything the drive parses - is
+    read as text mode read it (`_verb_text`), so every caller keeps the str it
+    parsed before and a Windows verb's CRLF line endings never reach a regex.
+    A RECORD is printed for an agent to read as it was written, and a carriage
+    return its CONTENT carries is part of it: `record=True` decodes stdout and
+    translates nothing (`_record_text`). `brief <id>` is the one record verb
+    the drive runs; stderr is a message either way."""
     cmd = [sys.executable, _loader.script_path(script)] + list(args)
     env = dict(os.environ)
     env["CLAUDE_PROJECT_DIR"] = ctx["project"]
     sent = stdin.encode("utf-8") if stdin is not None else None
     done = subprocess.run(cmd, cwd=ctx["project"], env=env, input=sent,
                           capture_output=True)
-    out, err = _verb_text(done.stdout), _verb_text(done.stderr)
+    out = (_record_text if record else _verb_text)(done.stdout)
+    err = _verb_text(done.stderr)
     ctx["log"].append((script, list(args), done.returncode, out + err))
     return done.returncode, out, err
 
@@ -645,8 +653,30 @@ def run_verb(ctx, script, args, stdin=None):
 def _verb_text(raw):
     """A verb's captured bytes as the str text mode gave: UTF-8 with
     replacement, and "\\r\\n" and a lone "\\r" read as "\\n"."""
-    text = (raw or b"").decode("utf-8", "replace")
+    text = _record_text(raw)
     return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _record_text(raw):
+    """A verb's captured bytes as UTF-8 with replacement, newlines untouched."""
+    return (raw or b"").decode("utf-8", "replace")
+
+
+def write_record(text):
+    """Print `text` and a newline on stdout as their UTF-8 bytes.
+
+    The command line's own half of a record: stdout's text layer would write
+    the "\\n" of a CRLF the record carries as "\\r\\n" on Windows, so the
+    bytes go to the stream's buffer. A stream with no buffer is an in-memory
+    one, which translates nothing."""
+    stream = sys.stdout
+    raw = getattr(stream, "buffer", None)
+    if raw is None:
+        stream.write(text + "\n")
+        return
+    stream.flush()
+    raw.write((text + "\n").encode("utf-8"))
+    raw.flush()
 
 
 def relay_refusal(ctx, script, code, text):
@@ -4257,7 +4287,8 @@ def explain(ctx, subject):
 
 def run_brief(args, out):
     """`brief <id> --role <role>`: print the brief the drive wrote for that dispatch,
-    as `audit-lookup.py brief --read` reads it for the id's current start."""
+    as `audit-lookup.py brief --read` reads it for the id's current start - a
+    record, so read back with its bytes as they are (`run_verb`)."""
     try:
         _manifest, ctx = project_context(args)
     except Exception as exc:                                   # noqa: BLE001
@@ -4265,7 +4296,7 @@ def run_brief(args, out):
         return E_USAGE
     code, said, err = run_verb(ctx, "audit-lookup.py", [
         ctx["manifest"], "brief", args.id, "--role", args.role, "--read",
-        "--project", ctx["project"]])
+        "--project", ctx["project"]], record=True)
     if code != 0:
         out("drive-phase.py: no brief to print - %s" % ((err or said).strip(),))
         return E_USAGE
@@ -4516,4 +4547,8 @@ if __name__ == "__main__":
         print("drive-phase.py has no inline --selftest; its cases live in "
               "plugins/audit/tests/test_drive_phase.py - run that file instead.")
         sys.exit(0)
+    if _output.own_args(sys.argv[1:])[:1] == ["brief"]:
+        # A record, not a step: `terse_cli` would hold it and print it again
+        # through stdout's text layer, which is the translation it must not get.
+        sys.exit(main(sys.argv[1:], out=write_record))
     sys.exit(_output.terse_cli(main, sys.argv[1:], success_line, keep_verbose=True))

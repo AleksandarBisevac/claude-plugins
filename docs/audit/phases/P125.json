@@ -4556,7 +4556,7 @@
     {
       "id": "P125.72-0h5",
       "title": "The legacy-locale pass pins only an environment that is Windows-shaped, and a brief keeps a carriage return its content carries",
-      "status": "pending",
+      "status": "in_progress",
       "description": "CI run 38665171766 (ci/p125 at 2d331e81). (1) ubuntu cp1252 legs: test_stamp_verification sr-round5 and test_audit_task lo-block raised `UnicodeEncodeError: 'ascii' codec can't encode character` for fixtures with non-ASCII FILE NAMES. Cause, measured: on Linux `LC_ALL=C PYTHONUTF8=0` makes the FILESYSTEM encoding ASCII too, while on macOS the filesystem encoding stays UTF-8 (`sys.getfilesystemencoding()` printed utf-8 under that env here) and on Windows it is UTF-8 - so the pass simulates Windows on macOS and something stricter and wrong on Linux. Make the pin faithful: pin only where the child then reports a non-UTF-8 preferred encoding AND a UTF-8 filesystem encoding (verify both in the one-time check); where the pin cannot give that (Linux C locale), do not pin, and say in the pass's output which half ran and why - never a silent narrowing. (2) Windows legs: the new case 'a legacy-encoding pass whose child still reports UTF-8 ... is refused as could-not-run' fails (`honest None, UTF-8 child None`) because the check does nothing on Windows by design; the case must assert the platform's actual contract (on Windows: no check, no refusal) rather than skip silently. (3) Windows shard 1: test_drive_phase sn6 now reports the difference - reviewer brief at offset 1440: written `-v0\\r\\n+changed by P1.1`, read back `-v0\\n\\n+chan`. The reviewer brief embeds a git diff whose CONTENT carries a carriage return (a fixture file with CRLF on Windows), and the read-back path translates it. A brief is a record: `brief <id>` must print its exact bytes, so trace the drive's brief verb end to end (drive-phase.py's brief subcommand -> run_verb -> `_verb_text`, which turns `\\r\\n` and a lone `\\r` into `\\n` -> audit-lookup brief --read -> write_exact) and make the brief path carry bytes without newline translation; keep `_verb_text`'s translation for verbs whose output is a message, not a record, and name which is which. POSIX-visible case: a brief whose diff content holds `\\r\\n` is printed byte for byte.",
       "files": [
         "tools/sweep-selftests.py",
@@ -4564,7 +4564,9 @@
         "plugins/audit/scripts/status/audit-lookup.py",
         "plugins/audit/tests/test_drive_phase.py",
         "plugins/audit/tests/test_audit_lookup.py",
-        "CONTRIBUTING.md"
+        "CONTRIBUTING.md",
+        "CLAUDE.md",
+        "plugins/audit/scripts/_output.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -4590,16 +4592,28 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-15T01:35:08Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "notes": [
+        {
+          "at": "2026-10-15T02:06:39Z",
+          "text": "Red-first proved by the orchestrator for the brief case (the helper's whole-file run timed out): git archive of HEAD plus the new test_drive_phase.py, Claude session variables unset, __pycache__ purged -> --stage bc-block exit 1, 0/1; with the task's drive-phase.py and audit-lookup.py -> 1/1. The sweep case's red before the fix was the executor's (NameError on the new verdict function); the case feeds the macOS, Linux, Windows and UTF-8 pairs to a pure decision, so pin-always fails the Linux row and pin-never the macOS row."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-10-15T02:36:12Z.6b60b3",
+        "status": "passed",
+        "at": "2026-10-15T02:36:12Z"
+      }
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",

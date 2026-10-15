@@ -228,6 +228,33 @@ def _pinned_clock(at):
         _harness.remove_tree(where)
 
 
+# The newline half of a Windows stdout, given to a POSIX child: its text stream
+# writes every "\n" as "\r\n", as the Windows text wrapper does, while its byte
+# buffer stays untranslated, as it does there too. Only the text layer differs.
+_WINDOWS_STDOUT = (
+    "import sys as _sys\n"
+    "_sys.stdout.reconfigure(newline='\\r\\n')\n")
+
+
+@contextlib.contextmanager
+def _windows_stdout():
+    """Every Python child started inside the block writes its text stdout the
+    way a Windows one does."""
+    where = os.path.realpath(_harness.fixture_root("drive-crlf-"))
+    with open(os.path.join(where, "sitecustomize.py"), "w", encoding="utf-8") as fh:
+        fh.write(_WINDOWS_STDOUT)
+    held = os.environ.get("PYTHONPATH")
+    os.environ["PYTHONPATH"] = where + (os.pathsep + held if held else "")
+    try:
+        yield where
+    finally:
+        if held is None:
+            os.environ.pop("PYTHONPATH", None)
+        else:
+            os.environ["PYTHONPATH"] = held
+        _harness.remove_tree(where)
+
+
 def _verb(root, name, args, stdin=None):
     # The verbs write UTF-8 whatever the console's code page; decoding them in
     # the locale's would fail on Windows on the first arrow a verb prints.
@@ -5780,6 +5807,66 @@ def _signal_drive_cases(check):
         _harness.remove_tree(root)
 
 
+def _brief_crlf_cases(check):
+    """A reviewer brief embeds the task's diff, and a diff's CONTENT may hold a
+    carriage return - a CRLF file, which every fixture written in text mode on
+    Windows is. `brief <id>` is how the agent reads that record, so it has to
+    print those bytes exactly, in process and through the command line, with
+    every child's text stdout Windows-shaped (`_windows_stdout`). That is where
+    the record was lost: a verb whose stdout is held and printed again through
+    the text layer writes the embedded CRLF as CR CR LF, and a newline-
+    translating read of it then shows two line breaks for one."""
+    title = ("a reviewer brief whose embedded diff carries a carriage return is "
+             "printed by brief <id> byte for byte")
+    M, why = _load("brief_crlf_mod")
+    if M is None:
+        check("%s (the driver did not load: %r)" % (title, why), False)
+        return
+    root, mpath = _repo("brief-crlf", task_ids=TASKS[:1])
+    try:
+        with open(os.path.join(root, "src", "f1.txt"), "wb") as fh:
+            fh.write(b"v0\r\nkept\r\n")
+        subprocess.run(_GIT + ["commit", "-qam", "fixture: a CRLF source"],
+                       cwd=root, check=True, capture_output=True, timeout=60)
+        _next(M, root, mpath)
+        _file_executor(root, mpath, "P1.1")
+        _code, dispatched = _next(M, root, mpath)
+        folder = os.path.join(root, ".claude", "state", "briefs", "P1.1")
+        names = sorted(n for n in os.listdir(folder) if n.endswith(".reviewer.md"))
+        with open(os.path.join(folder, names[-1]), "rb") as fh:
+            wrote = fh.read()
+        shown = []
+        with _windows_stdout(), _Env(root):
+            code = M.main(["brief", "P1.1", mpath, "--role", "reviewer",
+                           "--project-dir", root], out=shown.append)
+            probe = subprocess.run([sys.executable, "-c", "print('a')"],
+                                   capture_output=True, timeout=60).stdout
+            cli = subprocess.run(_script(DRIVER) + [
+                "brief", "P1.1", mpath, "--role", "reviewer", "--project-dir",
+                root], cwd=root, capture_output=True, timeout=120)
+    finally:
+        _harness.remove_tree(root)
+    inproc = "\n".join(shown).encode("utf-8")
+    # The premise, counted rather than found: the fixture's CRLF line and the
+    # diff's own LF lines both reach the brief, so a brief written all-LF or
+    # all-CRLF tells the cases nothing.
+    crlf = wrote.count(b"\r\n")
+    check("%s (premise: the written brief holds %d CRLF beside its LF lines, "
+          "and a child under the emulation prints CRLF from its text stream: "
+          "%r; in process exit %d, first difference %r; command line exit %d, "
+          "first difference %r, stderr %r; dispatched %r)"
+          % (title, crlf, probe, code,
+             _brief_difference("reviewer", wrote.rstrip(b"\n").decode("utf-8"),
+                               inproc.decode("utf-8")),
+             cli.returncode,
+             _brief_difference("reviewer", wrote.decode("utf-8", "replace"),
+                               cli.stdout.decode("utf-8", "replace")),
+             cli.stderr[:300], dispatched[:200]),
+          crlf >= 1 and wrote.count(b"\n") > crlf and probe == b"a\r\n"
+          and code == 0 and inproc == wrote.rstrip(b"\n")
+          and cli.returncode == 0 and cli.stdout == wrote)
+
+
 _TALLY = "%s: %d/%d cases " + "passed"
 
 
@@ -5844,6 +5931,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("tx-block", "_text_cases"),
           ("sn-block", "_signal_cases"), ("sn3-block", "_explain_cases"),
           ("sn5-block", "_signal_drive_cases"),
+          ("bc-block", "_brief_crlf_cases"),
           ("ce-block", "_close_evidence_cases"),
           ("bs-block", "_brief_scope_cases"),
           ("sc-block", "_scope_change_cases"), ("fv-block", "_falsifier_cases"),

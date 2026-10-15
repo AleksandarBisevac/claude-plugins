@@ -10,7 +10,7 @@ sweeps that used to exist.
     tools/sweep-selftests.py --costs-from-log LOG --platform win32 --record-costs .github/sweep-costs.json
                                                  # ...or read them off a saved CI log
     tools/sweep-selftests.py --jobs 1            # serial, for a bisect
-    tools/sweep-selftests.py --encoding cp1252   # the "can it print" pass: stdio codec AND, on POSIX, a non-UTF-8 locale
+    tools/sweep-selftests.py --encoding cp1252   # the "can it print" pass: stdio codec AND, where faithful, a non-UTF-8 locale
     tools/sweep-selftests.py --quiet             # failures and totals; no per-file lines
     tools/sweep-selftests.py --spaced            # TMPDIR and interpreter under a spaced symlink
     tools/sweep-selftests.py --selftest          # this file's own cases
@@ -552,16 +552,20 @@ def spaced_layout(holder):
 
 # What `open()` and `subprocess(text=True)` consult when no encoding is named is the
 # locale's preferred encoding, not PYTHONIOENCODING. C locale plus the UTF-8 mode
-# switched off makes it ASCII on POSIX; windows legs already run under a legacy
-# code page and are left as they are.
+# switched off makes it ASCII on POSIX - and on linux it makes the FILESYSTEM
+# encoding ASCII too, while macOS keeps UTF-8 file names under it, as windows
+# does. Windows legs already run under a legacy code page and are left as they are.
 LEGACY_LOCALE_VARS = {"LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0"}
-PREFERRED_ENCODING_PROBE = ("import locale; "
-                            "print(locale.getpreferredencoding(False))")
+LOCALE_PROBE = ("import locale, sys; "
+                "print(locale.getpreferredencoding(False)); "
+                "print(sys.getfilesystemencoding())")
 
 
 def locale_pins(encoding, locale_vars=None):
     """The environment additions a `--encoding` pass makes: the child's stdio
-    codec everywhere, and on POSIX the locale pins too."""
+    codec everywhere, and on POSIX the locale pins - `LEGACY_LOCALE_VARS` when
+    `locale_vars` is None, and none at all when it is empty, which is what
+    `locale_decision` hands a platform the pins would misrepresent."""
     if not encoding:
         return {}
     pins = {"PYTHONIOENCODING": encoding}
@@ -570,41 +574,95 @@ def locale_pins(encoding, locale_vars=None):
     return pins
 
 
-def legacy_locale_problem(environ=None, locale_vars=None, interpreter=None):
-    """None when a child under the legacy pins really reports a non-UTF-8
-    preferred encoding, else the sentence that refuses the pass.
+def _is_utf8(name):
+    return name.lower().replace("-", "").replace("_", "") in ("utf8", "utf8sig")
+
+
+def _spelled(locale_vars):
+    return " ".join("%s=%s" % kv for kv in sorted(locale_vars.items()))
+
+
+def locale_decision(os_name, reported, encoding, locale_vars=None):
+    """`{"locale", "problem", "line"}` - what a `--encoding` pass pins, given
+    what a child under the pins `reported` as `(preferred, filesystem)`.
+
+    PURE, so every platform's answer is a case on any one of them. `locale` is
+    the pins to hand `locale_pins` (empty: none); `problem` refuses the pass,
+    else None; `line` is the sentence the run prints saying which half ran and
+    why. Kept only where the pin is FAITHFUL to the platform it stands for - a
+    non-UTF-8 preferred encoding with UTF-8 file names. A pin that also makes
+    file names non-UTF-8 is stricter than any runner and wrong: the stdio half
+    runs alone there, and the line says so. A preferred encoding still UTF-8
+    under the pins is a pass that would claim a legacy encoding it never had,
+    and is refused.
+    """
+    pinned = LEGACY_LOCALE_VARS if locale_vars is None else locale_vars
+    if os_name == "nt":
+        return {"locale": {}, "problem": None,
+                "line": "encoding pass: only the stdio half was set (codec %s) - "
+                        "windows is given no locale pins and is not asked; its "
+                        "children run under the code page the system gives "
+                        "them" % (encoding,)}
+    preferred, filesystem = reported
+    if _is_utf8(preferred):
+        return {"locale": {}, "line": "",
+                "problem": "could-not-run: a legacy-encoding pass needs children "
+                           "whose preferred encoding is not UTF-8, and the probe "
+                           "saw %s under %s" % (preferred, _spelled(pinned))}
+    if not _is_utf8(filesystem):
+        return {"locale": {}, "problem": None,
+                "line": "encoding pass: only the stdio half ran (codec %s) - "
+                        "under %s a child reported filesystem encoding %s as "
+                        "well as preferred encoding %s, and a pin that makes "
+                        "file names non-UTF-8 stands for no platform this pass "
+                        "simulates, so the locale is not pinned"
+                        % (encoding, _spelled(pinned), filesystem, preferred)}
+    return {"locale": dict(pinned), "problem": None,
+            "line": "encoding pass: both halves ran - stdio codec %s, and the "
+                    "locale pinned (%s), under which a child reported "
+                    "preferred encoding %s and filesystem encoding %s"
+                    % (encoding, _spelled(pinned), preferred, filesystem)}
+
+
+def legacy_locale_verdict(environ=None, locale_vars=None, interpreter=None,
+                          encoding="cp1252"):
+    """`locale_decision`'s answer for a child of this machine, plus `reported`:
+    the `(preferred, filesystem)` pair it gave, or None where none was asked.
 
     ASKED, not assumed: a pass that claims a legacy encoding while its children run
-    UTF-8 is the silent pass this exists to end. The probe sees the same filtered
+    UTF-8 is the silent pass this exists to end, and one that pins a platform no
+    runner has is the loud wrong one. The probe sees the same filtered
     environment a suite does. Windows is not probed - it is not given the pins.
+    A probe that cannot answer refuses the pass as could-not-run.
     """
     if os.name == "nt":
-        return None
+        return dict(locale_decision("nt", None, encoding, locale_vars),
+                    reported=None)
     env = ambient_env(os.environ if environ is None else environ)
-    env.update(locale_pins("cp1252", locale_vars))
+    env.update(locale_pins(encoding, locale_vars))
     try:
         done = subprocess.run([interpreter or sys.executable, "-c",
-                               PREFERRED_ENCODING_PROBE], env=env,
+                               LOCALE_PROBE], env=env,
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                               timeout=60)
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return "could-not-run: the locale probe failed to run: %s" % (exc,)
-    seen = done.stdout.decode("utf-8", "replace").strip()
-    if done.returncode != 0 or not seen:
-        return ("could-not-run: the locale probe exited %d and said %r"
-                % (done.returncode, seen))
-    if seen.lower().replace("-", "").replace("_", "") in ("utf8", "utf8sig"):
-        return ("could-not-run: a legacy-encoding pass needs children whose "
-                "preferred encoding is not UTF-8, and the probe saw %s under "
-                "%s" % (seen, " ".join("%s=%s" % kv
-                                       for kv in sorted(env.items())
-                                       if kv[0] in ("LC_ALL", "LANG",
-                                                    "PYTHONUTF8"))))
-    return None
+        return {"locale": {}, "line": "", "reported": None,
+                "problem": "could-not-run: the locale probe failed to run: %s"
+                           % (exc,)}
+    said = done.stdout.decode("utf-8", "replace").split()
+    if done.returncode != 0 or len(said) != 2:
+        return {"locale": {}, "line": "", "reported": None,
+                "problem": "could-not-run: the locale probe exited %d and said "
+                           "%r, not a preferred and a filesystem encoding"
+                           % (done.returncode, " ".join(said))}
+    reported = (said[0], said[1])
+    return dict(locale_decision(os.name, reported, encoding, locale_vars),
+                reported=reported)
 
 
 def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
-            pycache=None, environ=None, spaced=False, grant=1):
+            pycache=None, environ=None, spaced=False, grant=1,
+            locale_vars=None):
     """Run one file's `--selftest` in a scratch directory and report what happened.
 
     Split from `grade` on purpose: everything below this line is a decision about
@@ -659,7 +717,7 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     """
     repo = repo or REPO
     env = ambient_env(os.environ if environ is None else environ)
-    env.update(locale_pins(encoding))
+    env.update(locale_pins(encoding, locale_vars))
     env[STAGE_GRANT_VAR] = str(grant)
     env[FILE_TIMEOUT_VAR] = str(timeout)
     # A SHORT PREFIX, deliberately. This directory becomes the root of every fixture
@@ -1089,8 +1147,11 @@ def exempt_row(rel_path, reason):
 
 def sweep(paths, covered, jobs=None, repo=None, encoding=None,
           timeout=DEFAULT_TIMEOUT, spaced=False, exempt=None, costs=None,
-          deadline=None):
+          deadline=None, locale_vars=None):
     """Run every path and return one graded row per file, sorted by path.
+
+    `locale_vars` is the encoding pass's locale pins as `locale_decision`
+    settled them, handed to every child (`locale_pins`).
 
     `costs` orders the submissions (`run_order`) and sets each file's timeout
     (`file_timeout`); each row carries the `seconds` its child took, which
@@ -1136,7 +1197,8 @@ def sweep(paths, covered, jobs=None, repo=None, encoding=None,
             return run_one(path, repo, encoding,
                            file_timeout(path, costs, timeout, weight,
                                         staged=path in staged, cap=left),
-                           pycache, None, spaced, weight)
+                           pycache, None, spaced, weight,
+                           locale_vars=locale_vars)
         finally:
             done(weight)
     pycache = tempfile.mkdtemp(prefix="sp-run-")
@@ -1490,15 +1552,21 @@ def main(argv):
                              "refusing to report a green part over nothing\n"
                              % (index, count))
             return 2
+    locale_vars = None
     if encoding:
-        problem = legacy_locale_problem()
-        if problem:
-            sys.stderr.write("sweep-selftests: %s\n" % (problem,))
+        verdict = legacy_locale_verdict(encoding=encoding)
+        if verdict["problem"]:
+            sys.stderr.write("sweep-selftests: %s\n" % (verdict["problem"],))
             return 2
+        # Which half of the pass runs here, and why, printed with it: a pass
+        # narrowed to its stdio half is never a silent narrowing.
+        sys.stdout.write("%s\n" % (verdict["line"],))
+        locale_vars = verdict["locale"]
     deadline = sweep_deadline()
     sys.stdout.write(budget_line(paths, jobs, costs, timeout, deadline=deadline))
     rows = sweep(paths, covered, jobs=jobs, encoding=encoding, timeout=timeout,
-                 spaced=spaced, costs=costs, deadline=deadline)
+                 spaced=spaced, costs=costs, deadline=deadline,
+                 locale_vars=locale_vars)
     if record:
         record_costs(record, rows, swept, jobs)
     return (render_quiet if quiet else render)(rows, jobs, encoding=encoding,
@@ -2712,14 +2780,17 @@ def _cases(check):
     # The suite reads a file holding valid UTF-8 with no encoding named. Under a
     # UTF-8 locale that is fine, so a pass that only set the stdio codec never saw
     # the defect; under the legacy locale it must raise. The second suite names its
-    # encoding and must pass under both. On windows the child already runs under a
-    # legacy code page, so the plain suite's verdict there is not asserted.
+    # encoding and must pass under both. The pins are the ones this machine's
+    # verdict settles, as `main` hands them on: where it keeps the stdio half
+    # only (windows, linux's C locale) the bare suite's verdict is not asserted.
     ll_title_a = ("under --encoding cp1252 a child suite that reads a UTF-8 file "
-                  "with no encoding fails on POSIX, and the same suite naming its "
-                  "encoding passes")
+                  "with no encoding fails where the locale is pinned, and the "
+                  "same suite naming its encoding passes")
     ll_title_b = ("a legacy-encoding pass whose child still reports UTF-8 as its "
-                  "preferred encoding is refused as could-not-run, naming the "
-                  "encoding it saw")
+                  "preferred encoding is refused as could-not-run where the pins "
+                  "are applied, naming the encoding it saw, and windows, given "
+                  "none, is neither asked nor refused")
+    ll_verdict = legacy_locale_verdict(environ=os.environ)
     ll_box = tempfile.mkdtemp(prefix="sweep-locale-")
     try:
         with io.open(os.path.join(ll_box, "data"), "wb") as ll_fh:
@@ -2745,25 +2816,75 @@ def _cases(check):
                         for n in ("bare", "named"))
         ll_legacy = dict((r["path"], r) for r in sweep(
             ["bare", "named"], set(), jobs=2, repo=ll_box, timeout=30,
-            encoding="cp1252"))
+            encoding="cp1252", locale_vars=ll_verdict["locale"]))
     finally:
         remove_tree(ll_box)
-    check("%s: plain %r, legacy %r" % (
-              ll_title_a,
+    check("%s (pins %r: plain %r, legacy %r)" % (
+              ll_title_a, ll_verdict["locale"],
               dict((p, r["code"]) for p, r in ll_plain.items()),
               dict((p, (r["ok"], r["why"])) for p, r in ll_legacy.items())),
-          ll_plain["bare"]["code"] == 0 and ll_plain["named"]["code"] == 0
+          ll_verdict["problem"] is None
+          and ll_plain["bare"]["code"] == 0 and ll_plain["named"]["code"] == 0
           and ll_legacy["named"]["ok"]
-          and (os.name == "nt" or (not ll_legacy["bare"]["ok"]
-                                   and "exited" in ll_legacy["bare"]["why"])))
+          and (not ll_verdict["locale"] or (
+              not ll_legacy["bare"]["ok"]
+              and "exited" in ll_legacy["bare"]["why"])))
 
-    ll_good = legacy_locale_problem(environ=os.environ)
-    ll_bad = legacy_locale_problem(
+    ll_good = legacy_locale_verdict(environ=os.environ)
+    ll_bad = legacy_locale_verdict(
         environ=os.environ, locale_vars={"PYTHONUTF8": "1", "LC_ALL": "C.UTF-8"})
-    check("%s: honest %r, UTF-8 child %r" % (ll_title_b, ll_good, ll_bad),
-          ll_good is None and ll_bad is not None
-          and "could-not-run" in ll_bad
-          and ("utf-8" in ll_bad.lower() or "utf8" in ll_bad.lower()))
+    # Each platform's own contract, asserted rather than skipped: windows is
+    # given no pins and asked nothing, so neither run refuses there.
+    if os.name == "nt":
+        ll_b_ok = (ll_good["problem"] is None and ll_bad["problem"] is None
+                   and ll_good["reported"] is None and not ll_good["locale"])
+    else:
+        ll_b_ok = (ll_good["problem"] is None and ll_bad["problem"] is not None
+                   and "could-not-run" in ll_bad["problem"]
+                   and ("utf-8" in ll_bad["problem"].lower()
+                        or "utf8" in ll_bad["problem"].lower()))
+    check("%s (on %s: honest %r, UTF-8 child %r)"
+          % (ll_title_b, os.name, ll_good, ll_bad), ll_b_ok)
+
+    # --- the pin is kept only where it is faithful ----------------------------
+    # Fed the pair each platform's child REPORTED under the pins (measured:
+    # macOS a non-UTF-8 preferred encoding with UTF-8 file names, linux's C
+    # locale ASCII for both, windows not asked). A pin that also makes file
+    # NAMES ASCII simulates no platform, so linux runs the stdio half only and
+    # says so. The macOS row is there for the other direction: a decision that
+    # never pins would pass every other row.
+    ll_title_c = ("the legacy-encoding pass pins a locale only where the child "
+                  "then has a non-UTF-8 preferred encoding and a UTF-8 "
+                  "filesystem encoding, and says which half ran where it cannot")
+    ll_rows = {
+        "macos": locale_decision("posix", ("US-ASCII", "utf-8"), "cp1252"),
+        "linux": locale_decision("posix", ("ANSI_X3.4-1968", "ascii"), "cp1252"),
+        "windows": locale_decision("nt", None, "cp1252"),
+        "utf8": locale_decision("posix", ("UTF-8", "utf-8"), "cp1252"),
+    }
+    ll_pins = dict((k, locale_pins("cp1252", v["locale"]))
+                   for k, v in ll_rows.items() if v["problem"] is None)
+    ll_live = legacy_locale_verdict(environ=os.environ)
+    check("%s (%r; pins %r; this machine %r)" % (ll_title_c, ll_rows, ll_pins,
+                                                 ll_live),
+          ll_rows["macos"]["problem"] is None
+          and ll_rows["macos"]["locale"] == LEGACY_LOCALE_VARS
+          and ll_pins["macos"].get("LC_ALL") == "C"
+          and "both halves" in ll_rows["macos"]["line"]
+          and ll_rows["linux"]["problem"] is None
+          and ll_rows["linux"]["locale"] == {}
+          and "LC_ALL" not in ll_pins["linux"]
+          and ll_pins["linux"].get("PYTHONIOENCODING") == "cp1252"
+          and "only the stdio half" in ll_rows["linux"]["line"]
+          and "ascii" in ll_rows["linux"]["line"]
+          and ll_rows["windows"]["problem"] is None
+          and ll_rows["windows"]["locale"] == {}
+          and "only the stdio half" in ll_rows["windows"]["line"]
+          and "windows" in ll_rows["windows"]["line"]
+          and ll_rows["utf8"]["problem"] is not None
+          and "could-not-run" in ll_rows["utf8"]["problem"]
+          and (os.name == "nt" or (ll_live["reported"] is not None
+                                   and len(ll_live["reported"]) == 2)))
 
 
 def _selftest():

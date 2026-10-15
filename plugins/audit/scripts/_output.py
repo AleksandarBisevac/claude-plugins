@@ -2479,8 +2479,10 @@ def text_encoding_violations(dirs=None, pending=None):
     test or a tool under `tests/` or `tools/` is not walked here; what one of
     them actually decodes is caught by the sweep's legacy-locale pass
     (`tools/sweep-selftests.py --encoding cp1252`), which runs each child under
-    a legacy code page and, on posix, a non-UTF-8 locale, so a read with no
-    encoding fails where it runs instead of being guessed at by name.
+    a legacy code page for stdio and - only where the pin gives a Windows-shaped
+    environment, a non-UTF-8 preferred encoding with UTF-8 file names - a
+    non-UTF-8 locale, printing which half ran, so a read with no encoding fails
+    where it runs instead of being guessed at by name.
     """
     dirs = dirs if dirs is not None else ENCODING_DIRS
     pending = set(ENCODING_PENDING if pending is None else pending)

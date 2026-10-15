@@ -1846,4 +1846,9 @@ if __name__ == "__main__":
               "plugins/audit/tests/test_audit_lookup.py - run that file "
               "instead.")
         sys.exit(0)
-    sys.exit(_output.terse_cli(main, sys.argv[1:], success_line))
+    # `--read` prints a record through `write_exact`, and only reaches stdout's
+    # buffer when `terse_cli` does not hold it: a held one is printed again
+    # through the text layer, which on Windows writes a CRLF the brief carries
+    # as CR CR LF. So it is a long-form flag, run unheld.
+    sys.exit(_output.terse_cli(main, sys.argv[1:], success_line,
+                               long_form=("--read",)))

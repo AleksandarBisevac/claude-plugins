@@ -287,10 +287,14 @@ python3 tools/sweep-selftests.py --selftest
 # (PYTHONIOENCODING), and, on POSIX, a locale whose preferred encoding is not UTF-8
 # (LC_ALL=C, LANG=C, PYTHONUTF8=0), which is what `open()` and text-mode
 # `subprocess` use when no encoding is named - a read or capture that omits one
-# fails here as it does on a Windows runner. The runner asks a child for its
-# `locale.getpreferredencoding(False)` once and refuses the pass as could-not-run
-# (exit 2) if it is still UTF-8. Windows legs already run under a legacy code page
-# and get the first half only. CI runs this leg and so does verify.sh (`--fast`
+# fails here as it does on a Windows runner. The runner asks a child under the pins
+# for its `locale.getpreferredencoding(False)` and `sys.getfilesystemencoding()`
+# once: a preferred encoding still UTF-8 refuses the pass as could-not-run (exit 2);
+# a filesystem encoding that is not UTF-8 too - linux's C locale - would make file
+# NAMES ASCII, which no runner has, so there the locale is not pinned and the stdio
+# half runs alone. The pass prints which half ran and why. Windows legs already run
+# under a legacy code page, are not asked, and get the first half only. CI runs
+# this leg and so does verify.sh (`--fast`
 # skips it and says so). gate-parity compares the runners' sweep legs, so one side
 # dropping it fails by the leg's flags.
 python3 tools/sweep-selftests.py --encoding cp1252
