@@ -3566,7 +3566,8 @@
       "P125.28",
       "P125.34-0h5",
       "P125.53-0h5",
-      "P125.88-0h5"
+      "P125.88-0h5",
+      "P125.114-0h5"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
       "P42.6",
@@ -5218,7 +5219,8 @@
       "P123.81-64p",
       "P126.7",
       "P125.32-0h5",
-      "P125.88-0h5"
+      "P125.88-0h5",
+      "P125.114-0h5"
     ],
     "plugins/audit/tests/test__journal_io.py": [
       "P29.3",
@@ -8515,7 +8517,8 @@
       "P128.17-0h5",
       "P128.22-0h5",
       "P125.110-0h5",
-      "P128.27-0h5"
+      "P128.27-0h5",
+      "P125.114-0h5"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
