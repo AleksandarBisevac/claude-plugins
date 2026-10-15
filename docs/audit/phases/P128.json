@@ -1261,6 +1261,49 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P128.26-0h5",
+      "title": "The filed-counterpart check accepts the house case label, a case id before the clause",
+      "status": "pending",
+      "description": "Register F682. title_names_clause accepts only the clause or clause plus ' (detail'; the suites label cases '<id> <title>', so correctly titled cases are reported as unfiled (P125.80, .107, .108).",
+      "files": [
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__filed_returns.py: a filed title of one case-id token, then the clause verbatim, then its detail, names that clause; a paraphrase or an id glued to the clause does not"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }
