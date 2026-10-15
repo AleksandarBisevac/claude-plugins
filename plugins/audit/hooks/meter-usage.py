@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 Stop / SubagentStop / SessionEnd meter — records token usage, blocks nothing.
-Also answers SessionStart: whether the PREVIOUS session's model is priced at
-all (see `session_start_check`) - no network call, silent when it is.
+Also answers SessionStart: whether the new session's model - off the payload,
+or the previous session's as a labelled fallback - is priced at all (see
+`session_start_check`) - no network call, silent when it is.
 
 Claude Code hands hooks a `transcript_path` but no token counts. The transcript
 JSONL has them: every `assistant` entry carries `message.model` and a
@@ -57,8 +58,9 @@ decision:
     run re-paying for context it already read is fixed by handing what is
     left to a fresh agent instead;
   * on SessionEnd, one line saying what the session cost;
-  * on SessionStart, one line when the PREVIOUS session's model has no price
-    row in this project's table (`session_start_check`) — rides
+  * on SessionStart, one line, once per session and model, when the session's
+    model has no price row in this project's table (`session_start_check`) —
+    rides
     `additionalContext` rather than `systemMessage`, the one place this
     hook's output is meant to be read by the model and not only the user, and
     is absent entirely on a quiet start.
@@ -266,10 +268,36 @@ def advise(ul, ledger_priced, manifest, ucfg, cursor, rows):
             "blocked." % (head, action))
 
 
+def _start_model(data, ul):
+    """`(model, dedupe_key, fallback)` for SessionStart's unpriced check.
+
+    The NEW session's model comes off the payload when it carries one: the
+    hooks reference (https://code.claude.com/docs/en/hooks.md, SessionStart
+    input) lists an optional `model` beside `source` (startup, resume, clear,
+    compact or fork). Keyed on this session, so a compact or resume of it
+    does not say the same thing twice.
+
+    Only when the payload names no model is the PREVIOUS session's last
+    assistant turn read instead, and `fallback` says so - it is the model a
+    session ended on, not the one this one starts on. Keyed on that previous
+    session, so each session started after it does not repeat the line.
+    `(None, None, False)` when neither is known."""
+    model = (data or {}).get("model")
+    if isinstance(model, str) and model:
+        return model, str((data or {}).get("session_id") or ""), False
+    prev = ul.previous_session_transcript(data)
+    if not prev:
+        return None, None, True
+    _tokens, model, _reason = ul.current_context_size(prev)
+    return model, os.path.splitext(os.path.basename(prev))[0], True
+
+
 def session_start_check(data, ul=None, cfg=None, root=None):
-    """At SessionStart: one line when the PREVIOUS session's model - its last
-    assistant turn's `message.model` - has no price row in this project's
-    table (`usage_ledger.rates_for`); silent otherwise.
+    """At SessionStart: one line when the session's model has no price row in
+    this project's table (`usage_ledger.rates_for`); silent otherwise. Which
+    model is read, and when the previous session's stands in for it, is
+    `_start_model`'s; the line names which it was, and is given once per
+    (session, model) through `usage_ledger.start_notice_given`.
 
     SHIPS ONLY THIS ONE CHECK. A second check was built beside it - whether
     the previous session's CLI-reported cost-state
@@ -283,11 +311,11 @@ def session_start_check(data, ul=None, cfg=None, root=None):
     session (which a wrong rate alone cannot explain). Most measured models
     varied rather than held constant, and a sizeable share of the
     disagreements had no ledger row for that session at all - not a priced
-    disagreement to begin with. A scattered ratio is the shape
-    `usage_ledger.read_cost_state`'s own docstring already documents on this
-    repo's own transcripts - conversation compaction trimming the retained
-    `.jsonl` while the CLI's own total stays cumulative, or a subagent
-    spending outside what got scanned - not a stale price. Firing a
+    disagreement to begin with. A scattered ratio is not what a stale price
+    produces; what does produce it is not known - compaction trimming the
+    retained `.jsonl`, or subagent spend the scan did not see, are guesses
+    that `usage_ledger.read_cost_state`'s docstring records as inferred, not
+    measured. Firing a
     confident "your price is stale" message on data that is mostly this would
     be wrong more often than right, so the second check stays unwired rather
     than shipped unreliable; the measurement that found this is reported
@@ -295,18 +323,18 @@ def session_start_check(data, ul=None, cfg=None, root=None):
 
     Fails open on anything unreadable, missing or malformed: returns None
     rather than raising, so a vanished transcript never blocks a session from
-    starting. A session with no previous transcript to compare against (the
-    first one ever opened in this project directory) also answers None -
-    there is nothing yet to check. No network call: the one read is a
-    transcript already on disk."""
+    starting. A payload naming no model with no previous transcript to fall
+    back on (the first session ever opened in this project directory, on a
+    host that omits the field) also answers None - nothing is known to
+    check. No network call: the reads are the payload and files on disk."""
     try:
         home = _config.tree_for(data, _config.PROJECT_ONLY, cfg, project=root)
         root, cfg = home["project"], home["cfg"]
         if not _config.usage_enabled(cfg):
             return None
         ul = ul if ul is not None else _load_ledger_lib()
-        prev = ul.previous_session_transcript(data)
-        if not prev:
+        model, key, fallback = _start_model(data, ul)
+        if not (model and ul.is_model_id(model)):
             return None
 
         plan_root = _config.tree_for(data, None, cfg, project=root)["root"]
@@ -314,16 +342,21 @@ def session_start_check(data, ul=None, cfg=None, root=None):
             Path(plan_root)
             / (cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"]))
         table = _pricing(ul, manifest, root)["table"]
+        if ul.rates_for(model, table) is not None:
+            return None
 
-        _tokens, model, _reason = ul.current_context_size(prev)
-        if (model and ul.is_model_id(model)
-                and ul.rates_for(model, table) is None):
-            return ("[audit] the previous session's model (%s) has no price "
-                    "row in this project's table, so its cost is not being "
-                    "counted - add a rate for it under usage.pricing in "
-                    ".claude/audit.config.json, or ignore this if it is "
-                    "intentionally unpriced." % model)
-        return None
+        ledger = str(_config.ledger_dir(root, cfg))
+        if ul.start_notice_given(ledger, key, model):
+            return None
+        ul.mark_start_notice(ledger, key, model)
+        whose = ("the previous session's model (%s; a fallback - this "
+                 "SessionStart payload named no model, so the new session's "
+                 "own is not known yet)" % model if fallback
+                 else "this session's model (%s)" % model)
+        return ("[audit] %s has no price row in this project's table, so its "
+                "cost is not being counted - add a rate for it under "
+                "usage.pricing in .claude/audit.config.json, or ignore this "
+                "if it is intentionally unpriced." % whose)
     except Exception:
         return None
 
@@ -515,9 +548,9 @@ def main():
         sys.exit(0)
 
     # SessionStart answers a different question from every other event this
-    # hook handles (did the PREVIOUS session price cleanly, not what THIS
-    # turn cost) and has nothing to meter yet - its own transcript_path names
-    # a session that has written no assistant turn. Routed here, before
+    # hook handles (is this session's model priced at all, not what THIS
+    # turn cost), and the next Stop meters whatever a resumed or compacted
+    # session has already written. Routed here, before
     # `meter()`, rather than folded into it. It rides `additionalContext`,
     # never `systemMessage`: that is what makes a quiet start cost zero
     # context tokens and a firing one cost exactly its own text, the figure

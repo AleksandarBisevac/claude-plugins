@@ -1438,6 +1438,75 @@ def _cases(check):
               "all, never one manufactured from nothing",
               M.cli_cost_compare(_cc_rows, None) == {})
 
+        # --- the CLI's figure recorded at METER time (cm) ------------------
+        # The scan that writes the rows also keeps the last `cost-state` the
+        # main transcript carried, on the session's cursor - so a reader asks
+        # the cursor rather than re-reading a transcript that may be gone.
+        _cm_main = os.path.join(_cc_dir, "s-cm.jsonl")
+        _cm_turn = {"type": "assistant", "timestamp": "2026-10-01T10:00:00Z",
+                    "message": {"id": "m-cm-1", "model": "claude-opus-5",
+                                "usage": {"input_tokens": 3,
+                                          "output_tokens": 4}}}
+        _write_jsonl(_cm_main, [
+            _cm_turn,
+            {"type": "cost-state", "totalCostUSD": 2.0,
+             "modelUsage": {"claude-opus-5[1m]": {"costUSD": 2.0}}},
+            {"type": "cost-state", "totalCostUSD": 7.25,
+             "modelUsage": {"claude-opus-5[1m]": {"costUSD": 7.0},
+                           "claude-haiku-4-5": {"costUSD": 0.25}},
+             "hasUnknownModelCost": True},
+        ])
+        # A subagent transcript carrying its own cost-state: never the
+        # session's figure - its value differs, so a scan that read it would
+        # be told apart.
+        _cm_sub = os.path.join(_cc_dir, "s-cm", "subagents")
+        os.makedirs(_cm_sub)
+        _write_jsonl(os.path.join(_cm_sub, "agent-x.jsonl"), [
+            {"type": "cost-state", "totalCostUSD": 999.0,
+             "modelUsage": {"claude-opus-5": {"costUSD": 999.0}}}])
+        _cm_rows, _cm_cur = M.scan_transcripts(
+            _cm_main, "s-cm", {}, None, {"pricing": dict(M.DEFAULT_PRICING)})
+        _cm_want = {"totalCostUSD": 7.25,
+                    "perModel": {"claude-opus-5": 7.0, "claude-haiku-4-5": 0.25},
+                    "hasUnknownModelCost": True}
+        check("cm1 scan_transcripts records the main transcript's LAST "
+              "cost-state on the cursor (as cliCost, normalised like "
+              "read_cost_state; a subagent's own entry is never it): %r"
+              % (_cm_cur.get("cliCost"),),
+              _cm_cur.get("cliCost") == _cm_want
+              and _cm_cur.get("cliCost") == M.read_cost_state(_cm_main),
+              _cm_cur.get("cliCost"))
+        with open(_cm_main, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"type": "assistant",
+                                 "timestamp": "2026-10-01T10:05:00Z",
+                                 "message": {"id": "m-cm-2",
+                                             "model": "claude-opus-5",
+                                             "usage": {"input_tokens": 1,
+                                                       "output_tokens": 1}}})
+                     + "\n")
+        _cm_rows2, _cm_cur2 = M.scan_transcripts(
+            _cm_main, "s-cm", _cm_cur, None, {"pricing": dict(M.DEFAULT_PRICING)})
+        check("cm2 a later scan whose new bytes carry no cost-state keeps the "
+              "recorded figure (carried, not erased by a quiet turn)",
+              len(_cm_rows2) == 1 and _cm_cur2.get("cliCost") == _cm_want,
+              (_cm_rows2, _cm_cur2.get("cliCost")))
+        _cm_quiet = os.path.join(_cc_dir, "s-cq.jsonl")
+        _write_jsonl(_cm_quiet, [_cm_turn])
+        _cm_rows3, _cm_cur3 = M.scan_transcripts(
+            _cm_quiet, "s-cq", {}, None, {"pricing": dict(M.DEFAULT_PRICING)})
+        check("cm3 a transcript with no cost-state records no cliCost key at "
+              "all (never an empty reading standing in for 'none recorded')",
+              len(_cm_rows3) == 1 and "cliCost" not in _cm_cur3, _cm_cur3)
+        _cm_ledger = os.path.join(_cc_dir, "ledger")
+        M.save_cursor(_cm_ledger, "s-cm", _cm_cur2)
+        M.save_cursor(_cm_ledger, "s-cq", _cm_cur3)
+        check("cm4 recorded_cost_state reads the figure back off the saved "
+              "cursor (None for a session that recorded none)",
+              getattr(M, "recorded_cost_state", None) is not None
+              and M.recorded_cost_state(_cm_ledger, "s-cm") == _cm_want
+              and M.recorded_cost_state(_cm_ledger, "s-cq") is None
+              and M.recorded_cost_state(_cm_ledger, "never-seen") is None)
+
         # --- the orchestrator's own CURRENT context (ctx) ----------------------
         _ctx_path = os.path.join(_cc_dir, "s-ctx.jsonl")
         _write_jsonl(_ctx_path, [

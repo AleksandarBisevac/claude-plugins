@@ -350,6 +350,58 @@ def _cases(check):
                   loaded, args, manifest, "all time", True,
                   cli_cost={"s-P1.1": None}))
 
+        # cc-cli6..9: the figure the dashboard compares comes off the cursor
+        # the meter wrote, and the transcript is read only for a session
+        # whose cursor recorded none - each reading saying which it was.
+        _cm_ledger = os.path.join(tmp, "cm-ledger")
+        _cm_tdir = os.path.join(tmp, "cm-transcripts")
+        os.makedirs(_cm_tdir)
+        _ul.save_cursor(_cm_ledger, "s-meter", {"cliCost": {
+            "totalCostUSD": 3.0, "perModel": {"claude-opus-5": 3.0},
+            "hasUnknownModelCost": False}})
+        # The transcript for the metered session disagrees with its cursor on
+        # purpose: a reader that went to the transcript is told apart.
+        for _sid, _usd in (("s-meter", 41.0), ("s-trans", 5.0)):
+            with open(os.path.join(_cm_tdir, _sid + ".jsonl"), "w",
+                      encoding="utf-8") as fh:
+                fh.write(json.dumps({"type": "cost-state", "totalCostUSD": _usd,
+                                     "modelUsage": {"claude-opus-5": {
+                                         "costUSD": _usd}}}) + "\n")
+        _cm_paths = sorted(os.path.join(_cm_tdir, n)
+                           for n in os.listdir(_cm_tdir))
+        _collect = getattr(M, "collect_cli_cost", None)
+        _cm_got = (_collect({"s-meter", "s-trans", "s-none"}, _cm_ledger,
+                            _cm_paths) if _collect else {})
+        check("cc-cli6 a session whose cursor recorded the CLI's figure at "
+              "meter time answers THAT figure, labelled source=meter, without "
+              "the transcript's: %r" % (_cm_got.get("s-meter"),),
+              (_cm_got.get("s-meter") or {}).get("perModel")
+              == {"claude-opus-5": 3.0}
+              and (_cm_got.get("s-meter") or {}).get("source") == "meter",
+              _cm_got)
+        check("cc-cli7 a session whose cursor recorded none falls back to its "
+              "transcript, labelled source=transcript: %r"
+              % (_cm_got.get("s-trans"),),
+              (_cm_got.get("s-trans") or {}).get("perModel")
+              == {"claude-opus-5": 5.0}
+              and (_cm_got.get("s-trans") or {}).get("source") == "transcript",
+              _cm_got)
+        check("cc-cli8 a session with neither answers None (never a reading "
+              "made up from nothing)",
+              "s-none" in _cm_got and _cm_got["s-none"] is None, _cm_got)
+        _cm_sess = {"s-P1.2": dict(_cc_state["s-P1.2"], source="meter")}
+        _cm_text = M.render(loaded, args, manifest, "all time", True,
+                            cli_cost=_cm_sess)
+        _cm_text_t = M.render(loaded, args, manifest, "all time", True,
+                              cli_cost={"s-P1.2": dict(_cc_state["s-P1.2"],
+                                                       source="transcript")})
+        check("cc-cli9 the CLI side names where its figure came from - "
+              "recorded at meter time, or read from the transcript now",
+              "(the CLI's estimate, recorded at meter time)" in _cm_text
+              and "(the CLI's estimate, read from the transcript)"
+              in _cm_text_t,
+              (_cm_text, _cm_text_t))
+
         # --- attribution coverage (ac): how much of the plan's done work a ---
         # --- per-task figure actually rests on -------------------------------
         # Four done tasks, three of which carry a priced row (P2.2 is done but

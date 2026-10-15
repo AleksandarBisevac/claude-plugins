@@ -67,7 +67,11 @@ zero.
 Storage (see the plugin README "Usage" section):
 
     <ledgerDir>/YYYY-MM.jsonl        append-only monthly ledger
-    <ledgerDir>/.cursors/<sid>.json  per-session scan cursors + resolved author
+    <ledgerDir>/.cursors/<sid>.json  per-session scan cursors + resolved author,
+                                     and `cliCost`: the CLI's own last
+                                     `cost-state` reading, kept by the scan
+    <ledgerDir>/.notices/<sid>.json  which unpriced-model notices SessionStart
+                                     already gave, per session and model
 
 Cursors live NEXT TO the ledger rather than in `stateDir` on purpose: `stateDir` is
 garbage-collected after 7 days by detect-plan-skip.py, and losing a cursor mid-session
@@ -666,6 +670,7 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
                         "pending": pending, "handoff": handoff}
     consumed = cut + 1
     seen = set(recent)
+    cost_state = None
 
     for raw in chunk[:cut].split(b"\n"):
         if not raw.strip():
@@ -684,6 +689,12 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
             named = attributor.task_from_handoff(entry)
             if named:
                 handoff = named
+            continue
+        # The CLI writes its own cumulative cost reading into the MAIN
+        # transcript only, so a subagent's file never supplies one; the last
+        # in this chunk is the newest (see `read_cost_state`).
+        if not agent_meta and entry.get("type") == "cost-state":
+            cost_state = cost_state_of(entry)
             continue
         if entry.get("type") != "assistant":
             continue
@@ -749,8 +760,13 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
     # message, so carrying its counted-so-far tally would only grow the cursor.
     kept = set(recent)
     pending = dict((mid, c) for mid, c in pending.items() if mid in kept)
-    return groups, {"offset": offset + consumed, "size": size, "recent": recent,
-                    "pending": pending, "handoff": handoff}
+    new_cursor = {"offset": offset + consumed, "size": size, "recent": recent,
+                  "pending": pending, "handoff": handoff}
+    if cost_state is not None:
+        # Handed up for `scan_transcripts` to lift onto the session's cursor,
+        # never kept in the per-file one.
+        new_cursor["costState"] = cost_state
+    return groups, new_cursor
 
 
 def scan_transcripts(transcript_path, session_id, cursor, manifest, opts):
@@ -819,6 +835,16 @@ def scan_transcripts(transcript_path, session_id, cursor, manifest, opts):
                 row["costUSD"] = round(usd, 6)
             rows.append(row)
 
+    # The CLI's own figure for this session, recorded as the scan meets it so
+    # a reader asks the cursor (`recorded_cost_state`) rather than a
+    # transcript that may have moved. A scan whose new bytes carry none keeps
+    # what an earlier one recorded; a session that never carried one has no
+    # `cliCost` key at all.
+    main_file = files.get(str(transcript_path))
+    recorded = (main_file.pop("costState", None)
+                if isinstance(main_file, dict) else None)
+    if recorded is not None:
+        cursor["cliCost"] = recorded
     cursor["files"] = files
     return rows, cursor
 
@@ -854,19 +880,29 @@ def read_cost_state(transcript_path):
     `{"totalCostUSD", "perModel": {baseModel: costUSD}, "hasUnknownModelCost"}`,
     or None when the file carries none or cannot be read.
 
-    PROBED, NOT ASSUMED: a `cost-state` entry's `modelUsage` DOES fold in
-    subagent spend. Checked on this repo's own session
-    `0a7c2fcc-df20-4990-96d6-d56b52648faf` (622 USD, 420 subagent
-    transcripts): the main transcript alone carries not one `sonnet` message,
-    while `modelUsage` reports real `claude-sonnet-5-5` tokens and a non-zero
-    `costUSD` for that model - spend that can only have come from a
-    subagent's own transcript. (The two sides also disagree in absolute
-    magnitude, by a wide margin, on every model - consistent with
-    conversation compaction trimming turns out of the retained `.jsonl` while
-    `cost-state`'s own totals stay cumulative; that gap is a transcript-
-    retention fact, not evidence against the finding above.) A `cost-state`
-    entry is written only to the MAIN transcript - none of this project's own
-    subagent `.jsonl` files carry one - so this never reads a subagent path.
+    WHETHER `modelUsage` FOLDS IN SUBAGENT SPEND IS INFERRED, NOT MEASURED.
+    The inference: on one recorded session the main transcript carried no
+    `sonnet` turn while `modelUsage` named `claude-sonnet-5-5` with a
+    non-zero `costUSD`, which only a subagent could have spent. The
+    measurement that would settle it - per model, `modelUsage` costUSD
+    against the ledger's per-model sum for that one session id, once with
+    its subagent rows and once without - has not been made. That session's
+    transcript is no longer on this machine. On 2026-10-15 the only session
+    this repo's project directory held,
+    `fb1bddcc-aedf-4720-99d2-ec2a15fdf289`, carried no `cost-state` entry at
+    all (`grep -c '"type":"cost-state"'` on its `.jsonl` printed 0). The
+    sessions of other projects that do carry one were not read, because the
+    host refused a read across another project's transcripts. The same
+    session's two sides were also seen to disagree in magnitude on every
+    model, and compaction trimming the retained `.jsonl` while `cost-state`
+    stays cumulative is a guess at why, not a finding. So no surface may
+    treat the two figures' gap as either a stale price or a known cause.
+
+    A `cost-state` entry is written only to the MAIN transcript - none of
+    this project's own subagent `.jsonl` files carry one - so this never
+    reads a subagent path. The meter records the same reading as it scans
+    (`scan_transcripts` -> the cursor's `cliCost`); this whole-file read is
+    for a session whose cursor holds none.
 
     Only the LAST entry is kept: `cost-state` is cumulative for the whole
     session, so an earlier one is a strict subset of a later one and never
@@ -888,7 +924,16 @@ def read_cost_state(transcript_path):
         return None
     if last is None:
         return None
-    model_usage = last.get("modelUsage")
+    return cost_state_of(last)
+
+
+def cost_state_of(entry):
+    """One `cost-state` transcript entry -> `{"totalCostUSD", "perModel":
+    {baseModel: costUSD}, "hasUnknownModelCost"}`: the one normalisation both
+    the whole-file read (`read_cost_state`) and the meter's scan
+    (`_scan_file`) apply, so the figure a cursor records and the figure a
+    transcript re-read gives cannot drift apart."""
+    model_usage = entry.get("modelUsage")
     per_model = {}
     if isinstance(model_usage, dict):
         for model, data in model_usage.items():
@@ -896,9 +941,9 @@ def read_cost_state(transcript_path):
                 key = strip_cli_tier(model)
                 per_model[key] = per_model.get(key, 0.0) + (data.get("costUSD") or 0.0)
     return {
-        "totalCostUSD": last.get("totalCostUSD"),
+        "totalCostUSD": entry.get("totalCostUSD"),
         "perModel": per_model,
-        "hasUnknownModelCost": bool(last.get("hasUnknownModelCost")),
+        "hasUnknownModelCost": bool(entry.get("hasUnknownModelCost")),
     }
 
 
@@ -949,18 +994,61 @@ def cli_cost_divergences(rows, cost_state, tolerance=CLI_COST_TOLERANCE_USD):
 
 
 # --- ledger I/O -----------------------------------------------------------------
-def cursor_path(ledger_dir, session_id):
+def _session_file(ledger_dir, sub, session_id):
     safe = "".join(c if (c.isalnum() or c in "._-") else "_" for c in str(session_id))
-    return os.path.join(ledger_dir, ".cursors", (safe or "session") + ".json")
+    return os.path.join(ledger_dir, sub, (safe or "session") + ".json")
 
 
-def load_cursor(ledger_dir, session_id):
+def cursor_path(ledger_dir, session_id):
+    return _session_file(ledger_dir, ".cursors", session_id)
+
+
+def _read_dict(path):
     try:
-        with open(cursor_path(ledger_dir, session_id), "r", encoding="utf-8") as fh:
+        with open(path, "r", encoding="utf-8") as fh:
             data = json.load(fh)
         return data if isinstance(data, dict) else {}
     except Exception:
         return {}
+
+
+def load_cursor(ledger_dir, session_id):
+    return _read_dict(cursor_path(ledger_dir, session_id))
+
+
+def recorded_cost_state(ledger_dir, session_id):
+    """The CLI's own cost reading the meter recorded for `session_id` (the
+    cursor's `cliCost`, shaped as `cost_state_of` answers), or None when its
+    cursor holds none - never an empty reading standing in for 'not
+    recorded'."""
+    recorded = load_cursor(ledger_dir, session_id).get("cliCost")
+    return recorded if isinstance(recorded, dict) else None
+
+
+def start_notice_given(ledger_dir, session_id, model):
+    """Whether SessionStart already told `session_id`'s reader that `model`
+    is unpriced. Kept in its own file beside the cursors, never in a cursor:
+    the fallback key is the PREVIOUS session, whose cursor another live
+    session's meter may be rewriting, and a stale cursor written back re-scans
+    from an old offset and double-counts."""
+    models = _read_dict(_session_file(ledger_dir, ".notices", session_id)).get(
+        "models")
+    return isinstance(models, list) and model in models
+
+
+def mark_start_notice(ledger_dir, session_id, model):
+    """Record that `model`'s unpriced notice was given for `session_id`.
+    True when it was written; False when it could not be (the notice may then
+    repeat, which is the failure an advisory can afford)."""
+    path = _session_file(ledger_dir, ".notices", session_id)
+    models = _read_dict(path).get("models")
+    models = sorted(set(models if isinstance(models, list) else []) | {model})
+    try:
+        ensure_ledger_dir(ledger_dir)
+        _manifest_io.atomic_write_text(path, json.dumps({"models": models}))
+        return True
+    except Exception:
+        return False
 
 
 LOCAL_IGNORE_MARKER = "# audit plugin: local state - do not commit\n*\n"

@@ -28,24 +28,30 @@
         "severity": "med",
         "file": "plugins/audit/scripts/report/_report_usage.py, plugins/audit/scripts/panel/_panel_usage.py:189 (P125.3, untouched; both declared in the task's files)",
         "issue": "P125.3 clause 'every surface (audit-usage, the report, the panel) prints unpriced beside its tokens instead of a dollar figure' is contradicted. Only audit-usage.py gained `cost_cell` and the 'tokens unpriced' text. The panel still sums `float(r.get('costUSD') or 0.0)`, and neither file mentions 'unpriced' or `unpricedTokens` at HEAD. An unpriced model's spend therefore reads as free in the report and the panel. The executor's claim defers these to P125.4, whose diff did not touch them either.",
-        "resolution": "Carry `unpricedTokens` (already summed by `_usage_core.totals`/`_finish`) into the report payload (`window.AUDIT_USAGE`) and the panel facts. Render 'unpriced' beside the tokens of a model that has no price, and state how many tokens a cost total leaves out. Add cases in test__report_usage.py and test__panel_usage.py.",
-        "fixTask": "P125.75-0h5"
+        "resolution": "fixed in P125.75-0h5 (ce9b2c34be03): Carry `unpricedTokens` (already summed by `_usage_core.totals`/`_finish`) into the report payload (`window.AUDIT_USAGE`) and the panel facts. Render 'unpriced' beside the tokens of a model that has no price, and state how many tokens a cost total leaves out. Add cases in test__report_usage.py and test__panel_usage.py.",
+        "fixTask": "P125.75-0h5",
+        "commit": "ce9b2c34be03",
+        "status": "fixed"
       },
       {
         "id": "P125-R2",
         "severity": "med",
         "file": "plugins/audit/scripts/usage/_usage_core.py:priced_at_read (~1962-1978); plugins/audit/scripts/usage/_usage_economics.py:146-170 (P125.3)",
         "issue": "P125.3 clause 'returns the count of each so every surface's rate phrase states the mix' is contradicted. `priced_at_read` returns only `pricedWhenWritten`, and that is now the count of unstamped, unpriceable rows only. The stamped and unstamped counts are not returned. The rate phrase still reads as 'costs priced at <resolved table>', although stamped rows are priced from their own stamp and are no longer touched by the table it names. That is a printed claim with no basis.",
-        "resolution": "Return `stamped` and `readPriced` (and `kept`) counts from `priced_at_read`. Have `rate_basis_phrase` say 'N rows at the rate stamped when written, M priced again at the rate in effect on their date'. Add a case pinning the phrase with a mixed ledger.",
-        "fixTask": "P125.75-0h5"
+        "resolution": "fixed in P125.75-0h5 (ce9b2c34be03): Return `stamped` and `readPriced` (and `kept`) counts from `priced_at_read`. Have `rate_basis_phrase` say 'N rows at the rate stamped when written, M priced again at the rate in effect on their date'. Add a case pinning the phrase with a mixed ledger.",
+        "fixTask": "P125.75-0h5",
+        "commit": "ce9b2c34be03",
+        "status": "fixed"
       },
       {
         "id": "P125-R3",
         "severity": "med",
         "file": "plugins/audit/scripts/usage/_usage_economics.py rate_basis_phrase / plugins/audit/README.md (P125.3)",
         "issue": "P125.3 clause 'rows are priced at global routing and the basis says so' is not implemented. No text under plugins/audit says 'global' or 'inference-geo' (grep at HEAD), and the diff changes neither the basis phrase nor the README in that respect.",
-        "resolution": "Add the routing statement to the printed rate basis and to the README usage section ('priced at global routing; inference-geo pricing is not visible in the transcript'). Pin it with a case.",
-        "fixTask": "P125.75-0h5"
+        "resolution": "fixed in P125.75-0h5 (ce9b2c34be03): Add the routing statement to the printed rate basis and to the README usage section ('priced at global routing; inference-geo pricing is not visible in the transcript'). Pin it with a case.",
+        "fixTask": "P125.75-0h5",
+        "commit": "ce9b2c34be03",
+        "status": "fixed"
       },
       {
         "id": "P125-R4",
@@ -960,7 +966,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 10 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 13 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -5726,7 +5732,7 @@
     {
       "id": "P125.75-0h5",
       "title": "every cost surface prints unpriced and states its rate mix and routing basis",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase-review findings fixed together (one theme, shared files).\n\nP125-R1: P125.3 clause 'every surface (audit-usage, the report, the panel) prints unpriced beside its tokens instead of a dollar figure' is contradicted. Only audit-usage.py gained `cost_cell` and the 'tokens unpriced' text. The panel still sums `float(r.get('costUSD') or 0.0)`, and neither file mentions 'unpriced' or `unpricedTokens` at HEAD. An unpriced model's spend therefore reads as free in the report and the panel. The executor's claim defers these to P125.4, whose diff did not touch them either.\n\nResolution asked: Carry `unpricedTokens` (already summed by `_usage_core.totals`/`_finish`) into the report payload (`window.AUDIT_USAGE`) and the panel facts. Render 'unpriced' beside the tokens of a model that has no price, and state how many tokens a cost total leaves out. Add cases in test__report_usage.py and test__panel_usage.py.\n\nP125-R2: P125.3 clause 'returns the count of each so every surface's rate phrase states the mix' is contradicted. `priced_at_read` returns only `pricedWhenWritten`, and that is now the count of unstamped, unpriceable rows only. The stamped and unstamped counts are not returned. The rate phrase still reads as 'costs priced at <resolved table>', although stamped rows are priced from their own stamp and are no longer touched by the table it names. That is a printed claim with no basis.\n\nResolution asked: Return `stamped` and `readPriced` (and `kept`) counts from `priced_at_read`. Have `rate_basis_phrase` say 'N rows at the rate stamped when written, M priced again at the rate in effect on their date'. Add a case pinning the phrase with a mixed ledger.\n\nP125-R3: P125.3 clause 'rows are priced at global routing and the basis says so' is not implemented. No text under plugins/audit says 'global' or 'inference-geo' (grep at HEAD), and the diff changes neither the basis phrase nor the README in that respect.\n\nResolution asked: Add the routing statement to the printed rate basis and to the README usage section ('priced at global routing; inference-geo pricing is not visible in the transcript'). Pin it with a case.",
       "files": [
         "plugins/audit/scripts/report/_report_usage.py",
@@ -5811,14 +5817,37 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ce9b2c34be03",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "priced_at_read (_usage_core) now returns mix {stamped, readPriced, unpriced, unpricedTokens, unpricedModels} beside pricedWhenWritten. _usage_economics: rate_basis_phrase adds ROUTING_BASIS ('rows are priced at global routing; the ledger does not read a request's inference geo') after the table name on every recorded basis, then a mix clause ('N row(s) at the rate stamped when written, M priced again at the rate in effect on their date'), the kept-row clause and an unpriced clause; new unpriced_phrase (the one wording) and all_unpriced (the one cost-cell rule); usage_ledger re-exports all three. audit-usage, audit-status, _panel_usage and _usage_load merge mix into the basis and ship it in pricingBasis, so every surface states the mix. Report: byModel/byPhase rows keep unpricedTokens; _ranked and the Markdown tables print 'unpriced' for a wholly unpriced group; window.AUDIT_USAGE carries unpricedTokens (null when totals never counted). Panel: facts gain a trailing 'unpriced' column; uBars rows and hover say 'unpriced'; the cost tile sub-line uses uUnpricedPhrase, pinned to Python via pyCall. README Token usage section states the routing basis (pinned by rb11b); the inference_geo measurement (grep command, 1047 global / 34782 not_available on 2026-10-15) sits in the rb10 case comment. _UNTIMED rows for the two helpers; module map regenerated (_usage_economics -> _fmt); examples, docs/index.html and docs/demo-large.html re-rendered; screenshots captured by the orchestrator, left as-is. Not covered, by declared scope: the panel browse dialog (browse-dialog.js) still shows a $0.00 cost column for an unpriced model, and the report's range line (report JS) does not state unpriced tokens. Gates: sweep-selftests exit 0 (335/335 files ok, 16333 cases); --encoding cp1252 exit 0 (335/335); ruff exit 0; vermin exit 0; npx vitest run 813 passed; check-report-interactive 187 checks passed; check-rendered-artifacts --before-commit OK.",
+        "descriptive": "Every cost surface now prints 'unpriced' instead of a free-looking $0.00, states how many tokens a total leaves out, and its rate phrase names the stamped/re-priced mix and the global-routing basis."
       },
       "startedAt": "2026-10-15T05:18:25Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T06:21:46Z",
+      "verifiedBy": [
+        "test__usage_core rt10",
+        "test__usage_economics rb8",
+        "test__usage_economics rb9",
+        "test__usage_economics rb10",
+        "test__usage_economics rb11",
+        "test__usage_economics rb11b",
+        "test__usage_economics rb12",
+        "test__usage_economics rb13",
+        "test__usage_economics rb14",
+        "test__report_usage ug4c",
+        "test__report_usage ug4d",
+        "test__report_usage ug4e",
+        "test__usage_overview uo35",
+        "test__usage_overview uo36",
+        "test__usage_markdown um11b",
+        "test__usage_load ul13b",
+        "test__usage_load ul13c",
+        "test__panel_usage rt3",
+        "test__panel_usage rt4",
+        "test_audit_usage ua5",
+        "test_audit_status rt3",
+        "usage-edges: a model no rate covers (4 cases)"
+      ],
       "notes": [
         {
           "at": "2026-10-15T03:41:27Z",
@@ -5839,6 +5868,18 @@
         "runId": "2026-10-15T06:21:44Z.571fbe",
         "status": "passed",
         "at": "2026-10-15T06:21:44Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "ce9b2c34be03",
+        "at": "2026-10-15T06:21:46Z",
+        "basis": "a fix task for P125-R1, P125-R2, P125-R3: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-15T06:10:54Z",
+        "basis": "`python3 plugins/audit/tests/test__usage_economics.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 27 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rb8 (house FAIL), rb10 (house FAIL): SELFTEST FAILED: 24/27 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -5896,7 +5937,12 @@
         "P125-R5",
         "P125-R73"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T06:41:58Z.d9faab",
+        "status": "passed",
+        "at": "2026-10-15T06:41:58Z"
+      }
     },
     {
       "id": "P125.77-0h5",

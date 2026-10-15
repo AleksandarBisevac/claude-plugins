@@ -350,10 +350,12 @@ def cli_cost_lines(rows, cli_cost, pricing, md=False):
     A model where the two AGREE prints one figure - naming both would read
     as a disagreement that is not there. A model where they differ by more
     than rounding, or where only one side has a reading, prints BOTH figures
-    with their own basis - 'the CLI's estimate' for the CLI's side, 'the
-    plugin's table, <source> as of <date>' for the plugin's - and neither is
-    ever called the bill. A session with no `cost_state` (no `cost-state`
-    entry was recorded for it) contributes no line at all."""
+    with their own basis - 'the CLI's estimate' for the CLI's side, saying
+    whether it was recorded at meter time or read from the transcript when
+    `collect_cli_cost` tagged it, 'the plugin's table, <source> as of
+    <date>' for the plugin's - and neither is ever called the bill. A session
+    with no `cost_state` (no `cost-state` entry was recorded for it)
+    contributes no line at all."""
     lines = []
     by_session = {}
     for row in rows:
@@ -363,6 +365,7 @@ def cli_cost_lines(rows, cli_cost, pricing, md=False):
         if not cost_state:
             continue
         compared = ul.cli_cost_compare(by_session.get(sid) or [], cost_state)
+        cli_basis = _cli_basis(cost_state)
         for model in sorted(compared):
             pair = compared[model]
             cli_usd, plugin_usd = pair["cliCostUSD"], pair["pluginCostUSD"]
@@ -370,18 +373,55 @@ def cli_cost_lines(rows, cli_cost, pricing, md=False):
             if pair["agrees"]:
                 lines.append(prefix + "%s" % fmt_cost(plugin_usd))
             elif cli_usd is not None and plugin_usd is not None:
-                lines.append(prefix + "CLI %s (the CLI's estimate) vs plugin "
-                             "%s (%s)" % (fmt_cost(cli_usd), fmt_cost(plugin_usd),
-                                         basis))
+                lines.append(prefix + "CLI %s (%s) vs plugin %s (%s)" % (
+                    fmt_cost(cli_usd), cli_basis, fmt_cost(plugin_usd), basis))
             elif cli_usd is not None:
-                lines.append(prefix + "CLI %s (the CLI's estimate); the "
-                             "plugin's own table has no reading for it"
-                             % fmt_cost(cli_usd))
+                lines.append(prefix + "CLI %s (%s); the plugin's own table "
+                             "has no reading for it"
+                             % (fmt_cost(cli_usd), cli_basis))
             else:
                 lines.append(prefix + "plugin %s (%s); the CLI's own "
                              "reading has no model for it"
                              % (fmt_cost(plugin_usd), basis))
     return lines
+
+
+def collect_cli_cost(sessions, ledger_dir, transcripts):
+    """`{sessionId: cost_state or None}` for every session in `sessions` -
+    the CLI's own per-session cost reading, each tagged with `source`.
+
+    `meter`: the figure the meter recorded on the session's cursor as it
+    scanned (`ul.recorded_cost_state`), preferred because it needs no
+    transcript on disk. `transcript`: read from the session's main transcript
+    now (`ul.read_cost_state`), only for a session whose cursor holds none -
+    one metered before the field existed, or never metered at all. None when
+    neither has a reading, which `cli_cost_lines` prints nothing for. Never
+    fatal: a transcript that cannot be read is a None, not a raise."""
+    by_sid = dict((os.path.splitext(os.path.basename(p))[0], p)
+                  for p in (transcripts or []))
+    out = {}
+    for sid in sorted(sessions):
+        state = ul.recorded_cost_state(ledger_dir, sid)
+        source = "meter"
+        if state is None and sid in by_sid:
+            try:
+                state = ul.read_cost_state(by_sid[sid])
+            except Exception:
+                state = None
+            source = "transcript"
+        out[sid] = dict(state, source=source) if state else None
+    return out
+
+
+def _cli_basis(cost_state):
+    """The CLI side's basis as its line prints it: where the figure came
+    from when `collect_cli_cost` tagged it, the bare name when nothing did."""
+    source = cost_state.get("source")
+    if source == "meter":
+        return "the CLI's estimate, recorded at meter time"
+    if source == "transcript":
+        return "the CLI's estimate, read from the transcript"
+    return "the CLI's estimate"
 
 
 def render(rows, args, manifest, window, show_cost, pt=None, pricing=None,
@@ -391,9 +431,9 @@ def render(rows, args, manifest, window, show_cost, pt=None, pricing=None,
     rate basis printed beside the costs. None resolves it from the manifest
     alone (no config read). `rows` are summed as handed in: `main` hands
     `ul.priced_at_read`'s copies, priced at that same table. `cli_cost` is
-    `{sessionId: cost_state}` - the CLI's own per-session read
-    (`ul.read_cost_state`), absent by default since it needs a transcript on
-    disk to read at all; see `cli_cost_lines`."""
+    `{sessionId: cost_state}` - the CLI's own per-session read, as
+    `collect_cli_cost` gathers it (the meter's recorded figure, else the
+    transcript's); absent by default; see `cli_cost_lines`."""
     if pricing is None:
         pricing = ul.resolve_pricing(manifest, None)
     phase_titles, task_titles = titles_of(manifest)
@@ -1168,21 +1208,10 @@ def main(argv):
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
 
-    # The CLI's own per-session read, best-effort: only for sessions actually
-    # in view, and never fatal to the dashboard when a transcript has moved
-    # or cannot be read - `cli_cost_lines` already skips a session with no
-    # `cost_state` at all.
-    cli_cost = {}
     sessions_in_view = set(r.get("sessionId") for r in rows if r.get("sessionId"))
-    if sessions_in_view:
-        for path in find_transcripts(project, args.transcript_dir):
-            sid = os.path.splitext(os.path.basename(path))[0]
-            if sid not in sessions_in_view:
-                continue
-            try:
-                cli_cost[sid] = ul.read_cost_state(path)
-            except Exception:
-                cli_cost[sid] = None
+    cli_cost = (collect_cli_cost(sessions_in_view, ledger_dir,
+                                 find_transcripts(project, args.transcript_dir))
+                if sessions_in_view else {})
 
     print(render(rows, args, manifest, window, show_cost,
                  pt=_cli_fmt.painter(args.color), pricing=resolved,

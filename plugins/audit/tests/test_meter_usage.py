@@ -156,6 +156,20 @@ def _cases(check):
         check("c1 appended turn metered incrementally",
               ul.totals(ul.read_ledger(ledger))["out"] == 157)
 
+        # c2: the CLI's own per-session figure is recorded by the meter run
+        # itself, on the session's saved cursor - not left for a later
+        # reader to dig out of a transcript that may have moved.
+        with open(transcript, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"type": "cost-state", "totalCostUSD": 4.5,
+                                 "modelUsage": {"claude-opus-5[1m]": {
+                                     "costUSD": 4.5}}}) + "\n")
+        M.meter(payload, ul=ul, cfg=cfg, root=tmp)
+        _c2 = ul.load_cursor(ledger, "sess-1").get("cliCost")
+        check("c2 a meter run records the CLI's cost-state on the session's "
+              "saved cursor (perModel keyed by base model): %r" % (_c2,),
+              isinstance(_c2, dict) and _c2.get("totalCostUSD") == 4.5
+              and _c2.get("perModel") == {"claude-opus-5": 4.5}, _c2)
+
         # (d) master switch
         off = _config.load(tmp)
         off["usage"] = dict(off["usage"], enabled=False)
@@ -644,6 +658,76 @@ def _cases(check):
             msg5 = M.session_start_check(payload5, ul=ul, cfg=ss_cfg, root=ss_root)
             check("ss5 a previous transcript that cannot be opened fails "
                   "open", msg5 is None, msg5)
+
+            # ss6..ss10: the payload's own `model` is the NEW session's model
+            # and wins whenever it is present; the previous session's last
+            # model is read only when the payload names none, and says so.
+            def _prev_turn(proj, prev_id, model):
+                (proj / (prev_id + ".jsonl")).write_text(
+                    json.dumps({"type": "assistant", "message": {
+                        "model": model,
+                        "usage": {"input_tokens": 1, "output_tokens": 1}}})
+                    + "\n", encoding="utf-8")
+
+            # ss6: the payload's model is unpriced while the previous
+            # session's is priced - the old reading (previous only) is silent.
+            proj6, prev6, payload6 = _ss_case("payload-unpriced")
+            _prev_turn(proj6, prev6, "claude-opus-5")
+            payload6 = dict(payload6, source="startup",
+                            model="brand-new-model-nobody-priced")
+            msg6 = M.session_start_check(payload6, ul=ul, cfg=ss_cfg, root=ss_root)
+            check("ss6 a SessionStart payload naming an unpriced model is read "
+                  "as THIS session's model and named, in one line: %r" % (msg6,),
+                  bool(msg6) and "brand-new-model-nobody-priced" in msg6
+                  and "this session's model" in msg6
+                  and "previous" not in msg6 and "\n" not in msg6, msg6)
+
+            # ss7: the payload's model is priced while the previous session's
+            # is not - the payload wins, so nothing is said.
+            proj7, prev7, payload7 = _ss_case("payload-priced")
+            _prev_turn(proj7, prev7, "some-other-model-nobody-priced")
+            payload7 = dict(payload7, source="startup", model="claude-opus-5")
+            msg7 = M.session_start_check(payload7, ul=ul, cfg=ss_cfg, root=ss_root)
+            check("ss7 a payload naming a priced model stays silent even when "
+                  "the previous session's model is unpriced", msg7 is None, msg7)
+
+            # ss8: no model in the payload - the previous session's model is
+            # read as a LABELLED fallback. Same model id as ss1 on purpose: a
+            # dedupe keyed on the model alone would silence this one.
+            proj8, prev8, payload8 = _ss_case("payload-no-model")
+            _prev_turn(proj8, prev8, "some-future-model-nobody-priced")
+            msg8 = M.session_start_check(payload8, ul=ul, cfg=ss_cfg, root=ss_root)
+            check("ss8 a payload carrying no model falls back to the previous "
+                  "session's model and labels it a fallback: %r" % (msg8,),
+                  bool(msg8) and "some-future-model-nobody-priced" in msg8
+                  and "previous session" in msg8 and "fallback" in msg8
+                  and "\n" not in msg8, msg8)
+
+            # ss9: the same session starting again (a compact, a resume) with
+            # the same model says nothing the second time; a different
+            # unpriced model in that session still speaks (the other
+            # direction - a dedupe keyed on the session alone would fail it).
+            msg9 = M.session_start_check(dict(payload6, source="compact"),
+                                         ul=ul, cfg=ss_cfg, root=ss_root)
+            msg9b = M.session_start_check(
+                dict(payload6, source="resume", model="yet-another-unpriced-one"),
+                ul=ul, cfg=ss_cfg, root=ss_root)
+            check("ss9 one line per (session, model): a compact of the same "
+                  "session is silent, a new unpriced model in it is not: "
+                  "%r / %r" % (msg9, msg9b),
+                  msg9 is None and bool(msg9b)
+                  and "yet-another-unpriced-one" in msg9b, (msg9, msg9b))
+
+            # ss10: the fallback dedupes per (previous session, model) - a
+            # second new session after the same previous one is silent.
+            payload10 = dict(payload8, session_id="payload-no-model-new-2",
+                             transcript_path=str(
+                                 proj8 / "payload-no-model-new-2.jsonl"))
+            msg10 = M.session_start_check(payload10, ul=ul, cfg=ss_cfg,
+                                          root=ss_root)
+            check("ss10 the fallback line is said once per (previous session, "
+                  "model), not again for the next session started after it",
+                  msg10 is None, msg10)
         finally:
             shutil.rmtree(ss_root, ignore_errors=True)
     finally:
