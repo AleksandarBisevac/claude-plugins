@@ -133,26 +133,10 @@ def _head(fx):
     return TI._head(fx["root"])
 
 
-def _git_checked(args):
-    """Run git; on a non-zero exit raise with git's own words.
-
-    `check=True` raises a CalledProcessError whose text names only the command
-    and the exit status, so a fixture clone that died on a runner left nothing
-    to read. The merged output is captured already; it is carried in the message.
-    """
-    done = subprocess.run(["git"] + list(args), stdout=subprocess.PIPE,
-                          stderr=subprocess.STDOUT)
-    if done.returncode != 0:
-        raise RuntimeError("git %s exited %d: %s" % (
-            " ".join(args), done.returncode,
-            done.stdout.decode("utf-8", "replace").strip() or "(no output)"))
-    return done
-
-
 def _clone_at(fx, sha, dest):
     """A fresh clone, checked out at `sha`. Returns the clone's path."""
-    _git_checked(["clone", "--quiet", "--no-hardlinks", fx["root"], dest])
-    _git_checked(["-C", dest, "checkout", "--quiet", sha])
+    TI._git(None, "clone", "--quiet", "--no-hardlinks", fx["root"], dest)
+    TI._git(dest, "checkout", "--quiet", sha)
     return dest
 
 
@@ -2205,7 +2189,7 @@ def _fixture_git_cases(check, repos):
     check("ctw-fg1 a fixture git command that fails raises an error carrying "
           "git's own stderr text (a checkout of a commit that does not exist "
           "names it, not only the exit status): %r" % (text[:300],),
-          raised is not None and "fatal:" in text and "exited" in text)
+          raised is not None and "fatal:" in text and "failed" in text)
     check("ctw-fg2 ALLOW: a fixture git command that succeeds raises nothing "
           "and returns the clone's path",
           os.path.isdir(_clone_at(fx, _head(fx), repos.scratch("fg-ok"))))

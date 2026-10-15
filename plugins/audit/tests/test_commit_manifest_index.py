@@ -28,7 +28,6 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import io
 import json
 import os
-import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -104,22 +103,6 @@ def _head(fx):
     return TI._head(fx["root"])
 
 
-def _git_checked(args):
-    """Run git; on a non-zero exit raise with git's own words.
-
-    `check=True` raises a CalledProcessError whose text names only the command
-    and the exit status, so a fixture clone that died on a runner left nothing
-    to read. The merged output is captured already; it is carried in the message.
-    """
-    done = subprocess.run(["git"] + list(args), stdout=subprocess.PIPE,
-                          stderr=subprocess.STDOUT)
-    if done.returncode != 0:
-        raise RuntimeError("git %s exited %d: %s" % (
-            " ".join(args), done.returncode,
-            done.stdout.decode("utf-8", "replace").strip() or "(no output)"))
-    return done
-
-
 def _clone_at(fx, sha, dest):
     """A fresh clone, checked out at `sha`. Returns the clone's path.
 
@@ -127,8 +110,8 @@ def _clone_at(fx, sha, dest):
     command ran in cannot tell a file that was committed from one that was merely
     left lying there, which is the exact distinction every case below turns on.
     """
-    _git_checked(["clone", "--quiet", "--no-hardlinks", fx["root"], dest])
-    _git_checked(["-C", dest, "checkout", "--quiet", sha])
+    TI._git(None, "clone", "--quiet", "--no-hardlinks", fx["root"], dest)
+    TI._git(dest, "checkout", "--quiet", sha)
     return dest
 
 
