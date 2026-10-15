@@ -8654,7 +8654,7 @@
     {
       "id": "P125.115-0h5",
       "title": "docs: the _deps comment names every consumer of _affected_tests",
-      "status": "in_progress",
+      "status": "done",
       "description": "Found at P125.113's return: _deps.py (~594) says run-test-gate is _affected_tests's only consumer; audit-task now imports it to map a fix task's sources to their suites. Correct the comment; no behaviour change.",
       "files": [
         "plugins/audit/scripts/_deps.py"
@@ -8682,19 +8682,29 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "29c5ba264983",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Rewrote the comment above _affected_tests in the LAYERS table of plugins/audit/scripts/_deps.py. It no longer names a sole consumer; it says the callers are entry points and add no edge that moves the layer. Consumers confirmed by grep: manifest/audit-task.py and governance/run-test-gate.py. Ran `python3 tools/sweep-selftests.py` in the task tree: exit 0, 335/335 files ok.",
+        "descriptive": "The layer comment no longer claims run-test-gate is the only consumer of _affected_tests."
       },
       "startedAt": "2026-10-15T16:30:14Z",
-      "completedAt": null,
+      "completedAt": "2026-10-15T17:23:06Z",
       "verifiedBy": [],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-15T17:23:04Z.afa077",
         "status": "passed",
         "at": "2026-10-15T17:23:04Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "29c5ba264983",
+        "at": "2026-10-15T17:23:06Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only comment fix, expectRedFirst false",
+        "at": "n/a"
       }
     },
     {
@@ -8739,7 +8749,12 @@
       "startedAt": "2026-10-15T16:30:17Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T17:33:28Z.c72577",
+        "status": "passed",
+        "at": "2026-10-15T17:33:28Z"
+      }
     },
     {
       "id": "P125.117-0h5",

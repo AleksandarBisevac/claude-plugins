@@ -4790,7 +4790,34 @@ def _follower_map_cases(check):
         check("fm0 the driver loads", False, why)
         return
     import _deps
-    root, mpath = _wave_repo("followmap", 2)
+    root, mpath, guide, fresh, prints = _drive_follower_map(M, "followmap")
+    task = tasks_of(mpath)["P1.2"]
+    notes = " ".join(str(n) for n in task.get("notes") or [])
+    said = "\n".join(prints)
+    held = _git_out(root, "show", "%s:%s" % (task.get("commit") or "HEAD", guide))
+    check("a wave member that regenerated the module map itself, with its gate "
+          "green, is integrated with the map widened on the owner's basis and no "
+          "undeclared-change decision printed (%r)"
+          % ((task.get("status"), task.get("files"), notes, prints),),
+          task.get("status") == "done" and guide in (task.get("files") or [])
+          and "_deps.map_drift" in notes and _deps.MAP_RECIPE in notes
+          and "undeclared-change" not in said
+          and fresh is not None and "a map from before" not in fresh
+          and held == fresh)
+
+
+def _drive_follower_map(M, prefix, sharded=False):
+    """The two-member wave whose second member regenerated the module map in
+    its own tree, the map undeclared; in the sharded layout when `sharded`, so
+    the task commit is held to the index HEAD carries. Up to six `next`s, until
+    every task is done. `(root, mpath, guide, fresh, prints)`, `fresh` the map
+    the member wrote, None when the wave made no tree."""
+    import _deps
+    root, mpath = _wave_repo(prefix, 2)
+    if sharded:
+        plan = _mio.load_manifest(mpath)
+        os.remove(mpath)
+        _mio.save_sharded(mpath, plan)
     shutil.copytree(_output.SCRIPTS_DIR,
                     os.path.join(root, "plugins", "audit", "scripts"),
                     ignore=shutil.ignore_patterns("__pycache__"))
@@ -4822,19 +4849,91 @@ def _follower_map_cases(check):
         prints.append("\n".join(said))
         if all(t.get("status") == "done" for t in tasks_of(mpath).values()):
             break
+    return root, mpath, guide, fresh, prints
+
+
+# The case's title is the task's tests.add clause, verbatim.
+_FOLLOWER_INDEX_CLAUSE = ("a wave member widened by a follower path at integration "
+                          "is committed and closed in one next, with no refusal "
+                          "for an uncommitted index")
+
+
+def _follower_index_cases(check):
+    """The widening `scope` writes a fileIndex row; the task commit is held to
+    the index HEAD carries, so that row has to be committed before it."""
+    M, why = _load("drive_phase_follower_index")
+    if M is None:
+        check("fi0 the driver loads", False, why)
+        return
+    root, mpath, guide, _fresh, prints = _drive_follower_map(
+        M, "followindex", sharded=True)
     task = tasks_of(mpath)["P1.2"]
-    notes = " ".join(str(n) for n in task.get("notes") or [])
-    said = "\n".join(prints)
-    held = _git_out(root, "show", "%s:%s" % (task.get("commit") or "HEAD", guide))
-    check("a wave member that regenerated the module map itself, with its gate "
-          "green, is integrated with the map widened on the owner's basis and no "
-          "undeclared-change decision printed (%r)"
-          % ((task.get("status"), task.get("files"), notes, prints),),
-          task.get("status") == "done" and guide in (task.get("files") or [])
-          and "_deps.map_drift" in notes and _deps.MAP_RECIPE in notes
-          and "undeclared-change" not in said
-          and fresh is not None and "a map from before" not in fresh
-          and held == fresh)
+    widened = [p for p in prints if "P1.2 widened by %s" % (guide,) in p]
+    refused = [p for p in prints if "REFUSED" in p or "stopped" in p]
+    head_index = _git_out(root, "show", "HEAD:docs/audit/audit-plan.json")
+    try:
+        row = (json.loads(head_index).get("fileIndex") or {}).get(guide)
+    except ValueError:
+        row = None
+    carried = _git_out(root, "show", "--name-only", "--format=",
+                       task.get("commit") or "HEAD").split()
+    check("%s (the print that widens the member by %s also closes it; no print "
+          "refuses or stops; HEAD's index carries the row and the task commit "
+          "the map): widened=%r refused=%r row=%r carried=%r status=%r"
+          % (_FOLLOWER_INDEX_CLAUSE, guide, widened, refused, row, carried,
+             task.get("status")),
+          len(widened) == 1 and "closed P1.2 at" in widened[0]
+          and not refused and task.get("status") == "done"
+          and "P1.2" in (row or []) and guide in carried)
+
+
+def _follower_retire_cases(check):
+    """A follower path the integration wrote is the phase tree's to hold: its
+    bytes are its owner's recipe run over the phase tree, so a member's own
+    copy differing from them is not work the phase tree lacks."""
+    M, why = _load("drive_phase_follower_retire")
+    if M is None:
+        check("fr0 the driver loads", False, why)
+        return
+    base = _harness.fixture_root("drive-retire-")
+    try:
+        tree, phase_tree = os.path.join(base, "member"), os.path.join(base, "phase")
+        os.makedirs(phase_tree)
+        os.makedirs(tree)
+        subprocess.run(_GIT + ["init", "-q"], cwd=tree, check=True,
+                       capture_output=True, timeout=60)
+        for rel in ("map.md", "src.txt"):
+            _write_lf(os.path.join(tree, rel), "base\n")
+        for argv in (["add", "-A"], ["commit", "-qm", "base"]):
+            subprocess.run(_GIT + argv, cwd=tree, check=True, capture_output=True,
+                           timeout=60)
+        _write_lf(os.path.join(tree, "map.md"), "the member's map\n")
+        _write_lf(os.path.join(phase_tree, "map.md"), "the phase tree's map\n")
+        _write_lf(os.path.join(phase_tree, "src.txt"), "base\n")
+        ctx = {"gitRoot": phase_tree}
+        check("fr1 a member whose only differing path is a follower the "
+              "integration wrote holds nothing the phase tree lacks",
+              M.tree_holds_only_integrated(ctx, tree, (), ["map.md"]) is True)
+        # The other direction: a guard that skipped every path would pass fr1.
+        check("fr2 (DENY: the same difference at a path that is not a follower "
+              "still keeps the tree)",
+              M.tree_holds_only_integrated(ctx, tree, (), ["src.txt"]) is False
+              and M.tree_holds_only_integrated(ctx, tree, ()) is False)
+
+        # The retirement reads the follower paths the integration mark holds.
+        seen = []
+        M.tree_holds_only_integrated = (
+            lambda c, t, records=(), followers=(): seen.append(list(followers)))
+        task = {"id": "P1.2", "status": "done", "startedAt": "2026-10-15T00:00:00Z"}
+        state = {"wave": {"trees": {"P1.2": tree}}}
+        M._mark(state, "integrated", task, {"regate": True, "followers": ["map.md"]})
+        rctx = {"gitRoot": phase_tree, "stateDir": os.path.join(base, "state"),
+                "phase": PHASE, "did": []}
+        M.retire_member(rctx, state, task)
+        check("fr3 retiring a member hands the check the follower paths its "
+              "integration wrote: %r" % (seen,), seen == [["map.md"]])
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
 
 
 # --- an undeclared path only a browser recipe writes -----------------------------
@@ -5197,7 +5296,8 @@ def _wave_review_discard_cases(check):
     # RED TWIN for `tree_holds_only_integrated`: a guard that never reports a
     # difference takes the tree down with the discarded bytes in it.
     mutant, _w = _load("drive_phase_wave_discard_mutant")
-    mutant.tree_holds_only_integrated = lambda ctx, tree, records=(): True
+    mutant.tree_holds_only_integrated = \
+        lambda ctx, tree, records=(), followers=(): True
     _r, mpath_m, tree_m, _a, answered_m, _s = _discard_run(mutant, "wavediscardm")
     check("wt8m RED TWIN: a driver whose guard never sees a difference removes "
           "the discarded change's tree, so wt8's predicate fails for it: %r"
@@ -6294,6 +6394,8 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("wz-block", "_wave_width_cases"),
           ("fw-block", "_follower_cases"), ("fh-block", "_follower_wave_cases"),
           ("fm-block", "_follower_map_cases"),
+          ("fi-block", "_follower_index_cases"),
+          ("fr-block", "_follower_retire_cases"),
           ("fm2-block", "_follower_shot_cases"),
           ("al-block", "_ascii_locale_cases"),
           ("wt-block", "_wave_resume_cases"), ("wt5-block", "_wave_adopt_cases"),

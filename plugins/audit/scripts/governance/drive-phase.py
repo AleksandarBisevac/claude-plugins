@@ -1210,6 +1210,28 @@ def owed_followers(ctx, text):
                             if isinstance(f, dict) and isinstance(f.get("path"), str)]
 
 
+def commit_scope_index(ctx, subject):
+    """Commit the index a `scope` the drive ran rewrote, in a sharded plan;
+    None, or the stop. `scope` writes the path's fileIndex row into the index
+    and the task's own shard, and the task commit carries the shard alone - it
+    refuses a shard declaring a path the index HEAD holds has no row for. So
+    the index is committed here, on its own, as a hand `scope` is followed by
+    it; the index is shared by every phase, and a task commit carrying it
+    would carry other phases' rows with it. A plan in one file has no index
+    apart from the task's own declaration, so nothing is committed."""
+    try:
+        sharded = _mio.is_sharded(_mio.read_json(ctx["manifest"]))
+    except Exception as exc:                                   # noqa: BLE001
+        return _stopped(ctx, "%s cannot be read to tell its layout (%s)"
+                        % (ctx["manifest"], exc))
+    if not sharded:
+        return None
+    _out, stop = _verb_or_stop(ctx, "commit-manifest-index.py", [
+        ctx["manifest"], ctx["phase"], "--project", ctx["project"],
+        "--subject", subject, "--json"])
+    return stop
+
+
 def widen_task(ctx, state, task, paths, basis):
     """Declare `paths` beside the task's files with `basis` noted, and accept
     that scope so no scope-changed decision asks about it. None, or the stop."""
@@ -1224,6 +1246,9 @@ def widen_task(ctx, state, task, paths, basis):
         _out, stop = _verb_or_stop(ctx, "audit-task.py", _task_args(ctx, *args))
         if stop is not None:
             return stop
+    stop = commit_scope_index(ctx, "%s widened by %s" % (task["id"], ", ".join(new)))
+    if stop is not None:
+        return stop
     accept_scope(ctx, state, task, basis)
     ctx["did"].append("%s widened by %s (%s)" % (task["id"], ", ".join(new), basis))
     return None
@@ -1916,7 +1941,7 @@ def integrate_member(ctx, state, phase, task):
         # A widened scope is a change to what the gate covered, so it re-gates.
         regate = True if word.get("answer") == "widen" or followers \
             else answer.get("regate")
-        held = {"regate": regate}
+        held = {"regate": regate, "followers": [f["path"] for f in followers]}
         _mark(state, "integrated", task, held)
         write_state(ctx, state)
         wave_row(ctx, TASK_INTEGRATED, "%s: %d path(s) integrated%s" % (
@@ -1946,12 +1971,17 @@ def integrate_member(ctx, state, phase, task):
     return None
 
 
-def tree_holds_only_integrated(ctx, tree, records=()):
+def tree_holds_only_integrated(ctx, tree, records=(), followers=()):
     """True when every path the tree changed holds the bytes the phase tree
     holds - nothing in it would be lost with it; False when one differs; None
     when git could not say. A path under `records` is left out: those bytes
     are the phase tree's own committed records, put there by the refresh, and
-    the phase tree's working copy of them moves on with every row it writes."""
+    the phase tree's working copy of them moves on with every row it writes.
+    So is a path in `followers`, one the integration took as a follower its
+    owner's recipe writes: the phase tree's copy is that recipe's output over
+    the phase tree - a sibling's change merged in moves it - so a member's
+    copy differing from it is a stale render, not work the phase tree lacks."""
+    skip = set(followers or ())
     try:
         done = subprocess.run(["git", "-C", tree, "status", "--porcelain", "-z",
                                "--untracked-files=all", "--no-renames"],
@@ -1962,7 +1992,7 @@ def tree_holds_only_integrated(ctx, tree, records=()):
         return None
     for item in done.stdout.split(b"\0"):
         rel = item[3:].decode("utf-8", "replace")
-        if not rel or _invariants.is_record_path(rel, records):
+        if not rel or rel in skip or _invariants.is_record_path(rel, records):
             continue
         sides = []
         for root in (tree, ctx["gitRoot"]):
@@ -1987,7 +2017,11 @@ def retire_member(ctx, state, task):
     if task.get("status") not in _mio.TERMINAL:
         return None
     wave.setdefault("retired", []).append(task["id"])
-    clean = tree_holds_only_integrated(ctx, tree, wave.get("records")) \
+    held = (((state.get("integrated") or {}).get(task["id"]) or {}).get("value")
+            or {})
+    followers = held.get("followers") if isinstance(held, dict) else None
+    clean = tree_holds_only_integrated(ctx, tree, wave.get("records"),
+                                       followers or ()) \
         if os.path.isdir(tree) else True
     if clean is not True:
         write_state(ctx, state)
@@ -2401,6 +2435,9 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
             files.append(pending["config"])
         _out, stop = _verb_or_stop(ctx, "audit-task.py", _task_args(
             ctx, "scope", task["id"], "--files", ",".join(files)))
+        if stop is None:
+            stop = commit_scope_index(ctx, "%s widened by %s" % (
+                task["id"], pending["config"]))
         if stop is None:
             ctx["did"].append("%s widened by %s" % (task["id"], pending["config"]))
         return stop
