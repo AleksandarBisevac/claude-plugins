@@ -8714,6 +8714,54 @@
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "phase"
+    },
+    {
+      "id": "P125.117-0h5",
+      "title": "Process teardown survives a PermissionError from killpg, judged by the confirmation step",
+      "status": "pending",
+      "description": "Register F686. test__proc_group raised PermissionError on os.killpg twice under loaded macOS sweeps; _kill does not handle it. Capture the line, confirm the cause (hypothesis: EPERM for a group of zombies), then handle it through the confirmation step.",
+      "files": [
+        "plugins/audit/scripts/governance/_proc_group.py",
+        "plugins/audit/tests/test__proc_group.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__proc_group.py: a killpg that raises PermissionError during teardown does not escape; the teardown is judged by whether the tree is gone, never reported clean on the error alone"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "movedFrom": {
+        "id": "P128.30-0h5",
+        "phase": "P128",
+        "at": "2026-10-15T16:56:52Z"
+      }
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",

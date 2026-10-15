@@ -1,0 +1,17 @@
+{
+  "gates": {
+    "selftests": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only comment fix, expectRedFirst false",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Rewrote the comment above _affected_tests in the LAYERS table of plugins/audit/scripts/_deps.py. It no longer names a sole consumer; it says the callers are entry points and add no edge that moves the layer. Consumers confirmed by grep: manifest/audit-task.py and governance/run-test-gate.py. Ran `python3 tools/sweep-selftests.py` in the task tree: exit 0, 335/335 files ok.",
+    "descriptive": "The layer comment no longer claims run-test-gate is the only consumer of _affected_tests."
+  },
+  "testsAdded": [],
+  "claims": "claims: comment states the layer constraint (reads _gate_derive, so one layer above); no consumer list, no task ids; basis: grep output and sweep exit 0.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:7094b2d06d43b9e138f7eddd20454459d147e028f084c6973ecee945e82aee6c\",\"dirtyDigest\":\"sha256:64df975258c47dd9638907add1c3aa9c87194c18aa873c6c6df58ba2cb00b73f\",\"dirtyPaths\":{\"plugins/audit/scripts/_deps.py\":\"942b6764c6e7d233\"},\"head\":\"307c61d4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/_deps.py\"],\"scopeDigest\":\"sha256:adbbf3ef71556eeeadb5aceb148dd53467d4e504cc09558f197ba27d21423c4a\",\"v\":2}"
+}
