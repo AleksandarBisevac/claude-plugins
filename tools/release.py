@@ -22,9 +22,17 @@ reads "done":
   followers             `tools/verify.sh --release`'s `#R` list, in its order:
                         README pins, the rendered example (+ docs/index.html),
                         the scale demo, the screenshots
-  verify-release        `sh tools/verify.sh --release`
   commit                the release commit
-  push-ci-branch        push `ci/v<version>`, dispatch `ci.yml` on it
+  verify-release        `sh tools/verify.sh --release`, AFTER the commit:
+                        its last arm asks whether HEAD carries the pages
+                        the followers re-rendered, which is red for as long
+                        as one is uncommitted - so before the commit it
+                        could never pass. A red here leaves a local commit
+                        only; amend it and resume, nothing has gone out
+  push-ci-branch        push `ci/v<version>`, dispatch `ci.yml` on it, and
+                        record the commit pushed (HEAD at that moment) -
+                        the push creates no local `ci/...` branch, so that
+                        bare name resolves to nothing afterwards
   wait-ci               wait for THAT exact commit's run to complete
   tag                   the annotated `v<version>` tag
   push-main-tag         push `main`, then the tag
@@ -33,10 +41,12 @@ reads "done":
 
 NOTHING IS PUSHED WITHOUT AN EXPLICIT `--push`, which is `CLAUDE.md`'s own
 rule restated as code: permission to commit is not permission to push. Every
-step from `push-ci-branch` on is a no-op (recorded "done", nothing run) when
-`--push` was not given - the pipeline still reaches `check-published` instead
-of stopping, because stopping would read like a failure of a release that was
-never asked to publish anything.
+remote step is recorded "skipped" - never "done" - when `--push` was not
+given, and nothing is run for it. A skipped step is still pending: a later
+run WITH `--push` over the same state file runs it, so the documented
+prepare-then-publish sequence publishes on its second run instead of finding
+every remote step already "done" and printing a success over nothing. A run
+that skipped any remote step ends saying it published nothing, not COMPLETE.
 
 EVERY REMOTE STEP IS NAMED BEFORE IT RUNS: the step's own name is printed as
 it starts, so a run watched live names what is about to touch a remote before
@@ -81,10 +91,10 @@ README_REL = os.path.join("plugins", "audit", "README.md")
 DEFAULT_STATE_REL = os.path.join(".claude", "state", "release-run.json")
 
 STEPS = ("preflight", "bump-version", "finalize-changelog", "followers",
-         "verify-release", "commit", "push-ci-branch", "wait-ci", "tag",
+         "commit", "verify-release", "push-ci-branch", "wait-ci", "tag",
          "push-main-tag", "gh-release", "check-published")
-# The steps that touch a remote at all, and so are skipped entirely (recorded
-# "done", nothing run) rather than attempted when `--push` was not given.
+# The steps that touch a remote at all, and so are recorded "skipped" (nothing
+# run, still pending for a later `--push` run) when `--push` was not given.
 REMOTE_STEPS = ("push-ci-branch", "wait-ci", "push-main-tag", "gh-release",
                 "check-published")
 
@@ -399,14 +409,20 @@ def dispatch_ci(ctx, ref):
     return True, "dispatched ci.yml on %s" % (ref,)
 
 
-def wait_ci(ctx, ref):
+def wait_ci(ctx, ref, sha=None):
     """Waits for the run matching `ref`'s EXACT commit to complete, and reads
     `conclusion` rather than reducing every non-success to one failure - a
-    cancelled run is named as cancelled, not reported as if it had failed."""
-    rc, out = ctx.run(["git", "rev-parse", ref])
-    if rc != 0:
-        return False, "could not resolve %s to a commit: %s" % (ref, excerpt(out))
-    sha = out.strip()
+    cancelled run is named as cancelled, not reported as if it had failed.
+
+    `sha` is the commit when the caller already knows it - the release's own
+    push records it - and `ref` is resolved locally only when it is not
+    given, which is right for `ci <ref>` on a local branch."""
+    if sha is None:
+        rc, out = ctx.run(["git", "rev-parse", ref])
+        if rc != 0:
+            return False, "could not resolve %s to a commit: %s" % (
+                ref, excerpt(out))
+        sha = out.strip()
     deadline = time.time() + ctx.ci_timeout
     while True:
         rc, out = ctx.run(["gh", "run", "list", "--branch", ref,
@@ -438,28 +454,42 @@ def wait_ci(ctx, ref):
 
 
 def step_push_ci_branch(ctx):
-    if _skip_remote("push-ci-branch", ctx):
-        return True, "skipped: no --push given"
+    """Records the commit it pushes, read from HEAD BEFORE the push: the push
+    names a remote ref only, so no local `ci/...` branch exists afterwards
+    for `wait-ci` to resolve."""
     allowed, refusal = release_permitted(ctx)
     if not allowed:
         return False, refusal
     branch = _ci_branch(ctx.version)
+    rc, out = ctx.run(["git", "rev-parse", "HEAD"])
+    if rc != 0 or not out.strip():
+        return False, "could not read HEAD before the push: %s" % (excerpt(out),)
+    sha = out.strip()
     rc, out = ctx.run(["git", "push", "origin",
                        "HEAD:refs/heads/%s" % (branch,)])
     if rc != 0:
         return False, "push to %s failed: %s" % (branch, excerpt(out))
+    ctx.state["ciBranch"] = branch
+    ctx.state["ciSha"] = sha
     ok, detail = dispatch_ci(ctx, branch)
     if not ok:
         return False, detail
-    ctx.state["ciBranch"] = branch
-    return True, "pushed %s and %s" % (branch, detail)
+    return True, "pushed %s (%s) and %s" % (branch, sha, detail)
 
 
 def step_wait_ci(ctx):
-    if _skip_remote("wait-ci", ctx):
-        return True, "skipped: no --push given"
+    """Waits on the commit `push-ci-branch` recorded. A state file written
+    before that was recorded falls back to the remote-tracking ref the push
+    left, never the bare branch name."""
     branch = ctx.state.get("ciBranch") or _ci_branch(ctx.version)
-    return wait_ci(ctx, branch)
+    sha = ctx.state.get("ciSha")
+    if not sha:
+        rc, out = ctx.run(["git", "rev-parse", "origin/%s" % (branch,)])
+        if rc != 0 or not out.strip():
+            return False, ("no pushed commit is recorded and origin/%s does "
+                           "not resolve: %s" % (branch, excerpt(out)))
+        sha = out.strip()
+    return wait_ci(ctx, branch, sha=sha)
 
 
 def step_tag(ctx):
@@ -476,8 +506,6 @@ def step_tag(ctx):
 
 
 def step_push_main_tag(ctx):
-    if _skip_remote("push-main-tag", ctx):
-        return True, "skipped: no --push given"
     allowed, refusal = release_permitted(ctx)
     if not allowed:
         return False, refusal
@@ -491,8 +519,6 @@ def step_push_main_tag(ctx):
 
 
 def step_gh_release(ctx):
-    if _skip_remote("gh-release", ctx):
-        return True, "skipped: no --push given"
     allowed, refusal = release_permitted(ctx)
     if not allowed:
         return False, refusal
@@ -515,8 +541,6 @@ def step_gh_release(ctx):
 
 
 def step_check_published(ctx):
-    if _skip_remote("check-published", ctx):
-        return True, "skipped: no --push given"
     rc, out = ctx.run(["python3", "tools/check-release-published.py"])
     if rc != 0:
         return False, "check-release-published.py: %s" % (excerpt(out),)
@@ -551,7 +575,11 @@ def run_pipeline(ctx, out=None):
     """Runs every step not already `done` in `ctx.state`, in order. Returns
     `(exit_code, last_detail)`. Writes `ctx.state` to `ctx.state_path` after
     EVERY step, so a process killed mid-pipeline leaves a state file that
-    names exactly what finished."""
+    names exactly what finished.
+
+    The one place a remote step is skipped without `--push`: recorded
+    `skipped`, which `step_done` does not count, so the same step runs on a
+    later `--push` run over this state file."""
     out = out if out is not None else sys.stdout
     ctx.state.setdefault("version", ctx.version)
     if ctx.state.get("version") != ctx.version:
@@ -561,9 +589,16 @@ def run_pipeline(ctx, out=None):
                                      ctx.version))
         out.write(detail + "\n")
         return 2, detail
+    skipped = []
     for name in STEPS:
         if step_done(ctx.state, name):
             out.write("== %-16s skipped (already done)\n" % (name,))
+            continue
+        if _skip_remote(name, ctx):
+            mark(ctx.state, name, "skipped", "no --push given; nothing run")
+            save_state(ctx.state_path, ctx.state)
+            out.write("== %-16s skipped (no --push given)\n" % (name,))
+            skipped.append(name)
             continue
         out.write("-> %s\n" % (name,))
         func = STEP_FUNCS[name]
@@ -578,6 +613,13 @@ def run_pipeline(ctx, out=None):
             out.write("Resume with:\n  %s\n" % (resume_command(ctx),))
             return 1, detail
         out.write("   ok: %s\n" % (detail,))
+    if skipped:
+        detail = ("release v%s prepared locally and nothing was published: "
+                  "%s skipped (no --push given)" % (ctx.version,
+                                                    ", ".join(skipped)))
+        out.write("\n%s.\nPublish with:\n  %s --push\n"
+                  % (detail, resume_command(ctx)))
+        return 0, detail
     out.write("\nRELEASE v%s COMPLETE.\n" % (ctx.version,))
     return 0, "complete"
 
@@ -668,8 +710,10 @@ def main(argv=None):
 class FakeRunner(object):
     """A scripted `runner`: `responses` is `[(predicate, (rc, out)), ...]`,
     checked in order against the command rendered as one string, so a case
-    can fail exactly one step by matching a substring of it. Records every
-    call so a case can assert what did, or did not, run."""
+    can fail exactly one step by matching a substring of it. A result may be
+    a callable taking that string, for an answer that depends on what ran
+    before it (`_faithful_responses`). Records every call so a case can
+    assert what did, or did not, run."""
 
     def __init__(self, responses=None, default=(0, ""), call_limit=200):
         self.calls = []
@@ -686,8 +730,87 @@ class FakeRunner(object):
             return 1, "fake runner: more than %d calls" % (self.call_limit,)
         for predicate, result in self.responses:
             if predicate(text):
-                return result
+                return result(text) if callable(result) else result
         return self.default
+
+
+def _new_world():
+    """What a faithful fake remembers across runners - one release attempt
+    and its resume share it, because the repository and the remote outlive
+    the process that touched them."""
+    return {"head": "0ldhead0", "committed": False, "tagged": False,
+            "pushedSha": None}
+
+
+def _faithful_responses(world, version="9.9.9"):
+    """The answers git, `verify.sh` and `gh` actually give, as the steps reach
+    them, so a case cannot pass on an order or a ref the real tools refuse.
+
+    - `git push origin HEAD:refs/heads/ci/v...` creates NO local branch, so
+      `git rev-parse ci/v...` fails exactly as it does in a real clone after
+      that push; only `origin/ci/v...` resolves, and only once pushed.
+    - `verify.sh --release` ends by asking whether HEAD carries the pages the
+      followers re-rendered, so it is red until a commit has been recorded.
+    - `gh run list` reports a green run for the commit that was pushed."""
+    sha = "c0mm1tted"
+    tag = "v%s" % (version,)
+    branch = "ci/v%s" % (version,)
+
+    def commit(_text):
+        world["committed"] = True
+        world["head"] = sha
+        return 0, "[main %s] release: %s" % (sha, tag)
+
+    def tag_it(_text):
+        world["tagged"] = True
+        return 0, ""
+
+    def rev_parse_tag(_text):
+        if world["tagged"]:
+            return 0, "7a9000\n"
+        return 128, "fatal: ambiguous argument '%s': unknown revision" % (tag,)
+
+    def rev_parse_remote(_text):
+        if world["pushedSha"]:
+            return 0, world["pushedSha"] + "\n"
+        return 128, "fatal: ambiguous argument 'origin/%s'" % (branch,)
+
+    def push_ci(_text):
+        world["pushedSha"] = world["head"]
+        return 0, ""
+
+    def verify(_text):
+        if world["committed"]:
+            return 0, "verify: every gate green"
+        return 1, ("FAIL HEAD carries the published pages: a re-rendered "
+                   "page is uncommitted")
+
+    def run_list(_text):
+        if not world["pushedSha"]:
+            return 0, "[]"
+        return 0, json.dumps([{"headSha": world["pushedSha"],
+                               "status": "completed", "conclusion": "success",
+                               "databaseId": 7}])
+
+    return [
+        (lambda c: c == "git rev-parse %s" % (tag,), rev_parse_tag),
+        (lambda c: c.startswith("git rev-parse ci/"),
+         (128, "fatal: ambiguous argument '%s': unknown revision" % (branch,))),
+        (lambda c: c.startswith("git rev-parse origin/ci/"), rev_parse_remote),
+        (lambda c: c == "git rev-parse HEAD",
+         lambda _t: (0, world["head"] + "\n")),
+        (lambda c: c.startswith("git commit"), commit),
+        (lambda c: c.startswith("git tag -a"), tag_it),
+        (lambda c: c.startswith("git push origin HEAD:refs/heads/ci/"),
+         push_ci),
+        (lambda c: c == "sh tools/verify.sh --release", verify),
+        (lambda c: c.startswith("gh run list"), run_list),
+    ]
+
+
+def _call_list(runner):
+    """Every case that prints a fake runner's call list prints it clipped."""
+    return excerpt(repr(runner.calls))
 
 
 def _fixture_repo(bugs=None):
@@ -741,24 +864,83 @@ def _cases(check):
     # --- without --push, no publishing command is ever issued ------------------
     tmp = _fixture_repo()
     try:
-        runner = FakeRunner(
-            responses=[(lambda c: c.startswith("git rev-parse v9.9.9"),
-                       (1, "no such tag"))],
-            default=(0, ""))
+        world = _new_world()
+        state_path = os.path.join(tmp, "state.json")
+        runner = FakeRunner(_faithful_responses(world))
         ctx = Context(tmp, "9.9.9", push=False, runner=runner,
-                     state_path=os.path.join(tmp, "state.json"))
-        code, _detail = run_pipeline(ctx, out=io.StringIO())
+                     state_path=state_path)
+        printed = io.StringIO()
+        code, _detail = run_pipeline(ctx, out=printed)
         publishing = [c for c in runner.calls
                      if ("git push" in c or "gh release create" in c
                          or "gh workflow run" in c)]
         check("rl2 a full run with no --push reaches the end green and "
               "issues no push, no `gh workflow run` and no `gh release "
-              "create`: %r" % (runner.calls,),
+              "create`: %s" % (_call_list(runner),),
               code == 0 and not publishing)
-        check("rl2b ...and every remote step is recorded done, as a no-op, "
-              "rather than skipped entirely - a later resume with --push "
-              "must not need to re-run `commit` to reach them",
-              all(step_done(ctx.state, name) for name in REMOTE_STEPS))
+        statuses = [(ctx.state["steps"].get(name) or {}).get("status")
+                    for name in REMOTE_STEPS]
+        check("rl2b ...and every remote step is recorded `skipped`, never "
+              "`done` - a `done` would let a later --push run skip it and "
+              "publish nothing: %r" % (statuses,),
+              statuses == ["skipped"] * len(REMOTE_STEPS))
+        check("rl2d ...and the run does not claim a COMPLETE release, saying "
+              "instead that nothing was published: %r"
+              % (excerpt(printed.getvalue()[-300:]),),
+              "COMPLETE" not in printed.getvalue()
+              and "nothing was published" in printed.getvalue())
+
+        runner2 = FakeRunner(_faithful_responses(world))
+        ctx2 = Context(tmp, "9.9.9", push=True, runner=runner2,
+                      state=load_state(state_path), state_path=state_path,
+                      poll_interval=0, ci_timeout=2)
+        printed2 = io.StringIO()
+        code2, detail2 = run_pipeline(ctx2, out=printed2)
+        published = [c for c in runner2.calls
+                     if c.startswith("git push origin")
+                     or c.startswith("gh release create")]
+        check("rl2c the same state file run again WITH --push publishes - "
+              "the ci branch, main, the tag and the GitHub Release are all "
+              "pushed - and only then prints COMPLETE: %r / %s"
+              % (detail2, _call_list(runner2)),
+              code2 == 0 and "COMPLETE" in printed2.getvalue()
+              and [c.split(" ")[3] if c.startswith("git push") else "release"
+                   for c in published]
+              == ["HEAD:refs/heads/ci/v9.9.9", "main", "v9.9.9", "release"]
+              and all(step_done(ctx2.state, name) for name in REMOTE_STEPS))
+        check("rl2e ...and the local steps that already ran are not run a "
+              "second time by that --push run: %s" % (_call_list(runner2),),
+              not any(c.startswith("git commit") or c.startswith("git tag -a")
+                      or "verify.sh" in c for c in runner2.calls))
+    finally:
+        remove_tree(tmp)
+
+    # --- the order and the refs a REAL run meets --------------------------------
+    tmp = _fixture_repo()
+    try:
+        world = _new_world()
+        runner = FakeRunner(_faithful_responses(world))
+        ctx = Context(tmp, "9.9.9", push=True, runner=runner,
+                     state_path=os.path.join(tmp, "state.json"),
+                     poll_interval=0, ci_timeout=2)
+        code, detail = run_pipeline(ctx, out=io.StringIO())
+        commit_at = [i for i, c in enumerate(runner.calls)
+                     if c.startswith("git commit")]
+        verify_at = [i for i, c in enumerate(runner.calls)
+                     if c == "sh tools/verify.sh --release"]
+        check("rl12 `verify.sh --release` runs once, AFTER the release "
+              "commit - its HEAD-carries-the-pages arm is red before one, so "
+              "a full --push run over a faithful fake goes green: %r / %s"
+              % (detail, _call_list(runner)),
+              code == 0 and len(commit_at) == 1 and len(verify_at) == 1
+              and commit_at[0] < verify_at[0])
+        check("rl13 wait-ci never asks git for the bare `ci/v...` name the "
+              "push does not create, and waits on the commit that was "
+              "pushed: %r / %s" % (ctx.state.get("ciSha"), _call_list(runner)),
+              not any(c.startswith("git rev-parse ci/") for c in runner.calls)
+              and ctx.state.get("ciSha") == "c0mm1tted"
+              and "c0mm1tted" in (ctx.state["steps"].get("wait-ci")
+                                  or {}).get("detail", ""))
     finally:
         remove_tree(tmp)
 
@@ -766,22 +948,12 @@ def _cases(check):
     tmp = _fixture_repo()
     try:
         state_path = os.path.join(tmp, "state.json")
-        dispatched = []
-
-        def responses_first():
-            return [
-                (lambda c: c.startswith("git rev-parse v9.9.9"), (1, "")),
-                (lambda c: "gh workflow run" in c,
-                 (0, dispatched.append(1) or "ok")),
-                (lambda c: c.startswith("git rev-parse ci/v9.9.9"),
-                 (0, "deadbeef\n")),
-                (lambda c: "gh run list" in c,
-                 (0, json.dumps([{"headSha": "deadbeef", "status": "completed",
-                                 "conclusion": "failure",
-                                 "databaseId": 1}]))),
-            ]
-
-        runner = FakeRunner(responses_first())
+        world = _new_world()
+        red_run = (lambda c: c.startswith("gh run list"),
+                   lambda _t: (0, json.dumps([{
+                       "headSha": world["pushedSha"], "status": "completed",
+                       "conclusion": "failure", "databaseId": 1}])))
+        runner = FakeRunner([red_run] + _faithful_responses(world))
         ctx = Context(tmp, "9.9.9", push=True, runner=runner,
                      state_path=state_path, poll_interval=0, ci_timeout=2)
         code, detail = run_pipeline(ctx, out=io.StringIO())
@@ -811,16 +983,8 @@ def _cases(check):
         # Resume: the CI run now succeeds.
         bumps_before_resume = len(
             [c for c in runner.calls if c.startswith("git tag")])
-        del dispatched[:]
         resumed_state = load_state(state_path)
-        responses_second = [
-            (lambda c: c.startswith("git rev-parse ci/v9.9.9"),
-             (0, "deadbeef\n")),
-            (lambda c: "gh run list" in c,
-             (0, json.dumps([{"headSha": "deadbeef", "status": "completed",
-                             "conclusion": "success", "databaseId": 2}]))),
-        ]
-        runner2 = FakeRunner(responses_second)
+        runner2 = FakeRunner(_faithful_responses(world))
         ctx2 = Context(tmp, "9.9.9", push=True, runner=runner2,
                       state=resumed_state, state_path=state_path,
                       poll_interval=0, ci_timeout=2)
@@ -829,7 +993,8 @@ def _cases(check):
               % (detail2,), code2 == 0)
         check("rl4b ...and the earlier steps did not run again on resume - "
               "no second push of the ci branch and no second `examples/"
-              "report.sh` (both already recorded done): %r" % (runner2.calls,),
+              "report.sh` (both already recorded done): %s"
+              % (_call_list(runner2),),
               bumps_before_resume == 0
               and not any(c.startswith("git push origin HEAD:refs/heads/")
                          for c in runner2.calls)
@@ -839,6 +1004,118 @@ def _cases(check):
               not any("gh workflow run" in c for c in runner2.calls))
     finally:
         remove_tree(tmp)
+
+    # --- a stop at EVERY step resumes there, and only there ---------------------
+    # One row per step: how to make that step (and only it) red on the first
+    # run, and how to repair the fixture before the resume. The second run's
+    # runner carries no fault, so what it calls is what the resume re-ran.
+    signature = {
+        "preflight": "git rev-parse v9.9.9",
+        "followers": "capture-screenshots.mjs",
+        "commit": "git commit",
+        "verify-release": "sh tools/verify.sh --release",
+        "push-ci-branch": "git push origin HEAD:refs/heads/",
+        "wait-ci": "gh run list",
+        "tag": "git tag -a",
+        "push-main-tag": "git push origin main",
+        "gh-release": "gh release create",
+        "check-published": "check-release-published.py",
+    }
+
+    def _failing(needle, result):
+        return [(lambda c: needle in c, result)]
+
+    def _write(root, rel, text):
+        with io.open(os.path.join(root, rel), "w", encoding="utf-8") as fh:
+            fh.write(text)
+
+    good_changelog = "# Changelog\n\n## [Unreleased]\n\n- a change\n"
+    good_plugin = json.dumps({"name": "audit", "version": "1.0.0"})
+    rows = {
+        "preflight": {"faults": _failing("git rev-parse v9.9.9",
+                                         (0, "an existing tag\n"))},
+        "bump-version": {
+            # Nothing a fake can answer makes bump-version red while letting
+            # preflight (which reads the same file) through, so this row
+            # starts with preflight already recorded and an unparseable file.
+            "seed": ("preflight",),
+            "break": lambda root: _write(root, PLUGIN_JSON_REL, "{not json"),
+            "repair": lambda root: _write(root, PLUGIN_JSON_REL, good_plugin)},
+        "finalize-changelog": {
+            "break": lambda root: _write(root, CHANGELOG_REL, "# Changelog\n"),
+            "repair": lambda root: _write(root, CHANGELOG_REL, good_changelog)},
+        "followers": {"faults": _failing("capture-screenshots.mjs",
+                                         (1, "no browser"))},
+        "commit": {"faults": _failing("git commit", (1, "hook refused"))},
+        "verify-release": {"faults": _failing("tools/verify.sh",
+                                              (1, "a gate is red"))},
+        "push-ci-branch": {"faults": _failing("git push origin HEAD:",
+                                              (1, "rejected"))},
+        "wait-ci": {"faults": None},
+        "tag": {"faults": _failing("git tag -a", (1, "tag refused"))},
+        "push-main-tag": {"faults": _failing("git push origin main",
+                                             (1, "rejected"))},
+        "gh-release": {"faults": _failing("gh release create",
+                                          (1, "HTTP 502"))},
+        "check-published": {"faults": _failing("check-release-published.py",
+                                               (1, "Latest names v1.0.0"))},
+    }
+    check("rl15 the resume table has exactly one row per step, in STEPS "
+          "order: %r" % (sorted(set(STEPS) ^ set(rows)),),
+          sorted(rows) == sorted(STEPS))
+    for index, name in enumerate(STEPS):
+        row = rows.get(name) or {}
+        earlier = STEPS[:index]
+        tmp = _fixture_repo()
+        try:
+            world = _new_world()
+            state_path = os.path.join(tmp, "state.json")
+            state = {"steps": {}, "version": "9.9.9"}
+            for seeded in row.get("seed", ()):
+                mark(state, seeded, "done", "fixture: pre-seeded done")
+                state["oldVersion"] = "1.0.0"
+            if row.get("break"):
+                row["break"](tmp)
+            faults = row.get("faults") or []
+            if name == "wait-ci":
+                faults = [(lambda c: c.startswith("gh run list"),
+                           lambda _t: (0, json.dumps([{
+                               "headSha": world["pushedSha"],
+                               "status": "completed", "conclusion": "failure",
+                               "databaseId": 3}])))]
+            runner = FakeRunner(faults + _faithful_responses(world))
+            ctx = Context(tmp, "9.9.9", push=True, runner=runner, state=state,
+                         state_path=state_path, poll_interval=0, ci_timeout=2)
+            code1, detail1 = run_pipeline(ctx, out=io.StringIO())
+            first_ok = (code1 == 1
+                        and (ctx.state["steps"].get(name) or {}).get("status")
+                        == "failed"
+                        and all(step_done(ctx.state, e) for e in earlier))
+            if row.get("repair"):
+                row["repair"](tmp)
+            runner2 = FakeRunner(_faithful_responses(world))
+            ctx2 = Context(tmp, "9.9.9", push=True, runner=runner2,
+                          state=load_state(state_path), state_path=state_path,
+                          poll_interval=0, ci_timeout=2)
+            printed2 = io.StringIO()
+            code2, detail2 = run_pipeline(ctx2, out=printed2)
+            text2 = printed2.getvalue()
+            reran = [e for e in earlier
+                     if "== %-16s skipped (already done)" % (e,) not in text2
+                     or (e in signature
+                         and any(signature[e] in c for c in runner2.calls))]
+            own = signature.get(name)
+            check("rl14 %s: a first run red at %s stops there with every "
+                  "earlier step done, and the resume re-runs %s and no "
+                  "earlier step, then finishes: first %r / resume %r / "
+                  "re-ran %r / %s"
+                  % (name, name, name, excerpt(detail1, 160),
+                     excerpt(detail2, 160), reran, _call_list(runner2)),
+                  first_ok and code2 == 0 and not reran
+                  and ("-> %s\n" % (name,)) in text2
+                  and (own is None or any(own in c for c in runner2.calls)))
+        finally:
+            remove_tree(tmp)
 
     # --- release_permitted: asked again before every remote step, not only -----
     # at preflight, because a bug can be filed in the gap a CI wait leaves open.
@@ -864,7 +1141,7 @@ def _cases(check):
         code, detail = run_pipeline(ctx, out=io.StringIO())
         check("rl8 a bug filed in the plan after preflight ran stops the run "
               "at the next remote step, naming the bug, with no push issued: "
-              "%r / %s" % (detail, excerpt(repr(runner.calls))),
+              "%r / %s" % (detail, _call_list(runner)),
               code == 1 and "BUG-9" in detail
               and step_done(ctx.state, "push-ci-branch") is False
               and not runner.calls)

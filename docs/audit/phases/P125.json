@@ -201,8 +201,10 @@
         "severity": "med",
         "file": ".claude/hooks/guard-release.py (P125.11)",
         "issue": "Task clause 'guard-release learns to treat an invocation of tools/release.py as a publishing command so the #release-with-bugs bypass still governs it' is not implemented: the hook has no hunk and the declared test 'python3 tools/release.py --push is classified as a publishing command' was not written. The open-bug rule exists only inside release.py (release_permitted), so the hook never sees the release command.",
-        "resolution": "Add the release.py arm to the guard's publisher classification with a case in the hook's suite, or have the owner amend the task description and its tests.add so the override is recorded where the gate reads it.",
-        "fixTask": "P125.104-0h5"
+        "resolution": "fixed in P125.104-0h5 (3299d01909c6): Add the release.py arm to the guard's publisher classification with a case in the hook's suite, or have the owner amend the task description and its tests.add so the override is recorded where the gate reads it.",
+        "fixTask": "P125.104-0h5",
+        "commit": "3299d01909c6",
+        "status": "fixed"
       },
       {
         "id": "P125-R25",
@@ -948,7 +950,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 4 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 5 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -5683,7 +5685,12 @@
         "P125-R25",
         "P125-R98"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-15T05:18:22Z.4e80b0",
+        "status": "passed",
+        "at": "2026-10-15T05:18:22Z"
+      }
     },
     {
       "id": "P125.75-0h5",
@@ -7321,7 +7328,7 @@
     {
       "id": "P125.104-0h5",
       "title": "fix P125-R24: guard-release treats a tools/release.py invocation as a publishing command",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase-review finding P125-R24 (P125.11's clause 'guard-release learns to treat an invocation of tools/release.py as a publishing command so the #release-with-bugs bypass still governs it' was not implemented; the declared test was not written). Command-reading code in a guard hook: written by the orchestrator, not an agent. Add the release.py arm to the guard's publisher classification - an invocation of tools/release.py whose arguments include --push - with a deny case and the allow twin (a release.py run without --push, and an unrelated python3 tools/x.py --push).",
       "files": [
         ".claude/hooks/guard-release.py",
@@ -7352,14 +7359,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3299d01909c6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "guard-release.py gains _release_push(cfg_mod, rest): the words the shell runs are tools/release.py run directly or by a Python interpreter (interpreter options stepped over, -W/-X/-Q with their value), with --push or --push=... among the script's own arguments. _words_publishers asks it first and reports 'runs the release pipeline with --push'; the anchored fallback for an unbalanced clause gets the same arm through _RELEASE_AT. Without --push the pipeline stops before every remote step, so that form is not a publisher. Cases gr4r (five pushing forms incl. -u, a direct run, an absolute path and sh -c, plus two non-pushing forms) and gr4s (another script's --push, release.py inside an echo string, release_notes.py) were proven by mutation in a scratch copy: dropping the arm turns gr4r red, accepting any --push turns gr4s red; 103/103 with the change. Written by the orchestrator, since this is command-reading code in a guard hook.",
+        "descriptive": "The release guard now treats `tools/release.py ... --push` as a publishing command, so the open-bug check and the #release-with-bugs bypass govern the release pipeline the same way they govern git tag and gh release."
       },
       "startedAt": "2026-10-15T04:32:29Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-15T05:08:32Z",
+      "verifiedBy": [
+        ".claude/hooks/guard-release.py: python3 tools/release.py --push is classified as a publishing command, and release.py without --push is not"
+      ],
       "notes": [
         {
           "at": "2026-10-15T03:41:51Z",
@@ -7374,6 +7383,18 @@
         "runId": "2026-10-15T05:08:30Z.6cde0b",
         "status": "passed",
         "at": "2026-10-15T05:08:30Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "3299d01909c6",
+        "at": "2026-10-15T05:08:32Z",
+        "basis": "a fix task for P125-R24: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-15T04:37:08Z",
+        "basis": "`python3 .claude/hooks/guard-release.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 103 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code, the task's run with its inline suite .claude/hooks/guard-release.py laid over as HEAD's copy plus its 1 test hunk(s), 4 other hunk(s) held at HEAD), each passing with the working tree's implementation - gr4r (house FAIL): SELFTEST FAILED: 102/103 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
