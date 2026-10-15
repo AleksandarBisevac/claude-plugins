@@ -1434,7 +1434,8 @@
       "P125.71-0h5",
       "P125.96-0h5",
       "P125.75-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.108-0h5"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2967,7 +2968,8 @@
       "P125.51-0h5",
       "P125.61-0h5",
       "P125.99-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.108-0h5"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -3637,7 +3639,8 @@
       "P125.49-0h5",
       "P125.54-0h5",
       "P125.51-0h5",
-      "P125.93-0h5"
+      "P125.93-0h5",
+      "P128.19-0h5"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -3698,7 +3701,8 @@
       "P125.63-0h5",
       "P125.68-0h5",
       "P125.71-0h5",
-      "P125.80-0h5"
+      "P125.80-0h5",
+      "P128.21-0h5"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -4062,7 +4066,8 @@
       "P125.60-0h5",
       "P125.65-0h5",
       "P125.87-0h5",
-      "P125.98-0h5"
+      "P125.98-0h5",
+      "P128.18-0h5"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -4983,7 +4988,8 @@
       "P125.56-0h5",
       "P125.61-0h5",
       "P125.99-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.108-0h5"
     ],
     "plugins/audit/tests/test__deps.py: a field added to one copy of the explorer return contract and not the other is a finding": [
       "P32.5"
@@ -5978,7 +5984,8 @@
       "P125.65-0h5",
       "P125.66-0h5",
       "P125.87-0h5",
-      "P125.98-0h5"
+      "P125.98-0h5",
+      "P128.18-0h5"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -6514,7 +6521,8 @@
       "P125.49-0h5",
       "P125.54-0h5",
       "P125.61-0h5",
-      "P125.93-0h5"
+      "P125.93-0h5",
+      "P128.19-0h5"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
@@ -6582,7 +6590,8 @@
       "P125.57-0h5",
       "P125.63-0h5",
       "P125.71-0h5",
-      "P125.80-0h5"
+      "P125.80-0h5",
+      "P128.21-0h5"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
@@ -6935,7 +6944,8 @@
       "P125.44-0h5",
       "P125.69-0h5",
       "P125.72-0h5",
-      "P125.73-0h5"
+      "P125.73-0h5",
+      "P128.20-0h5"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
