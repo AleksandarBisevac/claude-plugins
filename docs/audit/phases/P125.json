@@ -1114,8 +1114,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/ui/report/page-state.js:193-200; tools/check-report-interactive.mjs:2806-2858; tools/ui-tests/table-fit.test.mjs:20-40",
         "issue": "Nothing tests the content-change path of the measured fit. This is the ResizeObserver over every .tablewrap and its table. Per the comment at page-state.js:189-192 it is the only thing that re-measures a frame after an expand, filter or view switch makes its table wider with no window resize. In leg 10c the planted pass calls setViewportSize at every rung (2806-2810) before reading fitState, so the window-resize fallback alone satisfies it. Yet the expect label at 2848-2853 says it measures 'the re-measure following the content change', and its procedure cannot observe that. The vitest sandbox has no ResizeObserver, and the PRELUDE does not stub one. So deleting lines 193-200 leaves every new test green, and the failure this would hide is a stale data-fits mark releasing a frame around a table that now overflows it. table-fit.test.mjs's own header calls that the failure that matters, and it widens the page. The executor's outcome discloses the limit ('cannot tell the ResizeObserver path from the resize fallback').",
-        "resolution": "In leg 10c, after planting and before the planted ladder, wait two animation frames at the current viewport with no setViewportSize. Then run fitState/fitWrong once and fail on any frame that is marked while its table overflows. Also add a vitest case whose PRELUDE stubs window.ResizeObserver and records the callback and its observe() targets. Assert that every .tablewrap and its table are observed, and that invoking the callback queues one measurement that drops a stale mark. Prove red by deleting the `if (window.ResizeObserver)` block.",
-        "fixTask": "P125.130-0h5"
+        "resolution": "fixed in P125.140-0h5 (23fba1307608): In leg 10c, after planting and before the planted ladder, wait two animation frames at the current viewport with no setViewportSize. Then run fitState/fitWrong once and fail on any frame that is marked while its table overflows. Also add a vitest case whose PRELUDE stubs window.ResizeObserver and records the callback and its observe() targets. Assert that every .tablewrap and its table are observed, and that invoking the callback queues one measurement that drops a stale mark. Prove red by deleting the `if (window.ResizeObserver)` block.",
+        "fixTask": "P125.140-0h5",
+        "commit": "23fba1307608",
+        "status": "fixed"
       },
       {
         "id": "P125-R136",
@@ -1339,9 +1341,51 @@
         "file": "plugins/audit/tests/_harness.py:330-336",
         "issue": "On Windows, subprocess.run's timeout path calls process.communicate() with no timeout after kill. A hang where a descendant of git (a hook, or the fsmonitor hook in the new case) keeps stdout/stderr open is therefore not ended at `timeout`, and the new trace2-tail message appears only when that descendant exits. The gt-block case passes on Windows only because `sleep 10` ends by itself.",
         "resolution": "Run the call through Popen with stdout/stderr sent to scratch files, or kill and then communicate(timeout=<short>) and fall back to closing the pipes, so the timeout bounds the call on both platforms."
+      },
+      {
+        "id": "P125-R164",
+        "severity": "med",
+        "file": "plugins/audit/reference/phase-signoff.md:107-121 (HEAD), plugins/audit/scripts/governance/drive-phase.py:1481-1512,2510-2516 (HEAD), plugins/audit/schema/audit-plan.schema.json:1825-1831",
+        "issue": "contradicts task clause (5) of P125.19, which P125.128 quotes: 'every planned test carries a line 'must fail if <small code change>' ... and a test that survives is a finding with file:line'. The owner chose to implement this rather than narrow the clause (ORCHESTRATOR-NOTES R38), and the wiring now exists: falsify() runs after the green gate and the `falsifier` decision stops the close. Two halves of the clause are still unmet. (a) Nothing produces a falsifier. The new doc text says so itself: 'the field is optional, and nothing makes a plan declare one'. `git grep -i falsifier` at 63e319e8 finds no planner brief, no `/audit:task add` flag and no executor return field that writes `tests.falsifiers`. Outside the drive, the rules, the schema and the demo exemptions, the only hits are phase-signoff.md. So in any real plan task_falsifiers() returns [] and falsify() returns None at its first line. The new path runs only on a hand-edited shard. (b) A survivor is not a finding. `accept` only calls `_mark(state, 'falsified', task, {'accepted': reason, ...})` in the drive's ephemeral state (drive-phase.py:2510-2516). That state is dropped at finish, and decision() writes no journal row. Nothing lands in phase.review.findings or on the task, and the decision text names the tests.add entry, never a file:line. A surviving test that is accepted therefore leaves no durable record.",
+        "resolution": "Give the falsifier a producer. Either the planner/executor brief emits a `tests.falsifiers` entry for each planned test (the executor knows the fix's shape when it files, which answers the 'code not yet written at synthesis' objection), or `/audit:task add` takes a `--falsifier` flag that the planner is told to use. Then make a survived or accepted falsifier durable: record it as a phase.review finding, or a task note, carrying the mutation's file and the test entry. Do not restate 'nothing makes a plan declare one' as the answer to 'every planned test carries'."
+      },
+      {
+        "id": "P125-R165",
+        "severity": "med",
+        "file": "plugins/audit/tests/test_drive_phase.py:6627-6648,6655-6666 (HEAD)",
+        "issue": "The coverage statement that P125.134 adds and pins is false on Linux, which is where CI's POSIX legs run. The docstring says 'on POSIX the sweep's `--encoding` pass covers them, since it pins the locale there'. But tools/sweep-selftests.py:707 (locale_decision) returns `locale: {}` (stdio half only) whenever the child's filesystem encoding is not UTF-8. The sweep's own comment at :638 says that is exactly Linux under LC_ALL=C PYTHONUTF8=0 ('on linux it makes the FILESYSTEM encoding ASCII too, while macOS keeps UTF-8 file names'). The cp1252 leg runs on ubuntu-latest and windows-latest (ci.yml:99-100,259), so in CI no run puts the drive suite's other blocks under a non-UTF-8 locale. Only a macOS developer run does. _ascii_coverage_case cannot see this: it feeds locale_decision a fabricated macOS-shaped report `('ascii', 'utf-8')` and never the Linux shape. The finding this fix answers was about stating the coverage honestly, and the new statement names the wrong cover.",
+        "resolution": "Reword the docstring to the platform split locale_decision actually makes. The locale is pinned on macOS (UTF-8 file names under C). On Linux it is not, because the C locale makes the filesystem ASCII, so only the stdio codec is set. On Windows nothing is pinned. Extend _ascii_coverage_case to assert that a Linux-shaped report (`('ANSI_X3.4-1968', 'ascii')`) yields `locale == {}`, so the docstring and the decision table cannot drift apart again."
+      },
+      {
+        "id": "P125-R166",
+        "severity": "med",
+        "file": "plugins/audit/agents/audit-reviewer.md:133-137",
+        "issue": "P125.139 (c9af0c0b) records what a round reviewed only when the phase return is filed with `--shown`. A return filed without the flag is read as the legacy shape with no error, so the next brief shows every fix task again - the defect P125-R162 named. The reviewer's contract still spells the filing call as 'in `mode: phase` always `<phaseId> --role reviewer --head <sha>`' and never mentions `--shown`; the task declared this file but left it unchanged. A reviewer that follows its agent card rather than the brief's printed command files without the set, and nothing reports it.",
+        "resolution": "Change the agent's filing sentence to: run the filing command the brief prints, `--shown` included. Better, make the omission loud: record the shown set beside the brief keyed by head and have submit/file-return refuse a phase return for that head without it. Add a case."
+      },
+      {
+        "id": "P125-R167",
+        "severity": "low",
+        "file": "tools/sweep-selftests.py:436-444,868",
+        "issue": "P125.138 redirects each child's `git config --global` into a runner-owned file the documents say 'is checked back afterwards like a planted one', but no case exercises git_global_debris; deleting it from run_one's debris sum would fail nothing. Before, the home channel caught a suite writing global git config.",
+        "resolution": "Add a sweep selftest where a child runs `git config --global x.y z` (or deletes the file) and assert a red 'git global config:' finding, with the allow twin."
+      },
+      {
+        "id": "P125-R168",
+        "severity": "low",
+        "file": "plugins/audit/tests/test__help.py:812-819 (at f1018308)",
+        "issue": "P125.137's probe assigned os.path.join = lambda: ntpath.join(...); on Windows os.path is ntpath, so it recursed (CI run 38888145562).",
+        "resolution": "fixed at HEAD by 63e319e8 (P125.141)."
+      },
+      {
+        "id": "P125-R169",
+        "severity": "low",
+        "file": "tools/ui-tests/table-fit.test.mjs:151-184",
+        "issue": "No command in P125.140's tests.gate selects its vitest case (no `npx vitest run` entry); the recorded gate run says NO OVERLAP, so the case's green rests on the executor's hand run.",
+        "resolution": "Give tasks touching tools/ui-tests/ a vitest entry in tests.gate, or have the derived task gate add one for those paths."
       }
     ],
-    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 58 with a recorded fix commit]"
+    "outcome": "[findings: 169 - 3 high, 61 med, 105 low; 59 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -11154,7 +11198,7 @@
     {
       "id": "P125.141-0h5",
       "title": "The help payload's backslash probe keeps the original join, so it cannot recurse on Windows",
-      "status": "in_progress",
+      "status": "done",
       "description": "Regression from P125.137, CI 38888145562 (c9f8d86f, windows plain 3 and cp1252 3): test__help raised RecursionError. The probe sets os.path.join = lambda ...: ntpath.join(...); on Windows os.path IS ntpath, so ntpath.join is the lambda and it recurses (test__help.py ~815-817). Bind the original join before the swap and call that; a case simulates os.path being ntpath (patch ntpath.join through os.path on a posix host) and expects no recursion.",
       "files": [
         "plugins/audit/tests/test__help.py"
@@ -11184,19 +11228,31 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "63e319e86078",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "In plugins/audit/tests/test__help.py: extracted the swap into _run_with_nt_join(fn), which binds _nt_join = ntpath.join before replacing os.path.join and restores it in finally; the module-level probe now calls it. Added a case that sets os.path = ntpath (simulated Windows host), runs the helper, catches RecursionError as a failure, restores os.path/ntpath.join, and asserts the join result 'schema\\\\x.json' and that the backslash control still flags. The shim_path.join = ntpath.join near the top of _backslash_payload_bytes has no hazard: it assigns to a separate shim module, never to os.path or ntpath, so it was left alone. Exit codes: test__help.py --selftest 0 (112/112), sweep-selftests.py 0 (335/335 files ok), sweep-selftests.py --encoding cp1252 0 (335/335 ok; it printed 0 cases per file on this posix host, so that pass checks little here).",
+        "descriptive": "The help payload's backslash probe no longer recurses where os.path is ntpath, and a simulated-Windows case locks it."
       },
       "startedAt": "2026-10-16T12:07:04Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T12:43:26Z",
+      "verifiedBy": [
+        "the module-level backslash probe binds the real ntpath.join before swapping os.path.join, so on a host whose os.path is ntpath it does not call itself (os.path simulated as ntpath; the probe completes with no RecursionError and still flags the backslash control)"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-16T12:43:24Z.f6b1c7",
         "status": "passed",
         "at": "2026-10-16T12:43:24Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "63e319e86078",
+        "at": "2026-10-16T12:43:26Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression mode, expectRedFirst false; the mutation was run by hand in the task tree instead: replacing _nt_join(first, *rest) with ntpath.join(first, *rest) in the lambda made the new case FAIL with RecursionError (111/112 passed); restored and byte-compared with a saved copy",
+        "at": "n/a"
       }
     }
   ],

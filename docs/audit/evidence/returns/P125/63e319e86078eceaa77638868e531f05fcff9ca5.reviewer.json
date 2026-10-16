@@ -1,0 +1,276 @@
+{
+  "findings": [
+    {
+      "severity": "med",
+      "file": "plugins/audit/reference/phase-signoff.md:107-121 (HEAD), plugins/audit/scripts/governance/drive-phase.py:1481-1512,2510-2516 (HEAD), plugins/audit/schema/audit-plan.schema.json:1825-1831",
+      "issue": "contradicts task clause (5) of P125.19, which P125.128 quotes: 'every planned test carries a line 'must fail if <small code change>' ... and a test that survives is a finding with file:line'. The owner chose to implement this rather than narrow the clause (ORCHESTRATOR-NOTES R38), and the wiring now exists: falsify() runs after the green gate and the `falsifier` decision stops the close. Two halves of the clause are still unmet. (a) Nothing produces a falsifier. The new doc text says so itself: 'the field is optional, and nothing makes a plan declare one'. `git grep -i falsifier` at 63e319e8 finds no planner brief, no `/audit:task add` flag and no executor return field that writes `tests.falsifiers`. Outside the drive, the rules, the schema and the demo exemptions, the only hits are phase-signoff.md. So in any real plan task_falsifiers() returns [] and falsify() returns None at its first line. The new path runs only on a hand-edited shard. (b) A survivor is not a finding. `accept` only calls `_mark(state, 'falsified', task, {'accepted': reason, ...})` in the drive's ephemeral state (drive-phase.py:2510-2516). That state is dropped at finish, and decision() writes no journal row. Nothing lands in phase.review.findings or on the task, and the decision text names the tests.add entry, never a file:line. A surviving test that is accepted therefore leaves no durable record.",
+      "resolution": "Give the falsifier a producer. Either the planner/executor brief emits a `tests.falsifiers` entry for each planned test (the executor knows the fix's shape when it files, which answers the 'code not yet written at synthesis' objection), or `/audit:task add` takes a `--falsifier` flag that the planner is told to use. Then make a survived or accepted falsifier durable: record it as a phase.review finding, or a task note, carrying the mutation's file and the test entry. Do not restate 'nothing makes a plan declare one' as the answer to 'every planned test carries'.",
+      "id": 1
+    },
+    {
+      "severity": "med",
+      "file": "plugins/audit/tests/test_drive_phase.py:6627-6648,6655-6666 (HEAD)",
+      "issue": "The coverage statement that P125.134 adds and pins is false on Linux, which is where CI's POSIX legs run. The docstring says 'on POSIX the sweep's `--encoding` pass covers them, since it pins the locale there'. But tools/sweep-selftests.py:707 (locale_decision) returns `locale: {}` (stdio half only) whenever the child's filesystem encoding is not UTF-8. The sweep's own comment at :638 says that is exactly Linux under LC_ALL=C PYTHONUTF8=0 ('on linux it makes the FILESYSTEM encoding ASCII too, while macOS keeps UTF-8 file names'). The cp1252 leg runs on ubuntu-latest and windows-latest (ci.yml:99-100,259), so in CI no run puts the drive suite's other blocks under a non-UTF-8 locale. Only a macOS developer run does. _ascii_coverage_case cannot see this: it feeds locale_decision a fabricated macOS-shaped report `('ascii', 'utf-8')` and never the Linux shape. The finding this fix answers was about stating the coverage honestly, and the new statement names the wrong cover.",
+      "resolution": "Reword the docstring to the platform split locale_decision actually makes. The locale is pinned on macOS (UTF-8 file names under C). On Linux it is not, because the C locale makes the filesystem ASCII, so only the stdio codec is set. On Windows nothing is pinned. Extend _ascii_coverage_case to assert that a Linux-shaped report (`('ANSI_X3.4-1968', 'ascii')`) yields `locale == {}`, so the docstring and the decision table cannot drift apart again.",
+      "id": 2
+    },
+    {
+      "severity": "med",
+      "file": "plugins/audit/agents/audit-reviewer.md:133-137",
+      "issue": "P125.139 (c9af0c0b) records what a round reviewed only when the phase return is filed with `--shown`. A return filed without the flag is read as the legacy shape with no error, so the next brief shows every fix task again - the defect P125-R162 named. The reviewer's contract still spells the filing call as 'in `mode: phase` always `<phaseId> --role reviewer --head <sha>`' and never mentions `--shown`; the task declared this file but left it unchanged. A reviewer that follows its agent card rather than the brief's printed command files without the set, and nothing reports it.",
+      "resolution": "Change the agent's filing sentence to: run the filing command the brief prints, `--shown` included. Better, make the omission loud: record the shown set beside the brief keyed by head and have submit/file-return refuse a phase return for that head without it. Add a case.",
+      "id": 3
+    },
+    {
+      "severity": "low",
+      "file": "tools/sweep-selftests.py:436-444,868",
+      "issue": "P125.138 redirects each child's `git config --global` into a runner-owned file the documents say 'is checked back afterwards like a planted one', but no case exercises git_global_debris; deleting it from run_one's debris sum would fail nothing. Before, the home channel caught a suite writing global git config.",
+      "resolution": "Add a sweep selftest where a child runs `git config --global x.y z` (or deletes the file) and assert a red 'git global config:' finding, with the allow twin.",
+      "id": 4
+    },
+    {
+      "severity": "low",
+      "file": "plugins/audit/tests/test__help.py:812-819 (at f1018308)",
+      "issue": "P125.137's probe assigned os.path.join = lambda: ntpath.join(...); on Windows os.path is ntpath, so it recursed (CI run 38888145562).",
+      "resolution": "fixed at HEAD by 63e319e8 (P125.141).",
+      "id": 5
+    },
+    {
+      "severity": "low",
+      "file": "tools/ui-tests/table-fit.test.mjs:151-184",
+      "issue": "No command in P125.140's tests.gate selects its vitest case (no `npx vitest run` entry); the recorded gate run says NO OVERLAP, so the case's green rests on the executor's hand run.",
+      "resolution": "Give tasks touching tools/ui-tests/ a vitest entry in tests.gate, or have the derived task gate add one for those paths.",
+      "id": 6
+    }
+  ],
+  "preExisting": [
+    {
+      "severity": "low",
+      "file": "(outside the diff, slice07)",
+      "issue": "plugins/audit/tests/test_guard_bash_writes.py:2490 - the comment 'Nothing running: the warn tier' sits above a fixture whose plan holds a done phase. Under the current ladder that plan is the deny-past-the-free-file tier, not warn. This is the retired-rung wording P125.132 removed from shipped documents, left in a test comment that its .md/schema scan does not read.",
+      "resolution": "Recorded; outside the changed lines or a confirmation that an earlier finding is resolved.",
+      "id": 1
+    },
+    {
+      "severity": "low",
+      "file": "(outside the diff, slice07)",
+      "issue": "P125.129 (c68eefee) recorded gate run: 'NO OVERLAP - the gate named none of this task's files'. The task's tests.gate has no vitest entry, so the recorded gate did not measure the usage-metrics.js change. The executor's own `npx vitest run` pass is the only run that measured it.",
+      "resolution": "Recorded; outside the changed lines or a confirmation that an earlier finding is resolved.",
+      "id": 2
+    },
+    {
+      "severity": "low",
+      "file": "(outside the diff, slice07)",
+      "issue": "Verified as resolving their findings, nothing new filed: P125.129 (R127), P125.131 (R138 option b), P125.132 (R139), P125.133 (R145), P125.135 (R151).",
+      "resolution": "Recorded; outside the changed lines or a confirmation that an earlier finding is resolved.",
+      "id": 3
+    },
+    {
+      "severity": "low",
+      "file": "(outside the diff, slice08)",
+      "issue": "test_drive_phase.tests_dir_git_bypasses (P125.136) reads only the top level of TESTS_DIR, and code inside string literals (child-suite sources like _harness._PUSH_SUITE) is invisible to it; no consequence today.",
+      "resolution": "Recorded; outside the changed lines or a confirmation that an earlier finding is resolved.",
+      "id": 4
+    }
+  ],
+  "intent": {
+    "answer": "diverges",
+    "note": "Against the desired outcome: round 3's fixes resolve the round-2 findings they were made for (each slice confirms them), the help payload is platform-independent, the Windows recursion regression is fixed, and the re-review now records what each round showed. Not yet met: 3 med findings - the falsifier has no producer and an accepted survivor leaves no durable record, the ASCII coverage docstring names the wrong cover on Linux, and the reviewer's agent card does not carry --shown, so a reviewer following the card would make the next round repeat fix tasks.",
+    "missing": [],
+    "redFirst": "not-attempted",
+    "redFirstBasis": "The phase answer judges the outcome; red-first is graded per task in `tasks`.",
+    "inheritedTests": "not-asked",
+    "inheritedTestsBasis": "The phase gate is whole-project."
+  },
+  "verdict": "findings",
+  "tasks": [
+    {
+      "id": "P125.140-0h5",
+      "commit": "23fba1307608",
+      "answer": "matches",
+      "note": "Task: 'Finding P125-R135 (re-added ... as regression; page-state.js is unchanged)'. tests.add: 'In leg 10c, after planting and before the planted ladder, wait two animation frames with no resize and fail on any frame marked over an overflowing table; a stubbed ResizeObserver sees every frame and its table, and its callback drops a stale mark'. The diff does both halves: leg 10c gains a two-animation-frame wait after the planting evaluate and before the planted ladder, failing on viewport movement, zero outgrown frames, any !fits&&marked frame and fitWrong; table-fit.test.mjs's OBSERVER_PRELUDE stubs ResizeObserver, asserts one observer over [wrap, table, wrap, table], widens one table with no rAF pending, plants a stale mark, fires the callback twice and asserts one coalesced measurement drops both marks. page-state.js is not in the diff. The claim describes the diff.",
+      "missing": [],
+      "redFirst": "not-attempted",
+      "redFirstBasis": "Regression mode owes no red. Executor-run mutation: removing page-state.js's fitRo `if (window.ResizeObserver)` block turned the new vitest case red ('expected +0 to be 1') and leg 10c red on a scratch render ('still marked over an overflowing table').",
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "tests.gate's selftests runs the whole tree and interactive/shots are whole-page browser gates; no gate entry selects tools/ui-tests (the recorded run says NO OVERLAP)."
+    },
+    {
+      "id": "P125.141-0h5",
+      "commit": "63e319e86078",
+      "answer": "matches",
+      "note": "Task: 'Bind the original join before the swap and call that; a case simulates os.path being ntpath ... and expects no recursion.' _run_with_nt_join binds `_nt_join = ntpath.join` and `_real_join = os.path.join` before the lambda and restores in finally; the module-level probe calls it; the new case sets os.path = ntpath, catches RecursionError as a failure, restores, and asserts 'schema\\\\x.json', the control flag and `ntpath.join is _sim_join`. The claim matches; its note that _backslash_payload_bytes' shim has no hazard is accurate.",
+      "missing": [],
+      "redFirst": "not-attempted",
+      "redFirstBasis": "Regression mode owes no red. Executor-run mutation: calling ntpath.join directly in the lambda made the new case fail with RecursionError (111/112); the Windows RecursionError itself was seen in CI run 38888145562 and is gone at green 63e319e8.",
+      "inheritedTests": "not-asked",
+      "inheritedTestsBasis": "test__help.py is selected only through the whole-tree selftests gate entry."
+    }
+  ],
+  "shown": [
+    {
+      "id": "P125.74-0h5",
+      "commit": "73b282eb86e4"
+    },
+    {
+      "id": "P125.75-0h5",
+      "commit": "ce9b2c34be03"
+    },
+    {
+      "id": "P125.76-0h5",
+      "commit": "3ecc6df213e1"
+    },
+    {
+      "id": "P125.77-0h5",
+      "commit": "4bc5e5f9f097"
+    },
+    {
+      "id": "P125.78-0h5",
+      "commit": "fb4031beca8e"
+    },
+    {
+      "id": "P125.79-0h5",
+      "commit": "f6403a168ad7"
+    },
+    {
+      "id": "P125.80-0h5",
+      "commit": "dbd9008f4458"
+    },
+    {
+      "id": "P125.81-0h5",
+      "commit": "9e60ae16233a"
+    },
+    {
+      "id": "P125.82-0h5",
+      "commit": "92e4c5340e08"
+    },
+    {
+      "id": "P125.83-0h5",
+      "commit": "7539f5577ec0"
+    },
+    {
+      "id": "P125.84-0h5",
+      "commit": "6cb3e5fd58d1"
+    },
+    {
+      "id": "P125.85-0h5",
+      "commit": "5fadfc23c9cf"
+    },
+    {
+      "id": "P125.86-0h5",
+      "commit": "083c9f45fd01"
+    },
+    {
+      "id": "P125.87-0h5",
+      "commit": "dbbbb2fd93ff"
+    },
+    {
+      "id": "P125.88-0h5",
+      "commit": "34111766413d"
+    },
+    {
+      "id": "P125.89-0h5",
+      "commit": "704498fbe3d2"
+    },
+    {
+      "id": "P125.91-0h5",
+      "commit": "62d79b364315"
+    },
+    {
+      "id": "P125.93-0h5",
+      "commit": "d2b866ff3846"
+    },
+    {
+      "id": "P125.94-0h5",
+      "commit": "822c6e535b08"
+    },
+    {
+      "id": "P125.95-0h5",
+      "commit": "9bcb55ddc874"
+    },
+    {
+      "id": "P125.96-0h5",
+      "commit": "c15d26f976b2"
+    },
+    {
+      "id": "P125.98-0h5",
+      "commit": "c21ddff82a35"
+    },
+    {
+      "id": "P125.99-0h5",
+      "commit": "0ca2ab2c5f9f"
+    },
+    {
+      "id": "P125.100-0h5",
+      "commit": "15aecf0eb6d3"
+    },
+    {
+      "id": "P125.101-0h5",
+      "commit": "baf36eaf65e2"
+    },
+    {
+      "id": "P125.102-0h5",
+      "commit": "3a19b3ae450d"
+    },
+    {
+      "id": "P125.103-0h5",
+      "commit": "6413e737295a"
+    },
+    {
+      "id": "P125.104-0h5",
+      "commit": "3299d01909c6"
+    },
+    {
+      "id": "P125.128-0h5",
+      "commit": "4819e25e66af"
+    },
+    {
+      "id": "P125.129-0h5",
+      "commit": "c68eefee9108"
+    },
+    {
+      "id": "P125.131-0h5",
+      "commit": "bfca84f5a95e"
+    },
+    {
+      "id": "P125.132-0h5",
+      "commit": "cbd88b80b9a5"
+    },
+    {
+      "id": "P125.133-0h5",
+      "commit": "10d7eee58ec9"
+    },
+    {
+      "id": "P125.134-0h5",
+      "commit": "de00aac87d12"
+    },
+    {
+      "id": "P125.135-0h5",
+      "commit": "1428238d630a"
+    },
+    {
+      "id": "P125.136-0h5",
+      "commit": "0d581086db17"
+    },
+    {
+      "id": "P125.137-0h5",
+      "commit": "f10183084c04"
+    },
+    {
+      "id": "P125.138-0h5",
+      "commit": "6764eb63bd5b"
+    },
+    {
+      "id": "P125.139-0h5",
+      "commit": "c9af0c0beea3"
+    },
+    {
+      "id": "P125.140-0h5",
+      "commit": "23fba1307608"
+    },
+    {
+      "id": "P125.141-0h5",
+      "commit": "63e319e86078"
+    }
+  ]
+}
