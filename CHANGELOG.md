@@ -6,6 +6,228 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-10-16
+
+This release has two halves. The first makes a phase cheaper to drive: a task's gate runs its own
+checks plus only the suites its change can break, with the wide gate kept for sign-off; sign-off
+converges instead of looping, because a re-review reads only what changed and the rounds are
+capped; the drive speaks in one line per step; and a chained run starts each phase in a fresh
+context. The second makes every cost figure say what it rests on: rates are dated and stamped
+on each row when it is written, a model with no price reads `unpriced` instead of a guessed
+dollar figure, and the CLI's own per-session estimate is printed beside the plugin's reading.
+**One default changes behaviour:** with a plan that holds phases and none running, the plan gate
+now refuses an edit past the session's free file before it lands (see *Changed*);
+`planGate: "warn"` keeps the 3.3.0 behaviour.
+
+### Added
+- **Affected-test task gates.** A task's recorded gate now also runs every suite its change can
+  break, read from the task's own diff (a rename counts as both its paths): the project's
+  recorded related listing (`meta.phaseGate.derived.listing.related`), a Python import graph,
+  the e2e runner's changed listing (`listing.e2eChanged`), and every e2e spec when nothing
+  recorded can say which ones a source change reaches. Each joins as a step named
+  `affected/<arm>: <suites>`, so the evidence row says which arm chose it. A listing that cannot
+  answer widens the task's run to the phase gate with the reason printed, never to an empty
+  selection, and the phase's sign-off gate stays the wide one, run once per phase.
+  **`audit-task.py record-listing`** is the one writer of `meta.phaseGate.derived` (its listing
+  pair, spelling and version check); a hand edit of that block is refused.
+- **`review.maxRounds` in `.claude/audit.config.json`** caps how many phase reviews a sign-off
+  dispatches. At the cap, with a fix unreviewed or a `med`+ finding still open, the drive stops
+  once at `decide round-cap`, printing the open findings and the rounds' spend with its rate basis
+  (or `unpriced`), and asks for one answer: carry every open finding, one more round, or sign off
+  accepting them open. The count is read from the filed phase returns, so a lost driver state
+  re-derives it; a value below 1 is refused rather than read as the default. The panel's Settings
+  tab edits it.
+- **A planned test's "must fail if" line is applied by the drive.** `tests.falsifiers` in the
+  plan, keyed by the `tests.add` entry it falsifies, names a `{file, find, replace, command}`
+  mutation (optional `timeout`). Once the executor has filed and the task's gate is green, the
+  drive runs each one in a throwaway copy of the tree: the command must pass on the unmutated
+  copy and fail on the mutant. A test that survives its mutant, and a falsifier that could not run
+  (a `find` the file does not hold, a copy that is not green, a timeout), each stop the close at
+  the `falsifier` decision before a reviewer is spent. The field is optional; a malformed entry is
+  a `rules.falsifier.*` validator warning, not a finding, so every plan that validated still does.
+- **Dated price rows.** A `usage.pricing[model]` entry may now be a list of
+  `{"effectiveFrom", "rates"}` rows alongside the flat rate row, which keeps meaning "in effect
+  for every date". The shipped table gains **Sonnet 5.5** and **Haiku 5.5**, with Haiku 5.5's
+  published long-prompt tier priced per message by that message's own prompt size.
+- **Every usage row is stamped with the rate it was priced at** - the rate itself, its
+  `effectiveFrom` and the table's source and `asOf` - so a later price change never rewrites
+  what an old row claims it cost. An older unstamped row is priced at the rate in effect on its
+  own date, not today's, and every rate phrase states the mix of stamped and re-priced rows and
+  the global-routing basis every rate assumes.
+- **The CLI's own cost figure, beside the plugin's.** The meter records the per-session estimate
+  Claude Code writes into the main transcript, and `/audit:usage`, the HTML report, its Markdown
+  twin and the panel's browse dialog print it beside the plugin's reading wherever the two differ,
+  each with its basis. Neither is called the bill, and a comparison that failed says why rather
+  than reading as agreement.
+- **A new session says once when its model has no price.** `meter-usage.py` now also runs on
+  `SessionStart`: with no network call, it names a model the price table does not cover and the
+  `usage.pricing` remedy, and is silent otherwise. Claude Code's `<synthetic>` turn is not a model
+  and is never named.
+- **`/audit:doctor` reports unpriced models and the git-instructions setting.** It names every
+  model the ledger holds tokens for that no price row covers (and points at `/audit:usage
+  --backfill` for rows already written unpriced), reads where the effective
+  `includeGitInstructions` setting comes from (env var, local, project or user settings; a plugin
+  cannot set it), and under `--transcript` adds `dispatch cache`: whether each later subagent
+  dispatch started from a predecessor's cache, ordered by when each dispatch began.
+- **A phase boundary is a context boundary.** When a phase finishes and another is ready, the
+  drive's `done` carries `chain: clear context, then re-enter with /audit:phase <next>`, stated as
+  a step of `/audit:phase`. `/audit:status` names the orchestrator's live context size (or
+  `unknown`, with the reason) and, past the model's long-prompt threshold, what one more request
+  that size costs at the dated table.
+- **A standing high-risk approval.** Type `#approve-high-risk` in your own prompt and a
+  `risk: "high"` task commits without a mid-run question, each commit journaled with the task and
+  its scope digest, until you type `#revoke-high-risk`. Only the prompt hook arms it - no command,
+  no file, no agent. `/audit:doctor` and `/audit:status` (text and `--json`) show whether it is
+  armed, since when and how many commits used it; `--confirm-high-risk` works as before beside it.
+- **`--parent-branch NAME` on `/audit:phase add` and `retarget`** (and `parentBranch` in a batch
+  phase), validated as an existing local branch and journaled, so the remedy `start` names when a
+  phase forks from another branch is a verb rather than a hand edit the plan gate refused.
+- **Generated followers are records, not surprises.** A gate step that finds a generated file
+  stale (the module map, a README pin, a rendered artifact) prints the path and the recipe that
+  regenerates it, the evidence row records it as `followersOwed`, and the drive regenerates or
+  widens the task by it in the task's own commit. At integration, an undeclared path that a
+  follower's recipe reproduces byte for byte is integrated as that follower instead of raising an
+  undeclared-change decision; a browser-only follower is widened only when the recipe was seen to
+  move its bytes.
+- **A wave member's gate reads the phase tree's records, carried whole**: the index and every
+  phase shard it names, at one project commit, so record-only commits or a task added to a sibling
+  phase mid-wave no longer turn every member's validate step red.
+
+### Changed
+- **The plan gate denies past the free file when the plan holds phases and none is running.** The
+  ladder is now observe (no manifest) -> warn (a manifest holding no phase) -> deny past the
+  session's free file (phases, none running) -> deny (a phase running). In that third step the
+  refusal lands **before** the edit and names the commands that add a phase and start it.
+  **On upgrade:** a project with a plan but no running phase, which used to get an advisory after
+  each edit, now gets refusals; start a phase first, or pin `planGate: "warn"` to keep the old
+  behaviour. `planGate` and its precedence over `enforce` are unchanged (COMPATIBILITY.md promises
+  the key and that precedence; the ladder is a default, which it does not freeze). A crash while
+  reading a phase falls to warn, never to deny. `/audit:doctor` names which step of the ladder put
+  the active tier there.
+- **An unrecognized model is unpriced, not priced at a guess.** The shipped table no longer
+  carries a `_default` row, so a model with no row of its own shows its tokens and `unpriced`
+  instead of an Opus-tier figure, and every total says how many tokens it leaves out and on which
+  models. A `_default` your project declares, in either row shape, is still honoured.
+  **On upgrade:** totals that used to include a guessed figure for such a model now leave it out
+  and say so; add a `usage.pricing` row to price it.
+- **Every cost surface prints `unpriced` instead of a free-looking `$0.00`** - `/audit:usage`'s
+  tables, the report's ranked lists, range line and Markdown tables, and the panel's ranked lists
+  (including the `other` row) and browse dialog.
+- **The usage meter counts each message at its largest usage.** A subagent's repeats of one
+  message grow their output count, with or without a stop reason; the ledger now keeps a running
+  per-field tally for every message still in its ring, across scans, and adds only the excess, so
+  subagent spend is no longer under-counted.
+- **Sign-off converges.** A re-review is owed only for a fix whose finding was `med` or `high`, or
+  whose own gate went red; a fixed `low` closes on its green gate, and the triage recommends
+  `--answer carry --to <task or bug id>` for an open `low`. A low finding naming a contradicted
+  task clause is floored to `med` before it is filed.
+- **The phase reviewer's brief carries each owed task's diff, computed once**, plus every path the
+  phase changed outside every task's declared files. A re-review shows every task the earlier
+  round did not review and none it did: `file-return --role reviewer` takes `--shown`, the tasks
+  the brief showed, recorded beside `tasks` as `shown` so the next round leaves them out (optional;
+  a return filed without it reads as before).
+- **The intent check grades the diff against the task's own text.** The reviewer brief quotes the
+  task clause, carries `tests.add` with per-test questions, and ends on the executor's return,
+  labelled as the claim under review; a `matches` answer quoting none of the task's description
+  is refused, and a `tests.add` case with no filed counterpart is named when the executor files.
+  The executor brief says to title each case with its `tests.add` clause verbatim or file a
+  `tests.addMap` entry, and a house case label (`<id> <clause>`) counts as that clause.
+- **The drive speaks in one line per step.** `drive-phase.py next --signal` prints
+  `audit <phase> <verb> <subject> ... | <basis> | next: <command>` with the verbs `dispatch`,
+  `wait`, `ask`, `judge`, `review`, `done` and `stop`; `--explain <subject>` prints the whole
+  step. An agent is dispatched with one fixed prompt that runs `drive-phase.py brief`, which
+  prints its brief byte for byte on every platform; briefs open with a stable shared prefix.
+  `/audit:phase`, `/audit:run`, `/audit:next`, `/audit:resume` and `/audit:review` use the signal
+  form, and `/audit:phase add`'s flag-to-key map moved to `audit-task.py add-phase --help`.
+- **New behaviour is planned `tdd`.** A task added with no `tests.mode` is classified from its
+  own text - `tdd` unless its title leads with a refactor or config word - with the basis noted on
+  the task; an explicit mode always wins. `/audit:init` synthesis follows the same rule, and the
+  executor drafts a `tdd` task's tests from the task text before reading the code they will run
+  against. **On upgrade:** a feature task added without a mode, which used to fall through to a
+  weaker discipline, now owes a red-first proof.
+- **A fix task made from findings carries its test.** `add --fixes` reads paths from a
+  `path:symbol` spelling, adds the suite that tests each declared source, and writes one
+  `tests.add` clause per finding naming a real test file, never a stylesheet.
+- **Every agent the plugin ships runs at `effort: high`.** `audit-executor`, `audit-explorer` and
+  `guide` were below it; each agent's `model` is unchanged, and a case refuses an agent shipped
+  lower.
+- **A filed return is bound to the journal.** `submit` writes a journal row carrying the return's
+  digest, refuses a second filing for the same start by that row (naming it), and refuses an
+  outcome that is only a placeholder or an empty `testsAdded` while `tests.add` is not. Every
+  closer reads the return through that row, so a return edited or deleted after filing cannot
+  close its task.
+- **A retry brief quotes what the retry is about**: the operator's own `--reason`, every failing
+  file a red sweep step recorded, and the retried attempt's filed return rather than stale task
+  fields. A restart in the same second as the start it replaces gets its own identity, so it never
+  reads the previous start's return, marks or brief.
+- **A scope widened after an executor filed is a decision**, `decide scope-changed`, naming both
+  file lists, instead of a close that fails later.
+- **A plan, shard, journal or evidence path is never a task's own declared work.** Fix-task
+  derivation drops them, `scope` refuses to add one, and the commit, integration, the drive and
+  the attempt check share one answer to which paths are records.
+- **A commit carrying a plan record leaves a committed plan that validates.** A task close and
+  `commit-audit-state` both refuse a shard whose `fileIndex` rows HEAD lacks, naming the rows and
+  the index-first remedy, and a drive that widens a task by a follower commits the index first so
+  the task still closes in the same run. An index-validity breach names the journaled command that
+  last wrote the index.
+- **The red-first helper proves red on the runners real projects use**: Playwright and vitest JSON
+  and line reporters, and a JavaScript missing-export error (node ESM and rollup/vite spellings)
+  on a symbol the task introduces. A Playwright line-reporter failure no longer counts as proof
+  of an assertion; the helper asks for the JSON reporter.
+- **The write scrub and the committed-PII check answer "is this a home path" with one
+  predicate.** A repository's own relative `home/...` paths are kept, shallow cut home paths are
+  caught, and escaped control characters are no longer read as Windows paths or shares.
+- **Every text file and subprocess the plugin reads or writes names UTF-8**, in the scripts and
+  the hooks, held by a lint, so a legacy Windows code page or a non-UTF-8 locale cannot change
+  what the plugin writes or reads back. A filed return has the same LF bytes on every platform.
+- **The help drawer's payload is smaller and the same on every platform**: a schema definition
+  mounted at several paths is carried once with an alias, and no path in it is spelled with the
+  host's separator.
+- **Releases of this marketplace are cut by `tools/release.py`**, one resumable step at a time,
+  stopping on the first red. It verifies after the release commit, waits on the CI run for the
+  commit it pushed, and re-asks the release guard's open-bug question before every remote step;
+  the guard treats `tools/release.py ... --push` as a publishing command, so `#release-with-bugs`
+  governs it the same way.
+- **CI's sweep isolates git further.** Every git process a suite starts runs with background
+  maintenance off, set once in the runner's environment (including the receiving side of a local
+  push); fixture git calls go through one helper that reports git's own stderr, cannot wait on
+  stdin and names where a timed-out call was; and `--encoding cp1252` also pins a non-UTF-8
+  locale wherever that is faithful to the platform asked about, printing which half ran.
+
+### Fixed
+- **No report table can widen the page at any width.** Every table sits in a contained frame that
+  scrolls its own overflow; on desktop, a table measured to fit its frame is released so its
+  column headers stay sticky, re-measured on resize and on content change (expand, filters, view
+  switch). Without JavaScript, or in forced colors, the frame stays contained.
+- **Windows sharing races no longer lose a write.** A sharing denial on a lock, its breaker, an
+  unlink or an atomic replace is waited out within the operation's deadline by one shared helper,
+  so concurrent journal appends, panel drops and plan writes survive it, and a usage-ledger month
+  rewrite lets go of its own handle before the replace instead of waiting on itself.
+- **A timed-out red-first run's throwaway tree is removed** within the shared sharing wait, with a
+  bounded retry, rather than left behind.
+- **Process teardown survives a `PermissionError` from `killpg`** on macOS and judges the kill by
+  the group being gone; a killed process's liveness is read by one polling helper that counts a
+  zombie as gone.
+- **The plan-first bypass is armed only by the owner's own prompt**, through the same reader the
+  standing approval uses; a keyword arriving in another payload field or from a subagent arms
+  nothing.
+- **A signal line keeps every start, close, fix, sign-off, landing and release event** even when
+  ids are long, and the dispatch prompt names the manifest and project, so a brief prints from a
+  wave tree with no `CLAUDE_PROJECT_DIR`.
+
+### Documentation
+- Every user-facing statement of the plan-gate ladder - the README, QUICKSTART, SECURITY.md, the
+  config schema, the panel's Settings help and the build guide - names the deny-past-the-free-file
+  step the same way, derived from one ladder table where it is code, and a case fails if any
+  document says a plan with phases and nothing running only warns.
+- The README's cost section recommends `includeGitInstructions: false` in the project's own
+  `.claude/settings.json`, says what each cost figure rests on, and states that the driver commits
+  and the executors never do.
+- The build guide no longer carries absolute layer numbers; the layer lint now reads every
+  Markdown document and names the module, the stated layer and the real one.
+- The register-citation lint reads JavaScript, shell, CSS, YAML, TOML and HTML comments as well as
+  Python, and the citations it found are restated as constraints.
+
 ## [3.3.0] - 2026-10-13
 
 This release has two halves. A phase can now run its ready, disjoint tasks as a **wave**: each task
