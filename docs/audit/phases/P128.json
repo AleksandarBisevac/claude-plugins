@@ -1606,7 +1606,13 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-16T16:14:23Z",
+          "text": "Also carried from P125's fourth review round (signed off with them open as low): P125-R170 - file-return keys the shown-brief record by --head as typed, so a short head filed directly bypasses the check (expand with rev-parse or refuse a short head, with a case); P125-R171 - record_falsifiers keeps a plan-held entry, so after a retry an executor's corrected falsifier is dropped silently and the brief stops asking (let the current start's return replace an entry written by an earlier start of the same task, with a case)."
+        }
+      ]
     },
     {
       "id": "P128.37-0h5",

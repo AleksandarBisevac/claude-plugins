@@ -1,0 +1,52 @@
+{
+  "findings": [
+    {
+      "id": 1,
+      "severity": "low",
+      "file": "plugins/audit/scripts/manifest/audit-task.py:5475-5486,5518 (with plugins/audit/scripts/manifest/_filed_returns.py:1004-1007)",
+      "issue": "The shown-brief check is keyed on the --head string as typed. shown_brief_path uses return_start_key(head), and the brief writes its record under the full 40-char head. cmd_file_return only checks the head against _HEAD_SHAPE ^[0-9a-f]{7,40}$ and never expands it; only drive-phase.py submit expands it (whole_head, :4360). So a phase return filed straight through `audit-task.py file-return P125 --role reviewer --head 6652cd60` with no --shown finds no record (FileNotFoundError -> (None, None)) and files unchecked. That is the silent omission R166 asked to make loud. The same short key also gives the return file a different name from the one the full head would get.",
+      "resolution": "In cmd_file_return, resolve a phase return's --head to the full commit (git rev-parse --verify <head>^{commit}, as whole_head does) before the record lookup and phase_return_rel use it. If git cannot answer, refuse a short head. Add a case to _recorded_brief_cases that files with _HD_HEAD[:12] and no --shown, and must be refused."
+    },
+    {
+      "id": 2,
+      "severity": "low",
+      "file": "plugins/audit/scripts/governance/drive-phase.py:1508-1521 (with plugins/audit/scripts/status/audit-lookup.py:622-627)",
+      "issue": "A falsifier the executor declared on attempt 1 becomes 'the plan's', and on a `retry` it cannot be replaced. record_falsifiers keeps only `declared` keys `not in planned`. After `retry` (a new start, so falsifiersRecorded is unmarked), the plan already holds attempt 1's entry, and attempt 2's corrected falsifier is dropped with no line in `did`. falsifier_rule also stops asking the attempt-2 executor for one, because the entry is now held. Yet the decide-falsifier rule (:317-319) says 'could-not-run is no kill - fix the falsifier, then retry'. For an executor-produced falsifier with a wrong find, a non-green unmutated copy or a timeout, `retry` spends attempts on the same could-not-run until maxAttempts. The only ways out are a human `scope --falsifiers` overwrite or `accept`. No case covers a retry after a falsifier stop.",
+      "resolution": "Record where each entry came from, e.g. the start of the return that declared it. Let a later start's return replace an entry an earlier start's return recorded, while a planner-written entry still wins. Or show the held falsifier in the retry brief and ask for a replacement. At minimum, name a dropped declaration in `did`. Add a case: survivor, then retry, then a corrected falsifier is filed, then it is killed."
+    }
+  ],
+  "preExisting": [
+    {
+      "id": 1,
+      "severity": "low",
+      "file": "plugins/audit/scripts/governance/stamp-verification.py:1330-1350",
+      "issue": "This is why P125.142's red-first reads could-not-prove. The cause is not that the stage is absent at HEAD: new_stage_baseline exists to accept exactly that case. The problem is that new_stages joins the string literals of EVERY declared test file at HEAD into one set. At 4b7df26b, plugins/audit/tests/test_audit_task.py already holds a \"fp-block\" literal (git show 4b7df26b:plugins/audit/tests/test_audit_task.py | grep -c '\"fp-block\"' prints 1). So 'fp-block' read as not new, and the unknown-stage failure at HEAD (0/1) was graded as HEAD being red. The helper's own run did show test_drive_phase.py failing on assertions, 3/6 with fp1 among them. The function predates the phase base (d24b3047, P123.51).",
+      "resolution": "Work out new stages per test file, from the file the command runs (the path in its argv), and not from the join of all declared files. Add a case where two declared suites share a stage label and only the commanded one adds it."
+    }
+  ],
+  "intent": {
+    "answer": "matches",
+    "note": "No review skill is named in the brief or in .claude/audit.config.json (review.perTask: signals), so this is a manual read. Scope: the three fix tasks the brief shows. Earlier rounds reviewed the rest. R69 and R81 stay open by decision and are not filed again. P125.142 (R164). The task asked to 'Give the falsifier a producer' and to make 'a survived or accepted falsifier durable: record it as ... a task note, carrying the mutation's file and the test entry'. The diff adds FALSIFIER_RULE to the tdd executor brief (audit-lookup.py:622), a `falsifiers` return field checked at submit (returned_falsifier_problems), record_falsifiers writing it through the new `scope --falsifiers`, and notes from falsify() and the accept path naming the entry and mutation_site's file:line. The phrase 'nothing makes a plan declare one' is removed from phase-signoff.md. The claim's technical half describes the diff. Its descriptive half ('Every tdd test the executor adds now carries a falsifier') overstates it: a missing one is only a gap note. The red-first is could-not-prove, and its basis holds as quoted; see preExisting 1 for the real cause. The driver copy that ran this plan (claude-plugins-driver at 63e319e8) predates the fix, so P125.142's own declared falsifier was never recorded: its tests.falsifiers is empty. Only the fp-block fixtures exercise the producer. P125.143 (R165). The task asked to 'Reword the docstring to the platform split locale_decision actually makes' and to 'Extend _ascii_coverage_case to assert that a Linux-shaped report (('ANSI_X3.4-1968', 'ascii')) yields locale == {}'. The diff does both. It matches tools/sweep-selftests.py:707-714. The claim describes it, and not-attempted holds for a regression task. P125.144 (R166). The task asked to 'Change the agent's filing sentence to: run the filing command the brief prints, --shown included' and to 'record the shown set beside the brief keyed by head and have submit/file-return refuse a phase return for that head without it. Add a case.' The diff does all three. The claim describes it, and proved holds: exit 1, 1054/1055, the task's own case named, the fix run green. Finding 1 is the short-head path around it. Phase level: the fixes serve 'sign-off converges' (R166 stops fix tasks being shown again) and test strength (R164). Nothing here touches pricing.",
+    "missing": [],
+    "redFirst": "not-attempted",
+    "redFirstBasis": "Phase mode: intent.redFirst is not-attempted by the card's rule. Per task, read and not re-run: P125.142 could-not-prove (helper refusal 'HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed)'); P125.143 not-attempted (regression); P125.144 proved (red-first-helper, exit 1, 1054/1055, own case failing, fix run passing).",
+    "inheritedTests": "not-asked",
+    "inheritedTestsBasis": "In all three tasks, the tests.gate entry `selftests` resolves to `python3 tools/sweep-selftests.py`, which runs the whole project's suites. The bound is the whole tree, so the question is not asked."
+  },
+  "verdict": "findings",
+  "tasks": [],
+  "shown": [
+    {
+      "id": "P125.142-0h5",
+      "commit": "00489377f1a9"
+    },
+    {
+      "id": "P125.143-0h5",
+      "commit": "b0db52294b7b"
+    },
+    {
+      "id": "P125.144-0h5",
+      "commit": "6652cd602861"
+    }
+  ]
+}
