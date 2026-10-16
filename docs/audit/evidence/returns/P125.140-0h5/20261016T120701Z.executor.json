@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "vitest-table-fit": "pass",
+    "vitest-all": "pass",
+    "sweep-selftests": "pass",
+    "interactive": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task, expectRedFirst false; mutation proof run by hand in a scratch copy outside the tree: removing page-state.js's second `if (window.ResizeObserver)` block (the fitRo one) turned the new vitest case red ('expected +0 to be 1') and leg 10c red on a scratch render ('still marked over an overflowing table: table.phases#0, table.data#1...'); the real tree's page-state.js is git-diff clean against HEAD",
+    "at": "2026-10-16 14:10 local"
+  },
+  "outcome": {
+    "technical": "Ported p130.diff by Edit, all hunks applied cleanly. table-fit.test.mjs: OBSERVER_PRELUDE, loadObserved(), OBSERVED_CLAUSE (the full tests.add clause verbatim; the diff's truncated clause was replaced) and one new case. check-report-interactive.mjs: cleanLast tracking, leg 10c two-frame wait with no resize, corrected label on the planted-ladder expect. Gates: `npx vitest run tools/ui-tests/table-fit.test.mjs` 5 passed; `npx vitest run` 56 files / 830 tests passed; `node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html` exit 0, 191 checks; `python3 tools/sweep-selftests.py` exit 0, 335/335 files ok. The scratch render's other FAIL (layout baseline, no git) is a scratch artifact.",
+    "descriptive": "The report's table-fit observer path is now locked by a vitest case and by leg 10c, both proved red when the observer block is removed."
+  },
+  "testsAdded": [
+    "tools/ui-tests/table-fit.test.mjs: In leg 10c, after planting and before the planted ladder, wait two animation frames with no resize and fail on any frame marked over an overflowing table; a stubbed ResizeObserver sees every frame and its table, and its callback drops a stale mark"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:c2eea23d62cd640bee0e3781dce4cdc3286d139636e0ea0fbb111fce459655c9\",\"dirtyDigest\":\"sha256:6c1d90266be14446d011340c4dba576f13cd2755e57e323b6c58e2897bdb95f5\",\"dirtyPaths\":{\"tools/check-report-interactive.mjs\":\"0ee8b0082dd5c223\",\"tools/ui-tests/table-fit.test.mjs\":\"4facbb58db1b6b8f\"},\"head\":\"c9af0c0b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/check-report-interactive.mjs\",\"tools/ui-tests/table-fit.test.mjs\"],\"scopeDigest\":\"sha256:24b3b74335ec75c44059451a952af191cc0df6f40b609c0641fa5dd1a0921123\",\"v\":2}"
+}

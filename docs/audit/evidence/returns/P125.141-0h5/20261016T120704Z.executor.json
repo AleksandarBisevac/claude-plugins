@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "test__help --selftest": "pass",
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --encoding cp1252": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression mode, expectRedFirst false; the mutation was run by hand in the task tree instead: replacing _nt_join(first, *rest) with ntpath.join(first, *rest) in the lambda made the new case FAIL with RecursionError (111/112 passed); restored and byte-compared with a saved copy",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "In plugins/audit/tests/test__help.py: extracted the swap into _run_with_nt_join(fn), which binds _nt_join = ntpath.join before replacing os.path.join and restores it in finally; the module-level probe now calls it. Added a case that sets os.path = ntpath (simulated Windows host), runs the helper, catches RecursionError as a failure, restores os.path/ntpath.join, and asserts the join result 'schema\\\\x.json' and that the backslash control still flags. The shim_path.join = ntpath.join near the top of _backslash_payload_bytes has no hazard: it assigns to a separate shim module, never to os.path or ntpath, so it was left alone. Exit codes: test__help.py --selftest 0 (112/112), sweep-selftests.py 0 (335/335 files ok), sweep-selftests.py --encoding cp1252 0 (335/335 ok; it printed 0 cases per file on this posix host, so that pass checks little here).",
+    "descriptive": "The help payload's backslash probe no longer recurses where os.path is ntpath, and a simulated-Windows case locks it."
+  },
+  "testsAdded": [
+    "the module-level backslash probe binds the real ntpath.join before swapping os.path.join, so on a host whose os.path is ntpath it does not call itself (os.path simulated as ntpath; the probe completes with no RecursionError and still flags the backslash control)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:9189d667d8f2fbe75cad5f6c71d5a10ef921d71fe5af2688259fe021c3093d87\",\"dirtyDigest\":\"sha256:4982d5dc7be55594badd0a48f28ceac5d525bf4bb667b9a5bde39e255db94ee4\",\"dirtyPaths\":{\"plugins/audit/tests/test__help.py\":\"cf046f4a0b2b54a8\"},\"head\":\"c9af0c0b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/test__help.py\"],\"scopeDigest\":\"sha256:6ae880237b4a4da476dbed480d5db9098d6118b15cf1d73732d8f86683c07513\",\"v\":2}"
+}

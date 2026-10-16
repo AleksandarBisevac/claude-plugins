@@ -15,7 +15,7 @@
 // last one is the failure that matters, because a mark left behind releases a
 // frame around a table that now overflows it, and the page widens. So the cases
 // below evaluate the assembled script and drive the shipped functions, the
-// resize listener included.
+// resize listener and the observer over the frames and their tables included.
 
 import { describe, expect, it } from 'vitest';
 import { loadReport, reach, readPart } from './sandbox.mjs';
@@ -64,6 +64,35 @@ const frame = (clientWidth, tableWidth) => {
   };
   return { wrap, table, seenOverflow };
 };
+
+const OBSERVED_CLAUSE = 'In leg 10c, after planting and before the planted ladder, wait two '
+  + 'animation frames with no resize and fail on any frame marked over an overflowing '
+  + 'table; a stubbed ResizeObserver sees every frame and its table, and its callback '
+  + 'drops a stale mark';
+
+// The stub window has no ResizeObserver, so the page's content-change path -
+// the only one that re-measures a frame when an expand, filter or view switch
+// widens its table with no window resize - never ran here. This stub records
+// each observer the page builds, with its callback and every target handed to
+// observe(). The frames must exist BEFORE the page's first line, because the
+// observer is wired once at load, so they are built inside the context by the
+// same `frame` helper as every other case, passed in as its source text.
+const OBSERVER_PRELUDE = [
+  'window.__observers = [];',
+  'window.ResizeObserver = function ResizeObserver(cb) {',
+  '  const rec = { cb, targets: [] };',
+  '  window.__observers.push(rec);',
+  '  this.observe = (t) => { rec.targets.push(t); };',
+  '  this.unobserve = () => {};',
+  '  this.disconnect = () => {};',
+  '};',
+  '',
+].join('\n');
+
+const loadObserved = (sizes) => loadReport({ mutate: (src) => PRELUDE + OBSERVER_PRELUDE
+  + 'window.__frames = ' + JSON.stringify(sizes) + '.map(([c, t]) => ('
+  + frame.toString() + ')(c, t));\n'
+  + 'window.__wraps = window.__frames.map((f) => f.wrap);\n' + src });
 
 const flushFrames = (ctx) => {
   const due = ctx.__raf.splice(0);
@@ -117,6 +146,41 @@ describe('the measured fit of a report table', () => {
     onResize.forEach((fn) => fn({ type: 'resize' }));
     onResize.forEach((fn) => fn({ type: 'resize' }));
     expect(flushFrames(ctx)).toBe(1);
+  });
+
+  it(OBSERVED_CLAUSE + ' (every frame and its table are observed, and an observer '
+    + 'callback with no window resize queues one measurement that drops a stale mark)', () => {
+    // The two frames are told apart by the fixture: the first's table already
+    // overflows, the second fits at load and then outgrows its frame, which is
+    // the content change the observer exists for.
+    const { ctx } = loadObserved([[900, 1400], [900, 800]]);
+    const { TABLE_FIT_ATTR } = reach(ctx, ['TABLE_FIT_ATTR']);
+    const [over, grows] = ctx.__frames;
+    const wanted = [over.wrap, over.table, grows.wrap, grows.table];
+    const fitObservers = ctx.__observers.filter((o) =>
+      o.targets.some((t) => ctx.__wraps.includes(t)));
+    expect(fitObservers.length).toBe(1);
+    const [fitRo] = fitObservers;
+    // Counted, in order, rather than found: each frame and its table once.
+    expect(fitRo.targets).toEqual(wanted);
+
+    // The load's own first measurement, so what follows starts from a known mark.
+    expect(flushFrames(ctx)).toBe(1);
+    expect(over.wrap.hasAttribute(TABLE_FIT_ATTR)).toBe(false);
+    expect(grows.wrap.hasAttribute(TABLE_FIT_ATTR)).toBe(true);
+
+    // The content change: the table widens past its frame, the window does not
+    // move, and a mark is planted on the other frame as left from a stale read.
+    grows.table.width = 1000;
+    over.wrap.setAttribute(TABLE_FIT_ATTR, '');
+    expect(ctx.__raf.length).toBe(0);
+    fitRo.cb([{ target: grows.table }]);
+    fitRo.cb([{ target: grows.wrap }]);
+    // Still marked until the frame runs: the drop below is the queued pass's.
+    expect(grows.wrap.hasAttribute(TABLE_FIT_ATTR)).toBe(true);
+    expect(flushFrames(ctx)).toBe(1);
+    expect(grows.wrap.hasAttribute(TABLE_FIT_ATTR)).toBe(false);
+    expect(over.wrap.hasAttribute(TABLE_FIT_ATTR)).toBe(false);
   });
 
   it(CLAUSE + ' (the sheet releases a marked frame and pins its headers under the very '

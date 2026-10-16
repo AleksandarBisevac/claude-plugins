@@ -2749,6 +2749,9 @@ expect('...nor the panel inside it', onPaper.panel, true);
   const cleanWrong = [];
   const cleanWidened = [];
   let fitAtDesk = 0;
+  // The rung the clean walk ends on and what it read there: the planting below
+  // happens at that width, and the content-change read compares against it.
+  let cleanLast = { w: 0, frames: [] };
   for (const w of RESPONSIVE_LADDER) {
     await page.setViewportSize({ width: w, height: 945 });
     await page.waitForTimeout(60);
@@ -2758,6 +2761,7 @@ expect('...nor the panel inside it', onPaper.panel, true);
     if (de[0] > de[1] + 1) cleanWidened.push(`${w}px (${de[1]} -> ${de[0]})`);
     if (w > FRAMED_BELOW) fitAtDesk += frames.filter((f) => f.fits && f.sticky !== null).length;
     cleanWrong.push(...fitWrong(w, frames));
+    cleanLast = { w, frames };
   }
   expect('every column kind of every table on the page is planted with an unbreakable '
     + 'token and none widens the document, and a kind present on the page that cannot '
@@ -2799,6 +2803,33 @@ expect('...nor the panel inside it', onPaper.panel, true);
     });
     return { tables: tables.length, kinds, unplanted };
   }, HOSTILE_RUN);
+  // The content change on its own, with the window left where the clean walk
+  // put it. Every rung of the ladder below resizes the window first, and the
+  // script's resize listener re-measures by itself there, so the ladder cannot
+  // tell the observer over the frames and their tables from that fallback.
+  // Here nothing resizes: only the observer can take back a mark that planting
+  // made stale. Two animation frames - one for the observer's notification,
+  // one for the measurement it queues.
+  await page.evaluate(() => new Promise((done) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+  const settled = await fitState();
+  const settledViewport = await page.evaluate(() => window.innerWidth);
+  const outgrown = settled.filter((f, i) => !f.fits && cleanLast.frames[i]
+    && cleanLast.frames[i].marked).length;
+  const settledStale = settled.filter((f) => !f.fits && f.marked).map((f) => f.label);
+  expect('every column kind of every table on the page is planted with an unbreakable '
+    + 'token and none widens the document, and a kind present on the page that cannot '
+    + 'be planted fails the leg (once planted, with no window resize: two animation '
+    + `frames at ${cleanLast.w}px later, none of the ${outgrown} frame(s) marked before `
+    + 'planting whose table now overflows still carries the mark, nor does any other '
+    + 'overflowing frame)',
+    [settledViewport === cleanLast.w ? ''
+      : `the viewport moved to ${settledViewport}px, so a resize could have answered`,
+     outgrown ? '' : 'no frame marked before planting outgrew its frame, so the content '
+       + 'change was never measured',
+     settledStale.length ? `still marked over an overflowing table: ${settledStale.slice(0, 6).join(', ')}` : '',
+     fitWrong(cleanLast.w, settled).slice(0, 6).join('; ')]
+      .filter(Boolean).join('; ') || 'none', 'none');
   const widened = [];
   const unpainted = new Set();
   const plantedWrong = [];
@@ -2849,9 +2880,9 @@ expect('...nor the panel inside it', onPaper.panel, true);
   expect('every column kind of every table on the page is planted with an unbreakable '
     + 'token and none widens the document, and a kind present on the page that cannot '
     + 'be planted fails the leg (once planted, a table that outgrew its frame loses the '
-    + 'mark and its sticky header at every rung, the re-measure following the content '
-    + `change - ${overflowAtDesk} overflowing frame(s) with a header measured above the `
-    + 'tablet block)',
+    + 'mark and its sticky header at every rung, each read after a window resize that '
+    + `re-measures by itself - ${overflowAtDesk} overflowing frame(s) with a header `
+    + 'measured above the tablet block)',
     [overflowAtDesk ? '' : 'no planted table overflowed its frame at a desktop width, so '
       + 'the contained direction was never measured',
      plantedWrong.length ? plantedWrong.slice(0, 6).join('; ') : '']
