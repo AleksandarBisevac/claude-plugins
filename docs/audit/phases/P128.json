@@ -1525,6 +1525,50 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P128.35-0h5",
+      "title": "A phase review brief past a reader's budget is sliced, dispatched per slice and aggregated by the drive",
+      "status": "pending",
+      "description": "Register F696. P125's phase review briefs were 2.5 MB and 2.3 MB; both reviews were possible only by hand-slicing (scratchpad/review2/split.py) and aggregating the slice returns.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a phase brief past the reader budget is written as task-boundary slices with the header and owed lines each, one reviewer is dispatched per slice, and their returns aggregate into the one filed return"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }
