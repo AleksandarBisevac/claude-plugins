@@ -241,21 +241,30 @@ prints every file's seconds, so a CI log can be recorded with `--costs-from-log`
 wall clock rather than trusting a figure written here; `--jobs 1` gives the old serial shape for
 a bisect.
 
-**And every child runs in scratch directories it is expected to leave unchanged.** Four
-things are pointed away from your machine per child: its cwd and `TMPDIR` at one scratch
+**And every child runs in scratch directories it is expected to leave unchanged.** Each
+child has these pointed away from your machine: its cwd and `TMPDIR` at one scratch
 directory, its HOME at a second — under every name a home lookup reads, not just `HOME` —
-and `PYTHONPYCACHEPREFIX` at a third, so a bytecode cache the interpreter writes under the
-HOME it was handed cannot convict the suite that triggered it. The rest of the environment is
+`PYTHONPYCACHEPREFIX` at a third, so a bytecode cache the interpreter writes under the
+HOME it was handed cannot convict the suite that triggered it, and `GIT_CONFIG_GLOBAL` at a
+runner-owned git config in a fourth, for the one git the switches below cannot otherwise
+reach. The rest of the environment is
 filtered rather than pointed anywhere: the Claude session's variables — every `CLAUDE_` name,
 plus `CLAUDECODE` and `AUDIT_LOCK_TOKENS` — are dropped, and so is any identity the caller
 exports (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `EMAIL`); git runs with
 `GIT_CONFIG_NOSYSTEM` set and `user.useConfigOnly` refusing a guessed identity. No branch and no
 identity are supplied in their place, so a suite leaning on the host's git fails here the way it
 fails on a bare runner; that is what let a local sweep stay green over suites CI's ubuntu runner
-turned red. The same `GIT_CONFIG_COUNT` set turns `maintenance.auto` and `gc.auto` off, so no
-git a suite starts — through a fixture prefix or bare — leaves a detached housekeeping run
-working in a fixture the suite is about to read or delete; the caller's own pairs in that
-protocol are dropped first, so the runner's set is the whole of it. **The working directory and
+turned red. The same `GIT_CONFIG_COUNT` set turns `maintenance.auto` and `gc.auto` off for
+every git a suite starts, through a fixture prefix or bare, but one: git's local transport
+drops that protocol (and any `-c`) before it starts receive-pack, so a push to a local path
+ends in a detached housekeeping run on the receiving side. The `GIT_CONFIG_GLOBAL` file
+carries `receive.autogc` off — only that key, so a suite that takes the pairs out to measure
+its own prefix still sees a spawn — and does reach receive-pack, so no git a suite
+starts leaves a detached housekeeping run working in a fixture it is about to read or delete —
+unless the suite points `GIT_CONFIG_GLOBAL` elsewhere for its own git, which then reads what
+the suite chose. The file sits outside both watched directories and is checked back like their
+planted files, because a suite's `git config --global` now writes there. The caller's own pairs
+in that protocol are dropped first, so the runner's set is the whole of it. **The working directory and
 the home directory are the watched pair**, each holding one file the suite did not put
 there, and a suite is red if anything was added to either — or, the destructive half a
 strays-only check would call spotless, if that planted file was deleted or rewritten.

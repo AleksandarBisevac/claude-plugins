@@ -185,9 +185,14 @@ def fixture_root(prefix):
     identity, and one that names a branch must create it, exactly as on a bare CI
     runner. The same `GIT_CONFIG_COUNT` set turns `maintenance.auto` and
     `gc.auto` off for every git a suite starts, through a fixture prefix or bare,
-    so no detached housekeeping run is left working in a fixture the suite is
-    about to read or delete; the caller's own pairs in that protocol are dropped
-    first, so the runner's set is the whole of it.
+    but one: git's local transport drops that protocol (and any `-c`) before it
+    starts receive-pack, the receiving side of a push to a local path. So
+    `GIT_CONFIG_GLOBAL` names a runner-owned file, outside both watched
+    directories and checked back like their planted files, carrying
+    `receive.autogc` off and nothing else - and no detached housekeeping run is left
+    working in a fixture the suite is about to read or delete, unless the suite
+    points `GIT_CONFIG_GLOBAL` elsewhere for its own git. The caller's own pairs
+    in that protocol are dropped first, so the runner's set is the whole of it.
 
     This function is only the easy way to be clean.
     """
@@ -273,6 +278,11 @@ def worktree_pair(prefix):
 # this prefix is a second copy. It stays for a suite run OUTSIDE the sweep - by
 # hand, `--selftest` on one file - which inherits no runner environment, and
 # the sweep's own selftest holds the two copies to the same keys.
+#
+# THE PREFIX DOES NOT REACH A LOCAL PUSH'S RECEIVING SIDE: git's local transport
+# drops `-c` switches before it starts receive-pack. Inside the sweep the
+# runner's global config file covers it; run by hand, such a push still ends in
+# one detached run in the receiving repository.
 NO_AUTO_MAINTENANCE = ("-c", "maintenance.auto=false", "-c", "gc.auto=0")
 GIT = ("git",) + NO_AUTO_MAINTENANCE + (
     "-c", "user.email=fixture@example.com", "-c", "user.name=Fixture",
@@ -1980,10 +1990,109 @@ def _stage_runner_cases(check):
           and pools[0][:2] == ("3", "5") and "granted" in pools[0][2])
 
 
+# A suite that pushes to a local bare repository with BARE git, no fixture prefix,
+# and reports what its git did. The push is traced and every housekeeping spawn
+# counted off git's own `run_command:` line, on the client and on the receive-pack
+# side alike - one trace file, because receive-pack inherits `GIT_TRACE`. `deny`
+# is the same push with the runner's global file swapped for one that only keeps
+# maintenance in the FOREGROUND, so the one run it is expected to start is finished
+# before its repository is removed; a detached one would outlive the fixture.
+_PUSH_SUITE = r'''
+import json, os, shutil, subprocess, sys, tempfile
+
+
+def push(env, own_global):
+    root = tempfile.mkdtemp(prefix="rp-")
+    remote = os.path.join(root, "remote.git")
+    wt = os.path.join(root, "wt")
+    trace = os.path.join(root, "trace")
+    git = ["git", "-c", "user.name=Fixture", "-c",
+           "user.email=fixture@fixture.invalid", "-c", "commit.gpgsign=false"]
+    try:
+        if own_global is not None:
+            env = dict(env, GIT_CONFIG_GLOBAL=os.path.join(root, "global"))
+            with open(env["GIT_CONFIG_GLOBAL"], "w") as fh:
+                fh.write(own_global)
+        subprocess.run(["git", "init", "-q", "--bare", remote], env=env, check=True)
+        subprocess.run(["git", "init", "-q", wt], env=env, check=True)
+        with open(os.path.join(wt, "a"), "w") as fh:
+            fh.write("a")
+        subprocess.run(git + ["-C", wt, "add", "a"], env=env, check=True)
+        subprocess.run(git + ["-C", wt, "commit", "-qm", "a"], env=env, check=True)
+        subprocess.run(git + ["-C", wt, "push", "-q", remote, "HEAD:refs/heads/main"],
+                       env=dict(env, GIT_TRACE=trace), check=True)
+        with open(trace, encoding="utf-8", errors="replace") as fh:
+            lines = fh.read().splitlines()
+        return {"receive": sum(1 for ln in lines if "receive-pack" in ln),
+                "spawns": sum(1 for ln in lines
+                              if "run_command: git maintenance run" in ln
+                              or "run_command: git gc --auto" in ln)}
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+env = dict(os.environ)
+autogc = subprocess.run(["git", "config", "--global", "--get", "receive.autogc"],
+                        stdout=subprocess.PIPE, env=env)
+sys.stdout.write("PUSH=" + json.dumps({
+    "global": env.get("GIT_CONFIG_GLOBAL"),
+    "cwd": os.getcwd(),
+    "home": env.get("HOME"),
+    "autogc": autogc.stdout.decode("utf-8", "replace").strip(),
+    "with": push(env, None),
+    "deny": push(env, "[maintenance]\n\tautoDetach = false\n")}) + "\n")
+'''
+
+
+def _inside(path, root):
+    """True when `path` is `root` or sits anywhere under it, both resolved."""
+    path, root = os.path.realpath(path), os.path.realpath(root)
+    return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
+
+
+def _receive_pack_cases(check):
+    """A local push under the sweep's own environment: the git process the
+    runner's `GIT_CONFIG_COUNT` set cannot reach, because git's local transport
+    drops that protocol before it starts receive-pack."""
+    work = fixture_root("harness-push-")
+    with open(os.path.join(work, "push_suite"), "w", encoding="utf-8") as fh:
+        fh.write(_PUSH_SUITE)
+    ran = _load_sweep().run_one("push_suite", repo=work, timeout=120)
+    seen = {}
+    for line in (ran.get("output") or "").splitlines():
+        if line.startswith("PUSH="):
+            seen = json.loads(line[len("PUSH="):])
+    shown = seen or (ran.get("output") or "")[-600:]
+    held = seen.get("global")
+    outside = (bool(held) and not _inside(held, seen.get("cwd") or "")
+               and not _inside(held, seen.get("home") or ""))
+    check("Close the gap or name it (rp1 the gap closed: a traced `git push` to a "
+          "local bare repository, from a suite calling bare git under the sweep's "
+          "own environment, reaches receive-pack and spawns NO maintenance there - "
+          "the runner's `GIT_CONFIG_GLOBAL` file, which sits outside both watched "
+          "directories, is what reaches it, and the child's git reads "
+          "receive.autogc=false back from it): %r" % (shown,),
+          ran.get("code") == 0 and bool(seen) and outside
+          and seen.get("autogc") == "false"
+          and (seen.get("with") or {}).get("receive", 0) > 0
+          and (seen.get("with") or {}).get("spawns") == 0)
+    # rp2 IS THE SECOND DIRECTION of rp1: a trace receive-pack never writes to, or
+    # a match string git never prints, reads zero spawns under any environment.
+    # The same push without the runner's global file must spawn exactly one.
+    check("rp2 ...while the same push with the runner's global file swapped for one "
+          "that only keeps maintenance in the foreground spawns exactly one on the "
+          "receive-pack side, so rp1's zero is a count that could have been "
+          "otherwise: %r" % (shown,),
+          ran.get("code") == 0 and bool(seen)
+          and (seen.get("deny") or {}).get("receive", 0) > 0
+          and (seen.get("deny") or {}).get("spawns") == 1)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _stage_runner_cases(check)
+        _receive_pack_cases(check)
     return run(body)
 
 

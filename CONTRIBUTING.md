@@ -205,8 +205,9 @@ the script is only a caller:
 # contract — the net under `selftest_coverage()`'s string-literal blind spot.
 #
 # AND EVERY CHILD RUNS IN EMPTY DIRECTORIES IT IS EXPECTED TO LEAVE EMPTY. A suite runs
-# with its cwd AND `TMPDIR` pointed at one scratch directory, its HOME at a second, and
-# `PYTHONPYCACHEPREFIX` at a third. The first two of those are the WATCHED pair and each
+# with its cwd AND `TMPDIR` pointed at one scratch directory, its HOME at a second,
+# `PYTHONPYCACHEPREFIX` at a third, and `GIT_CONFIG_GLOBAL` at a git config file in a
+# fourth (below). The first two of those are the WATCHED pair and each
 # holds one file the suite did not put there; the cache prefix is redirected rather than
 # watched, because an interpreter that writes its shadow cache under the HOME it was
 # handed would otherwise convict a child for starting a grandchild.
@@ -231,9 +232,17 @@ the script is only a caller:
 # branch and no identity are supplied in their place: a suite leaning on the host's git must
 # fail here the way it fails on a bare runner, which is what a local sweep that stayed green
 # over CI's ubuntu reds was not doing. The same `GIT_CONFIG_COUNT` set turns `maintenance.auto`
-# and `gc.auto` off, so no git a suite starts - through a fixture prefix or bare - leaves a
-# detached housekeeping run working in a fixture the suite is about to read or delete; the
-# caller's own pairs in that protocol are dropped first, so the runner's set is the whole of it.
+# and `gc.auto` off for every git a suite starts, through a fixture prefix or bare, but one:
+# git's local transport drops that protocol (and any `-c`) before it starts receive-pack, so a
+# push to a local path ends in a detached housekeeping run on the receiving side. So each child's
+# `GIT_CONFIG_GLOBAL` names a runner-owned file, in a directory of its own outside both watched
+# ones, carrying `receive.autogc` off - that key alone, so a suite that takes the pairs out to
+# measure its own fixture prefix still sees a spawn - which does reach receive-pack - and no
+# git a suite starts leaves a detached housekeeping run working in a fixture it is about to read
+# or delete, unless the suite points `GIT_CONFIG_GLOBAL` elsewhere for its own git. The file is
+# checked back afterwards like a planted one, because a suite's `git config --global` now writes
+# there. The caller's own pairs in that protocol are dropped first, so the runner's set is the
+# whole of it.
 #
 # AND THIS COMMENT IS A CHECKED ONE. `gate-parity.py`'s `isolation_drift()` reads the runner's
 # own constants - the families are tuples in that module, not a list restated here - and fails

@@ -327,10 +327,11 @@ GIT_IDENTITY_NAMES = ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE",
 
 # NO DEFAULT BRANCH AND NO IDENTITY ARE PINNED, deliberately. Refusing the host's
 # answers is the whole move; supplying the runner's own would hide a suite that
-# still leans on the host behind a value only this runner provides. The global
-# config needs nothing here - HOME is already a scratch directory with no
+# still leans on the host behind a value only this runner provides. The host's
+# global config is out of reach already - HOME is a scratch directory with no
 # `.gitconfig` in it. `GIT_CONFIG_COUNT` rather than a file planted in that home,
-# because a planted file is one more thing the home channel would have to excuse.
+# because a planted file is one more thing the home channel would have to excuse;
+# the one git these pairs cannot reach gets a file outside it, below the table.
 #
 # NO BACKGROUND HOUSEKEEPING EITHER, and this is the one place that reaches every
 # git a suite starts. A commit, merge or fetch ends by spawning a DETACHED
@@ -356,6 +357,34 @@ GIT_ENV = (("GIT_CONFIG_NOSYSTEM", "1"),
 # index the runner writes and leave the caller's higher ones in the child, where a
 # suite that appends a pair by raising the count would read them as its own.
 _GIT_CONFIG_PAIR_RE = re.compile(r"^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$")
+
+# THE ONE GIT THAT SET NEVER REACHES: receive-pack, on a push to a local path.
+# git's local transport clears `GIT_CONFIG_COUNT` and `GIT_CONFIG_PARAMETERS`
+# before it starts the remote side, so the receiving repository ends the push
+# with a detached `git maintenance run --auto` the pairs above were meant to stop
+# - traced on git 2.53, the push's own `-c` switches lost the same way. A file
+# named by `GIT_CONFIG_GLOBAL` does reach it, so the runner writes one per child
+# holding `receive.autogc=false`, the key receive-pack itself reads before it
+# starts any housekeeping (the same trace: that key alone took the spawn to zero).
+#
+# THAT KEY ALONE, not the pairs' keys copied in. Every other git is already
+# switched off by the pairs, and a suite that measures its own fixture prefix
+# takes the pairs out to see the spawn its deny twin needs; a second copy of
+# `maintenance.auto` here would switch that twin off behind its back.
+#
+# IN A DIRECTORY OF ITS OWN, OUTSIDE BOTH WATCHED CHANNELS, which is the half
+# the comment above this table turned down when it chose the pairs over a file
+# planted in the child's home. And the file is checked back afterwards the way a
+# channel's planted file is: with it in place, a suite's `git config --global`
+# writes here instead of into the watched home, and an unchecked file would be a
+# leak the home channel used to catch going quiet.
+#
+# A SUITE THAT POINTS `GIT_CONFIG_GLOBAL` ELSEWHERE for its own git wins for that
+# git, as it should - the pairs above still reach every git that is not a local
+# push's receiving side, and the suite has chosen what its push side reads.
+GIT_GLOBAL_CONFIG_NAME = "config"
+GIT_GLOBAL_CONFIG = b"[receive]\n\tautogc = false\n"
+GIT_GLOBAL_CHANNEL = "git global config"
 
 
 def is_session_var(name):
@@ -388,6 +417,31 @@ def ambient_env(environ):
                and not is_ambient_git_config(k))
     out.update(GIT_ENV)
     return out
+
+
+def git_global_env(root):
+    """`GIT_CONFIG_GLOBAL` pointed at the runner's own config, written into `root`.
+
+    `root` is a directory this runner allocated for the file alone, so what
+    `git_global_debris` reads back afterwards is this file and nothing else.
+    """
+    path = os.path.join(root, GIT_GLOBAL_CONFIG_NAME)
+    with io.open(path, "wb") as fh:
+        fh.write(GIT_GLOBAL_CONFIG)
+    out = {}
+    out["GIT_CONFIG_GLOBAL"] = path
+    return out
+
+
+def git_global_debris(root):
+    """What a run did to the runner's global git config, each finding naming it.
+
+    `scratch_debris` with the config file as the planted one, so a suite that ran
+    `git config --global`, or deleted the file, is named in the same three words a
+    watched channel's findings use.
+    """
+    return ["%s: %s" % (GIT_GLOBAL_CHANNEL, finding) for finding in
+            scratch_debris(root, GIT_GLOBAL_CONFIG_NAME, GIT_GLOBAL_CONFIG)]
 
 
 def scratch_debris(root, sentinel=SENTINEL, expected=SENTINEL_BYTES):
@@ -742,7 +796,9 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     AND WHAT IS NOT A DIRECTORY IS FILTERED TOO. `ambient_env` drops the Claude
     session's variables and any git identity the caller exports, and refuses git's
     system config and its guessed identity,
-    so a suite sees what a bare runner shows it. `environ` is the caller's
+    so a suite sees what a bare runner shows it. `GIT_CONFIG_GLOBAL` names a
+    file of this runner's in a directory of its own, the one switch a local
+    push's receiving side still reads, and the file is checked back afterwards. `environ` is the caller's
     environment, threaded rather than read so a case can plant a session variable
     without writing to the process's own.
 
@@ -788,6 +844,11 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
         pycache = tempfile.mkdtemp(prefix="sp-")
         owned.append(pycache)
     env["PYTHONPYCACHEPREFIX"] = pycache
+    # PER CHILD, not shared like the cache prefix: a suite's `git config --global`
+    # lands in this file, and a shared one would hand that write to every sibling.
+    gitconf = tempfile.mkdtemp(prefix="sg-")
+    owned.append(gitconf)
+    env.update(git_global_env(gitconf))
     for root in (scratch, home):
         io.open(os.path.join(root, SENTINEL), "wb").write(SENTINEL_BYTES)
     argv = [interpreter, os.path.join(repo, rel_path), "--selftest"]
@@ -804,7 +865,7 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     seconds = time.monotonic() - began
     # MEASURED BEFORE THE REMOVAL, so what the child left is read rather than
     # inferred from a cleanup that may itself have failed.
-    debris = child_debris(scratch, home)
+    debris = child_debris(scratch, home) + git_global_debris(gitconf)
     # THE COPY OF THE REMOVAL HELPER, not a plain `rmtree`. A child that built a
     # git fixture in here left loose objects that windows will not unlink, and the
     # plain call - which every caller spells `ignore_errors=True` - would leave the

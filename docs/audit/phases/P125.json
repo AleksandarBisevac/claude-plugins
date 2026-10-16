@@ -1277,8 +1277,10 @@
         "severity": "med",
         "file": "plugins/audit/tests/test_drive_phase.py:6776-6778 (at fb733fc6; the _GIT_FIXTURE_SUITES tuple P125.119 added)",
         "issue": "contradicts task clause 'a _harness helper for fixture git calls ... used by every fixture that runs git' (P125.119). The diff moves five suites onto _harness.git. Its guard reads only a hand-listed _GIT_FIXTURE_SUITES of those same five, so bare_git_calls can never see any other suite. At fb733fc6 an AST scan of plugins/audit/tests (subprocess.run naming git with check=True, or check_call/check_output) still finds such calls in about two dozen suites. Each fails with a CalledProcessError that hides git's stderr, which is the class F679 reported. Examples: test__invariants.py:1441 and 1448 (`git init` with stderr sent to DEVNULL), test__proc_group.py:249, test__doctor_hygiene.py:75-83. A new suite that runs git is also never scanned.",
-        "resolution": "Derive the scanned set the way P125.121's scan does, from every *.py in _harness.TESTS_DIR, rather than from a tuple. Migrate the remaining checked fixture git calls to _harness.git, in a task whose files declare those suites. Any suite deliberately kept off the helper gets an exemption row with a reason the case checks. Keep fg1m's red twin.",
-        "fixTask": "P125.136-0h5"
+        "resolution": "fixed in P125.136-0h5 (0d581086db17): Derive the scanned set the way P125.121's scan does, from every *.py in _harness.TESTS_DIR, rather than from a tuple. Migrate the remaining checked fixture git calls to _harness.git, in a task whose files declare those suites. Any suite deliberately kept off the helper gets an exemption row with a reason the case checks. Keep fg1m's red twin.",
+        "fixTask": "P125.136-0h5",
+        "commit": "0d581086db17",
+        "status": "fixed"
       },
       {
         "id": "P125-R157",
@@ -1335,7 +1337,7 @@
         "resolution": "Run the call through Popen with stdout/stderr sent to scratch files, or kill and then communicate(timeout=<short>) and fall back to closing the pipes, so the timeout bounds the call on both platforms."
       }
     ],
-    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 55 with a recorded fix commit]"
+    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 56 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -10717,7 +10719,7 @@
     {
       "id": "P125.136-0h5",
       "title": "fix P125-R156: contradicts task clause 'a _harness helper for fixture git cal...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause 'a _harness helper for fixture git calls ... used by every fixture that runs git' (P125.119). The diff moves five suites onto _harness.git. Its guard reads only a hand-listed _GIT_FIXTURE_SUITES of those same five, so bare_git_calls can never see any other suite. At fb733fc6 an AST scan of plugins/audit/tests (subprocess.run naming git with check=True, or check_call/check_output) still finds such calls in about two dozen suites. Each fails with a CalledProcessError that hides git's stderr, which is the class F679 reported. Examples: test__invariants.py:1441 and 1448 (`git init` with stderr sent to DEVNULL), test__proc_group.py:249, test__doctor_hygiene.py:75-83. A new suite that runs git is also never scanned.\n\nResolution asked: Derive the scanned set the way P125.121's scan does, from every *.py in _harness.TESTS_DIR, rather than from a tuple. Migrate the remaining checked fixture git calls to _harness.git, in a task whose files declare those suites. Any suite deliberately kept off the helper gets an exemption row with a reason the case checks. Keep fg1m's red twin.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py",
@@ -10781,14 +10783,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0d581086db17",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "test_drive_phase.py: deleted the hand-listed _GIT_FIXTURE_SUITES tuple. The scan now covers every *.py in _harness.TESTS_DIR, through the new tests_dir_git_bypasses(), the same way the liveness scan in test_run_test_gate does. bare_git_calls() now also catches subprocess under any import alias, `from subprocess import run/check_call/check_output`, check_call/check_output, a git name or attribute ending in 'git' in either case, and names assigned a git argv, followed through chains of assignment. New case titled 'the case P125-R156 asks for, locking the behaviour at HEAD (...)': it checks that more than 10 files are scanned, that _harness.py and test_drive_phase.py are among them, that no bypass is found, and that a wide twin is reported on exactly lines [2,4,5,7,10]. Its last three lines (an unchecked run, a checked non-git run, the helper) are the over-fire direction. The fg1m red twin is kept byte for byte and still passes ([1,2]); the module name `subprocess` is always read as the module so it still matches. The bypass condition moved out of the older combined check into the new case. 186 checked bare fixture git calls (the HEAD count from the new scan) in 34 suites moved to _harness.git; 0 exemptions, because every caller expected success. Each call keeps its own prefix: a literal git call passes prefix=(\"git\",) so no fixture identity or default branch is added, and a suite's own prefix list (git, _git from shutil.which, -C forms) is passed as prefix=. Behaviour changes: (a) calls with no timeout are now bounded by GIT_TIMEOUT 60s; (b) git output that used to go to the terminal is captured, and stdin is DEVNULL; (c) three env-identity calls (test__id_shape commit, the test__merge_install _history git(), the test_audit_task git()) now pass the same name and address as -c user.name/user.email instead of GIT_AUTHOR_*/GIT_COMMITTER_* env; (d) test_audit_task head_of/sha_of check_output now capture stderr instead of inheriting it; (e) test_audit_doctor:148 still reads a failed init as 'no git' via its own except Exception, now catching RuntimeError. No unchecked call became checked, and no assertion changed. Unused subprocess imports were removed where the migration emptied them. Each suite's --selftest passed after its migration. test_audit_status also fails sl1-sl3 when run by hand outside the sweep; the same three fail on a pristine HEAD export, so this predates the change, and they pass under the sweep. ruff and vermin -t=3.8- are clean on all 35 changed files. Full sweep from the worktree: 335/335 files ok, 16477 cases, exit 0. cp1252 pass: 335/335 ok, both halves ran, exit 0. _harness.py was not touched.",
+        "descriptive": "Every suite's fixture git calls now go through _harness.git, so a failing fixture call reports git's own stderr, and the guard now scans the whole tests directory instead of a hand-kept list of five."
       },
       "startedAt": "2026-10-16T10:32:56Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T11:35:27Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py: the case P125-R156 asks for, locking the behaviour at HEAD (every .py in the tests directory is read ... twin reported on exactly those lines)"
+      ],
       "notes": [
         {
           "at": "2026-10-16T07:18:23Z",
@@ -10807,6 +10811,17 @@
         "runId": "2026-10-16T11:35:24Z.c0f58d",
         "status": "passed",
         "at": "2026-10-16T11:35:24Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "0d581086db17",
+        "at": "2026-10-16T11:35:27Z",
+        "basis": "a fix task for P125-R156: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "Regression task (expectRedFirst false) and the orchestrator asked for submit with no `--` part, so the helper was not run. Mutation evidence instead, made with Edit in the worktree and restored: re-adding the bare `subprocess.run([\"git\", \"init\", \"-q\", root], check=True, ...)` to test__proc_group.py:249 (a suite outside the old five) made `python3 plugins/audit/tests/test_drive_phase.py --selftest` exit 1, 318/319, FAIL on the new case with bypasses {'test__proc_group.py': [249]}; after restore `git diff` shows the helper call at that line and the scratch scan reports 0 bypasses. The new scan run over a `git archive HEAD` export of plugins/audit/tests reports 186 bypasses in 34 suites.",
+        "at": "not run by the helper"
       }
     },
     {
@@ -10958,7 +10973,12 @@
       "fixes": [
         "P125-R161"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-16T11:45:54Z.512dde",
+        "status": "passed",
+        "at": "2026-10-16T11:45:54Z"
+      }
     },
     {
       "id": "P125.139-0h5",
