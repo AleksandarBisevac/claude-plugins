@@ -22,7 +22,23 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P128-R1",
+        "severity": "low",
+        "file": "tools/verify.sh:453-459",
+        "issue": "The regenerated ledger directory is still not removed on a signal. ledger_reproducible makes $regen under $TMPDIR and removes it by an explicit rm -rf after ledger_compare returns; an INT or TERM arriving while the generator runs now exits through the new 'exit 130/143' traps, which remove only $WORKDIR, so verify-ledger-* is left behind on that path. The task asks for cleanup 'on every return path', which is met, but the signal path the executor added in the same change leaves the very leak the title names.",
+        "resolution": "Create the directory under the already-trapped workdir: regen=$(mktemp -d \"$WORKDIR/ledger-XXXXXX\"). The EXIT trap then covers return, signal and plain exit, and the explicit rm can stay as the early release. Adjust vsh2-vsh4 so their scratch TMPDIR check looks at the workdir."
+      },
+      {
+        "id": "P128-R2",
+        "severity": "low",
+        "file": "tools/gate-parity.py:3568-3573",
+        "issue": "The vsh5 control passes vacuously when no dash is on PATH: the check is check('vsh5 SKIPPED HERE ...', dash is None), which is True exactly in that branch. It is labelled, but it prints PASS. Likewise vsh2-vsh4 then run under whatever 'sh' is, which may be bash in POSIX mode where a RETURN trap would work, so those cases could not see the defect on that machine.",
+        "resolution": "Acceptable as labelled for a machine without dash; if the suite has a skip vocabulary, use it so a reader of a clean run sees the control did not run. Otherwise leave as is."
+      }
+    ],
+    "outcome": "[findings: 2 - 0 high, 0 med, 2 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -569,7 +585,19 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "tools/verify.sh: the case named in the description": {
+            "command": [
+              "python3",
+              "tools/gate-parity.py",
+              "--selftest"
+            ],
+            "file": "tools/verify.sh",
+            "find": "  rm -rf \"$regen\"\n",
+            "replace": "  :\n"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [],
@@ -588,9 +616,9 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-16T19:21:05Z.4872ad",
-        "status": "failed",
-        "at": "2026-10-16T19:21:05Z"
+        "runId": "2026-10-16T20:31:19Z.1769b4",
+        "status": "passed",
+        "at": "2026-10-16T20:31:19Z"
       }
     },
     {
@@ -1455,7 +1483,7 @@
     {
       "id": "P128.39",
       "title": "Fix BUG-23: /audit:version never reports auto-update set in settings.json",
-      "status": "in_progress",
+      "status": "done",
       "description": "Repro: add \"autoUpdate\": true under extraKnownMarketplaces.quality-gates in <home>/.claude/settings.json, then run /audit:version. Expected: the marketplace line reports the value with the file it was read from, reading the settings sources (user, project, local; CLAUDE_CONFIG_DIR honoured) as well as known_marketplaces.json, and says which wins when they disagree. Actual: the marketplace line says: auto-update not recorded (known_marketplaces.json). The advice line that tells the user to set autoUpdate in settings must stay consistent with what is read.",
       "files": [
         "plugins/audit/scripts/status/audit-version.py",
@@ -1503,20 +1531,41 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "647289c9ba09",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_claude_home.py: new project_dir(), settings_sources(), settings_auto_update(), resolve_auto_update(); marketplace_facts(home, name, project=None) now reads extraKnownMarketplaces.<name>.autoUpdate from user (<claude_home>/settings.json, CLAUDE_CONFIG_DIR honoured), project (.claude/settings.json) and local (.claude/settings.local.json) files, later overriding earlier, settings winning over known_marketplaces.json (stated as this command's reading, not a Claude Code documented order), returning autoUpdate/autoUpdateSource/autoUpdateReadings/autoUpdateNotes/autoUpdateDisagreement/autoUpdateSearched; non-boolean values and unparsable settings files become notes, not readings; duplicate paths (project==home) read once; attach_usage_hint reuses project_dir. audit-version.py: collect(project=) , render prints 'auto-update on/off, read from <file>' or 'not recorded (looked in <files>)', a disagreement line and notes, and the turn-on advice names the settings file that holds the false value (or the searched settings paths). Tests: 8 new cases v12..v12h (40/40 pass; 16/16 in test__claude_home.py). Mutations in my worktree: 'if readings:' disabled -> v12,v12b,v12c,v12d,v12f red; disagreement note made unconditional -> v12h red (v12e alone survived it, so v12h was added); all restored. Note: a first python heredoc edit of _claude_home.py was refused by the plan gate and landed nothing; I redid it with the Edit tool, which the gate allowed. Not touched: commands/version.md (outside files; its wording at lines 49-50 stays consistent).",
+        "descriptive": "/audit:version now reports autoUpdate set in user, project or local settings.json with the file it came from, says which wins on disagreement, and points the turn-on advice at the file it read."
       },
       "startedAt": "2026-10-16T18:38:34Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T20:19:44Z",
+      "verifiedBy": [
+        "v12 repro that FAILS on current code - autoUpdate true under extraKnownMarketplaces in a user settings.json is reported with that file as its source, vs auto-update not recorded",
+        "v12b project settings.json overrides user",
+        "v12c settings.local.json overrides both",
+        "v12d settings disagree with known_marketplaces.json",
+        "v12e SECOND DIRECTION record alone",
+        "v12f turn-on advice names the settings file",
+        "v12g non-boolean and non-JSON settings are notes",
+        "v12h agreeing settings claim no disagreement"
+      ],
       "bugId": "BUG-23",
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-16T20:19:40Z.9de276",
         "status": "passed",
         "at": "2026-10-16T20:19:40Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "647289c9ba09",
+        "at": "2026-10-16T20:19:44Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-16T18:42:18Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_version.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 34 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - v12 (house FAIL): SELFTEST FAILED: 32/34 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],

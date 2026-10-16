@@ -1,0 +1,22 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "tools/verify.sh:453-459",
+   "issue": "The regenerated ledger directory is still not removed on a signal. ledger_reproducible makes $regen under $TMPDIR and removes it by an explicit rm -rf after ledger_compare returns; an INT or TERM arriving while the generator runs now exits through the new 'exit 130/143' traps, which remove only $WORKDIR, so verify-ledger-* is left behind on that path. The task asks for cleanup 'on every return path', which is met, but the signal path the executor added in the same change leaves the very leak the title names.",
+   "resolution": "Create the directory under the already-trapped workdir: regen=$(mktemp -d \"$WORKDIR/ledger-XXXXXX\"). The EXIT trap then covers return, signal and plain exit, and the explicit rm can stay as the early release. Adjust vsh2-vsh4 so their scratch TMPDIR check looks at the workdir."},
+  {"id": 2, "severity": "low", "file": "tools/gate-parity.py:3568-3573",
+   "issue": "The vsh5 control passes vacuously when no dash is on PATH: the check is check('vsh5 SKIPPED HERE ...', dash is None), which is True exactly in that branch. It is labelled, but it prints PASS. Likewise vsh2-vsh4 then run under whatever 'sh' is, which may be bash in POSIX mode where a RETURN trap would work, so those cases could not see the defect on that machine.",
+   "resolution": "Acceptable as labelled for a machine without dash; if the suite has a skip vocabulary, use it so a reader of a clean run sees the control did not run. Otherwise leave as is."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task: 'Use an EXIT trap or explicit removal on every return path, with a check that runs under dash.' The diff splits ledger_reproducible into ledger_compare plus a wrapper that does 'rm -rf \"$regen\"' and returns the saved status (explicit removal on every return path), and gate-parity.py vsh1-vsh8 run the functions cut out of the shipped verify.sh under /bin/dash. I ran 'python3 tools/gate-parity.py --selftest' once in the task tree: ALL PASS 141/141, with vsh1-vsh8 passing under dash, including vsh5 which shows the old RETURN form leaving a directory. The claim describes the diff accurately. The extra change to the main trap (EXIT alone, plus 'trap exit 130' INT and 'trap exit 143' TERM) is correct and within the title ('cleans its temporary directory on every exit'). The old 'trap ... EXIT INT TERM' removed WORKDIR on a signal and then, per POSIX, resumed the script with the directory gone; the new form turns a signal into an exit so the EXIT trap runs once and the status is 128+signal. vsh6 observes 143 and 130 with no resume. set -u is the only shell option, so no set -e interaction with the ledger wrapper. No other 'trap ... RETURN' remains in the tree outside comments and the test control. The tests.add clause 'the case named in the description' matches no case in the description, which says only 'a check that runs under dash'; the cases are titled with that clause and satisfy the sentence.",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "Executor's word could-not-prove, source red-first-helper: the inline suite for tools/verify.sh is not Python, so the helper reads no test hunks from it. That holds. vsh5 shows the removed RETURN spelling leaking under dash, and the falsifier (replace the rm line by ':') is declared, but neither is a recorded run of the new cases against the old verify.sh, so I do not upgrade it to proved.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate entry 'selftests' is 'python3 tools/sweep-selftests.py', which runs the whole project, and the other entries are validators, lints and browser gates. The question is bounded by tests the gate selects and the gate selects the whole tree, so it is not asked."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

@@ -104,7 +104,14 @@ WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/verify-XXXXXX") || {
   echo "Falling back to a shared path is the defect this exists to prevent." >&2
   exit 2
 }
-trap 'rm -rf "$WORKDIR"' EXIT INT TERM
+# THE DIRECTORY GOES ON THE EXIT TRAP ALONE, and a signal turns into an exit so that
+# trap runs. `trap '...' EXIT INT TERM` removed the directory on a signal and then
+# RESUMED the script (a POSIX shell continues after a trap action), so an interrupted
+# run kept going with its scratch directory gone. 130 and 143 are the 128+signal
+# statuses a shell reports for them.
+trap 'rm -rf "$WORKDIR"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # One row per step, appended as each finishes. Printed at the end so the summary
 # reads as a table rather than as scrollback.
@@ -422,13 +429,18 @@ run "committed ledgers record a verdict the runner can make, and every commit a 
 # ABSENT_BY_DESIGN row reading "same throwaway demo tree", which describes a
 # different check: the throwaway-tree runs are elsewhere in ci.yml, and this one
 # compares a file this repository ships. That row is gone with this line.
-ledger_reproducible() {
-  regen=$(mktemp -d "${TMPDIR:-/tmp}/verify-ledger-XXXXXX")
-  trap 'rm -rf "$regen"' RETURN
+#
+# THE REGENERATED DIRECTORY IS REMOVED BY THE CALLER, NOT BY A TRAP. This used to be
+# `trap '...' RETURN`, a bash extension: dash and every other POSIX sh treat it as a
+# signal name they do not have and never run it, so the directory stayed under
+# `$TMPDIR` on each run. The comparison is its own function so that EVERY return
+# path - the generator failing, a ledger differing, all of them matching - comes back
+# to the one line that removes the directory.
+ledger_compare() {
   python3 plugins/audit/scripts/demo/gen-demo-usage.py \
-    examples/acme-store/audit-plan.json --out-dir "$regen" >/dev/null || return 1
+    examples/acme-store/audit-plan.json --out-dir "$1" >/dev/null || return 1
   for f in examples/acme-store/.claude/usage/*.jsonl; do
-    cmp -s "$f" "$regen/$(basename "$f")" && continue
+    cmp -s "$f" "$1/$(basename "$f")" && continue
     echo "the committed ledger no longer matches a fresh deterministic run:"
     echo "  $f"
     echo "fix: python3 plugins/audit/scripts/demo/gen-demo-usage.py \\"
@@ -437,6 +449,13 @@ ledger_reproducible() {
     return 1
   done
   return 0
+}
+ledger_reproducible() {
+  regen=$(mktemp -d "${TMPDIR:-/tmp}/verify-ledger-XXXXXX") || return 1
+  ledger_compare "$regen"
+  ledger_status=$?
+  rm -rf "$regen"
+  return "$ledger_status"
 }
 run "committed example ledger is reproducible from the generator" ledger_reproducible
 # CI HAS RUN THIS ALL ALONG AND THIS FILE DID NOT. It replays the plan gate refusing

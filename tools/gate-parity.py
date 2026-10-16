@@ -3507,6 +3507,144 @@ def main(argv):
     return render(result)
 
 
+# --- verify.sh removes its scratch directories under a strict POSIX sh ----------
+# `trap '...' RETURN` is spelled correctly and does nothing in any POSIX sh that is
+# not bash, so `verify.sh` (which asks for `/bin/sh`) left a `verify-ledger-*`
+# directory under `$TMPDIR` on every run where `sh` is dash. Only a process can say
+# whether a directory is still there afterwards, so these cases run the functions
+# the script defines - cut out of the shipped file - in a shell, against a `python3`
+# shim standing for the demo generator in one of three shapes (it reproduces the
+# committed ledger, it writes a different one, it fails). The shell is `dash` when
+# the machine has one and `sh` otherwise, and each label names the one that ran.
+_VERIFY_CLAUSE = "the case named in the description"
+_LEDGER_FUNCS = ("ledger_compare", "ledger_reproducible")
+_GENERATOR_STUB = """#!/bin/sh
+case "$STUB_MODE" in
+  fail) exit 1 ;;
+  same) cp examples/acme-store/.claude/usage/a.jsonl "$4/a.jsonl" ;;
+  differ) printf 'other\\n' >"$4/a.jsonl" ;;
+esac
+exit 0
+"""
+# The removed spelling, so the cases can show this shell is one that would keep it.
+_RETURN_TRAP_FUNC = (
+    "old() {\n  regen=$(mktemp -d \"${TMPDIR:-/tmp}/verify-ledger-XXXXXX\")\n"
+    "  trap 'rm -rf \"$regen\"' RETURN\n  return 0\n}\nold\n")
+
+
+def shell_function_text(source, name):
+    """The shell function `name` as written in `source`, or None."""
+    found = re.search(r"^%s\(\) \{\n.*?^\}\n" % (re.escape(name),), source,
+                      re.S | re.M)
+    return found.group(0) if found else None
+
+
+def run_in_scratch_shell(sh, root, script, mode=None):
+    """(exit code, output, what is left in the TMPDIR it was given)."""
+    scratch = os.path.join(root, "tmp")
+    if os.path.isdir(scratch):
+        shutil.rmtree(scratch)
+    os.makedirs(scratch)
+    env = {"PATH": os.path.join(root, "bin") + os.pathsep + "/usr/bin"
+           + os.pathsep + "/bin", "TMPDIR": scratch, "HOME": root}
+    if mode is not None:
+        env["STUB_MODE"] = mode
+    done = subprocess.run([sh, "-c", script], cwd=root, env=env,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    return (done.returncode, done.stdout.decode("utf-8", "replace"),
+            sorted(os.listdir(scratch)))
+
+
+def _verify_cleanup_cases(check):
+    from _suite import remove_tree
+    dash = shutil.which("dash")
+    shell = dash or shutil.which("sh")
+    if shell is None:
+        check("vsh0 no POSIX shell on PATH, so verify.sh's cleanup cannot be run",
+              False)
+        return
+    ran = os.path.basename(shell)
+    with io.open(os.path.join(REPO, VERIFY_REL), encoding="utf-8") as fh:
+        source = fh.read()
+    funcs = [shell_function_text(source, name) for name in _LEDGER_FUNCS]
+    check("vsh1 %s - both functions that make and compare the regenerated ledger "
+          "are found in the shipped script, so the cases below run its text and "
+          "not a copy: %r" % (_VERIFY_CLAUSE, [f is not None for f in funcs]),
+          all(f is not None for f in funcs))
+    if not all(f is not None for f in funcs):
+        return
+    run_ledger = "".join(funcs) + "ledger_reproducible\nprintf 'status=%s\\n' $?\n"
+
+    root = tempfile.mkdtemp(prefix="verify-sh-selftest-")
+    try:
+        os.makedirs(os.path.join(root, "bin"))
+        stub = os.path.join(root, "bin", "python3")
+        with io.open(stub, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(_GENERATOR_STUB)
+        os.chmod(stub, 0o755)
+        usage = os.path.join(root, "examples", "acme-store", ".claude", "usage")
+        os.makedirs(usage)
+        with io.open(os.path.join(usage, "a.jsonl"), "w", encoding="utf-8") as fh:
+            fh.write("committed\n")
+
+        _, out, left = run_in_scratch_shell(shell, root, run_ledger, mode="same")
+        check("vsh2 %s - a regenerated ledger identical to the committed one is "
+              "reported reproducible (status 0) and the scratch directory is gone "
+              "afterwards, under %s: out=%r left=%r"
+              % (_VERIFY_CLAUSE, ran, out, left),
+              "status=0" in out and left == [])
+
+        _, out, left = run_in_scratch_shell(shell, root, run_ledger, mode="differ")
+        check("vsh3 %s - a regenerated ledger that differs is refused (status 1), "
+              "named, and the scratch directory is gone afterwards, under %s: "
+              "out=%r left=%r" % (_VERIFY_CLAUSE, ran, out, left),
+              "status=1" in out and "no longer matches" in out and left == [])
+
+        _, out, left = run_in_scratch_shell(shell, root, run_ledger, mode="fail")
+        check("vsh4 %s - a generator that fails is refused (status 1) and the "
+              "scratch directory is gone afterwards, under %s: out=%r left=%r"
+              % (_VERIFY_CLAUSE, ran, out, left),
+              "status=1" in out and left == [])
+
+        # The control. If the shell in use ran a RETURN trap, the cases above
+        # could not have seen the defect and their green would say nothing.
+        if dash:
+            _, _, left = run_in_scratch_shell(shell, root, _RETURN_TRAP_FUNC,
+                                              mode="same")
+            check("vsh5 the cases can see the defect they guard - the removed "
+                  "`trap ... RETURN` spelling leaves its directory behind under "
+                  "dash: left=%r" % (left,), len(left) == 1)
+        else:
+            check("vsh5 SKIPPED HERE - no `dash` on PATH (the cases ran under "
+                  "%s), so a RETURN trap cannot be shown to leave a directory "
+                  "behind" % (ran,), dash is None)
+
+        # The signal half: TERM and INT must END the run with the directory
+        # removed, not remove it and let the script carry on.
+        head = source.split("WORKDIR=$(mktemp", 1)[1].split("\n\n", 1)[0]
+        trapped = "WORKDIR=$(mktemp" + head + "\n"
+        for sig, want in (("TERM", 143), ("INT", 130)):
+            code, out, left = run_in_scratch_shell(
+                shell, root,
+                trapped + "kill -%s $$\nprintf 'resumed\\n'\n" % (sig,))
+            check("vsh6 %s - a %s ends the run with status %d and removes the "
+                  "workdir instead of resuming, under %s: code=%r out=%r left=%r"
+                  % (_VERIFY_CLAUSE, sig, want, ran, code, out, left),
+                  code == want and "resumed" not in out and left == [])
+
+        code, out, left = run_in_scratch_shell(shell, root, trapped + "exit 3\n")
+        check("vsh7 %s - a plain exit still removes the workdir and keeps its "
+              "status, under %s: code=%r left=%r"
+              % (_VERIFY_CLAUSE, ran, code, left),
+              code == 3 and left == [])
+    finally:
+        remove_tree(root)
+
+    check("vsh8 %s - the script names RETURN as a trap signal nowhere outside a "
+          "comment" % (_VERIFY_CLAUSE,),
+          not re.search(r"^[^#\n]*\btrap\b[^\n]*\bRETURN\b", source, re.M))
+
+
 # --- selftest -----------------------------------------------------------------
 def _cases(check):
     real = parity()
@@ -5226,6 +5364,8 @@ def _cases(check):
           and len(_sg_b_noprod) == 1 and "earlier" in _sg_b_noprod[0][2]
           and len(_sg_b_nopath) == 1 and "no backticked" in _sg_b_nopath[0][2]
           and len(_sg_b_gone) == 1 and "no such step" in _sg_b_gone[0][2])
+
+    _verify_cleanup_cases(check)
 
 
 def _selftest():
