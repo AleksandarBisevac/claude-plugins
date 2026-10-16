@@ -1,0 +1,26 @@
+{
+  "gates": {
+    "own-test python3 plugins/audit/tests/test__panel_usage.py --selftest": "pass",
+    "npx vitest run": "pass",
+    "node tools/capture-screenshots.mjs --check": "pass",
+    "python3 tools/sweep-selftests.py": "fail",
+    "python3 tools/sweep-selftests.py --encoding cp1252": "fail"
+  },
+  "redFirst": {
+    "at": "2026-10-16T09:56:46Z",
+    "basis": "`python3 plugins/audit/tests/test__panel_usage.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 44 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - Return `(None, '<ExcType>: <msg>')` from the panel, as `_usage_load._cli_cost` does (when `ul.cli_cost_entries` raises the payload carries cliCost None and cliCostReason 'ValueError: cursor unreadable', not `[]`; a good read carries a list and no reason): ([], None) (house FAIL): SELFTEST FAILED: 43/44 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added usage_ledger.cli_cost_outcome (entries, reason); _usage_load._cli_cost and _panel_usage._cli_cost_payload both delegate to it. Panel ships cliCost None plus cliCostReason (declared in _usage_shape). browse-dialog.js browseCliNote prints the could-not-compare sentence with the reason when cliCost === null. New cases: panel python case (titled with tests.add clause), cm3b in test_usage_ledger.py, two vitest cases in usage-edges.test.mjs. Sweep exit 1 and cp1252 exit 1: only test__refs.py fails (sc1/sc2), because 17 panel-*.png screenshots are stale (panel source digest changed); I did not capture them. All 335 other files pass. vitest 829 passed; screenshots --check exit 0.",
+    "descriptive": "A panel CLI-cost comparison that raised no longer reads as agreement; both surfaces share one wrapper and the panel prints the reason."
+  },
+  "testsAdded": [
+    "Return `(None, '<ExcType>: <msg>')` from the panel, as `_usage_load._cli_cost` does",
+    "cm3b cli_cost_outcome",
+    "vitest: a comparison that could not be made says so, with the reason",
+    "vitest: names a missing reason, silent with dollars off"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:e5cb951a46d78110b8f3cc28b0fe8cb61a66964aa590f1bc954da7b1a1fedbff\",\"dirtyDigest\":\"sha256:be460cc5b4bf3e4cfd55d268fd57c6fc904f6bf26f308e500db720deeadf7a88\",\"dirtyPaths\":{\"plugins/audit/scripts/panel/_panel_usage.py\":\"10d954178990d2a9\",\"plugins/audit/scripts/report/_usage_load.py\":\"a421945a394e54e6\",\"plugins/audit/scripts/ui/panel/browse-dialog.js\":\"252994b1116878b6\",\"plugins/audit/scripts/usage/usage_ledger.py\":\"dfd367282aae8712\",\"plugins/audit/tests/test__panel_usage.py\":\"ece64d320e17be1c\",\"plugins/audit/tests/test_usage_ledger.py\":\"6bad78269c8773b8\",\"tools/ui-tests/usage-edges.test.mjs\":\"5977166086e521c9\"},\"head\":\"10d7eee5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"docs/screenshots/captured-at.json\",\"docs/screenshots/panel-appearance.png\",\"docs/screenshots/panel-blocks.png\",\"docs/screenshots/panel-composition-expanded.png\",\"docs/screenshots/panel-composition.png\",\"docs/screenshots/panel-confirm.png\",\"docs/screenshots/panel-dark.png\",\"docs/screenshots/panel-gate.png\",\"docs/screenshots/panel-guards.png\",\"docs/screenshots/panel-help.png\",\"docs/screenshots/panel-mobile.png\",\"docs/screenshots/panel-monthly.png\",\"docs/screenshots/panel-overview.png\",\"docs/screenshots/panel-person.png\",\"docs/screenshots/panel-policy-expanded.png\",\"docs/screenshots/panel-policy.png\",\"docs/screenshots/panel-proposals.png\",\"docs/screenshots/panel-usage.png\",\"plugins/audit/scripts/panel/_panel_usage.py\",\"plugins/audit/scripts/report/_usage_load.py\",\"plugins/audit/scripts/ui/panel/browse-dialog.js\",\"plugins/audit/scripts/usage/usage_ledger.py\",\"plugins/audit/tests/test__panel_usage.py\",\"plugins/audit/tests/test__usage_load.py\",\"plugins/audit/tests/test_usage_ledger.py\",\"tools/ui-tests/usage-edges.test.mjs\"],\"scopeDigest\":\"sha256:d151af183e5c628e7cac8fd4819492bf472c36c7c05a8b213f57745d8cb482e7\",\"v\":2}"
+}

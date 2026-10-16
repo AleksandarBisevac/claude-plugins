@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "own-test test__help.py --selftest": "pass",
+    "tools/sweep-selftests.py": "pass",
+    "tools/sweep-selftests.py --encoding cp1252": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-16T09:51:39Z",
+    "basis": "`python3 plugins/audit/tests/test__help.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 111 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - Spell SCHEMAS with '/' (load_schema already joins it under root, which opens on both platforms), as was done for the agent card's file (a module imported under Windows' os.path.join serves no backslash-separated plugin path, the scan flags one when present, and both schemas still open) (fresh-import hits ['schema\\\\audit-config.schema.json', 'schema\\\\audit-plan.schema.json'], control ['schema\\\\audit-config.schema.json']) (house FAIL): SELFTEST FAILED: 110/111 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "SCHEMAS in _help.py now literal '/' paths. New case in test__help.py re-imports _help via _loader (cache=False) while os.path.join is ntpath-spelled for relative joins, scans SCHEMAS and guide_card for backslash-separated plugin paths, has a positive control, and checks both schemas still load. Selftest 111/111; full sweep exit 0 (335/335 files); cp1252 sweep exit 0.",
+    "descriptive": "The help payload no longer carries Windows-spelled schema paths, and the platform case now sees import-time constants."
+  },
+  "testsAdded": [
+    "Spell SCHEMAS with '/' (load_schema already joins it under root, which opens on both platforms), as was done for the agent card's file"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:350c33300600f8a24c7fe96d2202888b6ce8d396908e2d39310cd9e6834e9159\",\"dirtyDigest\":\"sha256:530214dcced26d4657c438fe5b5edec3d3fdc9c6a4f4a0302a0dbd017d8c6100\",\"dirtyPaths\":{\"plugins/audit/scripts/config/_help.py\":\"5b812d3d3f703b55\",\"plugins/audit/tests/test__help.py\":\"8805a20882905869\"},\"head\":\"10d7eee5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/config/_help.py\",\"plugins/audit/tests/test__help.py\"],\"scopeDigest\":\"sha256:e531d1d5cfd123ad6c1c8e8fe8fccce1a3b4d7716500f67065244c7b3bdf402b\",\"v\":2}"
+}

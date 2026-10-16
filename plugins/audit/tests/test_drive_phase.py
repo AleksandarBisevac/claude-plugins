@@ -6601,10 +6601,46 @@ ASCII_ENV = {"LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0"}
 _UTF8_NAMES = ("utf-8", "utf8", "cp65001")
 
 
+def _ascii_coverage_case(check):
+    """The coverage `_ascii_locale_cases` states, held to what exists: the
+    re-run block is a stage, is not the stage that runs it, and the sweep's
+    encoding pass pins a locale on POSIX and none on Windows."""
+    sweep = _harness._load_sweep()
+    posix = sweep.locale_decision("posix", ("ascii", "utf-8"), "cp1252")
+    nt = sweep.locale_decision("nt", None, "cp1252")
+    names = [name for name, _fn in STAGES]
+    doc = " ".join(_ascii_locale_cases.__doc__.split())
+    check("plugins/audit/tests/test_drive_phase.py: the case P125-R147 asks "
+          "for, locking the behaviour at HEAD (ASCII_BLOCK names a stage other "
+          "than the one that re-runs it, the docstring states the POSIX and "
+          "Windows coverage, and the sweep's encoding pass pins the locale on "
+          "POSIX and none on Windows): %r"
+          % ((ASCII_BLOCK, names.count(ASCII_BLOCK), posix["locale"],
+              nt["locale"]),),
+          names.count(ASCII_BLOCK) == 1 and ASCII_BLOCK != "al-block"
+          and ("al-block", "_ascii_locale_cases") in STAGES
+          and "on POSIX the sweep's `--encoding` pass covers them" in doc
+          and "on Windows the sweep pins no locale, so nothing re-runs "
+              "them under a non-UTF-8 locale" in doc
+          and bool(posix["locale"]) and nt["locale"] == {})
+
+
 def _ascii_locale_cases(check):
     """`ASCII_BLOCK` run again as a child whose locale's preferred encoding is
     not UTF-8: every case it reports passes there, as it does in this suite's
-    own run of that block."""
+    own run of that block.
+
+    WHAT IS COVERED, per platform. `ASCII_BLOCK` is re-run under the pinned
+    ASCII locale on every platform. The drive suite's other blocks are not
+    re-run here: on POSIX the sweep's `--encoding` pass covers them, since it
+    pins the locale there; on Windows the sweep pins no locale, so nothing
+    re-runs them under a non-UTF-8 locale. `ASCII_BLOCK` was chosen because
+    it is the block whose path crosses every decode between the verbs and
+    this suite. Re-running the whole drive suite per Windows encoding shard
+    would add about the suite's full runtime, beyond the CI wall-time budget.
+    `_ascii_coverage_case` pins this paragraph to the stage table and to what
+    the sweep's encoding pass does per platform."""
+    _ascii_coverage_case(check)
     probe = subprocess.run(
         [sys.executable, "-c",
          "import locale; print(locale.getpreferredencoding(False))"],

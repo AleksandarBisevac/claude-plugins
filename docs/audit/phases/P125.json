@@ -10585,7 +10585,12 @@
       "fixes": [
         "P125-R147"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-16T10:12:03Z.457b40",
+        "status": "passed",
+        "at": "2026-10-16T10:12:03Z"
+      }
     },
     {
       "id": "P125.135-0h5",

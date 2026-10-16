@@ -1,0 +1,19 @@
+{
+  "gates": {
+    "own-tests: test_drive_phase.py --selftest --stage al-block": "pass",
+    "selftests: python3 tools/sweep-selftests.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression mode, expectRedFirst false; mutation run instead: ASCII_BLOCK set to 'zz-block' made the new case FAIL (al-block exit 1), restored to 'fm-block' (grep count of 'zz-block' is 0, 'ASCII_BLOCK = \"fm-block\"' present) and al-block exit 0",
+    "at": "not applicable"
+  },
+  "outcome": {
+    "technical": "In test_drive_phase.py: _ascii_locale_cases docstring now states per platform coverage (fm-block re-run everywhere, POSIX other blocks covered by sweep --encoding pass, Windows nothing re-runs them) with why fm-block and why not whole suite; new _ascii_coverage_case (called first) checks ASCII_BLOCK is a unique stage other than al-block, docstring contains the two coverage statements, and sweep locale_decision pins a locale on posix and none on nt. al-block: 6/6 pass, exit 0. Full sweep: exit 0, 335/335 files ok. Note: I used a python one-off (not Edit) once to normalize whitespace in the docstring check I had just written.",
+    "descriptive": "The drive suite's ASCII-locale coverage is stated honestly and pinned by a case; no overstated gap closure."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_drive_phase.py: the case P125-R147 asks for, locking the behaviour at HEAD (ASCII_BLOCK names a stage ...)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:218fad8ac3796ba280b41df5c09bcd6f7211358213073e513d6e0576d90470f3\",\"dirtyDigest\":\"sha256:c77cb05772f2f258100317a5cbbd99801348c0f6b2a677e2a211847f1a6a9c32\",\"dirtyPaths\":{\"plugins/audit/tests/test_drive_phase.py\":\"6a7648fff770691c\"},\"head\":\"10d7eee5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:d70c59b83c0519b9a48cfdeaf4f1ecadc5c9cc9e1051f57c6ed946754b63f855\",\"v\":2}"
+}
