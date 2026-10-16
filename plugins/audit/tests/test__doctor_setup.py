@@ -1445,11 +1445,81 @@ def _binding_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _ci_cadence_cases(check):
+    """`check_ci_cadence`: the effective cadence and where it came from - the
+    config file's path when it set one, the absence said when it did not, the
+    driver's own refusal as a finding when it cannot be read."""
+    path = os.path.join("proj", ".claude", "audit.config.json")
+
+    def rows(raw):
+        rep = base.Report()
+        M.check_ci_cadence(rep, raw, path)
+        return [r for r in rep.rows if r["check"] == "ci cadence"]
+
+    both = rows({"ci": {"cadence": {"closes": 3, "hours": 6}, "workflow": "t.yml"}})
+    check("ci1 a set cadence is reported OK with both triggers, the workflow and "
+          "the file it came from: %r" % (both,),
+          len(both) == 1 and both[0]["level"] == "OK"
+          and "every 3 task closes" in both[0]["detail"]
+          and "every 6 hours" in both[0]["detail"]
+          and "t.yml" in both[0]["detail"] and path in both[0]["detail"])
+    hours = rows({"ci": {"cadence": {"hours": 2.5}}})
+    check("ci2 hours alone names no closes trigger, and the default workflow: %r"
+          % (hours,),
+          len(hours) == 1 and "every 2.5 hours" in hours[0]["detail"]
+          and "task closes" not in hours[0]["detail"]
+          and "ci.yml" in hours[0]["detail"])
+    absent = rows({})
+    check("ci3 SECOND DIRECTION: no ci key is SAID, as landing only, and is not a "
+          "finding or a warning: %r" % (absent,),
+          len(absent) == 1 and absent[0]["level"] == "OK"
+          and "not set" in absent[0]["detail"]
+          and "landing only" in absent[0]["detail"])
+    bad = rows({"ci": {"cadence": {"closes": 0}}})
+    check("ci4 a cadence the driver refuses is a finding carrying the driver's "
+          "reason and the file, not 'not set': %r" % (bad,),
+          len(bad) == 1 and bad[0]["level"] == "FINDING"
+          and "closes is 0" in bad[0]["detail"] and path in bad[0]["detail"]
+          and "not set" not in bad[0]["detail"])
+    tmp = _harness.fixture_root("doctor-ci-")
+    try:
+        os.makedirs(os.path.join(tmp, ".claude"))
+        with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"ci": {"cadence": {"closes": 4}}}, fh)
+        rep = base.Report()
+        M.check_config(rep, tmp)
+        got = [r for r in rep.rows if r["check"] == "ci cadence"]
+        check("ci5 check_config reaches the row from the file on disk, naming "
+              "that file: %r" % (got,),
+              len(got) == 1 and "every 4 task closes" in got[0]["detail"]
+              and os.path.join(tmp, ".claude", "audit.config.json")
+              in got[0]["detail"])
+        os.remove(os.path.join(tmp, ".claude", "audit.config.json"))
+        rep = base.Report()
+        M.check_config(rep, tmp)
+        got = [r for r in rep.rows if r["check"] == "ci cadence"]
+        check("ci6 with no config file the absence is said, naming that there is "
+              "no file: %r" % (got,),
+              len(got) == 1 and "no config file" in got[0]["detail"])
+        with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("{ not json")
+        rep = base.Report()
+        M.check_config(rep, tmp)
+        check("ci7 an unreadable config makes no claim about the cadence: %r"
+              % ([r["detail"] for r in rep.rows if r["check"] == "ci cadence"],),
+              not [r for r in rep.rows if r["check"] == "ci cadence"])
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _merge_driver_cases(check)
         _binding_cases(check)
+        _ci_cadence_cases(check)
     return _harness.run(body)
 
 

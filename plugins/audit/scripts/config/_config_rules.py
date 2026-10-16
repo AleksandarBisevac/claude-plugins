@@ -72,7 +72,7 @@ KNOWN_ROOT = {
     "trivialLineThreshold", "stateDir", "logsDir", "bypassKeyword",
     "secretPatterns", "guardEdits", "bashWriteCheck", "tddReminder", "usage",
     "journal", "evidence", "policy", "ui", "priority", "portability", "executor",
-    "review",
+    "review", "ci",
 }
 # The tiers `planGate` may pin. Mirror of hooks/_config.py PLAN_GATE_TIERS (that
 # module stays the source of truth for the gate itself); the selftest below pins
@@ -100,6 +100,13 @@ RUNS_GATE_MODES = ("never", "own-tests", "full")
 # review at sign-off, or per task only where a computed signal fires.
 KNOWN_REVIEW = {"perTask", "maxRounds"}
 REVIEW_PER_TASK_MODES = ("always", "phase", "signals")
+# When a long phase asks CI about itself before it lands. `cadence` holds the
+# triggers (`closes`: every N task closes, `hours`: every H hours of phase time,
+# either or both); `workflow` is the workflow file dispatched, `ci.yml` unless it
+# names another. Nothing in `ci` set means landing only, as before the key existed.
+KNOWN_CI = {"cadence", "workflow"}
+KNOWN_CI_CADENCE = {"closes", "hours"}
+CI_WORKFLOW_DEFAULT = "ci.yml"
 
 
 def review_per_task_mode(config, defaults=None):
@@ -159,6 +166,49 @@ def review_max_rounds(config, defaults=None):
     return None, ("review.maxRounds is %r, not a positive integer - fix the "
                   "config (/audit:doctor names it); it is not read as the "
                   "default" % (rounds,))
+
+
+def _positive_number(value):
+    """A number above 0, never a bool - which Python counts as one."""
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and value > 0)
+
+
+def ci_cadence_setting(config):
+    """`(cadence, problem)` - `ci.cadence` as `config` sets it: `None` when the
+    key is absent (CI is asked about at landing only, as every config ran before
+    the key existed), else `{"closes": int or None, "hours": number or None,
+    "workflow": str}`; `(None, problem)` for a value that cannot be read.
+
+    REFUSED, NOT FOLDED INTO ABSENT: a cadence of 0 or `"often"` read as "no
+    cadence" would be a setting that silently does nothing while reading like a
+    decision, and an empty cadence names no trigger at all."""
+    block = (config or {}).get("ci")
+    if not isinstance(block, dict) or "cadence" not in block:
+        return None, None
+    raw = block["cadence"]
+    if not isinstance(raw, dict):
+        return None, "ci.cadence is %r, not an object of closes and/or hours" % (raw,)
+    closes, hours = raw.get("closes"), raw.get("hours")
+    if "closes" in raw and not _positive_int(closes):
+        return None, ("ci.cadence.closes is %r, not a whole number of at least 1 "
+                      "- fix the config (/audit:doctor names it); it is not read "
+                      "as no cadence" % (closes,))
+    if "hours" in raw and not _positive_number(hours):
+        return None, ("ci.cadence.hours is %r, not a number above 0 - fix the "
+                      "config (/audit:doctor names it); it is not read as no "
+                      "cadence" % (hours,))
+    if "closes" not in raw and "hours" not in raw:
+        return None, ("ci.cadence names neither closes nor hours, so it asks CI "
+                      "about nothing - set one, or remove ci.cadence for landing "
+                      "only")
+    workflow = block.get("workflow", CI_WORKFLOW_DEFAULT)
+    if not (isinstance(workflow, str) and workflow.strip()):
+        return None, ("ci.workflow is %r, not a non-empty workflow file name"
+                      % (workflow,))
+    return {"closes": closes if "closes" in raw else None,
+            "hours": hours if "hours" in raw else None,
+            "workflow": workflow.strip()}, None
 
 
 def _valid_wave_width(value):
@@ -465,6 +515,7 @@ def validate_config(obj):
     _check_evidence(obj.get("evidence"), findings, warnings)
     _check_executor(obj.get("executor"), findings, warnings)
     _check_review(obj.get("review"), findings, warnings)
+    _check_ci(obj.get("ci"), findings, warnings)
 
     # Delegated whole: the module that resolves a policy decides what a malformed
     # one is. A copy of those rules here would be free to call legal what the guard
@@ -597,6 +648,33 @@ def _check_review(review, findings, warnings):
         findings.append("review.maxRounds must be a positive integer - a cap "
                         "of %r is refused rather than read as the default"
                         % (review["maxRounds"],))
+
+
+def _check_ci(ci, findings, warnings):
+    """When a long phase asks CI about itself. A FINDING for a value the drive
+    refuses to read (`ci_cadence_setting`), `_check_executor`'s reason: only a
+    finding refuses the panel's save."""
+    if ci is None:
+        return
+    if not isinstance(ci, dict):
+        findings.append("ci must be an object")
+        return
+    for k in _real_keys(ci):
+        if k not in KNOWN_CI:
+            warnings.append("unknown ci key %r" % k)
+    cadence = ci.get("cadence")
+    if isinstance(cadence, dict):
+        for k in _real_keys(cadence):
+            if k not in KNOWN_CI_CADENCE:
+                warnings.append("unknown ci.cadence key %r" % k)
+    if "cadence" in ci:
+        _setting, problem = ci_cadence_setting({"ci": ci})
+        if problem:
+            findings.append(problem)
+    elif "workflow" in ci and not (isinstance(ci["workflow"], str)
+                                   and ci["workflow"].strip()):
+        findings.append("ci.workflow is %r, not a non-empty workflow file name"
+                        % (ci["workflow"],))
 
 
 def _check_bands(bands, findings, warnings):
@@ -762,6 +840,9 @@ OFF_ROOT = {
                   "hooks/_config.py stopped copying them so that consulting a "
                   "policy would not import the scripts-side module on every "
                   "tool call",
+        "ci": "no hook reads it: only the step driver does, through "
+              "ci_cadence_setting, which treats an absent key as landing only - "
+              "so there is no shipped value for DEFAULTS to carry",
     },
 }
 

@@ -332,6 +332,20 @@ FIELD_HELP = {
         "The directory task worktrees are made in, relative to the git root. Unset "
         "uses the directory above the git root. A directory inside the project is "
         "refused, because a tree there would be judged as the project itself.",
+    "ci.cadence.closes":
+        "Dispatch CI at every N-th task close since the last dispatch: the step "
+        "driver pushes the phase tip to its ci/ branch and runs the workflow "
+        "there, never waiting for it. The run is read at the next close and a red "
+        "files a bug. A whole number of at least 1; 0 is refused, not read as "
+        "landing only. Empty with no hours set means CI is asked about at landing "
+        "only.",
+    "ci.cadence.hours":
+        "Dispatch CI at the first close after this many hours of phase time since "
+        "the last dispatch, or since the phase started. Either this or the closes "
+        "setting is enough. A number above 0; 0 is refused, not read as landing "
+        "only.",
+    "ci.workflow":
+        "The workflow file dispatched on the phase's ci/ branch. Unset uses ci.yml.",
     "executor.maxHours":
         "How many hours a single spawned executor may be continued onto further "
         "tasks — never re-spawned — before the orchestrator prefers handing it "
@@ -679,6 +693,23 @@ SETTINGS_GROUPS = (
              "kind": "enum", "enum": "perTask"},
             {"path": "review.maxRounds", "label": "Review rounds before sign-off asks",
              "kind": "int", "min": 1},
+        ),
+    },
+    {
+        "id": "ci",
+        "title": "CI during a long phase",
+        "blurb": "A phase that runs for days used to meet CI only when it landed. "
+                 "Set either number and the step driver pushes the phase tip to "
+                 "its ci/ branch and dispatches the workflow there at the close "
+                 "that makes it due, without waiting; it reads the run at the next "
+                 "close, and a red files a bug. Leave both empty for landing only.",
+        "fields": (
+            {"path": "ci.cadence.closes", "label": "Task closes between CI runs",
+             "kind": "int", "min": 1, "placeholder": "landing only"},
+            {"path": "ci.cadence.hours", "label": "Hours of phase time between CI runs",
+             "kind": "number", "min": 0, "placeholder": "landing only"},
+            {"path": "ci.workflow", "label": "Workflow dispatched",
+             "kind": "text", "placeholder": "ci.yml"},
         ),
     },
 )

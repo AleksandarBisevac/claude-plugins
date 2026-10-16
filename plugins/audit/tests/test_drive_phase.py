@@ -6341,7 +6341,206 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("sc-block", "_scope_change_cases"), ("fv-block", "_falsifier_cases"),
           ("fp-block", "_falsifier_producer_cases"),
           ("gt-block", "_git_stdin_cases"),
+          ("ci-block", "_ci_cadence_cases"),
           ("sb-block", "_stage_cases"))
+
+
+CI_CADENCE_CLAUSE = ("plugins/audit/tests/test_drive_phase.py: with ci.cadence "
+                     "every 3 closes the drive dispatches CI on the third close "
+                     "and not before, never waits on it, and reads its verdict "
+                     "at the next close; absent, it dispatches only at landing")
+CI_TASKS = ("P1.1", "P1.2", "P1.3", "P1.4")
+
+
+def _ci_repo(prefix, ci):
+    """A four-task fixture whose config carries `ci` (None: no `ci` key)."""
+    root, mpath = _repo(prefix, task_ids=CI_TASKS, per_task="phase")
+    cfg = os.path.join(root, ".claude", "audit.config.json")
+    with open(cfg, encoding="utf-8") as fh:
+        config = json.load(fh)
+    if ci is None:
+        return root, mpath
+    config["ci"] = ci
+    with open(cfg, "w", encoding="utf-8") as fh:
+        json.dump(config, fh)
+    _harness.git(root, "commit", "-qam", "config")
+    return root, mpath
+
+
+def _ci_fake(root, runs):
+    """`(fake, calls)` - a stand-in for the driver's one seam to git's remote
+    and to `gh`, recording every argv and answering `gh run list` with `runs`
+    (a function of the sha the last push carried). No remote is touched."""
+    calls = []
+    pushed = []
+
+    def fake(ctx, argv):
+        calls.append(tuple(argv))
+        if "push" in argv:
+            pushed.append(argv[-1].split(":", 1)[0].lstrip("+"))
+            return 0, "", ""
+        if argv[:3] == ["gh", "workflow", "run"]:
+            return 0, "", ""
+        if argv[:3] == ["gh", "run", "list"]:
+            return 0, json.dumps(runs(pushed[-1] if pushed else None)), ""
+        return 1, "", "unexpected %r" % (argv,)
+    return fake, calls, pushed
+
+
+def _ci_run(M, root, mpath, runs):
+    """Drive the whole phase with the CI seam faked. -> (calls, events, pushed,
+    heads, run): `events` is the calls interleaved with a marker per close, in
+    the order they happened; `heads` is HEAD as each push was made."""
+    fake, calls, pushed = _ci_fake(root, runs)
+    events, heads = [], []
+
+    def seam(ctx, argv):
+        if "push" in argv:
+            heads.append(_head(root))
+        events.append(("call", tuple(argv)))
+        return fake(ctx, argv)
+    real_ci, real_close = M.ci_run, M.close_task
+
+    def closing(ctx, state, phase, task, intent_basis=None):
+        said = real_close(ctx, state, phase, task, intent_basis=intent_basis)
+        if any(d.startswith("%s %s" % (M.CLOSED, task["id"])) for d in ctx["did"]):
+            events.append(("close", task["id"]))
+        return said
+    M.ci_run, M.close_task = seam, closing
+    try:
+        run = drive(M, root, mpath)
+    finally:
+        M.ci_run, M.close_task = real_ci, real_close
+    return calls, events, pushed, heads, run
+
+
+def _segments(events):
+    """The calls made DURING each close, then after the last: `[[argv, ...],
+    ...]`, one more segment than closes. A close's marker is written when it
+    returns, so the calls its own CI step made sit in the segment before it."""
+    out = [[]]
+    for kind, value in events:
+        if kind == "close":
+            out.append([])
+        else:
+            out[-1].append(value)
+    return out
+
+
+def _ci_cadence_cases(check):
+    """`ci.cadence`: the drive pushes the phase tip to `ci/<phase>` and
+    dispatches the workflow every N closes, without waiting, and reads the run
+    at the next close; a red files a bug; no cadence, no CI call at all."""
+    def clause(detail):
+        return "%s (%s)" % (CI_CADENCE_CLAUSE, detail)
+
+    M, why = _load("ci_cadence_mod")
+    if M is None:
+        check(clause("the driver loads"), False, why)
+        return
+
+    def green(sha):
+        return [{"databaseId": 501, "headSha": sha, "status": "completed",
+                 "conclusion": "success", "url": "https://example.invalid/r/501"}]
+
+    root, mpath = _ci_repo("cadence", {"cadence": {"closes": 3}})
+    calls, events, pushed, heads, run = _ci_run(M, root, mpath, green)
+    seg = _segments(events)
+    closes = [v for k, v in events if k == "close"]
+    shape = [[(a[0], a[1]) if a[0] == "gh" else ("git", a[3]) for a in s]
+             for s in seg]
+    check(clause("the drive closed all four tasks and finished: %r"
+                 % ((closes, run["steps"][-1]),)),
+          closes == list(CI_TASKS) and run["steps"][-1] == DONE)
+    check(clause("no CI call is made at the first or second close; the push and "
+                 "the dispatch are made at the third and only there: %r"
+                 % (shape,)),
+          len(seg) == 5 and seg[0] == [] and seg[1] == []
+          and [a[3] for a in seg[2]][:1] == ["push"]
+          and seg[2][1][:3] == ("gh", "workflow", "run") and len(seg[2]) == 2
+          and not [a for s in seg[3:] for a in s if "push" in a])
+    check(clause("the push carries the phase tip as it stood at the third close "
+                 "to ci/p1, and the workflow is dispatched on that same branch: "
+                 "%r" % (calls[:2],)),
+          len(heads) == 1 and pushed == heads
+          and calls[0][-1] == "+%s:refs/heads/ci/p1" % (heads[0],)
+          and calls[1][-2:] == ("--ref", "ci/p1"))
+    check(clause("it never waits: no `watch`, no exit-status polling, and the "
+                 "fourth task is dispatched and closed while the run is out: %r"
+                 % (calls,)),
+          not [c for c in calls if "watch" in c or "--exit-status" in c]
+          and closes[3] == "P1.4")
+    reads = [c for c in calls if c[:3] == ("gh", "run", "list")]
+    check(clause("the verdict is read once, at the next close - the fourth - and "
+                 "never twice for a run already read: %r" % (shape,)),
+          len(reads) == 1 and shape[3] == [("gh", "run")]
+          and seg[4] == [])
+    check(clause("a green verdict files no bug: %r"
+                 % (_mio.load_manifest(mpath).get("bugs"),)),
+          not _mio.load_manifest(mpath).get("bugs"))
+
+    def red(sha):
+        return [{"databaseId": 777, "headSha": sha, "status": "completed",
+                 "conclusion": "failure", "url": "https://example.invalid/r/777"}]
+    root2, mpath2 = _ci_repo("cadence-red", {"cadence": {"closes": 3}})
+    _calls2, _events2, _pushed2, _heads2, _run2 = _ci_run(M, root2, mpath2, red)
+    bugs = _mio.load_manifest(mpath2).get("bugs") or []
+    check(clause("a red run read at the next close files one bug naming the run "
+                 "and the branch: %r" % (bugs,)),
+          len(bugs) == 1 and "777" in json.dumps(bugs[0])
+          and "ci/p1" in json.dumps(bugs[0]) and bugs[0].get("status") == "open")
+
+    def running(sha):
+        return [{"databaseId": 901, "headSha": sha, "status": "in_progress",
+                 "conclusion": "", "url": "https://example.invalid/r/901"}]
+    root3, mpath3 = _ci_repo("cadence-run", {"cadence": {"closes": 3}})
+    calls3, _e3, _p3, _h3, run3 = _ci_run(M, root3, mpath3, running)
+    check(clause("a run still going at the next close is left alone - no second "
+                 "dispatch is piled on it, nothing is filed, and the drive "
+                 "finishes without waiting: %r" % (calls3,)),
+          len([c for c in calls3 if c[:3] == ("gh", "workflow", "run")]) == 1
+          and run3["steps"][-1] == DONE
+          and not _mio.load_manifest(mpath3).get("bugs"))
+
+    root4, mpath4 = _ci_repo("cadence-absent", None)
+    calls4, _e4, _p4, _h4, run4 = _ci_run(M, root4, mpath4, green)
+    check(clause("with no ci key the drive makes no push and no dispatch at any "
+                 "close, and reads no run: %r" % (calls4,)),
+          calls4 == [] and run4["steps"][-1] == DONE)
+
+    # hours: a pure reading of the clock, asked with an injected `now`.
+    cadence = {"closes": None, "hours": 2}
+    base = {"at": 1000.0, "closes": 1}
+    check(clause("hours: due only once the hours since the last dispatch have "
+                 "elapsed, and closes counted since then do not matter when "
+                 "closes is unset: %r"
+                 % ((M.ci_due(cadence, base, 1000.0 + 7199),
+                     M.ci_due(cadence, base, 1000.0 + 7200)),)),
+          not M.ci_due(cadence, base, 1000.0 + 7199)
+          and M.ci_due(cadence, base, 1000.0 + 7200))
+    both = {"closes": 3, "hours": 2}
+    check(clause("closes and hours together: either one is enough: %r"
+                 % ((M.ci_due(both, {"at": 0.0, "closes": 3}, 10.0),
+                     M.ci_due(both, {"at": 0.0, "closes": 1}, 7200.0),
+                     M.ci_due(both, {"at": 0.0, "closes": 2}, 7199.0)),)),
+          M.ci_due(both, {"at": 0.0, "closes": 3}, 10.0)
+          and M.ci_due(both, {"at": 0.0, "closes": 1}, 7200.0)
+          and not M.ci_due(both, {"at": 0.0, "closes": 2}, 7199.0))
+    rules = _loader.load_script("_config_rules.py", "ci_rules_mod", cache=False)
+    ok, ok_why = rules.ci_cadence_setting({"ci": {"cadence": {"closes": 3}}})
+    absent, absent_why = rules.ci_cadence_setting({})
+    bad, bad_why = rules.ci_cadence_setting({"ci": {"cadence": {"closes": 0}}})
+    empty, empty_why = rules.ci_cadence_setting({"ci": {"cadence": {}}})
+    check(clause("the config reads closes and hours; an absent key is no "
+                 "cadence, and a zero, a non-number or an empty cadence is "
+                 "refused with a reason, never read as the default: %r"
+                 % ((ok, absent, bad, bad_why, empty_why),)),
+          ok and ok["closes"] == 3 and ok_why is None
+          and absent is None and absent_why is None
+          and bad is None and bad_why and empty is None and empty_why
+          and not rules.validate_config({"ci": {"cadence": {"hours": 4}}})[0]
+          and rules.validate_config({"ci": {"cadence": {"closes": 0}}})[0]
+          and "ci" in rules.KNOWN_ROOT)
 
 
 EMPTY_BLOB = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"

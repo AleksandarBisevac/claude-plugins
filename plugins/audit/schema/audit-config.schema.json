@@ -516,6 +516,35 @@
           "description": "Phase reviews sign-off runs before the driver asks once: carry what is open, one more round, or accept it open. Below 1 is refused."
         }
       }
+    },
+    "ci": {
+      "type": "object",
+      "description": "When a long phase asks CI about itself before it lands. Absent: landing only.",
+      "additionalProperties": true,
+      "properties": {
+        "cadence": {
+          "type": "object",
+          "description": "At a task close that makes it due the driver pushes the phase tip to ci/<phase>, dispatches the workflow there without waiting, and reads the run at the next close; a red files a bug, a run still going is left alone. Name closes, hours or both: either is enough. Neither, or a value below its minimum, is refused rather than read as landing only.",
+          "additionalProperties": true,
+          "properties": {
+            "closes": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Dispatch CI at every N-th task close since the last dispatch."
+            },
+            "hours": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Dispatch CI at the first close after this many hours of phase time since the last dispatch (or the phase's start)."
+            }
+          }
+        },
+        "workflow": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The workflow file dispatched on ci/<phase>. Absent: ci.yml."
+        }
+      }
     }
   }
 }

@@ -1601,6 +1601,175 @@ def _excerpt_build_line(text):
     return "no matching line"
 
 
+# --- CI at a cadence --------------------------------------------------------------
+# A phase that runs for days used to meet CI only when it landed, so what it
+# broke on another platform surfaced after the work on top of it was done.
+# `ci.cadence` asks earlier: at a close that makes it due the driver pushes the
+# phase tip to `ci/<phase>` and dispatches the workflow there, and it never
+# waits - the verdict is read at the NEXT close (and at sign-off, so the last
+# run is not dropped). A red files a bug; a run still going is left alone.
+# Absent, the driver makes no CI call at all.
+CI_TIMEOUT = 120
+CI_RED = ("failure", "timed_out", "startup_failure")
+CI_LIST_FIELDS = "databaseId,headSha,status,conclusion,url"
+
+
+def ci_run(ctx, argv):
+    """`(code, stdout, stderr)` of one git or `gh` call, from the git root. The
+    one seam to a remote: it never raises, never reads stdin and never prompts
+    for credentials, so a missing `gh` or a refused push is a code, not a hang."""
+    env = dict(os.environ)
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GH_PROMPT_DISABLED"] = "1"
+    try:
+        done = subprocess.run(argv, cwd=ctx["gitRoot"], env=env, text=True,
+                              encoding="utf-8", errors="replace",
+                              stdin=subprocess.DEVNULL, capture_output=True,
+                              timeout=CI_TIMEOUT)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return 127, "", "%s: %s" % (type(exc).__name__, exc)
+    return done.returncode, done.stdout, done.stderr
+
+
+def ci_now():
+    return datetime.datetime.now(datetime.timezone.utc).timestamp()
+
+
+def ci_started(phase):
+    """The epoch second the phase's `startedAt` names, or None."""
+    try:
+        moment = datetime.datetime.strptime(
+            str(phase.get("startedAt") or ""), "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return None
+    return moment.replace(tzinfo=datetime.timezone.utc).timestamp()
+
+
+def ci_due(cadence, held, now):
+    """Whether a dispatch is owed: `closes` task closes since the last one, or
+    `hours` of phase time since it. Either is enough; one left unset never is."""
+    closes, hours = cadence.get("closes"), cadence.get("hours")
+    if closes and held.get("closes", 0) >= closes:
+        return True
+    return bool(hours and now - held.get("at", now) >= hours * 3600)
+
+
+def ci_branch(phase):
+    return "ci/%s" % (str(phase["id"]).lower(),)
+
+
+def ci_file_red(ctx, run, row):
+    """The stop, or None, of filing the bug a red run owes: its title names the
+    branch, the commit and the run, so it cannot be mistaken for another."""
+    title = "CI red on %s at %s (run %s)" % (run["branch"], run["sha"][:7],
+                                             row.get("databaseId"))
+    why = ("The phase's CI run %s on %s at %s ended %s. %s - open the run for "
+           "the failing jobs and cases. Filed by the drive's ci.cadence read."
+           % (row.get("databaseId"), run["branch"], run["sha"],
+              row.get("conclusion"), row.get("url") or "no run URL"))
+    _out, stop = _verb_or_stop(ctx, "audit-task.py", [
+        "bug-add", title, ctx["manifest"], "--project-dir", ctx["project"],
+        "--severity", "high", "--description", why])
+    return stop
+
+
+def ci_settle(ctx, state, cadence):
+    """Read the run the last dispatch left out, without waiting for it: `(done,
+    stop)`. `done` is False while it is unread or still going, so nothing is
+    dispatched on top of it. A run that cannot be read is said, never filed."""
+    held = state.get("ci") or {}
+    run = held.get("run")
+    if not run:
+        return True, None
+    code, out, err = ci_run(ctx, [
+        "gh", "run", "list", "--workflow", cadence["workflow"], "--branch",
+        run["branch"], "--limit", "10", "--json", CI_LIST_FIELDS])
+    try:
+        rows = json.loads(out) if code == 0 else None
+    except ValueError:
+        rows = None
+    if not isinstance(rows, list):
+        ctx["did"].append("CI %s unread: %s" % (run["sha"][:7], _clip(
+            (err or out or "exit %d" % (code,)).strip(), 80)))
+        return False, None
+    mine = [r for r in rows if isinstance(r, dict) and r.get("headSha") == run["sha"]]
+    if not mine:
+        ctx["did"].append("CI %s not listed yet" % (run["sha"][:7],))
+        return False, None
+    row = mine[0]
+    if row.get("status") != "completed":
+        ctx["did"].append("CI %s still running" % (run["sha"][:7],))
+        return False, None
+    if row.get("conclusion") in CI_RED:
+        stop = ci_file_red(ctx, run, row)
+        if stop is not None:
+            return False, stop
+        ctx["did"].append("CI %s red: bug filed" % (run["sha"][:7],))
+    else:
+        ctx["did"].append("CI %s %s" % (run["sha"][:7], "green"
+                          if row.get("conclusion") == "success" else
+                          "ended %s, no bug" % (row.get("conclusion"),)))
+    held.pop("run", None)
+    write_state(ctx, state)
+    return True, None
+
+
+def ci_dispatch(ctx, state, phase, cadence, now):
+    """Push the phase tip to its `ci/` branch and dispatch the workflow there;
+    the run is remembered for the next close. A failed push or dispatch is said
+    and tried again at the next close, since nothing was left out to read."""
+    sha = git_head(ctx)
+    branch = ci_branch(phase)
+    if not sha:
+        ctx["did"].append("CI not dispatched: HEAD unreadable")
+        return
+    code, out, err = ci_run(ctx, ["git", "-C", ctx["gitRoot"], "push", "origin",
+                                  "+%s:refs/heads/%s" % (sha, branch)])
+    if code == 0:
+        code, out, err = ci_run(ctx, ["gh", "workflow", "run",
+                                      cadence["workflow"], "--ref", branch])
+    if code != 0:
+        ctx["did"].append("CI not dispatched: %s" % (_clip(
+            (err or out or "exit %d" % (code,)).strip(), 80),))
+        return
+    state["ci"].update(run={"sha": sha, "branch": branch}, closes=0, at=now)
+    write_state(ctx, state)
+    ctx["did"].append("CI dispatched on %s at %s" % (branch, sha[:7]))
+
+
+def ci_after_close(ctx, state, phase):
+    """What `ci.cadence` owes a close: the verdict of the run left out, then -
+    when the cadence says so and nothing is out - a new dispatch. The stop, or
+    None. No cadence, no call."""
+    cadence, problem = _config_rules.ci_cadence_setting(ctx["config"])
+    if problem:
+        ctx["did"].append("ci.cadence unread: %s" % (_clip(problem, 100),))
+        return None
+    if cadence is None:
+        return None
+    now = ci_now()
+    held = state.setdefault("ci", {})
+    held.setdefault("at", ci_started(phase) or now)
+    held["closes"] = held.get("closes", 0) + 1
+    settled, stop = ci_settle(ctx, state, cadence)
+    if stop is not None:
+        return stop
+    if settled and ci_due(cadence, held, now):
+        ci_dispatch(ctx, state, phase, cadence, now)
+    else:
+        write_state(ctx, state)
+    return None
+
+
+def ci_before_signoff(ctx, state):
+    """Sign-off reads the run the last close left out, so a verdict that arrived
+    after the final close is not dropped. The stop, or None."""
+    cadence, _problem = _config_rules.ci_cadence_setting(ctx["config"])
+    if cadence is None or not (state.get("ci") or {}).get("run"):
+        return None
+    return ci_settle(ctx, state, cadence)[1]
+
+
 def close_task(ctx, state, phase, task, intent_basis=None):
     """Findings, commit and close for a task whose returns are filed; None when
     the drive goes on, else the instruction or stop to print."""
@@ -1633,6 +1802,9 @@ def close_task(ctx, state, phase, task, intent_basis=None):
     if stop is not None:
         return stop
     ctx["did"].append("%s %s at %s" % (CLOSED, task["id"], sha.group(1)[:7]))
+    stop = ci_after_close(ctx, state, phase)
+    if stop is not None:
+        return stop
     items = review_items(reviewer)
     if items:
         return decision(ctx, state, "review-answer", task, items)
@@ -3767,6 +3939,9 @@ def sign_off(ctx, state, manifest, phase):
                 phase["review"]["status"], ", and landed"
                 if phase.get("mergedAt") else ""))
         return finish_signoff(ctx, state, phase)
+    stop = ci_before_signoff(ctx, state)
+    if stop is not None:
+        return stop
     return triage(ctx, state, manifest, phase)
 
 

@@ -711,6 +711,7 @@ def check_config(rep, project):
 
     if not os.path.exists(path):
         rep.ok("config", "no .claude/audit.config.json - safe defaults are active")
+        check_ci_cadence(rep, {}, path)
     elif cfg.get("_configError"):
         rep.finding("config",
                     "%s is present but unreadable (%s), so the project's custom "
@@ -732,7 +733,37 @@ def check_config(rep, project):
             rep.ok("config", "%s parses and validates" % path)
         for w in warnings:
             rep.warn("config", w)
+        check_ci_cadence(rep, raw, path)
     return cfg, cfg_mod
+
+
+def check_ci_cadence(rep, raw, path):
+    """The `ci.cadence` the step driver will act on, and where it came from.
+
+    Read off the config FILE (`raw`), not the hooks' merged config: the driver
+    reads the file, and a doctor reading the merge could report a setting the
+    driver never sees. The absent key is SAID - a long phase with no cadence
+    meets CI only at landing, and a doctor that stays quiet over that reads as a
+    clean bill. A cadence the driver refuses to read is a finding, the driver's
+    own reason verbatim."""
+    cadence, problem = _config_rules.ci_cadence_setting(raw)
+    if problem:
+        rep.finding("ci cadence", "%s: %s" % (path, problem),
+                    "set ci.cadence.closes (a whole number of at least 1) and/or "
+                    "ci.cadence.hours (a number above 0), or remove ci.cadence")
+        return
+    if cadence is None:
+        rep.ok("ci cadence", "ci.cadence is not set (%s), so a phase asks CI "
+               "about itself at landing only" % (
+                   path if os.path.exists(path) else "no config file"))
+        return
+    triggers = ["every %d task closes" % (cadence["closes"],)
+                if cadence["closes"] else None,
+                "every %g hours of phase time" % (cadence["hours"],)
+                if cadence["hours"] else None]
+    rep.ok("ci cadence", "ci.cadence in %s: the driver dispatches %s on ci/<phase> "
+           "%s, without waiting, and reads the run at the next close"
+           % (path, cadence["workflow"], " or ".join(t for t in triggers if t)))
 
 
 def check_plan_gate(rep, project, cfg, cfg_mod, manifest_rel):

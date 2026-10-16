@@ -113,7 +113,9 @@
         "plugins/audit/schema/audit-config.schema.json",
         "plugins/audit/scripts/panel/_panel_settings.py",
         "plugins/audit/tests/test__panel_settings.py",
-        "plugins/audit/scripts/status/_doctor_setup.py"
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/README.md",
+        "plugins/audit/tests/test__doctor_setup.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -131,7 +133,21 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "plugins/audit/tests/test_drive_phase.py: with ci.cadence every 3 closes the drive dispatches CI on the third close and not before, never waits on it, and reads its verdict at the next close; absent, it dispatches only at landing": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_drive_phase.py",
+              "--selftest",
+              "--stage",
+              "ci-block"
+            ],
+            "file": "plugins/audit/scripts/governance/drive-phase.py",
+            "find": "    if closes and held.get(\"closes\", 0) >= closes:",
+            "replace": "    if closes and held.get(\"closes\", 0) > closes:"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [],
@@ -140,14 +156,14 @@
       "dependsOn": [
         "P128.1-0h5"
       ],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-16T21:39:01Z",
+      "startedAt": "2026-10-16T22:50:08Z",
       "completedAt": null,
       "verifiedBy": [],
       "movedFrom": {
@@ -155,7 +171,18 @@
         "phase": "P125",
         "at": "2026-10-13T23:26:17Z"
       },
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-16T23:24:40Z.f30be7",
+        "status": "passed",
+        "at": "2026-10-16T23:24:40Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-16T23:13:20Z",
+          "text": "files widened by plugins/audit/README.md, plugins/audit/tests/test__doctor_setup.py: widened by the integration answer"
+        }
+      ]
     },
     {
       "id": "P128.3-0h5",
@@ -897,7 +924,7 @@
     {
       "id": "P128.19-0h5",
       "title": "A hand-run task gate measures the task tree, and the record names the tree it measured",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F675. run-test-gate --task --record with no --tree measured the project checkout for a task with its own wave tree and recorded GATE GREEN as its evidence; testedState carries no tree.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -941,14 +968,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "28345e9ba519",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "run-test-gate.py: new wave_tree_of / wave_integrated / wave_tree_refusal; a recorded --task gate with no --tree is refused (exit 2, remedy names `--tree <tree>`) when the task has a marked wave tree under the project (found via _worktrees.list_worktrees + read_provenance, as integrate-task does) and integrate-task has not recorded that task done for the tree's base (audit-wave-integration.json in the git dir). --own, unregistered tasks, --tree runs, and the drive's post-integration re-gate on the phase tree are not refused (the first sweep showed the drive's re-gate in test_drive_phase wu2/wg1/fm2 broke without that last exemption). Tests: plugins/audit/tests/test_run_test_gate.py _wave_tree_cases wt1-wt8 (real linked worktree fixture; includes stale-base, integrated, --own, --tree, unregistered-task allow cases and a pin of INTEGRATION_STATE_NAME against integrate-task.STATE_NAME). Scope note: the new `_worktrees` import changes _deps' module map, so PLUGIN-BUILD-GUIDE.md line for run-test-gate gained `, _worktrees` (outside task files; the Edit tool allowed it; test__deps g1 was red without it, 331/331 after). Full sweep first run: only test_drive_phase failed (cause fixed by the integrated exemption); second full sweep: only test__deps g1 failed (fixed by the guide line, re-run alone green). testedState: the refusal path writes no row; the --tree path already records tree.key; a project-measured row still carries no tree key (unchanged, deliberately not added to the evidence shape).",
+        "descriptive": "A hand-run recorded task gate can no longer silently measure the project checkout for a task whose work lives in a wave tree; it is refused with the --tree remedy."
       },
       "startedAt": "2026-10-16T21:38:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T22:49:52Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_run_test_gate.py: a task gate recorded without --tree, for a task with a registered wave tree, is refused or measured in that tree, and testedState names the tree it measured"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-16T22:49:50Z.292fe4",
@@ -968,7 +997,19 @@
           "at": "2026-10-16T22:38:52Z",
           "text": "files widened by PLUGIN-BUILD-GUIDE.md: written byte for byte at integration by `python3 plugins/audit/scripts/_deps.py --write-map` (_deps.map_drift)"
         }
-      ]
+      ],
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "28345e9ba519",
+        "at": "2026-10-16T22:49:52Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-16T22:14:39Z",
+        "basis": "`python3 plugins/audit/tests/test_run_test_gate.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 546 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - wt1 (house FAIL), wt2 (house FAIL): SELFTEST FAILED: 543/546 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
     },
     {
       "id": "P128.20-0h5",

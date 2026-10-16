@@ -1,0 +1,37 @@
+{
+  "gates": {
+    "own-tests: python3 plugins/audit/tests/test_drive_phase.py --selftest --stage ci-block": "pass",
+    "python3 tools/sweep-selftests.py --quiet": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- (scripts, hooks, tests)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-16T23:00:08Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage ci-block` in a throwaway tree at HEAD exited 1 on \"AttributeError: module 'ci_cadence_mod' has no attribute 'ci_run'\" (read as python), and the task introduces 'ci_run': absent from HEAD's plugins/audit/scripts/governance/drive-phase.py, plugins/audit/scripts/config/_config_rules.py, plugins/audit/reference/config.md, plugins/audit/schema/audit-config.schema.json, plugins/audit/scripts/panel/_panel_settings.py, plugins/audit/scripts/status/_doctor_setup.py and present in the working tree's plugins/audit/scripts/governance/drive-phase.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: new section 'CI at a cadence' (ci_run seam, ci_due, ci_settle, ci_dispatch, ci_after_close, ci_before_signoff); close_task calls ci_after_close after the done verb, sign_off calls ci_before_signoff. At a due close it pushes +<sha>:refs/heads/ci/<phase lower> and runs `gh workflow run <workflow> --ref ci/<phase>` without waiting; the next close (and sign-off) does one `gh run list` read for that sha; failure/timed_out/startup_failure files a high bug via audit-task.py bug-add naming branch, sha, run id and URL; a run still going/not listed/unreadable is said and nothing is piled on; a failed push/dispatch is said and retried at the next close; no ci.cadence = zero CI calls. _config_rules.py: root key ci (KNOWN_CI, KNOWN_CI_CADENCE), ci_cadence_setting() refusing closes<1, hours<=0, empty cadence, blank workflow; _check_ci in validate_config; OFF_ROOT['hooks DEFAULTS']['ci'] with reason. schema/audit-config.schema.json publishes ci (cadence.closes, cadence.hours, workflow). _panel_settings.py: a 'ci' Settings group with leaf controls ci.cadence.closes, ci.cadence.hours, ci.workflow and FIELD_HELP; test__panel_settings.py: container map + group tuple + case ps4. _doctor_setup.py: check_ci_cadence row 'ci cadence' reached from check_config, reading the config FILE (not the hooks merge), reporting effective triggers, workflow and source path OK, the absence said as landing-only (naming 'no config file' when there is none), the driver's own refusal as a finding, and nothing for an unreadable config; test__doctor_setup.py cases ci1-ci7. New reference/config.md. plugins/audit/README.md carries the ci.cadence and ci.workflow rows: README is NOT in the task's files and the brief names no follower rule for it; it is kept because test__config_rules cv1 reads the README's Configuration table as one of the surfaces that must publish every KNOWN_ROOT key, and it reported 'README: does not publish ci' before the rows were added - reverting it turns cv1 red, and the rows cannot move to reference/config.md because cv1 does not read that file. The plan gate allowed the edit (docs path). test_drive_phase.py: stage ci-block, 12 cases titled with the tests.add clause, ci_run faked so no remote or gh is touched. Evidence: ci-block 12/12; full `python3 tools/sweep-selftests.py --quiet` exit 0 (335/335 files ok, 16552 cases); ruff and vermin clean. PREMISE CORRECTIONS: (1) the drive did NOT already push ci/ branches - only tools/release.py does, for release tags - so there was no existing landing dispatch and 'absent, it dispatches only at landing' is asserted as zero CI calls at any close; no landing dispatch was added. (2) 'ci-red-files-bug' does not exist (P128.1-0h5, which would have read failing jobs and cases, is cancelled), so a red files a plain high bug naming the run and URL without per-job/case detail.",
+    "descriptive": "A phase can ask CI about itself every N closes or H hours, non-blocking, with a red filed as a bug; schema, Settings panel group and doctor row publish and report it."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_drive_phase.py: with ci.cadence every 3 closes the drive dispatches CI on the third close and not before, never waits on it, and reads its verdict at the next close; absent, it dispatches only at landing"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_drive_phase.py: with ci.cadence every 3 closes the drive dispatches CI on the third close and not before, never waits on it, and reads its verdict at the next close; absent, it dispatches only at landing": {
+      "file": "plugins/audit/scripts/governance/drive-phase.py",
+      "find": "    if closes and held.get(\"closes\", 0) >= closes:",
+      "replace": "    if closes and held.get(\"closes\", 0) > closes:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_drive_phase.py",
+        "--selftest",
+        "--stage",
+        "ci-block"
+      ]
+    }
+  },
+  "claims": "claims: (1) 'no ci.cadence = no CI call' is held by the absent case asserting calls == [] across a full drive with the seam faked; (2) 'never waits' is held by no watch/--exit-status argv, the fourth task closing while the run is out, and an in_progress run still finishing the drive - NOT held for real gh latency, the seam is faked; (3) the real ci_run subprocess path (stdin DEVNULL, GIT_TERMINAL_PROMPT=0) was never run against a real remote or gh; (4) the doctor reads the config file, so a setting only the hooks' merged config carries would not show - ci is deliberately not in DEFAULTS.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:f71d5687280ee483c301d2d572b9b325f5872a6f039d90f4e4638951d5b31dd9\",\"dirtyDigest\":\"sha256:dc48b6fc1cc096cfcdaf8e5e8ddbd537082405eeaaddf212e70bdb5f3c53b7b6\",\"dirtyPaths\":{\"plugins/audit/README.md\":\"a5711ff9c4af3dd1\",\"plugins/audit/reference/config.md\":\"02224f06578949bf\",\"plugins/audit/schema/audit-config.schema.json\":\"636175dce2bb27b6\",\"plugins/audit/scripts/config/_config_rules.py\":\"78e39f3329c53212\",\"plugins/audit/scripts/governance/drive-phase.py\":\"279049089ccd92d4\",\"plugins/audit/scripts/panel/_panel_settings.py\":\"749aa4c1f0a4bcd5\",\"plugins/audit/scripts/status/_doctor_setup.py\":\"7d1442ed331a42c8\",\"plugins/audit/tests/test__doctor_setup.py\":\"588f3cb13122a963\",\"plugins/audit/tests/test__panel_settings.py\":\"4faddf731a79b3e3\",\"plugins/audit/tests/test_drive_phase.py\":\"60b05979b87e8059\"},\"head\":\"06ba2068\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/reference/config.md\",\"plugins/audit/schema/audit-config.schema.json\",\"plugins/audit/scripts/config/_config_rules.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/panel/_panel_settings.py\",\"plugins/audit/scripts/status/_doctor_setup.py\",\"plugins/audit/tests/test__panel_settings.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:d4b613843ce14d13561ac11fdec4d619543e80375b42e193fc95b8ee3a2a6fae\",\"v\":2}"
+}

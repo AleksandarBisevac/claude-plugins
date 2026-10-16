@@ -51,7 +51,7 @@ def _cases(check):
                    "evidence": _vc.KNOWN_EVIDENCE,
                    "priority": _vc.KNOWN_PRIORITY,
                    "executor": _vc.KNOWN_EXECUTOR,
-                   "review": _vc.KNOWN_REVIEW}
+                   "review": _vc.KNOWN_REVIEW, "ci": _vc.KNOWN_CI}
     # `policy` is a root key with no control on this form, on purpose — the one
     # kind of exemption, and it is stated rather than silently subtracted. It is
     # not a setting with a value; it is a rule set whose meaning is the verdict it
@@ -78,6 +78,10 @@ def _cases(check):
                  if k not in _containers and k not in _settings_exempt}
     for _parent, _keys in _containers.items():
         _expected |= {"%s.%s" % (_parent, k) for k in _keys}
+    # `ci.cadence` is itself an object, edited leaf by leaf (the settings paths
+    # are dotted at any depth), so its own keys are expected instead of it.
+    _expected.discard("ci.cadence")
+    _expected |= {"ci.cadence.%s" % (k,) for k in _vc.KNOWN_CI_CADENCE}
     check("the Settings exemption names a real config key - an exemption for a key "
           "the validator has never heard of excuses nothing and hides the next one",
           _settings_exempt <= _vc.KNOWN_ROOT)
@@ -114,7 +118,7 @@ def _cases(check):
     check("the groups are the decisions the config makes, not one list",
           tuple(g["id"] for g in M.SETTINGS_GROUPS)
           == ("paths", "guards", "tdd", "usage", "journal", "priority",
-              "portability", "executor", "review")
+              "portability", "executor", "review", "ci")
           and all(g["blurb"] for g in M.SETTINGS_GROUPS))
     check("the audit trail's card states the limit of the claim, where someone "
           "deciding whether to rely on it will read it",
@@ -179,6 +183,15 @@ def _cases(check):
           "asks once" in _mrh and "carry" in _mrh
           and "one more round" in _mrh and "accepting them open" in _mrh
           and "0 is refused" in _mrh)
+    _ci = [f for g in M.SETTINGS_GROUPS if g["id"] == "ci" for f in g["fields"]]
+    check("ps4 the ci group edits the cadence's two numbers leaf by leaf and the "
+          "workflow, with the floors the validator accepts and refuses: %r"
+          % (_ci,),
+          [f["path"] for f in _ci] == ["ci.cadence.closes", "ci.cadence.hours",
+                                        "ci.workflow"]
+          and not _vc.validate_config({"ci": {"cadence": {"closes": 1}}})[0]
+          and _vc.validate_config({"ci": {"cadence": {"closes": 0}}})[0]
+          and "0 is refused" in M.FIELD_HELP["ci.cadence.closes"])
     check("_cfg_enums() is JSON-serializable (panel-server bakes it into UI_HTML "
           "with json.dumps)", json.dumps(M._cfg_enums(), sort_keys=True))
 
