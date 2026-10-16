@@ -645,7 +645,7 @@
     {
       "id": "P128.13-0h5",
       "title": "check-git-pipeline names an unusable python3 instead of failing obscurely or passing",
-      "status": "in_progress",
+      "status": "done",
       "description": "F656 (suspected, simulation only): reproduce with a faithful broken-interpreter fake; the check must report the interpreter as unusable and never pass. Close with evidence if it does not reproduce.",
       "files": [
         "tools/check-git-pipeline.py"
@@ -675,19 +675,36 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "777b5e9c5e89",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "F656 reproduces, but as an obscure failure rather than a pass: with a broken python3 resolved by py-launch.sh the gate failed 21 of 41 checks each blaming its own hook/journal detail, none naming the interpreter (it never passed). Added interpreter_problem(env, cwd) to tools/check-git-pipeline.py: probes python3, python, py (the launcher's names, read from the same order) on the fixture env PATH with a probe that must print; returns None if any one runs (launcher falls through broken candidates), else a sentence naming each candidate with its path, exit code and output. build_fixture calls it right after the git/sh presence checks and before any repository work, returning a problem, so the run prints 'git pipeline: NOT CHECKED - no Python interpreter that py-launch.sh could pick will run - ...' and exits 1. Selftest cases k13-k17 added (17/17 pass, was 12): k13 is the description case (all three shims exit 1 -> unusable), k14 exit-0-silent shim unusable, k15 allow (broken python3 first, working python later -> no problem), k16 name list equals the launcher's `for py in` line, k17 build_fixture end to end under a broken PATH (no .git made, render NOT CHECKED, exit 1). Real runs: broken PATH exit 1 with the NOT CHECKED line; normal PATH exit 0 'OK'. sweep-selftests on the file: ok 17 cases; ruff and vermin clean; prose_number_claims() reports 0 violations. Shims for nt are .cmd files and untested on Windows. Plan gate allowed every edit. Worktree HEAD printed before first edit: 5ba3b0fe.",
+        "descriptive": "check-git-pipeline now stops at the start and names an unusable Python interpreter instead of failing about twenty hook checks that never mention it."
       },
       "startedAt": "2026-10-16T20:36:35Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T21:25:10Z",
+      "verifiedBy": [
+        "k13 the case named in the description: a PATH whose python3, python and py all resolve to an interpreter that cannot run is reported as an unusable interpreter and never passes",
+        "k14 ...and an interpreter that resolves and exits 0 WITHOUT running anything is unusable too",
+        "k15 ALLOW: a broken python3 AHEAD of a working one is not a problem",
+        "k16 the interpreter names probed here are the ones py-launch.sh loops over, in its order",
+        "k17 build_fixture stops at the interpreter, before any git work"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-16T20:58:00Z.0810b6",
         "status": "passed",
         "at": "2026-10-16T20:58:00Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "777b5e9c5e89",
+        "at": "2026-10-16T21:25:10Z",
+        "return": "docs/audit/evidence/returns/P128.13-0h5/20261016T203635Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "mode regression, expectRedFirst false, and the test lives in the same file as the fix (tools/check-git-pipeline.py), so the red-first helper's HEAD-plus-test-files tree would carry the fix too. Before-fix reproduction watched by hand on the pre-edit file with fake python3/python/py shims (exit 1) first on PATH: exit 1, 'BROKEN: 21 of 41 check(s) failed', details such as decision='ask' and 'actions=[] ...' and 'the fixture has no journal file to tamper with', no row naming the interpreter. Mutations on a scratch copy turn the new cases red: probe call removed -> k17; any exit accepted -> k13,k14,k17; exit-0-silent accepted -> k14; no fall-through -> k1,k15; launcher name list drifted -> k16.",
+        "at": "2026-10-16"
       }
     },
     {

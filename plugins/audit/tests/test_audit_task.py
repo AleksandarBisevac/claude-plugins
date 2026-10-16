@@ -10158,7 +10158,7 @@ def _record_cases(check):
         for pr in _par_procs:
             pr.stdout.close()
         _par_f = (rv_phase(mppar).get("review") or {}).get("findings") or []
-        check("rv13 RED-FIRST: four `finding` processes of ONE session run at once "
+        check("rv13a RED-FIRST: four `finding` processes of ONE session run at once "
               "and EVERY finding lands, under four distinct ids - the lock "
               "serialises another process of the same session instead of letting "
               "it back in: %r"
@@ -10167,6 +10167,63 @@ def _record_cases(check):
               and sorted(f.get("file") for f in _par_f)
               == ["src/p%d.ts" % n for n in range(4)]
               and sorted(f.get("id") for f in _par_f)
+              == ["P2-R%d" % n for n in range(1, 5)])
+
+        # THE SAME RACE WITH THE WRITER'S REFUSAL SIMULATED. Windows answers a
+        # replace onto a name another process holds with EACCES; here each
+        # process's first three replaces onto a `.json` name are refused that
+        # way, in the child, before the real call. The writer must wait that
+        # out through `_output.while_shared` (one helper, no per-site retry),
+        # so every finding still lands. The log proves the refusals happened:
+        # a green run beside an empty log would have tested nothing.
+        projdn, mpdn = mk("rv-parallel-denied", rv_fixture(), git=True)
+        _dn_log = os.path.join(tmp, "rv13-denials.log")
+        _dn_src = (
+            "import errno, os, runpy, sys\n"
+            "real = os.replace\n"
+            "seen = {}\n"
+            "def denied(src, dst, *a, **k):\n"
+            "    n = seen.get(dst, 0) + 1\n"
+            "    seen[dst] = n\n"
+            "    if str(dst).endswith('.json') and n <= 3:\n"
+            "        with open(os.environ['RV13_DENIAL_LOG'], 'a') as fh:\n"
+            "            fh.write('d')\n"
+            "        raise PermissionError(errno.EACCES, 'sharing violation',\n"
+            "                              str(dst))\n"
+            "    return real(src, dst, *a, **k)\n"
+            "os.replace = denied\n"
+            "sys.argv = sys.argv[1:]\n"
+            "runpy.run_path(sys.argv[0], run_name='__main__')\n")
+        _dn_env = dict(_par_env, RV13_DENIAL_LOG=_dn_log)
+        _dn_procs = [subprocess.Popen(
+            [sys.executable, "-c", _dn_src, _par_script, "finding", "P2",
+             "--severity", "low", "--file", "src/p%d.ts" % n,
+             "--issue", "issue %d" % n, "--resolution", "fix %d" % n,
+             "--project-dir", projdn],
+            env=_dn_env, cwd=projdn, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT) for n in range(4)]
+        _dn_out = [(pr.wait(), pr.stdout.read().decode("utf-8", "replace"))
+                   for pr in _dn_procs]
+        for pr in _dn_procs:
+            pr.stdout.close()
+        _dn_f = (rv_phase(mpdn).get("review") or {}).get("findings") or []
+        try:
+            with open(_dn_log, encoding="utf-8") as _fh:
+                _dn_denials = len(_fh.read())
+        except OSError:
+            _dn_denials = 0
+        check("rv13 with a simulated sharing denial on the writer it races still "
+              "passes: four `finding` processes whose first replaces are refused "
+              "EACCES all exit 0 and every finding lands under four distinct "
+              "ids (denials injected %d): %r"
+              % (_dn_denials,
+                 ([(c, t[-120:]) for c, t in _dn_out if c != 0],
+                  sorted(f.get("file") for f in _dn_f))),
+              _dn_denials >= 4
+              and [c for c, _t in _dn_out] == [0] * 4
+              and sorted(f.get("file") for f in _dn_f)
+              == ["src/p%d.ts" % n for n in range(4)]
+              and sorted(f.get("id") for f in _dn_f)
               == ["P2-R%d" % n for n in range(1, 5)])
 
         # A LANDED PHASE IS A CLOSED RECORD; a signed-off one still in flight
