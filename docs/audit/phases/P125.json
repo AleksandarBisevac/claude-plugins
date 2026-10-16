@@ -803,8 +803,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/_deps.py:3334-3341",
         "issue": "The task asks the lint to read every source kind the tree ships through one table, but COMMENT_SYNTAXES has only .mjs, .js and .sh. The tree also ships .css (37 files, '/* */' comments), .yml/.yaml, .html and .toml. Citations survive there: .github/workflows/ci.yml:134,468,480,561,735,1068,1107 and plugins/audit/scripts/ui/panel-css/app-shell.css:48 (10 .css files match). The 'every source kind' clause is contradicted, and rc16c's green only covers the three kinds in the table.",
-        "resolution": "Add .css (block comment only) and .yml/.yaml (# line comment) rows, and decide .html and .toml explicitly. Fix the citations they find the same way, or record why a kind is excluded in the table.",
-        "fixTask": "P125.99-0h5"
+        "resolution": "fixed in P125.99-0h5 (0ca2ab2c5f9f): Add .css (block comment only) and .yml/.yaml (# line comment) rows, and decide .html and .toml explicitly. Fix the citations they find the same way, or record why a kind is excluded in the table.",
+        "fixTask": "P125.99-0h5",
+        "commit": "0ca2ab2c5f9f",
+        "status": "fixed"
       },
       {
         "id": "P125-R96",
@@ -1028,7 +1030,7 @@
         "resolution": "Add a doctor.md section for the unpriced-models row (what it counts, its remedy) and one README cost-section sentence naming the CLI's estimate beside the plugin's table reading, with neither called the bill."
       }
     ],
-    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 44 with a recorded fix commit]"
+    "outcome": "[findings: 124 - 3 high, 47 med, 74 low; 45 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -7672,7 +7674,7 @@
     {
       "id": "P125.99-0h5",
       "title": "fix P125-R95: The task asks the lint to read every source kind the tree ships...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The task asks the lint to read every source kind the tree ships through one table, but COMMENT_SYNTAXES has only .mjs, .js and .sh. The tree also ships .css (37 files, '/* */' comments), .yml/.yaml, .html and .toml. Citations survive there: .github/workflows/ci.yml:134,468,480,561,735,1068,1107 and plugins/audit/scripts/ui/panel-css/app-shell.css:48 (10 .css files match). The 'every source kind' clause is contradicted, and rc16c's green only covers the three kinds in the table.\n\nResolution asked: Add .css (block comment only) and .yml/.yaml (# line comment) rows, and decide .html and .toml explicitly. Fix the citations they find the same way, or record why a kind is excluded in the table.",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -7750,14 +7752,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0ca2ab2c5f9f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_deps.COMMENT_SYNTAXES gains rows for .css (block comments only), .yml/.yaml/.toml (a `#` after whitespace, via a shared _HASH_COMMENT row), and .html (`<!-- -->` only, no quote opens a string). The shell-only key hash_word is replaced by three general keys - line_after, quote_after, raw_quote - read through a new _opens_here(); line may be None. Every row carries a `why`, which rc16d requires non-empty. Shell and JS behaviour unchanged (rc16b still passes). New case rc16d in test__deps.py: a fixture tree whose css, yml, yaml, toml and html files carry an id inside a comment AND outside one (a css content string, a quoted and a plain yml value, an apostrophe mid-word, a `#` in a URL, a toml string, page text). Only the comment hits are reported. The real tree has no hit in those kinds. The widened lint found 34 citations: 11 in .github/workflows/ci.yml and 23 across 16 CSS parts. Each id was removed, or replaced where the sentence needed it ('pre-F28' -> 'old'; 'is F87' -> 'is a claim about interpreters nobody measured'; 'honest before F280' -> 'honest before the gate refused to grade a tree it rewrote'; 'which is F21, and the third time...' -> 'so a mention spelled in the grammar would read as a claim'; 'It also carries F53' -> 'It also drives the hooks no step wired'). Comments only, no CSS rule touched. register_citation_violations() over the tree now returns []. Re-rendered with `sh examples/report.sh` (acme-store html+md, docs/index.html; the md diff is the render timestamp only) and with check-rendered-artifacts' recipe for docs/demo-large.html; `check-rendered-artifacts.py --before-commit` exit 0. UI pins: count-ui-pins.py exit 0. No pin in plugins/audit/tests asserts on any changed comment text, and the only comment-anchored slice (`/* composition: filter toolbar`) is untouched. Full sweep exit 1, cp1252 sweep exit 1: in both the only red is test__refs.py sc1/sc2, because the screenshot source digest moved. All 25 docs/screenshots/*.png are stale per _refs.screenshot_capture_drift(), and that check returns 0 on a git-archive HEAD export, so the comment edits caused it. Capture was withheld as instructed. gate-parity exit 0. ruff and vermin are clean on both .py files. Left as is: .github/workflows/ci.yml:134 (a step `name:`) and :205 (an `echo`) still carry F117. They are YAML values and shell output, not comments, so the lint does not read them. Renaming them is a separate decision. docs/handbook.html's one fault-shaped hit is inside SVG data. Not decided here: .tape, .gitignore and .gitattributes, which have `#` comments and no citation today (measured with _fault_hits). A per-kind coverage gate was not added, because the disk walk sees local strays (the main checkout holds 14 extensionless files and a .TAG), so it would go red on machine state.",
+        "descriptive": "The comment-citation lint now reads CSS, YAML, TOML and HTML comments, and the 34 register citations it found in CI and stylesheet comments are now plain constraints."
       },
       "startedAt": "2026-10-16T00:31:38Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T01:25:51Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__deps.py::rc16d the comment-citation lint reads every source kind the tree ships through one table - css block comments and yml line comments included, html and toml decided in the table with a reason - and the tree carries no register citation in any of them"
+      ],
       "notes": [
         {
           "at": "2026-10-15T03:41:27Z",
@@ -7772,6 +7776,18 @@
         "runId": "2026-10-16T01:25:48Z.004a16",
         "status": "passed",
         "at": "2026-10-16T01:25:48Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "0ca2ab2c5f9f",
+        "at": "2026-10-16T01:25:51Z",
+        "basis": "a fix task for P125-R95: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-16T01:06:41Z",
+        "basis": "`python3 plugins/audit/tests/test__deps.py --selftest` in a throwaway tree at HEAD exited 1, but no case --case names failed an assertion as the task's own: rc16d (house FAIL) - SELFTEST FAILED: 330/331 cases passed; --case the comment-citation lint reads every source kind the tree ships through one table - css block comments and yml line comments included, html and toml decided in the table with a reason - and the tree carries no register citation in any of them names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -9641,7 +9657,12 @@
       "startedAt": "2026-10-16T00:31:35Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-16T01:36:14Z.c7d113",
+        "status": "passed",
+        "at": "2026-10-16T01:36:14Z"
+      }
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",

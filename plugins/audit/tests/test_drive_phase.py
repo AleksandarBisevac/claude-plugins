@@ -6434,7 +6434,83 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("ce-block", "_close_evidence_cases"),
           ("bs-block", "_brief_scope_cases"),
           ("sc-block", "_scope_change_cases"), ("fv-block", "_falsifier_cases"),
+          ("gt-block", "_git_stdin_cases"),
           ("sb-block", "_stage_cases"))
+
+
+EMPTY_BLOB = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+GIT_STDIN_CLAUSE = ("plugins/audit/tests/test_drive_phase.py: a fixture git call "
+                    "runs with stdin closed, and one that times out reports the "
+                    "tail of its GIT_TRACE2 trace, so a hang names the step it "
+                    "stopped in")
+
+
+def _trace_files():
+    """The trace scratch files `_harness.git` leaves in the temp directory."""
+    import tempfile
+    return sorted(n for n in os.listdir(tempfile.gettempdir())
+                  if n.startswith("git-trace2-"))
+
+
+def _git_stdin_cases(check):
+    """`_harness.git` never waits on stdin, and a hang names where git was.
+
+    The stdin case runs the call in a child whose own stdin is an OPEN pipe
+    nobody writes to: a git that inherited it would block on `--stdin` until
+    the timeout, which is the hang this exists against. The hang case stalls
+    `status` inside its fsmonitor hook, a step git traces as a region."""
+    import tempfile
+
+    def clause(detail):
+        return "%s (%s)" % (GIT_STDIN_CLAUSE, detail)
+
+    before = _trace_files()
+    code = ("import sys; sys.path.insert(0, %r); import _harness; "
+            "print(_harness.git(None, 'hash-object', '--stdin'))"
+            % os.path.dirname(os.path.abspath(__file__)))
+    child = subprocess.Popen([sys.executable, "-c", code], stdin=subprocess.PIPE,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        child.wait(timeout=30)
+        done = True
+    except subprocess.TimeoutExpired:
+        done = False
+        child.kill()
+        child.wait()
+    out = child.stdout.read().decode("utf-8", "replace")
+    err = child.stderr.read().decode("utf-8", "replace")
+    for pipe in (child.stdin, child.stdout, child.stderr):
+        pipe.close()
+    check(clause("hash-object --stdin returns the empty blob at once while the "
+                 "caller's stdin stays open; got done=%s out=%r err=%r"
+                 % (done, out.strip(), err.strip()[-200:])),
+          done and out.strip() == EMPTY_BLOB)
+
+    where = tempfile.mkdtemp(prefix="drive-trace-")
+    try:
+        _harness.git(where, "init", "-q")
+        with open(os.path.join(where, "f"), "w", encoding="utf-8") as fh:
+            fh.write("a\n")
+        _harness.git(where, "add", "f")
+        slow = ("-c", "core.fsmonitor=sleep 10; echo")
+        try:
+            _harness.git(where, "status", prefix=_harness.GIT + slow, timeout=3)
+            msg = "(no RuntimeError: the call finished)"
+        except RuntimeError as exc:
+            msg = str(exc)
+    finally:
+        _harness.remove_tree(where)
+    tail = msg.split("trace2 tail:", 1)[-1]
+    regions = [ln for ln in tail.splitlines() if "region_enter" in ln]
+    check(clause("a call stopped at its timeout reports a trace2 tail holding a "
+                 "region_enter line, the fsm_hook region it stalled in; got %r"
+                 % (msg[-300:],)),
+          "did not finish within 3s" in msg and len(regions) >= 1
+          and any("fsm_hook" in ln for ln in regions))
+    check(clause("the trace scratch is removed after a success and after a "
+                 "timeout; left behind: %r"
+                 % (sorted(set(_trace_files()) - set(before)),)),
+          set(_trace_files()) <= set(before))
 
 
 def _falsifier_cases(check):

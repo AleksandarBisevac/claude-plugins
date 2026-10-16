@@ -80,6 +80,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import ast
 import atexit
+import contextlib
 import json
 import os
 import re
@@ -292,6 +293,23 @@ def _decoded(raw):
     return raw.decode("utf-8", "replace")
 
 
+TRACE_TAIL_BYTES = 2000
+
+
+def _trace_tail(path):
+    """The last `TRACE_TAIL_BYTES` of a trace2 file, or a sentence saying why
+    there is none - a hang report that silently omitted its trace would read
+    the same as one git never traced."""
+    try:
+        with open(path, "rb") as fh:
+            raw = fh.read()
+    except OSError as exc:
+        return "(trace unreadable: %s)" % (exc,)
+    if not raw:
+        return "(trace empty: git wrote no region before it was stopped)"
+    return _decoded(raw[-TRACE_TAIL_BYTES:]).strip()
+
+
 def git(cwd, *argv, prefix=GIT, timeout=GIT_TIMEOUT):
     """git's stdout, decoded, for one call a fixture needs to succeed - raising
     `RuntimeError` naming the argv and carrying git's own message when it does
@@ -304,14 +322,24 @@ def git(cwd, *argv, prefix=GIT, timeout=GIT_TIMEOUT):
     for an `init` that names its own directory. A caller that reads a non-zero
     exit as an answer keeps its own `subprocess.run`."""
     import subprocess
+    import tempfile
     words = [str(a) for a in argv]
+    fd, trace = tempfile.mkstemp(prefix="git-trace2-")
+    os.close(fd)
+    env = dict(os.environ)
+    env["GIT_TRACE2_PERF"] = trace
     try:
         done = subprocess.run(list(prefix) + words, cwd=cwd, capture_output=True,
-                              stdin=subprocess.DEVNULL, timeout=timeout)
+                              stdin=subprocess.DEVNULL, timeout=timeout, env=env)
     except subprocess.TimeoutExpired as exc:
-        raise RuntimeError("git %s did not finish within %ss; stderr so far: %s"
+        raise RuntimeError("git %s did not finish within %ss; stderr so far: %s;"
+                           " trace2 tail: %s"
                            % (" ".join(words), timeout,
-                              _decoded(exc.stderr).strip()))
+                              _decoded(exc.stderr).strip(),
+                              _trace_tail(trace)))
+    finally:
+        with contextlib.suppress(OSError):
+            os.remove(trace)
     if done.returncode != 0:
         raise RuntimeError("git %s failed: %s (exit %d)" % (
             " ".join(words), _decoded(done.stderr).strip(), done.returncode))
