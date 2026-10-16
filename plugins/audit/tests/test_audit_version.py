@@ -229,6 +229,122 @@ def _cases(check):
         check("v11 CLAUDE_CONFIG_DIR moves the Claude home, as Claude Code honours it",
               env_home == "/custom/home"
               and M.claude_home({}).endswith(os.path.join("", ".claude")))
+
+        # --- autoUpdate declared in a settings file (user, project, local) ---------
+        def _settings(path, auto, name="quality-gates"):
+            _write(path, {"extraKnownMarketplaces": {name: {
+                "source": {"source": "github", "repo": "owner/repo"},
+                "autoUpdate": auto}}})
+
+        # The record says nothing (null) so only a settings file can answer; a
+        # reader that looks at known_marketplaces.json alone says "not recorded".
+        home_s, plug_s = _home(os.path.join(root, "settings"), auto=None)
+        user_file = os.path.join(home_s, "settings.json")
+        proj = os.path.join(root, "settings", "proj")
+        os.makedirs(proj)
+        _settings(user_file, True)
+        # The project comes from CLAUDE_PROJECT_DIR here, as it does for a command
+        # run by the user: pinned to the fixture so no settings file of the real
+        # working directory can answer in its place.
+        saved = os.environ.get("CLAUDE_PROJECT_DIR")
+        os.environ["CLAUDE_PROJECT_DIR"] = proj
+        try:
+            facts_s = M.collect(offline=True, home=home_s, plugin_root=plug_s)
+        finally:
+            if saved is None:
+                del os.environ["CLAUDE_PROJECT_DIR"]
+            else:
+                os.environ["CLAUDE_PROJECT_DIR"] = saved
+        text_s = M.render(facts_s)
+        check("v12 repro that FAILS on current code - autoUpdate true under "
+              "extraKnownMarketplaces in a user settings.json is reported with that "
+              "file as its source, vs auto-update not recorded:\n%s" % (text_s,),
+              facts_s["marketplace"].get("autoUpdate") is True
+              and facts_s["marketplace"].get("autoUpdateSource") == user_file
+              and "auto-update on" in text_s and user_file in text_s
+              and "not recorded" not in text_s)
+
+        # project overrides user, local overrides project: three values that
+        # alternate, so a reader taking the first or the last file blindly is wrong.
+        proj_file = os.path.join(proj, ".claude", "settings.json")
+        local_file = os.path.join(proj, ".claude", "settings.local.json")
+        _settings(proj_file, False)
+        mk_p = M.collect(offline=True, home=home_s, plugin_root=plug_s,
+                         project=proj)["marketplace"]
+        check("v12b a project settings.json overrides the user one, and the source "
+              "names the project file: %r" % (mk_p.get("autoUpdateSource"),),
+              mk_p.get("autoUpdate") is False
+              and mk_p.get("autoUpdateSource") == proj_file)
+        _settings(local_file, True)
+        mk_l = M.collect(offline=True, home=home_s, plugin_root=plug_s,
+                         project=proj)["marketplace"]
+        check("v12c ...and settings.local.json overrides both; every reading is kept "
+              "in order: %r" % ([r["path"] for r in mk_l.get("autoUpdateReadings", [])],),
+              mk_l.get("autoUpdate") is True
+              and mk_l.get("autoUpdateSource") == local_file
+              and [r["path"] for r in mk_l.get("autoUpdateReadings", [])]
+              == [user_file, proj_file, local_file])
+
+        # settings against the record: they disagree, the line says who wins.
+        home_d, plug_d = _home(os.path.join(root, "disagree"), auto=True)
+        _settings(os.path.join(home_d, "settings.json"), False)
+        text_d = M.render(M.collect(offline=True, home=home_d, plugin_root=plug_d,
+                                    project=os.path.join(root, "disagree")))
+        check("v12d settings that disagree with known_marketplaces.json: the line "
+              "reports the settings value, names both files and says which wins:\n%s"
+              % (text_d,),
+              "auto-update off" in text_d and "known_marketplaces.json says on" in text_d
+              and "settings win" in text_d)
+        # SECOND DIRECTION: agreement, and the record alone, must not invent a
+        # disagreement or a settings source.
+        home_a, plug_a = _home(os.path.join(root, "agree"), auto=True)
+        mk_a = M.collect(offline=True, home=home_a, plugin_root=plug_a,
+                         project=os.path.join(root, "agree"))["marketplace"]
+        text_a = M.render(M.collect(offline=True, home=home_a, plugin_root=plug_a,
+                                    project=os.path.join(root, "agree")))
+        check("v12e SECOND DIRECTION: with no settings file the record alone answers, "
+              "its file is the source and nothing claims a disagreement:\n%s" % (text_a,),
+              mk_a.get("autoUpdate") is True
+              and "known_marketplaces.json" in mk_a.get("autoUpdateSource", "")
+              and "settings win" not in text_a and "says" not in text_a)
+        # ...and a settings file that AGREES with the record is no disagreement
+        # either: the case that goes red if the disagreement note becomes
+        # unconditional.
+        home_g, plug_g = _home(os.path.join(root, "agreeset"), auto=True)
+        _settings(os.path.join(home_g, "settings.json"), True)
+        text_g = M.render(M.collect(offline=True, home=home_g, plugin_root=plug_g,
+                                    project=os.path.join(root, "agreeset")))
+        check("v12h a settings file that agrees with known_marketplaces.json is read "
+              "and claims no disagreement:\n%s" % (text_g,),
+              "auto-update on, read from %s" % (os.path.join(home_g, "settings.json"),)
+              in text_g and "settings win" not in text_g)
+
+        # the advice line must point at what was read.
+        home_o, plug_o = _home(os.path.join(root, "adviceoff"), auto=None)
+        off_file = os.path.join(home_o, "settings.json")
+        _settings(off_file, False)
+        text_o = M.render(M.collect(offline=True, home=home_o, plugin_root=plug_o,
+                                    project=os.path.join(root, "adviceoff")))
+        check("v12f the turn-it-on advice names the settings file that holds the false "
+              "value:\n%s" % (text_o,),
+              "auto-update is off for quality-gates" in text_o
+              and text_o.count(off_file) >= 2)
+
+        # a value that is not a boolean is not a reading, and a broken file is said.
+        home_b, plug_b = _home(os.path.join(root, "badsettings"), auto=None)
+        _write(os.path.join(home_b, "settings.json"),
+               {"extraKnownMarketplaces": {"quality-gates": {"autoUpdate": "yes"}}})
+        proj_b = os.path.join(root, "badsettings", "proj")
+        _write(os.path.join(proj_b, ".claude", "settings.json"), "{not json")
+        mk_b = M.collect(offline=True, home=home_b, plugin_root=plug_b,
+                         project=proj_b)["marketplace"]
+        check("v12g a non-boolean autoUpdate and a settings file that is not JSON are "
+              "not readings: the value stays unrecorded and both are named: %r"
+              % (mk_b.get("autoUpdateNotes"),),
+              mk_b.get("autoUpdate") is None
+              and len(mk_b.get("autoUpdateNotes", [])) == 2
+              and any("not a boolean" in n for n in mk_b.get("autoUpdateNotes", []))
+              and any("not JSON" in n for n in mk_b.get("autoUpdateNotes", [])))
     finally:
         _harness.remove_tree(root)
 

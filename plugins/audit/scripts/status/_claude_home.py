@@ -13,6 +13,12 @@ entry point, which nothing below it may import. `/audit:doctor`'s `plugin files`
 row needs the same records - which commit a marketplace install was made from,
 and where the clone that holds it lives - so the readers moved down to a layer
 both can reach, rather than a second reader being written beside the first.
+
+`settings.json` is the other side of the same fact: Claude Code documents an
+`autoUpdate` boolean on each `extraKnownMarketplaces.<name>` entry there, while
+`known_marketplaces.json` is only the record it keeps. A marketplace's auto-update
+state is read from both, never from the record alone, because a value the user
+wrote in settings is absent from the record until Claude Code next writes it.
 """
 import json
 import os
@@ -50,6 +56,12 @@ def claude_home(env=None):
     env = os.environ if env is None else env
     return env.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"),
                                                          ".claude")
+
+
+def project_dir(env=None, cwd=None):
+    """The project Claude Code is running for: CLAUDE_PROJECT_DIR, else the cwd."""
+    env = os.environ if env is None else env
+    return env.get("CLAUDE_PROJECT_DIR") or cwd or os.getcwd()
 
 
 def read_json(path):
@@ -94,16 +106,106 @@ def marketplace_of(plugin_root, home):
                   % (plugin_root,))
 
 
-def marketplace_facts(home, name):
+def settings_sources(home, project):
+    """`[(scope, path)]` in the order Claude Code layers them, later overriding
+    earlier: user (`<home>/settings.json`), project (`<project>/.claude/settings.json`),
+    local (`<project>/.claude/settings.local.json`).
+
+    A path that resolves to one already listed is dropped, because a project
+    directory equal to the home would otherwise read the user file twice and report
+    it as an override of itself."""
+    wanted = [("user settings.json", os.path.join(home, "settings.json"))]
+    if project:
+        wanted += [("project settings.json",
+                    os.path.join(project, ".claude", "settings.json")),
+                   ("local settings.local.json",
+                    os.path.join(project, ".claude", "settings.local.json"))]
+    seen, out = set(), []
+    for scope, path in wanted:
+        real = os.path.realpath(path)
+        if real not in seen:
+            seen.add(real)
+            out.append((scope, path))
+    return out
+
+
+def settings_auto_update(home, project, name):
+    """`(readings, notes)` - every `extraKnownMarketplaces.<name>.autoUpdate` the
+    settings files declare, in precedence order (the last one wins), and what was
+    seen but not usable.
+
+    A file that does not exist is the ordinary case and says nothing. A file that
+    exists but cannot be read or parsed, and an `autoUpdate` that is not a boolean,
+    are NOT readings: each is returned as a note naming the file, so an unusable
+    value never reads as `off` and never as an absence."""
+    readings, notes = [], []
+    for scope, path in settings_sources(home, project):
+        if not os.path.isfile(path):
+            continue
+        doc, why = read_json(path)
+        if doc is None:
+            notes.append("%s was not used: %s" % (scope, why))
+            continue
+        markets = doc.get("extraKnownMarketplaces") if isinstance(doc, dict) else None
+        entry = markets.get(name) if isinstance(markets, dict) else None
+        if not isinstance(entry, dict) or "autoUpdate" not in entry:
+            continue
+        value = entry["autoUpdate"]
+        if isinstance(value, bool):
+            readings.append({"source": scope, "path": path, "value": value})
+        else:
+            notes.append("%s (%s) sets autoUpdate to %r, which is not a boolean, so "
+                         "it was not used" % (scope, path, value))
+    return readings, notes
+
+
+def resolve_auto_update(record, readings):
+    """`(value, source, note)` - the auto-update state and the file it came from.
+
+    The settings files win over `known_marketplaces.json`: settings is where the
+    user declares the value, and the record is what Claude Code last wrote down
+    about it, so it can lag a settings edit. Among settings files the later one
+    wins. This is this command's reading of the two, not a precedence Claude Code
+    documents, and `note` says so when the two disagree. `value` is None with
+    `source` None when nothing recorded a boolean."""
+    record_value = record["value"] if isinstance(record["value"], bool) else None
+    if readings:
+        last = readings[-1]
+        note = None
+        if record_value is not None and record_value != last["value"]:
+            note = ("known_marketplaces.json says %s, %s says %s; settings win "
+                    "(this command's reading - Claude Code documents no order "
+                    "between the two)" % ("on" if record_value else "off",
+                                          last["source"],
+                                          "on" if last["value"] else "off"))
+        return last["value"], last["path"], note
+    if record_value is not None:
+        return record_value, record["path"], None
+    return None, None, None
+
+
+def marketplace_facts(home, name, project=None):
     """What the marketplace clone offers, when it was refreshed, and whether it
-    auto-updates - or why that could not be read."""
+    auto-updates - or why that could not be read. `project` adds the project and
+    local settings files to the user one when looking for `autoUpdate`."""
     doc, why = read_json(os.path.join(home, "plugins", "known_marketplaces.json"))
     entry = doc.get(name) if isinstance(doc, dict) else None
     if not isinstance(entry, dict):
         return {"name": name, "error": why or ("known_marketplaces.json has no %r"
                                                % (name,))}
+    readings, notes = settings_auto_update(home, project, name)
+    record_path = os.path.join(home, "plugins", "known_marketplaces.json")
+    record = {"value": entry.get("autoUpdate"), "path": record_path}
+    auto, source, disagree = resolve_auto_update(record, readings)
+    recorded = ([{"source": "known_marketplaces.json", "path": record_path,
+                  "value": record["value"]}]
+                if isinstance(record["value"], bool) else [])
     out = {"name": name, "lastUpdated": entry.get("lastUpdated"),
-           "autoUpdate": entry.get("autoUpdate"),
+           "autoUpdate": auto, "autoUpdateSource": source,
+           "autoUpdateReadings": recorded + readings, "autoUpdateNotes": notes,
+           "autoUpdateDisagreement": disagree,
+           "autoUpdateSearched": [record_path] + [
+               path for _scope, path in settings_sources(home, project)],
            "location": entry.get("installLocation"), "offered": None,
            "basis": "known_marketplaces.json, %s" % UNDOCUMENTED}
     clone, sub, cwhy = marketplace_source(home, name)
@@ -301,7 +403,7 @@ def attach_usage_hint(parser, env=None, version=None, plugin_root=None, cwd=None
 
     def error(message):
         source = os.environ if env is None else env
-        project = source.get("CLAUDE_PROJECT_DIR") or cwd or os.getcwd()
+        project = project_dir(source, cwd)
         hint = usage_hint(claude_home(source), project,
                           _output.plugin_version() if version is None else version,
                           _output.PLUGIN_ROOT if plugin_root is None else plugin_root)

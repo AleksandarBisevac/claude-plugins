@@ -9,7 +9,9 @@ fact beside the file or service it came from:
   running      the plugin.json of the copy this command runs from
   marketplace  what the marketplace clone offers, when it was refreshed, and
                whether it auto-updates - Claude Code's own records under its home
-               directory, which it writes and does not document
+               directory, which it writes and does not document, and the
+               `autoUpdate` set under extraKnownMarketplaces in the user, project
+               and local settings files, which win when they disagree
   installed    every installed copy of this plugin, by scope and project
   published    the newest release on the repository plugin.json names - one
                unauthenticated GET to the GitHub API, skipped by --offline
@@ -174,12 +176,13 @@ def update_steps(market_name, newer):
             "then restart Claude Code (or run /reload-plugins)"]
 
 
-def collect(offline=False, fetch=None, home=None, plugin_root=None):
+def collect(offline=False, fetch=None, home=None, plugin_root=None, project=None):
     """Every fact this command reports, each with its basis."""
     home = home or claude_home()
+    project = project or _home.project_dir()
     run = running(plugin_root)
     name, name_basis = marketplace_of(run["root"], home)
-    market = marketplace_facts(home, name) if name else None
+    market = marketplace_facts(home, name, project) if name else None
     copies, copies_why = installed_copies(home, name) if name else (None, "")
     published = ({"error": "not asked: --offline"} if offline
                  else latest_release(run.get("repository"), fetch=fetch))
@@ -192,6 +195,29 @@ def collect(offline=False, fetch=None, home=None, plugin_root=None):
 
 
 # --- rendering -----------------------------------------------------------------
+def _auto_clause(market):
+    """`auto-update on/off, read from <file>`, or that no file recorded a value,
+    naming every file looked in."""
+    auto, source = market.get("autoUpdate"), market.get("autoUpdateSource")
+    if auto is None:
+        return "auto-update not recorded (looked in %s)" % (
+            ", ".join(market.get("autoUpdateSearched") or ["nothing"]),)
+    return "auto-update %s, read from %s" % ("on" if auto else "off", source)
+
+
+def _turn_on_advice(market):
+    """Where to set the value: the settings file that holds the `false` when one
+    does, else the marketplace entry in a settings file."""
+    source = market.get("autoUpdateSource") or ""
+    if any(r["path"] == source and r["source"] != "known_marketplaces.json"
+           for r in market.get("autoUpdateReadings") or []):
+        return "set \"autoUpdate\": true on the marketplace in %s" % (source,)
+    return ("set \"autoUpdate\": true under extraKnownMarketplaces.%s in a settings "
+            "file (%s)" % (market["name"], ", ".join(
+                p for p in market.get("autoUpdateSearched") or []
+                if not p.endswith("known_marketplaces.json"))))
+
+
 def render(facts):
     run, market, pub = facts["running"], facts["marketplace"], facts["published"]
     lines = ["audit plugin version",
@@ -202,15 +228,17 @@ def render(facts):
     elif market.get("error"):
         lines.append("  marketplace  %s - %s" % (market["name"], market["error"]))
     else:
-        auto = market.get("autoUpdate")
-        lines.append("  marketplace  %s offers %s - refreshed %s, auto-update %s   "
-                     "(%s)" % (market["name"], market.get("offered") or "unknown",
-                               market.get("lastUpdated") or "never recorded",
-                               "on" if auto is True else ("off" if auto is False
-                                                          else "not recorded"),
-                               market["basis"]))
+        lines.append("  marketplace  %s offers %s - refreshed %s, %s   (%s)" % (
+            market["name"], market.get("offered") or "unknown",
+            market.get("lastUpdated") or "never recorded", _auto_clause(market),
+            market["basis"]))
         if market.get("offeredWhy"):
             lines.append("               offered version: %s" % market["offeredWhy"])
+        if market.get("autoUpdateDisagreement"):
+            lines.append("               auto-update: %s"
+                         % market["autoUpdateDisagreement"])
+        for note in market.get("autoUpdateNotes") or []:
+            lines.append("               auto-update: %s" % note)
     have = parse_version(run.get("version"))
     for copy in facts.get("installed") or []:
         theirs = parse_version(copy.get("version"))
@@ -238,8 +266,8 @@ def render(facts):
         lines.append("    %s" % step)
     if market and market.get("autoUpdate") is False:
         lines.append("  auto-update is off for %s: turn it on in /plugin > "
-                     "Marketplaces, or set \"autoUpdate\": true on the marketplace "
-                     "in settings" % (market["name"],))
+                     "Marketplaces, or %s" % (market["name"],
+                                              _turn_on_advice(market)))
     return "\n".join(lines)
 
 

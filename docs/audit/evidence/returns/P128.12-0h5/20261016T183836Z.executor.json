@@ -1,0 +1,35 @@
+{
+  "gates": {
+    "python3 tools/gate-parity.py --selftest": "pass",
+    "python3 tools/gate-parity.py": "pass",
+    "ruff check tools/gate-parity.py": "pass",
+    "python3 tools/sweep-selftests.py --quiet": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-16T18:58:30Z",
+    "basis": "`python3 tools/gate-parity.py --selftest` in a throwaway tree at HEAD: inline suite tools/verify.sh (its test file is its implementation file): it is not Python, and an inline suite's test hunks are read from Python definitions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/verify.sh: (1) ledger_reproducible no longer uses 'trap RETURN' (bash-only; dash never ran it, so verify-ledger-* stayed in TMPDIR). The comparison moved to ledger_compare; ledger_reproducible creates the dir, calls it, keeps the status, rm -rf's the dir and returns the status, so every return path is cleaned. (2) BEYOND THE DESCRIPTION, kept at the coordinator's instruction: the main trap 'rm -rf WORKDIR' EXIT INT TERM became trap on EXIT alone plus trap 'exit 130' INT and trap 'exit 143' TERM, because a POSIX shell resumes after a signal trap action, so an interrupted run kept going with its workdir deleted. tools/gate-parity.py (scope widened by orchestrator): new section with shell_function_text, run_in_scratch_shell and _verify_cleanup_cases, called at the end of _cases; cases vsh1-vsh8 run the functions cut out of the shipped verify.sh under dash (sh if no dash; each label names the shell that ran) against a python3 stub: reproducible/differing/failing generator leave TMPDIR empty with the right status, control vsh5 shows the old RETURN form leaks under dash, TERM->143 and INT->130 with no resume and workdir removed, plain exit keeps status, no non-comment trap line names RETURN. Cases are titled with the tests.add clause 'the case named in the description' at the front (the clause is ambiguous; flagging as a possible gap). Commands: gate-parity.py --selftest ALL PASS (141 cases incl. vsh1-8, dash used); gate-parity.py exit 0; ruff clean; full sweep-selftests --quiet exit 0, all files ok. No browser gates, no full verify.sh run.",
+    "descriptive": "verify.sh now removes its temporary directories on every exit path under dash as well as bash, and an interrupted run stops instead of continuing without its workdir; gate-parity's selftest locks it by running the real functions under dash."
+  },
+  "testsAdded": [
+    "tools/gate-parity.py: vsh1-vsh8 (the case named in the description)"
+  ],
+  "falsifiers": {
+    "tools/verify.sh: the case named in the description": {
+      "file": "tools/verify.sh",
+      "find": "  rm -rf \"$regen\"\n",
+      "replace": "  :\n",
+      "command": [
+        "python3",
+        "tools/gate-parity.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims: (1) verify.sh cleanup works under dash - basis: vsh2-vsh4 run the shipped functions under /bin/dash and TMPDIR is empty afterwards; (2) the cases can fail - basis: vsh5 observed the old RETURN form leaving a directory under dash, falsifier removes the rm line; (3) signals end the run - basis: vsh6 observed codes 143 and 130 with no 'resumed' output. Not claimed: behaviour of a full verify.sh run (not run, by instruction).",
+  "stamp": "audit-stamp: {\"content\":\"sha256:bd5aca160d589080017df35197ca31d75b7478135b1e6ea47dda983fd303cc68\",\"dirtyDigest\":\"sha256:e26e101da57164f659d2482fd08d835b8a4b515aeb9e8ecbbaa4c673d1b7f985\",\"dirtyPaths\":{\"tools/gate-parity.py\":\"81f614c8a5944c3b\",\"tools/verify.sh\":\"465a6201c30ecfc5\"},\"head\":\"82f1b3b3\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/gate-parity.py\",\"tools/verify.sh\"],\"scopeDigest\":\"sha256:68cb5af84e8e3f682f04fac548d33fafe3f214cc7c72fd0d6bd2166403d6a351\",\"v\":2}"
+}

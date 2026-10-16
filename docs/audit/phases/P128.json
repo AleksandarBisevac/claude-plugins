@@ -1478,7 +1478,19 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "plugins/audit/tests/test_audit_version.py: repro that FAILS on current code - autoUpdate true under extraKnownMarketplaces in a user settings.json is reported with that file as its source, vs auto-update not recorded": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_audit_version.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/status/_claude_home.py",
+            "find": "    if readings:\n        last = readings[-1]",
+            "replace": "    if False and readings:\n        last = readings[-1]"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -1502,9 +1514,9 @@
       "bugId": "BUG-23",
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-16T20:06:10Z.f770fe",
-        "status": "failed",
-        "at": "2026-10-16T20:06:11Z"
+        "runId": "2026-10-16T20:19:40Z.9de276",
+        "status": "passed",
+        "at": "2026-10-16T20:19:40Z"
       }
     }
   ],
