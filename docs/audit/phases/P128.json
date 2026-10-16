@@ -1502,9 +1502,9 @@
       "bugId": "BUG-23",
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-16T19:36:07Z.f8f8ca",
+        "runId": "2026-10-16T20:06:10Z.f770fe",
         "status": "failed",
-        "at": "2026-10-16T19:36:07Z"
+        "at": "2026-10-16T20:06:11Z"
       }
     }
   ],
