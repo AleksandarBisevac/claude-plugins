@@ -14532,6 +14532,65 @@ def _held_cases(check):
           all(code == M.E_USAGE and "--shown" in said and body is None
               for _l, code, said, body in bad)
           and task_shown[0] == M.E_USAGE and "--shown" in task_shown[1])
+    _recorded_brief_cases(check, shown_project, file_shown, filed_body)
+
+
+def _recorded_brief_cases(check, shown_project, file_shown, filed_body):
+    """A phase brief records the set it showed beside itself, keyed by head
+    (`audit-lookup.py brief`), and the filing verb holds a return for that head
+    to it. The record is written here by hand in the shape the brief writes,
+    which `test_audit_lookup.py` pins from the writer's side."""
+    shown_arg = "P1.1@%s,P1.2@%s" % (_FR_SHA, _HD_SHA2)
+
+    def record(proj):
+        path = os.path.join(proj, ".claude", "state", "briefs", "P1",
+                            "phase.shown.%s.json" % (_HD_HEAD,))
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"head": _HD_HEAD,
+                       "shown": [{"id": "P1.1", "commit": _FR_SHA},
+                                 {"id": "P1.2", "commit": _HD_SHA2}]}, fh)
+
+    proj_m, _m = shown_project("shown-briefed-missing")
+    record(proj_m)
+    missing = file_shown(proj_m)
+    proj_d, _d = shown_project("shown-briefed-different")
+    record(proj_d)
+    other = file_shown(proj_d, "--shown", "P1.1@%s" % (_FR_SHA,))
+    with open(os.path.join(_output.PLUGIN_ROOT, "agents", "audit-reviewer.md"),
+              encoding="utf-8") as fh:
+        card = fh.read()
+    filing = card.split("**Your last act is one call:**", 1)[-1] \
+        .split("\n\n", 1)[0]
+    check("a phase return filed for a head whose brief showed tasks, but filed "
+          "without --shown, is refused naming the missing set, and the reviewer "
+          "card names the brief's printed command as the one to run (missing, "
+          "a different set, the card's filing paragraph): %r"
+          % ((missing[0], missing[1][-240:], filed_body(proj_m), other[0],
+              filed_body(proj_d), filing[:300]),),
+          missing[0] == M.E_USAGE and shown_arg in missing[1]
+          and "Your return" in missing[1] and filed_body(proj_m) is None
+          and other[0] == M.E_USAGE and shown_arg in other[1]
+          and filed_body(proj_d) is None
+          and "--shown" in filing and "as printed" in filing)
+    # The other direction: a verb that refused every phase return once any
+    # brief was recorded, or that refused with no record at all, would pass
+    # the case above. Both of these must file.
+    proj_a, _a = shown_project("shown-briefed-matching")
+    record(proj_a)
+    allowed = file_shown(proj_a, "--shown", shown_arg)
+    proj_n, _n = shown_project("shown-unbriefed")
+    unbriefed = file_shown(proj_n)
+    check("ALLOW: the same return filed with the brief's own `--shown` files "
+          "and records that set, and a head no brief was recorded for files "
+          "with no `--shown` as before: %r"
+          % ((allowed[0], allowed[1][-160:], unbriefed[0], unbriefed[1][-160:]),),
+          allowed[0] == 0
+          and (filed_body(proj_a) or {}).get("shown") == [
+              {"id": "P1.1", "commit": _FR_SHA},
+              {"id": "P1.2", "commit": _HD_SHA2}]
+          and unbriefed[0] == 0 and isinstance(filed_body(proj_n), dict)
+          and "shown" not in filed_body(proj_n))
 
 
 def _batch_doc(**over):

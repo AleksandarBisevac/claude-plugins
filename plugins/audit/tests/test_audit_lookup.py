@@ -1692,6 +1692,23 @@ def _brief_cases(check):
           "what this round reviewed: %r" % (submit11,),
           len(submit11) == 1 and submit11[0].count("--shown ") == 1
           and want11 in submit11[0])
+    # The same set is recorded beside the brief, keyed by its head, in the
+    # shape the filing verb reads (`test_audit_task.py` files against a record
+    # hand-written in this shape). Every record in the folder is listed, so a
+    # writer keying it on anything else, or writing two, reads as a failure.
+    head11 = git(proj11, "rev-parse", "HEAD").stdout.decode().strip()
+    folder11 = os.path.dirname(brief_file(proj11, "P1", "phase.md"))
+    records11 = sorted(n for n in os.listdir(folder11)
+                       if n.startswith("phase.shown."))
+    body11 = read(os.path.join(folder11, records11[0])) if records11 else None
+    check("the phase brief records the set it showed beside itself, keyed by "
+          "the head it was computed at, each task at the commit its section "
+          "names: %r" % ((head11, records11, body11),),
+          records11 == ["phase.shown.%s.json" % (head11,)]
+          and json.loads(body11 or "null") == {
+              "head": head11,
+              "shown": [{"id": "P1.5", "commit": "f" * 40},
+                        {"id": "P1.6", "commit": "d" * 40}]})
 
     # ---- a wave task's brief says which tree it works in --------------------
     # The tree comes from the driver's state, which is where `add_tree` records

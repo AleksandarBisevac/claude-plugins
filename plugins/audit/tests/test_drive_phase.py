@@ -344,7 +344,11 @@ def _file_phase_review(root, mpath, text, findings=(), entry_over=None,
     `(code, text)`."""
     brief = _BRIEF.search(text)
     with open(os.path.join(root, *brief.group(1).split("/")), encoding="utf-8") as fh:
-        head = _HEAD_LINE.search(fh.read()).group(1)
+        brief_text = fh.read()
+    head = _HEAD_LINE.search(brief_text).group(1)
+    # Filed as the brief prints it: the set it showed rides on `--shown`, and
+    # the verb refuses a return for this head without it.
+    shown = re.search(r" --shown (\S+)", brief_text)
     answered = _answered(root, mpath)
     entries = [dict({"id": tid, "commit": t.get("commit"), "answer": "matches",
                      "note": "as asked", "missing": [], "redFirst": "not-attempted",
@@ -360,7 +364,8 @@ def _file_phase_review(root, mpath, text, findings=(), entry_over=None,
               "intent": {"answer": phase_intent, "note": "the phase as asked"},
               "verdict": "findings" if findings else "clean", "tasks": entries}
     return _verb(root, DRIVER, ["submit", PHASE, "--role", "reviewer", mpath,
-                                "--project-dir", root, "--head", head],
+                                "--project-dir", root, "--head", head]
+                 + (["--shown", shown.group(1)] if shown else []),
                  stdin=json.dumps(review))
 
 
@@ -1624,10 +1629,13 @@ def _submit_cases(check):
     review = {"findings": [], "intent": {"answer": "matches", "note": "done"},
               "verdict": "clean", "tasks": [entry]}
     head = _head(root)
+    # The drive composed this head's phase brief, so the filing carries the
+    # set it showed, as its printed command does.
+    shown = ["--shown", "P1.1@%s" % (done.get("commit"),)]
     code, text = _submit(None, root, mpath, PHASE, review, role="reviewer",
-                         tail=["--head", head])
+                         tail=["--head", head] + shown)
     code_2, text_2 = _submit(None, root, mpath, PHASE, review, role="reviewer",
-                             tail=["--head", head])
+                             tail=["--head", head] + shown)
     check("ds8 a phase review files through submit under --head, and a second "
           "filing for that head is the verb's refusal: %r" % ((text, text_2),),
           code == 0 and "filed" in text and code_2 == 1
@@ -1645,7 +1653,9 @@ def _submit_cases(check):
                 "verdict": "clean", "tasks": [entry_p]}
     head_p = _head(root_p)
     code_p, text_p = _submit(None, root_p, mpath_p, PHASE, review_p,
-                             role="reviewer", tail=["--head", head_p[:12]])
+                             role="reviewer", tail=["--head", head_p[:12],
+                                                    "--shown",
+                                                    "P1.1@%s" % (recorded,)])
     project_p, config_p = _evio.project_config_for(mpath_p, root_p)
     filed_p = _fr.phase_returns(_evio.evidence_dir(project_p, config_p), PHASE)
     check("ds8p a phase review whose entry names the whole commit the plan records "

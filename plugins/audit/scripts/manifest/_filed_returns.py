@@ -1152,6 +1152,75 @@ def shown_record(pairs):
     return [{"id": tid, "commit": commit} for tid, commit in pairs]
 
 
+# THE SET A BRIEF SHOWED IS RECORDED WHERE THE BRIEF IS, KEYED BY ITS HEAD. A
+# return filed without `--shown` reads as the shape that predates the list, so
+# with nothing to compare against the omission is silent and the next round
+# shows every fix task again. The brief writes this record when it is composed;
+# the filing verb holds a phase return for that head to it. A head no brief was
+# recorded for has nothing to compare against and files as it always did.
+BRIEFS_DIRNAME = "briefs"
+
+
+def shown_argument_of(pairs):
+    """`(id, commit)` pairs spelled as the `--shown` value a brief prints."""
+    return ",".join("%s@%s" % (tid, commit) for tid, commit in pairs)
+
+
+def shown_brief_path(state_dir, phase_id, head):
+    """Where a phase brief composed at `head` records the set it showed."""
+    return os.path.join(state_dir, BRIEFS_DIRNAME, str(phase_id),
+                        "phase.shown.%s.json" % (return_start_key(head),))
+
+
+def shown_brief_text(head, pairs):
+    """The record `shown_brief_path` holds, as written."""
+    return json.dumps({"head": head, SHOWN_FIELD: shown_record(pairs)},
+                      indent=2) + "\n"
+
+
+def read_shown_brief(state_dir, phase_id, head):
+    """`(pairs, None)` off the record a brief composed at `head` wrote, `(None,
+    None)` when none was written, or `(None, problem)` when one exists and
+    cannot be read - which is not the same as none."""
+    path = shown_brief_path(state_dir, phase_id, head)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            body = json.load(fh)
+    except FileNotFoundError:
+        return None, None
+    except (OSError, ValueError) as exc:
+        return None, "the record at %s cannot be read (%s)" % (path, exc)
+    entries = body.get(SHOWN_FIELD) if isinstance(body, dict) else None
+    if not isinstance(entries, list) or body.get("head") != head:
+        return None, ("the record at %s is not a `shown` list for head %s"
+                      % (path, head))
+    if not entries:
+        return [], None
+    pairs, problem = parse_shown(shown_argument_of(
+        (e.get("id"), e.get("commit")) if isinstance(e, dict) else ("", "")
+        for e in entries))
+    if problem:
+        return None, "the record at %s does not parse: %s" % (path, problem)
+    return pairs, None
+
+
+def shown_brief_refusal(recorded, given, path, head):
+    """Why a phase return for `head` carrying `given` (`parse_shown`'s pairs,
+    or None with no `--shown`) does not file against the `recorded` set its
+    brief showed, or None when the two name the same pairs."""
+    if sorted(recorded) == sorted(given or []):
+        return None
+    want = shown_argument_of(recorded)
+    carried = ("no `--shown`" if given is None
+               else "`--shown %s`" % (shown_argument_of(given),))
+    asked = ("`--shown %s`" % (want,) if recorded else
+             "no `--shown`, since it showed no task")
+    return ("the phase brief composed at head %s showed %s (recorded at %s), "
+            "and this return carries %s. Run the filing command that brief "
+            "prints under `## Your return`, as printed - it carries %s"
+            % (head, want or "no task", path, carried, asked))
+
+
 def reviewed_entries(returns):
     """`{(task id, commit): rel}` off `phase_returns`'s list - every commit a
     filed round reviewed: its `tasks` entries and its `shown` list, the first

@@ -1357,8 +1357,10 @@
         "severity": "med",
         "file": "plugins/audit/tests/test_drive_phase.py:6627-6648,6655-6666 (HEAD)",
         "issue": "The coverage statement that P125.134 adds and pins is false on Linux, which is where CI's POSIX legs run. The docstring says 'on POSIX the sweep's `--encoding` pass covers them, since it pins the locale there'. But tools/sweep-selftests.py:707 (locale_decision) returns `locale: {}` (stdio half only) whenever the child's filesystem encoding is not UTF-8. The sweep's own comment at :638 says that is exactly Linux under LC_ALL=C PYTHONUTF8=0 ('on linux it makes the FILESYSTEM encoding ASCII too, while macOS keeps UTF-8 file names'). The cp1252 leg runs on ubuntu-latest and windows-latest (ci.yml:99-100,259), so in CI no run puts the drive suite's other blocks under a non-UTF-8 locale. Only a macOS developer run does. _ascii_coverage_case cannot see this: it feeds locale_decision a fabricated macOS-shaped report `('ascii', 'utf-8')` and never the Linux shape. The finding this fix answers was about stating the coverage honestly, and the new statement names the wrong cover.",
-        "resolution": "Reword the docstring to the platform split locale_decision actually makes. The locale is pinned on macOS (UTF-8 file names under C). On Linux it is not, because the C locale makes the filesystem ASCII, so only the stdio codec is set. On Windows nothing is pinned. Extend _ascii_coverage_case to assert that a Linux-shaped report (`('ANSI_X3.4-1968', 'ascii')`) yields `locale == {}`, so the docstring and the decision table cannot drift apart again.",
-        "fixTask": "P125.143-0h5"
+        "resolution": "fixed in P125.143-0h5 (b0db52294b7b): Reword the docstring to the platform split locale_decision actually makes. The locale is pinned on macOS (UTF-8 file names under C). On Linux it is not, because the C locale makes the filesystem ASCII, so only the stdio codec is set. On Windows nothing is pinned. Extend _ascii_coverage_case to assert that a Linux-shaped report (`('ANSI_X3.4-1968', 'ascii')`) yields `locale == {}`, so the docstring and the decision table cannot drift apart again.",
+        "fixTask": "P125.143-0h5",
+        "commit": "b0db52294b7b",
+        "status": "fixed"
       },
       {
         "id": "P125-R166",
@@ -1390,7 +1392,7 @@
         "resolution": "Give tasks touching tools/ui-tests/ a vitest entry in tests.gate, or have the derived task gate add one for those paths."
       }
     ],
-    "outcome": "[findings: 169 - 3 high, 61 med, 105 low; 60 with a recorded fix commit]"
+    "outcome": "[findings: 169 - 3 high, 61 med, 105 low; 61 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -11370,7 +11372,7 @@
     {
       "id": "P125.143-0h5",
       "title": "fix P125-R165: The coverage statement that P125.134 adds and pins is false on...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The coverage statement that P125.134 adds and pins is false on Linux, which is where CI's POSIX legs run. The docstring says 'on POSIX the sweep's `--encoding` pass covers them, since it pins the locale there'. But tools/sweep-selftests.py:707 (locale_decision) returns `locale: {}` (stdio half only) whenever the child's filesystem encoding is not UTF-8. The sweep's own comment at :638 says that is exactly Linux under LC_ALL=C PYTHONUTF8=0 ('on linux it makes the FILESYSTEM encoding ASCII too, while macOS keeps UTF-8 file names'). The cp1252 leg runs on ubuntu-latest and windows-latest (ci.yml:99-100,259), so in CI no run puts the drive suite's other blocks under a non-UTF-8 locale. Only a macOS developer run does. _ascii_coverage_case cannot see this: it feeds locale_decision a fabricated macOS-shaped report `('ascii', 'utf-8')` and never the Linux shape. The finding this fix answers was about stating the coverage honestly, and the new statement names the wrong cover.\n\nResolution asked: Reword the docstring to the platform split locale_decision actually makes. The locale is pinned on macOS (UTF-8 file names under C). On Linux it is not, because the C locale makes the filesystem ASCII, so only the stdio codec is set. On Windows nothing is pinned. Extend _ascii_coverage_case to assert that a Linux-shaped report (`('ANSI_X3.4-1968', 'ascii')`) yields `locale == {}`, so the docstring and the decision table cannot drift apart again.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py"
@@ -11400,14 +11402,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b0db52294b7b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "In plugins/audit/tests/test_drive_phase.py, reworded _ascii_locale_cases's docstring to the macOS (pinned, UTF-8 file names under C) / Linux (not pinned, only stdio codec, C makes the filesystem ASCII) / Windows (nothing) split. _ascii_coverage_case now also feeds locale_decision a Linux-shaped report ('ANSI_X3.4-1968','ascii'), asserts locale == {}, problem None and the stdio-half line, and asserts the docstring states the macOS and Linux phrases; macOS shaped report must still pin. New case titled 'the case P125-R165 asks for, locking the behaviour at HEAD (...)'. Stage al-block exit 0; full sweep exit 0 (335/335 files ok).",
+        "descriptive": "The coverage statement now matches the platform split locale_decision makes, and the case locks it against drift."
       },
       "startedAt": "2026-10-16T14:24:02Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T15:56:22Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py: the case P125-R165 asks for, locking the behaviour at HEAD"
+      ],
       "notes": [
         {
           "at": "2026-10-16T14:23:58Z",
@@ -11426,6 +11430,17 @@
         "runId": "2026-10-16T15:56:20Z.1fb0a3",
         "status": "passed",
         "at": "2026-10-16T15:56:20Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "b0db52294b7b",
+        "at": "2026-10-16T15:56:22Z",
+        "basis": "a fix task for P125-R165: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression mode, no red owed; mutation proof done by hand in the task tree: flipping the Linux assertion to != {} gave 'SELFTEST FAILED: 7/8' with the R165 case FAIL; changing the docstring to say Linux is pinned turned the R147 case FAIL; both restored and cmp-verified identical to the pre-mutation backup",
+        "at": "2026-10-16"
       }
     },
     {
@@ -11442,7 +11457,8 @@
         "plugins/audit/tests/test_audit_lookup.py",
         "plugins/audit/tests/test__refs.py",
         "plugins/audit/scripts/manifest/_filed_returns.py",
-        "plugins/audit/tests/test__filed_returns.py"
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test_drive_phase.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -11489,6 +11505,10 @@
         {
           "at": "2026-10-16T14:23:58Z",
           "text": "no tests.add clause for P125-R166: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        },
+        {
+          "at": "2026-10-16T15:57:06Z",
+          "text": "files widened by plugins/audit/tests/test_drive_phase.py: widened by the integration answer"
         }
       ],
       "fixes": [
@@ -11496,9 +11516,9 @@
       ],
       "reviewPerTask": "phase",
       "testEvidence": {
-        "runId": "2026-10-16T15:35:01Z.2569c3",
+        "runId": "2026-10-16T16:07:46Z.f30278",
         "status": "passed",
-        "at": "2026-10-16T15:35:01Z"
+        "at": "2026-10-16T16:07:46Z"
       }
     }
   ],

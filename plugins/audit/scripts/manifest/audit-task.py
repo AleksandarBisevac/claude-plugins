@@ -5472,6 +5472,24 @@ def _phase_return_gate(project, config, mpath, phase, role, head):
     return (evdir, live, filed), None
 
 
+def _shown_brief_refusal(project, mpath, phase_id, head, shown):
+    """Why a phase return for `head` carrying `shown` does not match the set
+    the brief composed at that head recorded (`_fr.read_shown_brief`), or None
+    - None too when no brief was recorded for the head, which files as before.
+    The state directory is resolved as the brief resolves it."""
+    proj, cfg = _evidence_io.project_config_for(mpath, project)
+    state = _run_state_dir(proj, cfg)
+    recorded, problem = _fr.read_shown_brief(state, phase_id, head)
+    if problem:
+        return ("what the phase brief for head %s showed cannot be read, so "
+                "whether this return carries its `--shown` is unknown: %s"
+                % (head, problem))
+    if recorded is None:
+        return None
+    return _fr.shown_brief_refusal(
+        recorded, shown, _fr.shown_brief_path(state, phase_id, head), head)
+
+
 def _locked_file_return(args, project, mpath, tid, role, text, out, config=None,
                         head=None, body=None, shown=None):
     """Write one return, once. The manifest is read for the task's current start,
@@ -5496,6 +5514,10 @@ def _locked_file_return(args, project, mpath, tid, role, text, out, config=None,
         if outside:
             out("[audit-task] REFUSED: `--shown` names %s, not a task of phase "
                 "%s. Nothing written." % (", ".join(outside), tid))
+            return E_USAGE
+        briefed = _shown_brief_refusal(project, mpath, tid, head, shown)
+        if briefed:
+            out("[audit-task] REFUSED: %s. Nothing written." % (briefed,))
             return E_USAGE
         # Filed as typed unless the verb filled an answer or records what the
         # brief showed: such a return is written whole, its `computedAnswers`

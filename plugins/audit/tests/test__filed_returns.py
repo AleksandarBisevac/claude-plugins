@@ -404,6 +404,7 @@ def _held_cases(check):
           % (parsed,),
           parsed[0] == ([("P1.1", "a" * 12), ("P1.4", "e" * 40)], None)
           and all(p is not None and p[0] == [] and p[1] for p in parsed[1:]))
+    _shown_brief_cases(check)
 
     with open(os.path.join(_output.PLUGIN_ROOT, "schema",
                            "audit-plan.schema.json"), "r", encoding="utf-8") as fh:
@@ -525,6 +526,50 @@ def _held_cases(check):
           "computed at: %r" % (M.phase_return_rel("P1", _SHA),),
           M.phase_return_rel("P1", _SHA)
           == "returns/P1/%s.reviewer.json" % (_SHA,))
+
+
+def _shown_brief_cases(check):
+    """The record a phase brief writes of the set it showed, read back: absent
+    is not unreadable, and the refusal compares sets, not their order."""
+    import shutil
+    import tempfile
+    root = tempfile.mkdtemp(prefix="fr-shown-brief-")
+    try:
+        head = "c" * 40
+        pairs = [("P1.1", "a" * 40), ("P1.4", "e" * 40)]
+        none = M.read_shown_brief(root, "P1", head)
+        path = M.shown_brief_path(root, "P1", head)
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(M.shown_brief_text(head, pairs))
+        back = M.read_shown_brief(root, "P1", head)
+        other_head = M.read_shown_brief(root, "P1", "d" * 40)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("{not json")
+        broken = M.read_shown_brief(root, "P1", head)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+    check("pk7 a brief's shown record reads back as the pairs it was written "
+          "with; a head with no record reads as none, not as a problem; a "
+          "record that will not parse reads as a problem, not as none: %r"
+          % ((none, back, other_head, broken),),
+          none == (None, None) and back == (pairs, None)
+          and other_head == (None, None)
+          and broken[0] is None and bool(broken[1]))
+    same = M.shown_brief_refusal(pairs, list(reversed(pairs)), "p", head)
+    empty_ok = M.shown_brief_refusal([], None, "p", head)
+    absent = M.shown_brief_refusal(pairs, None, "p", head)
+    fewer = M.shown_brief_refusal(pairs, pairs[:1], "p", head)
+    extra = M.shown_brief_refusal([], pairs[:1], "p", head)
+    want = "P1.1@%s,P1.4@%s" % ("a" * 40, "e" * 40)
+    check("pk8 the refusal names the set the brief showed when the return "
+          "carries none or another, and is None for the same pairs in another "
+          "order or for a brief that showed nothing filed without `--shown`: %r"
+          % ((same, empty_ok, absent, fewer, extra),),
+          same is None and empty_ok is None
+          and absent and want in absent and "no `--shown`" in absent
+          and fewer and want in fewer
+          and extra and "showed no task" in extra)
 
 
 def _absent(*_args, **_kw):

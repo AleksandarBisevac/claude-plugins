@@ -391,7 +391,7 @@ def runs_gate_reading(project, hc=None):
 
 # --- the computed brief ------------------------------------------------------
 BRIEF_ROLES = ("executor", "reviewer", "phase")
-BRIEFS_DIRNAME = "briefs"
+BRIEFS_DIRNAME = _fr.BRIEFS_DIRNAME
 
 # The one question a phase review asks of the request, fixed so every phase
 # brief asks it in the same words.
@@ -1253,7 +1253,13 @@ def _review_owed(ctx, phase):
 def shown_argument(tasks):
     """The `--shown` value naming `tasks` at the commit each records, in their
     order: what a phase brief showed, for the filing verb to record."""
-    return ",".join("%s@%s" % (t.get("id"), t.get("commit")) for t in tasks)
+    return _fr.shown_argument_of(shown_pairs(tasks))
+
+
+def shown_pairs(tasks):
+    """`(id, commit)` for each of `tasks`, in their order - the set a phase
+    brief showed, as the record beside it and its `--shown` both name it."""
+    return [(str(t.get("id")), t.get("commit")) for t in tasks]
 
 
 def _owed_line(task, phase, live, answered):
@@ -1307,11 +1313,13 @@ def _recorded_run_line(evidence, rows, rows_why):
 
 
 def compose_phase_brief(manifest, phase, ctx):
-    """The sign-off reviewer's whole brief, as lines: the request as saved and
-    the choices it left open, the fixed question, every task with a diff on its
-    own record, and under `review.perTask: phase` the tasks owed their three
-    answers, the head this brief was computed at and the filing command keyed
-    on it."""
+    """`(lines, head, shown)` - the sign-off reviewer's whole brief, as lines:
+    the request as saved and the choices it left open, the fixed question,
+    every task with a diff on its own record, and under `review.perTask:
+    phase` the tasks owed their three answers, the head this brief was computed
+    at and the filing command keyed on it. `head` is None when git did not
+    answer; `shown` is the `(id, commit)` set its sections show, None when the
+    brief stops before computing it."""
     pid = str(phase.get("id"))
     head, head_why = _head(ctx)
     live, answered, seen, owed_why = _review_owed(ctx, phase)
@@ -1435,7 +1443,7 @@ def compose_phase_brief(manifest, phase, ctx):
         lines += _section("Review answers owed per task", [
             "Which tasks are owed their answers could not be read: %s. Sign-off "
             "and its filing refuse until it can." % (owed_why,)])
-        return lines
+        return lines, head, None
     # The set this brief shows rides on its filing command, so the verb can
     # record what the round reviewed - fix tasks included, which no `tasks`
     # entry ever names - and the next round's brief leaves it out.
@@ -1455,7 +1463,7 @@ def compose_phase_brief(manifest, phase, ctx):
             file_cmd if head else
             "The head could not be read (%s), so there is no head to file "
             "under: run this brief again where git answers." % (head_why,)])
-        return lines
+        return lines, head, shown_pairs(shown)
     lines += _section("Review answers owed per task", [
         "review.perTask reads `phase`, so no reviewer answered these tasks one "
         "by one: you do, by the rules `mode: task` applies to one task. Each "
@@ -1470,7 +1478,7 @@ def compose_phase_brief(manifest, phase, ctx):
         file_cmd if head else
         "The head could not be read (%s), so there is no head to file under: "
         "run this brief again where git answers." % (head_why,)])
-    return lines
+    return lines, head, shown_pairs(shown)
 
 
 def brief_target(manifest, node_id, role):
@@ -1504,6 +1512,7 @@ def write_brief(manifest, manifest_path, project_arg, node_id, role):
                            % ("phase" if role == "phase" else "task", node_id))
     phase, task = target
     ctx = _brief_context(manifest_path, project_arg)
+    record = None
     if role == "phase":
         held = phase_brief_refusal(phase)
         if held:
@@ -1512,7 +1521,10 @@ def write_brief(manifest, manifest_path, project_arg, node_id, role):
                 "review binds each task's answers to its commit, and those would "
                 "have no diff. Close them first. No brief written."
                 % (node_id, ", ".join(held)))
-        lines = compose_phase_brief(manifest, phase, ctx)
+        lines, head, shown = compose_phase_brief(manifest, phase, ctx)
+        record = (None if head is None or shown is None else
+                  (_fr.shown_brief_path(ctx["state"], node_id, head),
+                   _fr.shown_brief_text(head, shown)))
     elif not task.get("startedAt"):
         return E_REFUSED, ("REFUSED: %s records no start (`startedAt`), and a "
                            "brief belongs to one start - /audit:task start %s "
@@ -1533,12 +1545,17 @@ def write_brief(manifest, manifest_path, project_arg, node_id, role):
         _found, files = brief_lookup(manifest, node_id)
         lines = compose_executor_brief(manifest, phase, task, ctx, files, gate)
     path = brief_file(ctx, node_id, role, (task or {}).get("startedAt"))
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8", newline="") as fh:
-            fh.write("\n".join(lines) + "\n")
-    except OSError as exc:
-        return E_USAGE, "the brief could not be written to %s (%s)" % (path, exc)
+    writes = [(path, "\n".join(lines) + "\n")]
+    if record is not None:
+        writes.append(record)
+    for where, text in writes:
+        try:
+            os.makedirs(os.path.dirname(where), exist_ok=True)
+            with open(where, "w", encoding="utf-8", newline="") as fh:
+                fh.write(text)
+        except OSError as exc:
+            return E_USAGE, ("the brief could not be written to %s (%s)"
+                             % (where, exc))
     return E_OK, path
 
 
