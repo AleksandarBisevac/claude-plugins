@@ -1569,6 +1569,44 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P128.36-0h5",
+      "title": "Work the low findings carried from P125's phase review",
+      "status": "pending",
+      "description": "The target of P125's carried low findings (both review rounds). Each carried finding names its file, issue and resolution in P125's review; work them here in groups by file, splitting into tasks as their scope becomes clear. None held 3.4.0: lows are carried, not looped into another fix round.",
+      "files": [],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }
