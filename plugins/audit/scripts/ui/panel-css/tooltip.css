@@ -4,7 +4,7 @@
  box-shadow:var(--shadow-md);padding:var(--sp-1) var(--sp-2);font-size:.74rem;
  max-width:18rem;color:var(--text)}
 .utip.hidden{display:none}
-/* uc (F-P-2): the one row in a usage table that has no plan behind it. Text
+/* uc: the one row in a usage table that has no plan behind it. Text
    colour, not a badge — it is a normal row of the table, not a warning about
    the row; the eye should find it without the table shouting. The warn role is
    the panel's own (see the top of this sheet), and text-on-surface at both

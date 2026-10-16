@@ -27,7 +27,7 @@ tr.seghead td{background:var(--surface-2);border-top:1px solid var(--border);
    rewrites, so nothing may ride inside it. */
 .usx{float:none;display:flex;justify-content:flex-end;gap:.3rem;
   margin:.2rem 0 0}
-/* vw (F-P-4): the archive's disclosure button is gone — which segments are on
+/* vw: the archive's disclosure button is gone — which segments are on
    screen is the toolbar's View select now, and a segment that ALSO hid itself
    was a second gate saying something different. The row below is what replaced
    the one thing the toggle did well: it said the rows were there. */

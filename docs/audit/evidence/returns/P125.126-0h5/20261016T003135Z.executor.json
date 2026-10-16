@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --encoding cp1252": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task, expectRedFirst false. Mutation proven in a scratch copy of the tests dir (not the tree): dropping stdin=DEVNULL from _harness.git left 1/3 cases passing (2 FAIL, stdin case hangs to timeout); replacing the trace tail in the timeout message with a constant left the region_enter case FAIL. Restore asserted by diff against the tree copy (RESTORED). Note stdin=DEVNULL was already present at HEAD, so the stdin case locks it rather than fixing it.",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "_harness.git now sets GIT_TRACE2_PERF to a per-call mkstemp scratch file (in the temp dir, which is the sweep's scratch TMPDIR), appends the last 2000 bytes (or a sentence saying empty/unreadable) as 'trace2 tail:' to the timeout RuntimeError, and always removes the file in finally. Added _trace_tail, TRACE_TAIL_BYTES, import contextlib. Cost measured: git status 100-call microbench ~7.0ms old vs ~8.3ms new (+~1.3ms/call); al-block runs ~42s and fixture git calls are a few dozen at most, so overhead is milliseconds, immaterial. Chose always-trace, not retry-on-timeout: a retry would re-run a possibly non-idempotent call and cost 60s more per hang, and a first hang would carry no trace. Added block gt-block / _git_stdin_cases (3 cases) to STAGES: hash-object --stdin in a child with an open unwritten stdin pipe returns the empty blob; status stalled in core.fsmonitor with timeout=3 reports a trace2 tail with a region_enter fsm_hook line; no git-trace2-* files left in temp dir. Full sweep exit 0 (335/335 files ok, 16466 cases); cp1252 pass exit 0 (335/335).",
+    "descriptive": "A hung fixture git call now names the git region it stopped in, and the stdin-closed behaviour is locked by a case."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_drive_phase.py: a fixture git call runs with stdin closed, and one that times out reports the tail of its GIT_TRACE2 trace, so a hang names the step it stopped in (hash-object --stdin returns the empty blob at once ...)",
+    "... (a call stopped at its timeout reports a trace2 tail holding a region_enter line ...)",
+    "... (the trace scratch is removed after a success and after a timeout ...)"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:8e3626344925399459ecb7836c34fd1993cec3a6aa0afabe3c32980bcf156b82\",\"dirtyDigest\":\"sha256:0e040ca1337aea943e4db89b1df824c072b408f36b6e238bccdeda75f0d71b00\",\"dirtyPaths\":{\"plugins/audit/tests/_harness.py\":\"fd4c76066fe4db72\",\"plugins/audit/tests/test_drive_phase.py\":\"e3c46f67ff1ffa4f\"},\"head\":\"c21ddff8\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/_harness.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:cdef48fa4e95fa093b5df864d37dc77dab5bb981cd7038228d247a78585a9826\",\"v\":2}"
+}

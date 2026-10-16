@@ -3,7 +3,7 @@
    the ⓘ are three items on one line only while one line is wide enough. An
    inline-flex that cannot wrap has no narrow layout at all — it is exactly as wide
    as its content wherever it is put, which is how a 390px screen ended up with a
-   447px row (F8). `min-width:0` for the same reason it is on the row above. */
+   447px row. `min-width:0` for the same reason it is on the row above. */
 .lbl{display:inline-flex;align-items:center;gap:var(--sp-0);flex-wrap:wrap;min-width:0}
 /* The <label> inside .lbl inherits the row, and it has to: it holds the words and
    the JSON key, and as ONE inline box they run together. MEASURED, not styled by
@@ -40,7 +40,7 @@
 /* The clamp itself — TIPW/TIPGUT, viewport edges, the flip above a bottom-edge
    icon — lives in showTip() with the rest of the geometry. There is deliberately
    no `max-width` here: the width IS the clamp, and a second cap expressed in
-   `vw` would disagree with it by the width of a scrollbar (F9's lesson, kept). */
+   `vw` would disagree with it by the width of a scrollbar. */
 /* A capability that resolves on this machine and would not survive a clone.
    DIMMED, never hidden by CSS: the tables say what this machine has, and the
    narrowing is a filter the reader can see and switch. Opacity rather than a

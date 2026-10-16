@@ -3489,20 +3489,59 @@ def _py_comment_citations(text):
 # --- comment syntaxes of the non-Python source kinds -------------------------
 # ONE table, keyed by extension: adding a source kind to the citation scan is
 # a row here, not a function. `line` is the marker opening a to-end-of-line
-# comment, `block` the (open, close) pair or None, `quotes` the characters
-# opening a string literal whose body is NOT a comment, and `regex` whether a
-# `/` can open a regex literal (whose body may hold a quote or `//`).
-# `hash_word` is the shell rule: `#` opens a comment only at the start of a
-# word, so `$#` and `${#x}` are not comments.
+# comment or None, `block` the (open, close) pair or None, `quotes` the
+# characters opening a string literal whose body is NOT a comment, and `regex`
+# whether a `/` can open a regex literal (whose body may hold a quote or `//`).
+# `line_after` is None or the characters that must precede `line` for it to
+# open a comment: a shell or YAML `#` opens one only at the start of a word,
+# so `$#`, `${#x}` and a URL's `/#` are not comments. `quote_after` is the same
+# rule for a quote, for the kinds whose plain values hold apostrophes - a quote
+# opening mid-word there would swallow the comment after it. `raw_quote` names
+# the quote whose strings take no backslash escape.
+# `why` is the row's reason, read by a case: what the row reads and, where the
+# kind holds more than this scanner sees, what it leaves unread.
 # `.py` is deliberately absent: it is read by `tokenize` plus the AST, which
-# know what a comment is without this scanner's approximation.
+# know what a comment is without this scanner's approximation. `.md` is read
+# whole below. A kind with no comment syntax (`.json`, `.jsonl`) or no text
+# (`.png`, `.gif`) has nothing for a row to read.
+_HASH_COMMENT = {"line": "#", "block": None, "quotes": "'\"", "regex": False,
+                 "line_after": " \t\n", "quote_after": " \t\n[{,=",
+                 "raw_quote": "'"}
 COMMENT_SYNTAXES = {
     ".mjs": {"line": "//", "block": ("/*", "*/"), "quotes": "'\"`",
-             "regex": True, "hash_word": False},
+             "regex": True, "line_after": None, "quote_after": None,
+             "raw_quote": "",
+             "why": "browser and Node modules: line and block comments"},
     ".js": {"line": "//", "block": ("/*", "*/"), "quotes": "'\"`",
-            "regex": True, "hash_word": False},
-    ".sh": {"line": "#", "block": None, "quotes": "'\"",
-            "regex": False, "hash_word": True},
+            "regex": True, "line_after": None, "quote_after": None,
+            "raw_quote": "",
+            "why": "the UI parts and the JS unit tests: line and block "
+                   "comments"},
+    ".sh": {"line": "#", "block": None, "quotes": "'\"", "regex": False,
+            "line_after": " \t\n;|&(", "quote_after": None, "raw_quote": "'",
+            "why": "POSIX shell: a `#` at the start of a word"},
+    ".css": {"line": None, "block": ("/*", "*/"), "quotes": "'\"",
+             "regex": False, "line_after": None, "quote_after": None,
+             "raw_quote": "",
+             "why": "the stylesheet parts: CSS has block comments only, and "
+                    "a `content` string is not one"},
+    ".yml": dict(_HASH_COMMENT, why="workflows and pipeline examples: a `#` "
+                 "after whitespace, including the shell inside a `run:` "
+                 "block, which a reader sees as a comment too"),
+    ".yaml": dict(_HASH_COMMENT, why="the same YAML under its other "
+                  "extension"),
+    ".toml": dict(_HASH_COMMENT, why="tool configuration: TOML's `#` "
+                  "comment, outside a string"),
+    ".html": {"line": None, "block": ("<!--", "-->"), "quotes": "",
+              "regex": False, "line_after": None, "quote_after": None,
+              "raw_quote": "",
+              "why": "markup comments only. Page text is read as data, so "
+                     "no quote opens a string - its apostrophes are prose. "
+                     "An inline <style> or <script> keeps its own comments "
+                     "unread here: in a rendered page they are copies of "
+                     "the parts the .css and .js rows already read, and in a "
+                     "hand-written page they are a gap this row does not "
+                     "close"},
 }
 _REGEX_PRECEDERS = "(,=:[!&|?{};+-*%<>~^"
 
@@ -3541,6 +3580,12 @@ def _skip_regex(text, pos):
     return None
 
 
+def _opens_here(text, pos, after):
+    """Whether a marker at `text[pos]` opens: anywhere when `after` is None,
+    else only at the start of the text or after one of `after`'s characters."""
+    return after is None or pos == 0 or text[pos - 1] in after
+
+
 def _source_comment_lines(text, syntax):
     """[(lineno, body)] -- every line of every comment in `text` under
     `syntax`, the marker and a block line's leading `*` stripped. A string
@@ -3567,19 +3612,16 @@ def _source_comment_lines(text, syntax):
             lineno += body.count("\n")
             i = min(n, end + len(block[1]))
             continue
-        if text.startswith(line_marker, i):
-            opens = True
-            if syntax["hash_word"] and i > 0:
-                opens = text[i - 1] in " \t\n;|&("
-            if opens:
+        if line_marker is not None and text.startswith(line_marker, i):
+            if _opens_here(text, i, syntax["line_after"]):
                 end = text.find("\n", i)
                 end = n if end == -1 else end
                 out.append((lineno, text[i + len(line_marker):end].strip()))
                 i = end
                 continue
-        if ch in syntax["quotes"]:
-            end = _skip_string(text, i, ch, not (
-                syntax["hash_word"] and ch == "'"))
+        if ch in syntax["quotes"] and _opens_here(text, i,
+                                                  syntax["quote_after"]):
+            end = _skip_string(text, i, ch, ch not in syntax["raw_quote"])
             lineno += text.count("\n", i, end)
             i = end
             last_sig = ch

@@ -1,4 +1,4 @@
-/* ov (F-P-5): Overview follows the report's table — a compact row that opens
+/* ov: Overview follows the report's table — a compact row that opens
    in place. The wrapper exists so the detail is a sibling of its row rather
    than inside a <button>, which may not contain interactive content. */
 .ovwrap{display:block}

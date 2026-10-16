@@ -2,154 +2,154 @@
   "note": "Written by tools/capture-screenshots.mjs. Each entry is the plugin version that was in the picture when that file was written, the hash of the bytes it was written as, the surface it is a picture of, and the digest of that surface's UI sources at the moment of the shutter (_output.ui_surface_digests). _refs.screenshot_capture_drift() compares all of them; an entry missing the digest is a finding, not silence.",
   "images": {
     "areas.png": {
-      "sha256": "938d7e5721d7efb8f52e3a083bb022c6a8cc71f460fa5ede63a080a53111f755",
+      "sha256": "b69c44a2c02c4355341f28961db5c01b04978e5a8b851d2b5f8c11a1c2d58848",
       "version": "3.3.0",
       "surface": "report",
-      "uiDigest": "87a2c04faf4e3877bf1aea38caffe58aa4d936ee4c44eff66fcc9b172c2ed140"
+      "uiDigest": "d4128a81fcda31a12d3012505e094a20b443c2c840f6d059aa0205b0c2793b84"
     },
     "authors.png": {
-      "sha256": "bc4c0646668c22e950750bf5eb6cea7c3581d1560368dcfa2e8bd014bb7994a5",
+      "sha256": "e03e2ffaa4b481b4f4b6760b72d59efd9df6e97d353a4c7e415e59aaf2e67524",
       "version": "3.3.0",
       "surface": "report",
-      "uiDigest": "87a2c04faf4e3877bf1aea38caffe58aa4d936ee4c44eff66fcc9b172c2ed140"
+      "uiDigest": "d4128a81fcda31a12d3012505e094a20b443c2c840f6d059aa0205b0c2793b84"
     },
     "dark.png": {
-      "sha256": "8b51f878efd60eaff0b944f294d64726175e7a869032e057fcfca5c8596699b9",
+      "sha256": "04f1b77adaccf5b70e454dc8e4f0ed47f96fe93c233f8c0f2733270233430428",
       "version": "3.3.0",
       "surface": "report",
-      "uiDigest": "87a2c04faf4e3877bf1aea38caffe58aa4d936ee4c44eff66fcc9b172c2ed140"
+      "uiDigest": "d4128a81fcda31a12d3012505e094a20b443c2c840f6d059aa0205b0c2793b84"
     },
     "expanded.png": {
-      "sha256": "94c5e1f9e0879e5ee131460c2f005bbaf1e9bec6a5a5350c8b8307cd76289b3c",
+      "sha256": "0bc7cefaa0c70e00231f4b9c1480d99a8009abdcbbc18eb7cfa7b37ecf00dc29",
       "version": "3.3.0",
       "surface": "report",
-      "uiDigest": "87a2c04faf4e3877bf1aea38caffe58aa4d936ee4c44eff66fcc9b172c2ed140"
+      "uiDigest": "d4128a81fcda31a12d3012505e094a20b443c2c840f6d059aa0205b0c2793b84"
     },
     "filtered.png": {
-      "sha256": "b8967727327103ae1d5da2eb051de1ab0e69ad5823c1bd7bd68e9936e68407fe",
+      "sha256": "4ab77ce1528b3d09c3296b9c83ec1abf54dc207d4c7988cdef955d22edf36bb1",
       "version": "3.3.0",
       "surface": "report",
-      "uiDigest": "87a2c04faf4e3877bf1aea38caffe58aa4d936ee4c44eff66fcc9b172c2ed140"
+      "uiDigest": "d4128a81fcda31a12d3012505e094a20b443c2c840f6d059aa0205b0c2793b84"
     },
     "filters.png": {
-      "sha256": "8c8aca51c0cbd84ff39df944b1f9198b99204f8f830fa927b490a01f41758246",
+      "sha256": "50210a9e0aff284c7818fba92e46c5e476fb941e0e339bb65956356dcee64b72",
       "version": "3.3.0",
       "surface": "report",
-      "uiDigest": "87a2c04faf4e3877bf1aea38caffe58aa4d936ee4c44eff66fcc9b172c2ed140"
+      "uiDigest": "d4128a81fcda31a12d3012505e094a20b443c2c840f6d059aa0205b0c2793b84"
     },
     "mobile.png": {
       "sha256": "2c46149ddd5f930d3917a479e2f0080774c765fa817d44ed3d2ad3f12c01a172",
       "version": "3.3.0",
       "surface": "report",
-      "uiDigest": "87a2c04faf4e3877bf1aea38caffe58aa4d936ee4c44eff66fcc9b172c2ed140"
+      "uiDigest": "d4128a81fcda31a12d3012505e094a20b443c2c840f6d059aa0205b0c2793b84"
     },
     "overview.png": {
-      "sha256": "554f4266ae5a67611855c3a7e68a5e8fcdaa6432f7cf6efe37451fc39a457c12",
+      "sha256": "cdbae0af615692fd6addb21946226f3961d82f007927164897d29462d4dee25f",
       "version": "3.3.0",
       "surface": "report",
-      "uiDigest": "87a2c04faf4e3877bf1aea38caffe58aa4d936ee4c44eff66fcc9b172c2ed140"
+      "uiDigest": "d4128a81fcda31a12d3012505e094a20b443c2c840f6d059aa0205b0c2793b84"
     },
     "panel-appearance.png": {
-      "sha256": "4559f8c2a17261dffcdc7f2d284079c5944b7a14b6092ce04f56068a95b5f09d",
+      "sha256": "760a1bb94d3a884500fd9fef455ff497d3897940843b0414ce90c96e97861038",
       "version": "3.3.0",
       "surface": "panel",
-      "uiDigest": "527e73f987f6f8e373ff990e9bb35d23fb0fd28a60db2b8bf15a5d4ca557bf3b"
+      "uiDigest": "38a817eb06f160487b45bae01e7f982f36e1a3c89a54bc943ce234472efc1016"
     },
     "panel-blocks.png": {
-      "sha256": "e478b0d16b79f68b432f81c0d02d43cf12796309eb830e0329fa4b99d7f51e2c",
+      "sha256": "260ad4b8bc76c951761c90751b8767e8ca756376059d66b21731e2f25f9396d6",
       "version": "3.3.0",
       "surface": "panel",
-      "uiDigest": "527e73f987f6f8e373ff990e9bb35d23fb0fd28a60db2b8bf15a5d4ca557bf3b"
+      "uiDigest": "38a817eb06f160487b45bae01e7f982f36e1a3c89a54bc943ce234472efc1016"
     },
     "panel-composition-expanded.png": {
-      "sha256": "6b0d49778d5534a6f20a7c78820da397435ca2beeea42c75a889d053bca549a0",
+      "sha256": "1dc5b962580f485c983cb81dfc21e92e15403e3573638ae60030ada1accf80b8",
       "version": "3.3.0",
       "surface": "panel",
-      "uiDigest": "527e73f987f6f8e373ff990e9bb35d23fb0fd28a60db2b8bf15a5d4ca557bf3b"
+      "uiDigest": "38a817eb06f160487b45bae01e7f982f36e1a3c89a54bc943ce234472efc1016"
     },
     "panel-composition.png": {
-      "sha256": "f36dfe33bc6ea8afd0b22fafba462b53ec609bdfa939c654311ecfc6793a6cc9",
+      "sha256": "772101373d43aa14b0306495e244a3ec31dd1c20038e05d2db1ecceab961c978",
       "version": "3.3.0",
       "surface": "panel",
-      "uiDigest": "527e73f987f6f8e373ff990e9bb35d23fb0fd28a60db2b8bf15a5d4ca557bf3b"
+      "uiDigest": "38a817eb06f160487b45bae01e7f982f36e1a3c89a54bc943ce234472efc1016"
     },
     "panel-confirm.png": {
-      "sha256": "65c8d852b9fa11ab63a3b80ebff46c458d12eab8d97f771931153f0144468184",
+      "sha256": "61c7ba154f7d77b614150f9c1f881f0aab88711cea3da0170aa438d5b0a2d693",
       "version": "3.3.0",
       "surface": "panel",
-      "uiDigest": "527e73f987f6f8e373ff990e9bb35d23fb0fd28a60db2b8bf15a5d4ca557bf3b"
+      "uiDigest": "38a817eb06f160487b45bae01e7f982f36e1a3c89a54bc943ce234472efc1016"
     },
     "panel-dark.png": {
-      "sha256": "f2b0b82e0307e3ef358ba5a52102b78c60842c94afee0c2216058cbbc7057c88",
+      "sha256": "8500f4e512d38204aeacff5b491f132a0dbc9d3086c03f43de344ce38a647df6",
       "version": "3.3.0",
       "surface": "panel",
-      "uiDigest": "527e73f987f6f8e373ff990e9bb35d23fb0fd28a60db2b8bf15a5d4ca557bf3b"
+      "uiDigest": "38a817eb06f160487b45bae01e7f982f36e1a3c89a54bc943ce234472efc1016"
     },
     "panel-gate.png": {
-      "sha256": "8dc62f1bd1a4e4b585ac52077bbbd9a6c83f65696d785149b13ae02aa3b14968",
+      "sha256": "a175ce0859d4a3d122d6a484588a128513dd043994aed12f7e6bde64671a49ba",
       "version": "3.3.0",
       "surface": "panel",
-      "uiDigest": "527e73f987f6f8e373ff990e9bb35d23fb0fd28a60db2b8bf15a5d4ca557bf3b"
+      "uiDigest": "38a817eb06f160487b45bae01e7f982f36e1a3c89a54bc943ce234472efc1016"
     },
     "panel-guards.png": {
-      "sha256": "eff19f7bfd8cb83f7f43a47a56709652be1105611f714b9d369edfff16a6ef50",
+      "sha256": "fcfdf6e12672de74fa87aa0b5d0e725895bb240d29cb3de1b93603ecd7aeb9a1",
       "version": "3.3.0",
       "surface": "panel",
-      "uiDigest": "527e73f987f6f8e373ff990e9bb35d23fb0fd28a60db2b8bf15a5d4ca557bf3b"
+      "uiDigest": "38a817eb06f160487b45bae01e7f982f36e1a3c89a54bc943ce234472efc1016"
     },
     "panel-help.png": {
-      "sha256": "596a315fbe475e027fac6dcd403c8cfa41e20ce9e061ae241175026515565b7d",
+      "sha256": "87839e587bc9b93ef5d9da29bf0de4694331a6b32266b0ab08cb498f305e395c",
       "version": "3.3.0",
       "surface": "panel",
-      "uiDigest": "527e73f987f6f8e373ff990e9bb35d23fb0fd28a60db2b8bf15a5d4ca557bf3b"
+      "uiDigest": "38a817eb06f160487b45bae01e7f982f36e1a3c89a54bc943ce234472efc1016"
     },
     "panel-mobile.png": {
-      "sha256": "46547b12f9058ea9e0dc0ae776bc6e695c6780ebf34872e75524c23a50750634",
+      "sha256": "86dd0ef29dd5b382d3b9ab2c4b8dd970415f3d4a3ca909181e72168bfb301ba8",
       "version": "3.3.0",
       "surface": "panel",
-      "uiDigest": "527e73f987f6f8e373ff990e9bb35d23fb0fd28a60db2b8bf15a5d4ca557bf3b"
+      "uiDigest": "38a817eb06f160487b45bae01e7f982f36e1a3c89a54bc943ce234472efc1016"
     },
     "panel-monthly.png": {
-      "sha256": "f15d4d3bca0511f50912e0481ddceffab24757a35c9a54a7ff9600348ee7e7e3",
+      "sha256": "dac26c3ec73b07b8cdd16c1e88c731b5a9c3b150d4931e725486ae7676227e1b",
       "version": "3.3.0",
       "surface": "panel",
-      "uiDigest": "527e73f987f6f8e373ff990e9bb35d23fb0fd28a60db2b8bf15a5d4ca557bf3b"
+      "uiDigest": "38a817eb06f160487b45bae01e7f982f36e1a3c89a54bc943ce234472efc1016"
     },
     "panel-overview.png": {
-      "sha256": "d2d08dd346b8b039b79c99f7474ee39150078640e74be7535e10137ee6768bf5",
+      "sha256": "34fa6241fd6647631ec4c1f052d5a36f9244ab4003a5688476988e0ba95a6040",
       "version": "3.3.0",
       "surface": "panel",
-      "uiDigest": "527e73f987f6f8e373ff990e9bb35d23fb0fd28a60db2b8bf15a5d4ca557bf3b"
+      "uiDigest": "38a817eb06f160487b45bae01e7f982f36e1a3c89a54bc943ce234472efc1016"
     },
     "panel-person.png": {
-      "sha256": "507d26dd8bb4ddd673478e94c3c07d49e17e825b196a75b4c916ad46d6c39ea9",
+      "sha256": "388f8eeab64fd484a99ab31fe80d1342dbf487bf153994f589cbff5b4af185ec",
       "version": "3.3.0",
       "surface": "panel",
-      "uiDigest": "527e73f987f6f8e373ff990e9bb35d23fb0fd28a60db2b8bf15a5d4ca557bf3b"
+      "uiDigest": "38a817eb06f160487b45bae01e7f982f36e1a3c89a54bc943ce234472efc1016"
     },
     "panel-policy-expanded.png": {
-      "sha256": "743d8518388fa4693b33afa34412b7a6d89d50bcd678f07d103977c1b3fceb8d",
+      "sha256": "177c3b6298a4b57e010a7b22b1c5ffa9c10c8995f3156bcd640bb7300d513899",
       "version": "3.3.0",
       "surface": "panel",
-      "uiDigest": "527e73f987f6f8e373ff990e9bb35d23fb0fd28a60db2b8bf15a5d4ca557bf3b"
+      "uiDigest": "38a817eb06f160487b45bae01e7f982f36e1a3c89a54bc943ce234472efc1016"
     },
     "panel-policy.png": {
-      "sha256": "06e44cdd3fb1c454feeba8c50bf68ad6346fb5971829a45c1a59a2984f7646af",
+      "sha256": "a8fb608c3fb6ab4bcdc32b209384987f631f5bb7dbfe5fea84651462401b92bf",
       "version": "3.3.0",
       "surface": "panel",
-      "uiDigest": "527e73f987f6f8e373ff990e9bb35d23fb0fd28a60db2b8bf15a5d4ca557bf3b"
+      "uiDigest": "38a817eb06f160487b45bae01e7f982f36e1a3c89a54bc943ce234472efc1016"
     },
     "panel-proposals.png": {
-      "sha256": "1ac779249cce244dff1ae829add149de3d947232bd11407892d2e4244e341194",
+      "sha256": "ce1e85fcfdf5f48ecef093f3ab71c3d2ef60afdc0732ec7b5621c67e680f0d52",
       "version": "3.3.0",
       "surface": "panel",
-      "uiDigest": "527e73f987f6f8e373ff990e9bb35d23fb0fd28a60db2b8bf15a5d4ca557bf3b"
+      "uiDigest": "38a817eb06f160487b45bae01e7f982f36e1a3c89a54bc943ce234472efc1016"
     },
     "panel-usage.png": {
-      "sha256": "f96d6d202b2cb3ae06dedf9658721f7eb703ec30a0be4fead392bb5a21f2075a",
+      "sha256": "4a5ebeb7f59acf25e15fc3dce2e31b1286d4fcdfb3cac83b9bf66cd5596d64f1",
       "version": "3.3.0",
       "surface": "panel",
-      "uiDigest": "527e73f987f6f8e373ff990e9bb35d23fb0fd28a60db2b8bf15a5d4ca557bf3b"
+      "uiDigest": "38a817eb06f160487b45bae01e7f982f36e1a3c89a54bc943ce234472efc1016"
     }
   },
   "gifs": {

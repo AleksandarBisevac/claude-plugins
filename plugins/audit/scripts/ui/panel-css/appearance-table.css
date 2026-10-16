@@ -1,4 +1,4 @@
-/* th (F-P-6): Appearance. A token table — name, light, dark — where the two
+/* th: Appearance. A token table — name, light, dark — where the two
    values sit SIDE BY SIDE: a reader who edits one theme and flips to check the
    other is how the pair drifts, and the parity lint downstream refuses a colour
    that exists in one theme only. The swatch is a native <input type=color>

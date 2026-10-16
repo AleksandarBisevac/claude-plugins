@@ -465,7 +465,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          # NOTHING IN THE GATE SET EVER CREATED A REPOSITORY (F54). The three steps
+          # NOTHING IN THE GATE SET EVER CREATED A REPOSITORY. The three steps
           # above drive hooks through the launcher against a synthetic project
           # directory - a manifest and a config file, no source and no history - and
           # every other job here works on manifest data or rendered output. So an
@@ -477,7 +477,7 @@ jobs:
           # with no `.git`, a check that could not run printed what a check that
           # found nothing prints.
           #
-          # It also carries F53. The three steps above wire four hooks; the ones
+          # It also drives the hooks no step wired. The three steps above wire four hooks; the ones
           # they left out were `journal-writes`, `meter-usage`,
           # `guard-history-rewrite`, `guard-bash-writes` and `detect-plan-skip`, and
           # the first two are the ones the product's own adjectives rest on -
@@ -558,7 +558,7 @@ jobs:
           set -e
           # The step BELOW renders the example to a temp directory and greps
           # that, which proves the renderer works and can never see the
-          # COMMITTED file drift. It did: examples/acme-store kept the pre-F28
+          # COMMITTED file drift. It did: examples/acme-store kept the old
           # aria-labels -- the ones a speech user cannot reach -- long after the
           # source was fixed. This compares the file a user actually opens.
           #
@@ -732,7 +732,7 @@ jobs:
           # being true when the report started honouring SOURCE_DATE_EPOCH - the byte
           # comparison lives in tools/check-rendered-artifacts.py now, and the
           # version this page stamps is compared with plugin.json by
-          # _refs.artifact_version_drift(). Content assertions cannot see age (F12):
+          # _refs.artifact_version_drift(). Content assertions cannot see age:
           # this page served a stamp several releases behind the plugin while every
           # probe below stayed green. Refresh with
           #   python plugins/audit/scripts/demo/gen-demo-manifest.py /tmp/dl --phases 40 --tasks 5
@@ -742,9 +742,9 @@ jobs:
           #   cp /tmp/dl/demo-large.html docs/demo-large.html
           python plugins/audit/scripts/demo/gen-demo-manifest.py /tmp/dl --phases 40 --tasks 5
           python plugins/audit/scripts/manifest/validate-manifest.py /tmp/dl/audit-plan.json
-          # F-A-1 (v0.37): these probes used to grep the WHOLE document, embedded
+          # These probes used to grep the WHOLE document, embedded
           # report.js included - the same blindness render-report's selftest pins
-          # carried (F-C-1, v0.36). Judged over the markup with <script> blocks
+          # carried. Judged over the markup with <script> blocks
           # stripped, a JS string containing a markup literal can no longer move
           # a count or trip the invalid-banner probe.
           python - <<PYEOF
@@ -904,7 +904,7 @@ jobs:
           # definition current, so the path that meets a missing element ran
           # nowhere — and it met one by dereferencing it, dying inside
           # page.evaluate with `Cannot read properties of null` and a stack ending
-          # in the checker (F7). A diagnostic that dies computing its own
+          # in the checker. A diagnostic that dies computing its own
           # diagnosis reports the wrong thing twice, and the first reader of an
           # older report believes the report is broken. Faked here by taking the
           # class off the fresh render's filter bar, which is what a report
@@ -980,7 +980,7 @@ jobs:
           # ...and one none of them can stand in for: an ALL-PARKED plan. That is
           # what /audit:init leaves when the user declines every synthesized
           # phase, and it used to render zero phases with no hint that any
-          # proposal existed (F-P-32) — a report showing nothing does not read as
+          # proposal existed — a report showing nothing does not read as
           # "the proposals are elsewhere", it reads as "there is nothing", on the
           # one surface a team is likely to be shown. Without this fixture the
           # check for that sentence is an implication nothing ever makes true.
@@ -1065,7 +1065,8 @@ jobs:
           # not the same on every version - `hashlib` drags a third C accelerator
           # on 3.9 and two on 3.13 - while this plugin publishes support for 3.8
           # and up (`vermin -t=3.8-`, further down this same job). A budget taken
-          # on one interpreter and read as a property of the product is F87.
+          # on one interpreter and read as a property of the product is a claim
+          # about interpreters nobody measured.
           #
           # The LAST version listed is what bare `python` resolves to, so 3.12
           # stays last and every other step in this job is unchanged. The others
@@ -1104,9 +1105,10 @@ jobs:
           # leak here would be the same bug one layer out.
           # Its own cases run inside the selftest job's sweep, which covers tools/.
           python tools/check-committed-pii.py
-          # F297: the same committed files, read for CONTENT rather than bytes. One
+          # The same committed files, read for CONTENT rather than bytes. One
           # row in the example's evidence ledger recorded `passed` beside a tree the
-          # gate had rewritten - honest before F280, unproducible after it - and no
+          # gate had rewritten - honest before the gate refused to grade a tree it
+          # rewrote, unproducible after it - and no
           # gate read that ledger at all, because it is hand-written narrative
           # rather than something a generator derives. This measures every committed
           # row against the schema's published vocabulary and against itself, and

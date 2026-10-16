@@ -5,7 +5,7 @@ dialog.browse{width:min(56rem,calc(100vw - 2rem));max-height:calc(100vh - 4rem);
  background:var(--surface);color:var(--text);box-shadow:var(--shadow-md);
  overflow:hidden}
 dialog.browse::backdrop{background:rgb(0 0 0 / .45)}
-/* px (F-P-3): the capability table with the screen to itself. Wider and taller
+/* px: the capability table with the screen to itself. Wider and taller
    than .browse on purpose — this one is read ACROSS (a verdict column per area),
    which is the reading the 34rem frame makes hardest. The table inside scrolls;
    the dialog is the frame, so .poltblwrap.full drops its own height cap. */

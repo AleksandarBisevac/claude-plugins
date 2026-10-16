@@ -3117,6 +3117,56 @@ def _cases(check):
           % (len(_src_real), len(set(v[0] for v in _src_real))),
           _src_real == [])
 
+    # THE REST OF THE KINDS THE TREE SHIPS: a stylesheet has block comments
+    # only, YAML and TOML a `#` that opens a comment only after whitespace,
+    # HTML a `<!-- -->` block. Each fixture carries the same id OUTSIDE a
+    # comment too - a CSS `content` string, a quoted and a plain YAML value, a
+    # `#` glued to a URL, a TOML string, page text - and that half is the one
+    # that goes red if a row is loosened to read the whole file. The apostrophe
+    # inside a plain YAML value is there because a quote that opened a string
+    # mid-word would swallow the trailing comment after it.
+    _kind_tmp = tempfile.mkdtemp(prefix="audit-deps-rc-kinds-")
+    _new_kinds = (".css", ".yml", ".yaml", ".toml", ".html")
+    try:
+        with open(os.path.join(_kind_tmp, ".gitignore"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("__pycache__/\n")
+        _kind_files = {
+            "e.css": ".a{color:red}\n/* first line\n * cites F921 here\n */\n"
+                     ".b::after{content:\"F922 in a string\"}\n"
+                     ".c::after{content:'/* F923 */'}\n",
+            "f.yml": "# F924 a comment\nname: \"F925 # in a quoted value\"\n"
+                     "key: F926 plain value\n"
+                     "run: echo it's fine  # F927 trailing comment\n"
+                     "url: http://x/#F928\n",
+            "g.yaml": "on: push\n# F929 the other spelling\n",
+            "h.toml": "key = \"F930 # in a string\"\n# F931 a comment\n",
+            "i.html": "<p>F932 page data</p>\n<!-- F933 a comment -->\n",
+        }
+        for _name, _body in _kind_files.items():
+            with open(os.path.join(_kind_tmp, _name), "w",
+                      encoding="utf-8") as fh:
+                fh.write(_body)
+        _kind_hits = sorted(M.register_citation_violations(_kind_tmp))
+    finally:
+        shutil.rmtree(_kind_tmp, ignore_errors=True)
+    _kind_real = [v for v in M.register_citation_violations()
+                  if os.path.splitext(v[0])[1] in _new_kinds]
+    check("the comment-citation lint reads every source kind the tree "
+          "ships through one table - css block comments and yml line comments "
+          "included, html and toml decided in the table with a reason - and "
+          "the tree carries no register citation in any of them (fixture "
+          "hits %r; still standing in the tree: %r; kinds the table lacks: %r)"
+          % (_kind_hits, _kind_real,
+             [k for k in _new_kinds if k not in M.COMMENT_SYNTAXES]),
+          _kind_hits == [("e.css", 3, "F921"), ("f.yml", 1, "F924"),
+                         ("f.yml", 4, "F927"), ("g.yaml", 2, "F929"),
+                         ("h.toml", 2, "F931"), ("i.html", 2, "F933")]
+          and _kind_real == []
+          and all(k in M.COMMENT_SYNTAXES for k in _new_kinds)
+          and all(str(M.COMMENT_SYNTAXES[k].get("why") or "").strip()
+                  for k in M.COMMENT_SYNTAXES))
+
     # THE SEPARATION ITSELF: `CITATION_SCAN_EXEMPT` is this scan's own table, not
     # `_output.PROSE_SCAN_EXEMPT` reused. A path the NUMBER scan exempts for a
     # reason that has nothing to do with citations - the test file that holds

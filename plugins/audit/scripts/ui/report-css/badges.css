@@ -16,7 +16,7 @@
    text having to carry the colour at a contrast that hurts to read. */
 .chip::before{content:"";width:.45em;height:.45em;border-radius:50%;flex:none;
   background:var(--st,var(--st-pending))}
-/* rk (F-P-4): risk is TEXT, in its own ink — not a pill. A row carrying two
+/* rk: risk is TEXT, in its own ink — not a pill. A row carrying two
    pills (status and risk) reads as two states of equal weight, and only one of
    them is a state: status is where the task IS, risk is a property of it. The
    ink is the same token the pill used, so nothing about the colour system
@@ -45,7 +45,7 @@
    without saying when, so nothing can place it against the moment recording
    began. None of them is a failing test and none of them can sign anything off —
    and every one of them is something a person has to go and do.
-   `gate-mutated` JOINS THEM AND IS NEITHER RED NOR GREY (F280). Every command
+   `gate-mutated` JOINS THEM AND IS NEITHER RED NOR GREY. Every command
    came back green, so red would send a reader hunting a failing test that does
    not exist; what is wrong is the MEASUREMENT, the gate having rewritten the
    files it was grading, and that repair is the gate's. The grey below is the

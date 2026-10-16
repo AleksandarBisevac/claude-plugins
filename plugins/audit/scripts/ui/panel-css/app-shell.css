@@ -45,7 +45,7 @@
 .brand.roomy h1{white-space:nowrap}
 .shell{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr);gap:var(--shell-gap);
  max-width:92rem;margin:0 auto;padding:1.25rem 1.25rem 4rem;align-items:start}
-/* The staleness notice (F100), between the bar and the shell it is about.
+/* The staleness notice, between the bar and the shell it is about.
    PLACEMENT ONLY. The block inside it is `.findings warn`, the panel's existing
    notice — a second warning component is how two warnings come to read as two
    different severities — so nothing about colour, radius or padding is decided

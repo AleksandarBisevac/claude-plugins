@@ -39,7 +39,7 @@ textarea{font-family:var(--mono);font-size:.82rem;min-height:4.5rem;resize:verti
 .btn:hover{border-color:var(--field-border-hover);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
 .btn:active{transform:none}.btn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 /* Unavailable, but still reachable — WCAG 2.2 SC 2.4.3. These controls carry
-   aria-disabled rather than `disabled` so they keep their tab stop (F16), and
+   aria-disabled rather than `disabled` so they keep their tab stop, and
    aria-disabled has NO user-agent styling the way :disabled does: without this
    rule the button would look pressable while refusing every press. The hover
    lift is cancelled for the same reason — it is the affordance that says "this

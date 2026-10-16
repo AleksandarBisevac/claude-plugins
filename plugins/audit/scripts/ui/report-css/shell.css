@@ -7,7 +7,7 @@
 [data-status="in_progress"],[data-status="triaged"]{--st:var(--st-prog);--st-ink:var(--st-prog-ink)}
 [data-status="blocked"],[data-status="open"]{--st:var(--st-blocked);--st-ink:var(--st-blocked-ink)}
 [data-status="pending"]{--st:var(--st-pending);--st-ink:var(--st-pending-ink)}
-/* ca (F-P-4): the two "settled, not achieved" states share an ink. A cancelled
+/* ca: the two "settled, not achieved" states share an ink. A cancelled
    phase beside a done one must not read as a second success — see the token. */
 [data-status="cancelled"],[data-status="wontfix"],
 [data-status="not_a_bug"]{--st:var(--st-cancelled);

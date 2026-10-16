@@ -1,5 +1,5 @@
 /* ---- reduced motion ------------------------------------------------------
-   The global opt-out moved into the token layer (F25), so BOTH surfaces get it
+   The global opt-out moved into the token layer, so BOTH surfaces get it
    from one definition instead of the panel getting none. What stays here is the
    part that is the report's own: `.fill` needs its final width pinned, which a
    duration of .001ms does not give it. */

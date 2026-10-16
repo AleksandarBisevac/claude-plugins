@@ -93,7 +93,7 @@ h3.sub,h4.sub{font-size:var(--t-2);font-weight:640;letter-spacing:-.01em;
    tint at that density reads as a selection the reader did not make. */
 .rank{cursor:help}
 .rank:hover .track i{filter:brightness(1.15)}
-/* The row is a tab stop now (F17) - the name is clipped and the whole of it lives
+/* The row is a tab stop now - the name is clipped and the whole of it lives
    in a tooltip no browser opens on focus. A tab stop with no ring would trade one
    AA failure for another (SC 2.4.7), so the ring is the same one every other
    focusable in this report uses. `outline-offset` is negative: the row is full
