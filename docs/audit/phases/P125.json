@@ -1136,8 +1136,10 @@
         "severity": "med",
         "file": "plugins/audit/tests/test_drive_phase.py:3948-4014 (HEAD; added by 5fadfc23c9cf for P125.85-0h5)",
         "issue": "contradicts task clause: P125-R35 asks for 'two trivial phases driven back to back as the command directs ... offline fixture over recorded transcript rows' with a stated margin. That micro-test is still not there in substance. `_session_rows` builds the rows itself and sets `carried = 0` whenever a printed line contains \"clear context\". So `followed[\"b-first\"] == fresh[\"b-first\"]` holds by construction, and CHAIN_MARGIN_TOKENS never comes into play. The only fact the case actually observes is the substring \"clear context\" in `M.finish(ctx, ...)['lines']`, which cn1 already asserts (cn1 also checks that the line names P2; the new case does not). Phase P2 is never driven. No recorded transcript row is read: every row is synthesised by `_request_row`. The `a-first` mark is computed and never used. The orchestrator's mutation turning cx red proves only that the substring is checked, which cn1 already proved. The executor's outcome does say obedience is 'modelled, not observed'. Its title still claims a context measurement within a margin.",
-        "resolution": "Either (a) read a captured transcript fixture of two real phases with the `/clear` between them, measure the second phase's first request with the existing reader (`tools/stream-cost.py` / `_usage_core`) and keep the margin; or (b) record the omission on the task and retitle the case to what it checks (finish prints the chain line). Drop the margin claim, which nothing exercises.",
-        "fixTask": "P125.131-0h5"
+        "resolution": "fixed in P125.131-0h5 (bfca84f5a95e): Either (a) read a captured transcript fixture of two real phases with the `/clear` between them, measure the second phase's first request with the existing reader (`tools/stream-cost.py` / `_usage_core`) and keep the margin; or (b) record the omission on the task and retitle the case to what it checks (finish prints the chain line). Drop the margin claim, which nothing exercises.",
+        "fixTask": "P125.131-0h5",
+        "commit": "bfca84f5a95e",
+        "status": "fixed"
       },
       {
         "id": "P125-R139",
@@ -1323,7 +1325,7 @@
         "resolution": "Run the call through Popen with stdout/stderr sent to scratch files, or kill and then communicate(timeout=<short>) and fall back to closing the pipes, so the timeout bounds the call on both platforms."
       }
     ],
-    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 49 with a recorded fix commit]"
+    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 50 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -10290,7 +10292,7 @@
     {
       "id": "P125.131-0h5",
       "title": "fix P125-R138: contradicts task clause: P125-R35 asks for 'two trivial phases...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause: P125-R35 asks for 'two trivial phases driven back to back as the command directs ... offline fixture over recorded transcript rows' with a stated margin. That micro-test is still not there in substance. `_session_rows` builds the rows itself and sets `carried = 0` whenever a printed line contains \"clear context\". So `followed[\"b-first\"] == fresh[\"b-first\"]` holds by construction, and CHAIN_MARGIN_TOKENS never comes into play. The only fact the case actually observes is the substring \"clear context\" in `M.finish(ctx, ...)['lines']`, which cn1 already asserts (cn1 also checks that the line names P2; the new case does not). Phase P2 is never driven. No recorded transcript row is read: every row is synthesised by `_request_row`. The `a-first` mark is computed and never used. The orchestrator's mutation turning cx red proves only that the substring is checked, which cn1 already proved. The executor's outcome does say obedience is 'modelled, not observed'. Its title still claims a context measurement within a margin.\n\nResolution asked: Either (a) read a captured transcript fixture of two real phases with the `/clear` between them, measure the second phase's first request with the existing reader (`tools/stream-cost.py` / `_usage_core`) and keep the margin; or (b) record the omission on the task and retitle the case to what it checks (finish prints the chain line). Drop the margin claim, which nothing exercises.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py"
@@ -10320,14 +10322,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "bfca84f5a95e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "In plugins/audit/tests/test_drive_phase.py removed the whole cx block (cx0-cx2 and the unlabeled margin case), CHAIN_MARGIN_TOKENS, _tokens_of, _request_row, _clear_row, _context_of, _first_requests, _session_rows, _chain_context_cases and its ('cx-block', ...) registration. After removing the synthesis the case was identical to cn1 (same P1 done / P2 pending fixture, asserts 'clear context' and 'P2' in finish() lines), so it was merged into cn1 rather than duplicated. Added a one-line comment above cn1 that a real-transcript measurement is not done because no recorded two-phase transcript exists (no task ids). The orchestrator records the omission on the task. Full sweep python3 tools/sweep-selftests.py in the task tree: exit 0, 335/335 files ok.",
+        "descriptive": "Dropped a context-measurement case that held by construction; the chain-line behaviour stays asserted by cn1, which names the next phase."
       },
       "startedAt": "2026-10-16T08:38:48Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T09:09:41Z",
+      "verifiedBy": [
+        "cn1 a next phase the plan's own readiness names beyond the one that just closed gets the chain's fresh-context step, naming it (existing case; the cx case was merged into it, not a new case)"
+      ],
       "notes": [
         {
           "at": "2026-10-16T07:18:21Z",
@@ -10346,6 +10350,17 @@
         "runId": "2026-10-16T09:09:39Z.98a500",
         "status": "passed",
         "at": "2026-10-16T09:09:39Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "bfca84f5a95e",
+        "at": "2026-10-16T09:09:41Z",
+        "basis": "a fix task for P125-R138: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task (expectRedFirst false). Mutation proof done in a scratch copy: changing finish()'s chain line 'clear context' to 'keep going' turned cn1 red (FAIL cn1 ..., 312/317 cases passed, exit 1; the other FAILs were scratch-copy artefacts, missing files). Mutated file restored and cmp-checked identical.",
+        "at": "2026-10-16"
       }
     },
     {
@@ -10417,7 +10432,12 @@
       "fixes": [
         "P125-R139"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-16T09:20:03Z.b0ef3c",
+        "status": "passed",
+        "at": "2026-10-16T09:20:03Z"
+      }
     },
     {
       "id": "P125.133-0h5",

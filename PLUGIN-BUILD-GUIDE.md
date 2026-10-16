@@ -638,9 +638,9 @@ else first small (change **magnitude** = max(added lines, chars/200, removed lin
 `<= trivialLineThreshold`) non-exempt file per session → allow.
 **An out-of-policy edit is then GRADED on evidence** via `_config.plan_gate_mode`, because
 enforcing plan-first requires a plan to enforce against: no manifest → `observe` (tally it,
-report once per session from `detect-plan-skip.py`, never block); manifest but no phase
-`in_progress` → `warn` (PostToolUse `additionalContext`); manifest + a running phase →
-**deny** (canonical `permissionDecision` JSON). `enforce: true` denies at every tier.
+report once per session from `detect-plan-skip.py`, never block); a manifest holding no
+phase → `warn` (PostToolUse `additionalContext`); phases with none running → **deny** past
+the free file, and a running phase → **deny** (canonical `permissionDecision` JSON). `enforce: true` denies at every tier.
 The warn tier deliberately does NOT emit a `permissionDecision` — there is no `allow` path in
 this hook, and adding one would auto-approve the tool call and skip the user's own prompt.
 `_config.manifest_state` reads the ASSEMBLED manifest: sharded index stubs carry no `status`,

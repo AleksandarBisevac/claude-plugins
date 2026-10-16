@@ -421,8 +421,9 @@ tree that invocation runs in.
 
 The plan gate is **conditional**, and anyone reasoning about this plugin's guarantees needs
 the condition. It denies only when there is a plan to enforce against: with no manifest it
-records and reports without blocking, with a manifest but no phase `in_progress` it warns,
-and it denies once a phase is running. `enforce: true` in `.claude/audit.config.json` denies
+records and reports without blocking, with a manifest holding no phase it warns, with
+phases and none running it denies past the session's free file, and it denies once a phase
+is running. `enforce: true` in `.claude/audit.config.json` denies
 at every tier, and `planGate` (0.34.0) pins any single tier by hand — `"observe"`, `"warn"`,
 `"ask"` (each out-of-plan edit waits for the human's approval) or `"deny"` — winning over
 `enforce` when both are set; a `planGate` typo fails open to the graded ladder, never to

@@ -83,7 +83,7 @@
     },
     "enforce": {
       "type": "boolean",
-      "description": "LEGACY: force the plan-first gate to DENY regardless of evidence — planGate: \"deny\" says the same thing, and planGate wins when both are set. Default false, which grades the gate: observe with no manifest, warn with a manifest but no phase in_progress, deny once a phase is running. What is graded is the plan-coverage class wherever it is enforced: require-plan's Edit/Write path, the shell-write branch of guard-secrets-read and the PostToolUse report in guard-bash-writes all resolve the same tier. The secret guards are never graded and deny at every tier."
+      "description": "LEGACY: force the plan-first gate to DENY regardless of evidence — planGate: \"deny\" says the same thing, and planGate wins when both are set. Default false, which grades the gate: observe (no manifest) -> warn (no phase) -> deny past the free file (phases, none running) -> deny (a phase running). What is graded is the plan-coverage class wherever it is enforced: require-plan's Edit/Write path, the shell-write branch of guard-secrets-read and the PostToolUse report in guard-bash-writes all resolve the same tier. The secret guards are never graded and deny at every tier."
     },
     "planGate": {
       "type": "string",

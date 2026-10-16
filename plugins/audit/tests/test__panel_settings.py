@@ -248,8 +248,109 @@ def _ladder_cases(check):
           and all(w in M.plan_gate_ladder_phrase() for w in _words.values()))
 
 
+# Every spelling the retired rung (a plan with phases and none running only
+# warns) has been written in. Matched on text with whitespace collapsed and
+# backticks dropped, so a line wrap or a code span does not hide one.
+_RETIRED_RUNG_SPELLINGS = (
+    r"(manifest|plan) but (no phase|nothing|none)",
+    r"no phase (is )?(in_progress|running)",
+    r"(nothing|none) (is )?running",
+)
+
+# Documents allowed to keep the old wording, each with the reason the case
+# checks: a row without a reason, or naming a path the walk no longer reaches,
+# fails the case instead of silently widening the allowance.
+_RETIRED_RUNG_ALLOWED = (
+    ("CHANGELOG.md",
+     "released history: an entry describes the ladder of the release it shipped in"),
+    ("docs/essays/",
+     "a dated essay: it describes the ladder as it stood when it was written"),
+)
+
+
+def _retired_rung_hits(text):
+    """Spans of `text` stating the retired rung: one of the spellings with the
+    `warn` tier beside it, with no `deny` and no sentence end between them. The
+    current ladder holds the same words (`phases, none running`) under `deny`,
+    which is why the tier beside the words is what decides."""
+    import re
+    flat = re.sub(r"\s+", " ", text.replace("`", ""))
+    low = flat.lower()
+    hits = []
+    for pat in _RETIRED_RUNG_SPELLINGS:
+        for m in re.finditer(pat, low):
+            before = low[max(0, m.start() - 60):m.start()]
+            after = low[m.end():m.end() + 60]
+            # A comma ends the clause before the words (a tier named in the
+            # previous clause is not the tier of these); after them the tier
+            # may follow in the same clause, so only a sentence end stops it.
+            for stop in ("deny", ". ", "; ", ", "):
+                if stop in before:
+                    before = before[before.rindex(stop) + len(stop):]
+            for stop in ("deny", ". ", "; "):
+                if stop in after:
+                    after = after[:after.index(stop)]
+            if "warn" in before or "warn" in after:
+                hits.append(flat[max(0, m.start() - 40):m.end() + 40])
+    return hits
+
+
+def _retired_rung_cases(check):
+    import os
+    # Second direction: the detector must see every old spelling beside warn,
+    # and stay quiet over the current ladder, which holds the same words
+    # under deny. Without these an always-quiet or always-firing detector
+    # would pass the scan below.
+    _old = (
+        "with a manifest but no phase `in_progress` it warns, and it denies",
+        "warn with a manifest but no phase in_progress, deny once a phase runs",
+        "manifest but no phase\n`in_progress` -> `warn` (PostToolUse)",
+        "a plan with nothing running only warns",
+        "warns while none running, denies later",
+    )
+    _new = (
+        "observe (no manifest) -> warn (no phase) -> deny past the free file "
+        "(phases, none running) -> deny (a phase running)",
+        "with a manifest holding no phase it warns, with phases and none "
+        "running it denies past the session's free file",
+        "a project with a plan but no phase running now gets refusals past its "
+        "free file; pin planGate to warn to keep the old behaviour",
+    )
+    check("the retired-rung detector sees each old spelling beside the warn tier",
+          all(_retired_rung_hits(t) for t in _old),
+          "quiet on: %r" % [t for t in _old if not _retired_rung_hits(t)])
+    check("...and stays quiet over the current ladder, whose words are the same "
+          "under deny",
+          not any(_retired_rung_hits(t) for t in _new),
+          "fired on: %r" % [t for t in _new if _retired_rung_hits(t)])
+
+    _scan = M._output.prose_scan_set((".md",), table=_RETIRED_RUNG_ALLOWED)
+    _root = M._output.REPO_ROOT
+    check("...the allowances each carry a reason and name a document the walk "
+          "still reaches, and the walk read the tree",
+          _scan["problem"] is None and _scan["paths"]
+          and all(why.strip() for _p, why in _RETIRED_RUNG_ALLOWED)
+          and all(any(c == p or (p.endswith("/") and c.startswith(p))
+                      for c in _scan["exempted"])
+                  for p, _w in _RETIRED_RUNG_ALLOWED),
+          "problem=%r paths=%d exempted=%r"
+          % (_scan["problem"], len(_scan["paths"]), _scan["exempted"]))
+    _texts = [(rel, open(os.path.join(_root, rel), encoding="utf-8").read())
+              for rel in _scan["paths"]]
+    _texts.append(("plugins/audit/schema/audit-config.schema.json",
+                   open(os.path.join(M._output.PLUGIN_ROOT, "schema",
+                                     "audit-config.schema.json"),
+                        encoding="utf-8").read()))
+    _found = [(rel, h) for rel, t in _texts for h in _retired_rung_hits(t)]
+    check("no shipped document or schema text states the retired ladder rung in "
+          "any spelling (no phase in_progress, nothing running, but no phase "
+          "running) as the tier for a plan with phases",
+          not _found, "found: %r" % _found)
+
+
 def _selftest():
-    return _harness.run(lambda check: (_cases(check), _ladder_cases(check)))
+    return _harness.run(lambda check: (_cases(check), _ladder_cases(check),
+                                       _retired_rung_cases(check)))
 
 
 if __name__ == "__main__":
