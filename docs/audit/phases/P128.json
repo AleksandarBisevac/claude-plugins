@@ -1607,6 +1607,49 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P128.37-0h5",
+      "title": "The fix-task deriver maps loader-loaded scripts, ui parts and documents to the suite or check that covers them",
+      "status": "pending",
+      "description": "Register F697. Four of twelve round-3 fix tasks came without a suite: drive-phase.py (loaded via _loader, not imported), a panel JS part, docs and ci.yml.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a finding on a script loaded through _loader, on a ui part, or on a document mints a fix task naming the suite or check that covers it, or gate-only with the reason"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }
