@@ -36,9 +36,16 @@
         "file": "tools/gate-parity.py:3568-3573",
         "issue": "The vsh5 control passes vacuously when no dash is on PATH: the check is check('vsh5 SKIPPED HERE ...', dash is None), which is True exactly in that branch. It is labelled, but it prints PASS. Likewise vsh2-vsh4 then run under whatever 'sh' is, which may be bash in POSIX mode where a RETURN trap would work, so those cases could not see the defect on that machine.",
         "resolution": "Acceptable as labelled for a machine without dash; if the suite has a skip vocabulary, use it so a reader of a clean run sees the control did not run. Otherwise leave as is."
+      },
+      {
+        "id": "P128-R3",
+        "severity": "low",
+        "file": "tools/check-git-pipeline.py:2506-2528",
+        "issue": "The nt branch of _shim_dir and of the k15 working shim writes .cmd files and is untested on Windows (the executor says so). On the windows CI leg a .cmd found by shutil.which and run without a shell, and a cmd shim that forwards %* to sys.executable, are assumptions; a failure there would turn k13-k15 red on CI only.",
+        "resolution": "Confirm on the first windows CI run after this lands (ci-every-phase dispatch). If k13-k15 go red there, build the shims as .bat or add the extension to PATHEXT in the case env."
       }
     ],
-    "outcome": "[findings: 2 - 0 high, 0 med, 2 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -563,7 +570,7 @@
     {
       "id": "P128.12-0h5",
       "title": "verify.sh cleans its temporary directory on every exit under any POSIX sh",
-      "status": "in_progress",
+      "status": "done",
       "description": "F655: trap RETURN is a bash extension; under dash the temp directory stays. Use an EXIT trap or explicit removal on every return path, with a check that runs under dash.",
       "files": [
         "tools/gate-parity.py",
@@ -606,25 +613,39 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "5ba3b0fe0e63",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/verify.sh: (1) ledger_reproducible no longer uses 'trap RETURN' (bash-only; dash never ran it, so verify-ledger-* stayed in TMPDIR). The comparison moved to ledger_compare; ledger_reproducible creates the dir, calls it, keeps the status, rm -rf's the dir and returns the status, so every return path is cleaned. (2) BEYOND THE DESCRIPTION, kept at the coordinator's instruction: the main trap 'rm -rf WORKDIR' EXIT INT TERM became trap on EXIT alone plus trap 'exit 130' INT and trap 'exit 143' TERM, because a POSIX shell resumes after a signal trap action, so an interrupted run kept going with its workdir deleted. tools/gate-parity.py (scope widened by orchestrator): new section with shell_function_text, run_in_scratch_shell and _verify_cleanup_cases, called at the end of _cases; cases vsh1-vsh8 run the functions cut out of the shipped verify.sh under dash (sh if no dash; each label names the shell that ran) against a python3 stub: reproducible/differing/failing generator leave TMPDIR empty with the right status, control vsh5 shows the old RETURN form leaks under dash, TERM->143 and INT->130 with no resume and workdir removed, plain exit keeps status, no non-comment trap line names RETURN. Cases are titled with the tests.add clause 'the case named in the description' at the front (the clause is ambiguous; flagging as a possible gap). Commands: gate-parity.py --selftest ALL PASS (141 cases incl. vsh1-8, dash used); gate-parity.py exit 0; ruff clean; full sweep-selftests --quiet exit 0, all files ok. No browser gates, no full verify.sh run.",
+        "descriptive": "verify.sh now removes its temporary directories on every exit path under dash as well as bash, and an interrupted run stops instead of continuing without its workdir; gate-parity's selftest locks it by running the real functions under dash."
       },
       "startedAt": "2026-10-16T18:38:36Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T20:36:33Z",
+      "verifiedBy": [
+        "tools/gate-parity.py: vsh1-vsh8 (the case named in the description)"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-16T20:31:19Z.1769b4",
         "status": "passed",
         "at": "2026-10-16T20:31:19Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "5ba3b0fe0e63",
+        "at": "2026-10-16T20:36:33Z",
+        "return": "docs/audit/evidence/returns/P128.12-0h5/20261016T183836Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-16T18:58:30Z",
+        "basis": "`python3 tools/gate-parity.py --selftest` in a throwaway tree at HEAD: inline suite tools/verify.sh (its test file is its implementation file): it is not Python, and an inline suite's test hunks are read from Python definitions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P128.13-0h5",
       "title": "check-git-pipeline names an unusable python3 instead of failing obscurely or passing",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F656 (suspected, simulation only): reproduce with a faithful broken-interpreter fake; the check must report the interpreter as unusable and never pass. Close with evidence if it does not reproduce.",
       "files": [
         "tools/check-git-pipeline.py"
@@ -652,21 +673,27 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-16T20:36:35Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-16T20:58:00Z.0810b6",
+        "status": "passed",
+        "at": "2026-10-16T20:58:00Z"
+      }
     },
     {
       "id": "P128.14-0h5",
       "title": "test_audit_task rv13's writer goes through the shared sharing-denial helper, so a Windows denial is waited out",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F654: CI run 38488610602 (windows-latest) had test_audit_task rv13 red in one draw only; the CI study (quality-gates-internal studies/C-ci-study.md) places it in the sharing-race class P125.38 fixes through one helper in _output.py. Check whether rv13's writer already goes through that helper after P125.38; if it does, close with that evidence; if not, route it through it. No per-site retry.",
       "files": [
         "plugins/audit/tests/test_audit_task.py",
@@ -695,21 +722,27 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-16T20:36:39Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-16T21:12:48Z.3eeb26",
+        "status": "passed",
+        "at": "2026-10-16T21:12:48Z"
+      }
     },
     {
       "id": "P128.16-0h5",
       "title": "A recorded gate spelling wins over a sibling task's, and repointing substitutes only the {paths} slot",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F659 (found by P125.44): resolve_shape prefers a sibling task's path-scoped entry over meta.phaseGate.derived.spelling, and repointed() replaces every path-shaped word including the runner, so a narrowed gate runs one suite. The recorded spelling wins; only the {paths} slot is substituted.",
       "files": [
         "plugins/audit/scripts/governance/_gate_derive.py",
@@ -738,16 +771,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-16T20:36:42Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-16T21:23:45Z.ce3181",
+        "status": "failed",
+        "at": "2026-10-16T21:23:45Z"
+      }
     },
     {
       "id": "P128.17-0h5",
@@ -1567,6 +1606,50 @@
         "status": "proved",
         "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P128.40-izt",
+      "title": "The schema describes the recorded gate spelling as the first source a narrowed gate tries",
+      "status": "pending",
+      "description": "P128.16 made _gate_derive.resolve_shape try meta.phaseGate.derived.spelling first and read a sibling task path-scoped entry only when no usable spelling exists (a spelling without {paths} is skipped with its printed reason). The schema description of derived.spelling (plugins/audit/schema/audit-plan.schema.json, around line 293) still says the spelling is the SECOND source and that the sibling always wins. Reword it to state the new order and the {paths} fall-through, and check every other description in the schema that states the old order. The plan gate refused this edit inside P128.16 because the file was outside that task.",
+      "files": [
+        "plugins/audit/schema/audit-plan.schema.json"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [
+        "before-you-claim"
+      ],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P128.16-0h5"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "reviewPerTask": "signals",

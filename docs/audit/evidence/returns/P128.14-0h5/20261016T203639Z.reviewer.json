@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause: 'Check whether rv13's writer already goes through that helper after P125.38; if it does, close with that evidence; if not, route it through it. No per-site retry.' The diff changes no code, which is right: _manifest_io.py:1220 calls _output.while_shared(lambda: os.replace(tmp, path)) in the atomic write that cmd_finding reaches, and the lock library uses the same helper (_locks.py:647,751,793,1377). The only additions are the tests.add case plus the rename of the old label rv13 to rv13a. The claim matches the diff. I read the filed evidence chain and the helper's source, and checked that sharing_denied() accepts the injected EACCES. Nothing else references the old label: rv13 in test__refs.py:2728 is an unrelated case in another file, and tools/ and .github hold no reference. The older P84/P121 records name 'rv13' as free text only, and nothing resolves them. I ran the at7-block stage once: both rv13a and the new rv13 pass, with 12 denials injected, and it ended at 232/232.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "The executor filed not-attempted: mode regression, expectRedFirst false, because the writer already goes through the helper and the new case is green on HEAD by design. That holds. It also reports a mutation (bare os.replace in atomic_write_text) turning the new case FAIL at 231/232 while rv13a stayed PASS. I did not reproduce the mutation, and I did not mark it proved.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "The task's tests.gate entry 'selftests' is python3 tools/sweep-selftests.py, which runs the whole project. Under the rules, a gate that runs a whole project gives not-asked."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

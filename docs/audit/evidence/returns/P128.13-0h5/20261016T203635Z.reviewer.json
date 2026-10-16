@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "tools/check-git-pipeline.py:2506-2528",
+   "issue": "The nt branch of _shim_dir and of the k15 working shim writes .cmd files and is untested on Windows (the executor says so). On the windows CI leg a .cmd found by shutil.which and run without a shell, and a cmd shim that forwards %* to sys.executable, are assumptions; a failure there would turn k13-k15 red on CI only.",
+   "resolution": "Confirm on the first windows CI run after this lands (ci-every-phase dispatch). If k13-k15 go red there, build the shims as .bat or add the extension to PATHEXT in the case env."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'reproduce with a faithful broken-interpreter fake; the check must report the interpreter as unusable and never pass. Close with evidence if it does not reproduce.' The diff adds interpreter_problem(env, cwd) (tools/check-git-pipeline.py:283-321) and calls it in build_fixture right after the git/sh presence checks, returning {'problem': ...}, which render() prints as 'git pipeline: NOT CHECKED - ...' with exit 1. The fakes are real executable files found by PATH lookup (_shim_dir), exit 1 and exit-0-silent. The claim says F656 reproduces as an obscure failure (many rows failing, none naming the interpreter) rather than a pass, and the executor reports the fix. The diff matches that: a probe that must print 'ran', fall-through across candidates like py-launch.sh, and names read in the launcher's order, held by k16. I read py-launch.sh:95 ('for py in python3 python py; do') and its 'WHAT IT STILL CANNOT SEE' header, which the docstring cites correctly. The probe is deliberately stricter than the launcher (silent exit 0 is rejected); that is stated in the docstring. I ran python3 tools/check-git-pipeline.py --selftest in the task tree: ALL PASS, 17/17. I did not re-run the by-hand pre-fix reproduction or the mutation table; both are the executor's claims.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "The executor filed not-attempted: mode regression, expectRedFirst false, and the test sits in the same file as the fix, so a HEAD-plus-test-files tree would carry the fix. The basis holds because the mode owes no red-first. The executor also reports a by-hand before-fix run on the pre-edit file with exit-1 shims (exit 1, 'BROKEN: 21 of 41 check(s) failed', no row naming the interpreter) and a mutation table turning k13-k17 red. I could not verify either, so they are not graded as proved.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate's selftests entry is 'python3 tools/sweep-selftests.py', which runs the whole project. The other entries (validate, plugin-validate, gate, report, lint, shots, interactive) select no per-test file I could bound. The question is not asked."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

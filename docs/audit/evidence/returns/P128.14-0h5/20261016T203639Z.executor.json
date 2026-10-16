@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_audit_task.py --selftest --stage at7-block": "pass",
+    "ruff check plugins/audit/tests/test_audit_task.py": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/tests/test_audit_task.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "mode regression, expectRedFirst false: the writer already goes through the helper, so the new case is green on HEAD code by design. Non-vacuity shown by mutation in my own worktree (restored byte-identical, git diff of the file empty): replacing _output.while_shared(lambda: os.replace(tmp, path)) in _manifest_io.atomic_write_text with a bare os.replace turned the new case FAIL (231/232) while rv13a stayed PASS.",
+    "at": "not run through the helper"
+  },
+  "outcome": {
+    "technical": "Evidence (no code change owed): rv13's writer is `audit-task.py finding` -> cmd_finding -> _locked_finding -> _write_plan -> _write_add -> _panel_write._atomic_write_json -> _manifest_io.atomic_write_json -> atomic_write_text (_manifest_io.py:1220), which calls _output.while_shared(lambda: os.replace(tmp, path)); that helper is P125.38-0h5's (commit 92d4b076). The lock claim/unlink paths (_locks.py:647,751,793,1377) and journal paths (_journal_io.py:1051,1182,2282) use it too. No per-site retry anywhere. Added to plugins/audit/tests/test_audit_task.py (_record_cases, after rv13) one case, titled with the tests.add clause: four concurrent `finding` processes of one session run through a `python -c` wrapper that, in each child, raises PermissionError(EACCES) on its first three os.replace calls onto each .json destination, then delegates to the real call; asserts exits all 0, four findings land under P2-R1..R4, and the injected-denial log shows >=4 denials (12 observed) so it cannot pass vacuously. Because the harness refuses duplicate case ids and the tests.add clause begins `rv13`, I renamed the existing case label from `rv13 RED-FIRST:` to `rv13a RED-FIRST:` (nothing else in the repo references the id; test__refs.py has an unrelated rv13). Run: python3 plugins/audit/tests/test_audit_task.py --selftest --stage at7-block -> exit 0, 232/232. ruff and vermin on the file exit 0. Not run: the full sweep, other blocks, browser gates (per addendum). HEAD printed 5ba3b0fe in tree claude-plugins-P128.14-0h5 before the first edit; the plan gate refused nothing.",
+    "descriptive": "rv13's race is now locked with a simulated Windows sharing denial on the manifest writer; the writer already waits it out via the shared helper, so F654 needs no code fix."
+  },
+  "testsAdded": [
+    "rv13 with a simulated sharing denial on the writer it races still passes"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:498a8b79f1ba7e030e33b17c888510a2c6929284b3c2d0fee5ee6a93fa78a5c6\",\"dirtyDigest\":\"sha256:32f8a401ad732ed4d439662306409ab958bb937841f777db25f634f8587467a5\",\"dirtyPaths\":{\"plugins/audit/tests/test_audit_task.py\":\"b1369241388669b9\"},\"head\":\"5ba3b0fe\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:63f32c10f16d7a70561aef942847a6716cb7edb5965a95b34f9472a11fcec9c4\",\"v\":2}"
+}

@@ -280,6 +280,47 @@ def read_manifest(fx):
         return None
 
 
+# The names `py-launch.sh` tries, in its order. Copied from its `for py in ...` line
+# because the launcher is shell and cannot be imported; case k16 in the selftest
+# below holds the two together.
+LAUNCHER_INTERPRETERS = ("python3", "python", "py")
+
+
+def interpreter_problem(env, cwd):
+    """None when a Python the launcher could pick runs, else the sentence saying why not.
+
+    Every hook check goes through `py-launch.sh`, which resolves its interpreter from
+    PATH - not the one running this file. A `python3` that resolves but cannot run (a
+    Store shim, a dangling symlink, a half-removed install) makes the launcher print
+    its "cannot run" prompt or stay silent, and the checks that read a decision or a
+    journal row then fail one by one with `decision='ask'` or `rows=0`: red rows in
+    bulk, none of which says the interpreter is the fault. This asks the question once,
+    first, and names each candidate.
+
+    The probe is stricter than the launcher's own `-c ''`: it must PRINT something. The
+    launcher cannot tell an interpreter that exits 0 without running from one that ran
+    (its header says so), and a gate that took silence for a working interpreter would
+    be the one place that blindness is not allowed.
+    """
+    seen = []
+    for name in LAUNCHER_INTERPRETERS:
+        found = shutil.which(name, path=env.get("PATH"))
+        if not found:
+            seen.append("%s: not on PATH" % name)
+            continue
+        code, out = run([found, "-c", "import sys; sys.stdout.write('ran')"],
+                        cwd, env)
+        if code == 0 and (out or "").strip() == "ran":
+            return None
+        seen.append("%s (%s): %s" % (
+            name, found,
+            "exit %s, output %r" % (code, (out or "").strip()[:80])))
+    return ("no Python interpreter that `py-launch.sh` could pick will run - %s. "
+            "The hook checks drive the launcher, so every one of them would fail "
+            "without naming the interpreter; repair or remove the broken one "
+            "first" % "; ".join(seen))
+
+
 def build_fixture(root):
     """A real git repository with source, a commit and a branch.
 
@@ -305,6 +346,9 @@ def build_fixture(root):
                            "unproven is not the same answer as proven"}
     fx = {"root": root, "git": git_bin, "sh": sh_bin, "env": fixture_env(root),
           "head": None, "problem": None}
+    broken = interpreter_problem(fx["env"], root)
+    if broken:
+        return {"problem": broken}
 
     for rel in ("src", "docs/audit"):
         os.makedirs(os.path.join(root, rel.replace("/", os.sep)))
@@ -2419,6 +2463,106 @@ def _cases(check):
           and decision_of(json.dumps({"hookSpecificOutput": {
               "permissionDecision": "deny",
               "permissionDecisionReason": "because"}})) == ("deny", "because"))
+
+    _interpreter_cases(check)
+
+
+def _shim_dir(root, exit_code, names=LAUNCHER_INTERPRETERS):
+    """A directory holding one fake for each of `names`, each exiting `exit_code`.
+
+    Faithful to the fault rather than to a mock: a real file found by PATH lookup and
+    executed, which answers every invocation - `-c`, a script path, anything - the way
+    a Store shim or a dangling install does. Exit 0 is the other fake, the one that
+    resolves and "works" without running anything.
+    """
+    d = tempfile.mkdtemp(prefix="shims-", dir=root)
+    for name in names:
+        if os.name == "nt":
+            path, body = os.path.join(d, name + ".cmd"), "@exit /b %d\r\n" % exit_code
+        else:
+            path, body = os.path.join(d, name), "#!/bin/sh\nexit %d\n" % exit_code
+        with io.open(path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(body)
+        os.chmod(path, 0o755)
+    return d
+
+
+def _path_with(first, env):
+    """`env` with `first` ahead of everything already on PATH."""
+    return dict(env, PATH=first + os.pathsep + env.get("PATH", ""))
+
+
+def _interpreter_cases(check):
+    root = tempfile.mkdtemp(prefix="audit-git-interp-selftest-")
+    base = dict(os.environ)
+    saved_path = os.environ.get("PATH")
+    try:
+        broken = _shim_dir(root, 1)
+        silent = _shim_dir(root, 0)
+        env_broken = _path_with(broken, base)
+        said = interpreter_problem(env_broken, root)
+        check("k13 the case named in the description: a PATH whose python3, python "
+              "and py all resolve to an interpreter that cannot run is reported as "
+              "an unusable interpreter and never passes - %r"
+              % ((said or "")[:90],),
+              said is not None and "will run" in said
+              and all(n in said for n in LAUNCHER_INTERPRETERS)
+              and "exit 1" in said)
+
+        said = interpreter_problem(_path_with(silent, base), root)
+        check("k14 ...and an interpreter that resolves and exits 0 WITHOUT running "
+              "anything is unusable too - silence must not read as a working "
+              "interpreter: %r" % ((said or "")[:90],),
+              said is not None and "output ''" in said)
+
+        # The allow case, from the other side: a broken python3 is searched FIRST,
+        # and a working `python` (a pass-through to the real interpreter) after it.
+        # The launcher falls through a broken candidate to the next name, so must this.
+        working = tempfile.mkdtemp(prefix="shims-", dir=root)
+        if os.name == "nt":
+            wpath, wbody = (os.path.join(working, "python.cmd"),
+                            '@"%s" %%*\r\n' % sys.executable)
+        else:
+            wpath, wbody = (os.path.join(working, "python"),
+                            '#!/bin/sh\nexec "%s" "$@"\n' % sys.executable)
+        with io.open(wpath, "w", encoding="utf-8", newline="") as fh:
+            fh.write(wbody)
+        os.chmod(wpath, 0o755)
+        env_mixed = dict(base, PATH=os.pathsep.join(
+            [_shim_dir(root, 1, ("python3",)), working, base.get("PATH", "")]))
+        problem = interpreter_problem(env_mixed, root)
+        check("k15 ALLOW: a broken python3 AHEAD of a working one is not a problem - "
+              "the launcher falls through to the next candidate that answers, so "
+              "refusing here would fail a machine whose hooks run: %r" % (problem,),
+              problem is None)
+
+        os.environ["PATH"] = broken + os.pathsep + (saved_path or "")
+        sub = os.path.join(root, "fixture")
+        os.makedirs(sub)
+        fx = build_fixture(sub)
+        problem = fx.get("problem") or ""
+        text = io.StringIO()
+        code = render({"problem": fx.get("problem"), "root": sub, "checks": []}, text)
+        check("k17 build_fixture stops at the interpreter, before any git work: no "
+              "repository is made, the problem names the interpreter, and the "
+              "verdict is NOT CHECKED with exit 1 - not a wall of rows blaming the "
+              "hooks: %r" % (problem[:70],),
+              "will run" in problem and not os.path.exists(os.path.join(sub, ".git"))
+              and code == 1 and "NOT CHECKED" in text.getvalue())
+    finally:
+        if saved_path is None:
+            os.environ.pop("PATH", None)
+        else:
+            os.environ["PATH"] = saved_path
+        from _suite import remove_tree   # tools/_suite.py says why here
+        remove_tree(root)
+
+    launcher = io.open(os.path.join(HOOKS_DIR, "py-launch.sh"),
+                       encoding="utf-8").read()
+    check("k16 the interpreter names probed here are the ones `py-launch.sh` loops "
+          "over, in its order - a name added to the launcher and not here would be "
+          "a candidate this check never looks at",
+          "for py in %s; do" % " ".join(LAUNCHER_INTERPRETERS) in launcher)
 
 
 # THE LIVE RUN, memoised. Every case above is about the runner and costs nothing;
