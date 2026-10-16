@@ -1306,8 +1306,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/config/_help.py:97-100,1549; plugins/audit/tests/test__help.py:324-355,426-434",
         "issue": "contradicts task clause 'Find the platform difference ... A case pins platform independence': payload() still serves \"schemas\": dict(SCHEMAS), and SCHEMAS is built with os.path.join at import. On Windows it serialises as schema\\\\audit-config.schema.json and schema\\\\audit-plan.schema.json, 2 bytes larger (probe: 133604 native, 133606 with Windows-spelled SCHEMAS). These are exactly the 2 bytes of CI's 200001 that the claim left unexplained. p5's backslash build cannot see them, because _backslash_payload_bytes swaps M.os at call time, after SCHEMAS was bound with the real separator. The payload is still platform-dependent, and the case meant to pin that passes over it.",
-        "resolution": "Spell SCHEMAS with '/' (load_schema already joins it under root, which opens on both platforms), as was done for the agent card's file. Make the platform case see module-level constants too: rebuild the payload with the module re-imported under the shim, or assert that json.dumps(payload()) contains no backslash-separated plugin path.",
-        "fixTask": "P125.137-0h5"
+        "resolution": "fixed in P125.137-0h5 (f10183084c04): Spell SCHEMAS with '/' (load_schema already joins it under root, which opens on both platforms), as was done for the agent card's file. Make the platform case see module-level constants too: rebuild the payload with the module re-imported under the shim, or assert that json.dumps(payload()) contains no backslash-separated plugin path.",
+        "fixTask": "P125.137-0h5",
+        "commit": "f10183084c04",
+        "status": "fixed"
       },
       {
         "id": "P125-R161",
@@ -1333,7 +1335,7 @@
         "resolution": "Run the call through Popen with stdout/stderr sent to scratch files, or kill and then communicate(timeout=<short>) and fall back to closing the pipes, so the timeout bounds the call on both platforms."
       }
     ],
-    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 54 with a recorded fix commit]"
+    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 55 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -10715,10 +10717,44 @@
     {
       "id": "P125.136-0h5",
       "title": "fix P125-R156: contradicts task clause 'a _harness helper for fixture git cal...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "contradicts task clause 'a _harness helper for fixture git calls ... used by every fixture that runs git' (P125.119). The diff moves five suites onto _harness.git. Its guard reads only a hand-listed _GIT_FIXTURE_SUITES of those same five, so bare_git_calls can never see any other suite. At fb733fc6 an AST scan of plugins/audit/tests (subprocess.run naming git with check=True, or check_call/check_output) still finds such calls in about two dozen suites. Each fails with a CalledProcessError that hides git's stderr, which is the class F679 reported. Examples: test__invariants.py:1441 and 1448 (`git init` with stderr sent to DEVNULL), test__proc_group.py:249, test__doctor_hygiene.py:75-83. A new suite that runs git is also never scanned.\n\nResolution asked: Derive the scanned set the way P125.121's scan does, from every *.py in _harness.TESTS_DIR, rather than from a tuple. Migrate the remaining checked fixture git calls to _harness.git, in a task whose files declare those suites. Any suite deliberately kept off the helper gets an exemption row with a reason the case checks. Keep fg1m's red twin.",
       "files": [
-        "plugins/audit/tests/test_drive_phase.py"
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/tests/test__doctor_completions.py",
+        "plugins/audit/tests/test__doctor_hygiene.py",
+        "plugins/audit/tests/test__doctor_setup.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/tests/test__id_shape.py",
+        "plugins/audit/tests/test__invariants.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/tests/test__live_copy.py",
+        "plugins/audit/tests/test__merge_install.py",
+        "plugins/audit/tests/test__panel_composition.py",
+        "plugins/audit/tests/test__panel_runstate.py",
+        "plugins/audit/tests/test__panel_state.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "plugins/audit/tests/test__proc_group.py",
+        "plugins/audit/tests/test__proposals.py",
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/tests/test__tree_stamp.py",
+        "plugins/audit/tests/test__verdict_binding.py",
+        "plugins/audit/tests/test_audit_doctor.py",
+        "plugins/audit/tests/test_audit_lock.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/tests/test_derive_phase_gate.py",
+        "plugins/audit/tests/test_full_gate.py",
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_panel_server.py",
+        "plugins/audit/tests/test_require_plan.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/tests/test_usage_ledger.py"
       ],
       "tests": {
         "mode": "regression",
@@ -10743,14 +10779,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-16T10:32:56Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -10765,12 +10801,13 @@
       ],
       "fixes": [
         "P125-R156"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.137-0h5",
       "title": "fix P125-R160: contradicts task clause 'Find the platform difference ... A ca...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause 'Find the platform difference ... A case pins platform independence': payload() still serves \"schemas\": dict(SCHEMAS), and SCHEMAS is built with os.path.join at import. On Windows it serialises as schema\\\\audit-config.schema.json and schema\\\\audit-plan.schema.json, 2 bytes larger (probe: 133604 native, 133606 with Windows-spelled SCHEMAS). These are exactly the 2 bytes of CI's 200001 that the claim left unexplained. p5's backslash build cannot see them, because _backslash_payload_bytes swaps M.os at call time, after SCHEMAS was bound with the real separator. The payload is still platform-dependent, and the case meant to pin that passes over it.\n\nResolution asked: Spell SCHEMAS with '/' (load_schema already joins it under root, which opens on both platforms), as was done for the agent card's file. Make the platform case see module-level constants too: rebuild the payload with the module re-imported under the shim, or assert that json.dumps(payload()) contains no backslash-separated plugin path.",
       "files": [
         "plugins/audit/scripts/config/_help.py",
@@ -10801,14 +10838,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f10183084c04",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "SCHEMAS in _help.py now literal '/' paths. New case in test__help.py re-imports _help via _loader (cache=False) while os.path.join is ntpath-spelled for relative joins, scans SCHEMAS and guide_card for backslash-separated plugin paths, has a positive control, and checks both schemas still load. Selftest 111/111; full sweep exit 0 (335/335 files); cp1252 sweep exit 0.",
+        "descriptive": "The help payload no longer carries Windows-spelled schema paths, and the platform case now sees import-time constants."
       },
       "startedAt": "2026-10-16T09:30:37Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T10:32:54Z",
+      "verifiedBy": [
+        "Spell SCHEMAS with '/' (load_schema already joins it under root, which opens on both platforms), as was done for the agent card's file"
+      ],
       "notes": [
         {
           "at": "2026-10-16T07:18:25Z",
@@ -10831,12 +10870,24 @@
         "runId": "2026-10-16T10:32:52Z.c3e388",
         "status": "passed",
         "at": "2026-10-16T10:32:52Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "f10183084c04",
+        "at": "2026-10-16T10:32:54Z",
+        "basis": "a fix task for P125-R160: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-16T09:51:39Z",
+        "basis": "`python3 plugins/audit/tests/test__help.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 111 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - Spell SCHEMAS with '/' (load_schema already joins it under root, which opens on both platforms), as was done for the agent card's file (a module imported under Windows' os.path.join serves no backslash-separated plugin path, the scan flags one when present, and both schemas still open) (fresh-import hits ['schema\\\\audit-config.schema.json', 'schema\\\\audit-plan.schema.json'], control ['schema\\\\audit-config.schema.json']) (house FAIL): SELFTEST FAILED: 110/111 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P125.138-0h5",
       "title": "fix P125-R161: contradicts task clause 'so no git process in any suite spawns...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "contradicts task clause 'so no git process in any suite spawns detached maintenance' (tests.add): on a local push, git's local transport unsets GIT_CONFIG_COUNT before receive-pack, so the runner's set never reaches the remote side. Under the runner's exact environment, a `git push` to a local bare repo traced 'run_command: git maintenance run --auto --quiet --detach' (my probe, git 2.53), and the executor measured the same (1 left in test__invariants). The three isolation documents still say no git a suite starts, 'through a fixture prefix or bare', leaves a detached housekeeping run, and the gm0 title claims it for every git process.\n\nResolution asked: Close the gap or name it. Either reach receive-pack (fixture remotes set receive.autogc=false and maintenance.auto=false in their own config, or the runner points GIT_CONFIG_GLOBAL at a runner-owned file that the home channel excuses), with a traced local-push case beside gm1/gm2. Or, if that is deferred, state the receive-pack exception in all three documents and the case title, and file the follow-up the claim calls for.",
       "files": [
         "CLAUDE.md",
@@ -10867,14 +10918,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-16T10:32:59Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -10901,12 +10952,13 @@
       ],
       "fixes": [
         "P125-R161"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.139-0h5",
       "title": "fix P125-R162: contradicts task clause 'Derive shown and owed from one set: e...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "contradicts task clause 'Derive shown and owed from one set: every task the earlier round did not review': 'reviewed' is read only off filed phase returns' `tasks` entries. The filing verb refuses entries for recorded fix tasks and for tasks whose review.perTask key is not phase (_filed_returns.py:1137-1140), so those tasks are never marked reviewed, even after a round reviewed their diffs. Every later re-review shows them again with full sections. Fix-task sections were 1.3 MB of this brief by the executor's own measure, and the set grows each round, which works against the phase outcome that sign-off converges. The new case's fixture has no fix task reviewed by an earlier round, so it cannot see this.\n\nResolution asked: Record what a round reviewed, not only what it owed. For example, the filing verb writes the shown (id, commit) set into the filed return, or a `reviewed` list beside `tasks`, and compose_phase_brief reads that. Add a round-3 case: a fix task shown and reviewed in round 2 is not shown in round 3.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -10935,14 +10987,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-16T10:33:01Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -10957,7 +11009,8 @@
       ],
       "fixes": [
         "P125-R162"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.140-0h5",
