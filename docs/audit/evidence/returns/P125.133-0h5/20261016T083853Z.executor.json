@@ -1,0 +1,17 @@
+{
+  "gates": {
+    "selftests": "pass",
+    "gate-parity": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task, expectRedFirst false; no test owed",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Edited .github/workflows/ci.yml only: line 134 step name now '- name: what os.kill(pid, 0) does on Windows (a MEASUREMENT, not a gate)'; line 205 echo now 'echo \"panel-server._pid_alive() asks os.kill(pid, 0). On this runner:\"'. git grep -nP fault-shape over '*.yml' printed nothing (exit 1 = no match). Step name referenced elsewhere only in review evidence/manifest text (docs/audit/...), no test pins it. python3 tools/gate-parity.py exit 0. python3 tools/sweep-selftests.py exit 0 (335/335 files ok, 16472 cases). Other brief gate commands not run (runsGate own-tests; nothing of its own).",
+    "descriptive": "CI step name and log line no longer carry the fault id; constraint stated instead."
+  },
+  "testsAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:9e6479779c2a05abc75f441847e145766ceb28eb3f0a144d94e094f612587ef1\",\"dirtyDigest\":\"sha256:5691efe67c7575f9912252a889faa4cfd7a39f74f103927b159d26896069ccbb\",\"dirtyPaths\":{\".github/workflows/ci.yml\":\"82dcede595248a6e\"},\"head\":\"c68eefee\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".github/workflows/ci.yml\"],\"scopeDigest\":\"sha256:56a94249c7b0a86b80e8a8b6a4d2a703e344aa847bce12faf7a5376defed2748\",\"v\":2}"
+}

@@ -1,0 +1,19 @@
+{
+  "gates": {
+    "selftests": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task (expectRedFirst false). Mutation proof done in a scratch copy: changing finish()'s chain line 'clear context' to 'keep going' turned cn1 red (FAIL cn1 ..., 312/317 cases passed, exit 1; the other FAILs were scratch-copy artefacts, missing files). Mutated file restored and cmp-checked identical.",
+    "at": "2026-10-16"
+  },
+  "outcome": {
+    "technical": "In plugins/audit/tests/test_drive_phase.py removed the whole cx block (cx0-cx2 and the unlabeled margin case), CHAIN_MARGIN_TOKENS, _tokens_of, _request_row, _clear_row, _context_of, _first_requests, _session_rows, _chain_context_cases and its ('cx-block', ...) registration. After removing the synthesis the case was identical to cn1 (same P1 done / P2 pending fixture, asserts 'clear context' and 'P2' in finish() lines), so it was merged into cn1 rather than duplicated. Added a one-line comment above cn1 that a real-transcript measurement is not done because no recorded two-phase transcript exists (no task ids). The orchestrator records the omission on the task. Full sweep python3 tools/sweep-selftests.py in the task tree: exit 0, 335/335 files ok.",
+    "descriptive": "Dropped a context-measurement case that held by construction; the chain-line behaviour stays asserted by cn1, which names the next phase."
+  },
+  "testsAdded": [
+    "cn1 a next phase the plan's own readiness names beyond the one that just closed gets the chain's fresh-context step, naming it (existing case; the cx case was merged into it, not a new case)"
+  ],
+  "claims": "claims: no new case was added; the case P125-R138 asked to retitle was merged into cn1 because it became identical. The real-transcript measurement is not done (no recorded two-phase transcript exists).",
+  "stamp": "audit-stamp: {\"content\":\"sha256:28eafac67d531588c4fac984445e57ba6e641a1035829d00e4ec5cbc78745e5d\",\"dirtyDigest\":\"sha256:c77cb05772f2f258100317a5cbbd99801348c0f6b2a677e2a211847f1a6a9c32\",\"dirtyPaths\":{\"plugins/audit/tests/test_drive_phase.py\":\"5fc82134f679c372\"},\"head\":\"c68eefee\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:0be62b9cfbc09ecc207470313c06bce3fcf18d35fdb9c40468a4c8b098edfdfb\",\"v\":2}"
+}

@@ -3868,6 +3868,8 @@ def _chain_next_cases(check):
     with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(_manifest("pending"), fh)
     out = M.finish(ctx, {}, "signed off (passed)")
+    # Whether the next phase then starts from a cleared context is not measured
+    # here: no recorded transcript of two real phases exists to read it from.
     check("cn1 a next phase the plan's own readiness names beyond the one "
           "that just closed gets the chain's fresh-context step, naming it: "
           "%r" % (out["lines"],),
@@ -3882,135 +3884,6 @@ def _chain_next_cases(check):
           "at all - never printed on a guess: %r" % (out2["lines"],),
           out2["kind"] == "done"
           and not any("clear context" in line for line in out2["lines"]))
-
-
-# What the chain case measures. A request's context is what the model is shown:
-# fresh input plus cache creation plus cache reads, the three usage fields a
-# transcript row records. Tokens are estimated at four bytes each, the same
-# rough rate for every row, so only differences between rows mean anything.
-CHAIN_MARGIN_TOKENS = 64
-
-
-def _tokens_of(text):
-    return (len(text.encode("utf-8")) + 3) // 4
-
-
-def _request_row(request_id, context_tokens):
-    """One recorded assistant row, its context split across the three fields."""
-    return {"type": "assistant", "requestId": request_id,
-            "message": {"role": "assistant", "usage": {
-                "input_tokens": 3,
-                "cache_creation_input_tokens": context_tokens // 4,
-                "cache_read_input_tokens": context_tokens - 3 - context_tokens // 4,
-                "output_tokens": 10}}}
-
-
-def _clear_row():
-    return {"type": "user", "message": {"role": "user", "content":
-            "<command-name>/clear</command-name>"}}
-
-
-def _context_of(row):
-    usage = row["message"]["usage"]
-    return (usage["input_tokens"] + usage["cache_creation_input_tokens"]
-            + usage["cache_read_input_tokens"])
-
-
-def _first_requests(rows, marks):
-    """The context of the first assistant row after each mark in `marks`, where
-    a mark is the id of a row that opens a phase. Rows are read back from their
-    serialised form, so only what a transcript file would hold is used."""
-    rows = [json.loads(json.dumps(row)) for row in rows]
-    out = {}
-    for row in rows:
-        mark = row.get("requestId")
-        if mark in marks:
-            out[mark] = _context_of(row)
-    return out
-
-
-def _session_rows(entry_tokens, work_tokens, finish_lines):
-    """The main loop's transcript across two phases, written the way the printed
-    output directs. The only thing that empties the context between them is a
-    clear row, and that row is written only when a printed line says to clear;
-    nothing here knows what the answer should be."""
-    rows = [_request_row("a-first", entry_tokens)]
-    carried = entry_tokens + work_tokens
-    rows.append(_request_row("a-last", carried))
-    told = [line for line in finish_lines if "clear context" in line]
-    if told:
-        rows.append(_clear_row())
-        carried = 0
-    rows.append(_request_row("b-first", carried + entry_tokens))
-    return rows
-
-
-def _chain_context_cases(check):
-    """Two trivial phases driven back to back as the command directs: the first
-    finishes, `finish` prints the chain line, and the second is entered with
-    `/audit:phase <next>`. Offline, over rows shaped like a transcript's."""
-    M, why = _load("dp_chain_ctx_mod")
-    check("cx0 the driver loads: %r" % (why,), M is not None)
-    if M is None:
-        return
-
-    root = _harness.fixture_root("drive-chain-ctx-")
-    mpath = os.path.join(root, "audit-plan.json")
-    manifest = {
-        "meta": {"version": 2, "developmentBranch": "main"},
-        "fileIndex": {},
-        "phases": [
-            {"id": "P1", "title": "first", "status": "done",
-             "desiredOutcome": "x", "blockedBy": [], "tasks": [
-                {"id": "P1.1", "status": "done", "blockedBy": [],
-                 "dependsOn": []}]},
-            {"id": "P2", "title": "second", "status": "pending",
-             "desiredOutcome": "y", "blockedBy": [], "tasks": [
-                {"id": "P2.1", "status": "pending", "blockedBy": [],
-                 "dependsOn": []}]}]}
-    with open(mpath, "w", encoding="utf-8") as fh:
-        json.dump(manifest, fh)
-    M.release_lock = lambda ctx, state: None
-    M.drop_state = lambda ctx: None
-    ctx = {"manifest": mpath, "project": root, "phase": "P1", "did": [],
-           "log": []}
-    out = M.finish(ctx, {}, "signed off (passed)")
-    lines = list(out["lines"])
-
-    # The entry the second phase starts from is the real command text a fresh
-    # session loads; the first phase's work is a body far larger than it.
-    with open(os.path.join(_output.PLUGIN_ROOT, "commands", "phase.md"),
-              encoding="utf-8") as fh:
-        entry = _tokens_of(fh.read())
-    work = 20 * entry
-    marks = ("a-first", "b-first")
-
-    followed = _first_requests(_session_rows(entry, work, lines), marks)
-    fresh = _first_requests([_request_row("b-first", entry)], marks)
-    muted = _first_requests(_session_rows(
-        entry, work, [l for l in lines if "clear context" not in l]), marks)
-
-    margin = CHAIN_MARGIN_TOKENS
-    ok = followed["b-first"] <= fresh["b-first"] + margin
-    check("two trivial phases driven back to back as the command directs, over "
-          "recorded transcript rows offline, the second phase's first "
-          "orchestrator request carries no more context than a fresh entry, "
-          "within a margin the case states (margin %d tokens, a bound on the "
-          "chain line's own words; second %d, fresh %d): %r"
-          % (margin, followed["b-first"], fresh["b-first"], lines), ok)
-    check("cx1 RED TWIN: the same two phases with the chain line removed carry "
-          "the first phase's context into the second, so the margin catches "
-          "it (carried %d, fresh %d, margin %d)"
-          % (muted["b-first"], fresh["b-first"], margin),
-          muted["b-first"] > fresh["b-first"] + margin
-          and muted["b-first"] - fresh["b-first"] >= work)
-    check("cx2 the margin is wide enough for the chain line's own words and "
-          "narrow enough to be a bound: %d tokens against a chain line of %d "
-          "and a first phase of %d"
-          % (margin, sum(_tokens_of(l) for l in lines
-                         if "clear context" in l), work),
-          0 < margin < work
-          and any("clear context" in l for l in lines))
 
 
 # --- waves: ready disjoint tasks run together, each in a tree of its own -------
@@ -6409,7 +6282,6 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("of-block", "_open_finding_cases"),
           ("nf-block", "_landing_cases"), ("bk-block", "_blocked_cases"),
           ("cn-block", "_chain_next_cases"),
-          ("cx-block", "_chain_context_cases"),
           ("wv-block", "_wave_cases"), ("wr-block", "_wave_red_sibling_cases"),
           ("wq-block", "_wave_record_cases"),
           ("wqm-block", "_wave_record_mutant_cases"),
