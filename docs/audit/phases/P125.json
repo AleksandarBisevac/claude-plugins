@@ -1347,21 +1347,24 @@
         "severity": "med",
         "file": "plugins/audit/reference/phase-signoff.md:107-121 (HEAD), plugins/audit/scripts/governance/drive-phase.py:1481-1512,2510-2516 (HEAD), plugins/audit/schema/audit-plan.schema.json:1825-1831",
         "issue": "contradicts task clause (5) of P125.19, which P125.128 quotes: 'every planned test carries a line 'must fail if <small code change>' ... and a test that survives is a finding with file:line'. The owner chose to implement this rather than narrow the clause (ORCHESTRATOR-NOTES R38), and the wiring now exists: falsify() runs after the green gate and the `falsifier` decision stops the close. Two halves of the clause are still unmet. (a) Nothing produces a falsifier. The new doc text says so itself: 'the field is optional, and nothing makes a plan declare one'. `git grep -i falsifier` at 63e319e8 finds no planner brief, no `/audit:task add` flag and no executor return field that writes `tests.falsifiers`. Outside the drive, the rules, the schema and the demo exemptions, the only hits are phase-signoff.md. So in any real plan task_falsifiers() returns [] and falsify() returns None at its first line. The new path runs only on a hand-edited shard. (b) A survivor is not a finding. `accept` only calls `_mark(state, 'falsified', task, {'accepted': reason, ...})` in the drive's ephemeral state (drive-phase.py:2510-2516). That state is dropped at finish, and decision() writes no journal row. Nothing lands in phase.review.findings or on the task, and the decision text names the tests.add entry, never a file:line. A surviving test that is accepted therefore leaves no durable record.",
-        "resolution": "Give the falsifier a producer. Either the planner/executor brief emits a `tests.falsifiers` entry for each planned test (the executor knows the fix's shape when it files, which answers the 'code not yet written at synthesis' objection), or `/audit:task add` takes a `--falsifier` flag that the planner is told to use. Then make a survived or accepted falsifier durable: record it as a phase.review finding, or a task note, carrying the mutation's file and the test entry. Do not restate 'nothing makes a plan declare one' as the answer to 'every planned test carries'."
+        "resolution": "Give the falsifier a producer. Either the planner/executor brief emits a `tests.falsifiers` entry for each planned test (the executor knows the fix's shape when it files, which answers the 'code not yet written at synthesis' objection), or `/audit:task add` takes a `--falsifier` flag that the planner is told to use. Then make a survived or accepted falsifier durable: record it as a phase.review finding, or a task note, carrying the mutation's file and the test entry. Do not restate 'nothing makes a plan declare one' as the answer to 'every planned test carries'.",
+        "fixTask": "P125.142-0h5"
       },
       {
         "id": "P125-R165",
         "severity": "med",
         "file": "plugins/audit/tests/test_drive_phase.py:6627-6648,6655-6666 (HEAD)",
         "issue": "The coverage statement that P125.134 adds and pins is false on Linux, which is where CI's POSIX legs run. The docstring says 'on POSIX the sweep's `--encoding` pass covers them, since it pins the locale there'. But tools/sweep-selftests.py:707 (locale_decision) returns `locale: {}` (stdio half only) whenever the child's filesystem encoding is not UTF-8. The sweep's own comment at :638 says that is exactly Linux under LC_ALL=C PYTHONUTF8=0 ('on linux it makes the FILESYSTEM encoding ASCII too, while macOS keeps UTF-8 file names'). The cp1252 leg runs on ubuntu-latest and windows-latest (ci.yml:99-100,259), so in CI no run puts the drive suite's other blocks under a non-UTF-8 locale. Only a macOS developer run does. _ascii_coverage_case cannot see this: it feeds locale_decision a fabricated macOS-shaped report `('ascii', 'utf-8')` and never the Linux shape. The finding this fix answers was about stating the coverage honestly, and the new statement names the wrong cover.",
-        "resolution": "Reword the docstring to the platform split locale_decision actually makes. The locale is pinned on macOS (UTF-8 file names under C). On Linux it is not, because the C locale makes the filesystem ASCII, so only the stdio codec is set. On Windows nothing is pinned. Extend _ascii_coverage_case to assert that a Linux-shaped report (`('ANSI_X3.4-1968', 'ascii')`) yields `locale == {}`, so the docstring and the decision table cannot drift apart again."
+        "resolution": "Reword the docstring to the platform split locale_decision actually makes. The locale is pinned on macOS (UTF-8 file names under C). On Linux it is not, because the C locale makes the filesystem ASCII, so only the stdio codec is set. On Windows nothing is pinned. Extend _ascii_coverage_case to assert that a Linux-shaped report (`('ANSI_X3.4-1968', 'ascii')`) yields `locale == {}`, so the docstring and the decision table cannot drift apart again.",
+        "fixTask": "P125.143-0h5"
       },
       {
         "id": "P125-R166",
         "severity": "med",
         "file": "plugins/audit/agents/audit-reviewer.md:133-137",
         "issue": "P125.139 (c9af0c0b) records what a round reviewed only when the phase return is filed with `--shown`. A return filed without the flag is read as the legacy shape with no error, so the next brief shows every fix task again - the defect P125-R162 named. The reviewer's contract still spells the filing call as 'in `mode: phase` always `<phaseId> --role reviewer --head <sha>`' and never mentions `--shown`; the task declared this file but left it unchanged. A reviewer that follows its agent card rather than the brief's printed command files without the set, and nothing reports it.",
-        "resolution": "Change the agent's filing sentence to: run the filing command the brief prints, `--shown` included. Better, make the omission loud: record the shown set beside the brief keyed by head and have submit/file-return refuse a phase return for that head without it. Add a case."
+        "resolution": "Change the agent's filing sentence to: run the filing command the brief prints, `--shown` included. Better, make the omission loud: record the shown set beside the brief keyed by head and have submit/file-return refuse a phase return for that head without it. Add a case.",
+        "fixTask": "P125.144-0h5"
       },
       {
         "id": "P125-R167",
@@ -11254,6 +11257,207 @@
         "basis": "regression mode, expectRedFirst false; the mutation was run by hand in the task tree instead: replacing _nt_join(first, *rest) with ntpath.join(first, *rest) in the lambda made the new case FAIL with RecursionError (111/112 passed); restored and byte-compared with a saved copy",
         "at": "n/a"
       }
+    },
+    {
+      "id": "P125.142-0h5",
+      "title": "fix P125-R164: contradicts task clause (5) of P125.19, which P125.128 quotes:...",
+      "status": "in_progress",
+      "description": "contradicts task clause (5) of P125.19, which P125.128 quotes: 'every planned test carries a line 'must fail if <small code change>' ... and a test that survives is a finding with file:line'. The owner chose to implement this rather than narrow the clause (ORCHESTRATOR-NOTES R38), and the wiring now exists: falsify() runs after the green gate and the `falsifier` decision stops the close. Two halves of the clause are still unmet. (a) Nothing produces a falsifier. The new doc text says so itself: 'the field is optional, and nothing makes a plan declare one'. `git grep -i falsifier` at 63e319e8 finds no planner brief, no `/audit:task add` flag and no executor return field that writes `tests.falsifiers`. Outside the drive, the rules, the schema and the demo exemptions, the only hits are phase-signoff.md. So in any real plan task_falsifiers() returns [] and falsify() returns None at its first line. The new path runs only on a hand-edited shard. (b) A survivor is not a finding. `accept` only calls `_mark(state, 'falsified', task, {'accepted': reason, ...})` in the drive's ephemeral state (drive-phase.py:2510-2516). That state is dropped at finish, and decision() writes no journal row. Nothing lands in phase.review.findings or on the task, and the decision text names the tests.add entry, never a file:line. A surviving test that is accepted therefore leaves no durable record.\n\nResolution asked: Give the falsifier a producer. Either the planner/executor brief emits a `tests.falsifiers` entry for each planned test (the executor knows the fix's shape when it files, which answers the 'code not yet written at synthesis' objection), or `/audit:task add` takes a `--falsifier` flag that the planner is told to use. Then make a survived or accepted falsifier durable: record it as a phase.review finding, or a task note, carrying the mutation's file and the test entry. Do not restate 'nothing makes a plan declare one' as the answer to 'every planned test carries'.",
+      "files": [
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a planned test's falsifier is produced in the normal flow - the executor's filed return declares it and the plan records it - and a survived or accepted falsifier leaves a durable record naming the mutated file and the test"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-16T14:23:59Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-16T14:23:58Z",
+          "text": "scope: plugins/audit/reference/phase-signoff.md, plugins/audit/scripts/governance/drive-phase.py, plugins/audit/schema/audit-plan.schema.json, every path the finding(s) P125-R164 name"
+        },
+        {
+          "at": "2026-10-16T14:23:58Z",
+          "text": "no suite: plugins/audit/reference/phase-signoff.md - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-16T14:23:58Z",
+          "text": "no suite: plugins/audit/scripts/governance/drive-phase.py - 6 suites import it and none is named for it (plugins/audit/tests/test__filed_returns.py, plugins/audit/tests/test__invariants.py, plugins/audit/tests/test_commit_audit_state.py and 3 more); name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-16T14:23:58Z",
+          "text": "no suite: plugins/audit/schema/audit-plan.schema.json - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-16T14:23:58Z",
+          "text": "no tests.add clause for P125-R164: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P125-R164"
+      ],
+      "reviewPerTask": "phase"
+    },
+    {
+      "id": "P125.143-0h5",
+      "title": "fix P125-R165: The coverage statement that P125.134 adds and pins is false on...",
+      "status": "in_progress",
+      "description": "The coverage statement that P125.134 adds and pins is false on Linux, which is where CI's POSIX legs run. The docstring says 'on POSIX the sweep's `--encoding` pass covers them, since it pins the locale there'. But tools/sweep-selftests.py:707 (locale_decision) returns `locale: {}` (stdio half only) whenever the child's filesystem encoding is not UTF-8. The sweep's own comment at :638 says that is exactly Linux under LC_ALL=C PYTHONUTF8=0 ('on linux it makes the FILESYSTEM encoding ASCII too, while macOS keeps UTF-8 file names'). The cp1252 leg runs on ubuntu-latest and windows-latest (ci.yml:99-100,259), so in CI no run puts the drive suite's other blocks under a non-UTF-8 locale. Only a macOS developer run does. _ascii_coverage_case cannot see this: it feeds locale_decision a fabricated macOS-shaped report `('ascii', 'utf-8')` and never the Linux shape. The finding this fix answers was about stating the coverage honestly, and the new statement names the wrong cover.\n\nResolution asked: Reword the docstring to the platform split locale_decision actually makes. The locale is pinned on macOS (UTF-8 file names under C). On Linux it is not, because the C locale makes the filesystem ASCII, so only the stdio codec is set. On Windows nothing is pinned. Extend _ascii_coverage_case to assert that a Linux-shaped report (`('ANSI_X3.4-1968', 'ascii')`) yields `locale == {}`, so the docstring and the decision table cannot drift apart again.",
+      "files": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: the case P125-R165 asks for, locking the behaviour at HEAD"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-16T14:24:02Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-16T14:23:58Z",
+          "text": "scope: plugins/audit/tests/test_drive_phase.py, every path the finding(s) P125-R165 name"
+        },
+        {
+          "at": "2026-10-16T14:23:58Z",
+          "text": "no test runner in this task's gate for the test P125-R165 asks for: the gate is ['selftests', 'validate', 'plugin-validate', 'gate', 'report', 'lint', 'shots', 'interactive'], derived as the phase's testGate, wide -- no sibling task in P125 declares a path-scoped gate entry to read this project's spelling off; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P125-R165"
+      ],
+      "reviewPerTask": "phase"
+    },
+    {
+      "id": "P125.144-0h5",
+      "title": "fix P125-R166: P125.139 (c9af0c0b) records what a round reviewed only when th...",
+      "status": "in_progress",
+      "description": "P125.139 (c9af0c0b) records what a round reviewed only when the phase return is filed with `--shown`. A return filed without the flag is read as the legacy shape with no error, so the next brief shows every fix task again - the defect P125-R162 named. The reviewer's contract still spells the filing call as 'in `mode: phase` always `<phaseId> --role reviewer --head <sha>`' and never mentions `--shown`; the task declared this file but left it unchanged. A reviewer that follows its agent card rather than the brief's printed command files without the set, and nothing reports it.\n\nResolution asked: Change the agent's filing sentence to: run the filing command the brief prints, `--shown` included. Better, make the omission loud: record the shown set beside the brief keyed by head and have submit/file-return refuse a phase return for that head without it. Add a case.",
+      "files": [
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a phase return filed for a head whose brief showed tasks, but filed without --shown, is refused naming the missing set, and the reviewer card names the brief's printed command as the one to run"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-16T14:24:05Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-16T14:23:58Z",
+          "text": "scope: plugins/audit/agents/audit-reviewer.md, every path the finding(s) P125-R166 name"
+        },
+        {
+          "at": "2026-10-16T14:23:58Z",
+          "text": "no suite: plugins/audit/agents/audit-reviewer.md - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-16T14:23:58Z",
+          "text": "no tests.add clause for P125-R166: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P125-R166"
+      ],
+      "reviewPerTask": "phase"
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
