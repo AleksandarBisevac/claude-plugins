@@ -11405,7 +11405,9 @@
         "plugins/audit/scripts/governance/drive-phase.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/tests/test_audit_lookup.py",
-        "plugins/audit/tests/test__refs.py"
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py"
       ],
       "tests": {
         "mode": "tdd",
