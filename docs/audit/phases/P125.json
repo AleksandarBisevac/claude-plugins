@@ -341,7 +341,8 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:1352-1363 and plugins/audit/reference/phase-signoff.md:104-115",
         "issue": "Task clause (5) says every planned test carries a 'must fail if' line and the drive applies it in a temp tree after the executor files; the diff wires nothing (run_falsifier stays unreferenced by the pipeline) and rewrites phase-signoff.md to 'A planned test MAY carry a falsifier ... nothing in the pipeline calls it automatically', contradicts task clause (5). The executor documents why (no schema field in its files). | Orchestrator item 7: recorded as carried to P128 by an earlier decision. At 8e7c5121 run_falsifier (drive-phase.py:1300) still has no caller, and docs/audit/phases/P128.json names no falsifier or 'must fail if' task, so the carry is not on the plan.",
-        "resolution": "Open a follow-up task owning schema/_manifest_rules plus the wiring, or amend clause (5) on the plan; do not leave the delivered text as the answer to the clause."
+        "resolution": "Open a follow-up task owning schema/_manifest_rules plus the wiring, or amend clause (5) on the plan; do not leave the delivered text as the answer to the clause.",
+        "fixTask": "P125.128-0h5"
       },
       {
         "id": "P125-R39",
@@ -1052,7 +1053,8 @@
         "severity": "med",
         "file": "plugins/audit/scripts/ui/panel/usage-metrics.js:406-413",
         "issue": "contradicts task clause 'every surface (audit-usage, the report, the panel) prints unpriced beside its tokens instead of a dollar figure' (P125-R1, resolution: \"Render 'unpriced' beside the tokens of a model that has no price\"). The diff adds `costOf` to uBars' head rows but leaves the tail row unchanged: `const more=tail.reduce((a,x)=>[a[0]+x[1][0],a[1]+x[1][1]],[0,0]);` ... `uTok(more[0])+(USAGE.showCost?' - '+uCost(more[1]):'')`. So an 'other (N)' row whose every token is unpriced still reads '$0.00' in the panel. The report's `_ranked` does handle this case: the same diff makes its 'other (%d)' row sum `unpricedTokens` (`_usage_overview.py:399-403`). The README sentence this diff adds (README.md:991 at HEAD) claims the opposite: a row whose every token is unpriced reads `unpriced` 'in ... the panel's ranked lists'. HEAD still has the line unchanged (usage-metrics.js:413).",
-        "resolution": "Sum the tail's unpriced tokens from the `unp` map (`tail.reduce` over `unp.get(k)`) and print `uAllUnpriced(more[0], tailUnp) ? 'unpriced' : uCost(more[1])` on the tail row. Add a usage-edges case where more than SHOWN[dim] values exist and every tail value is unpriced, asserting the 'other' row reads 'unpriced' and never '$0.00'."
+        "resolution": "Sum the tail's unpriced tokens from the `unp` map (`tail.reduce` over `unp.get(k)`) and print `uAllUnpriced(more[0], tailUnp) ? 'unpriced' : uCost(more[1])` on the tail row. Add a usage-edges case where more than SHOWN[dim] values exist and every tail value is unpriced, asserting the 'other' row reads 'unpriced' and never '$0.00'.",
+        "fixTask": "P125.129-0h5"
       },
       {
         "id": "P125-R128",
@@ -1108,7 +1110,8 @@
         "severity": "med",
         "file": "plugins/audit/scripts/ui/report/page-state.js:193-200; tools/check-report-interactive.mjs:2806-2858; tools/ui-tests/table-fit.test.mjs:20-40",
         "issue": "Nothing tests the content-change path of the measured fit. This is the ResizeObserver over every .tablewrap and its table. Per the comment at page-state.js:189-192 it is the only thing that re-measures a frame after an expand, filter or view switch makes its table wider with no window resize. In leg 10c the planted pass calls setViewportSize at every rung (2806-2810) before reading fitState, so the window-resize fallback alone satisfies it. Yet the expect label at 2848-2853 says it measures 'the re-measure following the content change', and its procedure cannot observe that. The vitest sandbox has no ResizeObserver, and the PRELUDE does not stub one. So deleting lines 193-200 leaves every new test green, and the failure this would hide is a stale data-fits mark releasing a frame around a table that now overflows it. table-fit.test.mjs's own header calls that the failure that matters, and it widens the page. The executor's outcome discloses the limit ('cannot tell the ResizeObserver path from the resize fallback').",
-        "resolution": "In leg 10c, after planting and before the planted ladder, wait two animation frames at the current viewport with no setViewportSize. Then run fitState/fitWrong once and fail on any frame that is marked while its table overflows. Also add a vitest case whose PRELUDE stubs window.ResizeObserver and records the callback and its observe() targets. Assert that every .tablewrap and its table are observed, and that invoking the callback queues one measurement that drops a stale mark. Prove red by deleting the `if (window.ResizeObserver)` block."
+        "resolution": "In leg 10c, after planting and before the planted ladder, wait two animation frames at the current viewport with no setViewportSize. Then run fitState/fitWrong once and fail on any frame that is marked while its table overflows. Also add a vitest case whose PRELUDE stubs window.ResizeObserver and records the callback and its observe() targets. Assert that every .tablewrap and its table are observed, and that invoking the callback queues one measurement that drops a stale mark. Prove red by deleting the `if (window.ResizeObserver)` block.",
+        "fixTask": "P125.130-0h5"
       },
       {
         "id": "P125-R136",
@@ -1129,14 +1132,16 @@
         "severity": "med",
         "file": "plugins/audit/tests/test_drive_phase.py:3948-4014 (HEAD; added by 5fadfc23c9cf for P125.85-0h5)",
         "issue": "contradicts task clause: P125-R35 asks for 'two trivial phases driven back to back as the command directs ... offline fixture over recorded transcript rows' with a stated margin. That micro-test is still not there in substance. `_session_rows` builds the rows itself and sets `carried = 0` whenever a printed line contains \"clear context\". So `followed[\"b-first\"] == fresh[\"b-first\"]` holds by construction, and CHAIN_MARGIN_TOKENS never comes into play. The only fact the case actually observes is the substring \"clear context\" in `M.finish(ctx, ...)['lines']`, which cn1 already asserts (cn1 also checks that the line names P2; the new case does not). Phase P2 is never driven. No recorded transcript row is read: every row is synthesised by `_request_row`. The `a-first` mark is computed and never used. The orchestrator's mutation turning cx red proves only that the substring is checked, which cn1 already proved. The executor's outcome does say obedience is 'modelled, not observed'. Its title still claims a context measurement within a margin.",
-        "resolution": "Either (a) read a captured transcript fixture of two real phases with the `/clear` between them, measure the second phase's first request with the existing reader (`tools/stream-cost.py` / `_usage_core`) and keep the margin; or (b) record the omission on the task and retitle the case to what it checks (finish prints the chain line). Drop the margin claim, which nothing exercises."
+        "resolution": "Either (a) read a captured transcript fixture of two real phases with the `/clear` between them, measure the second phase's first request with the existing reader (`tools/stream-cost.py` / `_usage_core`) and keep the margin; or (b) record the omission on the task and retitle the case to what it checks (finish prints the chain line). Drop the margin claim, which nothing exercises.",
+        "fixTask": "P125.131-0h5"
       },
       {
         "id": "P125-R139",
         "severity": "med",
         "file": "SECURITY.md:424-425; plugins/audit/schema/audit-config.schema.json:86; PLUGIN-BUILD-GUIDE.md:641-643 (P125.95-0h5, 9bcb55ddc874)",
         "issue": "contradicts task clause: P125-R77's issue is that 'other user-facing statements' of the ladder still say a plan with phases and nothing running only warns. Three surfaces still state the old ladder at HEAD. SECURITY.md:424 reads 'with a manifest but no phase `in_progress` it warns, and it denies once a phase is running', and that section exists so that 'anyone reasoning about this plugin's guarantees' has the condition. The `enforce` description in the schema file this diff edited (:86) reads 'warn with a manifest but no phase in_progress, deny once a phase is running'. The build guide's require-plan section (:641-643) reads 'manifest but no phase `in_progress` -> `warn`'. The executor's descriptive claim 'Every user-facing statement of the plan gate ladder now reads deny past the free file' is false. Its grep ('nothing running|none running', 'warns with a plan/manifest') missed the 'no phase in_progress' spelling. This is the same class the finding named, fixed per instance again.",
-        "resolution": "Correct SECURITY.md:424-425, the schema `enforce` description and PLUGIN-BUILD-GUIDE.md:641-643 to the ladder. Close the class with a check, not another grep: a case that scans the shipped .md and schema text for the retired rung's wording in every spelling ('no phase in_progress', 'nothing running', 'but no phase running'), or that requires each document stating the ladder to carry `plan_gate_ladder_phrase()`'s steps."
+        "resolution": "Correct SECURITY.md:424-425, the schema `enforce` description and PLUGIN-BUILD-GUIDE.md:641-643 to the ladder. Close the class with a check, not another grep: a case that scans the shipped .md and schema text for the retired rung's wording in every spelling ('no phase in_progress', 'nothing running', 'but no phase running'), or that requires each document stating the ladder to carry `plan_gate_ladder_phrase()`'s steps.",
+        "fixTask": "P125.132-0h5"
       },
       {
         "id": "P125-R140",
@@ -1178,7 +1183,8 @@
         "severity": "med",
         "file": ".github/workflows/ci.yml:134,205",
         "issue": "contradicts task clause \"Citations survive there: .github/workflows/ci.yml:134,468,480,561,735,1068,1107\". The diff removes the ids at 468, 480, 561, 735, 1068 and 1107 (and at 745, 747, 907 and 983, which the widened lint found). It leaves line 134 (`- name: F117 - what os.kill(pid, 0) does on Windows (a MEASUREMENT, not a gate)`) and line 205 (`echo \"F117: panel-server._pid_alive() asks os.kill(pid, 0). ...\"`) as they were. Both are still at HEAD fb733fc6: `git grep` over every .yml/.yaml/.toml/.css/.tape/.gitignore/.gitattributes file at HEAD finds the fault shape on these two lines and nowhere else. The executor disclosed this and gave the reason that the lines are a YAML value and shell output, not comments, so the comment lint does not read them. That is a fair account of what the lint can see, but the task named :134 as a citation that survives. A step name and an echo line are also more public than a comment: they appear on every CI run page and in every log. The .py side of the same scan already reads every string literal for this reason (`_py_other_literal_citations`).",
-        "resolution": "Swap the id for the constraint it stands for, in the step name and the echo. For example `- name: what os.kill(pid, 0) does on Windows (a MEASUREMENT, not a gate)` and `echo \"panel-server._pid_alive() asks os.kill(pid, 0). On this runner:\"`. Then confirm with `git grep -nP '\\bF(?:\\d{1,4}|-[A-Z]?-?\\d{1,4})[a-z]?\\b' -- '*.yml'` that no fault-shaped token is left. No change to the lint is needed."
+        "resolution": "Swap the id for the constraint it stands for, in the step name and the echo. For example `- name: what os.kill(pid, 0) does on Windows (a MEASUREMENT, not a gate)` and `echo \"panel-server._pid_alive() asks os.kill(pid, 0). On this runner:\"`. Then confirm with `git grep -nP '\\bF(?:\\d{1,4}|-[A-Z]?-?\\d{1,4})[a-z]?\\b' -- '*.yml'` that no fault-shaped token is left. No change to the lint is needed.",
+        "fixTask": "P125.133-0h5"
       },
       {
         "id": "P125-R146",
@@ -1192,7 +1198,8 @@
         "severity": "med",
         "file": "plugins/audit/tests/test_drive_phase.py:6646-6730 (HEAD; added by 6413e737295a at 6150, 6197-6221)",
         "issue": "contradicts task clause (3) 'run the drive and integrate suites with LC_ALL=C PYTHONUTF8=0 ... and add that run as a case', which the fix task quotes. The fix task's text names two gaps: 'The integrate suite (test_integrate_task.py) and the other drive blocks have no case.' The diff closes only the integrate half (_integrate_ascii_case runs test_integrate_task.py --selftest whole under ASCII_ENV). The drive suite under the ASCII locale is still only ASCII_BLOCK = 'fm-block'. The executor's own reasoning for choosing option (a) is that the sweep's --encoding pass 'pins no locale on Windows'. That reasoning applies just as much to the drive suite's other blocks, so on Windows those blocks get no ASCII run, and nothing records where they are covered. The technical outcome admits this ('The drive suite's other blocks are still not re-run under ASCII'), but the descriptive claim says 'closing the clause-3 gap', which overstates what the diff does.",
-        "resolution": "Pick one. (1) Re-run the drive suite's remaining stages, not al-block itself (it would recurse), under ASCII_ENV through _harness.run_stage, as fm-block is run. (2) Or state in _ascii_locale_cases's docstring, beside the ASCII_BLOCK comment, that the sweep's --encoding pass is the cover for the drive suite's other blocks on POSIX and that nothing covers them on Windows, and correct the descriptive claim to match."
+        "resolution": "Pick one. (1) Re-run the drive suite's remaining stages, not al-block itself (it would recurse), under ASCII_ENV through _harness.run_stage, as fm-block is run. (2) Or state in _ascii_locale_cases's docstring, beside the ASCII_BLOCK comment, that the sweep's --encoding pass is the cover for the drive suite's other blocks on POSIX and that nothing covers them on Windows, and correct the descriptive claim to match.",
+        "fixTask": "P125.134-0h5"
       },
       {
         "id": "P125-R148",
@@ -1220,7 +1227,8 @@
         "severity": "med",
         "file": "plugins/audit/scripts/panel/_panel_usage.py:329-341 (HEAD fb733fc6; introduced by P125.105 5f951d727baa at _panel_usage.py:337-376)",
         "issue": "`_cli_cost_payload` wraps the CLI-vs-plugin comparison in `except Exception: return []`. In this same payload, `[]` means 'every recorded CLI figure agreed with the plugin's': the browse note renders nothing for an empty list (`if(... !diff.length) return null`). So a comparison that raised reads on the panel as agreement, a silent pass. At HEAD the report's loader handles the same call the other way. `_usage_load._cli_cost` docstring: 'None, not `[]`: an empty list says every recorded CLI figure agreed, and a comparison that raised has said nothing of the kind', and the report prints the reason. The panel still collapses the failure to `[]`, even though its HEAD docstring says 'The report carries the same list, so the two surfaces cannot disagree'. The two surfaces do disagree on exactly this case. The new test (test__panel_usage.py `_cli_cost_cases`) covers only the success path, so nothing can see it.",
-        "resolution": "Return `(None, '<ExcType>: <msg>')` from the panel, as `_usage_load._cli_cost` does. Ship `cliCost: null` plus a `cliCostReason` key, declared in `_usage_shape`. Have `browseCliNote` (and the usage-view.js line) print the could-not-compare sentence with that reason when `cliCost` is null. Add a case that makes `ul.cli_cost_entries` raise and asserts that the payload carries None plus the reason, not `[]`."
+        "resolution": "Return `(None, '<ExcType>: <msg>')` from the panel, as `_usage_load._cli_cost` does. Ship `cliCost: null` plus a `cliCostReason` key, declared in `_usage_shape`. Have `browseCliNote` (and the usage-view.js line) print the could-not-compare sentence with that reason when `cliCost` is null. Add a case that makes `ul.cli_cost_entries` raise and asserts that the payload carries None plus the reason, not `[]`.",
+        "fixTask": "P125.135-0h5"
       },
       {
         "id": "P125-R152",
@@ -1255,7 +1263,8 @@
         "severity": "med",
         "file": "plugins/audit/tests/test_drive_phase.py:6776-6778 (at fb733fc6; the _GIT_FIXTURE_SUITES tuple P125.119 added)",
         "issue": "contradicts task clause 'a _harness helper for fixture git calls ... used by every fixture that runs git' (P125.119). The diff moves five suites onto _harness.git. Its guard reads only a hand-listed _GIT_FIXTURE_SUITES of those same five, so bare_git_calls can never see any other suite. At fb733fc6 an AST scan of plugins/audit/tests (subprocess.run naming git with check=True, or check_call/check_output) still finds such calls in about two dozen suites. Each fails with a CalledProcessError that hides git's stderr, which is the class F679 reported. Examples: test__invariants.py:1441 and 1448 (`git init` with stderr sent to DEVNULL), test__proc_group.py:249, test__doctor_hygiene.py:75-83. A new suite that runs git is also never scanned.",
-        "resolution": "Derive the scanned set the way P125.121's scan does, from every *.py in _harness.TESTS_DIR, rather than from a tuple. Migrate the remaining checked fixture git calls to _harness.git, in a task whose files declare those suites. Any suite deliberately kept off the helper gets an exemption row with a reason the case checks. Keep fg1m's red twin."
+        "resolution": "Derive the scanned set the way P125.121's scan does, from every *.py in _harness.TESTS_DIR, rather than from a tuple. Migrate the remaining checked fixture git calls to _harness.git, in a task whose files declare those suites. Any suite deliberately kept off the helper gets an exemption row with a reason the case checks. Keep fg1m's red twin.",
+        "fixTask": "P125.136-0h5"
       },
       {
         "id": "P125-R157",
@@ -1283,21 +1292,24 @@
         "severity": "med",
         "file": "plugins/audit/scripts/config/_help.py:97-100,1549; plugins/audit/tests/test__help.py:324-355,426-434",
         "issue": "contradicts task clause 'Find the platform difference ... A case pins platform independence': payload() still serves \"schemas\": dict(SCHEMAS), and SCHEMAS is built with os.path.join at import. On Windows it serialises as schema\\\\audit-config.schema.json and schema\\\\audit-plan.schema.json, 2 bytes larger (probe: 133604 native, 133606 with Windows-spelled SCHEMAS). These are exactly the 2 bytes of CI's 200001 that the claim left unexplained. p5's backslash build cannot see them, because _backslash_payload_bytes swaps M.os at call time, after SCHEMAS was bound with the real separator. The payload is still platform-dependent, and the case meant to pin that passes over it.",
-        "resolution": "Spell SCHEMAS with '/' (load_schema already joins it under root, which opens on both platforms), as was done for the agent card's file. Make the platform case see module-level constants too: rebuild the payload with the module re-imported under the shim, or assert that json.dumps(payload()) contains no backslash-separated plugin path."
+        "resolution": "Spell SCHEMAS with '/' (load_schema already joins it under root, which opens on both platforms), as was done for the agent card's file. Make the platform case see module-level constants too: rebuild the payload with the module re-imported under the shim, or assert that json.dumps(payload()) contains no backslash-separated plugin path.",
+        "fixTask": "P125.137-0h5"
       },
       {
         "id": "P125-R161",
         "severity": "med",
         "file": "CLAUDE.md:255-258; CONTRIBUTING.md:233-236; plugins/audit/tests/_harness.py:185-189; tools/sweep-selftests.py:1880-1885",
         "issue": "contradicts task clause 'so no git process in any suite spawns detached maintenance' (tests.add): on a local push, git's local transport unsets GIT_CONFIG_COUNT before receive-pack, so the runner's set never reaches the remote side. Under the runner's exact environment, a `git push` to a local bare repo traced 'run_command: git maintenance run --auto --quiet --detach' (my probe, git 2.53), and the executor measured the same (1 left in test__invariants). The three isolation documents still say no git a suite starts, 'through a fixture prefix or bare', leaves a detached housekeeping run, and the gm0 title claims it for every git process.",
-        "resolution": "Close the gap or name it. Either reach receive-pack (fixture remotes set receive.autogc=false and maintenance.auto=false in their own config, or the runner points GIT_CONFIG_GLOBAL at a runner-owned file that the home channel excuses), with a traced local-push case beside gm1/gm2. Or, if that is deferred, state the receive-pack exception in all three documents and the case title, and file the follow-up the claim calls for."
+        "resolution": "Close the gap or name it. Either reach receive-pack (fixture remotes set receive.autogc=false and maintenance.auto=false in their own config, or the runner points GIT_CONFIG_GLOBAL at a runner-owned file that the home channel excuses), with a traced local-push case beside gm1/gm2. Or, if that is deferred, state the receive-pack exception in all three documents and the case title, and file the follow-up the claim calls for.",
+        "fixTask": "P125.138-0h5"
       },
       {
         "id": "P125-R162",
         "severity": "med",
         "file": "plugins/audit/scripts/status/audit-lookup.py:1323-1340,1396",
         "issue": "contradicts task clause 'Derive shown and owed from one set: every task the earlier round did not review': 'reviewed' is read only off filed phase returns' `tasks` entries. The filing verb refuses entries for recorded fix tasks and for tasks whose review.perTask key is not phase (_filed_returns.py:1137-1140), so those tasks are never marked reviewed, even after a round reviewed their diffs. Every later re-review shows them again with full sections. Fix-task sections were 1.3 MB of this brief by the executor's own measure, and the set grows each round, which works against the phase outcome that sign-off converges. The new case's fixture has no fix task reviewed by an earlier round, so it cannot see this.",
-        "resolution": "Record what a round reviewed, not only what it owed. For example, the filing verb writes the shown (id, commit) set into the filed return, or a `reviewed` list beside `tasks`, and compose_phase_brief reads that. Add a round-3 case: a fix task shown and reviewed in round 2 is not shown in round 3."
+        "resolution": "Record what a round reviewed, not only what it owed. For example, the filing verb writes the shown (id, commit) set into the filed return, or a `reviewed` list beside `tasks`, and compose_phase_brief reads that. Add a round-3 case: a fix task shown and reviewed in round 2 is not shown in round 3.",
+        "fixTask": "P125.139-0h5"
       },
       {
         "id": "P125-R163",
@@ -10020,6 +10032,734 @@
         "status": "proved",
         "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P125.128-0h5",
+      "title": "fix P125-R38: Task clause (5) says every planned test carries a 'must fail if...",
+      "status": "in_progress",
+      "description": "Task clause (5) says every planned test carries a 'must fail if' line and the drive applies it in a temp tree after the executor files; the diff wires nothing (run_falsifier stays unreferenced by the pipeline) and rewrites phase-signoff.md to 'A planned test MAY carry a falsifier ... nothing in the pipeline calls it automatically', contradicts task clause (5). The executor documents why (no schema field in its files). | Orchestrator item 7: recorded as carried to P128 by an earlier decision. At 8e7c5121 run_falsifier (drive-phase.py:1300) still has no caller, and docs/audit/phases/P128.json names no falsifier or 'must fail if' task, so the carry is not on the plan.\n\nResolution asked: Open a follow-up task owning schema/_manifest_rules plus the wiring, or amend clause (5) on the plan; do not leave the delivered text as the answer to the clause.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test__manifest_rules.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a planned test that carries a 'must fail if' line has it applied by the drive in a throwaway tree after the executor files, and a test that still passes under the mutation stops the close",
+          "plugins/audit/tests/test__manifest_rules.py: the plan schema and the rules accept a planned test's 'must fail if' falsifier and refuse a malformed one"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-16T07:18:29Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "scope: plugins/audit/scripts/governance/drive-phase.py, plugins/audit/reference/phase-signoff.md, every path the finding(s) P125-R38 name"
+        },
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "no suite: plugins/audit/scripts/governance/drive-phase.py - 6 suites import it and none is named for it (plugins/audit/tests/test__filed_returns.py, plugins/audit/tests/test__invariants.py, plugins/audit/tests/test_commit_audit_state.py and 3 more); name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "no suite: plugins/audit/reference/phase-signoff.md - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "no tests.add clause for P125-R38: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P125-R38"
+      ],
+      "reviewPerTask": "phase"
+    },
+    {
+      "id": "P125.129-0h5",
+      "title": "fix P125-R127: contradicts task clause 'every surface (audit-usage, the repor...",
+      "status": "in_progress",
+      "description": "contradicts task clause 'every surface (audit-usage, the report, the panel) prints unpriced beside its tokens instead of a dollar figure' (P125-R1, resolution: \"Render 'unpriced' beside the tokens of a model that has no price\"). The diff adds `costOf` to uBars' head rows but leaves the tail row unchanged: `const more=tail.reduce((a,x)=>[a[0]+x[1][0],a[1]+x[1][1]],[0,0]);` ... `uTok(more[0])+(USAGE.showCost?' - '+uCost(more[1]):'')`. So an 'other (N)' row whose every token is unpriced still reads '$0.00' in the panel. The report's `_ranked` does handle this case: the same diff makes its 'other (%d)' row sum `unpricedTokens` (`_usage_overview.py:399-403`). The README sentence this diff adds (README.md:991 at HEAD) claims the opposite: a row whose every token is unpriced reads `unpriced` 'in ... the panel's ranked lists'. HEAD still has the line unchanged (usage-metrics.js:413).\n\nResolution asked: Sum the tail's unpriced tokens from the `unp` map (`tail.reduce` over `unp.get(k)`) and print `uAllUnpriced(more[0], tailUnp) ? 'unpriced' : uCost(more[1])` on the tail row. Add a usage-edges case where more than SHOWN[dim] values exist and every tail value is unpriced, asserting the 'other' row reads 'unpriced' and never '$0.00'.",
+      "files": [
+        "plugins/audit/scripts/ui/panel/usage-metrics.js",
+        "tools/ui-tests/usage-edges.test.mjs"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/usage-edges.test.mjs: an 'other' row whose every tail value is unpriced reads 'unpriced', never $0.00"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-16T07:18:32Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "scope: plugins/audit/scripts/ui/panel/usage-metrics.js, every path the finding(s) P125-R127 name"
+        },
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "no suite: plugins/audit/scripts/ui/panel/usage-metrics.js - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "no tests.add clause for P125-R127: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P125-R127"
+      ],
+      "reviewPerTask": "phase"
+    },
+    {
+      "id": "P125.130-0h5",
+      "title": "fix P125-R135: Nothing tests the content-change path of the measured fit. Thi...",
+      "status": "in_progress",
+      "description": "Nothing tests the content-change path of the measured fit. This is the ResizeObserver over every .tablewrap and its table. Per the comment at page-state.js:189-192 it is the only thing that re-measures a frame after an expand, filter or view switch makes its table wider with no window resize. In leg 10c the planted pass calls setViewportSize at every rung (2806-2810) before reading fitState, so the window-resize fallback alone satisfies it. Yet the expect label at 2848-2853 says it measures 'the re-measure following the content change', and its procedure cannot observe that. The vitest sandbox has no ResizeObserver, and the PRELUDE does not stub one. So deleting lines 193-200 leaves every new test green, and the failure this would hide is a stale data-fits mark releasing a frame around a table that now overflows it. table-fit.test.mjs's own header calls that the failure that matters, and it widens the page. The executor's outcome discloses the limit ('cannot tell the ResizeObserver path from the resize fallback').\n\nResolution asked: In leg 10c, after planting and before the planted ladder, wait two animation frames at the current viewport with no setViewportSize. Then run fitState/fitWrong once and fail on any frame that is marked while its table overflows. Also add a vitest case whose PRELUDE stubs window.ResizeObserver and records the callback and its observe() targets. Assert that every .tablewrap and its table are observed, and that invoking the callback queues one measurement that drops a stale mark. Prove red by deleting the `if (window.ResizeObserver)` block.",
+      "files": [
+        "plugins/audit/scripts/ui/report/page-state.js",
+        "tools/check-report-interactive.mjs",
+        "tools/ui-tests/table-fit.test.mjs"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/table-fit.test.mjs: In leg 10c, after planting and before the planted ladder, wait two animation frames at the current viewport with no setViewportSize"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-16T07:18:34Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "scope: plugins/audit/scripts/ui/report/page-state.js, tools/check-report-interactive.mjs, tools/ui-tests/table-fit.test.mjs, every path the finding(s) P125-R135 name"
+        },
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "no suite: plugins/audit/scripts/ui/report/page-state.js - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "no suite: tools/check-report-interactive.mjs - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "no test runner in this task's gate for the test P125-R135 asks for: the gate is ['selftests', 'validate', 'plugin-validate', 'gate', 'report', 'lint', 'shots', 'interactive'], derived as the phase's testGate, wide -- no sibling task in P125 declares a path-scoped gate entry to read this project's spelling off; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P125-R135"
+      ],
+      "reviewPerTask": "phase"
+    },
+    {
+      "id": "P125.131-0h5",
+      "title": "fix P125-R138: contradicts task clause: P125-R35 asks for 'two trivial phases...",
+      "status": "pending",
+      "description": "contradicts task clause: P125-R35 asks for 'two trivial phases driven back to back as the command directs ... offline fixture over recorded transcript rows' with a stated margin. That micro-test is still not there in substance. `_session_rows` builds the rows itself and sets `carried = 0` whenever a printed line contains \"clear context\". So `followed[\"b-first\"] == fresh[\"b-first\"]` holds by construction, and CHAIN_MARGIN_TOKENS never comes into play. The only fact the case actually observes is the substring \"clear context\" in `M.finish(ctx, ...)['lines']`, which cn1 already asserts (cn1 also checks that the line names P2; the new case does not). Phase P2 is never driven. No recorded transcript row is read: every row is synthesised by `_request_row`. The `a-first` mark is computed and never used. The orchestrator's mutation turning cx red proves only that the substring is checked, which cn1 already proved. The executor's outcome does say obedience is 'modelled, not observed'. Its title still claims a context measurement within a margin.\n\nResolution asked: Either (a) read a captured transcript fixture of two real phases with the `/clear` between them, measure the second phase's first request with the existing reader (`tools/stream-cost.py` / `_usage_core`) and keep the margin; or (b) record the omission on the task and retitle the case to what it checks (finish prints the chain line). Drop the margin claim, which nothing exercises.",
+      "files": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: the case P125-R138 asks for, locking the behaviour at HEAD"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "scope: plugins/audit/tests/test_drive_phase.py, every path the finding(s) P125-R138 name"
+        },
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "no test runner in this task's gate for the test P125-R138 asks for: the gate is ['selftests', 'validate', 'plugin-validate', 'gate', 'report', 'lint', 'shots', 'interactive'], derived as the phase's testGate, wide -- no sibling task in P125 declares a path-scoped gate entry to read this project's spelling off; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P125-R138"
+      ]
+    },
+    {
+      "id": "P125.132-0h5",
+      "title": "fix P125-R139: contradicts task clause: P125-R77's issue is that 'other user-...",
+      "status": "pending",
+      "description": "contradicts task clause: P125-R77's issue is that 'other user-facing statements' of the ladder still say a plan with phases and nothing running only warns. Three surfaces still state the old ladder at HEAD. SECURITY.md:424 reads 'with a manifest but no phase `in_progress` it warns, and it denies once a phase is running', and that section exists so that 'anyone reasoning about this plugin's guarantees' has the condition. The `enforce` description in the schema file this diff edited (:86) reads 'warn with a manifest but no phase in_progress, deny once a phase is running'. The build guide's require-plan section (:641-643) reads 'manifest but no phase `in_progress` -> `warn`'. The executor's descriptive claim 'Every user-facing statement of the plan gate ladder now reads deny past the free file' is false. Its grep ('nothing running|none running', 'warns with a plan/manifest') missed the 'no phase in_progress' spelling. This is the same class the finding named, fixed per instance again.\n\nResolution asked: Correct SECURITY.md:424-425, the schema `enforce` description and PLUGIN-BUILD-GUIDE.md:641-643 to the ladder. Close the class with a check, not another grep: a case that scans the shipped .md and schema text for the retired rung's wording in every spelling ('no phase in_progress', 'nothing running', 'but no phase running'), or that requires each document stating the ladder to carry `plan_gate_ladder_phrase()`'s steps.",
+      "files": [
+        "SECURITY.md",
+        "plugins/audit/schema/audit-config.schema.json",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "scope: SECURITY.md, plugins/audit/schema/audit-config.schema.json, PLUGIN-BUILD-GUIDE.md, every path the finding(s) P125-R139 name"
+        },
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "no suite: SECURITY.md - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "no suite: plugins/audit/schema/audit-config.schema.json - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "no suite: PLUGIN-BUILD-GUIDE.md - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "no tests.add clause for P125-R139: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P125-R139"
+      ]
+    },
+    {
+      "id": "P125.133-0h5",
+      "title": "fix P125-R145: contradicts task clause \"Citations survive there: .github/work...",
+      "status": "pending",
+      "description": "contradicts task clause \"Citations survive there: .github/workflows/ci.yml:134,468,480,561,735,1068,1107\". The diff removes the ids at 468, 480, 561, 735, 1068 and 1107 (and at 745, 747, 907 and 983, which the widened lint found). It leaves line 134 (`- name: F117 - what os.kill(pid, 0) does on Windows (a MEASUREMENT, not a gate)`) and line 205 (`echo \"F117: panel-server._pid_alive() asks os.kill(pid, 0). ...\"`) as they were. Both are still at HEAD fb733fc6: `git grep` over every .yml/.yaml/.toml/.css/.tape/.gitignore/.gitattributes file at HEAD finds the fault shape on these two lines and nowhere else. The executor disclosed this and gave the reason that the lines are a YAML value and shell output, not comments, so the comment lint does not read them. That is a fair account of what the lint can see, but the task named :134 as a citation that survives. A step name and an echo line are also more public than a comment: they appear on every CI run page and in every log. The .py side of the same scan already reads every string literal for this reason (`_py_other_literal_citations`).\n\nResolution asked: Swap the id for the constraint it stands for, in the step name and the echo. For example `- name: what os.kill(pid, 0) does on Windows (a MEASUREMENT, not a gate)` and `echo \"panel-server._pid_alive() asks os.kill(pid, 0). On this runner:\"`. Then confirm with `git grep -nP '\\bF(?:\\d{1,4}|-[A-Z]?-?\\d{1,4})[a-z]?\\b' -- '*.yml'` that no fault-shaped token is left. No change to the lint is needed.",
+      "files": [
+        ".github/workflows/ci.yml"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "scope: .github/workflows/ci.yml, every path the finding(s) P125-R145 name"
+        },
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "no suite: .github/workflows/ci.yml - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "no tests.add clause for P125-R145: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P125-R145"
+      ]
+    },
+    {
+      "id": "P125.134-0h5",
+      "title": "fix P125-R147: contradicts task clause (3) 'run the drive and integrate suite...",
+      "status": "pending",
+      "description": "contradicts task clause (3) 'run the drive and integrate suites with LC_ALL=C PYTHONUTF8=0 ... and add that run as a case', which the fix task quotes. The fix task's text names two gaps: 'The integrate suite (test_integrate_task.py) and the other drive blocks have no case.' The diff closes only the integrate half (_integrate_ascii_case runs test_integrate_task.py --selftest whole under ASCII_ENV). The drive suite under the ASCII locale is still only ASCII_BLOCK = 'fm-block'. The executor's own reasoning for choosing option (a) is that the sweep's --encoding pass 'pins no locale on Windows'. That reasoning applies just as much to the drive suite's other blocks, so on Windows those blocks get no ASCII run, and nothing records where they are covered. The technical outcome admits this ('The drive suite's other blocks are still not re-run under ASCII'), but the descriptive claim says 'closing the clause-3 gap', which overstates what the diff does.\n\nResolution asked: Pick one. (1) Re-run the drive suite's remaining stages, not al-block itself (it would recurse), under ASCII_ENV through _harness.run_stage, as fm-block is run. (2) Or state in _ascii_locale_cases's docstring, beside the ASCII_BLOCK comment, that the sweep's --encoding pass is the cover for the drive suite's other blocks on POSIX and that nothing covers them on Windows, and correct the descriptive claim to match.",
+      "files": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: the case P125-R147 asks for, locking the behaviour at HEAD"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "scope: plugins/audit/tests/test_drive_phase.py, every path the finding(s) P125-R147 name"
+        },
+        {
+          "at": "2026-10-16T07:18:21Z",
+          "text": "no test runner in this task's gate for the test P125-R147 asks for: the gate is ['selftests', 'validate', 'plugin-validate', 'gate', 'report', 'lint', 'shots', 'interactive'], derived as the phase's testGate, wide -- no sibling task in P125 declares a path-scoped gate entry to read this project's spelling off; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P125-R147"
+      ]
+    },
+    {
+      "id": "P125.135-0h5",
+      "title": "fix P125-R151: `_cli_cost_payload` wraps the CLI-vs-plugin comparison in `exc...",
+      "status": "pending",
+      "description": "`_cli_cost_payload` wraps the CLI-vs-plugin comparison in `except Exception: return []`. In this same payload, `[]` means 'every recorded CLI figure agreed with the plugin's': the browse note renders nothing for an empty list (`if(... !diff.length) return null`). So a comparison that raised reads on the panel as agreement, a silent pass. At HEAD the report's loader handles the same call the other way. `_usage_load._cli_cost` docstring: 'None, not `[]`: an empty list says every recorded CLI figure agreed, and a comparison that raised has said nothing of the kind', and the report prints the reason. The panel still collapses the failure to `[]`, even though its HEAD docstring says 'The report carries the same list, so the two surfaces cannot disagree'. The two surfaces do disagree on exactly this case. The new test (test__panel_usage.py `_cli_cost_cases`) covers only the success path, so nothing can see it.\n\nResolution asked: Return `(None, '<ExcType>: <msg>')` from the panel, as `_usage_load._cli_cost` does. Ship `cliCost: null` plus a `cliCostReason` key, declared in `_usage_shape`. Have `browseCliNote` (and the usage-view.js line) print the could-not-compare sentence with that reason when `cliCost` is null. Add a case that makes `ul.cli_cost_entries` raise and asserts that the payload carries None plus the reason, not `[]`.",
+      "files": [
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/tests/test__panel_usage.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__panel_usage.py: Return `(None, '<ExcType>: <msg>')` from the panel, as `_usage_load._cli_cost` does"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-16T07:18:23Z",
+          "text": "scope: plugins/audit/scripts/panel/_panel_usage.py, every path the finding(s) P125-R151 name"
+        },
+        {
+          "at": "2026-10-16T07:18:23Z",
+          "text": "scope: plugins/audit/tests/test__panel_usage.py, the suite that tests plugins/audit/scripts/panel/_panel_usage.py (python: its import closure reaches plugins/audit/scripts/panel/_panel_usage.py)"
+        }
+      ],
+      "fixes": [
+        "P125-R151"
+      ]
+    },
+    {
+      "id": "P125.136-0h5",
+      "title": "fix P125-R156: contradicts task clause 'a _harness helper for fixture git cal...",
+      "status": "pending",
+      "description": "contradicts task clause 'a _harness helper for fixture git calls ... used by every fixture that runs git' (P125.119). The diff moves five suites onto _harness.git. Its guard reads only a hand-listed _GIT_FIXTURE_SUITES of those same five, so bare_git_calls can never see any other suite. At fb733fc6 an AST scan of plugins/audit/tests (subprocess.run naming git with check=True, or check_call/check_output) still finds such calls in about two dozen suites. Each fails with a CalledProcessError that hides git's stderr, which is the class F679 reported. Examples: test__invariants.py:1441 and 1448 (`git init` with stderr sent to DEVNULL), test__proc_group.py:249, test__doctor_hygiene.py:75-83. A new suite that runs git is also never scanned.\n\nResolution asked: Derive the scanned set the way P125.121's scan does, from every *.py in _harness.TESTS_DIR, rather than from a tuple. Migrate the remaining checked fixture git calls to _harness.git, in a task whose files declare those suites. Any suite deliberately kept off the helper gets an exemption row with a reason the case checks. Keep fg1m's red twin.",
+      "files": [
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: the case P125-R156 asks for, locking the behaviour at HEAD"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-16T07:18:23Z",
+          "text": "scope: plugins/audit/tests/test_drive_phase.py, every path the finding(s) P125-R156 name"
+        },
+        {
+          "at": "2026-10-16T07:18:23Z",
+          "text": "no test runner in this task's gate for the test P125-R156 asks for: the gate is ['selftests', 'validate', 'plugin-validate', 'gate', 'report', 'lint', 'shots', 'interactive'], derived as the phase's testGate, wide -- no sibling task in P125 declares a path-scoped gate entry to read this project's spelling off; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P125-R156"
+      ]
+    },
+    {
+      "id": "P125.137-0h5",
+      "title": "fix P125-R160: contradicts task clause 'Find the platform difference ... A ca...",
+      "status": "pending",
+      "description": "contradicts task clause 'Find the platform difference ... A case pins platform independence': payload() still serves \"schemas\": dict(SCHEMAS), and SCHEMAS is built with os.path.join at import. On Windows it serialises as schema\\\\audit-config.schema.json and schema\\\\audit-plan.schema.json, 2 bytes larger (probe: 133604 native, 133606 with Windows-spelled SCHEMAS). These are exactly the 2 bytes of CI's 200001 that the claim left unexplained. p5's backslash build cannot see them, because _backslash_payload_bytes swaps M.os at call time, after SCHEMAS was bound with the real separator. The payload is still platform-dependent, and the case meant to pin that passes over it.\n\nResolution asked: Spell SCHEMAS with '/' (load_schema already joins it under root, which opens on both platforms), as was done for the agent card's file. Make the platform case see module-level constants too: rebuild the payload with the module re-imported under the shim, or assert that json.dumps(payload()) contains no backslash-separated plugin path.",
+      "files": [
+        "plugins/audit/scripts/config/_help.py",
+        "plugins/audit/tests/test__help.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__help.py: Spell SCHEMAS with '/' (load_schema already joins it under root, which opens on both platforms), as was done for the agent card's file"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-16T07:18:25Z",
+          "text": "scope: plugins/audit/scripts/config/_help.py, plugins/audit/tests/test__help.py, every path the finding(s) P125-R160 name"
+        },
+        {
+          "at": "2026-10-16T07:18:25Z",
+          "text": "scope: plugins/audit/tests/test__help.py, the suite that tests plugins/audit/scripts/config/_help.py (python: its import closure reaches plugins/audit/scripts/config/_help.py)"
+        },
+        {
+          "at": "2026-10-16T07:18:25Z",
+          "text": "no test runner in this task's gate for the test P125-R160 asks for: the gate is ['selftests', 'validate', 'plugin-validate', 'gate', 'report', 'lint', 'shots', 'interactive'], derived as the phase's testGate, wide -- no sibling task in P125 declares a path-scoped gate entry to read this project's spelling off; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P125-R160"
+      ]
+    },
+    {
+      "id": "P125.138-0h5",
+      "title": "fix P125-R161: contradicts task clause 'so no git process in any suite spawns...",
+      "status": "pending",
+      "description": "contradicts task clause 'so no git process in any suite spawns detached maintenance' (tests.add): on a local push, git's local transport unsets GIT_CONFIG_COUNT before receive-pack, so the runner's set never reaches the remote side. Under the runner's exact environment, a `git push` to a local bare repo traced 'run_command: git maintenance run --auto --quiet --detach' (my probe, git 2.53), and the executor measured the same (1 left in test__invariants). The three isolation documents still say no git a suite starts, 'through a fixture prefix or bare', leaves a detached housekeeping run, and the gm0 title claims it for every git process.\n\nResolution asked: Close the gap or name it. Either reach receive-pack (fixture remotes set receive.autogc=false and maintenance.auto=false in their own config, or the runner points GIT_CONFIG_GLOBAL at a runner-owned file that the home channel excuses), with a traced local-push case beside gm1/gm2. Or, if that is deferred, state the receive-pack exception in all three documents and the case title, and file the follow-up the claim calls for.",
+      "files": [
+        "CLAUDE.md",
+        "CONTRIBUTING.md",
+        "plugins/audit/tests/_harness.py",
+        "tools/sweep-selftests.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/_harness.py: Close the gap or name it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-16T07:18:26Z",
+          "text": "scope: CLAUDE.md, CONTRIBUTING.md, plugins/audit/tests/_harness.py, tools/sweep-selftests.py, every path the finding(s) P125-R161 name"
+        },
+        {
+          "at": "2026-10-16T07:18:26Z",
+          "text": "no suite: CLAUDE.md - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-16T07:18:26Z",
+          "text": "no suite: CONTRIBUTING.md - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-16T07:18:26Z",
+          "text": "no suite: tools/sweep-selftests.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-16T07:18:26Z",
+          "text": "no test runner in this task's gate for the test P125-R161 asks for: the gate is ['selftests', 'validate', 'plugin-validate', 'gate', 'report', 'lint', 'shots', 'interactive'], derived as the phase's testGate, wide -- no sibling task in P125 declares a path-scoped gate entry to read this project's spelling off; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P125-R161"
+      ]
+    },
+    {
+      "id": "P125.139-0h5",
+      "title": "fix P125-R162: contradicts task clause 'Derive shown and owed from one set: e...",
+      "status": "pending",
+      "description": "contradicts task clause 'Derive shown and owed from one set: every task the earlier round did not review': 'reviewed' is read only off filed phase returns' `tasks` entries. The filing verb refuses entries for recorded fix tasks and for tasks whose review.perTask key is not phase (_filed_returns.py:1137-1140), so those tasks are never marked reviewed, even after a round reviewed their diffs. Every later re-review shows them again with full sections. Fix-task sections were 1.3 MB of this brief by the executor's own measure, and the set grows each round, which works against the phase outcome that sign-off converges. The new case's fixture has no fix task reviewed by an earlier round, so it cannot see this.\n\nResolution asked: Record what a round reviewed, not only what it owed. For example, the filing verb writes the shown (id, commit) set into the filed return, or a `reviewed` list beside `tasks`, and compose_phase_brief reads that. Add a round-3 case: a fix task shown and reviewed in round 2 is not shown in round 3.",
+      "files": [
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_lookup.py: Record what a round reviewed, not only what it owed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-16T07:18:28Z",
+          "text": "scope: plugins/audit/scripts/status/audit-lookup.py, every path the finding(s) P125-R162 name"
+        },
+        {
+          "at": "2026-10-16T07:18:28Z",
+          "text": "scope: plugins/audit/tests/test_audit_lookup.py, the suite that tests plugins/audit/scripts/status/audit-lookup.py (python: its import closure reaches plugins/audit/scripts/status/audit-lookup.py)"
+        }
+      ],
+      "fixes": [
+        "P125-R162"
+      ]
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
