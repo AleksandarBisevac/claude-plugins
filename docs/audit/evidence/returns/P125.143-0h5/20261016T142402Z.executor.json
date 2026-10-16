@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_drive_phase.py --selftest --stage al-block": "pass",
+    "python3 tools/sweep-selftests.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression mode, no red owed; mutation proof done by hand in the task tree: flipping the Linux assertion to != {} gave 'SELFTEST FAILED: 7/8' with the R165 case FAIL; changing the docstring to say Linux is pinned turned the R147 case FAIL; both restored and cmp-verified identical to the pre-mutation backup",
+    "at": "2026-10-16"
+  },
+  "outcome": {
+    "technical": "In plugins/audit/tests/test_drive_phase.py, reworded _ascii_locale_cases's docstring to the macOS (pinned, UTF-8 file names under C) / Linux (not pinned, only stdio codec, C makes the filesystem ASCII) / Windows (nothing) split. _ascii_coverage_case now also feeds locale_decision a Linux-shaped report ('ANSI_X3.4-1968','ascii'), asserts locale == {}, problem None and the stdio-half line, and asserts the docstring states the macOS and Linux phrases; macOS shaped report must still pin. New case titled 'the case P125-R165 asks for, locking the behaviour at HEAD (...)'. Stage al-block exit 0; full sweep exit 0 (335/335 files ok).",
+    "descriptive": "The coverage statement now matches the platform split locale_decision makes, and the case locks it against drift."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_drive_phase.py: the case P125-R165 asks for, locking the behaviour at HEAD"
+  ],
+  "claims": "claims: docstring split macOS/Linux/Windows matches locale_decision (sweep-selftests.py ~707, observed by the Linux-shaped case returning locale {}); mutation red on both the assertion and the docstring, restored byte-identical (cmp exit 0).",
+  "stamp": "audit-stamp: {\"content\":\"sha256:67b096a5415d849ce34f97765665734dbfbe39f21e45b370489f9cac2e23f65c\",\"dirtyDigest\":\"sha256:c77cb05772f2f258100317a5cbbd99801348c0f6b2a677e2a211847f1a6a9c32\",\"dirtyPaths\":{\"plugins/audit/tests/test_drive_phase.py\":\"2419951ec1e03c51\"},\"head\":\"4b7df26b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:b575e23986ceb1f84f683af3e9f9e463c319eb2d1df0382ef5c6aaecd495150b\",\"v\":2}"
+}

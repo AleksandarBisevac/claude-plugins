@@ -11275,7 +11275,9 @@
         "plugins/audit/tests/test_audit_lookup.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/tests/test__filed_returns.py",
-        "plugins/audit/tests/test__refs.py"
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/reference/execute-task.md"
       ],
       "tests": {
         "mode": "tdd",
