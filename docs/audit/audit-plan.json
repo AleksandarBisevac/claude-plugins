@@ -2948,7 +2948,8 @@
       "P125.128-0h5",
       "P125.142-0h5",
       "P129.7-izt",
-      "P129.8-izt"
+      "P129.8-izt",
+      "P128.40-izt"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -9902,7 +9903,7 @@
     {
       "id": "BUG-23",
       "title": "/audit:version never reports auto-update set in settings.json",
-      "status": "in_progress",
+      "status": "fixed",
       "severity": "med",
       "reportedAt": "2026-10-16T18:33:14Z",
       "reportedBy": null,
@@ -9915,6 +9916,25 @@
         "plugins/audit/scripts/status/_claude_home.py"
       ],
       "taskId": "P128.39",
+      "fixedIn": "647289c9ba09",
+      "notes": null
+    },
+    {
+      "id": "BUG-24-izt",
+      "title": "/audit:usage compares a filtered ledger window against the CLI cumulative session cost",
+      "status": "open",
+      "severity": "med",
+      "reportedAt": "2026-10-16T21:15:18Z",
+      "reportedBy": null,
+      "description": "The \"CLI vs plugin\" line sums ledger rows already narrowed by --since, --until and the other filters, and compares them with the last cost-state entry of the session transcript, which is cumulative from session start and also counts requests that write no assistant transcript entry (compaction, away summaries, titles, the auto-mode classifier). Neither surface says so, so the line reads as the plugin under-pricing by 3-12x when its rates match the published table.",
+      "repro": "Run /audit:usage --by attr --since <a day after a long session started> on a session that spans several days.",
+      "expected": "The line compares like with like: whole-session unfiltered ledger rows against the CLI figure, or it is withheld under a filter with the reason printed; the CLI figure is labelled as including requests no transcript entry records.",
+      "actual": "Session fb1bddcc with --since 2026-10-16: Opus CLI 463.63 vs plugin 126.75; the unfiltered ledger for the same session is 366.23, and the remaining 97.40 is tokens absent from every transcript.",
+      "files": [
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/scripts/usage/usage_ledger.py"
+      ],
+      "taskId": null,
       "fixedIn": null,
       "notes": null
     }
