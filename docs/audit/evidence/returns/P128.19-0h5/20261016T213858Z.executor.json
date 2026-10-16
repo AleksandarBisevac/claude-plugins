@@ -1,0 +1,34 @@
+{
+  "gates": {
+    "own-tests: python3 plugins/audit/tests/test_run_test_gate.py --selftest (548/548 in the task tree)": "pass",
+    "python3 tools/sweep-selftests.py --quiet (full, task tree)": "pass",
+    "ruff check plugins/audit tools": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-16T22:14:39Z",
+    "basis": "`python3 plugins/audit/tests/test_run_test_gate.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 546 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - wt1 (house FAIL), wt2 (house FAIL): SELFTEST FAILED: 543/546 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "run-test-gate.py: new wave_tree_of / wave_integrated / wave_tree_refusal; a recorded --task gate with no --tree is refused (exit 2, remedy names `--tree <tree>`) when the task has a marked wave tree under the project (found via _worktrees.list_worktrees + read_provenance, as integrate-task does) and integrate-task has not recorded that task done for the tree's base (audit-wave-integration.json in the git dir). --own, unregistered tasks, --tree runs, and the drive's post-integration re-gate on the phase tree are not refused (the first sweep showed the drive's re-gate in test_drive_phase wu2/wg1/fm2 broke without that last exemption). Tests: plugins/audit/tests/test_run_test_gate.py _wave_tree_cases wt1-wt8 (real linked worktree fixture; includes stale-base, integrated, --own, --tree, unregistered-task allow cases and a pin of INTEGRATION_STATE_NAME against integrate-task.STATE_NAME). Scope note: the new `_worktrees` import changes _deps' module map, so PLUGIN-BUILD-GUIDE.md line for run-test-gate gained `, _worktrees` (outside task files; the Edit tool allowed it; test__deps g1 was red without it, 331/331 after). Full sweep first run: only test_drive_phase failed (cause fixed by the integrated exemption); second full sweep: only test__deps g1 failed (fixed by the guide line, re-run alone green). testedState: the refusal path writes no row; the --tree path already records tree.key; a project-measured row still carries no tree key (unchanged, deliberately not added to the evidence shape).",
+    "descriptive": "A hand-run recorded task gate can no longer silently measure the project checkout for a task whose work lives in a wave tree; it is refused with the --tree remedy."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_run_test_gate.py: a task gate recorded without --tree, for a task with a registered wave tree, is refused or measured in that tree, and testedState names the tree it measured"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_run_test_gate.py: a task gate recorded without --tree, for a task with a registered wave tree, is refused or measured in that tree, and testedState names the tree it measured": {
+      "file": "plugins/audit/scripts/governance/run-test-gate.py",
+      "find": "    if tree is None or wave_integrated(project, args.task, base):",
+      "replace": "    if True:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims: (1) the refusal fires only for --record, --task, no --own, no --tree: evidence wt1 red before / green after, wt3-wt5,wt7 allow cases; (2) the integrated exemption is bound to the marker base: wt6 stale base still refused; (3) state file name pinned against integrate-task.STATE_NAME: wt8.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:502732c2f7444bc33e89fcdcabcc3dcd0f8fdcdd46488946fbf60134f3c011a1\",\"dirtyDigest\":\"sha256:fa4958e32be4ebeebac77c85a6934150b079f988e3d9c852103213d88995f90a\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"d45ccc1e392e726f\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"c9aa920112dc4b5c\",\"plugins/audit/tests/test_run_test_gate.py\":\"470d4e8bb34e2e0d\"},\"head\":\"06ba2068\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:33a1c5d5c081009fd1a927b2eae9dd52abf85ed47961000084ac28904ce13994\",\"v\":2}"
+}

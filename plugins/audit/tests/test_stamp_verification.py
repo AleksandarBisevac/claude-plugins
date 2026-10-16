@@ -4955,6 +4955,30 @@ def _house_abort_cases(check):
           and "TypeError" in (got_t.get("redFirst") or {}).get("basis", ""))
 
 
+def _owner_module_cases(check):
+    """An AttributeError names the module it was raised on, and the name is
+    judged introduced from THAT module's own bindings: a sibling file of the
+    task that happens to hold the same word as a local says nothing about it."""
+    py = sys.executable
+    root, man = _red_repo(
+        "stamp-owner-", _aborting_test("mine.new_fn()"),
+        extra={"src/other.py": "def helper():\n    new_fn = 1\n    return new_fn\n"},
+        files=["src/mine.py", "src/other.py", "tests/test_mine.py"])
+    _write(os.path.join(root, "src", "mine.py"), "v = 1\n")
+    _git(root, "add", "src/other.py")
+    _git(root, "commit", "-q", "-m", "a sibling holding new_fn as a local")
+    _write(os.path.join(root, "src", "mine.py"),
+           "v = 2\n\n\ndef new_fn():\n    return 2\n")
+    code, got = _red(root, man, [py, "tests/test_mine.py"], "--introduces",
+                     "new_fn")
+    block = got.get("redFirst") or {}
+    check("sh5 an AttributeError naming module X is judged introduced from X's "
+          "module-level bindings, so a same-named local in a sibling file does "
+          "not veto the proof (exit=%r %s)" % (code, block.get("basis", "")[:240]),
+          code == M.E_PROVED and block.get("status") == "proved"
+          and "AttributeError" in block.get("basis", ""))
+
+
 def _crlf_abort_cases(check):
     line = ("FAIL %s (AttributeError: module 'mine' has no attribute 'new_fn')"
             % (_ABORT,))
@@ -5280,6 +5304,7 @@ STAGES = (
     ("sr-vitest-json", "_vitest_json_credit_cases"),
     ("sr-could-not-start", "_could_not_start_cases"),
     ("sh-house-abort", "_house_abort_cases"),
+    ("sh-owner-module", "_owner_module_cases"),
     ("sh-crlf-abort", "_crlf_abort_cases"),
     ("si-inline", "_inline_suite_cases"),
     ("sr-directory", "_directory_scope_cases"),

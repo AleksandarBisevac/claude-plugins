@@ -1,0 +1,37 @@
+{
+  "gates": {
+    "own-tests: python3 plugins/audit/tests/test_drive_phase.py --selftest --stage ci-block": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- (scripts, hooks, tests)": "pass",
+    "python3 tools/sweep-selftests.py --quiet": "fail"
+  },
+  "redFirst": {
+    "at": "2026-10-16T22:01:03Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage ci-block` in a throwaway tree at HEAD exited 1 on \"AttributeError: module 'ci_cadence_mod' has no attribute 'ci_run'\" (read as python), and the task introduces 'ci_run': absent from HEAD's plugins/audit/scripts/governance/drive-phase.py, plugins/audit/scripts/config/_config_rules.py, plugins/audit/reference/config.md and present in the working tree's plugins/audit/scripts/governance/drive-phase.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: new section 'CI at a cadence' (ci_run seam, ci_due, ci_settle, ci_dispatch, ci_after_close, ci_before_signoff). close_task calls ci_after_close after the done verb; sign_off calls ci_before_signoff. At a due close it pushes +<sha>:refs/heads/ci/<phase lower> and runs `gh workflow run <workflow> --ref ci/<phase>` without waiting; the next close (and sign-off) does one `gh run list` read for that sha; failure/timed_out/startup_failure files a high bug via audit-task.py bug-add (naming branch, sha, run id, URL); in_progress/not-listed/unreadable is said and nothing is piled on; failed push/dispatch is said and retried at the next close; no ci.cadence = zero CI calls. _config_rules.py: KNOWN_ROOT += ci, KNOWN_CI, KNOWN_CI_CADENCE, ci_cadence_setting() (refuses 0, non-numbers, empty cadence, blank workflow), _check_ci in validate_config, OFF_ROOT['hooks DEFAULTS']['ci'] with reason. README.md: ci.cadence and ci.workflow rows. New reference/config.md. test_drive_phase.py: new stage ci-block (12 cases, all titled with the tests.add clause plus a parenthetical detail), fake ci_run seam so no git remote or gh is touched. Full sweep: 333/335 files ok; the 2 red are test__config_rules.py cv1 (schema/audit-config.schema.json does not publish 'ci') and test__panel_settings.py (Settings has no control bound to 'ci'), both because the plan gate refused edits to files outside this task: plugins/audit/schema/audit-config.schema.json (declared by P41.1, P42.5, ... P128.3-0h5, P129.*) and, by the same rule, plugins/audit/scripts/panel/_panel_settings.py. NOT DONE for the same reason: 'Doctor reports the setting' (needs a row in scripts/status/_doctor_setup.py or similar, outside files). PREMISE DISCREPANCIES: the drive did NOT already push ci/ branches (only tools/release.py does for release tags), so there is no existing landing dispatch - 'absent' is asserted as zero CI calls at any close; and 'ci-red-files-bug' does not exist (P128.1-0h5, which would have read failing jobs and cases, is cancelled), so a red files a plain bug naming the run and URL, without per-job/case detail.",
+    "descriptive": "A phase can now ask CI about itself every N closes or H hours, non-blocking, with a red filed as a bug; schema, Settings panel control and doctor row still need a widened scope."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_drive_phase.py: with ci.cadence every 3 closes the drive dispatches CI on the third close and not before, never waits on it, and reads its verdict at the next close; absent, it dispatches only at landing"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_drive_phase.py: with ci.cadence every 3 closes the drive dispatches CI on the third close and not before, never waits on it, and reads its verdict at the next close; absent, it dispatches only at landing": {
+      "file": "plugins/audit/scripts/governance/drive-phase.py",
+      "find": "    if closes and held.get(\"closes\", 0) >= closes:",
+      "replace": "    if closes and held.get(\"closes\", 0) > closes:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_drive_phase.py",
+        "--selftest",
+        "--stage",
+        "ci-block"
+      ]
+    }
+  },
+  "claims": "claims: (1) 'no ci.cadence = no CI call' is held by the absent-case asserting calls == [] through a full drive with the seam faked; (2) 'never waits' is held by no watch/--exit-status argv and the fourth task closing while the run is out, plus an in_progress run finishing the drive; NOT held for real gh latency, the seam is faked; (3) the real ci_run subprocess path (DEVNULL stdin, GIT_TERMINAL_PROMPT=0) was not exercised against a real remote.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:62a98e13ae67bb60c519afc13837980ef637af6c06b3707682578eee7c3ad985\",\"dirtyDigest\":\"sha256:0aeff21d665fc00225c3211958c7ce82b892a032ccae9cdf99b5f65e540f6c7f\",\"dirtyPaths\":{\"plugins/audit/README.md\":\"a5711ff9c4af3dd1\",\"plugins/audit/reference/config.md\":\"02224f06578949bf\",\"plugins/audit/scripts/config/_config_rules.py\":\"78e39f3329c53212\",\"plugins/audit/scripts/governance/drive-phase.py\":\"279049089ccd92d4\",\"plugins/audit/tests/test_drive_phase.py\":\"60b05979b87e8059\"},\"head\":\"06ba2068\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/reference/config.md\",\"plugins/audit/scripts/config/_config_rules.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:dfac927e76540204c6ab6106ed8527e44bd3abc74d1dd9b15e97071d43033870\",\"v\":2}"
+}

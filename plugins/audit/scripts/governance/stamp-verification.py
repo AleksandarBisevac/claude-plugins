@@ -1077,13 +1077,80 @@ def _names(text, word):
     return bool(re.search(r"(?<![\w-])%s(?![\w-])" % re.escape(word), text or ""))
 
 
-def introduced(root, implementation, symbol, deadline=None):
+_OWNER_MODULE = re.compile(r"module '([^']+)' has no attribute")
+
+
+def owner_module(report):
+    """The module an AttributeError report says lacked the attribute, or None:
+    the error names the object it was raised on, and that is the one place the
+    missing name is expected to appear."""
+    if report.get("cls") != "AttributeError":
+        return None
+    found = _OWNER_MODULE.search(report.get("message") or "")
+    return found.group(1) if found else None
+
+
+def _owner_file(owner, implementation):
+    """The ONE declared implementation file module `owner` is, or None: the
+    dotted name as a path, then with the last part spelled the way a script's
+    hyphenated file name is (`stamp_verification` for `stamp-verification.py`)."""
+    path = owner.replace(".", "/")
+    head, _sep, tail = path.rpartition("/")
+    hyphened = (head + "/" if head else "") + tail.replace("_", "-")
+    for spelling in (path, hyphened):
+        rel = _one_source(spelling, implementation, (".py", "/__init__.py"))
+        if rel:
+            return rel
+    return None
+
+
+def _module_bindings(text):
+    """The names a Python module binds at its top level, imports included
+    (`_top_names` leaves those out, and `mod.name` reads them too), or None
+    when `text` does not parse."""
+    names = _top_names(text)
+    if names is None:
+        return None
+    names = set(names)
+    for stmt in _parse(text).body:
+        if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+            names.update((a.asname or a.name).split(".")[0] for a in stmt.names)
+    return names
+
+
+def _introduced_by_owner(root, rel, symbol, deadline):
+    """`(holds, basis)` for `symbol` judged from the module-level bindings of
+    the one file `rel` the error was raised on, or None when that cannot be
+    read as a module (it does not parse, or the working tree's copy does not
+    bind the name) and the whole-name reading must decide."""
+    head = _head_text(root, rel, timeout=max(1, _left(deadline))
+                      if deadline is not None else 120)
+    before = set() if head is None else _module_bindings(head)
+    after = _module_bindings(_wt_text(root, rel))
+    if before is None or after is None or symbol not in after:
+        return None
+    if symbol in before:
+        return False, ("%r is not introduced by this task: HEAD's %s already "
+                       "binds it at module level" % (symbol, rel))
+    return True, ("absent from HEAD's module-level bindings of %s and bound in "
+                  "the working tree's" % (rel,))
+
+
+def introduced(root, implementation, symbol, deadline=None, owner=None):
     """`(holds, basis)` - the STATIC half of whether this task introduces `symbol`:
     absent, as a whole name, from HEAD's copy of every declared implementation
     file (content and path, so a new module counts), and present in the working
     tree's copy of at least one. The half that decides is the second run, in
     `run_red`: with the working tree's implementation copied in, the error the
-    first run ended on must be gone."""
+    first run ended on must be gone.
+
+    `owner` is the module an AttributeError named. When it is one declared file
+    the judgement is that file's module-level bindings alone, so a sibling file
+    holding the same word as a local or a string says nothing about it."""
+    rel = _owner_file(owner, implementation) if owner else None
+    judged = _introduced_by_owner(root, rel, symbol, deadline) if rel else None
+    if judged is not None:
+        return judged
     heads = dict((rel, _head_text(root, rel, timeout=max(1, _left(deadline))
                                   if deadline is not None else 120))
                  for rel in implementation)
@@ -3071,7 +3138,8 @@ def red_verdict(run, ctx):
                           (final_error(text) or ("", "", "none"))[2]))
     for (kind, subject), report in subjects:
         if kind == "symbol":
-            holds, why = introduced(ctx["root"], sources, subject, ctx.get("deadline"))
+            holds, why = introduced(ctx["root"], sources, subject, ctx.get("deadline"),
+                                    owner_module(report))
             what = "the task introduces %r" % (subject,)
         else:
             holds, why = changed_source(ctx["root"], subject, ctx.get("deadline"))
