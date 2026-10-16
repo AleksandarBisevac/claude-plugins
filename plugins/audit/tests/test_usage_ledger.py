@@ -1497,6 +1497,13 @@ def _cases(check):
         check("cm3 a transcript with no cost-state records no cliCost key at "
               "all (never an empty reading standing in for 'none recorded')",
               len(_cm_rows3) == 1 and "cliCost" not in _cm_cur3, _cm_cur3)
+        _co_bad = M.cli_cost_outcome(os.path.join(_cc_dir, "none"), None)
+        _co_ok = M.cli_cost_outcome(os.path.join(_cc_dir, "none"), [])
+        check("cm3b cli_cost_outcome answers None plus the exception's name "
+              "and message when the comparison raised, and `[]` plus no "
+              "reason only when nothing differs",
+              _co_bad[0] is None and _co_bad[1].startswith("TypeError: ")
+              and _co_ok == ([], None), (_co_bad, _co_ok))
         _cm_ledger = os.path.join(_cc_dir, "ledger")
         M.save_cursor(_cm_ledger, "s-cm", _cm_cur2)
         M.save_cursor(_cm_ledger, "s-cq", _cm_cur3)

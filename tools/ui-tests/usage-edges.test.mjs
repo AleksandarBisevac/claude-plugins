@@ -734,6 +734,28 @@ describe('with showCost off the tab prints no per-task dollar figure', () => {
       expect(tabCli({ cliCost, showCost: false })).toEqual([]);
       expect(tabCli({ cliCost: [] })).toEqual([]);
     });
+
+    const COULD_NOT = "The CLI's own per-session figure could not be compared "
+      + "with the plugin's reading for this ledger: ";
+
+    it('a comparison that could not be made says so, with the reason, in the '
+      + 'dialog and on the tab [not the silence of an empty list]', () => {
+      const extra = { cliCost: null,
+        cliCostReason: 'ValueError: cursor unreadable' };
+      const dlg = browseUnpriced('model', extra).lines
+        .filter((s) => s.includes('could not be compared')).join('\n');
+      expect(dlg).toContain(COULD_NOT + 'ValueError: cursor unreadable.');
+      const notes = tabCli(extra);
+      expect(notes.length).toBe(1);
+      expect(notes[0]).toContain(COULD_NOT + 'ValueError: cursor unreadable.');
+    });
+
+    it('...and names a missing reason, and stays silent with dollars off '
+      + '[the twin: a note that always prints fails here]', () => {
+      expect(tabCli({ cliCost: null })[0]).toContain('no reason was recorded');
+      expect(tabCli({ cliCost: null, cliCostReason: 'X: y',
+        showCost: false })).toEqual([]);
+    });
   });
 });
 

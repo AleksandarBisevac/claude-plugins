@@ -132,6 +132,8 @@ def _usage_shape(**overrides):
         # reading of the same session - `_cli_cost_payload`. `[]` on the exits
         # with no rows, where there is no plugin reading to differ from.
         "cliCost": [],
+        # Why `cliCost` is None when the comparison raised; None otherwise.
+        "cliCostReason": None,
     }
     unknown = sorted(k for k in overrides if k not in shape)
     if unknown:
@@ -335,12 +337,10 @@ def _cli_cost_payload(ul, ledger_dir, rows):
     surfaces cannot disagree about which sessions differ or what the CLI's
     side is called.
 
-    Fail-soft to `[]`, like each derived block: one comparison going wrong
-    costs the tab that line, never the tab."""
-    try:
-        return ul.cli_cost_entries(ledger_dir, rows)
-    except Exception:
-        return []
+    Returns `(entries, reason)` from `ul.cli_cost_outcome`, the wrapper the
+    report shares: when the comparison raised, `entries` is None and `reason`
+    says why. `[]` is reserved for "every recorded figure agreed"."""
+    return ul.cli_cost_outcome(ledger_dir, rows)
 
 
 # --- what the gates caught, from a DIFFERENT ledger than the rest of this file ---
@@ -469,12 +469,13 @@ def usage_state(project):
     # the tab DRAWS and by what a save-to-disk export carries out of the page.
     payload = dict(declared)
     payload.update(_usage_derived(ul, manifest, rows, pricing["table"]))
+    cli_cost, cli_cost_reason = _cli_cost_payload(ul, ledger_dir, rows)
     payload.update({
         "pricingBasis": {k: pricing[k] for k in
                          ("basis", "asOf", "source", "pricedWhenWritten")
                          + tuple(priced["mix"])},
         "rateBasis": ul.rate_basis_phrase(pricing),
-        "cliCost": _cli_cost_payload(ul, ledger_dir, rows)})
+        "cliCost": cli_cost, "cliCostReason": cli_cost_reason})
     payload.update({"fields": list(_FACT_FIELDS), "facts": facts,
                     "phaseTitles": titles, "taskMeta": task_meta,
                     "phaseBudgets": budgets, "counts": _ledger_counts(rows),

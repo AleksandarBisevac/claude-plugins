@@ -1098,6 +1098,22 @@ def cli_cost_entries(ledger_dir, rows):
     return out
 
 
+def cli_cost_outcome(ledger_dir, rows):
+    """`(entries, reason)` - `cli_cost_entries` over the priced rows and
+    None, or None and why the comparison could not be made. None, not `[]`:
+    an empty list says every recorded CLI figure agreed, and a comparison
+    that raised has said nothing of the kind. The reason is the exception
+    itself, because a surface saying only that something failed leaves its
+    reader nothing to look at. The report and the panel both call this, so
+    the two cannot disagree on the case where the read failed. Contained so
+    that one failing read costs the surface that line, never the whole
+    Usage block."""
+    try:
+        return cli_cost_entries(ledger_dir, rows), None
+    except Exception as exc:
+        return None, "%s: %s" % (type(exc).__name__, exc)
+
+
 def start_notice_given(ledger_dir, session_id, model):
     """Whether SessionStart already told `session_id`'s reader that `model`
     is unpriced. Kept in its own file beside the cursors, never in a cursor:

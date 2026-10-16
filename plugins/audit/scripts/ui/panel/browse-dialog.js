@@ -113,12 +113,19 @@ function modelCell(r){
  * the facts are.
  * @param {string} dim The dimension being browsed; only `model` carries it,
  *   since a model is what both sides price.
+ * A comparison that could not be made (`cliCost` null) says so with the
+ * server's `cliCostReason`; an empty list is the only thing that reads as
+ * agreement.
  * @returns {HTMLDivElement|null} Null with dollars off, on another dimension,
  *   or when nothing differs.
  */
 function browseCliNote(dim){
+ if(dim!=='model'||!USAGE.showCost)return null;
+ if(USAGE.cliCost===null)return el('div',{class:'mut small','data-cli-cost':''},
+   'The CLI\'s own per-session figure could not be compared with the plugin\'s '
+   +'reading for this ledger: '+(USAGE.cliCostReason||'no reason was recorded')+'.');
  const diff=Array.isArray(USAGE.cliCost)?USAGE.cliCost:[];
- if(dim!=='model'||!USAGE.showCost||!diff.length)return null;
+ if(!diff.length)return null;
  const plugin=c=>c.pluginUnpriced?'unpriced'
    :c.pluginCostUSD==null?'no reading':uCost(c.pluginCostUSD);
  return el('div',{class:'mut small','data-cli-cost':''},

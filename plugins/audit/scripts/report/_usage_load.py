@@ -96,17 +96,9 @@ def _project_pricing(manifest, manifest_path, project_dir, ul):
 
 
 def _cli_cost(ul, ledger_dir, rows):
-    """`(entries, reason)` - `ul.cli_cost_entries` over the priced rows and
-    None, or None and why the comparison could not be made. None, not `[]`:
-    an empty list says every recorded CLI figure agreed, and a comparison
-    that raised has said nothing of the kind. The reason is the exception
-    itself, because a surface saying only that something failed leaves its
-    reader nothing to look at. Contained here so that one failing read costs
-    the section that line rather than the whole Usage block."""
-    try:
-        return ul.cli_cost_entries(ledger_dir, rows), None
-    except Exception as exc:
-        return None, "%s: %s" % (type(exc).__name__, exc)
+    """`(entries, reason)` from `ul.cli_cost_outcome`, the one wrapper the
+    panel shares: None and why, never `[]`, when the comparison raised."""
+    return ul.cli_cost_outcome(ledger_dir, rows)
 
 
 def _hourly(rows, ul):

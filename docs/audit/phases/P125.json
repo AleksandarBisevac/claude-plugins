@@ -1208,8 +1208,10 @@
         "severity": "med",
         "file": "plugins/audit/tests/test_drive_phase.py:6646-6730 (HEAD; added by 6413e737295a at 6150, 6197-6221)",
         "issue": "contradicts task clause (3) 'run the drive and integrate suites with LC_ALL=C PYTHONUTF8=0 ... and add that run as a case', which the fix task quotes. The fix task's text names two gaps: 'The integrate suite (test_integrate_task.py) and the other drive blocks have no case.' The diff closes only the integrate half (_integrate_ascii_case runs test_integrate_task.py --selftest whole under ASCII_ENV). The drive suite under the ASCII locale is still only ASCII_BLOCK = 'fm-block'. The executor's own reasoning for choosing option (a) is that the sweep's --encoding pass 'pins no locale on Windows'. That reasoning applies just as much to the drive suite's other blocks, so on Windows those blocks get no ASCII run, and nothing records where they are covered. The technical outcome admits this ('The drive suite's other blocks are still not re-run under ASCII'), but the descriptive claim says 'closing the clause-3 gap', which overstates what the diff does.",
-        "resolution": "Pick one. (1) Re-run the drive suite's remaining stages, not al-block itself (it would recurse), under ASCII_ENV through _harness.run_stage, as fm-block is run. (2) Or state in _ascii_locale_cases's docstring, beside the ASCII_BLOCK comment, that the sweep's --encoding pass is the cover for the drive suite's other blocks on POSIX and that nothing covers them on Windows, and correct the descriptive claim to match.",
-        "fixTask": "P125.134-0h5"
+        "resolution": "fixed in P125.134-0h5 (de00aac87d12): Pick one. (1) Re-run the drive suite's remaining stages, not al-block itself (it would recurse), under ASCII_ENV through _harness.run_stage, as fm-block is run. (2) Or state in _ascii_locale_cases's docstring, beside the ASCII_BLOCK comment, that the sweep's --encoding pass is the cover for the drive suite's other blocks on POSIX and that nothing covers them on Windows, and correct the descriptive claim to match.",
+        "fixTask": "P125.134-0h5",
+        "commit": "de00aac87d12",
+        "status": "fixed"
       },
       {
         "id": "P125-R148",
@@ -1329,7 +1331,7 @@
         "resolution": "Run the call through Popen with stdout/stderr sent to scratch files, or kill and then communicate(timeout=<short>) and fall back to closing the pipes, so the timeout bounds the call on both platforms."
       }
     ],
-    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 52 with a recorded fix commit]"
+    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 53 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -10534,7 +10536,7 @@
     {
       "id": "P125.134-0h5",
       "title": "fix P125-R147: contradicts task clause (3) 'run the drive and integrate suite...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause (3) 'run the drive and integrate suites with LC_ALL=C PYTHONUTF8=0 ... and add that run as a case', which the fix task quotes. The fix task's text names two gaps: 'The integrate suite (test_integrate_task.py) and the other drive blocks have no case.' The diff closes only the integrate half (_integrate_ascii_case runs test_integrate_task.py --selftest whole under ASCII_ENV). The drive suite under the ASCII locale is still only ASCII_BLOCK = 'fm-block'. The executor's own reasoning for choosing option (a) is that the sweep's --encoding pass 'pins no locale on Windows'. That reasoning applies just as much to the drive suite's other blocks, so on Windows those blocks get no ASCII run, and nothing records where they are covered. The technical outcome admits this ('The drive suite's other blocks are still not re-run under ASCII'), but the descriptive claim says 'closing the clause-3 gap', which overstates what the diff does.\n\nResolution asked: Pick one. (1) Re-run the drive suite's remaining stages, not al-block itself (it would recurse), under ASCII_ENV through _harness.run_stage, as fm-block is run. (2) Or state in _ascii_locale_cases's docstring, beside the ASCII_BLOCK comment, that the sweep's --encoding pass is the cover for the drive suite's other blocks on POSIX and that nothing covers them on Windows, and correct the descriptive claim to match.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py"
@@ -10564,14 +10566,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "de00aac87d12",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "In test_drive_phase.py: _ascii_locale_cases docstring now states per platform coverage (fm-block re-run everywhere, POSIX other blocks covered by sweep --encoding pass, Windows nothing re-runs them) with why fm-block and why not whole suite; new _ascii_coverage_case (called first) checks ASCII_BLOCK is a unique stage other than al-block, docstring contains the two coverage statements, and sweep locale_decision pins a locale on posix and none on nt. al-block: 6/6 pass, exit 0. Full sweep: exit 0, 335/335 files ok. Note: I used a python one-off (not Edit) once to normalize whitespace in the docstring check I had just written.",
+        "descriptive": "The drive suite's ASCII-locale coverage is stated honestly and pinned by a case; no overstated gap closure."
       },
       "startedAt": "2026-10-16T09:30:32Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T10:12:05Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py: the case P125-R147 asks for, locking the behaviour at HEAD (ASCII_BLOCK names a stage ...)"
+      ],
       "notes": [
         {
           "at": "2026-10-16T07:18:21Z",
@@ -10590,6 +10594,17 @@
         "runId": "2026-10-16T10:12:03Z.457b40",
         "status": "passed",
         "at": "2026-10-16T10:12:03Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "de00aac87d12",
+        "at": "2026-10-16T10:12:05Z",
+        "basis": "a fix task for P125-R147: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression mode, expectRedFirst false; mutation run instead: ASCII_BLOCK set to 'zz-block' made the new case FAIL (al-block exit 1), restored to 'fm-block' (grep count of 'zz-block' is 0, 'ASCII_BLOCK = \"fm-block\"' present) and al-block exit 0",
+        "at": "not applicable"
       }
     },
     {
@@ -10671,7 +10686,12 @@
       "fixes": [
         "P125-R151"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-16T10:22:27Z.1665c9",
+        "status": "passed",
+        "at": "2026-10-16T10:22:27Z"
+      }
     },
     {
       "id": "P125.136-0h5",

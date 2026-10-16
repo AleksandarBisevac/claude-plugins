@@ -500,6 +500,36 @@ def _cli_cost_cases(check, tmp, write_json):
           and unp[0][fields.index("tokens")] == 2500000
           and M._usage_shape().get("cliCost") == [])
 
+    # A comparison that raised must not read as agreement. The twin of the
+    # session-sy case above (agreement ships `[]` and no reason): a payload
+    # that answered `[]` here, or that attached a reason to a good read, goes
+    # red on one side or the other.
+    ul = M._load("audit_usage_ledger", "usage_ledger.py")
+    real = ul.cli_cost_entries
+
+    def boom(ledger_dir, rows):
+        raise ValueError("cursor unreadable")
+
+    ul.cli_cost_entries = boom
+    try:
+        failed = M.usage_state(proj)
+        direct = M._cli_cost_payload(ul, led, [])
+    finally:
+        ul.cli_cost_entries = real
+    ok_state = M.usage_state(proj)
+    check("Return `(None, '<ExcType>: <msg>')` from the panel, as "
+          "`_usage_load._cli_cost` does (when `ul.cli_cost_entries` raises "
+          "the payload carries cliCost None and cliCostReason "
+          "'ValueError: cursor unreadable', not `[]`; a good read carries a "
+          "list and no reason): %r" % ((failed.get("cliCost", "absent"),
+                                        failed.get("cliCostReason")),),
+          "cliCost" in failed and failed["cliCost"] is None
+          and failed.get("cliCostReason") == "ValueError: cursor unreadable"
+          and direct == (None, "ValueError: cursor unreadable")
+          and isinstance(ok_state.get("cliCost"), list)
+          and ok_state.get("cliCostReason") is None
+          and M._usage_shape().get("cliCostReason", "absent") is None)
+
 
 def _read_time_pricing_cases(check, tmp, write_json):
     """A ledger stored at another table: the tab ships the resolved table's
