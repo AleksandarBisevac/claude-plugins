@@ -1055,8 +1055,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/ui/panel/usage-metrics.js:406-413",
         "issue": "contradicts task clause 'every surface (audit-usage, the report, the panel) prints unpriced beside its tokens instead of a dollar figure' (P125-R1, resolution: \"Render 'unpriced' beside the tokens of a model that has no price\"). The diff adds `costOf` to uBars' head rows but leaves the tail row unchanged: `const more=tail.reduce((a,x)=>[a[0]+x[1][0],a[1]+x[1][1]],[0,0]);` ... `uTok(more[0])+(USAGE.showCost?' - '+uCost(more[1]):'')`. So an 'other (N)' row whose every token is unpriced still reads '$0.00' in the panel. The report's `_ranked` does handle this case: the same diff makes its 'other (%d)' row sum `unpricedTokens` (`_usage_overview.py:399-403`). The README sentence this diff adds (README.md:991 at HEAD) claims the opposite: a row whose every token is unpriced reads `unpriced` 'in ... the panel's ranked lists'. HEAD still has the line unchanged (usage-metrics.js:413).",
-        "resolution": "Sum the tail's unpriced tokens from the `unp` map (`tail.reduce` over `unp.get(k)`) and print `uAllUnpriced(more[0], tailUnp) ? 'unpriced' : uCost(more[1])` on the tail row. Add a usage-edges case where more than SHOWN[dim] values exist and every tail value is unpriced, asserting the 'other' row reads 'unpriced' and never '$0.00'.",
-        "fixTask": "P125.129-0h5"
+        "resolution": "fixed in P125.129-0h5 (c68eefee9108): Sum the tail's unpriced tokens from the `unp` map (`tail.reduce` over `unp.get(k)`) and print `uAllUnpriced(more[0], tailUnp) ? 'unpriced' : uCost(more[1])` on the tail row. Add a usage-edges case where more than SHOWN[dim] values exist and every tail value is unpriced, asserting the 'other' row reads 'unpriced' and never '$0.00'.",
+        "fixTask": "P125.129-0h5",
+        "commit": "c68eefee9108",
+        "status": "fixed"
       },
       {
         "id": "P125-R128",
@@ -1321,7 +1323,7 @@
         "resolution": "Run the call through Popen with stdout/stderr sent to scratch files, or kill and then communicate(timeout=<short>) and fall back to closing the pipes, so the timeout bounds the call on both platforms."
       }
     ],
-    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 48 with a recorded fix commit]"
+    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 49 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -7043,6 +7045,10 @@
         {
           "at": "2026-10-15T03:41:27Z",
           "text": "no test runner in this task's gate for the test P125-R35 asks for: the gate is ['selftests', 'validate', 'plugin-validate', 'gate', 'report', 'lint', 'shots', 'interactive'], derived as the phase's testGate, wide -- no sibling task in P125 declares a path-scoped gate entry to read this project's spelling off; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        },
+        {
+          "at": "2026-10-16T08:39:50Z",
+          "text": "Omission recorded (finding P125-R138, the orchestrator's choice of its option b): the micro-test over recorded transcript rows with a stated margin is NOT done. No captured transcript of two real phases with a /clear between them exists, and a synthesised one only restates the answer. The case is narrowed by P125.131 to what it observes: finish()'s chain line tells the next phase to start from a cleared context and names that phase. A real-transcript measurement is owed if a two-phase capture is ever recorded."
         }
       ],
       "fixes": [
@@ -10132,7 +10138,7 @@
     {
       "id": "P125.129-0h5",
       "title": "fix P125-R127: contradicts task clause 'every surface (audit-usage, the repor...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause 'every surface (audit-usage, the report, the panel) prints unpriced beside its tokens instead of a dollar figure' (P125-R1, resolution: \"Render 'unpriced' beside the tokens of a model that has no price\"). The diff adds `costOf` to uBars' head rows but leaves the tail row unchanged: `const more=tail.reduce((a,x)=>[a[0]+x[1][0],a[1]+x[1][1]],[0,0]);` ... `uTok(more[0])+(USAGE.showCost?' - '+uCost(more[1]):'')`. So an 'other (N)' row whose every token is unpriced still reads '$0.00' in the panel. The report's `_ranked` does handle this case: the same diff makes its 'other (%d)' row sum `unpricedTokens` (`_usage_overview.py:399-403`). The README sentence this diff adds (README.md:991 at HEAD) claims the opposite: a row whose every token is unpriced reads `unpriced` 'in ... the panel's ranked lists'. HEAD still has the line unchanged (usage-metrics.js:413).\n\nResolution asked: Sum the tail's unpriced tokens from the `unp` map (`tail.reduce` over `unp.get(k)`) and print `uAllUnpriced(more[0], tailUnp) ? 'unpriced' : uCost(more[1])` on the tail row. Add a usage-edges case where more than SHOWN[dim] values exist and every tail value is unpriced, asserting the 'other' row reads 'unpriced' and never '$0.00'.",
       "files": [
         "plugins/audit/scripts/ui/panel/usage-metrics.js",
@@ -10164,14 +10170,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c68eefee9108",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "usage-metrics.js: tail row sums unpriced tokens from unp map (tailUnp) and prints uAllUnpriced(more[0],tailUnp)?'unpriced':uCost(more[1]). usage-edges.test.mjs: renderUnpriced takes optional tailRows; added the clause case and a deny twin (priced tail keeps a dollar figure). Full npx vitest run: 827 passed. Sweep: 334/335 files ok; only test__refs.py fails (sc1/sc2: panel screenshots stale vs panel source digest, expected, not captured). capture-screenshots --check exit 0. Files changed: plugins/audit/scripts/ui/panel/usage-metrics.js, tools/ui-tests/usage-edges.test.mjs.",
+        "descriptive": "The panel's 'other (N)' ranked row now reads 'unpriced' when its whole tail is unpriced, matching the report."
       },
       "startedAt": "2026-10-16T07:18:32Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T08:38:46Z",
+      "verifiedBy": [
+        "an 'other' row whose every tail value is unpriced reads 'unpriced', never $0.00 (more values than SHOWN[dim], none of the tail priced)",
+        "...and an 'other' row with priced tokens keeps its figure [the twin: a tail that always says unpriced fails here]"
+      ],
       "notes": [
         {
           "at": "2026-10-16T07:18:21Z",
@@ -10198,6 +10207,18 @@
         "runId": "2026-10-16T08:38:44Z.61d5f9",
         "status": "passed",
         "at": "2026-10-16T08:38:44Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "c68eefee9108",
+        "at": "2026-10-16T08:38:46Z",
+        "basis": "a fix task for P125-R127: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-16T07:39:38Z",
+        "basis": "`npx vitest run tools/ui-tests/usage-edges.test.mjs` in a throwaway tree at HEAD exited 1, but no case --case names failed an assertion as the task's own: an 'other' row whose every tail value is unpriced reads 'unpriced', never $0.00 (more values than SHOWN[dim], none of the tail priced) (AssertionError: expected 'other (2) - show 2 more150 - $0.00' to contain 'unpriced') (with showCost off the tab prints no per-task dollar figure > a model no rate covers > an 'other' row whose every tail value is unpriced reads 'unpriced', never $0.00 (more values than SHOWN[dim], none of the tail priced): tools/ui-tests/usage-edges.test.mjs (with showCost off the tab prints no per-task dollar figure > a model no rate covers > an 'other' row whose every tail value is unpriced reads 'unpriced', never $0.00 (more values than SHOWN[dim], none of the tail priced)) builds a test title at run time (`.each`, a template or a variable) that may be this one, so which test failed cannot be told) - Tests  1 failed | 47 passed (48); --case an 'other' row whose every tail value is unpriced reads 'unpriced', never $0.00 names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -10269,7 +10290,7 @@
     {
       "id": "P125.131-0h5",
       "title": "fix P125-R138: contradicts task clause: P125-R35 asks for 'two trivial phases...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "contradicts task clause: P125-R35 asks for 'two trivial phases driven back to back as the command directs ... offline fixture over recorded transcript rows' with a stated margin. That micro-test is still not there in substance. `_session_rows` builds the rows itself and sets `carried = 0` whenever a printed line contains \"clear context\". So `followed[\"b-first\"] == fresh[\"b-first\"]` holds by construction, and CHAIN_MARGIN_TOKENS never comes into play. The only fact the case actually observes is the substring \"clear context\" in `M.finish(ctx, ...)['lines']`, which cn1 already asserts (cn1 also checks that the line names P2; the new case does not). Phase P2 is never driven. No recorded transcript row is read: every row is synthesised by `_request_row`. The `a-first` mark is computed and never used. The orchestrator's mutation turning cx red proves only that the substring is checked, which cn1 already proved. The executor's outcome does say obedience is 'modelled, not observed'. Its title still claims a context measurement within a margin.\n\nResolution asked: Either (a) read a captured transcript fixture of two real phases with the `/clear` between them, measure the second phase's first request with the existing reader (`tools/stream-cost.py` / `_usage_core`) and keep the margin; or (b) record the omission on the task and retitle the case to what it checks (finish prints the chain line). Drop the margin claim, which nothing exercises.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py"
@@ -10297,14 +10318,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-16T08:38:48Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -10319,12 +10340,13 @@
       ],
       "fixes": [
         "P125-R138"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.132-0h5",
       "title": "fix P125-R139: contradicts task clause: P125-R77's issue is that 'other user-...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "contradicts task clause: P125-R77's issue is that 'other user-facing statements' of the ladder still say a plan with phases and nothing running only warns. Three surfaces still state the old ladder at HEAD. SECURITY.md:424 reads 'with a manifest but no phase `in_progress` it warns, and it denies once a phase is running', and that section exists so that 'anyone reasoning about this plugin's guarantees' has the condition. The `enforce` description in the schema file this diff edited (:86) reads 'warn with a manifest but no phase in_progress, deny once a phase is running'. The build guide's require-plan section (:641-643) reads 'manifest but no phase `in_progress` -> `warn`'. The executor's descriptive claim 'Every user-facing statement of the plan gate ladder now reads deny past the free file' is false. Its grep ('nothing running|none running', 'warns with a plan/manifest') missed the 'no phase in_progress' spelling. This is the same class the finding named, fixed per instance again.\n\nResolution asked: Correct SECURITY.md:424-425, the schema `enforce` description and PLUGIN-BUILD-GUIDE.md:641-643 to the ladder. Close the class with a check, not another grep: a case that scans the shipped .md and schema text for the retired rung's wording in every spelling ('no phase in_progress', 'nothing running', 'but no phase running'), or that requires each document stating the ladder to carry `plan_gate_ladder_phrase()`'s steps.",
       "files": [
         "SECURITY.md",
@@ -10355,14 +10377,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-16T08:38:50Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -10389,12 +10411,13 @@
       ],
       "fixes": [
         "P125-R139"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.133-0h5",
       "title": "fix P125-R145: contradicts task clause \"Citations survive there: .github/work...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "contradicts task clause \"Citations survive there: .github/workflows/ci.yml:134,468,480,561,735,1068,1107\". The diff removes the ids at 468, 480, 561, 735, 1068 and 1107 (and at 745, 747, 907 and 983, which the widened lint found). It leaves line 134 (`- name: F117 - what os.kill(pid, 0) does on Windows (a MEASUREMENT, not a gate)`) and line 205 (`echo \"F117: panel-server._pid_alive() asks os.kill(pid, 0). ...\"`) as they were. Both are still at HEAD fb733fc6: `git grep` over every .yml/.yaml/.toml/.css/.tape/.gitignore/.gitattributes file at HEAD finds the fault shape on these two lines and nowhere else. The executor disclosed this and gave the reason that the lines are a YAML value and shell output, not comments, so the comment lint does not read them. That is a fair account of what the lint can see, but the task named :134 as a citation that survives. A step name and an echo line are also more public than a comment: they appear on every CI run page and in every log. The .py side of the same scan already reads every string literal for this reason (`_py_other_literal_citations`).\n\nResolution asked: Swap the id for the constraint it stands for, in the step name and the echo. For example `- name: what os.kill(pid, 0) does on Windows (a MEASUREMENT, not a gate)` and `echo \"panel-server._pid_alive() asks os.kill(pid, 0). On this runner:\"`. Then confirm with `git grep -nP '\\bF(?:\\d{1,4}|-[A-Z]?-?\\d{1,4})[a-z]?\\b' -- '*.yml'` that no fault-shaped token is left. No change to the lint is needed.",
       "files": [
         ".github/workflows/ci.yml"
@@ -10420,14 +10443,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-16T08:38:53Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -10446,7 +10469,8 @@
       ],
       "fixes": [
         "P125-R145"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.134-0h5",
