@@ -10104,6 +10104,123 @@ def _tree_cases(check):
           full_code == M.E_ASK and any("--full" in ln for ln in full_lines))
 
 
+def _wave_tree_cases(check):
+    """A task with a wave tree of its own, gated by hand with `--record` and no
+    `--tree`. The project's copy of the declared file FAILS and the wave tree's
+    PASSES, so a run that measured the project cannot be mistaken for one that
+    measured the task's work: it is red, and a row it wrote would be GATE RED
+    evidence for the wrong bytes - or, with the bytes swapped, GREEN ones.
+
+    The tree is a real linked worktree of the project carrying the marker
+    `manage-worktrees.py task-add` writes, since the gate reads the task's tree
+    the way `integrate-task.py` does: through git's worktree list.
+    """
+    import _worktrees
+    project = _mini_repo("run-test-gate-wave-p-")
+    aux = _harness.fixture_root("run-test-gate-wave-x-")
+    tree = os.path.join(aux, "wave")
+    os.makedirs(os.path.join(project, "tests"))
+
+    def declared(root, code):
+        with open(os.path.join(root, "tests", "test_a.py"), "w") as fh:
+            fh.write("import sys\nprint('tests/test_a.py')\nsys.exit(%d)\n"
+                     % (code,))
+
+    def task(tid):
+        return {"id": tid, "title": "t", "status": "in_progress",
+                "files": ["tests/test_a.py"],
+                "tests": {"gateBasis": "declared",
+                          "gate": ['"%s" tests/test_a.py' % (sys.executable,)],
+                          "add": ["tests/test_a.py: covers a"]}}
+    declared(project, 1)
+    mp = os.path.join(project, "audit-plan.json")
+    with open(mp, "w") as fh:
+        json.dump({"meta": {"version": 2, "buildCommands": {"chk": "true"}},
+                   "phases": [{"id": "P1", "title": "p",
+                               "status": "in_progress", "testGate": ["chk"],
+                               "tasks": [task("P1.1"), task("P1.2")]}]}, fh)
+    git = lambda *a: _harness.git(project, *a, prefix=_PLAIN_GIT)  # noqa: E731
+    git("add", "-A")
+    git("-c", "user.email=f@example.com", "-c", "user.name=F", "commit", "-q",
+        "-m", "base")
+    head = git("rev-parse", "HEAD").strip()
+    git("worktree", "add", "-q", "--detach", tree, head)
+    declared(tree, 0)
+    admin = _worktrees.admin_dir(tree)
+    with open(os.path.join(admin, "audit-worktree.json"), "w") as fh:
+        json.dump({"createdBy": "audit", "taskId": "P1.1",
+                   "phaseTree": project, "base": head}, fh)
+    base = [mp, "P1", "--project-dir", project, "--record"]
+
+    lines = []
+    code = M.main(base + ["--task", "P1.1"], out=lines.append)
+    rows = _ev_io.read_rows(project)["rows"]
+    state = (rows[-1].get("testedState") or {}) if rows else {}
+    key = (state.get("tree") or {}).get("key")
+    tree_digest = _tree_stamp.scope_digest(tree, ["tests/test_a.py"])[0]
+    refused = code == M.E_ASK and not rows
+    measured = (code == M.E_OK and len(rows) == 1 and bool(key)
+                and key == M.tree_key(tree)
+                and state.get("scopeDigest") == tree_digest)
+    check("wt1 RED-FIRST: a task gate recorded without --tree, for a task with "
+          "a registered wave tree, is refused or measured in that tree, and "
+          "testedState names the tree it measured: %r"
+          % ((code, len(rows), key, lines[-3:]),),
+          refused or measured)
+    check("wt2 ...a refusal names the way out (`--tree`) in its message: %r"
+          % (lines[-3:],),
+          measured or any("--tree" in ln for ln in lines))
+
+    other = []
+    ocode = M.main(base + ["--task", "P1.2"], out=other.append)
+    check("wt3 ALLOW: a task with no wave tree of its own is still measured in "
+          "the project, so the refusal reads the task's registration and not "
+          "the project's worktrees (the project's copy fails here, so a "
+          "project measurement is red, never refused): %r"
+          % ((ocode, other[-2:]),),
+          ocode == M.E_FAIL)
+
+    again = []
+    acode = M.main(base + ["--task", "P1.1", "--tree", tree], out=again.append)
+    arows = _ev_io.read_rows(project)["rows"]
+    astate = (arows[-1].get("testedState") or {}) if arows else {}
+    check("wt4 ALLOW: the same task WITH --tree is measured in it and records "
+          "its key: %r" % ((acode, (astate.get("tree") or {}).get("key")),),
+          acode == M.E_OK
+          and (astate.get("tree") or {}).get("key") == M.tree_key(tree))
+
+    own = []
+    owncode = M.main([mp, "P1", "--project-dir", project, "--own", "--quiet",
+                      "--task", "P1.1"], out=own.append)
+    check("wt5 ALLOW: `--own` writes no row, so it is not held to the refusal: "
+          "%r" % ((owncode, own[-2:]),), owncode == M.E_FAIL)
+
+    sfile = os.path.join(project, ".git", M.INTEGRATION_STATE_NAME)
+    with open(sfile, "w") as fh:
+        json.dump({"version": 1, "tasks": {"P1.1": {
+            "status": "done", "base": "0" * 40}}}, fh)
+    stale = []
+    scode = M.main(base + ["--task", "P1.1"], out=stale.append)
+    check("wt6 an integration record for ANOTHER base does not lift the "
+          "refusal - the tree is a later attempt at the task: %r"
+          % ((scode, stale[-2:]),), scode == M.E_ASK)
+    with open(sfile, "w") as fh:
+        json.dump({"version": 1, "tasks": {"P1.1": {
+            "status": "done", "base": head}}}, fh)
+    done = []
+    dcode = M.main(base + ["--task", "P1.1"], out=done.append)
+    check("wt7 ALLOW: once `integrate-task.py` has carried the task in for this "
+          "tree's base, the drive's re-gate on the phase tree is measured "
+          "there (the project's copy fails, so it is red and not refused): %r"
+          % ((dcode, done[-2:]),), dcode == M.E_FAIL)
+    writer = _loader.load_script("integrate-task.py", "rtg_integrate")
+    check("wt8 the state file name the gate reads is the one integrate-task "
+          "writes - two copies of a name, pinned by comparison: %r"
+          % ((M.INTEGRATION_STATE_NAME, writer.STATE_NAME),),
+          M.INTEGRATION_STATE_NAME == writer.STATE_NAME)
+    git("worktree", "remove", "--force", tree)
+
+
 def _shared_facts_cases(check):
     """One tree, one set of changed paths: both gatherers must hand back the
     same version answer and the same related listing, and must get them from
@@ -10225,6 +10342,7 @@ def _selftest():
         _harness.stage(check, "fo-block", _follower_cases)
         _cases(check)
         _harness.stage(check, "tr-block", _tree_cases)
+        _harness.stage(check, "wt-block", _wave_tree_cases)
         _harness.stage(check, "sl-block", _success_line_cases)
         _harness.stage(check, "ag-block", _affected_cases)
         _harness.stage(check, "rp-block", _member_records_cases)

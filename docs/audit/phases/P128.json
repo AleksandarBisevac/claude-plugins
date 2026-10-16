@@ -901,7 +901,8 @@
       "description": "Register F675. run-test-gate --task --record with no --tree measured the project checkout for a task with its own wave tree and recorded GATE GREEN as its evidence; testedState carries no tree.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
-        "plugins/audit/tests/test_run_test_gate.py"
+        "plugins/audit/tests/test_run_test_gate.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -950,14 +951,22 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-16T22:25:54Z.da05ae",
+        "runId": "2026-10-16T22:49:50Z.292fe4",
         "status": "passed",
-        "at": "2026-10-16T22:25:54Z"
+        "at": "2026-10-16T22:49:50Z"
       },
       "notes": [
         {
           "at": "2026-10-16T22:27:10Z",
           "text": "falsifier could-not-run for `plugins/audit/tests/test_run_test_gate.py: a task gate recorded without --tree, for a task with a registered wave tree, is refused or measured in that tree, and testedState names the tree it measured`: mutation at plugins/audit/scripts/governance/run-test-gate.py:4924 (the mutation broke the build rather than failing the test - PASS ct4 pytest is read decorated AND bare -- `-q` drops the `=` rule entirely -- and both of its zero shapes are POSITIVE zeros: `no tests ran` collected nothing, and `1 error` is a test that never started, which is the exact distinction that separates a positive zero from `None`: (3, 0, 0))"
+        },
+        {
+          "at": "2026-10-16T22:38:44Z",
+          "text": "falsifier could-not-run for `plugins/audit/tests/test_run_test_gate.py: a task gate recorded without --tree, for a task with a registered wave tree, is refused or measured in that tree, and testedState names the tree it measured` accepted at the close: The falsifier could not run: its mutation broke the build rather than reaching the test. The task red-first proof is recorded proved independently of it, and the falsifier is being retired under F1.6 by owner decision 2026-10-16, so it is not repaired here. (mutation at plugins/audit/scripts/governance/run-test-gate.py:4924; the mutation broke the build rather than failing the test - PASS ct4 pytest is read decorated AND bare -- `-q` drops the `=` rule entirely -- and both of its zero shapes are POSITIVE zeros: `no tests ran` collected nothing, and `1 error` is a test that never started, which is the exact distinction that separates a positive zero from `None`: (3, 0, 0))"
+        },
+        {
+          "at": "2026-10-16T22:38:52Z",
+          "text": "files widened by PLUGIN-BUILD-GUIDE.md: written byte for byte at integration by `python3 plugins/audit/scripts/_deps.py --write-map` (_deps.map_drift)"
         }
       ]
     },
@@ -1007,7 +1016,7 @@
     {
       "id": "P128.21-0h5",
       "title": "The red-first helper judges an introduced attribute by its owner module, not a bare name anywhere",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F678. introduced() matched cli_basis as a local variable in audit-usage.py and refused a proof whose error named usage_ledger, which HEAD did not carry.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -1052,19 +1061,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1fe23390d201",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py: introduced() takes an optional owner; new owner_module(report) reads the module out of an AttributeError 'module X has no attribute'; _owner_file resolves X to the one declared implementation file (dotted path, or hyphenated script name); _introduced_by_owner judges the symbol from that file's module-level bindings (top-level defs/classes/assignments plus imports) at HEAD vs the working tree, returning None (fall back to the old whole-name reading) when the file is unparsable or the working tree does not bind the name. run_red's symbol-subject call passes owner_module(report). Test: sh5 in new stage sh-owner-module in test_stamp_verification.py (a sibling src/other.py holds new_fn as a local at HEAD; --introduces new_fn on an AttributeError naming module 'mine' is now proved). Before the fix it was could-not-prove. Full file selftest 287/287, ruff clean, vermin min 3.7, full sweep 335/335 files exit 0. Falsifier run in a scratch copy: replacing the owner_module(report) argument with None turns sh5 red. Note: a bash heredoc python edit of stamp-verification.py was refused by the plan gate (magnitude 104 > 80); I redid it with the Edit tool, which the gate allowed.",
+        "descriptive": "The red-first helper no longer refuses a proof because a sibling file uses the introduced name as a local; it judges the name by the module the AttributeError names."
       },
       "startedAt": "2026-10-16T21:39:03Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T22:38:21Z",
+      "verifiedBy": [
+        "sh5 an AttributeError naming module X is judged introduced from X's module-level bindings, so a same-named local in a sibling file does not veto the proof"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-16T22:38:16Z.840bc1",
         "status": "passed",
         "at": "2026-10-16T22:38:16Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "1fe23390d201",
+        "at": "2026-10-16T22:38:21Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-16T21:55:02Z",
+        "basis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest --stage sh-owner-module` in a throwaway tree at HEAD exited 1 with 1 of 1 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `sh-owner-module`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - sh5 (house FAIL): SELFTEST FAILED: 0/1 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {

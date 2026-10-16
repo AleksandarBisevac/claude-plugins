@@ -89,6 +89,9 @@ read it as one.
 commands run in DIR and the digests are read from it, the row lands in the
 project's ledger, and `testedState.tree` names DIR by a hash key, never a path.
 It is refused with `--full` and `--reconcile`, and for a DIR that does not exist.
+A recorded `--task` gate without `--tree` is refused when the task has a wave tree
+registered under the project and not yet integrated: the project's checkout is
+not where its work is.
 
 Exit codes:
   0  every command passed, the tree is unchanged, and at least one check ran
@@ -132,6 +135,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
+import _worktrees  # noqa: E402  (list_worktrees/read_provenance: the task's wave tree, by its marker)
 import _tree_stamp  # noqa: E402  (the ONE tree identity: porcelain + the three fields)
 import _proc_group  # noqa: E402  (a child tree stopped whole; a stop signal as an exception)
 import _evidence_io as _ev  # noqa: E402  (where a run is recorded, and the pointer)
@@ -4862,6 +4866,69 @@ def tree_of(args, project):
     return args.tree, None
 
 
+# The file `integrate-task.py` keeps in the phase tree's git directory, one
+# entry per task it carried in; pinned against its `STATE_NAME` by a case.
+INTEGRATION_STATE_NAME = "audit-wave-integration.json"
+
+
+def wave_tree_of(project, task_id):
+    """`(path, base)` of the worktree whose marker names `task_id` under
+    `project`, or `(None, None)` when the task has none (or git cannot say)."""
+    listing = _worktrees.list_worktrees(project)
+    if listing["error"]:
+        return None, None
+    for rec in listing["trees"]:
+        if rec.get("isMain") or not rec.get("path"):
+            continue
+        prov = _worktrees.read_provenance(rec["path"], expect_task=str(task_id))
+        if prov["ours"] is True:
+            return rec["path"], (prov["record"] or {}).get("base")
+    return None, None
+
+
+def wave_integrated(project, task_id, base):
+    """True when `integrate-task.py` recorded `task_id` as carried into the
+    project for this tree's `base`: the project now holds the task's work, and a
+    gate taken on it measures that work."""
+    where = _git_text(project, ["rev-parse", "--git-path", INTEGRATION_STATE_NAME])
+    if not where or not where.strip():
+        return False
+    path = where.strip()
+    path = path if os.path.isabs(path) else os.path.join(project, path)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            entry = (json.load(fh).get("tasks") or {}).get(str(task_id)) or {}
+    except (OSError, ValueError, AttributeError):
+        return False
+    return entry.get("status") == "done" and entry.get("base") == base
+
+
+def wave_tree_refusal(project, args):
+    """The sentence refusing a RECORDED task gate that names no `--tree` while the
+    task has a wave tree registered under the project and its work is not in the
+    project yet, or None.
+
+    A task registered by `manage-worktrees.py task-add` does its work in that
+    tree, and the project's checkout does not hold it until `integrate-task.py`
+    has carried it in. A gate taken here without `--tree` would measure the
+    project's bytes and file the verdict - green or red - as the task's evidence,
+    with a `testedState` that names no tree to tell the two apart. So the run is
+    refused, naming the tree to pass. Three runs are not asked: `--own`, which
+    writes no row; a task with no registration; and the re-gate on the phase tree
+    after integration, which is how the drive checks the carried-in work.
+    """
+    if args.tree is not None or args.task is None or args.own \
+            or not args.record or args.full or args.reconcile:
+        return None
+    tree, base = wave_tree_of(project, args.task)
+    if tree is None or wave_integrated(project, args.task, base):
+        return None
+    return ("%s has a wave tree registered under this project (%s) whose work "
+            "is not integrated, and a recorded gate without --tree would "
+            "measure the project's checkout and file that as the task's "
+            "evidence. Remedy: pass `--tree %s`." % (args.task, tree, tree))
+
+
 def main(argv, out=print):
     p = argparse.ArgumentParser(prog="run-test-gate.py", add_help=True)
     p.add_argument("manifest")
@@ -4982,6 +5049,10 @@ def main(argv, out=print):
     tree, tree_err = tree_of(args, project)
     if tree_err:
         out("[run-test-gate] %s" % (tree_err,))
+        return E_ASK
+    wave_err = wave_tree_refusal(project, args)
+    if wave_err:
+        out("[run-test-gate] %s" % (wave_err,))
         return E_ASK
     try:
         manifest = _mio.load_manifest(args.manifest)
