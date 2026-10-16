@@ -5009,7 +5009,8 @@
       "P125.6",
       "P125.40-0h5",
       "P125.77-0h5",
-      "P125.94-0h5"
+      "P125.94-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
@@ -5073,7 +5074,8 @@
       "P72.8-ttl",
       "P76.3-6qa",
       "P80.15-rtb",
-      "P123.15"
+      "P123.15",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test__doctor_hygiene.py": [
       "P18.6",
@@ -5081,7 +5083,8 @@
       "P75.2-j5h",
       "P105.9-m32",
       "P118.10",
-      "P123.5"
+      "P123.5",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test__doctor_policy.py": [
       "P18.6",
@@ -5114,7 +5117,8 @@
       "P123.23",
       "P123.38",
       "P125.12",
-      "P125.40-0h5"
+      "P125.40-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test__doctor_trail.py": [
       "P20.6",
@@ -5145,7 +5149,8 @@
       "P125.12",
       "P125.52-0h5",
       "P125.77-0h5",
-      "P125.83-0h5"
+      "P125.83-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test__evidence_io.py": [
       "P32.7",
@@ -5203,7 +5208,8 @@
       "P123.62-64p",
       "P123.63-64p",
       "P123.71-64p",
-      "P125.54-0h5"
+      "P125.54-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
@@ -5246,7 +5252,8 @@
       "P61.1",
       "P61.8",
       "P76.3-6qa",
-      "P94.1"
+      "P94.1",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test__invariants.py": [
       "P28.2",
@@ -5272,7 +5279,8 @@
       "P126.7",
       "P125.32-0h5",
       "P125.88-0h5",
-      "P125.114-0h5"
+      "P125.114-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test__journal_io.py": [
       "P29.3",
@@ -5313,7 +5321,8 @@
       "P123.24",
       "P123.25",
       "P123.47-64p",
-      "P125.38-0h5"
+      "P125.38-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test__locks.py": [
       "P22.11",
@@ -5451,7 +5460,8 @@
     "plugins/audit/tests/test__merge_install.py": [
       "P60.5",
       "P62.1",
-      "P94.4"
+      "P94.4",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test__output.py": [
       "P29.5",
@@ -5530,7 +5540,8 @@
       "P80.15-rtb",
       "P81.10",
       "P105.7",
-      "P123.62-64p"
+      "P123.62-64p",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test__panel_page.py": [
       "P18.7",
@@ -5564,7 +5575,8 @@
       "P49.3",
       "P75.2-j5h",
       "P105.5",
-      "P115.4-4yc"
+      "P115.4-4yc",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test__panel_state.py": [
       "P18.7",
@@ -5578,7 +5590,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P123.20",
-      "P123.62-64p"
+      "P123.62-64p",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test__panel_write.py": [
       "P18.7",
@@ -5598,7 +5611,8 @@
       "P122.9-z4y",
       "P122.10-z4y",
       "P123.7",
-      "P123.20"
+      "P123.20",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test__priority.py": [
       "P63.8"
@@ -5613,7 +5627,8 @@
       "P84.9-791",
       "P123.7",
       "P123.20",
-      "P123.43-64p"
+      "P123.43-64p",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test__proposals.py: add-phase's allocator returns highest-plus-one over the shared taken set, and refuses P0": [
       "P32.1"
@@ -5669,7 +5684,8 @@
       "P125.51-0h5",
       "P125.54-0h5",
       "P125.106-0h5",
-      "P125.84-0h5"
+      "P125.84-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test__report_html.py": [
       "P25.1",
@@ -5740,7 +5756,8 @@
       "P115.5-4yc",
       "P118.8",
       "P122.6-z4y",
-      "P128.10-0h5"
+      "P128.10-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test__status_facts.py: --fail-on failing-tests refuses a run whose record says the tree was mutated": [
       "P32.7"
@@ -5752,7 +5769,8 @@
       "P71.4-zso",
       "P74.3-qq5",
       "P100.1",
-      "P118.11-v7t"
+      "P118.11-v7t",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test__ui_theme.py": [
       "P20.5",
@@ -5799,7 +5817,8 @@
       "P125.4",
       "P125.2",
       "P125.40-0h5",
-      "P125.42-0h5"
+      "P125.42-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test_audit_journal.py": [
       "P34.3",
@@ -5827,7 +5846,8 @@
       "P94.1",
       "P106.8-b6f",
       "P106.10-b6f",
-      "P118.2"
+      "P118.2",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test_audit_lookup.py": [
       "P56.3",
@@ -5912,7 +5932,8 @@
       "P125.18",
       "P128.9-0h5",
       "P125.59-0h5",
-      "P125.75-0h5"
+      "P125.75-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -6065,7 +6086,8 @@
       "P128.23-0h5",
       "P128.24-0h5",
       "P128.31-0h5",
-      "P128.37-0h5"
+      "P128.37-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -6093,7 +6115,8 @@
       "P125.46-0h5",
       "P125.76-0h5",
       "P125.75-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test_audit_version.py": [
       "P67.1",
@@ -6280,7 +6303,8 @@
       "P123.64-64p",
       "P123.72-64p",
       "P125.40-0h5",
-      "P128.15-0h5"
+      "P128.15-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test_guard_capabilities.py": [
       "P72.1"
@@ -6363,7 +6387,8 @@
       "P123.72-64p",
       "P125.40-0h5",
       "P128.28-0h5",
-      "P128.29-0h5"
+      "P128.29-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test_harvest_worktree.py": [
       "P43.3"
@@ -6447,7 +6472,8 @@
       "P115.3-4yc",
       "P121.6",
       "P123.23",
-      "P125.38-0h5"
+      "P125.38-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
@@ -6527,7 +6553,8 @@
       "P124.5",
       "P123.37",
       "P123.40-64p",
-      "P125.40-0h5"
+      "P125.40-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test_resolve_branch.py": [
       "P64.1"
@@ -6681,7 +6708,8 @@
       "P125.71-0h5",
       "P125.80-0h5",
       "P128.21-0h5",
-      "P128.32-0h5"
+      "P128.32-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
@@ -6707,7 +6735,8 @@
       "P125.76-0h5",
       "P125.97-0h5",
       "P125.107-0h5",
-      "P125.135-0h5"
+      "P125.135-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/tests/test_validate_config.py": [
       "P47.1",
@@ -7138,7 +7167,8 @@
       "P123.20",
       "P123.49-64p",
       "P125.44-0h5",
-      "P125.49-0h5"
+      "P125.49-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/scripts/governance/import-evidence.py": [
       "P80.5",
@@ -7184,7 +7214,8 @@
       "P81.7",
       "P81.14-j7p",
       "P81.16-j7p",
-      "P123.62-64p"
+      "P123.62-64p",
+      "P125.136-0h5"
     ],
     ".claude/hooks/guard-release.py": [
       "P80.11",
@@ -7307,7 +7338,8 @@
       "P127.9-bgr",
       "P127.10-bgr",
       "P125.117-0h5",
-      "P125.121-0h5"
+      "P125.121-0h5",
+      "P125.136-0h5"
     ],
     "plugins/audit/scripts/governance/_verdict_binding.py": [
       "P74.3-qq5",
@@ -7326,7 +7358,8 @@
       "P74.6-qq5",
       "P81.10",
       "P100.2",
-      "P124.3"
+      "P124.3",
+      "P125.136-0h5"
     ],
     "plugins/audit/scripts/governance/record-outside-run.py": [
       "P74.9-qq5",
@@ -8519,7 +8552,8 @@
     ],
     "plugins/audit/tests/test__live_copy.py": [
       "P115.3-4yc",
-      "P115.4-4yc"
+      "P115.4-4yc",
+      "P125.136-0h5"
     ],
     "tools/ui-tests/overview-outcome.test.mjs": [
       "P115.3-4yc",
