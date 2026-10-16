@@ -1347,8 +1347,10 @@
         "severity": "med",
         "file": "plugins/audit/reference/phase-signoff.md:107-121 (HEAD), plugins/audit/scripts/governance/drive-phase.py:1481-1512,2510-2516 (HEAD), plugins/audit/schema/audit-plan.schema.json:1825-1831",
         "issue": "contradicts task clause (5) of P125.19, which P125.128 quotes: 'every planned test carries a line 'must fail if <small code change>' ... and a test that survives is a finding with file:line'. The owner chose to implement this rather than narrow the clause (ORCHESTRATOR-NOTES R38), and the wiring now exists: falsify() runs after the green gate and the `falsifier` decision stops the close. Two halves of the clause are still unmet. (a) Nothing produces a falsifier. The new doc text says so itself: 'the field is optional, and nothing makes a plan declare one'. `git grep -i falsifier` at 63e319e8 finds no planner brief, no `/audit:task add` flag and no executor return field that writes `tests.falsifiers`. Outside the drive, the rules, the schema and the demo exemptions, the only hits are phase-signoff.md. So in any real plan task_falsifiers() returns [] and falsify() returns None at its first line. The new path runs only on a hand-edited shard. (b) A survivor is not a finding. `accept` only calls `_mark(state, 'falsified', task, {'accepted': reason, ...})` in the drive's ephemeral state (drive-phase.py:2510-2516). That state is dropped at finish, and decision() writes no journal row. Nothing lands in phase.review.findings or on the task, and the decision text names the tests.add entry, never a file:line. A surviving test that is accepted therefore leaves no durable record.",
-        "resolution": "Give the falsifier a producer. Either the planner/executor brief emits a `tests.falsifiers` entry for each planned test (the executor knows the fix's shape when it files, which answers the 'code not yet written at synthesis' objection), or `/audit:task add` takes a `--falsifier` flag that the planner is told to use. Then make a survived or accepted falsifier durable: record it as a phase.review finding, or a task note, carrying the mutation's file and the test entry. Do not restate 'nothing makes a plan declare one' as the answer to 'every planned test carries'.",
-        "fixTask": "P125.142-0h5"
+        "resolution": "fixed in P125.142-0h5 (00489377f1a9): Give the falsifier a producer. Either the planner/executor brief emits a `tests.falsifiers` entry for each planned test (the executor knows the fix's shape when it files, which answers the 'code not yet written at synthesis' objection), or `/audit:task add` takes a `--falsifier` flag that the planner is told to use. Then make a survived or accepted falsifier durable: record it as a phase.review finding, or a task note, carrying the mutation's file and the test entry. Do not restate 'nothing makes a plan declare one' as the answer to 'every planned test carries'.",
+        "fixTask": "P125.142-0h5",
+        "commit": "00489377f1a9",
+        "status": "fixed"
       },
       {
         "id": "P125-R165",
@@ -1388,7 +1390,7 @@
         "resolution": "Give tasks touching tools/ui-tests/ a vitest entry in tests.gate, or have the derived task gate add one for those paths."
       }
     ],
-    "outcome": "[findings: 169 - 3 high, 61 med, 105 low; 59 with a recorded fix commit]"
+    "outcome": "[findings: 169 - 3 high, 61 med, 105 low; 60 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -11261,7 +11263,7 @@
     {
       "id": "P125.142-0h5",
       "title": "fix P125-R164: contradicts task clause (5) of P125.19, which P125.128 quotes:...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause (5) of P125.19, which P125.128 quotes: 'every planned test carries a line 'must fail if <small code change>' ... and a test that survives is a finding with file:line'. The owner chose to implement this rather than narrow the clause (ORCHESTRATOR-NOTES R38), and the wiring now exists: falsify() runs after the green gate and the `falsifier` decision stops the close. Two halves of the clause are still unmet. (a) Nothing produces a falsifier. The new doc text says so itself: 'the field is optional, and nothing makes a plan declare one'. `git grep -i falsifier` at 63e319e8 finds no planner brief, no `/audit:task add` flag and no executor return field that writes `tests.falsifiers`. Outside the drive, the rules, the schema and the demo exemptions, the only hits are phase-signoff.md. So in any real plan task_falsifiers() returns [] and falsify() returns None at its first line. The new path runs only on a hand-edited shard. (b) A survivor is not a finding. `accept` only calls `_mark(state, 'falsified', task, {'accepted': reason, ...})` in the drive's ephemeral state (drive-phase.py:2510-2516). That state is dropped at finish, and decision() writes no journal row. Nothing lands in phase.review.findings or on the task, and the decision text names the tests.add entry, never a file:line. A surviving test that is accepted therefore leaves no durable record.\n\nResolution asked: Give the falsifier a producer. Either the planner/executor brief emits a `tests.falsifiers` entry for each planned test (the executor knows the fix's shape when it files, which answers the 'code not yet written at synthesis' objection), or `/audit:task add` takes a `--falsifier` flag that the planner is told to use. Then make a survived or accepted falsifier durable: record it as a phase.review finding, or a task note, carrying the mutation's file and the test entry. Do not restate 'nothing makes a plan declare one' as the answer to 'every planned test carries'.",
       "files": [
         "plugins/audit/reference/phase-signoff.md",
@@ -11305,14 +11307,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "00489377f1a9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Executor return gains optional `falsifiers` (_filed_returns: _falsifiers_problems, return_falsifiers, falsifier_gaps). drive-phase: submit refuses a malformed falsifier via returned_falsifier_problems and names tdd gaps; record_falsifiers writes the return's falsifiers into tests.falsifiers through new `audit-task.py scope --falsifiers JSON` (merged; a held entry keeps its value; tests.falsifiers in _WIDENABLE) before falsify(); a tdd added test with none is a gap note, not a stop; falsify() notes each survivor/could-not-run naming entry, mutated file:line (mutation_site) and outcome via `audit-task.py note`; accept appends a note with the reason. audit-lookup brief asks tdd tasks for falsifiers (FALSIFIER_RULE). Docs: audit-executor.md bullet + return field, execute-task.md, commands/task.md hint, README command row, phase-signoff.md (removed 'nothing makes a plan declare one'), schema description. Tests: test_drive_phase fp-block fp0-fp4 incl. fp2/fp2b regression deny twins (6/6); test__filed_returns fz1-fz2. Full sweep exit 0 (335/335 files), cp1252 exit 0, measure-context --gate exit 0 (executor 8756/9000), ruff and vermin exit 0. Mutation probes in a scratch copy: dropping the tdd check reddens fp2b; removing either note reddens fp1.",
+        "descriptive": "Every tdd test the executor adds now carries a falsifier the plan records and the drive runs, and a surviving or accepted mutant leaves a note on the task naming the file:line and the test."
       },
       "startedAt": "2026-10-16T14:23:59Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T15:24:22Z",
+      "verifiedBy": [
+        "a planned test's falsifier is produced in the normal flow - the executor's filed return declares it and the plan records it - and a survived or accepted falsifier leaves a durable record naming the mutated file and the test",
+        "fp2",
+        "fp2b",
+        "fp3",
+        "fp4",
+        "fz1",
+        "fz2"
+      ],
       "notes": [
         {
           "at": "2026-10-16T14:23:58Z",
@@ -11343,6 +11353,18 @@
         "runId": "2026-10-16T15:24:20Z.e0886e",
         "status": "passed",
         "at": "2026-10-16T15:24:20Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "00489377f1a9",
+        "at": "2026-10-16T15:24:22Z",
+        "basis": "a fix task for P125-R164: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-16T15:13:03Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage fp-block` in a throwaway tree at HEAD exited 1 with failing cases a planned test's falsifier is produced in the normal flow - the executor's filed return declares it and the plan records it - and a survived or accepted falsifier leaves a durable record naming the mutated file and the test (fp1: the executor's `falsifiers` field lands in the task's tests.falsifiers, the drive runs it and the survivor is the `falsifier` decision with the task still in progress, a note naming the mutated file:line and the test entry is on the task before any answer, and `accept` closes with a second note carrying the reason: ((0, '[drive-phase] P1: P1.1 executor return filed at docs/audit/evidence/returns/P1.1/20261016T151248Z.executor.json; red-first could-not-prove; stamp taken\\nhand back the line above as your whole reply\\n'), None, 'reviewer', 'done', [], [], 'done')) (house FAIL) and 2 more, but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 3/6 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -11399,7 +11421,12 @@
       "fixes": [
         "P125-R165"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-16T15:56:20Z.1fb0a3",
+        "status": "passed",
+        "at": "2026-10-16T15:56:20Z"
+      }
     },
     {
       "id": "P125.144-0h5",
@@ -11467,7 +11494,12 @@
       "fixes": [
         "P125-R166"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-16T15:35:01Z.2569c3",
+        "status": "passed",
+        "at": "2026-10-16T15:35:01Z"
+      }
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
