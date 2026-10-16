@@ -94,9 +94,11 @@ import _journal_io                               # noqa: E402  (the journal row 
 import _manifest_vocab                           # noqa: E402  (the KNOWN_* sets schema_vocab_drift checks)
 
 # The schemas ARE the field documentation; these are the only two there are.
+# Spelled with '/', which both platforms open and which serialises the same
+# everywhere - an os.path.join here would put a backslash in the served payload.
 SCHEMAS = {
-    "config": os.path.join("schema", "audit-config.schema.json"),
-    "manifest": os.path.join("schema", "audit-plan.schema.json"),
+    "config": "schema/audit-config.schema.json",
+    "manifest": "schema/audit-plan.schema.json",
 }
 
 # The panel's Composition tab edits manifest levers under names of its own

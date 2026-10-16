@@ -1239,8 +1239,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/panel/_panel_usage.py:329-341 (HEAD fb733fc6; introduced by P125.105 5f951d727baa at _panel_usage.py:337-376)",
         "issue": "`_cli_cost_payload` wraps the CLI-vs-plugin comparison in `except Exception: return []`. In this same payload, `[]` means 'every recorded CLI figure agreed with the plugin's': the browse note renders nothing for an empty list (`if(... !diff.length) return null`). So a comparison that raised reads on the panel as agreement, a silent pass. At HEAD the report's loader handles the same call the other way. `_usage_load._cli_cost` docstring: 'None, not `[]`: an empty list says every recorded CLI figure agreed, and a comparison that raised has said nothing of the kind', and the report prints the reason. The panel still collapses the failure to `[]`, even though its HEAD docstring says 'The report carries the same list, so the two surfaces cannot disagree'. The two surfaces do disagree on exactly this case. The new test (test__panel_usage.py `_cli_cost_cases`) covers only the success path, so nothing can see it.",
-        "resolution": "Return `(None, '<ExcType>: <msg>')` from the panel, as `_usage_load._cli_cost` does. Ship `cliCost: null` plus a `cliCostReason` key, declared in `_usage_shape`. Have `browseCliNote` (and the usage-view.js line) print the could-not-compare sentence with that reason when `cliCost` is null. Add a case that makes `ul.cli_cost_entries` raise and asserts that the payload carries None plus the reason, not `[]`.",
-        "fixTask": "P125.135-0h5"
+        "resolution": "fixed in P125.135-0h5 (1428238d630a): Return `(None, '<ExcType>: <msg>')` from the panel, as `_usage_load._cli_cost` does. Ship `cliCost: null` plus a `cliCostReason` key, declared in `_usage_shape`. Have `browseCliNote` (and the usage-view.js line) print the could-not-compare sentence with that reason when `cliCost` is null. Add a case that makes `ul.cli_cost_entries` raise and asserts that the payload carries None plus the reason, not `[]`.",
+        "fixTask": "P125.135-0h5",
+        "commit": "1428238d630a",
+        "status": "fixed"
       },
       {
         "id": "P125-R152",
@@ -1331,7 +1333,7 @@
         "resolution": "Run the call through Popen with stdout/stderr sent to scratch files, or kill and then communicate(timeout=<short>) and fall back to closing the pipes, so the timeout bounds the call on both platforms."
       }
     ],
-    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 53 with a recorded fix commit]"
+    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 54 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -10610,7 +10612,7 @@
     {
       "id": "P125.135-0h5",
       "title": "fix P125-R151: `_cli_cost_payload` wraps the CLI-vs-plugin comparison in `exc...",
-      "status": "in_progress",
+      "status": "done",
       "description": "`_cli_cost_payload` wraps the CLI-vs-plugin comparison in `except Exception: return []`. In this same payload, `[]` means 'every recorded CLI figure agreed with the plugin's': the browse note renders nothing for an empty list (`if(... !diff.length) return null`). So a comparison that raised reads on the panel as agreement, a silent pass. At HEAD the report's loader handles the same call the other way. `_usage_load._cli_cost` docstring: 'None, not `[]`: an empty list says every recorded CLI figure agreed, and a comparison that raised has said nothing of the kind', and the report prints the reason. The panel still collapses the failure to `[]`, even though its HEAD docstring says 'The report carries the same list, so the two surfaces cannot disagree'. The two surfaces do disagree on exactly this case. The new test (test__panel_usage.py `_cli_cost_cases`) covers only the success path, so nothing can see it.\n\nResolution asked: Return `(None, '<ExcType>: <msg>')` from the panel, as `_usage_load._cli_cost` does. Ship `cliCost: null` plus a `cliCostReason` key, declared in `_usage_shape`. Have `browseCliNote` (and the usage-view.js line) print the could-not-compare sentence with that reason when `cliCost` is null. Add a case that makes `ul.cli_cost_entries` raise and asserts that the payload carries None plus the reason, not `[]`.",
       "files": [
         "plugins/audit/scripts/panel/_panel_usage.py",
@@ -10665,14 +10667,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1428238d630a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added usage_ledger.cli_cost_outcome (entries, reason); _usage_load._cli_cost and _panel_usage._cli_cost_payload both delegate to it. Panel ships cliCost None plus cliCostReason (declared in _usage_shape). browse-dialog.js browseCliNote prints the could-not-compare sentence with the reason when cliCost === null. New cases: panel python case (titled with tests.add clause), cm3b in test_usage_ledger.py, two vitest cases in usage-edges.test.mjs. Sweep exit 1 and cp1252 exit 1: only test__refs.py fails (sc1/sc2), because 17 panel-*.png screenshots are stale (panel source digest changed); I did not capture them. All 335 other files pass. vitest 829 passed; screenshots --check exit 0.",
+        "descriptive": "A panel CLI-cost comparison that raised no longer reads as agreement; both surfaces share one wrapper and the panel prints the reason."
       },
       "startedAt": "2026-10-16T09:30:35Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T10:22:29Z",
+      "verifiedBy": [
+        "Return `(None, '<ExcType>: <msg>')` from the panel, as `_usage_load._cli_cost` does",
+        "cm3b cli_cost_outcome",
+        "vitest: a comparison that could not be made says so, with the reason",
+        "vitest: names a missing reason, silent with dollars off"
+      ],
       "notes": [
         {
           "at": "2026-10-16T07:18:23Z",
@@ -10691,6 +10698,18 @@
         "runId": "2026-10-16T10:22:27Z.1665c9",
         "status": "passed",
         "at": "2026-10-16T10:22:27Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "1428238d630a",
+        "at": "2026-10-16T10:22:29Z",
+        "basis": "a fix task for P125-R151: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-16T09:56:46Z",
+        "basis": "`python3 plugins/audit/tests/test__panel_usage.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 44 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - Return `(None, '<ExcType>: <msg>')` from the panel, as `_usage_load._cli_cost` does (when `ul.cli_cost_entries` raises the payload carries cliCost None and cliCostReason 'ValueError: cursor unreadable', not `[]`; a good read carries a list and no reason): ([], None) (house FAIL): SELFTEST FAILED: 43/44 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -10807,7 +10826,12 @@
       "fixes": [
         "P125-R160"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-16T10:32:52Z.c3e388",
+        "status": "passed",
+        "at": "2026-10-16T10:32:52Z"
+      }
     },
     {
       "id": "P125.138-0h5",

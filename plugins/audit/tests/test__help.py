@@ -119,6 +119,21 @@ def _backslash_payload_bytes():
         del M.open
 
 
+def _backslash_paths(node):
+    """Every served string that spells a file path with a backslash between two
+    path words. Walks the payload object itself, so the backslash is one
+    character, not the doubled form `json.dumps` writes."""
+    import re
+    pat = re.compile(r"[\w.-]+\\[\w.-]+\.(?:json|md|py)\b")
+    if isinstance(node, str):
+        return [node] if pat.search(node) else []
+    if isinstance(node, dict):
+        return [h for v in node.values() for h in _backslash_paths(v)]
+    if isinstance(node, (list, tuple)):
+        return [h for v in node for h in _backslash_paths(v)]
+    return []
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     # --- extraction ---------------------------------------------------------------
@@ -783,6 +798,39 @@ def _cases(check):
           len(set(_p5)) == 1 and _p5[0] <= PAYLOAD_CAP - PAYLOAD_HEADROOM,
           "native/crlf/backslash %r, cap %d, headroom owed %d"
           % (_p5, PAYLOAD_CAP, PAYLOAD_HEADROOM))
+    # p5 swaps `os` at call time, after every module-level constant was bound with
+    # the real separator, so it cannot see a path built at import. This loads the
+    # module afresh while `os.path.join` is Windows' own, so import-time constants
+    # are built the Windows way, then scans the strings it serves: a backslash
+    # between two path words is a Windows spelling whatever built it. (Only the
+    # served constants are scanned: `payload()` itself would try to open the
+    # backslash path on a posix host.) The control
+    # half feeds the scan a known Windows-spelled path - without it a scan that
+    # matches nothing would pass over everything.
+    import ntpath
+    import _loader
+    _real_join = os.path.join
+    # Absolute anchors keep the real join so the import preamble can still find
+    # its siblings on a posix host; every relative join is spelled Windows-style.
+    os.path.join = lambda first, *rest: (
+        _real_join(first, *rest) if os.path.isabs(first)
+        else ntpath.join(first, *rest))
+    try:
+        _fresh = _loader.load(M.__file__, "_help_ntpath_probe", cache=False)
+    finally:
+        os.path.join = _real_join
+    _fresh_hits = _backslash_paths(
+        {"schemas": dict(_fresh.SCHEMAS), "agent": _fresh.guide_card()})
+    _control = _backslash_paths({"schemas": {"config": ntpath.join(
+        "schema", "audit-config.schema.json")}})
+    check("Spell SCHEMAS with '/' (load_schema already joins it under root, "
+          "which opens on both platforms), as was done for the agent card's file "
+          "(a module imported under Windows' os.path.join serves no "
+          "backslash-separated plugin path, the scan flags one when present, "
+          "and both schemas still open)",
+          not _fresh_hits and len(_control) == 1
+          and all(M.load_schema(k) for k in M.SCHEMAS),
+          "fresh-import hits %r, control %r" % (_fresh_hits, _control))
     check("p6 it names where the field text came from, so a reader can go read "
           "the source", pay["schemas"]["config"].endswith(".json"))
 
