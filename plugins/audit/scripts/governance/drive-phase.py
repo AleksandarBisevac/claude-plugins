@@ -1478,6 +1478,73 @@ def tree_paths(root):
     return sorted(set(n for n in names if n)), None
 
 
+def mutation_site(root, falsifier):
+    """`file:line` of the first match of the falsifier's `find` in `root`, the
+    line a survivor's record names; the bare file when the text is not there
+    or the file cannot be read, since then no line was mutated."""
+    rel = str(falsifier.get("file") or "")
+    find = falsifier.get("find")
+    try:
+        with open(os.path.join(root, *rel.split("/")), "r", encoding="utf-8",
+                  errors="replace") as fh:
+            text = fh.read()
+    except (OSError, ValueError):
+        return rel
+    at = text.find(find) if isinstance(find, str) and find else -1
+    return rel if at < 0 else "%s:%d" % (rel, text.count("\n", 0, at) + 1)
+
+
+def note_falsifiers(ctx, task, texts):
+    """Append each of `texts` to `task` as a note through the note verb; None,
+    or the stop when the verb refused one."""
+    for text in texts:
+        _out, stop = _verb_or_stop(ctx, "audit-task.py", _task_args(
+            ctx, "note", task["id"], "--text", text))
+        if stop is not None:
+            return stop
+    return None
+
+
+def record_falsifiers(ctx, state, task, executor):
+    """`(task, None)` with the executor's declared falsifiers recorded into the
+    task's `tests.falsifiers` through the scope verb, and the task read back -
+    or `(None, stop)`. An entry the plan already holds keeps the plan's. A tdd
+    task's added test that neither carries is a recorded gap, a note, rather
+    than a stop: the return is filed once, so a stop here could be answered
+    only by a whole new attempt, and the drive does not ask for a mutation the
+    executor did not write. Once per start."""
+    if _marked(state, "falsifiersRecorded", task):
+        return task, None
+    declared = _fr.return_falsifiers(executor)
+    planned = (task.get("tests") or {}).get("falsifiers")
+    planned = planned if isinstance(planned, dict) else {}
+    new = dict((k, v) for k, v in declared.items() if k not in planned)
+    if new:
+        _out, stop = _verb_or_stop(ctx, "audit-task.py", _task_args(
+            ctx, "scope", task["id"], "--falsifiers",
+            json.dumps(new, sort_keys=True)))
+        if stop is not None:
+            return None, stop
+        ctx["did"].append("falsifier(s) of %s recorded from its return: %s" % (
+            task["id"], ", ".join("`%s`" % (_clip(e, 40),) for e in sorted(new))))
+    gaps = _fr.falsifier_gaps(task, declared)
+    if gaps:
+        stop = note_falsifiers(ctx, task, [
+            "no falsifier declared for `%s`: the executor's return names no "
+            "change it must fail against, so the drive cannot try it" % (entry,)
+            for entry in gaps])
+        if stop is not None:
+            return None, stop
+        ctx["did"].append("%s: no falsifier for %d added test(s), recorded as "
+                          "a note" % (task["id"], len(gaps)))
+    if new:
+        manifest, _phase = load_phase(ctx)
+        task = _mio.tasks_by_id(manifest).get(task["id"]) or task
+    _mark(state, "falsifiersRecorded", task)
+    write_state(ctx, state)
+    return task, None
+
+
 def falsify(ctx, state, task, tree=None):
     """Apply every falsifier `task` declares in `tests.falsifiers`, once each,
     in a throwaway copy of the tree the gate measured; None when each one was
@@ -1500,11 +1567,21 @@ def falsify(ctx, state, task, tree=None):
                 list(falsifier["command"]), root, falsifier,
                 timeout=falsifier.get("timeout") or FALSIFIER_TIMEOUT,
                 paths=paths))
-    open_ = [g for g in graded if g[1] != "killed"]
+    held = dict((entry, falsifier) for entry, falsifier, _p in declared)
+    open_ = [[entry, mutation_site(root, held[entry]), status, said]
+             for entry, status, said in graded if status != "killed"]
     if open_:
+        # THE RECORD OUTLIVES THE DRIVE: the decision lives in the driver's
+        # state, which is dropped at finish, so each open falsifier is a note on
+        # the task before the question is asked - whatever the answer is.
+        stop = note_falsifiers(ctx, task, [
+            "falsifier %s for `%s`: mutation at %s (%s)" % (status, entry, site, said)
+            for entry, site, status, said in open_])
+        if stop is not None:
+            return stop
         return decision(ctx, state, "falsifier", task, "; ".join(
-            "%s for `%s` (%s)" % (status, _clip(entry, 60), said)
-            for entry, status, said in open_))
+            "%s for `%s` at %s (%s)" % (status, _clip(entry, 60), site, said)
+            for entry, site, status, said in open_), extra={"open": open_})
     _mark(state, "falsified", task)
     write_state(ctx, state)
     ctx["did"].append("falsifier %s killed by %s" % (
@@ -1633,6 +1710,11 @@ def advance(ctx, state, manifest, phase, task, tree=None):
     # After the green gate, over the tree it measured, and before a reviewer
     # is spent on a test that cannot fail its own mutant.
     if _marked(state, "gated", task) and not _marked(state, "falsified", task):
+        # The executor's return is the falsifier's producer: what it declares
+        # lands in the plan first, so `falsify` reads the plan's one record.
+        task, stop = record_falsifiers(ctx, state, task, executor)
+        if stop is not None:
+            return stop
         said = falsify(ctx, state, task, tree)
         if said is not None:
             return said
@@ -2508,6 +2590,17 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         ctx["did"].append("blocked %s" % (task["id"],))
         return keep_record(ctx, phase)
     if pending["decision"] == "falsifier" and answer == "accept":
+        # The accept is a note on the task as well as a mark: the mark goes
+        # with the driver's state at finish, and a test closed over its own
+        # surviving mutant must stay readable after it.
+        stop = note_falsifiers(ctx, task, [
+            "falsifier %s for `%s` accepted at the close: %s (mutation at %s; %s)"
+            % (status, entry, reason, site, said)
+            for entry, site, status, said in pending.get("open") or []]
+            or ["falsifier result accepted at the close: %s (%s)"
+                % (reason, pending.get("why") or "")])
+        if stop is not None:
+            return stop
         _mark(state, "falsified", task, {"accepted": reason,
                                          "why": pending.get("why") or ""})
         write_state(ctx, state)
@@ -3993,6 +4086,18 @@ def submit_target(manifest, target):
     return None, None
 
 
+def returned_falsifier_problems(task, body):
+    """Why the falsifiers an executor's return declares cannot be recorded for
+    `task`, as sentences - `_manifest_rules.falsifier_problems`, the reading
+    the scope verb and `falsify` refuse on, asked before anything is filed so
+    the executor can correct the return rather than leave it unrunnable."""
+    declared = (task.get("tests") or {}).get("add") or []
+    held = _fr.return_falsifiers(body)
+    return ["`falsifiers[%r]` %s" % (entry, text) for entry in sorted(held)
+            for _code, text, _schema in _rules.falsifier_problems(
+                entry, held[entry], list(declared))]
+
+
 def submitted_shape(role, body, fills, task=None):
     """The ways `body` falls short of `role`'s shape, judged with each field in
     `fills` set aside: those are `submit`'s to supply, not the agent's. `task`
@@ -4202,6 +4307,8 @@ def submit(ctx, manifest, args, cmd, text):
     fills = (["stamp"] + (["redFirst"] if cmd else [])) if executor else []
     problems = (submitted_shape(args.role, body, fills, task)
                if task is not None else [])
+    if executor and not problems:
+        problems = returned_falsifier_problems(task, body)
     if problems:
         return _stopped(ctx, "the %s return for %s does not have the shape its "
                         "role declares. Nothing filed:\n%s" % (
@@ -4242,6 +4349,11 @@ def submit(ctx, manifest, args, cmd, text):
             ctx["did"].append(
                 "tests.add names %d case(s) with no filed counterpart: %s"
                 % (len(gaps), "; ".join(gaps)))
+        unfalsified = _fr.falsifier_gaps(task, _fr.return_falsifiers(body))
+        if unfalsified:
+            ctx["did"].append(
+                "no falsifier declared for %d added test(s), recorded as a gap "
+                "at the close: %s" % (len(unfalsified), "; ".join(unfalsified)))
         text = json.dumps(body, indent=2) + "\n"
     head = args.head
     if task is None and args.role == "reviewer":

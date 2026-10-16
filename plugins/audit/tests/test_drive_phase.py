@@ -6329,6 +6329,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("ce-block", "_close_evidence_cases"),
           ("bs-block", "_brief_scope_cases"),
           ("sc-block", "_scope_change_cases"), ("fv-block", "_falsifier_cases"),
+          ("fp-block", "_falsifier_producer_cases"),
           ("gt-block", "_git_stdin_cases"),
           ("sb-block", "_stage_cases"))
 
@@ -6603,6 +6604,128 @@ def _falsifier_drive_cases(check, M):
           instruction(held)[1] == "falsifier"
           and tasks_of(mpath).get("P1.1", {}).get("status") == "done"
           and "%s P1.1" % (M.CLOSED,) in closed)
+
+
+FALSIFIER_PRODUCED_CLAUSE = (
+    "a planned test's falsifier is produced in the normal flow - the "
+    "executor's filed return declares it and the plan records it - and a "
+    "survived or accepted falsifier leaves a durable record naming the mutated "
+    "file and the test")
+# The weak falsifier the executor declares: its command exits 0 whatever the
+# file holds, so the mutant survives. A literal no other line of a note holds.
+_FP_WEAK = {"file": "src/f1.txt", "find": "changed", "replace": "broken",
+            "command": [sys.executable, "-c", "pass"], "timeout": 60}
+_FP_REASON = "accepted-for-the-fixture: the weak test is tracked elsewhere"
+
+
+def _producer_repo(prefix, mode, add):
+    """A one-task drive whose task is graded `mode` and plans `add`, and whose
+    plan declares no falsifier: whatever the plan holds afterwards was produced
+    by the flow."""
+    root, mpath = _repo(prefix, task_ids=TASKS[:1], per_task="phase")
+    with open(mpath, "r", encoding="utf-8") as fh:
+        plan = json.load(fh)
+    tests = plan["phases"][0]["tasks"][0]["tests"]
+    tests.update({"mode": mode, "expectRedFirst": mode == "tdd",
+                  "add": list(add)})
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh, indent=2)
+    _harness.git(root, "commit", "-qam", "plan the task")
+    return root, mpath
+
+
+def _notes_of(mpath, task_id):
+    return [str(n.get("text") or "") for n in
+            tasks_of(mpath).get(task_id, {}).get("notes") or []
+            if isinstance(n, dict)]
+
+
+def _falsifier_producer_cases(check):
+    """The executor's filed return is the falsifier's producer: the plan
+    records what it declares, the drive runs it, a survivor stops the close
+    with a note on the task, and an accept leaves a second note carrying the
+    reason. A task with no new test owes none and is told nothing."""
+    M, why = _load("fp_mod")
+    check("fp0 the driver loads: %r" % (why,), M is not None)
+    if M is None:
+        return
+    clause = _FV_ADD.split(": ", 1)[1]
+    root, mpath = _producer_repo("producer-tdd", "tdd", [_FV_ADD])
+    _code, begun = _next(M, root, mpath)
+    briefs = {"tdd": _brief_of(root, begun, "P1.1")}
+    filed = _file_executor(root, mpath, "P1.1", {
+        "testsAdded": [clause], "falsifiers": {_FV_ADD: _FP_WEAK}})
+    _code, stopped = _next(M, root, mpath)
+    task = tasks_of(mpath).get("P1.1", {})
+    recorded = (task.get("tests") or {}).get("falsifiers")
+    held_notes = _notes_of(mpath, "P1.1")
+    _code, closed = _next(M, root, mpath, "--answer", "accept", "--reason",
+                          _FP_REASON)
+    after_notes = _notes_of(mpath, "P1.1")
+    accepted = [n for n in after_notes if _FP_REASON in n]
+    survived = [n for n in held_notes if "survived" in n]
+    check("%s (fp1: the executor's `falsifiers` field lands in the task's "
+          "tests.falsifiers, the drive runs it and the survivor is the "
+          "`falsifier` decision with the task still in progress, a note naming "
+          "the mutated file:line and the test entry is on the task before any "
+          "answer, and `accept` closes with a second note carrying the reason: "
+          "%r)" % (FALSIFIER_PRODUCED_CLAUSE,
+                   (filed, recorded, instruction(stopped)[1],
+                    task.get("status"), held_notes, after_notes,
+                    tasks_of(mpath).get("P1.1", {}).get("status"))),
+          filed[0] == 0
+          and recorded == {_FV_ADD: _FP_WEAK}
+          and instruction(stopped)[1] == "falsifier" and "survived" in stopped
+          and task.get("status") == "in_progress"
+          and len(survived) == 1 and "src/f1.txt:1" in survived[0]
+          and _FV_ADD in survived[0]
+          and len(accepted) == 1 and "src/f1.txt:1" in accepted[0]
+          and _FV_ADD in accepted[0]
+          and tasks_of(mpath).get("P1.1", {}).get("status") == "done"
+          and "%s P1.1" % (M.CLOSED,) in closed)
+
+    # The deny twin, for the over-fire mutation: a regression task that plans
+    # no new test owes no falsifier, so it closes with no falsifier line, no
+    # note and no tests.falsifiers - a gap line that fired on every task would
+    # turn this red.
+    for name, add, over in (("fp2", [], None),
+                            ("fp2b", [_FV_ADD], {"testsAdded": [clause]})):
+        root, mpath = _producer_repo("producer-%s" % (name,), "regression", add)
+        _code, begun = _next(M, root, mpath)
+        briefs[name] = _brief_of(root, begun, "P1.1")
+        plain = _file_executor(root, mpath, "P1.1", over)
+        _code, done = _next(M, root, mpath)
+        task = tasks_of(mpath).get("P1.1", {})
+        check("%s a regression task needs no falsifier (tests.add %r) - the "
+              "mode, not the empty list, is what exempts it: it closes, nothing "
+              "names a falsifier and nothing is recorded: %r"
+              % (name, add, (plain, done[:400], task.get("notes"),
+                             task.get("tests"))),
+              plain[0] == 0 and task.get("status") == "done"
+              and "falsifier" not in (plain[1] + done).lower()
+              and not task.get("notes")
+              and "falsifiers" not in (task.get("tests") or {}))
+
+    # A tdd task whose return declares none is a recorded gap, not a stop.
+    root, mpath = _producer_repo("producer-gap", "tdd", [_FV_ADD])
+    _next(M, root, mpath)
+    bare = _file_executor(root, mpath, "P1.1", {"testsAdded": [clause]})
+    _code, gap = _next(M, root, mpath)
+    task = tasks_of(mpath).get("P1.1", {})
+    gaps = [n for n in _notes_of(mpath, "P1.1") if "no falsifier" in n]
+    check("fp3 a tdd task whose return declares no falsifier for an added test "
+          "is named at submit and recorded as a note naming the entry, and the "
+          "close goes on: %r" % ((bare, gap[:400], task.get("notes")),),
+          bare[0] == 0 and "no falsifier" in bare[1]
+          and len(gaps) == 1 and _FV_ADD in gaps[0]
+          and task.get("status") == "done")
+    asks = dict((k, v.count("declare one in your return's `falsifiers`"))
+                for k, v in briefs.items())
+    check("fp4 the executor's brief asks a tdd task for its falsifiers, once, "
+          "and asks a regression task for none - with or without a planned "
+          "test: %r" % ((asks, dict((k, len(v)) for k, v in briefs.items())),),
+          asks == {"tdd": 1, "fp2": 0, "fp2b": 0}
+          and all(briefs.values()))
 
 
 def unencoded_text_opens(source):

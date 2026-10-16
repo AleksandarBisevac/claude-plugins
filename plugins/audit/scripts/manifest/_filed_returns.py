@@ -298,7 +298,53 @@ def _executor_problems(body, task=None):
         problems.append("`stamp` is missing or empty")
     if "claims" in body and not isinstance(body.get("claims"), str):
         problems.append("`claims` is not text")
+    problems += _falsifiers_problems(body)
     return problems
+
+
+# --- the falsifiers an executor declares ------------------------------------------
+# The executor is the one actor that knows the fix's shape when it files, so its
+# return carries each added test's 'must fail if' change, keyed by the
+# `tests.add` entry verbatim as `tests.falsifiers` is. Only the container is
+# judged here; what each mutation must hold is `_manifest_rules.falsifier_problems`,
+# which the filing verb's caller asks before anything is filed.
+RETURN_FALSIFIERS = "falsifiers"
+
+
+def _falsifiers_problems(body):
+    """Why the return's optional `falsifiers` cannot be read, or nothing."""
+    if RETURN_FALSIFIERS not in body:
+        return []
+    held = body.get(RETURN_FALSIFIERS)
+    if not isinstance(held, dict):
+        return ["`falsifiers` is not an object keyed by tests.add entry"]
+    return ["`falsifiers[%r]` is not an object" % (entry,)
+            for entry in sorted(held) if not isinstance(held[entry], dict)]
+
+
+def return_falsifiers(body):
+    """`{entry: falsifier}` the filed return declares, empty when it declares
+    none or the field is not an object."""
+    held = (body or {}).get(RETURN_FALSIFIERS) if isinstance(body, dict) else None
+    if not isinstance(held, dict):
+        return {}
+    return dict((k, v) for k, v in held.items() if isinstance(v, dict))
+
+
+def falsifier_gaps(task, declared):
+    """The `tests.add` entries of a tdd `task` that neither the plan's
+    `tests.falsifiers` nor `declared` (a return's) carries a falsifier for, in
+    plan order. Empty for any other mode: a regression or gate-only task plans
+    no test the change is written to fail first, so it owes none."""
+    tests = (task or {}).get("tests") if isinstance(task, dict) else None
+    tests = tests if isinstance(tests, dict) else {}
+    if tests.get("mode") != "tdd":
+        return []
+    planned = tests.get("falsifiers")
+    planned = planned if isinstance(planned, dict) else {}
+    return [entry for entry in tests.get("add") or []
+            if isinstance(entry, str) and entry not in planned
+            and entry not in (declared or {})]
 
 
 def _clause_quoted(description, note, span=4):

@@ -223,7 +223,9 @@ verb writes and refuses, and what the run commands leave behind, is
      itself), only its own added test(s) on `own-tests`, or nothing on `never` — and return **the
      shape `agents/audit-executor.md` declares** — `gates` per gate command it actually ran (`{}`
      on `never`), `outcome` = `{ technical, descriptive }`, `testsAdded` (the test names that
-     become `task.verifiedBy`), `redFirst` (above), `stamp` (the tree its claims are about) and,
+     become `task.verifiedBy`), `falsifiers` (owed under `tdd`: per added test, the
+     `{file, find, replace, command}` change it must fail against, keyed by its `tests.add`
+     entry verbatim), `redFirst` (above), `stamp` (the tree its claims are about) and,
      when a skill asked for one, `claims`. The
      brief holds the wording of each, including
      the pass/fail/could-not-run distinction the arms in step 4 turn on;

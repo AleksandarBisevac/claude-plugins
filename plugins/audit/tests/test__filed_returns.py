@@ -893,8 +893,36 @@ def _clause_marker_cases(check):
           and [f["severity"] for f in floored] == ["med", "low"])
 
 
+def _falsifiers_cases(check):
+    """The return's optional `falsifiers`: a container that is not an object of
+    objects is named, an absent one is no problem, and the gaps are a tdd
+    task's planned tests that neither the plan nor the return covers."""
+    mutation = {"file": "a.py", "find": "x", "replace": "y", "command": ["t"]}
+    whole = M.return_problems("executor", _executor(falsifiers={"t.py: c": mutation}))
+    flat = M.return_problems("executor", _executor(falsifiers=["t.py: c"]))
+    inner = M.return_problems("executor", _executor(falsifiers={"t.py: c": "x"}))
+    check("fz1 a `falsifiers` object of objects files, a list or a non-object "
+          "value is named by the field, and an absent one is no problem: %r"
+          % ((whole, flat, inner),),
+          whole == [] and len(flat) == 1 and "`falsifiers`" in flat[0]
+          and len(inner) == 1 and "t.py: c" in inner[0]
+          and M.return_problems("executor", _executor()) == [])
+    tdd = {"tests": {"mode": "tdd", "add": ["a: one", "b: two", "c: three"],
+                     "falsifiers": {"a: one": mutation}}}
+    reg = {"tests": {"mode": "regression", "add": ["a: one"]}}
+    check("fz2 a tdd task's gaps are the planned tests neither the plan nor the "
+          "return covers, in plan order; a regression task has none: %r"
+          % ((M.falsifier_gaps(tdd, {"b: two": mutation}),
+              M.falsifier_gaps(reg, {})),),
+          M.falsifier_gaps(tdd, {"b: two": mutation}) == ["c: three"]
+          and M.falsifier_gaps(reg, {}) == []
+          and M.return_falsifiers({"falsifiers": {"b": mutation, "c": 1}})
+          == {"b": mutation})
+
+
 def _selftest():
     def body(check):
+        _harness.stage(check, "fz-block", _falsifiers_cases)
         _harness.stage(check, "cm-block", _clause_marker_cases)
         _harness.stage(check, "ct-block", _case_title_cases)
         _harness.stage(check, "ci-block", _case_id_title_cases)

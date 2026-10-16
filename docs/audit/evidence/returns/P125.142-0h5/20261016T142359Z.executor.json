@@ -1,0 +1,41 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_drive_phase.py --selftest --stage fp-block": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-16T15:13:03Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage fp-block` in a throwaway tree at HEAD exited 1 with failing cases a planned test's falsifier is produced in the normal flow - the executor's filed return declares it and the plan records it - and a survived or accepted falsifier leaves a durable record naming the mutated file and the test (fp1: the executor's `falsifiers` field lands in the task's tests.falsifiers, the drive runs it and the survivor is the `falsifier` decision with the task still in progress, a note naming the mutated file:line and the test entry is on the task before any answer, and `accept` closes with a second note carrying the reason: ((0, '[drive-phase] P1: P1.1 executor return filed at docs/audit/evidence/returns/P1.1/20261016T151248Z.executor.json; red-first could-not-prove; stamp taken\\nhand back the line above as your whole reply\\n'), None, 'reviewer', 'done', [], [], 'done')) (house FAIL) and 2 more, but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 3/6 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Executor return gains optional `falsifiers` (_filed_returns: _falsifiers_problems, return_falsifiers, falsifier_gaps). drive-phase: submit refuses a malformed falsifier via returned_falsifier_problems and names tdd gaps; record_falsifiers writes the return's falsifiers into tests.falsifiers through new `audit-task.py scope --falsifiers JSON` (merged; a held entry keeps its value; tests.falsifiers in _WIDENABLE) before falsify(); a tdd added test with none is a gap note, not a stop; falsify() notes each survivor/could-not-run naming entry, mutated file:line (mutation_site) and outcome via `audit-task.py note`; accept appends a note with the reason. audit-lookup brief asks tdd tasks for falsifiers (FALSIFIER_RULE). Docs: audit-executor.md bullet + return field, execute-task.md, commands/task.md hint, README command row, phase-signoff.md (removed 'nothing makes a plan declare one'), schema description. Tests: test_drive_phase fp-block fp0-fp4 incl. fp2/fp2b regression deny twins (6/6); test__filed_returns fz1-fz2. Full sweep exit 0 (335/335 files), cp1252 exit 0, measure-context --gate exit 0 (executor 8756/9000), ruff and vermin exit 0. Mutation probes in a scratch copy: dropping the tdd check reddens fp2b; removing either note reddens fp1.",
+    "descriptive": "Every tdd test the executor adds now carries a falsifier the plan records and the drive runs, and a surviving or accepted mutant leaves a note on the task naming the file:line and the test."
+  },
+  "testsAdded": [
+    "a planned test's falsifier is produced in the normal flow - the executor's filed return declares it and the plan records it - and a survived or accepted falsifier leaves a durable record naming the mutated file and the test",
+    "fp2",
+    "fp2b",
+    "fp3",
+    "fp4",
+    "fz1",
+    "fz2"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_drive_phase.py: a planned test's falsifier is produced in the normal flow - the executor's filed return declares it and the plan records it - and a survived or accepted falsifier leaves a durable record naming the mutated file and the test": {
+      "file": "plugins/audit/scripts/governance/drive-phase.py",
+      "find": "task, stop = record_falsifiers(ctx, state, task, executor)",
+      "replace": "stop = None",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_drive_phase.py",
+        "--selftest",
+        "--stage",
+        "fp-block"
+      ],
+      "timeout": 300
+    }
+  },
+  "claims": "claims:\n1 drive-phase.py record_falsifiers (before falsify in advance), falsify -> note_falsifiers with mutation_site, apply_answer accept -> note; _filed_returns.falsifier_gaps reads the mode; audit-lookup falsifier_rule asks only on tdd\n2 pre-fix fp-block 2/4 (fp1, fp3 red); tdd-check dropped -> fp2b red; accept note removed -> fp1 red; survivor note removed -> fp1 red; all in a scratch copy, pycache purged\n3 grep of .md for 'nothing makes a plan'/'falsifier': only phase-signoff.md (fixed) and audit-executor.md (new); gen-demo-manifest exemptions left, they concern the demo's rendered surface\n4 submit refusal = returned_falsifier_problems, survivor stop = falsify decision, gap note = record_falsifiers; each named in phase-signoff.md's sentence\n5 n/a - only the executor byte size, printed by measure-context.py --gate\n6 n/a - no guard\n7 no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:f8b5b42f65deef52ca7d0795523f7e41ef46e52be578c8329c455d04a8595b8a\",\"dirtyDigest\":\"sha256:c144602fbbb3cd6fbe296b9831cad83269910de83218b8de776f0f17daae271c\",\"dirtyPaths\":{\"plugins/audit/README.md\":\"4526f6c28e3831af\",\"plugins/audit/agents/audit-executor.md\":\"86e8761e86345c0e\",\"plugins/audit/commands/task.md\":\"c52572a5d2356721\",\"plugins/audit/reference/execute-task.md\":\"ad3b6d811bcdd63e\",\"plugins/audit/reference/phase-signoff.md\":\"67f77ecf6803f8ac\",\"plugins/audit/schema/audit-plan.schema.json\":\"425259b26e728d05\",\"plugins/audit/scripts/governance/drive-phase.py\":\"80ef54b72682c0fa\",\"plugins/audit/scripts/manifest/_filed_returns.py\":\"43a90ee484a8cf4e\",\"plugins/audit/scripts/manifest/audit-task.py\":\"aca39926afb41e21\",\"plugins/audit/scripts/status/audit-lookup.py\":\"50d2d99c8e2e91b3\",\"plugins/audit/tests/test__filed_returns.py\":\"c8ad6c4ac999ce92\",\"plugins/audit/tests/test_drive_phase.py\":\"55715c5bd417e338\"},\"head\":\"4b7df26b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/README.md\",\"plugins/audit/agents/audit-executor.md\",\"plugins/audit/commands/task.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/reference/phase-signoff.md\",\"plugins/audit/schema/audit-plan.schema.json\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/_filed_returns.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/tests/test__filed_returns.py\",\"plugins/audit/tests/test__refs.py\",\"plugins/audit/tests/test_audit_lookup.py\",\"plugins/audit/tests/test_audit_task.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:cf2b8bc7c8d34cc116f651f1126e869658165c5f3329a2bd56d51426a3c1f66e\",\"v\":2}"
+}
