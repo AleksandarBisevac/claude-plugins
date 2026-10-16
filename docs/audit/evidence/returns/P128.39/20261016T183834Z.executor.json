@@ -1,0 +1,42 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_audit_version.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__claude_home.py --selftest": "pass",
+    "ruff check plugins/audit": "pass",
+    "vermin -t=3.8- (status dir + test_audit_version.py)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-16T18:42:18Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_version.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 34 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - v12 (house FAIL): SELFTEST FAILED: 32/34 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "_claude_home.py: new project_dir(), settings_sources(), settings_auto_update(), resolve_auto_update(); marketplace_facts(home, name, project=None) now reads extraKnownMarketplaces.<name>.autoUpdate from user (<claude_home>/settings.json, CLAUDE_CONFIG_DIR honoured), project (.claude/settings.json) and local (.claude/settings.local.json) files, later overriding earlier, settings winning over known_marketplaces.json (stated as this command's reading, not a Claude Code documented order), returning autoUpdate/autoUpdateSource/autoUpdateReadings/autoUpdateNotes/autoUpdateDisagreement/autoUpdateSearched; non-boolean values and unparsable settings files become notes, not readings; duplicate paths (project==home) read once; attach_usage_hint reuses project_dir. audit-version.py: collect(project=) , render prints 'auto-update on/off, read from <file>' or 'not recorded (looked in <files>)', a disagreement line and notes, and the turn-on advice names the settings file that holds the false value (or the searched settings paths). Tests: 8 new cases v12..v12h (40/40 pass; 16/16 in test__claude_home.py). Mutations in my worktree: 'if readings:' disabled -> v12,v12b,v12c,v12d,v12f red; disagreement note made unconditional -> v12h red (v12e alone survived it, so v12h was added); all restored. Note: a first python heredoc edit of _claude_home.py was refused by the plan gate and landed nothing; I redid it with the Edit tool, which the gate allowed. Not touched: commands/version.md (outside files; its wording at lines 49-50 stays consistent).",
+    "descriptive": "/audit:version now reports autoUpdate set in user, project or local settings.json with the file it came from, says which wins on disagreement, and points the turn-on advice at the file it read."
+  },
+  "testsAdded": [
+    "v12 repro that FAILS on current code - autoUpdate true under extraKnownMarketplaces in a user settings.json is reported with that file as its source, vs auto-update not recorded",
+    "v12b project settings.json overrides user",
+    "v12c settings.local.json overrides both",
+    "v12d settings disagree with known_marketplaces.json",
+    "v12e SECOND DIRECTION record alone",
+    "v12f turn-on advice names the settings file",
+    "v12g non-boolean and non-JSON settings are notes",
+    "v12h agreeing settings claim no disagreement"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_audit_version.py: repro that FAILS on current code - autoUpdate true under extraKnownMarketplaces in a user settings.json is reported with that file as its source, vs auto-update not recorded": {
+      "file": "plugins/audit/scripts/status/_claude_home.py",
+      "find": "    if readings:\n        last = readings[-1]",
+      "replace": "    if False and readings:\n        last = readings[-1]",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_version.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n1 _claude_home.py settings_auto_update/resolve_auto_update implement 'settings win, later file overrides earlier'; audit-version.py _auto_clause/_turn_on_advice render the source; precedence over the record is worded as this command's reading, not a Claude Code fact\n2 'if readings:' -> 'if False and readings:' => v12,v12b,v12c,v12d,v12f red (34/39) -> restored 40/40; disagreement note forced 'if True:' => v12h red (39/40), v12e alone survived it -> v12h added -> restored\n3 grep of autoUpdate/marketplace_facts across plugins/audit and tools: only audit-version.py, _claude_home.py, commands/version.md, README.md and test__claude_home.py (name list only) read or mention it; the md/README wording stays true; left unchanged because outside task files\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:1701ddd6c1387aeeef3e19ccaa1fbd53781027dbffe84813953313d31362905a\",\"dirtyDigest\":\"sha256:97e09599794a9262216b87af6de7a50570aa67e9bd2a28811040d28e3127e5bf\",\"dirtyPaths\":{\"plugins/audit/scripts/status/_claude_home.py\":\"cab2e4cc362b8117\",\"plugins/audit/scripts/status/audit-version.py\":\"daa86ca194accd5a\",\"plugins/audit/tests/test_audit_version.py\":\"8347cb4b3bab1bbb\"},\"head\":\"82f1b3b3\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/status/_claude_home.py\",\"plugins/audit/scripts/status/audit-version.py\",\"plugins/audit/tests/test_audit_version.py\"],\"scopeDigest\":\"sha256:738a6aab86f201d1303ffbfa92214d0081ac8b18f29b29960a88e406e2250b96\",\"v\":2}"
+}

@@ -5172,6 +5172,31 @@ def _new_stage_cases(check):
           code_t == M.E_CANNOT_PROVE and block_t.get("status") == "could-not-prove"
           and M.NARROW in block_t.get("basis", ""))
 
+    # A sibling declared test file that already holds the label as a plain string
+    # at HEAD must not make the other file's new stage read as old.
+    root_s, man_s = _red_repo("stamp-newstage-sibling-", _staged_test(
+        [old, ("zz", [("new1", "mine.v == 2")])]), head_test=_staged_test([old]))
+    _write(os.path.join(root_s, "tests", "test_other.py"), "NAMES = ['zz']\n")
+    _git(root_s, "add", "tests/test_other.py")
+    _git(root_s, "commit", "-q", "-m", "sibling")
+    with open(man_s, encoding="utf-8") as fh:
+        manifest_s = json.loads(fh.read())
+    task_s = manifest_s["phases"][0]["tasks"][0]
+    task_s["files"] = task_s["files"] + ["tests/test_other.py"]
+    task_s["tests"]["add"] = ["tests/test_mine.py: v is two",
+                              "tests/test_other.py: names"]
+    _write(man_s, json.dumps(manifest_s))
+    code_s, got_s = _red(root_s, man_s, [py, "tests/test_mine.py", "--stage", "zz"])
+    block_s = got_s.get("redFirst") or {}
+    check("ns5 a stage new in one test file is recognised as new even when another "
+          "declared test file carries the same name as a string literal, and the "
+          "proof is judged from the task's own run: exit=%r %r"
+          % (code_s, block_s or got_s.get("note") or got_s),
+          code_s == M.E_PROVED and block_s.get("status") == "proved"
+          and "new1" in block_s.get("basis", "")
+          and "new at HEAD" in block_s.get("basis", "")
+          and got_s.get("baseline", {}).get("newStages") == ["zz"])
+
 
 def _new_stage_unit_cases(check):
     """How the unknown-stage check is read, and which labels count as new."""
@@ -5205,6 +5230,20 @@ def _new_stage_unit_cases(check):
           and M.new_stages(cmd, None, wt) == []
           and M.new_stages(cmd, {"tests/t.py": "def ("}, wt) == []
           and M.new_stages(cmd, wt, wt) == [])
+    head2 = {"tests/t.py": "STAGES = (('aa', '_a'),)\n",
+             "tests/u.py": "NAMES = ['zz']\n"}
+    wt2 = {"tests/t.py": "STAGES = (('aa', '_a'), ('zz', '_z'))\n",
+           "tests/u.py": "NAMES = ['zz']\n"}
+    wt3 = {"tests/t.py": "STAGES = (('aa', '_a'),)\n",
+           "tests/u.py": "NAMES = ['zz']\n"}
+    check("nu4 a stage new in one test file is recognised as new even when another "
+          "declared test file carries the same name as a string literal, and the "
+          "proof is judged from the task's own run - read per file: %r"
+          % (M.new_stages(cmd, head2, wt2),),
+          M.new_stages(cmd, head2, wt2) == ["zz"]
+          and M.new_stages(cmd, head2, wt3) == []
+          and M.new_stages(cmd, {"tests/u.py": "NAMES = ['zz']\n"}, wt2)
+          == ["aa", "zz"])
 
 
 # Every block, in run order. `--stage LABEL` narrows a run to the blocks it

@@ -1,7 +1,7 @@
 {
   "id": "P128",
   "title": "Consolidated solution: orchestration by scripts, a smaller plugin, a simpler CI",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Holds the work the owner's 2026-10-14 decisions (D1-D10 of the cost/code/CI synthesis, quality-gates-internal reports/2026-10-14-cost-code-ci-analysis) moved out of P125 until the segment studies (orchestration, code, CI) produce one consolidated plan. Its tasks are re-planned from those studies before any starts.",
   "desiredOutcome": "A task through the plugin costs about 1.25x a plain session above a measured size threshold, the main loop reads one signal line per step, scripts+hooks shrink toward 115k lines with code not above its 3.4.0 count, and CI runs in at most 8 minutes from one executable description of the gate set.",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "82f1b3b393d6a174646d79a4f65ccd030c37a438",
+  "branch": "audit/p128-consolidated-solution-orchestr",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,7 +29,7 @@
     {
       "id": "P128.1-0h5",
       "title": "A red CI run on a phase's ci/ branch files a manifest bug with its failing jobs and cases",
-      "status": "pending",
+      "status": "blocked",
       "description": "Observed 2026-10-12: ci/p122 (run 38017386858) and ci/p124 (run 38036907164) went red on windows-latest two days before the 3.3.0 cut, yet no task or bug was filed, P123 landed on top, and the release candidate's CI (38299118105) found nine Windows files red - all new in P123, none overlapping P124's bt2/sr210 which P123 had fixed. The per-phase CI ran as intended; its verdict reached no record a gate reads. A CI result is read into the plan: a command (or the drive's landing step, once it has pushed ci/<phase>) reads the run's failing jobs and case ids (`gh run view --log-failed`, parsed by the house FAIL/FAILED reader) and files `/audit:bug add` naming the run, the jobs and each failing case, so the release guard and the open-bug rule see it at once. Refuses rather than files when it cannot read the run. Source: testbed monitor, 2026-10-12.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -74,7 +74,8 @@
         "id": "P125.24",
         "phase": "P125",
         "at": "2026-10-13T23:26:15Z"
-      }
+      },
+      "blockedReason": "CONSOLIDATED-PLAN.md section 2.7 rewrites this task into an F2/F3 task; held until that phase is materialized."
     },
     {
       "id": "P128.2-0h5",
@@ -131,7 +132,7 @@
     {
       "id": "P128.3-0h5",
       "title": "Phase review can run Haiku-first and escalate on a computed predicate, off by default",
-      "status": "pending",
+      "status": "cancelled",
       "description": "N2. Config review.cascade: 'off' (default) | 'haiku-first'. When on, dispatch_phase_review dispatches the reviewer with model=claude-haiku-5-5 and the same brief and JSON return; a pure predicate escalate(filed, phase) decides whether a second, Sonnet dispatch is owed: any finding, any cannot-tell or missing intent input, any recorded open choice, red-first not proved, or an existing test file modified (the signals signals_fired() and the brief already compute). The second filing supersedes the first in _filed_returns, and both are kept in evidence with their model. The predicate's verdict per phase is computed offline over the recorded phase fixtures and printed by a selftest; the cascade's false-negative rate needs model calls and is not measured here (openChoices), which is why the default is off. Depends on the price table so a Haiku dispatch is priced, not _default. Evidence (research report 2026-10-12, probe 2): Haiku matched Opus on the target defect at about 1/18 of the cost ONLY under the clause-quoting rule of intent-against-task-text; one scenario, false-positive rate not measured - so this depends on that task and its predicate must be re-measured before default-on.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -179,10 +180,10 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: CONSOLIDATED-PLAN.md section 2.7 discards this task (owner approved the plan 2026-10-14)."
       },
       "startedAt": null,
-      "completedAt": null,
+      "completedAt": "2026-10-16T18:37:56Z",
       "verifiedBy": [],
       "movedFrom": {
         "id": "P125.7",
@@ -315,7 +316,7 @@
     {
       "id": "P128.6-0h5",
       "title": "An executor or reviewer reply longer than its filed line is sent back once",
-      "status": "pending",
+      "status": "blocked",
       "description": "F567: 'hand back the line above as your whole reply' is printed by submit and followed by no executor (measured hand-backs ran to kilobytes). A new SubagentStop hook, scoped by agent_type to the plugin's executor and reviewer: submit writes the line it printed to the state dir keyed by the task id the agent's meta description starts with; the hook compares last_assistant_message to that line and, when the reply is longer, returns decision block once with the line as the reason, so the agent's final message - the one the main loop carries - becomes that line. It blocks at most once per agent (a marker per agent_id) and is fail-open: no line on file, an unreadable payload or a non-plugin agent passes. Confirm the payload fields with a probe before relying on them (the hooks reference documents last_assistant_message on SubagentStop). Register it in hooks.json, keep it inside tools/bench-hooks.py's import budget, and list it in SECURITY.md's fail-open table. Also (F574): stream-cost apportions a rebuilt final's output over the whole tool-result bytes, counting the CLI's frame and trailer as emitted - subtract the frame and trailer before apportioning, and switch pipeline-cost-design.md's ad-hoc `analyse(load_events(...))` commands to the CLI so they meet its refusal of a follow-up stream read alone. Faults add: F574.",
       "files": [
         "plugins/audit/hooks/hold-handback.py",
@@ -374,12 +375,13 @@
         "id": "P125.15",
         "phase": "P125",
         "at": "2026-10-13T23:26:24Z"
-      }
+      },
+      "blockedReason": "CONSOLIDATED-PLAN.md section 2.7 rewrites this task into an F2/F3 task; held until that phase is materialized."
     },
     {
       "id": "P128.7-0h5",
       "title": "CI fails when a recorded session's reconstructed cost exceeds its ceiling",
-      "status": "pending",
+      "status": "blocked",
       "description": "Sketch section 3. tools/stream-cost.py gains --gate: for each committed recording it reconstructs per-stage cost (main loop, executor, reviewer, hand-back) at the shipped table and fails on any stage above its ceiling, printing stage, figure, ceiling and pricing basis; an unpriced model fails the gate as unpriced rather than counting zero. Recordings are committed redacted (see openChoices): a redaction mode keeps counts, model ids, tool names and byte lengths and replaces text, and check-committed-pii must pass over them. Wire the gate into tools/verify.sh and .github/workflows/ci.yml, describe it in CONTRIBUTING.md and CLAUDE.md's test list, add its gate-parity entry and its prove-gates row (raising a recording's cost above the ceiling must go red; a recording at the ceiling must stay green).",
       "files": [
         "tools/stream-cost.py",
@@ -433,12 +435,13 @@
         "id": "P125.16",
         "phase": "P125",
         "at": "2026-10-13T23:26:25Z"
-      }
+      },
+      "blockedReason": "CONSOLIDATED-PLAN.md section 2.7 rewrites this task into an F2/F3 task; held until that phase is materialized."
     },
     {
       "id": "P128.8-0h5",
       "title": "The phase cycle as a plugin Workflow has a design and an offline measurement",
-      "status": "pending",
+      "status": "cancelled",
       "description": "N3, design and measurement only - no implementation, because the decisive facts (hooks firing inside workflow-spawned agents, the stagger's cache read, the main loop's real saving) need a paid probe. Write the design: run-phase.js's stages, the Haiku runner that calls drive-phase next and returns {exit, print} by schema, the on-disk token the script must re-read so a mis-relayed print cannot mis-route the loop, how every decide ends the run (workflows take no mid-run input), the fallback to today's Agent path for orgs with workflows off, the Claude Code version floor for COMPATIBILITY.md, and the guarantees to re-argue (gate independence, plan gate inside workflow agents, nothing owed to a human lands unseen). Measure offline with tools/stream-cost.py on recorded sessions: the main loop's spend between dispatches and the hand-back rows, each figure beside the command that produced it. End with the paid probe's exact protocol and the readings that would accept or reject the design.",
       "files": [
         "docs/research/phase-workflow-design.md"
@@ -471,10 +474,10 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: CONSOLIDATED-PLAN.md section 2.7 discards this task (owner approved the plan 2026-10-14)."
       },
       "startedAt": null,
-      "completedAt": null,
+      "completedAt": "2026-10-16T18:37:57Z",
       "verifiedBy": [],
       "movedFrom": {
         "id": "P125.17",
@@ -485,7 +488,7 @@
     {
       "id": "P128.9-0h5",
       "title": "A task's model follows its recorded complexity as well as its risk, with the reason shown before approval",
-      "status": "pending",
+      "status": "blocked",
       "description": "F634 (owner-raised, measured on the testbed): `audit-task._model_floor` routes opus only for `risk: high`, and risk is blast radius, not difficulty - nearly every testbed task ran on Sonnet, including the plan's hardest code (an astronomy core, a WebGL sky layer), because each was low risk; no planning step asks about difficulty. (1) A task records `complexity` (low/med/high) with a one-line basis, separate from risk, written by planning (init synthesis, `/audit:phase add`, `audit-task add`/`scope`) and validated by the manifest schema and rules (additive: a plan without it stays valid and reads as unrecorded, never defaulted). (2) Routing: opus when risk is high OR complexity is high, else sonnet; the caller's explicit `--model` still wins; a config key (`executor.modelByComplexity`, documented in COMPATIBILITY.md as added) can turn the complexity arm off. (3) The plan preview and `/audit:status` show each task's model and the reason it was chosen (risk, complexity, or the caller). (4) Escalation: after a retry, or a med+ finding on a Sonnet attempt, the next attempt of that task runs on opus, journaled with the reason. Red-first: two low-risk fixture tasks - a WebGL scene marked complexity high and a copy edit marked low - route to opus and sonnet; a retried Sonnet task's next dispatch names opus and the journal row says why. Faults: F634.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -545,12 +548,13 @@
         "id": "P125.20",
         "phase": "P125",
         "at": "2026-10-13T23:26:28Z"
-      }
+      },
+      "blockedReason": "CONSOLIDATED-PLAN.md section 2.7 holds this task on the owner until after F3."
     },
     {
       "id": "P128.10-0h5",
       "title": "Parallel waves respect a shared external-resource budget: resources in config, needs on a task, and status says why a task was held",
-      "status": "pending",
+      "status": "blocked",
       "description": "F508 (deferred feature; its revisit trigger - a waves verb - has fired with P124's waves). Today parallel safety is disjoint `files` plus `dependsOn` only, so two tasks that each start a dev server on one port, or hit one rate-limited API, run side by side (the testbed's port 3100 collision is the live shape). Add `resources: {name: capacity}` to audit.config.json (schema + config rules, additive, documented in COMPATIBILITY.md), `needs: [name]` on a task (plan schema + rules, additive), cap wave membership where waves are computed so a wave never holds more tasks needing a resource than its capacity, and have status/the drive say which task was held and for which resource. In the scheduler, not in executor prose. Red-first: two ready tasks both needing `port3100` with capacity 1 never share a wave, the held one is named with the resource; without `resources` the waves are unchanged. Faults: F508.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -602,12 +606,13 @@
         "id": "P125.21",
         "phase": "P125",
         "at": "2026-10-13T23:26:30Z"
-      }
+      },
+      "blockedReason": "CONSOLIDATED-PLAN.md section 2.7 moves this task to its own phase after F5."
     },
     {
       "id": "P128.11-0h5",
       "title": "Every plugin agent carries a measured maxTurns cap and a capped run stops loudly",
-      "status": "pending",
+      "status": "blocked",
       "description": "N12. Add maxTurns to audit-executor, audit-reviewer and audit-explorer frontmatter, each set from a measurement written beside it (see openChoices for the rule). A _refs lint requires the field on every agent under plugins/audit/agents/ (guide.md included or exempted with a reason) and gets its prove-gates row. drive-phase already treats a dispatch with no filed return as stopped; its stop line now says the agent may have reached its maxTurns cap and names the cap, so a runaway is a named stop rather than a silent one.",
       "files": [
         "plugins/audit/agents/audit-executor.md",
@@ -660,14 +665,16 @@
         "id": "P125.13",
         "phase": "P125",
         "at": "2026-10-14T00:05:31Z"
-      }
+      },
+      "blockedReason": "CONSOLIDATED-PLAN.md section 2.7 rewrites this task into an F2/F3 task; held until that phase is materialized."
     },
     {
       "id": "P128.12-0h5",
       "title": "verify.sh cleans its temporary directory on every exit under any POSIX sh",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F655: trap RETURN is a bash extension; under dash the temp directory stays. Use an EXIT trap or explicit removal on every return path, with a check that runs under dash.",
       "files": [
+        "tools/gate-parity.py",
         "tools/verify.sh"
       ],
       "tests": {
@@ -693,16 +700,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-16T18:38:36Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P128.13-0h5",
@@ -792,7 +800,7 @@
     {
       "id": "P128.15-0h5",
       "title": "The bash write guard grades the patch family (patch, git apply, ed/ex) as writers, by the operation",
-      "status": "pending",
+      "status": "blocked",
       "description": "F658. Guard command-reading code: lands with the consolidated plan's single lexer (S5, D10: written by an agent; if the API safeguard refuses, stop and report). Grade by the operation (tree before/after) rather than adding spellings.",
       "files": [
         "plugins/audit/hooks/guard-bash-writes.py",
@@ -831,7 +839,8 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "blockedReason": "Lands with S5 (the guard lexer, F4 last), per its own description."
     },
     {
       "id": "P128.16-0h5",
@@ -879,7 +888,7 @@
     {
       "id": "P128.17-0h5",
       "title": "The falsifier ('must fail if' per planned test) is wired into the drive or retired, decided in the orchestration plan",
-      "status": "pending",
+      "status": "cancelled",
       "description": "Carried from P125's phase review (P125-R38, merged with the orchestrator's earlier note): P125.19's clause (5) asked that every planned test carry a `must fail if <small code change>` line the drive applies in a temporary tree after the executor files, a surviving test being a finding with file:line. `run_falsifier` exists in drive-phase.py with no caller, and phase-signoff.md was rewritten to say a planned test MAY carry a falsifier and nothing calls it. Decide in the consolidated orchestration plan whether the falsifier stays; if it stays, add the schema field, the planning-time line, and the drive's post-filing run with a case that a surviving mutant is a finding; if it goes, delete run_falsifier and the documentation of it.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -914,11 +923,12 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: Owner decision 2026-10-16: retire the falsifier; run_falsifier leaves the shipped tree under F1.6."
       },
       "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-10-16T18:45:25Z",
+      "verifiedBy": [],
+      "blockedReason": "Owner decision pending: keep the falsifier, or retire run_falsifier under F1.6."
     },
     {
       "id": "P128.19-0h5",
@@ -966,7 +976,7 @@
     {
       "id": "P128.20-0h5",
       "title": "The encoding pass summary says what it graded, not case counts it never took",
-      "status": "pending",
+      "status": "blocked",
       "description": "Register F677. The --encoding pass grades by exit code and debris only, yet prints \"0 migrated to tests/, 0 cases\" as if it had counted.",
       "files": [
         "tools/sweep-selftests.py"
@@ -1003,7 +1013,8 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "blockedReason": "CONSOLIDATED-PLAN.md F1.1 makes this redundant; it is folded into F1.1."
     },
     {
       "id": "P128.21-0h5",
@@ -1265,7 +1276,7 @@
     {
       "id": "P128.28-0h5",
       "title": "The plan gate's shell arm grades an interpreter write it cannot resolve to a path as unresolved, not as no write",
-      "status": "pending",
+      "status": "blocked",
       "description": "Register F684 (fail-open, present at v3.3.0). _eval_write_targets sees only direct-call writes; p = Path(x); p.write_text(...) and loops pass ungraded. Orchestrator writes this guard code.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -1303,12 +1314,19 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "blockedReason": "Guard command-reading code: held for an owner decision on who writes it.",
+      "notes": [
+        {
+          "at": "2026-10-16T18:45:26Z",
+          "text": "Owner decision 2026-10-16: deferred to the S5 guard lexer (F4); not patched before it."
+        }
+      ]
     },
     {
       "id": "P128.29-0h5",
       "title": "The plan gate's shell arm reads the task-tree binding, as the edit arm does",
-      "status": "pending",
+      "status": "blocked",
       "description": "Register F685 (present at v3.3.0). guard-secrets-read's _ungoverned_write_target reads the worktree's stale shard instead of _config.task_binding, so one file gets two verdicts by tool and undeclared shell writes pass on the free slot in a bound tree. Orchestrator writes this guard code.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -1346,7 +1364,14 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "blockedReason": "Guard command-reading code: held for an owner decision on who writes it.",
+      "notes": [
+        {
+          "at": "2026-10-16T18:45:27Z",
+          "text": "Owner decision 2026-10-16: deferred to the S5 guard lexer (F4); not patched before it."
+        }
+      ]
     },
     {
       "id": "P128.31-0h5",
@@ -1573,7 +1598,7 @@
     {
       "id": "P128.36-0h5",
       "title": "Work the low findings carried from P125's phase review",
-      "status": "pending",
+      "status": "blocked",
       "description": "The target of P125's carried low findings (both review rounds). Each carried finding names its file, issue and resolution in P125's review; work them here in groups by file, splitting into tasks as their scope becomes clear. None held 3.4.0: lows are carried, not looped into another fix round.",
       "files": [],
       "tests": {
@@ -1612,7 +1637,8 @@
           "at": "2026-10-16T16:14:23Z",
           "text": "Also carried from P125's fourth review round (signed off with them open as low): P125-R170 - file-return keys the shown-brief record by --head as typed, so a short head filed directly bypasses the check (expand with rev-parse or refuse a short head, with a case); P125-R171 - record_falsifiers keeps a plan-held entry, so after a retry an executor's corrected falsifier is dropped silently and the brief stops asking (let the current start's return replace an entry written by an earlier start of the same task, with a case)."
         }
-      ]
+      ],
+      "blockedReason": "Must be split into one task per carried finding before it can run."
     },
     {
       "id": "P128.37-0h5",
@@ -1660,7 +1686,7 @@
     {
       "id": "P128.38",
       "title": "The red-first helper reads stage names per test file, so a task's new stage is recognised as new",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F698 (corrected cause): stamp-verification's new_stages pools string literals from every declared test file at HEAD, so a 'fp-block' literal in test_audit_task.py made the new fp-block stage in test_drive_phase.py read as not new and P125.142's proof came back could-not-prove.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -1682,23 +1708,100 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "plugins/audit/tests/test_stamp_verification.py: a stage new in one test file is recognised as new even when another declared test file carries the same name as a string literal, and the proof is judged from the task's own run": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_stamp_verification.py",
+              "--selftest",
+              "--stage",
+              "sr-new-stage-units"
+            ],
+            "file": "plugins/audit/scripts/governance/stamp-verification.py",
+            "find": "- at_head.get(rel, set())",
+            "replace": "- set().union(*at_head.values())"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [],
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-16T18:38:31Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-16T18:57:05Z.3dc3c5",
+        "status": "passed",
+        "at": "2026-10-16T18:57:05Z"
+      }
+    },
+    {
+      "id": "P128.39",
+      "title": "Fix BUG-23: /audit:version never reports auto-update set in settings.json",
+      "status": "in_progress",
+      "description": "Repro: add \"autoUpdate\": true under extraKnownMarketplaces.quality-gates in <home>/.claude/settings.json, then run /audit:version. Expected: the marketplace line reports the value with the file it was read from, reading the settings sources (user, project, local; CLAUDE_CONFIG_DIR honoured) as well as known_marketplaces.json, and says which wins when they disagree. Actual: the marketplace line says: auto-update not recorded (known_marketplaces.json). The advice line that tells the user to set autoUpdate in settings must stay consistent with what is read.",
+      "files": [
+        "plugins/audit/scripts/status/audit-version.py",
+        "plugins/audit/scripts/status/_claude_home.py",
+        "plugins/audit/tests/test_audit_version.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_version.py: repro that FAILS on current code - autoUpdate true under extraKnownMarketplaces in a user settings.json is reported with that file as its source, vs auto-update not recorded"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-16T18:38:34Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "bugId": "BUG-23",
+      "reviewPerTask": "signals"
     }
-  ]
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "d55605e4-ee14-4690-adce-d240ad64810b",
+    "branch": "audit/p128-consolidated-solution-orchestr",
+    "at": "2026-10-16T18:38:31Z"
+  },
+  "startedAt": "2026-10-16T18:38:31Z"
 }

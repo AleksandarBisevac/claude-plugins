@@ -1,0 +1,36 @@
+{
+  "gates": {
+    "own-tests: python3 plugins/audit/tests/test_stamp_verification.py --selftest (whole file, in tree claude-plugins-P128.38)": "pass",
+    "ruff check on the two files": "pass",
+    "vermin -t=3.8- on the two files": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-16T18:42:45Z",
+    "basis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest --stage sr-new-stage-units` in a throwaway tree at HEAD exited 1 with 1 of 4 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - nu4 (house FAIL): SELFTEST FAILED: 3/4 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "new_stages() in stamp-verification.py now judges a --stage label per file: new when some declared test file's working-tree copy holds it as a string literal and that same file's HEAD copy does not (a file with no HEAD copy introduces all its literals). Previously HEAD literals were pooled across every declared test file, so a sibling file carrying the same string hid the new stage. Added ns5 (end-to-end: sibling test_other.py committed at HEAD with 'zz', test_mine.py adds stage zz -> proved, newStages == ['zz']) and nu4 (unit, per-file read) to test_stamp_verification.py, both titled with the tests.add clause after the id. Whole suite: 286/286 cases passed.",
+    "descriptive": "A stage added to one test file is no longer hidden by the same name appearing as a string in another declared test file, so such proofs come back proved rather than could-not-prove."
+  },
+  "testsAdded": [
+    "ns5 a stage new in one test file is recognised as new even when another declared test file carries the same name as a string literal, and the proof is judged from the task's own run",
+    "nu4 a stage new in one test file is recognised as new even when another declared test file carries the same name as a string literal, and the proof is judged from the task's own run - read per file"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_stamp_verification.py: a stage new in one test file is recognised as new even when another declared test file carries the same name as a string literal, and the proof is judged from the task's own run": {
+      "file": "plugins/audit/scripts/governance/stamp-verification.py",
+      "find": "- at_head.get(rel, set())",
+      "replace": "- set().union(*at_head.values())",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "--selftest",
+        "--stage",
+        "sr-new-stage-units"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:b86ac94ea28895b77c7d7a23f7a359dc4a98f3115eb7468214b0051c7d722e28\",\"dirtyDigest\":\"sha256:78d8b94c5176b8b484a07c83764e4c9a9f88869de9c95ff4579791404f5b7eb8\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/stamp-verification.py\":\"d9254df7b4019885\",\"plugins/audit/tests/test_stamp_verification.py\":\"4bf2049fab477e62\"},\"head\":\"82f1b3b3\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:8447f9138b37f35ef212a56db4b955d60a0c18717f307a772e7031538d6e9057\",\"v\":2}"
+}

@@ -1329,25 +1329,27 @@ def _string_constants(text):
 
 def new_stages(cmd, head_texts, wt_texts):
     """The `--stage` labels `cmd` names that the task's own test files
-    introduce: a string literal of a declared test file's working-tree copy
-    (`wt_texts`, `{rel: text}`) and of none of HEAD's copies (`head_texts`).
-    None of them when HEAD's copies could not be read, or one does not parse -
-    absent at HEAD then cannot be told from unread."""
+    introduce: a label is new when some declared test file holds it as a string
+    literal in its working-tree copy (`wt_texts`, `{rel: text}`) and that same
+    file's HEAD copy (`head_texts`) does not. Read file by file, because a
+    sibling declared file already carrying the same string at HEAD says nothing
+    about the file the stage was added to. None of them when HEAD's copies could
+    not be read, or one does not parse - absent at HEAD then cannot be told from
+    unread. A file with no HEAD copy is new, so all its literals are."""
     args = [str(a) for a in cmd or ()]
     named = [args[i + 1] for i, a in enumerate(args[:-1]) if a == "--stage"]
     if not named or head_texts is None:
         return []
-    at_head = set()
-    for text in head_texts.values():
+    at_head = {}
+    for rel, text in head_texts.items():
         found = _string_constants(text)
         if found is None:
             return []
-        at_head |= found
-    in_wt = set()
-    for text in wt_texts.values():
-        in_wt |= _string_constants(text) or set()
-    return sorted(set(label for label in named
-                      if label in in_wt and label not in at_head))
+        at_head[rel] = found
+    introduced = set()
+    for rel, text in wt_texts.items():
+        introduced |= (_string_constants(text) or set()) - at_head.get(rel, set())
+    return sorted(set(label for label in named if label in introduced))
 
 
 def new_stage_baseline(head, cmd, stages):
