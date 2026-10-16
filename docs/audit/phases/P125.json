@@ -9456,7 +9456,8 @@
         "tools/gate-parity.py",
         "CLAUDE.md",
         "CONTRIBUTING.md",
-        "plugins/audit/tests/_harness.py"
+        "plugins/audit/tests/_harness.py",
+        "plugins/audit/tests/test_commit_task_work.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -9491,7 +9492,18 @@
       "startedAt": "2026-10-15T23:29:06Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-16T00:21:03Z.35cd6f",
+        "status": "passed",
+        "at": "2026-10-16T00:21:03Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-16T00:10:43Z",
+          "text": "files widened by plugins/audit/tests/test_commit_task_work.py: widened by the integration answer"
+        }
+      ]
     },
     {
       "id": "P125.126-0h5",

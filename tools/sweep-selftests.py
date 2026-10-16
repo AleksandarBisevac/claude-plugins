@@ -331,10 +331,31 @@ GIT_IDENTITY_NAMES = ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE",
 # config needs nothing here - HOME is already a scratch directory with no
 # `.gitconfig` in it. `GIT_CONFIG_COUNT` rather than a file planted in that home,
 # because a planted file is one more thing the home channel would have to excuse.
+#
+# NO BACKGROUND HOUSEKEEPING EITHER, and this is the one place that reaches every
+# git a suite starts. A commit, merge or fetch ends by spawning a DETACHED
+# `git maintenance run --auto` that outlives the command, so it can still be
+# working in a fixture repository while the suite reads or deletes it. A fixture
+# prefix switches it off only for the suites that use the prefix, and many call
+# bare `git`. `maintenance.auto` stops the spawn - `gc.auto` alone does not - and
+# `gc.auto` stops the direct `gc --auto` an older git runs instead. The protocol
+# these pairs travel by is read by git 2.31 and later; the selftest asks the
+# child's own git to read `maintenance.auto` back, so a runner with an older git
+# fails there rather than housekeeping in silence.
 GIT_ENV = (("GIT_CONFIG_NOSYSTEM", "1"),
-           ("GIT_CONFIG_COUNT", "1"),
+           ("GIT_CONFIG_COUNT", "3"),
            ("GIT_CONFIG_KEY_0", "user.useConfigOnly"),
-           ("GIT_CONFIG_VALUE_0", "true"))
+           ("GIT_CONFIG_VALUE_0", "true"),
+           ("GIT_CONFIG_KEY_1", "maintenance.auto"),
+           ("GIT_CONFIG_VALUE_1", "false"),
+           ("GIT_CONFIG_KEY_2", "gc.auto"),
+           ("GIT_CONFIG_VALUE_2", "0"))
+
+# THE CALLER'S OWN PAIRS IN THAT PROTOCOL ARE DROPPED before the runner's are laid
+# on, so the runner's set is the whole of it. Overwriting alone would win every
+# index the runner writes and leave the caller's higher ones in the child, where a
+# suite that appends a pair by raising the count would read them as its own.
+_GIT_CONFIG_PAIR_RE = re.compile(r"^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$")
 
 
 def is_session_var(name):
@@ -347,16 +368,24 @@ def is_ambient_identity(name):
     return name in GIT_IDENTITY_NAMES
 
 
+def is_ambient_git_config(name):
+    """True when `name` carries a config pair the caller set through git's
+    environment protocol, which the runner's own set replaces whole."""
+    return bool(_GIT_CONFIG_PAIR_RE.match(name))
+
+
 def ambient_env(environ):
-    """The caller's environment minus the session and any exported git identity,
-    with git's host answers refused.
+    """The caller's environment minus the session, any exported git identity and
+    any git config pairs of its own, with git's host answers refused and its
+    background housekeeping off.
 
     A NEW MAPPING, never the caller's: `run_one` layers the directory pins on top of
     this, and the process's own environment is shared with every other thread of
     the sweep.
     """
     out = dict((k, v) for k, v in environ.items()
-               if not is_session_var(k) and not is_ambient_identity(k))
+               if not is_session_var(k) and not is_ambient_identity(k)
+               and not is_ambient_git_config(k))
     out.update(GIT_ENV)
     return out
 
@@ -1807,7 +1836,6 @@ def _cases(check):
           "supplied in their place: %r"
           % (dict((k, v) for k, v in _amb.items() if k.startswith("GIT_")),),
           _amb.get("GIT_CONFIG_NOSYSTEM") == "1"
-          and _amb.get("GIT_CONFIG_COUNT") == "1"
           and _amb.get("GIT_CONFIG_KEY_0") == "user.useConfigOnly"
           and _amb.get("GIT_CONFIG_VALUE_0") == "true"
           and not any(k in _amb for k in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
@@ -1837,6 +1865,44 @@ def _cases(check):
                   if k in ("GIT_DIR", "GIT_TERMINAL_PROMPT")),),
           _amb.get("GIT_DIR") == "/r/.git"
           and _amb.get("GIT_TERMINAL_PROMPT") == "0")
+
+    # THE CALLER CARRIES A CONFIG SET OF ITS OWN, through the same protocol: a
+    # higher count, an index the runner also writes holding the opposite value, and
+    # an index past the runner's count. A runner that only overwrites leaves that
+    # last pair in the child, where any suite that appends to the count reads it.
+    _cfg = {"PATH": "/bin", "GIT_CONFIG_COUNT": "6",
+            "GIT_CONFIG_KEY_1": "maintenance.auto", "GIT_CONFIG_VALUE_1": "true",
+            "GIT_CONFIG_KEY_5": "core.hooksPath", "GIT_CONFIG_VALUE_5": "/caller"}
+    _amb = ambient_env(_cfg)
+    _gitcfg = dict((k, v) for k, v in _amb.items()
+                   if k.startswith("GIT_CONFIG_") and k != "GIT_CONFIG_NOSYSTEM")
+    try:
+        _count = int(_amb.get("GIT_CONFIG_COUNT", ""))
+    except ValueError:
+        _count = -1
+    _settings = [(_amb.get("GIT_CONFIG_KEY_%d" % (i,)),
+                  _amb.get("GIT_CONFIG_VALUE_%d" % (i,)))
+                 for i in range(max(_count, 0))]
+    _encoded = set(["GIT_CONFIG_COUNT"]) | set(
+        "GIT_CONFIG_%s_%d" % (part, i) for part in ("KEY", "VALUE")
+        for i in range(max(_count, 0)))
+    _keys = [k for k, _ in _settings]
+    # NAMED HERE rather than read off GIT_ENV, as hv0 and se4 do: a case asserting
+    # the table against itself passes a table that lost the two keys. COUNTED, not
+    # found - a set where `maintenance.auto` appears twice is one git resolves by
+    # whichever index comes last.
+    check("every sweep child's environment carries maintenance.auto=false and "
+          "gc.auto=0 through GIT_CONFIG_COUNT, so no git process in any suite "
+          "spawns detached maintenance, and the isolation documents name the "
+          "family (gm0 the runner's set is the whole of the protocol a child "
+          "sees - both keys once each beside the identity refusal, the count "
+          "covering exactly them, and none of the caller's pairs left over): %r"
+          % (_gitcfg,),
+          _keys.count("maintenance.auto") == 1 and _keys.count("gc.auto") == 1
+          and ("maintenance.auto", "false") in _settings
+          and ("gc.auto", "0") in _settings
+          and ("user.useConfigOnly", "true") in _settings
+          and set(_gitcfg) == _encoded)
 
     # A fixture, NOT this file: `run_one` appends `--selftest`, so pointing it at
     # this module would have it run its own suite, which runs this case, which
@@ -2116,6 +2182,74 @@ def _cases(check):
               and _env.get("tmp") == _env.get("cwd")
               and _env.get("home") not in (None, os.path.expanduser("~"),
                                            _env.get("cwd")))
+
+        # -- background maintenance, asked of the git the child really runs -----
+        # A SUITE THAT CALLS BARE GIT, with no shared fixture prefix: the class the
+        # runner's own setting exists for, since a prefix only reaches the suites
+        # that use it. The commit is traced and the spawn counted off git's own
+        # `run_command:` line, once per commit. The deny twin runs the same commit
+        # with the runner's config set taken out again and
+        # `maintenance.autoDetach=false`, so the one maintenance run it is expected
+        # to start runs in the foreground and is finished before its repository is
+        # removed - a detached one would outlive the fixture, which is the very
+        # thing being switched off.
+        maint = _fixture(
+            "fixture_maint",
+            "import json, os, shutil, subprocess, sys, tempfile\n"
+            "def spawns(env, extra):\n"
+            "    root = tempfile.mkdtemp(prefix='gm-')\n"
+            "    wt = os.path.join(root, 'wt')\n"
+            "    trace = os.path.join(root, 'trace')\n"
+            "    git = ['git', '-c', 'user.name=Fixture', '-c',\n"
+            "           'user.email=fixture@fixture.invalid', '-c',\n"
+            "           'commit.gpgsign=false'] + extra\n"
+            "    try:\n"
+            "        subprocess.run(['git', 'init', '-q', wt], env=env, check=True)\n"
+            "        with open(os.path.join(wt, 'a'), 'w') as fh:\n"
+            "            fh.write('a')\n"
+            "        subprocess.run(git + ['-C', wt, 'add', 'a'], env=env,\n"
+            "                       check=True)\n"
+            "        subprocess.run(git + ['-C', wt, 'commit', '-qm', 'a'],\n"
+            "                       env=dict(env, GIT_TRACE=trace), check=True)\n"
+            "        with open(trace, encoding='utf-8', errors='replace') as fh:\n"
+            "            return sum(1 for line in fh if\n"
+            "                       'run_command: git maintenance run' in line)\n"
+            "    finally:\n"
+            "        shutil.rmtree(root, ignore_errors=True)\n"
+            "env = dict(os.environ)\n"
+            "bare = dict((k, v) for k, v in env.items()\n"
+            "            if k != 'GIT_CONFIG_COUNT'\n"
+            "            and not k.startswith('GIT_CONFIG_KEY_')\n"
+            "            and not k.startswith('GIT_CONFIG_VALUE_'))\n"
+            "seen = subprocess.run(['git', 'config', '--get', 'maintenance.auto'],\n"
+            "                      stdout=subprocess.PIPE, env=env)\n"
+            "ver = subprocess.run(['git', '--version'], stdout=subprocess.PIPE)\n"
+            "sys.stdout.write('MAINT=' + json.dumps({\n"
+            "    'version': ver.stdout.decode('utf-8', 'replace').strip(),\n"
+            "    'reads': seen.stdout.decode('utf-8', 'replace').strip(),\n"
+            "    'with': spawns(env, []),\n"
+            "    'without': spawns(bare, ['-c', 'maintenance.autoDetach=false'])})\n"
+            "    + '\\n')\n"
+            + _CONTRACT_LINE)
+        ran = run_one(maint, timeout=60)
+        _mt = {}
+        for line in ran["output"].splitlines():
+            if line.startswith("MAINT="):
+                _mt = json.loads(line[len("MAINT="):])
+        _mshown = _mt or ran["output"][-400:]
+        check("gm1 ...a traced commit in a suite that calls bare git, with no "
+              "shared prefix, spawns NO maintenance under the runner's "
+              "environment, and that child's git reads the runner's value back "
+              "through the protocol: %r" % (_mshown,),
+              ran["code"] == 0 and bool(_mt) and _mt.get("with") == 0
+              and _mt.get("reads") == "false")
+        # gm2 IS THE SECOND DIRECTION of gm1: a trace that is never written, or a
+        # match string git never prints, reads zero spawns under any environment.
+        # The same commit without the runner's set must spawn exactly one.
+        check("gm2 ...while the same commit with the runner's set taken out spawns "
+              "exactly one, so gm1's zero is a count that could have been "
+              "otherwise: %r" % (_mshown,),
+              ran["code"] == 0 and bool(_mt) and _mt.get("without") == 1)
 
         # The WIRING, at the level that actually runs in CI. Everything above
         # proves `run_one` observes and `grade` judges; this is the only case that
@@ -2441,6 +2575,37 @@ def _cases(check):
           bg_h.STAGE_GRANT_VAR == STAGE_GRANT_VAR
           and bg_h.FILE_TIMEOUT_VAR == FILE_TIMEOUT_VAR
           and bg_h.STAGE_WORKERS == STAGE_GRANT_MAX)
+    # TWO COPIES OF ONE SETTING, held together the way bg0 holds the grant: the
+    # harness prefix serves a suite run outside the sweep, the runner's set serves
+    # every suite inside it, and a key dropped from one would leave the two runs of
+    # one suite housekeeping differently.
+    _prefix = list(bg_h.NO_AUTO_MAINTENANCE)
+    _prefixed = sorted(_prefix[i + 1] for i in range(0, len(_prefix), 2)
+                       if _prefix[i] == "-c")
+    _runner = dict(GIT_ENV)
+    _set = sorted("%s=%s" % (_runner["GIT_CONFIG_KEY_%d" % (i,)],
+                             _runner["GIT_CONFIG_VALUE_%d" % (i,)])
+                  for i in range(int(_runner.get("GIT_CONFIG_COUNT", "0")))
+                  if "GIT_CONFIG_KEY_%d" % (i,) in _runner)
+    check("gm3 ...the harness prefix a suite outside the sweep uses switches off "
+          "the same keys the runner's set does: prefix %r, runner %r"
+          % (_prefixed, _set),
+          _prefixed == ["gc.auto=0", "maintenance.auto=false"]
+          and all(p in _set for p in _prefixed))
+    gp_spec = importlib.util.spec_from_file_location(
+        "sweep_gate_parity_gm", os.path.join(REPO, "tools", "gate-parity.py"))
+    gp = importlib.util.module_from_spec(gp_spec)
+    gp_spec.loader.exec_module(gp)
+    _iso = gp.isolation_drift(REPO)
+    _cfgfam = _iso["filtered"].get("git config", ())
+    _cfgprose = [row for row in _iso["prose"] if row[1] == "git config"]
+    check("gm4 ...and every document that describes the isolation names both "
+          "keys, by the rule gate-parity holds them to, read over %d document(s): "
+          "family %r, findings %r, problem %r"
+          % (_iso["sides"], _cfgfam, _cfgprose, _iso["problem"]),
+          _iso["problem"] is None and _iso["sides"] > 0
+          and "maintenance.auto" in _cfgfam and "gc.auto" in _cfgfam
+          and _cfgprose == [])
     bg_grants = dict((j, stage_grant(j)) for j in (1, 2, 3, 4, 5, 8, 12, 64))
     check("bg1 a staged suite holds all but one of the budget's slots, at least "
           "two, at most the cap, never more than the budget: %r" % (bg_grants,),

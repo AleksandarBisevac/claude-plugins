@@ -182,7 +182,11 @@ def fixture_root(prefix):
     `user.useConfigOnly` refusing a guessed identity, supplying no branch and no
     identity instead. So a fixture here that commits must configure its own
     identity, and one that names a branch must create it, exactly as on a bare CI
-    runner.
+    runner. The same `GIT_CONFIG_COUNT` set turns `maintenance.auto` and
+    `gc.auto` off for every git a suite starts, through a fixture prefix or bare,
+    so no detached housekeeping run is left working in a fixture the suite is
+    about to read or delete; the caller's own pairs in that protocol are dropped
+    first, so the runner's set is the whole of it.
 
     This function is only the easy way to be clean.
     """
@@ -263,6 +267,11 @@ def worktree_pair(prefix):
 # proven cure for any failure. Both keys, because `maintenance.auto` stops the
 # spawn and `gc.auto` stops the direct `gc --auto` an older git runs instead.
 # Every suite-local fixture prefix carries `NO_AUTO_MAINTENANCE` too.
+#
+# THE SWEEP SETS BOTH KEYS ITSELF, for every git any suite starts, so inside it
+# this prefix is a second copy. It stays for a suite run OUTSIDE the sweep - by
+# hand, `--selftest` on one file - which inherits no runner environment, and
+# the sweep's own selftest holds the two copies to the same keys.
 NO_AUTO_MAINTENANCE = ("-c", "maintenance.auto=false", "-c", "gc.auto=0")
 GIT = ("git",) + NO_AUTO_MAINTENANCE + (
     "-c", "user.email=fixture@example.com", "-c", "user.name=Fixture",

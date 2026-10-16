@@ -230,7 +230,10 @@ the script is only a caller:
 # with `GIT_CONFIG_NOSYSTEM` set and `user.useConfigOnly` refusing a guessed identity. No
 # branch and no identity are supplied in their place: a suite leaning on the host's git must
 # fail here the way it fails on a bare runner, which is what a local sweep that stayed green
-# over CI's ubuntu reds was not doing.
+# over CI's ubuntu reds was not doing. The same `GIT_CONFIG_COUNT` set turns `maintenance.auto`
+# and `gc.auto` off, so no git a suite starts - through a fixture prefix or bare - leaves a
+# detached housekeeping run working in a fixture the suite is about to read or delete; the
+# caller's own pairs in that protocol are dropped first, so the runner's set is the whole of it.
 #
 # AND THIS COMMENT IS A CHECKED ONE. `gate-parity.py`'s `isolation_drift()` reads the runner's
 # own constants - the families are tuples in that module, not a list restated here - and fails

@@ -2273,7 +2273,12 @@ def _traced_commit_spawns(prefix, scratch):
     _harness.git(None, "init", "-q", repo, prefix=prefix)
     _write(os.path.join(repo, "a.txt"), "a\n")
     _harness.git(repo, "add", "a.txt", prefix=prefix)
-    env = dict(os.environ)
+    # THE PREFIX ALONE IS MEASURED: the sweep hands every child its own config
+    # pairs through `GIT_CONFIG_COUNT`, which switch the same keys off, so they
+    # are taken out here or the deny twin could never see a spawn.
+    env = dict((k, v) for k, v in os.environ.items()
+               if k != "GIT_CONFIG_COUNT"
+               and not k.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")))
     env["GIT_TRACE"] = trace
     subprocess.run(list(prefix) + ["commit", "-q", "-m", "traced"], cwd=repo,
                    env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,

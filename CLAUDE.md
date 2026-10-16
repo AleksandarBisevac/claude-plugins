@@ -252,7 +252,10 @@ exports (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `EMAIL`); git runs with
 `GIT_CONFIG_NOSYSTEM` set and `user.useConfigOnly` refusing a guessed identity. No branch and no
 identity are supplied in their place, so a suite leaning on the host's git fails here the way it
 fails on a bare runner; that is what let a local sweep stay green over suites CI's ubuntu runner
-turned red. **The working directory and
+turned red. The same `GIT_CONFIG_COUNT` set turns `maintenance.auto` and `gc.auto` off, so no
+git a suite starts — through a fixture prefix or bare — leaves a detached housekeeping run
+working in a fixture the suite is about to read or delete; the caller's own pairs in that
+protocol are dropped first, so the runner's set is the whole of it. **The working directory and
 the home directory are the watched pair**, each holding one file the suite did not put
 there, and a suite is red if anything was added to either — or, the destructive half a
 strays-only check would call spotless, if that planted file was deleted or rewritten.

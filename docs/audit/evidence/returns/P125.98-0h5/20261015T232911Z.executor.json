@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --encoding cp1252": "pass",
+    "python3 plugins/audit/tests/test__filed_returns.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_audit_task.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-15T23:47:06Z",
+    "basis": "`python3 plugins/audit/tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 98 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - a filed return whose file was deleted reads as a problem naming the filing row's digest and the missing file, never as unfiled (rj10 (None, None, None, None); a row recording no digest still refuses: None; a row for another return refuses nothing: (None, None, None, None)) (house FAIL): SELFTEST FAILED: 96/98 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "read_filed_return_checked now returns a problem (row digest + missing file) when the file is absent but a filing row names it; filed_digest_problem uses the same missing wording. Callers: audit-task _close_returns (reviewer and --from-return executor) and _close_evidence_refusal, drive-phase filed, commit-task-work executor_return, claims_from_return all refuse on a problem, so audit-task.py needed no edit. Added rj10/rj10c and fj4. Sweep exit 0 (335/335 files, 16458 cases), cp1252 exit 0.",
+    "descriptive": "A deleted filed return can no longer be read as unfiled, so a recorded diverges review cannot be deleted into a matches close."
+  },
+  "testsAdded": [
+    "a filed return whose file was deleted reads as a problem naming the filing row's digest and the missing file, never as unfiled",
+    "a task whose filed reviewer or executor return was deleted cannot be closed, and the refusal names the missing return"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:2a8dc1fac7498fd3fc56d759cfc664e1e28afcd57665f2a3ed06bc877b20f430\",\"dirtyDigest\":\"sha256:841477dd704760d49ba68ab9d19f27e95e365e28e0b7f3e712b8c2412f712231\",\"dirtyPaths\":{\"plugins/audit/scripts/manifest/_filed_returns.py\":\"dc2e3fd2d9756f3e\",\"plugins/audit/tests/test__filed_returns.py\":\"ad14adcf79415c30\",\"plugins/audit/tests/test_audit_task.py\":\"27ca98faa9c0be89\"},\"head\":\"f645b245\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/_filed_returns.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test__filed_returns.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:81c5984d0b6509f3a5fbba47fa849ca509338a713979ccb97bd68953db5e84b0\",\"v\":2}"
+}
