@@ -3225,6 +3225,10 @@
         {
           "at": "2026-10-15T03:41:50Z",
           "text": "What the diff did (its filed outcome is the placeholder text the filing gate now refuses): stamp-verification's _remove_throwaway gained a bounded retry of the throwaway removal while the holder still exists - REMOVE_RETRIES 5 at REMOVE_RETRY_S 0.05, injectable retries/backoff, with sr215 (fails once, then removed) and sr216 (never goes away, exactly the bound). Later superseded: the removal now goes through _output.while_shared under the shared sharing wait (b634d314, 28449751). Recorded for phase-review finding P125-R69."
+        },
+        {
+          "at": "2026-10-16T07:18:00Z",
+          "text": "What the diff changed (recorded by the orchestrator because the filed return's outcome is 'placeholder'; finding P125-R69): stamp-verification._remove_throwaway retries shutil.rmtree of the throwaway holder up to REMOVE_RETRIES (5) times with REMOVE_RETRY_S (0.05 s) backoff while the holder still exists, instead of one attempt, because a just-killed process's handles are released asynchronously on Windows; a holder that never clears is still reported left behind. Cases in test_stamp_verification pin the retry and the bound. Commit 875fb758046b."
         }
       ],
       "testEvidence": {
