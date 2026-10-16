@@ -10103,7 +10103,12 @@
       "fixes": [
         "P125-R38"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-16T08:12:47Z.25be37",
+        "status": "passed",
+        "at": "2026-10-16T08:12:47Z"
+      }
     },
     {
       "id": "P125.129-0h5",

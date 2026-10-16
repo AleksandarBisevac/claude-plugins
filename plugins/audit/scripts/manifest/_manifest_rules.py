@@ -37,7 +37,9 @@ decides the ORDER, and the order is not arbitrary — `_walk_phases` builds the
 index the five checks after it read, so it runs once and first. `_check_meta`
 stayed with it because the root object's key vocabulary and `meta` are the
 document's HEADER: they need nothing the walk builds, and they are what decides
-whether the rest is worth walking.
+whether the rest is worth walking. `tests.falsifiers`' rule sits here too, beside
+`task_falsifiers`, the reading the step driver closes a task by: one home for
+both, so the validator's warning and the drive's refusal name the same faults.
 
 AND THE NAMES. Every name those five modules hold is re-exported here, as a thin
 module-level alias rather than a copy, because this module is what four
@@ -499,6 +501,118 @@ def _check_muted(manifest, index, today=None):
     return (f, w)
 
 
+# --- tests.falsifiers: a planned test's 'must fail if' line ------------------------
+# Keyed by the `tests.add` entry it falsifies, as `tests.addMap` is, so the entries
+# stay the strings every reader of `tests.add` parses. `drive-phase.py` reads a
+# task's falsifiers through `task_falsifiers` and refuses to close over a problem
+# this names; the validator says the same problems as WARNINGS, because a plan
+# that validated before the field existed keeps validating (COMPATIBILITY.md).
+FALSIFIER_FIELDS = ("file", "find", "replace", "command")
+
+
+def _falsifier_shape(falsifier):
+    """The shape faults the published schema also refuses, as (code, text)."""
+    if not isinstance(falsifier, dict):
+        return [("rules.falsifier.object", "is not an object")]
+    out = [("rules.falsifier.missing", "has no `%s`" % (k,))
+           for k in FALSIFIER_FIELDS if k not in falsifier]
+    out += [("rules.falsifier.type", "`%s` is not a string" % (k,))
+            for k in ("file", "find", "replace")
+            if k in falsifier and not isinstance(falsifier[k], str)]
+    command = falsifier.get("command")
+    if "command" in falsifier and not (
+            isinstance(command, list) and all(isinstance(a, str) for a in command)):
+        out.append(("rules.falsifier.type", "`command` is not an array of strings"))
+    timeout = falsifier.get("timeout")
+    if "timeout" in falsifier and (isinstance(timeout, bool)
+                                   or not isinstance(timeout, int) or timeout < 1):
+        out.append(("rules.falsifier.timeout",
+                    "`timeout` is not a whole number of seconds, at least 1"))
+    return out
+
+
+def _outside_tree(path):
+    """True for a `file` that does not name a path inside the git root."""
+    parts = path.replace("\\", "/").split("/")
+    return (not path or path.startswith(("/", "\\")) or os.path.isabs(path)
+            or ".." in parts or re.match(r"^[A-Za-z]:", path) is not None)
+
+
+def _falsifier_values(entry, falsifier, declared):
+    """The faults no schema keyword can express, as (code, text)."""
+    out = []
+    if entry not in declared:
+        out.append(("rules.falsifier.unknown-test",
+                    "is keyed by no `tests.add` entry of this task, so no "
+                    "planned test owns it"))
+    if not isinstance(falsifier, dict):
+        return out
+    find, path = falsifier.get("find"), falsifier.get("file")
+    if isinstance(find, str) and not find:
+        out.append(("rules.falsifier.find-empty",
+                    "`find` is empty, so it names no code to mutate"))
+    if isinstance(find, str) and find and find == falsifier.get("replace"):
+        out.append(("rules.falsifier.no-op",
+                    "`replace` equals `find`, so the mutant is the code itself"))
+    if isinstance(path, str) and _outside_tree(path):
+        out.append(("rules.falsifier.path",
+                    "`file` %r is not a path inside the tree" % (path,)))
+    command = falsifier.get("command")
+    if isinstance(command, list) and not any(
+            isinstance(a, str) and a.strip() for a in command):
+        out.append(("rules.falsifier.command",
+                    "`command` is empty, so nothing would run"))
+    return out
+
+
+def falsifier_problems(entry, falsifier, declared):
+    """`[(code, text, schema_says)]` - every reason the falsifier keyed `entry`
+    cannot be run as declared, given `declared`, the task's `tests.add`
+    entries. `schema_says` marks a fault the published schema refuses too, so
+    the validator leaves that one to the schema's line."""
+    return ([(c, t, True) for c, t in _falsifier_shape(falsifier)]
+            + [(c, t, False) for c, t in _falsifier_values(entry, falsifier,
+                                                           declared)])
+
+
+def _declared_falsifiers(task):
+    """`(falsifiers, declared)` - the task's `tests.falsifiers` object, or None
+    when it holds none, and its `tests.add` entries."""
+    tests = task.get("tests") if isinstance(task, dict) else None
+    tests = tests if isinstance(tests, dict) else {}
+    held = tests.get("falsifiers")
+    declared = [e for e in tests.get("add") or [] if isinstance(e, str)]
+    return (held if isinstance(held, dict) else None), declared
+
+
+def task_falsifiers(task):
+    """`[(entry, falsifier, problems)]` for every falsifier `task` declares,
+    sorted by entry; `problems` is `falsifier_problems`' texts, empty when the
+    falsifier can be run. Empty when the task declares none."""
+    held, declared = _declared_falsifiers(task)
+    return [(entry, held[entry],
+             [t for _c, t, _s in falsifier_problems(entry, held[entry], declared)])
+            for entry in sorted(held or {}, key=str)]
+
+
+def _check_falsifiers(phases):
+    """([], warnings): each falsifier fault no schema keyword says, one line
+    each. A `tests.falsifiers` that is not an object is the schema's line."""
+    w = []
+    tasks = [t for p in phases if isinstance(p, dict)
+             for t in (p.get("tasks") or []) if isinstance(t, dict)]
+    for task in tasks:
+        held, declared = _declared_falsifiers(task)
+        for entry in sorted(held or {}, key=str):
+            w.extend(_output.finding(code, (
+                "task %s: tests.falsifiers[%r] %s - the drive stops the close "
+                "on it as could-not-run" % (task.get("id"), entry, text)))
+                for code, text, schema_says
+                in falsifier_problems(entry, held[entry], declared)
+                if not schema_says)
+    return ([], w)
+
+
 # --- the published schema, over the whole plan -------------------------------------
 # The schema was applied by CI's `ajv` step over three committed plans and by
 # nothing a verb runs, so a verb could write a plan the published schema refuses.
@@ -718,6 +832,9 @@ def validate(manifest, today=None, schema=None):
     add(_check_ado_parents(manifest, phases))
     add(_check_derived(manifest))
     add(_check_muted(manifest, index, today))
+    # A pass over the tasks of its own, unlike `tests.add`'s rules: the walk
+    # those ride lives in `_manifest_phases`, and this needs nothing it builds.
+    add(_check_falsifiers(phases))
     # LAST, and handed every finding raised above, so a fault a hand-written
     # rule already refused is said once.
     add(_check_schema(manifest, schema, list(f)))

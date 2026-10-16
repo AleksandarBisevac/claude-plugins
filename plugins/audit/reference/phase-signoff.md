@@ -104,15 +104,21 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    string diff, that flagged most of the danuvia tasks on language alone). **A reviewer's `matches`
    answer whose note quotes none of the task's own `description`** is refused as unsupported before
    it can file - `unsupported_match_basis` in `_filed_returns.py` - so a renamed scope cannot read
-   back as matching on the strength of the executor's own restatement. **A planned test MAY carry a
-   falsifier** - a small code change it must fail against - which `run_falsifier` applies in
-   a throwaway copy of the tree, never the executor's own, and runs: a test that survives its own
-   mutant is a finding with file:line, and a patch that breaks the build is `could-not-run`, never a
-   kill. Callable over a `{file, find, replace}` mutation and a task's own gate command; nothing in
-   the pipeline calls it automatically, because the mutation it needs names code a `tdd` task has
-   not written yet at the point task synthesis runs, and inventing one would be a model judgement
-   no deterministic verb here makes. A reviewer or a human who already knows the shape of the fix
-   runs it by hand against the filed return's tree.
+   back as matching on the strength of the executor's own restatement. **A planned test that
+   carries a 'must fail if' line has it applied by the drive.** The line is the task's
+   `tests.falsifiers` entry, keyed by the `tests.add` entry it falsifies and naming a
+   `{file, find, replace, command}` mutation (an optional `timeout` in seconds); the field is
+   optional, and nothing makes a plan declare one. Once the executor has filed and the task's gate
+   is green, `drive-phase.py`'s `falsify` runs each declared falsifier through `run_falsifier`, once,
+   in a throwaway copy of the tree the gate measured (the files git lists, ignored ones left out),
+   never the tree itself: the command must exit 0 on the unmutated copy, then fail on the mutant.
+   A test that still passes under its mutation stops the close at the `falsifier` decision, before
+   any reviewer is spent on it - `retry`, `accept --reason`, or `block`. So does a falsifier that
+   could not be run - a malformed entry, a `find` the file does not hold, an unmutated copy that is
+   not green, a mutant that broke the build, a run past its timeout - as `could-not-run`, never as
+   a kill. The validator names a malformed entry as a `rules.falsifier.*` warning
+   (`_manifest_rules.falsifier_problems`, the same reading the drive refuses on), a warning rather
+   than a finding because a plan that validated before the field existed keeps validating.
 
    **Nothing refuses a hand edit of the shard** — the validator's shape warning is the only
    backstop, and a hand-written finding carries no journal row and no tally. Then, for each

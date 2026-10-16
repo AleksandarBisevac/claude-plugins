@@ -6630,6 +6630,84 @@ def _falsifier_cases(check):
               and absent_status == "could-not-run" and before == after)
     finally:
         _harness.remove_tree(root)
+    _falsifier_drive_cases(check, M)
+
+
+FALSIFIER_DRIVE_CLAUSE = ("a planned test that carries a 'must fail if' line has "
+                          "it applied by the drive in a throwaway tree after "
+                          "the executor files, and a test that still passes "
+                          "under the mutation stops the close")
+_FV_ADD = "src/f1.txt: the file says the task changed it"
+# The planned test's own check, run from the copy's root: green while the file
+# still opens with what the executor wrote, red once the mutation rewrites it.
+_FV_STRICT = ("import sys; sys.exit(0 if open('src/f1.txt', encoding='utf-8')"
+              ".read().startswith('changed') else 1)")
+
+
+def _falsifier_repo(prefix, command, find="changed"):
+    """A one-task drive whose task plans one test and carries its falsifier -
+    `None` for `command` plans the test with no falsifier at all."""
+    root, mpath = _repo(prefix, task_ids=TASKS[:1], per_task="phase")
+    with open(mpath, "r", encoding="utf-8") as fh:
+        plan = json.load(fh)
+    tests = plan["phases"][0]["tasks"][0]["tests"]
+    tests["add"] = [_FV_ADD]
+    if command is not None:
+        tests["falsifiers"] = {_FV_ADD: {
+            "file": "src/f1.txt", "find": find, "replace": "broken",
+            "command": [sys.executable, "-c", command], "timeout": 60}}
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh, indent=2)
+    _harness.git(root, "commit", "-qam", "plan the falsifier")
+    return root, mpath
+
+
+def _falsifier_drive_cases(check, M):
+    """The drive applies a task's declared falsifiers between the green gate
+    and the close: a mutant the test survives, and one that could not be run,
+    each stop the close as a decision; a killed one goes on to the close."""
+    outcomes = {}
+    for name, command, find in (("weak", "pass", "changed"),
+                                ("strict", _FV_STRICT, "changed"),
+                                ("absent", _FV_STRICT, "no such text"),
+                                ("none", None, "changed")):
+        root, mpath = _falsifier_repo("falsifier-%s" % (name,), command, find)
+        _next(M, root, mpath)
+        _file_executor(root, mpath, "P1.1")
+        _code, text = _next(M, root, mpath)
+        with open(os.path.join(root, "src", "f1.txt"), "r", encoding="utf-8") as fh:
+            left = fh.read()
+        outcomes[name] = (instruction(text)[1],
+                          tasks_of(mpath).get("P1.1", {}).get("status"),
+                          M.CLOSED in text, text, left, root, mpath)
+    weak, strict, absent, none = (outcomes[n] for n in
+                                  ("weak", "strict", "absent", "none"))
+    check("%s (fv6: a test that exits 0 under its declared mutation is the "
+          "`falsifier` decision naming `survived`, the task stays in progress "
+          "and nothing is closed, and the executor's own file is untouched by "
+          "the mutant; one the mutation turns red closes, its did-line naming "
+          "the kill; a mutation whose `find` is not in the file is the same "
+          "decision as `could-not-run`, never a pass; a task declaring no "
+          "falsifier closes with no falsifier line at all: %r)"
+          % (FALSIFIER_DRIVE_CLAUSE,
+             [(n, o[0], o[1], o[2], o[3][:300], o[4])
+              for n, o in sorted(outcomes.items())]),
+          weak[0] == "falsifier" and weak[1] == "in_progress" and not weak[2]
+          and "survived" in weak[3] and weak[4] == "changed by P1.1\n"
+          and strict[1] == "done" and strict[2]
+          and "falsifier" in strict[3] and "killed" in strict[3]
+          and absent[0] == "falsifier" and absent[1] == "in_progress"
+          and not absent[2] and "could-not-run" in absent[3]
+          and none[1] == "done" and none[2] and "falsifier" not in none[3])
+    _w0, _w1, _w2, _w3, _w4, root, mpath = weak
+    _code, held = _next(M, root, mpath)
+    _code, closed = _next(M, root, mpath, "--answer", "accept", "--reason",
+                          "the weak test is known and tracked")
+    check("fv7 the falsifier decision is held until answered, and `accept` "
+          "with a reason goes on to the close: %r" % ((held[:300], closed[:300]),),
+          instruction(held)[1] == "falsifier"
+          and tasks_of(mpath).get("P1.1", {}).get("status") == "done"
+          and "%s P1.1" % (M.CLOSED,) in closed)
 
 
 def unencoded_text_opens(source):

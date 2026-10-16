@@ -985,6 +985,30 @@ SCHEMA_EXEMPTIONS = {
         "panel, not /audit:status - so a mute carried here would be a key "
         "nothing downstream shows, the same reason meta.phaseGate above is "
         "exempt. REVISIT when a rendered surface shows a muted suite.",
+    # A planned test's 'must fail if' line is read by the step driver alone, at
+    # a task's close; the fixture's tasks are generated already closed, and no
+    # rendered surface reads the field. REVISIT when one shows a falsifier or
+    # the result the drive graded it with.
+    "tests.falsifiers":
+        "a planned test's falsifier, keyed by its tests.add entry - applied by "
+        "drive-phase.py between a task's green gate and its close. The demo's "
+        "tasks are generated already closed, so the drive never reads one here, "
+        "and no rendered surface shows the field.",
+    "falsifier.file":
+        "the file a falsifier's mutation edits - unread for tests.falsifiers' "
+        "own reason above, the object it sits in.",
+    "falsifier.find":
+        "the text a falsifier's mutation replaces - unread for "
+        "tests.falsifiers' own reason above.",
+    "falsifier.replace":
+        "what a falsifier's `find` becomes in the mutant - unread for "
+        "tests.falsifiers' own reason above.",
+    "falsifier.command":
+        "the planned test's argument vector the drive runs on the copy - "
+        "unread for tests.falsifiers' own reason above.",
+    "falsifier.timeout":
+        "the seconds each falsifier run may take - unread for "
+        "tests.falsifiers' own reason above.",
     "phase.testGateBasis":
         "which derivation produced `testGateDerived` beside it - unreachable "
         "for the same reason: the fixture's phases carry a plain `testGate` "

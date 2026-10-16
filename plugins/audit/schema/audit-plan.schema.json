@@ -1822,6 +1822,13 @@
           "type": "boolean",
           "description": "Machine-readable disambiguation of `add`: true (typical for tdd) means the tests are expected to fail on current code before the fix."
         },
+        "falsifiers": {
+          "type": "object",
+          "description": "A planned test's 'must fail if' line, made runnable: each key is one `add` entry, spelled verbatim (the way `addMap` is keyed), and its value names a mutation of the code that test must fail against. Optional and additive - a task with none is driven exactly as before. Beside `add` rather than inside it, because every reader of `add` parses its entries as `\"<path>: <what it asserts>\"` strings. After the executor files and the task's gate is green, `drive-phase.py` runs each one once in a throwaway copy of the tree (the task's own files as they stand, never the tree itself): the command must exit 0 on the unmutated copy, then fail once the mutation is applied. A test that still passes under its mutation, and a falsifier that could not be run, each stop the close at the `falsifier` decision. The validator's `rules.falsifier.*` warnings (`_manifest_rules.falsifier_problems`) name a malformed one.",
+          "additionalProperties": {
+            "$ref": "#/$defs/falsifier"
+          }
+        },
         "gate": {
           "type": "array",
           "description": "Commands (or 'key:project' entries resolved via meta.buildCommands) that must pass.",
@@ -1832,6 +1839,43 @@
         "gateBasis": {
           "type": "string",
           "description": "Which derivation produced `gate`, written by /audit:task add and re-written by /audit:task scope --gate. 'declared' = the caller named the commands; 'cleared' = --gate-clear; 'tests.add'/'files' = narrowed to this task's own paths in a sibling's spelling; 'phase-no-spelling' = the phase's gate, because no task in the phase declares a path-scoped entry to read this project's spelling off; 'phase-no-paths' = the phase's gate, because a sibling is path-scoped and this task names no file; 'gate-only-no-suite' = the phase's own gate runs no suite at all (`meta.phaseGate.exclude` removes every `meta.buildCommands` key), so there is no wide gate to narrow away from; 'failing-from-run:<runId>' = the ledger already has a run of this exact gate that failed, named by its opaque runId rather than parsed. The validator's wide-gate warning reads it: 'declared', 'phase-no-spelling' and 'gate-only-no-suite' are answers rather than unnarrowed defaults, and a task carrying no basis at all is still named. The vocabulary is open — a word this build does not know is treated as an unnarrowed default rather than folded into one it does."
+        }
+      }
+    },
+    "falsifier": {
+      "type": "object",
+      "required": [
+        "file",
+        "find",
+        "replace",
+        "command"
+      ],
+      "additionalProperties": true,
+      "description": "One mutation a planned test must fail against: the first occurrence of `find` in `file` becomes `replace`, in a throwaway copy, and `command` runs there. Which values the shape cannot express - an empty `find`, a path out of the tree, an empty command, a `replace` equal to `find` - is `_manifest_rules.falsifier_problems`'s to say.",
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "The file the mutation edits, relative to the git root."
+        },
+        "find": {
+          "type": "string",
+          "description": "The text the mutation replaces, first occurrence only. A `find` the file does not hold applies no mutant, which the drive reports as could-not-run, never as a kill."
+        },
+        "replace": {
+          "type": "string",
+          "description": "What `find` becomes in the mutant."
+        },
+        "command": {
+          "type": "array",
+          "description": "The planned test's command as an argument vector, run from the copy's root with no shell between it and the process.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Seconds each of the falsifier's two runs (the unmutated copy, then the mutant) may take before it is stopped and reported as could-not-run. Absent reads `drive-phase.py`'s FALSIFIER_TIMEOUT."
         }
       }
     },
