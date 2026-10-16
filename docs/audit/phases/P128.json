@@ -1656,6 +1656,49 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P128.38",
+      "title": "The red-first helper reads stage names per test file, so a task's new stage is recognised as new",
+      "status": "pending",
+      "description": "Register F698 (corrected cause): stamp-verification's new_stages pools string literals from every declared test file at HEAD, so a 'fp-block' literal in test_audit_task.py made the new fp-block stage in test_drive_phase.py read as not new and P125.142's proof came back could-not-prove.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: a stage new in one test file is recognised as new even when another declared test file carries the same name as a string literal, and the proof is judged from the task's own run"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ]
 }
