@@ -131,7 +131,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: F117 - what os.kill(pid, 0) does on Windows (a MEASUREMENT, not a gate)
+      - name: what os.kill(pid, 0) does on Windows (a MEASUREMENT, not a gate)
         if: ${{ !cancelled() && runner.os == 'Windows' && matrix.leg == 'e2e' }}
         continue-on-error: true
         shell: bash
@@ -202,7 +202,7 @@ jobs:
               printf '  %-9s NO OUTPUT, exit %s - the interpreter died\n' "$label" "$rc"
             fi
           }
-          echo "F117: panel-server._pid_alive() asks os.kill(pid, 0). On this runner:"
+          echo "panel-server._pid_alive() asks os.kill(pid, 0). On this runner:"
           report consts python "$probe" consts
           report live python "$probe" live
           report dead python "$probe" dead

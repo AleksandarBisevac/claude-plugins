@@ -1146,8 +1146,10 @@
         "severity": "med",
         "file": "SECURITY.md:424-425; plugins/audit/schema/audit-config.schema.json:86; PLUGIN-BUILD-GUIDE.md:641-643 (P125.95-0h5, 9bcb55ddc874)",
         "issue": "contradicts task clause: P125-R77's issue is that 'other user-facing statements' of the ladder still say a plan with phases and nothing running only warns. Three surfaces still state the old ladder at HEAD. SECURITY.md:424 reads 'with a manifest but no phase `in_progress` it warns, and it denies once a phase is running', and that section exists so that 'anyone reasoning about this plugin's guarantees' has the condition. The `enforce` description in the schema file this diff edited (:86) reads 'warn with a manifest but no phase in_progress, deny once a phase is running'. The build guide's require-plan section (:641-643) reads 'manifest but no phase `in_progress` -> `warn`'. The executor's descriptive claim 'Every user-facing statement of the plan gate ladder now reads deny past the free file' is false. Its grep ('nothing running|none running', 'warns with a plan/manifest') missed the 'no phase in_progress' spelling. This is the same class the finding named, fixed per instance again.",
-        "resolution": "Correct SECURITY.md:424-425, the schema `enforce` description and PLUGIN-BUILD-GUIDE.md:641-643 to the ladder. Close the class with a check, not another grep: a case that scans the shipped .md and schema text for the retired rung's wording in every spelling ('no phase in_progress', 'nothing running', 'but no phase running'), or that requires each document stating the ladder to carry `plan_gate_ladder_phrase()`'s steps.",
-        "fixTask": "P125.132-0h5"
+        "resolution": "fixed in P125.132-0h5 (cbd88b80b9a5): Correct SECURITY.md:424-425, the schema `enforce` description and PLUGIN-BUILD-GUIDE.md:641-643 to the ladder. Close the class with a check, not another grep: a case that scans the shipped .md and schema text for the retired rung's wording in every spelling ('no phase in_progress', 'nothing running', 'but no phase running'), or that requires each document stating the ladder to carry `plan_gate_ladder_phrase()`'s steps.",
+        "fixTask": "P125.132-0h5",
+        "commit": "cbd88b80b9a5",
+        "status": "fixed"
       },
       {
         "id": "P125-R140",
@@ -1325,7 +1327,7 @@
         "resolution": "Run the call through Popen with stdout/stderr sent to scratch files, or kill and then communicate(timeout=<short>) and fall back to closing the pipes, so the timeout bounds the call on both platforms."
       }
     ],
-    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 50 with a recorded fix commit]"
+    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 51 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -10366,7 +10368,7 @@
     {
       "id": "P125.132-0h5",
       "title": "fix P125-R139: contradicts task clause: P125-R77's issue is that 'other user-...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause: P125-R77's issue is that 'other user-facing statements' of the ladder still say a plan with phases and nothing running only warns. Three surfaces still state the old ladder at HEAD. SECURITY.md:424 reads 'with a manifest but no phase `in_progress` it warns, and it denies once a phase is running', and that section exists so that 'anyone reasoning about this plugin's guarantees' has the condition. The `enforce` description in the schema file this diff edited (:86) reads 'warn with a manifest but no phase in_progress, deny once a phase is running'. The build guide's require-plan section (:641-643) reads 'manifest but no phase `in_progress` -> `warn`'. The executor's descriptive claim 'Every user-facing statement of the plan gate ladder now reads deny past the free file' is false. Its grep ('nothing running|none running', 'warns with a plan/manifest') missed the 'no phase in_progress' spelling. This is the same class the finding named, fixed per instance again.\n\nResolution asked: Correct SECURITY.md:424-425, the schema `enforce` description and PLUGIN-BUILD-GUIDE.md:641-643 to the ladder. Close the class with a check, not another grep: a case that scans the shipped .md and schema text for the retired rung's wording in every spelling ('no phase in_progress', 'nothing running', 'but no phase running'), or that requires each document stating the ladder to carry `plan_gate_ladder_phrase()`'s steps.",
       "files": [
         "SECURITY.md",
@@ -10399,14 +10401,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "cbd88b80b9a5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "SECURITY.md, PLUGIN-BUILD-GUIDE.md and the schema `enforce` description now state the ladder (observe / warn no phase / deny past the free file / deny running). Added to test__panel_settings.py: a detector (_retired_rung_hits: three spelling regexes with the warn tier beside them, no deny/sentence end between) with both-direction fixtures (old spellings seen, current ladder quiet), an allowance table (CHANGELOG.md, docs/essays/) whose reasons and reachability the case checks, and the scan over prose_scan_set((.md,), table=allowances) plus the schema file. Sweep exit 0 (335/335 files ok); cp1252 sweep exit 0; test__help payload 136039 bytes of cap 200000 (headroom 40000 required). Files changed: SECURITY.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/schema/audit-config.schema.json, plugins/audit/tests/test__panel_settings.py. Left as-is: templates/audit.config.example.json and the schema planGate description already carry the ladder; plugins/audit/README.md line on 'no phase running now gets refusals' is the correct deny reading and the detector stays quiet on it.",
+        "descriptive": "No shipped document states that a plan with phases and nothing running only warns, and a case now fails if one does."
       },
       "startedAt": "2026-10-16T08:38:50Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T09:20:05Z",
+      "verifiedBy": [
+        "no shipped document or schema text states the retired ladder rung in any spelling (no phase in_progress, nothing running, but no phase running) as the tier for a plan with phases"
+      ],
       "notes": [
         {
           "at": "2026-10-16T07:18:21Z",
@@ -10437,6 +10441,18 @@
         "runId": "2026-10-16T09:20:03Z.b0ef3c",
         "status": "passed",
         "at": "2026-10-16T09:20:03Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "cbd88b80b9a5",
+        "at": "2026-10-16T09:20:05Z",
+        "basis": "a fix task for P125-R139: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-16T08:58:59Z",
+        "basis": "`python3 plugins/audit/tests/test__panel_settings.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 68 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - no shipped document or schema text states the retired ladder rung in any spelling (no phase in_progress, nothing running, but no phase running) as the tier for a plan with phases (found: [('PLUGIN-BUILD-GUIDE.md', 'from detect-plan-skip.py, never block); manifest but no phase in_progress → warn (PostToolUse additio'), ('PLUGIN-BUILD-GUIDE.md', 'lan-skip.py, never block); manifest but no phase in_progress → warn (PostToolUse additionalContext);'), ('SECURITY.md', 'ds and reports without blocking, with a manifest but no phase in_progress it warns, and it denies onc'), ('SECURITY.md', 's without blocking, with a manifest but no phase in_progress it warns, and it denies once a phase is'), ('plugins/audit/schema/audit-config.schema.json', ': observe with no manifest, warn with a manifest but no phase in_progress, deny once a phase is runni'), ('plugins/audit/schema/audit-config.schema.json', 'h no manifest, warn with a manifest but no phase in_progress, deny once a phase is running. What is ')]) (house FAIL): SELFTEST FAILED: 67/68 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -10495,7 +10511,12 @@
       "fixes": [
         "P125-R145"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-16T09:30:28Z.5f7c40",
+        "status": "passed",
+        "at": "2026-10-16T09:30:28Z"
+      }
     },
     {
       "id": "P125.134-0h5",
