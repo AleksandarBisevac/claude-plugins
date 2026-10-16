@@ -134,6 +134,23 @@ def _backslash_paths(node):
     return []
 
 
+def _run_with_nt_join(fn):
+    """Run `fn()` while `os.path.join` spells every relative join Windows-style.
+    The Windows join is bound BEFORE the swap: where `os.path` is `ntpath`,
+    `ntpath.join` is the very attribute being replaced, so a lambda that looked it
+    up at call time would call itself."""
+    import ntpath
+    _nt_join = ntpath.join
+    _real_join = os.path.join
+    os.path.join = lambda first, *rest: (
+        _real_join(first, *rest) if os.path.isabs(first)
+        else _nt_join(first, *rest))
+    try:
+        return fn()
+    finally:
+        os.path.join = _real_join
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     # --- extraction ---------------------------------------------------------------
@@ -809,16 +826,10 @@ def _cases(check):
     # matches nothing would pass over everything.
     import ntpath
     import _loader
-    _real_join = os.path.join
     # Absolute anchors keep the real join so the import preamble can still find
     # its siblings on a posix host; every relative join is spelled Windows-style.
-    os.path.join = lambda first, *rest: (
-        _real_join(first, *rest) if os.path.isabs(first)
-        else ntpath.join(first, *rest))
-    try:
-        _fresh = _loader.load(M.__file__, "_help_ntpath_probe", cache=False)
-    finally:
-        os.path.join = _real_join
+    _fresh = _run_with_nt_join(
+        lambda: _loader.load(M.__file__, "_help_ntpath_probe", cache=False))
     _fresh_hits = _backslash_paths(
         {"schemas": dict(_fresh.SCHEMAS), "agent": _fresh.guide_card()})
     _control = _backslash_paths({"schemas": {"config": ntpath.join(
@@ -831,6 +842,28 @@ def _cases(check):
           not _fresh_hits and len(_control) == 1
           and all(M.load_schema(k) for k in M.SCHEMAS),
           "fresh-import hits %r, control %r" % (_fresh_hits, _control))
+    # Simulate a host whose `os.path` IS `ntpath` on a posix runner. A recursion
+    # is caught and reported as a failure rather than aborting the suite.
+    _sim_real_path = os.path
+    _sim_join = ntpath.join
+    _sim_out = None
+    _sim_err = None
+    os.path = ntpath
+    try:
+        _sim_out = _run_with_nt_join(lambda: os.path.join("schema", "x.json"))
+    except RecursionError as exc:
+        _sim_err = "RecursionError: %s" % exc
+    finally:
+        os.path = _sim_real_path
+        ntpath.join = _sim_join
+    check("the module-level backslash probe binds the real ntpath.join before "
+          "swapping os.path.join, so on a host whose os.path is ntpath it does "
+          "not call itself (os.path simulated as ntpath; the probe completes "
+          "with no RecursionError and still flags the backslash control)",
+          _sim_err is None and _sim_out == "schema\\x.json"
+          and len(_control) == 1 and ntpath.join is _sim_join,
+          "simulated join %r, error %r, control %r"
+          % (_sim_out, _sim_err, _control))
     check("p6 it names where the field text came from, so a reader can go read "
           "the source", pay["schemas"]["config"].endswith(".json"))
 

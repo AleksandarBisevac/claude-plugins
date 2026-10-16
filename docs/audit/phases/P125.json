@@ -11093,7 +11093,7 @@
     {
       "id": "P125.140-0h5",
       "title": "The measured table fit's content-change path is tested: the observer is wired to every frame and a stale mark is dropped without a resize",
-      "status": "in_progress",
+      "status": "done",
       "description": "Finding P125-R135 (re-added from cancelled P125.130 as regression; page-state.js is unchanged). Proved by mutation: deleting page-state.js's if (window.ResizeObserver) block turns the new vitest case red (expected +0 to be 1) and leg 10c red (still marked over an overflowing table), restore byte-equal.",
       "files": [
         "tools/check-report-interactive.mjs",
@@ -11124,19 +11124,31 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "23fba1307608",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Ported p130.diff by Edit, all hunks applied cleanly. table-fit.test.mjs: OBSERVER_PRELUDE, loadObserved(), OBSERVED_CLAUSE (the full tests.add clause verbatim; the diff's truncated clause was replaced) and one new case. check-report-interactive.mjs: cleanLast tracking, leg 10c two-frame wait with no resize, corrected label on the planted-ladder expect. Gates: `npx vitest run tools/ui-tests/table-fit.test.mjs` 5 passed; `npx vitest run` 56 files / 830 tests passed; `node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html` exit 0, 191 checks; `python3 tools/sweep-selftests.py` exit 0, 335/335 files ok. The scratch render's other FAIL (layout baseline, no git) is a scratch artifact.",
+        "descriptive": "The report's table-fit observer path is now locked by a vitest case and by leg 10c, both proved red when the observer block is removed."
       },
       "startedAt": "2026-10-16T12:07:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T12:32:52Z",
+      "verifiedBy": [
+        "tools/ui-tests/table-fit.test.mjs: In leg 10c, after planting and before the planted ladder, wait two animation frames with no resize and fail on any frame marked over an overflowing table; a stubbed ResizeObserver sees every frame and its table, and its callback drops a stale mark"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-16T12:32:50Z.bfde3d",
         "status": "passed",
         "at": "2026-10-16T12:32:50Z"
+      },
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "23fba1307608",
+        "at": "2026-10-16T12:32:52Z"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task, expectRedFirst false; mutation proof run by hand in a scratch copy outside the tree: removing page-state.js's second `if (window.ResizeObserver)` block (the fitRo one) turned the new vitest case red ('expected +0 to be 1') and leg 10c red on a scratch render ('still marked over an overflowing table: table.phases#0, table.data#1...'); the real tree's page-state.js is git-diff clean against HEAD",
+        "at": "2026-10-16 14:10 local"
       }
     },
     {
@@ -11180,7 +11192,12 @@
       "startedAt": "2026-10-16T12:07:04Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-16T12:43:24Z.f6b1c7",
+        "status": "passed",
+        "at": "2026-10-16T12:43:24Z"
+      }
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",
