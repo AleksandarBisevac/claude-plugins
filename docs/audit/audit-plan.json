@@ -1460,7 +1460,8 @@
       "P125.132-0h5",
       "P125.128-0h5",
       "P129.7-izt",
-      "P129.8-izt"
+      "P129.8-izt",
+      "P128.19-0h5"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -9937,6 +9938,24 @@
       "files": [
         "plugins/audit/scripts/usage/audit-usage.py",
         "plugins/audit/scripts/usage/usage_ledger.py"
+      ],
+      "taskId": null,
+      "fixedIn": null,
+      "notes": null
+    },
+    {
+      "id": "BUG-25-izt",
+      "title": "The red-first helper never proves a new Playwright spec, because a \"no tests found\" baseline is not read as red",
+      "status": "open",
+      "severity": "med",
+      "reportedAt": "2026-10-16T22:22:54Z",
+      "reportedBy": null,
+      "description": "When a task adds a new Playwright spec, running it at HEAD prints Playwright own \"no tests found\" result. stamp-verification.py (around lines 1274-1287) does not recognise that output as the red baseline, so the proof for a new spec can never come back proved. The P125.23 fixtures were hand-built and encoded an assumed baseline that real Playwright does not produce; a plain session that installed Playwright 1.56.0 and captured real output did not have this gap.",
+      "repro": "In a fixture repo with Playwright installed, add a new spec file under a task and run the red-first helper over it at HEAD.",
+      "expected": "The helper reads Playwright no-tests-found baseline as the red state of a new spec and records proved once the spec passes on the work.",
+      "actual": "The baseline is not recognised and the proof cannot be proved.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py"
       ],
       "taskId": null,
       "fixedIn": null,
