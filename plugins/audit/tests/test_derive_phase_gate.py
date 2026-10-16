@@ -22,7 +22,6 @@ import os
 import re
 import shlex
 import stat
-import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -52,8 +51,7 @@ def _write_script(root, name, body):
 
 
 def _git(root, *args):
-    subprocess.run(["git"] + list(args), cwd=root, check=True,
-                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    _harness.git(root, *args, prefix=("git",))
 
 
 def _build_commands():
@@ -109,9 +107,7 @@ def _project(root, mode, version_answer="v20", write_manifest=True,
     _write_script(d, "README.md", "hello\n")
     _git(d, "add", "-A")
     _git(d, "commit", "-q", "-m", "init")
-    base_ref = subprocess.run(["git", "rev-parse", "HEAD"], cwd=d,
-                              stdout=subprocess.PIPE, check=True
-                              ).stdout.decode().strip()
+    base_ref = _harness.git(d, "rev-parse", "HEAD", prefix=("git",)).strip()
     os.makedirs(os.path.join(d, "docs", "audit"))
     mpath = os.path.join(d, "docs", "audit", "audit-plan.json")
     if write_manifest:

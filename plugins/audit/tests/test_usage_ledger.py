@@ -165,15 +165,11 @@ def _cases(check):
     # repository was read at all. Pinning `user.email` in a fixture makes the
     # expected digest a value no ambient identity can produce.
     import hashlib
-    import subprocess
     authroot = _harness.fixture_root("usage-ledger-author-")
     _author_email = "fixture-author@example.invalid"
-    subprocess.run(["git", "init", "-q", authroot], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                   timeout=30)
-    subprocess.run(["git", "-C", authroot, "config", "user.email",
-                    _author_email], check=True, stdout=subprocess.DEVNULL,
-                   stderr=subprocess.DEVNULL, timeout=30)
+    _harness.git(None, "init", "-q", authroot, prefix=("git",), timeout=30)
+    _harness.git(None, "-C", authroot, "config", "user.email", _author_email,
+                 prefix=("git",), timeout=30)
     _want = "anon-" + hashlib.sha256(
         _author_email.encode("utf-8")).hexdigest()[:12]
     check("author: none mode returns None",

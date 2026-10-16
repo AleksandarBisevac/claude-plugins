@@ -637,8 +637,7 @@ def _race_cases(check):
     try:
         proj = os.path.join(tmp, "proj")
         os.makedirs(proj)
-        subprocess.run(["git", "init", "-q", proj], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(None, "init", "-q", proj, prefix=("git",))
         mpath = os.path.join(proj, "audit-plan.json")
         with open(mpath, "w", encoding="utf-8") as fh:
             json.dump(_manifest([_prop("PROP-1", payload=_payload("P7")),

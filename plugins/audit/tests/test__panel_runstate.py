@@ -431,8 +431,7 @@ def _cases(check):
     # fresh project's launch with no ignore rule at all and an untracked file.
     _gi_proj = tempfile.mkdtemp(prefix="panel-runstate-git-")
     try:
-        _sp.run(["git", "init", "-q", _gi_proj], check=True,
-                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        _harness.git(None, "init", "-q", _gi_proj, prefix=("git",))
         M.record_opened(_gi_proj)
         _gi_dir = os.path.dirname(M._open_state_path(_gi_proj, None))
         _gi_marker = os.path.join(_gi_dir, ".gitignore")

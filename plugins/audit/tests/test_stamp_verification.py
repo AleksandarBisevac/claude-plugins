@@ -56,12 +56,11 @@ M_PLUGIN = _output.PLUGIN_ROOT
 
 def _git(repo, *args):
     """A git command that must succeed, with the identity a fresh runner lacks."""
-    subprocess.run(["git", "-C", repo,
-                    "-c", "user.email=fixture@example.invalid",
-                    "-c", "user.name=fixture",
-                    "-c", "commit.gpgsign=false"] + list(args),
-                   check=True, stdout=subprocess.DEVNULL,
-                   stderr=subprocess.DEVNULL)
+    _harness.git(None, *args,
+                 prefix=("git", "-C", repo,
+                         "-c", "user.email=fixture@example.invalid",
+                         "-c", "user.name=fixture",
+                         "-c", "commit.gpgsign=false"))
 
 
 def _write(path, text):
@@ -80,8 +79,7 @@ def _seeded_repo(prefix):
     one setting core.autocrlf - and the two disagree about the bytes a
     checkout writes."""
     root = _harness.fixture_root(prefix)
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=("git",))
     _git(root, "config", "core.autocrlf", "false")
     os.makedirs(os.path.join(root, "src"))
     _write(os.path.join(root, "src", "mine.py"), "v = 1\n")
@@ -2903,10 +2901,10 @@ def _located_cases(check):
             os.makedirs(os.path.join(root_d, "src"), exist_ok=True)
             with open(os.path.join(root_d, rel), "w") as fh:
                 fh.write(text)
-        subprocess.run(["git", "init", "-q"], cwd=root_d, check=True)
-        subprocess.run(["git", "add", "-A"], cwd=root_d, check=True)
-        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit",
-                        "-qm", "x"], cwd=root_d, check=True, capture_output=True)
+        _harness.git(root_d, "init", "-q", prefix=("git",))
+        _harness.git(root_d, "add", "-A", prefix=("git",))
+        _harness.git(root_d, "-c", "user.name=t", "-c", "user.email=t@t", "commit",
+                     "-qm", "x", prefix=("git",))
         for rel, text in (("src/old.py", "a = 1\nb = 2\n\n\ndef keep():\n    pass\n"
                                          "\n\ndef foo():\n    pass\n\n\nclass Bar:\n    pass\n"),
                           ("src/integrate-task.py", "def go():\n    pass\n"),
@@ -4134,8 +4132,7 @@ def _deps_cases(check):
     root_p, man_p, cmd_p = _deps_repo("stamp-red-deps-from-",
                                       [("v is two", "v()", "2")], deps=False)
     source = _harness.fixture_root("stamp-red-deps-source-")
-    subprocess.run(["git", "init", "-q", source], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", source, prefix=("git",))
     _write(os.path.join(source, ".gitignore"), "node_modules/\n")
     _deps_dir(source)
     code_n, payload_n = _red(root_p, man_p, cmd_p)
@@ -4318,8 +4315,7 @@ def _windows_cases(check):
           and fn("/tmp/a/repo", posixpath) == "/tmp/a/repo")
 
     root = _harness.fixture_root("stamp-sw-plan-")
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=("git",))
     _write(os.path.join(root, ".gitignore"), "node_modules/\n")
     _deps_dir(root)
     seen = []
@@ -4541,8 +4537,7 @@ def _edge_cases(check):
                       "made here (%s)" % (refused,), True)
         return
     root_c = _harness.fixture_root("stamp-colon-")
-    subprocess.run(["git", "init", "-q", root_c], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root_c, prefix=("git",))
     _write(os.path.join(root_c, ":colon_test.py"), "x = 1\n")
     _write(os.path.join(root_c, "colon_test.py"), "x = 2\n")
     _git(root_c, "add", "-A")
@@ -5062,8 +5057,7 @@ def _inline_suite_cases(check):
                _INLINE_WT)]
     for label, blob, wt in shapes:
         root_s = _harness.fixture_root("stamp-inline-ends-")
-        subprocess.run(["git", "init", "-q", root_s], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(None, "init", "-q", root_s, prefix=("git",))
         _git(root_s, "config", "core.autocrlf", "false")
         with open(os.path.join(root_s, "f.py"), "wb") as fh:
             fh.write(blob.encode("utf-8"))

@@ -1415,17 +1415,14 @@ def _cases(check):
         else:
             rmp = os.path.join(tmp, "removed-ledger")
             os.makedirs(os.path.join(rmp, "docs", "audit"))
-            subprocess.run(["git", "init", "-q", rmp], check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _harness.git(None, "init", "-q", rmp, prefix=("git",))
             for _k, _v in (("user.email", "p@example.com"), ("user.name", "P")):
-                subprocess.run(["git", "-C", rmp, "config", _k, _v], check=True)
+                _harness.git(None, "-C", rmp, "config", _k, _v, prefix=("git",))
             rpath = M.append_row(rmp, _run("run-1", "passed",
                                            "2026-06-01T10:00:00Z"))
-            subprocess.run(["git", "-C", rmp, "add", "-A"], check=True,
-                           stdout=subprocess.DEVNULL)
-            subprocess.run(["git", "-C", rmp, "-c", "commit.gpgsign=false",
-                            "commit", "-q", "-m", "e"], check=True,
-                           stdout=subprocess.DEVNULL)
+            _harness.git(None, "-C", rmp, "add", "-A", prefix=("git",))
+            _harness.git(None, "-C", rmp, "-c", "commit.gpgsign=false",
+                         "commit", "-q", "-m", "e", prefix=("git",))
             _clean_after_commit = M.verify(rmp)
             os.remove(rpath)
             _removed = M.verify(rmp)
@@ -1437,8 +1434,8 @@ def _cases(check):
                   _removed["ok"] is False and len(_removed["findings"]) == 1
                   and os.path.basename(rpath) in _removed["findings"][0]
                   and "NOT in the working tree" in _removed["findings"][0])
-            subprocess.run(["git", "-C", rmp, "checkout", "--", "."], check=True,
-                           stdout=subprocess.DEVNULL)
+            _harness.git(None, "-C", rmp, "checkout", "--", ".",
+                         prefix=("git",))
             _back = M.verify(rmp)
             check("ec19 SECOND DIRECTION, BOTH WAYS: committing the ledger is "
                   "not itself a finding, and putting the deleted file back takes "
@@ -1578,8 +1575,7 @@ def _cases(check):
                                 {"id": "P1.1", "title": "t",
                                  "status": "in_progress"}]}, fh)
             if git:
-                subprocess.run(["git", "init", "-q", root], check=True,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                _harness.git(None, "init", "-q", root, prefix=("git",))
             return root, os.path.join(root, "docs", "audit", "audit-plan.json")
 
         proj, mpath = _manifest_project("ptr")
@@ -1632,8 +1628,7 @@ def _cases(check):
 
         gitproj = os.path.join(tmp, "gitptr")
         os.makedirs(gitproj)
-        subprocess.run(["git", "init", "-q", gitproj], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(None, "init", "-q", gitproj, prefix=("git",))
         free, _d = M.pointer_lock_state(gitproj, "P1", session_id="me")
         check("ed6 an unheld lock reads FREE - the state a normal standalone run "
               "meets, and the one that must not be confused with the two below",
@@ -3284,13 +3279,11 @@ def _real_two_commits(root):
           "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
 
     def sh(*args):
-        subprocess.run(git + list(args), cwd=root, check=True,
-                       capture_output=True, timeout=30)
+        _harness.git(root, *args, prefix=git, timeout=30)
 
     def rev():
-        out = subprocess.run(git + ["rev-parse", "HEAD"], cwd=root, check=True,
-                             capture_output=True, timeout=30)
-        return out.stdout.decode("utf-8").strip()
+        return _harness.git(root, "rev-parse", "HEAD", prefix=git,
+                            timeout=30).strip()
 
     sh("init", "-q")
     with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
@@ -3969,16 +3962,12 @@ def _rfg_project(name, fullgate):
     root = _harness.fixture_root("evidence-io-rfg-%s-" % (name,))
     _project(root, {"manifestPath": "docs/audit/audit-plan.json"})
     os.makedirs(os.path.join(root, "docs", "audit"))
-    git = ["git", "-C", root]
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(git + ["-c", "user.email=fixture@example.com",
-                          "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
-                          "commit", "-q", "--allow-empty", "-m", "fixture"],
-                   check=True, stdout=subprocess.DEVNULL,
-                   stderr=subprocess.DEVNULL)
-    head = subprocess.run(git + ["rev-parse", "HEAD"], capture_output=True,
-                          text=True, check=True).stdout.strip()
+    git = ("git", "-C", root)
+    _harness.git(None, "init", "-q", root, prefix=("git",))
+    _harness.git(None, "-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-q", "--allow-empty", "-m", "fixture", prefix=git)
+    head = _harness.git(None, "rev-parse", "HEAD", prefix=git).strip()
     manifest = _rfg_plan(fullgate, head)
     mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
     with open(mpath, "w", encoding="utf-8") as fh:

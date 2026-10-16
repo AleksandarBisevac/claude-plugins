@@ -2275,8 +2275,7 @@ def _cases(check):
     import subprocess as _sp
     _lk_proj = tempfile.mkdtemp(prefix="borrowed-lock-")
     try:
-        _sp.run(["git", "init", "-q", _lk_proj], check=True,
-                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        _harness.git(None, "init", "-q", _lk_proj, prefix=("git",))
         _ld = M._locks.lock_dir(_lk_proj)
         os.makedirs(_ld, exist_ok=True)
         with open(os.path.join(_ld, "index.lock"), "w",
@@ -2327,8 +2326,7 @@ def _cases(check):
     # write could each hold one and each believe it was the index.
     _wl_proj = tempfile.mkdtemp(prefix="write-lock-")
     try:
-        _sp.run(["git", "init", "-q", _wl_proj], check=True,
-                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        _harness.git(None, "init", "-q", _wl_proj, prefix=("git",))
         _wl_ld = M._locks.lock_dir(_wl_proj)
         _wl_lock = os.path.join(_wl_ld, "index.lock")
         _wl_legacy = M._manifest_path(_wl_proj, {}) + ".lock"
@@ -2644,8 +2642,7 @@ def _lost_update_cases(check):
     os.makedirs(os.path.join(proj, ".claude"), exist_ok=True)
     real_write, real_save = M._atomic_write_json, M._proposals._save
     try:
-        subprocess.run(["git", "init", "-q", proj], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(None, "init", "-q", proj, prefix=("git",))
         mpath = M._manifest_path(proj, M.read_config(proj))
         os.makedirs(os.path.dirname(mpath), exist_ok=True)
 
@@ -2781,8 +2778,7 @@ def _lost_update_cases(check):
         # second, the save may now reach a phase whose lock was never asked about.
         proj2 = os.path.join(tmp, "sharded")
         os.makedirs(os.path.join(proj2, ".claude"), exist_ok=True)
-        subprocess.run(["git", "init", "-q", proj2], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(None, "init", "-q", proj2, prefix=("git",))
         mp2 = M._manifest_path(proj2, M.read_config(proj2))
         os.makedirs(os.path.dirname(mp2), exist_ok=True)
         M._mio.save_sharded(mp2, {"meta": {"version": 2},

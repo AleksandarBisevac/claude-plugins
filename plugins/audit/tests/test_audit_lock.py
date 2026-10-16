@@ -146,8 +146,7 @@ def _cases(check):
         if not shutil.which("git"):
             print("SKIP c* (git not installed)")
         else:
-            subprocess.run(["git", "init", "-q", tmp], check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _harness.git(None, "init", "-q", tmp, prefix=("git",))
             ld = M.lock_dir(tmp)
             check("c0 lock dir resolves inside the git dir",
                   ld and ld.endswith("audit-locks") and ".git" in ld)
@@ -276,14 +275,13 @@ def _cases(check):
         else:
             main_tree = os.path.join(utmp, "main")
             linked = os.path.join(utmp, "linked")
-            quiet = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
-            subprocess.run(["git", "init", "-q", main_tree], check=True, **quiet)
-            subprocess.run(["git", "-C", main_tree, "-c", "user.email=a@b",
-                            "-c", "user.name=a", "-c", "commit.gpgsign=false",
-                            "commit", "-q", "--allow-empty", "-m", "base"],
-                           check=True, **quiet)
-            subprocess.run(["git", "-C", main_tree, "worktree", "add", "-q",
-                            "-b", "wt", linked], check=True, **quiet)
+            _harness.git(None, "init", "-q", main_tree, prefix=("git",))
+            _harness.git(None, "-C", main_tree, "-c", "user.email=a@b",
+                         "-c", "user.name=a", "-c", "commit.gpgsign=false",
+                         "commit", "-q", "--allow-empty", "-m", "base",
+                         prefix=("git",))
+            _harness.git(None, "-C", main_tree, "worktree", "add", "-q",
+                         "-b", "wt", linked, prefix=("git",))
             code, txt = run(["acquire", "user-e2e", "--session", "sess-A",
                              "--pid", str(os.getpid()), "--wait", "0"],
                             main_tree)
@@ -347,8 +345,7 @@ def _cases(check):
         if not shutil.which("git"):
             print("SKIP p* (git not installed)")
         else:
-            subprocess.run(["git", "init", "-q", pro], check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _harness.git(None, "init", "-q", pro, prefix=("git",))
             pld = M.lock_dir(pro)
             os.makedirs(pld, exist_ok=True)
             os.chmod(pld, 0o500)
@@ -448,8 +445,7 @@ def _shell_code_cases(check):
         return
     tmp = tempfile.mkdtemp(prefix="audit-lock-ours-")
     try:
-        subprocess.run(["git", "init", "-q", tmp], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(None, "init", "-q", tmp, prefix=("git",))
         quiet = lambda *_a, **_k: None                      # noqa: E731
         M.acquire(tmp, "phase-P5", note="the outer hold", session="sess-X",
                   pid=str(os.getppid()), out=quiet)
@@ -492,8 +488,7 @@ def _handed_off_cases(check):
     prev = os.environ.get("CLAUDE_PID")
     os.environ.pop("CLAUDE_PID", None)
     try:
-        subprocess.run(["git", "init", "-q", tmp], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(None, "init", "-q", tmp, prefix=("git",))
         ld = M.lock_dir(tmp)
         said = []
         code = M.main(["acquire", "phase-P6", "--project", tmp,
@@ -558,8 +553,7 @@ def _success_line_cases(check):
     """The verb's success, said in one line; its refusal and `--verbose`, in full."""
     tmp = tempfile.mkdtemp(prefix="audit-lock-sl-")
     try:
-        subprocess.run(["git", "init", "-q", tmp], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(None, "init", "-q", tmp, prefix=("git",))
         mine = ["--project", tmp, "--session", "sess-A",
                 "--pid", str(os.getpid())]
         code, _ = _cli(["acquire", "phase-P1", "--note", "phase P1"] + mine)

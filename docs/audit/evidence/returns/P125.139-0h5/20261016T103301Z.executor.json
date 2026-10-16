@@ -1,0 +1,31 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_audit_lookup.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/sweep-selftests.py --encoding cp1252": "pass",
+    "python3 tools/measure-context.py --gate": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-16T11:14:01Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_lookup.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 107 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - Record what a round reviewed, not only what it owed (round three: the fix task P1.4 round two showed is not shown again, P1.5 closed since is, and so is P1.6, redone at a commit round two never showed; sections, owed): (['P1.4', 'P1.5', 'P1.6'], ['P1.5']) (house FAIL): SELFTEST FAILED: 104/107 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Option (a): the brief's printed filing command now carries `--shown id@commit,...` (audit-lookup.py shown_argument, shlex-quoted) for every task it shows; drive-phase.py submit passes `--shown` through; audit-task.py file-return accepts it for a phase return only (VERB_FLAGS row widened), refuses a malformed list, a duplicate, a non-hex commit, a task outside the phase or use without --head, and writes the list into the filed return as `shown` beside `tasks`. _filed_returns.py adds parse_shown, shown_record and reviewed_entries ({(id, commit): rel} over `tasks` entries and `shown` lists, first return winning). compose_phase_brief reads reviewed_entries, so a task any round showed at its current commit is left out unless it is still owed an answer, which keeps every owed task with a section. A return without the list reads as its `tasks` entries, as before; COMPATIBILITY.md says so beside the file-return sentence. Option (b) was rejected: a past brief's shown set depends on the plan as it stood when that brief was composed, which no record keeps (the committed plan at the head lags task closes, an ancestor test misreads rewritten branches, and journal timestamps mark a task closed between compose and filing as reviewed). Tests added: test_audit_lookup round-three case and the brief's filing command case; test_audit_task hd40/hd41/hd42; test__filed_returns pk5/pk6; test_drive_phase ds8s; bf13's expected scope wording changed from 'answered by' to 'recorded by'. Suites: test_audit_lookup 107/107, test_audit_task 1053/1053, test_drive_phase 319/319, test__filed_returns 100/100; all were red on today's code first (lookup 105/107, task 1051/1053, drive 318/319, filed_returns 98/100). Full sweep exit 0 (335/335 files, 16484 cases); cp1252 pass exit 0 (335/335 files, both halves ran); measure-context --gate exit 0. P125 brief via compose_phase_brief: 1,620,966 bytes before, 1,621,917 after (36 sections either way, because the two filed returns predate the list; the submit line grows by the --shown argument). Simulated in memory, a next round after a return filed from this brief comes to 18,763 bytes with 0 task sections.",
+    "descriptive": "A re-review brief no longer repeats fix tasks an earlier round already showed, because the filed return now records the set the brief showed."
+  },
+  "testsAdded": [
+    "Record what a round reviewed, not only what it owed (round three: the fix task P1.4 round two showed is not shown again, P1.5 closed since is, and so is P1.6, redone at a commit round two never showed; sections, owed)",
+    "the phase brief's filing command carries the set it shows, each task at the commit its section names, so the filing verb records what this round reviewed",
+    "hd40",
+    "hd41",
+    "hd42",
+    "pk5",
+    "pk6",
+    "ds8s"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:d34540cb693d7e4a5e3b06136480082558904cbe2223a58f7c24d6ca322f9862\",\"dirtyDigest\":\"sha256:8fb3c5057b7966acecb7f8c06d8bc8edee14d82535c51efaa462829db01050c2\",\"dirtyPaths\":{\"COMPATIBILITY.md\":\"66a412de8b1aac8f\",\"plugins/audit/scripts/governance/drive-phase.py\":\"3a83d5dde48fc7e9\",\"plugins/audit/scripts/manifest/_filed_returns.py\":\"7f30e835ba7ebe10\",\"plugins/audit/scripts/manifest/audit-task.py\":\"ac6761c0e2f58a6c\",\"plugins/audit/scripts/status/audit-lookup.py\":\"c8cd70c966a80fe1\",\"plugins/audit/tests/test__filed_returns.py\":\"c2ada18a01e2a1bf\",\"plugins/audit/tests/test_audit_lookup.py\":\"66f7e83f0c64f75a\",\"plugins/audit/tests/test_audit_task.py\":\"1c3a43bc7b5f98c4\",\"plugins/audit/tests/test_drive_phase.py\":\"b8f6084b9e5a8b9c\"},\"head\":\"f1018308\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"COMPATIBILITY.md\",\"plugins/audit/agents/audit-reviewer.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/_filed_returns.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/tests/test__filed_returns.py\",\"plugins/audit/tests/test_audit_lookup.py\",\"plugins/audit/tests/test_audit_task.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:ed50cdd1e820dd24d415c1d6a0cdd72cc302ebfcb71761ed8c1df0c5c37278c7\",\"v\":2}"
+}

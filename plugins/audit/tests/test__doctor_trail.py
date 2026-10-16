@@ -21,7 +21,6 @@ import os
 import re
 import shlex
 import shutil
-import subprocess
 import sys
 import time
 
@@ -63,19 +62,16 @@ def _committed_journal(root):
     fails open on an untracked file, so a journal git has never seen produces
     no warning to classify at all."""
     os.makedirs(os.path.join(root, "docs", "audit"))
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=("git",))
     for k, v in (("user.email", "p@example.com"), ("user.name", "P")):
-        subprocess.run(["git", "-C", root, "config", k, v], check=True)
+        _harness.git(None, "-C", root, "config", k, v, prefix=("git",))
     for tid in ("P1.1", "P1.2"):
         _journal_io.append(root, {"action": "task.complete", "actor": "probe",
                                   "ts": "2026-01-01T00:00:00Z",
                                   "details": {"taskId": tid}})
-    subprocess.run(["git", "-C", root, "add", "-A"], check=True,
-                   stdout=subprocess.DEVNULL)
-    subprocess.run(["git", "-C", root, "-c", "commit.gpgsign=false",
-                    "commit", "-q", "-m", "j"], check=True,
-                   stdout=subprocess.DEVNULL)
+    _harness.git(None, "-C", root, "add", "-A", prefix=("git",))
+    _harness.git(None, "-C", root, "-c", "commit.gpgsign=false",
+                 "commit", "-q", "-m", "j", prefix=("git",))
     return sorted(_journal_io.journal_files(_journal_io.journal_dir(root)))[0]
 
 
@@ -328,10 +324,9 @@ def _cases(check):
         if not have_git:
             print("SKIP git-dependent cases (git is not on PATH)")
         else:
-            subprocess.run(["git", "init", "-q", tmp], check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _harness.git(None, "init", "-q", tmp, prefix=("git",))
             for k, v in (("user.email", "p@example.com"), ("user.name", "P")):
-                subprocess.run(["git", "-C", tmp, "config", k, v], check=True)
+                _harness.git(None, "-C", tmp, "config", k, v, prefix=("git",))
 
             for f in _journal_io.journal_files(jdir):
                 _age(f, 3.0)
@@ -361,11 +356,9 @@ def _cases(check):
                   and "FINDING" not in _levels(rep, "journal")
                   and "never been committed" in _detail(rep, "journal"))
 
-            subprocess.run(["git", "-C", tmp, "add", "-A"], check=True,
-                           stdout=subprocess.DEVNULL)
-            subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false",
-                            "commit", "-q", "-m", "j"], check=True,
-                           stdout=subprocess.DEVNULL)
+            _harness.git(None, "-C", tmp, "add", "-A", prefix=("git",))
+            _harness.git(None, "-C", tmp, "-c", "commit.gpgsign=false",
+                         "commit", "-q", "-m", "j", prefix=("git",))
             check("dt17 committing it retires the answer entirely - the check "
                   "reads git's porcelain, not the filename's month, so a "
                   "committed file of the same age says nothing: %r"
@@ -379,14 +372,12 @@ def _cases(check):
             row["actor"] = "someone-else"
             with open(first, "w", encoding="utf-8") as fh:
                 fh.write(json.dumps(row, sort_keys=True) + "\n")
-            subprocess.run(["git", "-C", tmp, "add", "-A"], check=True,
-                           stdout=subprocess.DEVNULL)
-            subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false",
-                            "commit", "-q", "-m", "t"], check=True,
-                           stdout=subprocess.DEVNULL)
+            _harness.git(None, "-C", tmp, "add", "-A", prefix=("git",))
+            _harness.git(None, "-C", tmp, "-c", "commit.gpgsign=false",
+                         "commit", "-q", "-m", "t", prefix=("git",))
             rep = base.Report()
             M.check_journal(rep, tmp, {}, cfgmod, tmp)
-            check("dt18 a row rewritten under the hash that signed it IS a "
+            check("dt18a row rewritten under the hash that signed it IS a "
                   "FINDING - the chain is append-only and a broken one means a "
                   "row was edited, deleted or reordered, which does not happen "
                   "by accident: %r" % (_detail(rep, "journal"),),
@@ -517,8 +508,8 @@ def _cases(check):
             # THE OVER-FIRE DIRECTION, and the one that decides whether this
             # check survives contact with a fresh clone: restoring the files
             # must take the finding away completely, not soften it.
-            subprocess.run(["git", "-C", wiped, "checkout", "--", "."],
-                           check=True, stdout=subprocess.DEVNULL)
+            _harness.git(None, "-C", wiped, "checkout", "--", ".",
+                         prefix=("git",))
             rep = base.Report()
             M.check_journal(rep, wiped, {}, cfgmod, wiped)
             check("dt51 SECOND DIRECTION: the same repository with the files put "
@@ -547,10 +538,10 @@ def _cases(check):
         else:
             anch = os.path.join(tmp, "unanchored-trail")
             os.makedirs(os.path.join(anch, "docs", "audit"))
-            subprocess.run(["git", "init", "-q", anch], check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _harness.git(None, "init", "-q", anch, prefix=("git",))
             for _k, _v in (("user.email", "p@example.com"), ("user.name", "P")):
-                subprocess.run(["git", "-C", anch, "config", _k, _v], check=True)
+                _harness.git(None, "-C", anch, "config", _k, _v,
+                             prefix=("git",))
             _journal_io.append(anch, {"action": "task.complete",
                                       "actor": "probe",
                                       "ts": "2026-01-01T00:00:00Z",
@@ -583,11 +574,9 @@ def _cases(check):
                   and "FINDING" not in _levels(rep, M.ANCHOR_CHECK)
                   and "nothing was found here" in _fix(rep, M.ANCHOR_CHECK))
 
-            subprocess.run(["git", "-C", anch, "add", "-A"], check=True,
-                           stdout=subprocess.DEVNULL)
-            subprocess.run(["git", "-C", anch, "-c", "commit.gpgsign=false",
-                            "commit", "-q", "-m", "j"], check=True,
-                           stdout=subprocess.DEVNULL)
+            _harness.git(None, "-C", anch, "add", "-A", prefix=("git",))
+            _harness.git(None, "-C", anch, "-c", "commit.gpgsign=false",
+                         "commit", "-q", "-m", "j", prefix=("git",))
             bres = _journal_io.verify(anch)
             rep = base.Report()
             M.check_journal(rep, anch, {}, cfgmod, anch)
@@ -1727,13 +1716,11 @@ def _cases(check):
               "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
 
         def sh(*args):
-            subprocess.run(git + list(args), cwd=root, check=True,
-                          capture_output=True, timeout=30)
+            _harness.git(root, *args, prefix=git, timeout=30)
 
         def rev():
-            out = subprocess.run(git + ["rev-parse", "HEAD"], cwd=root,
-                                 check=True, capture_output=True, timeout=30)
-            return out.stdout.decode("utf-8").strip()
+            return _harness.git(root, "rev-parse", "HEAD", prefix=git,
+                                timeout=30).strip()
 
         sh("init", "-q")
         with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
@@ -2273,10 +2260,10 @@ def _coupling_cases(check):
         return [r for r in rep.rows if r["check"] == "coupling"]
 
     def _git(root, *args):
-        subprocess.run(["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
-                        "-c", "commit.gpgsign=false",
-                        "-c", "init.defaultBranch=main"] + list(args),
-                       cwd=root, check=True, capture_output=True, timeout=30)
+        _harness.git(root, *args,
+                     prefix=("git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+                             "-c", "commit.gpgsign=false",
+                             "-c", "init.defaultBranch=main"), timeout=30)
 
     def _entry(test, sources, learned, caught=None):
         entry = {"test": test, "sources": list(sources),

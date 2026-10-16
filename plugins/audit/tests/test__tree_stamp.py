@@ -38,7 +38,6 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import os
-import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -52,12 +51,11 @@ def _git(repo, *args):
     `-c user.*` on every invocation rather than a `git config` pass: a CI runner
     has no global identity, and a fixture that depends on the operator having one
     is a fixture that is green here and red there."""
-    subprocess.run(["git", "-C", repo,
-                    "-c", "user.email=fixture@example.invalid",
-                    "-c", "user.name=fixture",
-                    "-c", "commit.gpgsign=false"] + list(args),
-                   check=True, stdout=subprocess.DEVNULL,
-                   stderr=subprocess.DEVNULL)
+    _harness.git(None, *args,
+                 prefix=("git", "-C", repo,
+                         "-c", "user.email=fixture@example.invalid",
+                         "-c", "user.name=fixture",
+                         "-c", "commit.gpgsign=false"))
 
 
 def _write(path, text):
@@ -68,8 +66,7 @@ def _write(path, text):
 def _seeded_repo(prefix):
     """A repository with one commit in it, so HEAD is a sha and not an unborn ref."""
     root = _harness.fixture_root(prefix)
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=("git",))
     os.makedirs(os.path.join(root, "src"))
     _write(os.path.join(root, "src", "mine.py"), "v = 1\n")
     _write(os.path.join(root, "src", "theirs.py"), "w = 1\n")

@@ -127,8 +127,7 @@ def _own_project(root=None):
     before = os.environ.get("CLAUDE_PROJECT_DIR")
     try:
         if made and shutil.which("git"):
-            subprocess.run(["git", "init", "-q", root], check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _harness.git(None, "init", "-q", root, prefix=("git",))
         os.environ["CLAUDE_PROJECT_DIR"] = root
         yield root
     finally:
@@ -2666,9 +2665,7 @@ def _cases(_record):
                 return
             _uf_repo = os.path.join(_uf_root, "proj")
             os.makedirs(os.path.join(_uf_repo, "docs", "audit"))
-            subprocess.run(["git", "init", "-q", _uf_repo], check=True,
-                           stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL)
+            _harness.git(None, "init", "-q", _uf_repo, prefix=("git",))
             _uf_plan = {"meta": {"version": 2, "title": "waves"},
                         "phases": [{"id": "P5", "title": "eight waves",
                                     "status": "in_progress", "tasks": [
@@ -2782,13 +2779,10 @@ def _cases(_record):
               "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
 
         def sh(*args):
-            subprocess.run(git + list(args), cwd=root, check=True,
-                           capture_output=True)
+            _harness.git(root, *args, prefix=git)
 
         def rev():
-            out = subprocess.run(git + ["rev-parse", "HEAD"], cwd=root,
-                                 check=True, capture_output=True)
-            return out.stdout.decode("utf-8").strip()
+            return _harness.git(root, "rev-parse", "HEAD", prefix=git).strip()
 
         sh("init", "-q")
         with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
@@ -3307,8 +3301,7 @@ def _locked_copy_cases(check):
            "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
 
     def sh(*args, **kw):
-        subprocess.run(git + list(args), cwd=kw.get("cwd", repo), check=True,
-                       capture_output=True)
+        _harness.git(kw.get("cwd", repo), *args, prefix=git)
 
     def tasks(pid, done, pending):
         return ([{"id": "%s.%d" % (pid, i + 1), "title": "t", "status": "done"}
@@ -3530,8 +3523,7 @@ def _live_copy_cases(check):
            "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
 
     def sh(*args):
-        subprocess.run(git + list(args), cwd=repo, check=True,
-                       capture_output=True)
+        _harness.git(repo, *args, prefix=git)
 
     def write_shard(base, pid, title, done, pending, last="t"):
         rows = ([{"id": "%s.%d" % (pid, i + 1), "title": "t", "status": "done"}
@@ -3738,8 +3730,7 @@ def _worktree_post_fork_cases(check):
            "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
 
     def sh(*args):
-        subprocess.run(git + list(args), cwd=repo, check=True,
-                       capture_output=True)
+        _harness.git(repo, *args, prefix=git)
 
     def write_shard(base, pid, title, done, pending):
         rows = ([{"id": "%s.%d" % (pid, i + 1), "title": "t",
@@ -3856,8 +3847,7 @@ def _every_surface_cases(check):
            "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
 
     def sh(*args):
-        subprocess.run(git + list(args), cwd=repo, check=True,
-                       capture_output=True)
+        _harness.git(repo, *args, prefix=git)
 
     def write_shard(base, pid, title, status, done, pending):
         rows = ([{"id": "%s.%d" % (pid, i + 1), "title": "t",
@@ -4049,8 +4039,7 @@ def _worked_elsewhere_cases(check):
            "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
 
     def sh(*args, **kw):
-        subprocess.run(git + list(args), cwd=kw.get("cwd", repo), check=True,
-                       capture_output=True)
+        _harness.git(kw.get("cwd", repo), *args, prefix=git)
 
     def write_shard(base, pid, title, status, statuses):
         rows = [{"id": "%s.%d" % (pid, i + 1), "title": "t", "status": s}
@@ -4283,8 +4272,7 @@ def _success_line_cases(check):
     view is folded verbatim into the reply a run opens with, and the bare table
     is what `/audit:status` exists to show. A refusal, as it always was."""
     root = _harness.fixture_root("audit-status-sl-")
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=("git",))
     mpath = os.path.join(root, "audit-plan.json")
     with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(_fixture(), fh)
@@ -4317,8 +4305,7 @@ def _kept_tree_cases(check):
     member's - is named by the bare render for as long as the directory is
     there, not only in the print of the run that kept it."""
     root = _harness.fixture_root("audit-status-kt-")
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=("git",))
     mpath = os.path.join(root, "audit-plan.json")
     with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(_fixture(), fh)
@@ -4413,8 +4400,7 @@ def _standing_approval_cases(check):
     """`standing_approval_block` hands back what the hooks' reader answers,
     shown in text and `--json`, and says nothing when none was ever armed."""
     root = _harness.fixture_root("audit-status-sa-")
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=("git",))
     mpath = os.path.join(root, "audit-plan.json")
     with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(_fixture(), fh)

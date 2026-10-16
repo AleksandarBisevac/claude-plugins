@@ -273,8 +273,7 @@ def _cases(check):
     wn_cfg = _config._deep_merge(_config.DEFAULTS,
                                  {"manifestPath": "audit/plan.json"})
     try:
-        subprocess.run(["git", "init", "-q"], cwd=str(wn_repo), check=True,
-                       capture_output=True, timeout=10)
+        _harness.git(str(wn_repo), "init", "-q", prefix=("git",), timeout=10)
         wn_lockdir = _config._load_lock_lib().lock_dir(str(wn_repo))
         os.makedirs(wn_lockdir, exist_ok=True)
         with open(os.path.join(wn_lockdir, "phase-P1.lock"), "w",
@@ -761,8 +760,7 @@ def _cases(check):
     plant_plan(gitrepo)
     os.environ["CLAUDE_PROJECT_DIR"] = str(gitrepo)
     try:
-        subprocess.run(["git", "init", "-q"], cwd=str(gitrepo), check=True,
-                       capture_output=True, timeout=10)
+        _harness.git(str(gitrepo), "init", "-q", prefix=("git",), timeout=10)
         # baseline pass BEFORE the shell write exists (real git, no injection)
         M.decide({"tool_name": "Bash", "tool_input": {"command": "x"},
                   "session_id": s, "cwd": str(gitrepo)}, cfg=cfg, state_dir=sd)
@@ -791,8 +789,7 @@ def _cases(check):
     cfg_lock = _config._deep_merge(_config.DEFAULTS,
                                    {"manifestPath": "audit/plan.json"})
     try:
-        subprocess.run(["git", "init", "-q"], cwd=str(lockrepo), check=True,
-                       capture_output=True, timeout=10)
+        _harness.git(str(lockrepo), "init", "-q", prefix=("git",), timeout=10)
         lockdir = _config._load_lock_lib().lock_dir(str(lockrepo))
         os.makedirs(lockdir, exist_ok=True)
         with open(os.path.join(lockdir, "phase-P1.lock"), "w",
@@ -854,8 +851,7 @@ def _cases(check):
     os.environ["CLAUDE_PROJECT_DIR"] = str(proj)
     cfg_nested = _config._deep_merge(_config.DEFAULTS, {"gitRoot": "sub"})
     try:
-        subprocess.run(["git", "init", "-q"], cwd=str(sub), check=True,
-                       capture_output=True, timeout=10)
+        _harness.git(str(sub), "init", "-q", prefix=("git",), timeout=10)
         # baseline pass BEFORE the shell write exists (real git, no injection)
         M.decide({"tool_name": "Bash", "tool_input": {"command": "x"},
                   "session_id": "bw-h", "cwd": str(proj)},
@@ -924,17 +920,14 @@ def _cases(check):
     wtsd = wta / ".claude" / "state"
     os.environ["CLAUDE_PROJECT_DIR"] = str(wta)
     try:
-        subprocess.run(["git", "init", "-q"], cwd=str(wta), check=True,
-                       capture_output=True, timeout=20)
-        subprocess.run(["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
-                        "commit", "-q", "--allow-empty", "-m", "base"],
-                       cwd=str(wta), check=True, capture_output=True, timeout=20)
-        subprocess.run(["git", "worktree", "add", "-q", str(wtb), "-b",
-                        "wt-phase"], cwd=str(wta), check=True,
-                       capture_output=True, timeout=30)
+        _harness.git(str(wta), "init", "-q", prefix=("git",), timeout=20)
+        _harness.git(str(wta), "-c", "user.email=t@t.t", "-c", "user.name=t",
+                     "commit", "-q", "--allow-empty", "-m", "base",
+                     prefix=("git",), timeout=20)
+        _harness.git(str(wta), "worktree", "add", "-q", str(wtb), "-b",
+                     "wt-phase", prefix=("git",), timeout=30)
         wtsep.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["git", "init", "-q"], cwd=str(wtsep), check=True,
-                       capture_output=True, timeout=20)
+        _harness.git(str(wtsep), "init", "-q", prefix=("git",), timeout=20)
 
         # THE `cd` TARGETS ARE RELATIVE, AND SPELLED WITH FORWARD SLASHES.
         # These cases used to paste the fixture's ABSOLUTE path into the command
@@ -1895,8 +1888,7 @@ def _cases(check):
     _sr_narrowed = srsub / ".claude" / "state"
     os.environ["CLAUDE_PROJECT_DIR"] = str(srp)
     try:
-        subprocess.run(["git", "init", "-q"], cwd=str(srsub), check=True,
-                       capture_output=True, timeout=20)
+        _harness.git(str(srsub), "init", "-q", prefix=("git",), timeout=20)
 
         def _sr(sid):
             return M.decide({"tool_name": "Bash",
@@ -2623,8 +2615,7 @@ def _copy_outcome_cases(check):
             ("ca4", [], "cp a.py c.py")):
         root = _harness.fixture_root("bash-writes-ca-")
         try:
-            subprocess.run(["git", "init", "-q", root], check=True,
-                           capture_output=True, timeout=30)
+            _harness.git(None, "init", "-q", root, prefix=("git",), timeout=30)
             for name in dirs:
                 os.makedirs(os.path.join(root, name))
             for rel in ("a.py", "b.py", "src/k.py"):
@@ -2653,8 +2644,7 @@ def _copy_outcome_cases(check):
     for cid, cmd in (("ca5", "cp -r src lib/"), ("ca6", "cp -r src/ lib/")):
         root = _harness.fixture_root("bash-writes-%s-" % cid)
         try:
-            subprocess.run(["git", "init", "-q", root], check=True,
-                           capture_output=True, timeout=30)
+            _harness.git(None, "init", "-q", root, prefix=("git",), timeout=30)
             for name in ("src", "lib"):
                 os.makedirs(os.path.join(root, name))
             with open(os.path.join(root, "src", "k.py"), "w",

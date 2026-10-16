@@ -1438,15 +1438,13 @@ def _cases(check):
         home = _harness.fixture_root("clone-id-")
         try:
             spot = os.path.join(home, "repo")
-            subprocess.run(["git", "init", "-q", spot], check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _harness.git(None, "init", "-q", spot, prefix=("git",))
             before = M.clone_id(spot)
             minted = M.clone_id(spot, create=True)
             moved = os.path.join(home, "moved")
             shutil.move(spot, moved)
             after_move = M.clone_id(moved)
-            subprocess.run(["git", "init", "-q", spot], check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _harness.git(None, "init", "-q", spot, prefix=("git",))
             same_path = M.clone_id(spot, create=True)
         finally:
             _harness.remove_tree(home)
@@ -1460,8 +1458,7 @@ def _cases(check):
         home = _harness.fixture_root("clone-id-empty-")
         try:
             spot = os.path.join(home, "repo")
-            subprocess.run(["git", "init", "-q", spot], check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _harness.git(None, "init", "-q", spot, prefix=("git",))
             common = os.path.dirname(M._locks.lock_dir(spot))
             with open(os.path.join(common, M.CLONE_ID_NAME), "w") as fh:
                 fh.write("")
@@ -2328,8 +2325,7 @@ def _scrubbed_baseline_cases(check):
     home = _harness.fixture_root("baseline-scrub-")
     try:
         repo = os.path.join(home, "repo")
-        subprocess.run(["git", "init", "-q", repo], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(None, "init", "-q", repo, prefix=("git",))
         machine = "/".join(("", "Users", "someone", "work", "x.py"))
         inside = os.path.join(repo, "src", "a.py")
 

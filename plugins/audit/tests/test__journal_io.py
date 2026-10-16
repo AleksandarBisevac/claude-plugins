@@ -2983,7 +2983,7 @@ def _line_ending_cases(check):
         old = _anchor_project(tmp, "old-windows")
         git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
                "-c", "commit.gpgsign=false", "-C", old]
-        subprocess.run(git + ["init", "-q"], check=True, capture_output=True)
+        _harness.git(None, "init", "-q", prefix=git)
         first = M.append(old, {"action": "task.start", "target": "P1.1",
                                "actor": {"sessionId": "s1"}})
         M.append(old, {"action": "task.done", "target": "P1.1",
@@ -2991,9 +2991,8 @@ def _line_ending_cases(check):
         lf = _bytes_of(first)
         with open(first, "wb") as fh:
             fh.write(lf.replace(b"\n", b"\r\n"))
-        subprocess.run(git + ["add", "-A"], check=True, capture_output=True)
-        subprocess.run(git + ["commit", "-qm", "crlf trail"], check=True,
-                       capture_output=True)
+        _harness.git(None, "add", "-A", prefix=git)
+        _harness.git(None, "commit", "-qm", "crlf trail", prefix=git)
         M.append(old, {"action": "task.start", "target": "P1.2",
                        "actor": {"sessionId": "s1"}})
         mixed = _bytes_of(first)
@@ -3574,8 +3573,8 @@ def _worktree_writer_cases(check):
     wt_b = os.path.join(pair["root"], "main-B")
     git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
            "-c", "commit.gpgsign=false"]
-    subprocess.run(git + ["worktree", "add", "-q", wt_b, "-b", "chore/b"],
-                   cwd=main, check=True, capture_output=True, timeout=30)
+    _harness.git(main, "worktree", "add", "-q", wt_b, "-b", "chore/b",
+                 prefix=git, timeout=30)
     sid = "cccccccc-0000-4000-8000-00000000000c"
 
     def row(project, what):
@@ -3616,14 +3615,12 @@ def _worktree_writer_cases(check):
           repr(idx["mine"]))
     # Both branches commit their journal and merge into main: no conflict.
     for tree, msg in ((wt_a, "a"), (wt_b, "b")):
-        subprocess.run(git + ["add", "-A", "docs/audit/journal"], cwd=tree,
-                       check=True, capture_output=True, timeout=30)
-        subprocess.run(git + ["commit", "-qm", msg], cwd=tree, check=True,
-                       capture_output=True, timeout=30)
-    subprocess.run(git + ["add", "-A", "docs/audit/journal"], cwd=main,
-                   check=True, capture_output=True, timeout=30)
-    subprocess.run(git + ["commit", "-qm", "m"], cwd=main, check=True,
-                   capture_output=True, timeout=30)
+        _harness.git(tree, "add", "-A", "docs/audit/journal", prefix=git,
+                     timeout=30)
+        _harness.git(tree, "commit", "-qm", msg, prefix=git, timeout=30)
+    _harness.git(main, "add", "-A", "docs/audit/journal", prefix=git,
+                 timeout=30)
+    _harness.git(main, "commit", "-qm", "m", prefix=git, timeout=30)
     merges = [subprocess.run(git + ["merge", "--no-edit", "-q", br], cwd=main,
                              capture_output=True, text=True, timeout=30)
               for br in ("chore/p48", "chore/b")]
@@ -3645,9 +3642,8 @@ def _worktree_writer_cases(check):
     with open(os.path.join(nested, ".claude", "audit.config.json"), "w",
               encoding="utf-8") as fh:
         json.dump({"gitRoot": "repo"}, fh)
-    subprocess.run(git + ["worktree", "add", "-q", os.path.join(nested, "repo"),
-                          "-b", "chore/nested"], cwd=main, check=True,
-                   capture_output=True, timeout=30)
+    _harness.git(main, "worktree", "add", "-q", os.path.join(nested, "repo"),
+                 "-b", "chore/nested", prefix=git, timeout=30)
     ncfg = M.load_config(nested)
     check("wk9 a project whose gitRoot is a linked worktree gets a worktree key "
           "- git is asked where the gitRoot says the repository is",
@@ -3685,10 +3681,10 @@ def _worktree_writer_cases(check):
     # the worktree's `.git` file, so a worktree removed and added back at the
     # same path - a fresh git dir with no token - gets a fresh key.
     _before = M.worktree_key(wt_b)
-    subprocess.run(git + ["worktree", "remove", "--force", wt_b], cwd=main,
-                   check=True, capture_output=True, timeout=30)
-    subprocess.run(git + ["worktree", "add", "-q", wt_b, "-b", "chore/b-again"],
-                   cwd=main, check=True, capture_output=True, timeout=30)
+    _harness.git(main, "worktree", "remove", "--force", wt_b, prefix=git,
+                 timeout=30)
+    _harness.git(main, "worktree", "add", "-q", wt_b, "-b", "chore/b-again",
+                 prefix=git, timeout=30)
     _after = M.worktree_key(wt_b)
     check("wk14 a worktree removed and added back at the same path gets a NEW "
           "key - the kept answer is checked against its `.git` file",
@@ -3713,8 +3709,8 @@ def _worktree_writer_cases(check):
     os.makedirs(_later)
     _none_first = M.worktree_key(_later)
     os.rmdir(_later)
-    subprocess.run(git + ["worktree", "add", "-q", _later, "-b", "chore/later"],
-                   cwd=main, check=True, capture_output=True, timeout=30)
+    _harness.git(main, "worktree", "add", "-q", _later, "-b", "chore/later",
+                 prefix=git, timeout=30)
     _then = M.worktree_key(_later)
     _real_uncached = M._worktree_key_uncached
     M._WORKTREE_KEYS.clear()

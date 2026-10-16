@@ -250,8 +250,7 @@ def _cases(check):
         print("SKIP lk* (git is not on PATH)")
     else:
         lkroot = Path(tempfile.mkdtemp(prefix="require-plan-lock-"))
-        _sp.run([_git, "init", "-q", str(lkroot)], check=True,
-                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        _harness.git(None, "init", "-q", str(lkroot), prefix=(_git,))
         (lkroot / "audit" / "phases").mkdir(parents=True, exist_ok=True)
         # From DEFAULTS, not from `cfg` — earlier cases mutate that dict (enforce),
         # and the lock check must be pinned independently of whichever plan tier
@@ -1658,19 +1657,16 @@ def _cases(check):
         try:
             def _git_repo(path):
                 path.mkdir(parents=True, exist_ok=True)
-                _sp.run([_git, "init", "-q", str(path)], check=True,
-                        stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
-                _sp.run([_git, "-C", str(path), "config", "user.email",
-                        "t@t.t"], check=True, stdout=_sp.DEVNULL,
-                        stderr=_sp.DEVNULL)
-                _sp.run([_git, "-C", str(path), "config", "user.name", "t"],
-                        check=True, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+                _harness.git(None, "init", "-q", str(path), prefix=(_git,))
+                _harness.git(None, "-C", str(path), "config", "user.email",
+                             "t@t.t", prefix=(_git,))
+                _harness.git(None, "-C", str(path), "config", "user.name", "t",
+                             prefix=(_git,))
 
             def _commit(path, msg):
-                _sp.run([_git, "-C", str(path), "add", "-A"], check=True,
-                        stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
-                _sp.run([_git, "-C", str(path), "commit", "-q", "-m", msg],
-                        check=True, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+                _harness.git(None, "-C", str(path), "add", "-A", prefix=(_git,))
+                _harness.git(None, "-C", str(path), "commit", "-q", "-m", msg,
+                             prefix=(_git,))
 
             def _write_manifest_at(path, phase_status):
                 d = path / "docs" / "audit"
@@ -1689,9 +1685,8 @@ def _cases(check):
             _write_manifest_at(wmain, "in_progress")
             _commit(wmain, "phase running")
             wlinked = wtroot / "linked"
-            _sp.run([_git, "-C", str(wmain), "worktree", "add", "-q",
-                     str(wlinked), "-b", "feature"], check=True,
-                    stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+            _harness.git(None, "-C", str(wmain), "worktree", "add", "-q",
+                         str(wlinked), "-b", "feature", prefix=(_git,))
 
             wtcfg = dict(_config.DEFAULTS)
             wtsd = wtroot / "state"
@@ -1758,13 +1753,11 @@ def _cases(check):
             # evidence rather than either silently allowing (the old bug) or
             # borrowing the sibling's stronger one, so both configurations
             # below must agree with EACH OTHER on "observe", not on "block".
-            c1 = _sp.run([_git, "-C", str(wmain), "rev-parse", "HEAD~1"],
-                        check=True, capture_output=True, text=True,
-                        timeout=20).stdout.strip()
+            c1 = _harness.git(None, "-C", str(wmain), "rev-parse", "HEAD~1",
+                              prefix=(_git,), timeout=20).strip()
             wstale = wtroot / "stale"
-            _sp.run([_git, "-C", str(wmain), "worktree", "add", "-q",
-                     str(wstale), c1], check=True, stdout=_sp.DEVNULL,
-                    stderr=_sp.DEVNULL)
+            _harness.git(None, "-C", str(wmain), "worktree", "add", "-q",
+                         str(wstale), c1, prefix=(_git,))
             check("wt5a the stale worktree really does predate the manifest - "
                   "the fixture's own precondition, not an assumption",
                   not (wstale / "docs" / "audit" / "audit-plan.json").exists())
@@ -1845,7 +1838,6 @@ def _cases(check):
     # marker in the tree's admin dir names the phase tree, and THAT tree's plan
     # (where the task is in_progress) decides, restricted to the one task.
     def _bt_build(prefix):
-        import subprocess
         root = os.path.realpath(_harness.fixture_root(prefix))
         main = os.path.join(root, "main")
         os.makedirs(os.path.join(main, "src"))
@@ -1876,15 +1868,13 @@ def _cases(check):
         steps += [["worktree", "add", "-q", "--detach",
                    os.path.join(root, "wt" + k)] for k in sorted(trees)]
         for argv in steps:
-            subprocess.run(git + argv, cwd=main, check=True,
-                           capture_output=True, timeout=30)
+            _harness.git(main, *argv, prefix=git, timeout=30)
         paths = {k: os.path.join(root, "wt" + k) for k in trees}
         for k, task in sorted(trees.items()):
             if task is None:
                 continue
-            admin = subprocess.run(
-                git + ["rev-parse", "--git-dir"], cwd=paths[k], check=True,
-                capture_output=True, text=True, timeout=30).stdout.strip()
+            admin = _harness.git(paths[k], "rev-parse", "--git-dir",
+                                 prefix=git, timeout=30).strip()
             tree_of_plan = main if k != "G" else os.path.join(root, "gone")
             with open(os.path.join(admin, "audit-worktree.json"), "w",
                       encoding="utf-8") as fh:

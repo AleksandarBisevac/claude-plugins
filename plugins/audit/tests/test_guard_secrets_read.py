@@ -1568,11 +1568,9 @@ def _lw_wide_copy_cases(check, lw, bash, out):
     # git would place somewhere else. A nested repository inside the worktree
     # is its own toplevel, so a copy into it is that repository's business
     # and no plan's here - asked of git, never answered by containment.
-    import subprocess
     nested = Path(lw["wt"]) / "vendored"
     (nested / "lib").mkdir(parents=True, exist_ok=True)
-    subprocess.run(["git", "init", "-q", str(nested)], check=True,
-                   capture_output=True, timeout=30)
+    _harness.git(None, "init", "-q", str(nested), prefix=("git",), timeout=30)
     probe = _out_tree(out / "nested-src", 1, 1, ".ts")
     cmd = "cp %s %s; cp %s %s" % _quoted(
         probe / "d00" / "f00.ts", Path(lw["wt"]) / "src" / "x1.ts",
@@ -2816,8 +2814,7 @@ def _cases(check):
         if not _sh2.which("git") or _lockmod is None:
             print("SKIP sm19-sm22 (no git on PATH, or _locks.py did not load)")
         else:
-            _sp_sm.run(["git", "init", "-q", str(_lock_tmp)], check=True,
-                       stdout=_sp_sm.DEVNULL, stderr=_sp_sm.DEVNULL)
+            _harness.git(None, "init", "-q", str(_lock_tmp), prefix=("git",))
             _ld_sm = Path(_lockmod.lock_dir(str(_lock_tmp)))
             _ld_sm.mkdir(parents=True, exist_ok=True)
 

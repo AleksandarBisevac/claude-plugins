@@ -22,7 +22,6 @@ import importlib
 import json
 import os
 import shutil
-import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -84,8 +83,7 @@ def worktree_fixture(root, linked, cross=False):
     git = _git_cmd()
 
     def sh(*args, **kw):
-        subprocess.run(git + list(args), cwd=kw.get("cwd", repo), check=True,
-                       capture_output=True, timeout=60)
+        _harness.git(kw.get("cwd", repo), *args, prefix=git, timeout=60)
 
     manifest = os.path.join(repo, "docs", "audit", "audit-plan.json")
     with open(os.path.join(repo, "README"), "w", encoding="utf-8") as fh:

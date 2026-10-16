@@ -415,19 +415,16 @@ def _fr_repo(root):
     needs two real, different, ancestor-related commits, and a fake `run`
     cannot give it - a mutation comparing `head==mergedHead` would still pass
     against two equal strings."""
-    import subprocess
     os.makedirs(root, exist_ok=True)
     git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
           "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
 
     def sh(*args):
-        subprocess.run(git + list(args), cwd=root, check=True,
-                       capture_output=True, timeout=30)
+        _harness.git(root, *args, prefix=git, timeout=30)
 
     def rev():
-        out = subprocess.run(git + ["rev-parse", "HEAD"], cwd=root, check=True,
-                             capture_output=True, timeout=30)
-        return out.stdout.decode("utf-8").strip()
+        return _harness.git(root, "rev-parse", "HEAD", prefix=git,
+                            timeout=30).strip()
 
     sh("init", "-q")
     with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:

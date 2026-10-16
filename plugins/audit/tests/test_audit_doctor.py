@@ -145,9 +145,8 @@ def _cases(check):
         have_git = bool(sh.which("git"))
         if have_git:
             try:
-                subprocess.run(["git", "init", "-q", tmp],
-                               stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, timeout=30, check=True)
+                _harness.git(None, "init", "-q", tmp, prefix=("git",),
+                             timeout=30)
             except Exception:
                 have_git = False
         if not have_git:
@@ -1473,10 +1472,8 @@ def _cases(check):
         if have_git:
             hyg = _harness.fixture_root("doctor-hygiene-")
             try:
-                subprocess.run(["git", "init", "-q", hyg],
-                               stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, timeout=30,
-                               check=True)
+                _harness.git(None, "init", "-q", hyg, prefix=("git",),
+                             timeout=30)
 
                 def hyg_fix(rep_x):
                     return " ".join(r["fix"] or "" for r in rep_x.rows

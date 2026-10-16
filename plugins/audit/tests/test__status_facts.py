@@ -609,8 +609,7 @@ def _cases(check):
         _ur_root = _harness.fixture_root("status-facts-unfinished-")
         _ur_repo = os.path.join(_ur_root, "proj")
         os.makedirs(_ur_repo)
-        subprocess.run(["git", "init", "-q", _ur_repo], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(None, "init", "-q", _ur_repo, prefix=("git",))
         _ur_quiet = lambda *_a, **_k: None          # noqa: E731  (acquire's `out`)
         # THE IDENTITY IS PASSED, NEVER INHERITED. `_locks._identity` falls back
         # to `CLAUDE_PID` and `CLAUDE_CODE_SESSION_ID`, which are set inside a

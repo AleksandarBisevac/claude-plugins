@@ -68,7 +68,7 @@ def _cases(check):
               got is None and "not inside a git work tree" in err, err)
 
         repo = os.path.join(tmp, "repo")
-        subprocess.run(["git", "init", "-q", repo], check=True)
+        _harness.git(None, "init", "-q", repo, prefix=("git",))
         spaced = os.path.join(repo, "my plans", "plan.json")
         os.makedirs(os.path.dirname(spaced))
         got, err = M.locate(spaced)
@@ -106,10 +106,11 @@ def _history(root):
     env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
                GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
 
+    # The identity `env` carries, as config: the same name and address for
+    # author and committer, which is all these commits read.
     def git(*a):
-        return subprocess.run(["git", "-C", root] + list(a), check=True, env=env,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE
-                              ).stdout.decode().strip()
+        return _harness.git(None, *a, prefix=("git", "-C", root, "-c", "user.name=t",
+                                              "-c", "user.email=t@t")).strip()
 
     def write(path, lines):
         full = os.path.join(root, path)
@@ -119,7 +120,7 @@ def _history(root):
 
     plan = "docs/audit/plan.json"
     body = ["{", '  "a": 1,'] + ['  "k%d": %d,' % (i, i) for i in range(12)] + ['  "z": 0', "}"]
-    subprocess.run(["git", "init", "-q", "-b", "main", root], check=True)
+    _harness.git(None, "init", "-q", "-b", "main", root, prefix=("git",))
     write(plan, body)
     git("add", "-A")
     git("commit", "-qm", "base")
@@ -181,7 +182,7 @@ def _replay_cases(check, tmp):
           "(both appended at the tail), not the far-apart edit",
           got.get("conflicted") == [shas["conflicted"]], got)
     fresh = os.path.join(tmp, "fresh")
-    subprocess.run(["git", "init", "-q", fresh], check=True)
+    _harness.git(None, "init", "-q", fresh, prefix=("git",))
     got_fresh = M.replay_merges(fresh, "docs/audit/plan.json")
     check("mi13 a repository with no commit yet has nothing to measure - and is not "
           "reported as a git too old to measure with: %r" % (got_fresh,),

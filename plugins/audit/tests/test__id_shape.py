@@ -11,7 +11,6 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 
@@ -107,22 +106,22 @@ def _cases(check):
     os.environ.update({"HOME": tmp, "GIT_CONFIG_NOSYSTEM": "1",
                        "GIT_CONFIG_GLOBAL": os.devnull})
     try:
-        subprocess.run(["git", "init", "-q", "-b", "feature/x", tmp], check=True)
+        _harness.git(None, "init", "-q", "-b", "feature/x", tmp, prefix=("git",))
         check("is15 current_branch names the checked-out branch, even before a commit",
               M.current_branch(tmp) == "feature/x", M.current_branch(tmp))
         check("is15b suffix_here on a repository whose only branch is unborn and not a "
               "trunk mints no suffix (no trunk exists to fork from)",
               M.suffix_here(tmp, plan) is None)
-        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
-                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
-        subprocess.run(["git", "-C", tmp, "commit", "-q", "--allow-empty", "-m", "b"],
-                       check=True, env=env)
-        subprocess.run(["git", "-C", tmp, "branch", "main"], check=True)
+        # The author and committer identity as config rather than environment:
+        # the same name and address for both, which is all the commit reads.
+        _harness.git(None, "-C", tmp, "commit", "-q", "--allow-empty", "-m", "b",
+                     prefix=("git", "-c", "user.name=t", "-c", "user.email=t@t"))
+        _harness.git(None, "-C", tmp, "branch", "main", prefix=("git",))
         check("is15c ...and once `main` exists beside it, the side branch is suffixed",
               M.suffix_here(tmp, plan) == a, M.suffix_here(tmp, plan))
-        subprocess.run(["git", "-C", tmp, "update-ref", "refs/remotes/upstream/main",
-                        "HEAD"], check=True)
-        subprocess.run(["git", "-C", tmp, "branch", "-D", "-q", "main"], check=True)
+        _harness.git(None, "-C", tmp, "update-ref", "refs/remotes/upstream/main",
+                     "HEAD", prefix=("git",))
+        _harness.git(None, "-C", tmp, "branch", "-D", "-q", "main", prefix=("git",))
         check("is15d ...and a trunk known only as a remote-tracking branch of ANY remote "
               "counts - upstream/main, not only origin/main",
               M.suffix_here(tmp, plan) == a, M.suffix_here(tmp, plan))

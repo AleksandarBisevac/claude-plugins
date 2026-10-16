@@ -22,7 +22,6 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import os
 import inspect
 import shutil
-import subprocess
 import sys
 
 import json
@@ -281,20 +280,16 @@ def _cases(check):
               "chained records" not in _detail(rep, "completions"))
 
         if have_git:
-            subprocess.run(["git", "init", "-q", tmp], check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _harness.git(None, "init", "-q", tmp, prefix=("git",))
             for k, v in (("user.email", "p@example.com"), ("user.name", "P")):
-                subprocess.run(["git", "-C", tmp, "config", k, v], check=True)
+                _harness.git(None, "-C", tmp, "config", k, v, prefix=("git",))
             with open(os.path.join(tmp, "a.py"), "w", encoding="utf-8") as fh:
                 fh.write("x = 1\n")
-            subprocess.run(["git", "-C", tmp, "add", "-A"], check=True,
-                           stdout=subprocess.DEVNULL)
-            subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false",
-                            "commit", "-q", "-m", "i"], check=True,
-                           stdout=subprocess.DEVNULL)
-            head = subprocess.run(["git", "-C", tmp, "rev-parse", "HEAD"],
-                                  stdout=subprocess.PIPE,
-                                  check=True).stdout.decode().strip()
+            _harness.git(None, "-C", tmp, "add", "-A", prefix=("git",))
+            _harness.git(None, "-C", tmp, "-c", "commit.gpgsign=false",
+                         "commit", "-q", "-m", "i", prefix=("git",))
+            head = _harness.git(None, "-C", tmp, "rev-parse", "HEAD",
+                                prefix=("git",)).strip()
 
             # The ONLY fully clean fixture in this file: a real commit, a
             # completedAt inside 24h of the record, and a ledger row covering
@@ -384,24 +379,21 @@ def _cases(check):
             deep_tmp = _harness.fixture_root("doctor-completions-deep-")
             try:
                 os.makedirs(os.path.join(deep_tmp, "docs", "audit"))
-                subprocess.run(["git", "init", "-q", deep_tmp], check=True,
-                               stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL)
+                _harness.git(None, "init", "-q", deep_tmp, prefix=("git",))
                 for k, v in (("user.email", "p@example.com"),
                              ("user.name", "P")):
-                    subprocess.run(["git", "-C", deep_tmp, "config", k, v],
-                                   check=True)
+                    _harness.git(None, "-C", deep_tmp, "config", k, v,
+                                 prefix=("git",))
                 with open(os.path.join(deep_tmp, "a.py"), "w",
                           encoding="utf-8") as fh:
                     fh.write("x = 1\n")
-                subprocess.run(["git", "-C", deep_tmp, "add", "-A"], check=True,
-                               stdout=subprocess.DEVNULL)
-                subprocess.run(["git", "-C", deep_tmp, "-c",
-                                "commit.gpgsign=false", "commit", "-q", "-m",
-                                "i"], check=True, stdout=subprocess.DEVNULL)
-                deep_head = subprocess.run(
-                    ["git", "-C", deep_tmp, "rev-parse", "HEAD"],
-                    stdout=subprocess.PIPE, check=True).stdout.decode().strip()
+                _harness.git(None, "-C", deep_tmp, "add", "-A", prefix=("git",))
+                _harness.git(None, "-C", deep_tmp, "-c",
+                             "commit.gpgsign=false", "commit", "-q", "-m",
+                             "i", prefix=("git",))
+                deep_head = _harness.git(
+                    None, "-C", deep_tmp, "rev-parse", "HEAD",
+                    prefix=("git",)).strip()
                 for ts, tid in (("2026-03-01T00:00:00Z", "P1.1"),
                                 ("2026-09-01T00:00:00Z", "P1.2")):
                     _journal_io.append(deep_tmp,

@@ -756,7 +756,6 @@ def _cases(check):
 # token. Driven over HTTP against `_make_handler` on a ThreadingHTTPServer, with
 # the first write slowed so the second request lands while it is under way.
 def _handler_race_cases(check):
-    import subprocess
     import threading
     import time
     import urllib.request
@@ -769,8 +768,7 @@ def _handler_race_cases(check):
     real_unlink, real_link = os.unlink, _panel_write._locks._link_into_place
     httpd = None
     try:
-        subprocess.run(["git", "init", "-q", proj], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(None, "init", "-q", proj, prefix=("git",))
         mpath = _panel_write._manifest_path(proj, _panel_write.read_config(proj))
         os.makedirs(os.path.dirname(mpath), exist_ok=True)
 
@@ -929,19 +927,16 @@ def _fr_repo(root):
     """A REAL git repository, two sequential commits on `main` -
     `test__panel_state.py`'s own fixture, for the same reason: ancestry needs
     two real, different, ancestor-related commits."""
-    import subprocess
     os.makedirs(root, exist_ok=True)
     git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
           "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
 
     def sh(*args):
-        subprocess.run(git + list(args), cwd=root, check=True,
-                       capture_output=True, timeout=30)
+        _harness.git(root, *args, prefix=git, timeout=30)
 
     def rev():
-        out = subprocess.run(git + ["rev-parse", "HEAD"], cwd=root, check=True,
-                             capture_output=True, timeout=30)
-        return out.stdout.decode("utf-8").strip()
+        return _harness.git(root, "rev-parse", "HEAD", prefix=git,
+                            timeout=30).strip()
 
     sh("init", "-q")
     with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:

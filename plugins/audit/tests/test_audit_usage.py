@@ -1068,8 +1068,7 @@ def _cases(check):
         import subprocess as _sp
         _lk = os.path.join(tmp, "lock-repo")
         os.makedirs(_lk)
-        _sp.run(["git", "init", "-q", _lk], check=True,
-                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        _harness.git(None, "init", "-q", _lk, prefix=("git",))
         _shared = _locks.lock_dir(_lk)
         lpath = os.path.join(_shared, "%s.lock" % (M.LOCK_NAME,))
         got, err = M.acquire_lock(_lk)

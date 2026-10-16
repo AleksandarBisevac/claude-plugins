@@ -14,7 +14,6 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 import json
 import os
-import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -358,15 +357,12 @@ def _tree_binding_cases(check):
             fh.write("a = 2\n")
         git = ["git", "-C", project, "-c", "user.name=t", "-c", "user.email=t@t",
                "-c", "commit.gpgsign=false"]
-        subprocess.run(["git", "init", "-q", project], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(None, "init", "-q", project, prefix=("git",))
         mpath = _project(project, [])
-        subprocess.run(git + ["add", "-A"], check=True)
-        subprocess.run(git + ["commit", "-qm", "base"], check=True,
-                       stdout=subprocess.DEVNULL)
-        head_then = subprocess.run(
-            ["git", "-C", project, "rev-parse", "HEAD"], check=True,
-            stdout=subprocess.PIPE, universal_newlines=True).stdout.strip()
+        _harness.git(None, "add", "-A", prefix=git)
+        _harness.git(None, "commit", "-qm", "base", prefix=git)
+        head_then = _harness.git(None, "-C", project, "rev-parse", "HEAD",
+                                 prefix=("git",)).strip()
         measured = _measured(tree, "R1", "2026-09-01T00:00:00Z")
         measured["testedState"]["head"] = head_then
         _project(project, [measured])
@@ -376,12 +372,10 @@ def _tree_binding_cases(check):
               % (got["sentence"],), got["state"] == "refused")
         with open(os.path.join(project, "src", "a.py"), "w") as fh:
             fh.write("a = 2\n")
-        subprocess.run(git + ["add", "-A"], check=True)
-        subprocess.run(git + ["commit", "-qm", "integrate"], check=True,
-                       stdout=subprocess.DEVNULL)
-        head_now = subprocess.run(
-            ["git", "-C", project, "rev-parse", "HEAD"], check=True,
-            stdout=subprocess.PIPE, universal_newlines=True).stdout.strip()
+        _harness.git(None, "add", "-A", prefix=git)
+        _harness.git(None, "commit", "-qm", "integrate", prefix=git)
+        head_now = _harness.git(None, "-C", project, "rev-parse", "HEAD",
+                                prefix=("git",)).strip()
         got = _bind(project, mpath)
         check("vb33 ...and once the tree's bytes are copied in and COMMITTED in "
               "the project it binds although HEAD is no longer the one the row "

@@ -6757,11 +6757,6 @@ def _integrate_tail_case(check, preferred):
           and len(err.encode("utf-8")) <= 600)
 
 
-# The suites whose fixtures run git, every one of them read for a git call that
-# bypasses the fixture helper.
-_GIT_FIXTURE_SUITES = ("_harness.py", "test_drive_phase.py",
-                       "test_integrate_task.py", "test_run_test_gate.py",
-                       "test_hooks.py")
 # A child that fails the way the fm-block re-run did on a CI runner: a long
 # stretch of stderr, then a fixture's git call raising through the helper.
 _GIT_CHILD = (
@@ -6778,42 +6773,106 @@ _TAIL_REPORTERS = ("_harness.tail_" + 'bytes(res["err"], ',
                    "_harness.tail_" + "bytes(done.stderr, ")
 
 
-def _names_git(node):
-    """Whether a command expression spells git: the literal word, or a name
-    ending in GIT, the spelling every fixture prefix in these suites uses."""
+_CHECKED_RUNNERS = ("run", "check_call", "check_output")
+
+
+def _names_git(node, bound=()):
+    """Whether a command expression spells git: the literal word, a name or
+    attribute ending in git in either case - `GIT`, `_GIT`, a local `git` list
+    - or a name `bound` holds, one assigned from an expression that spells it."""
     for sub in ast.walk(node):
         if isinstance(sub, ast.Constant) and sub.value == "git":
             return True
-        if isinstance(sub, ast.Name) and sub.id.endswith("GIT"):
+        if isinstance(sub, ast.Name) and (sub.id.lower().endswith("git")
+                                          or sub.id in bound):
+            return True
+        if isinstance(sub, ast.Attribute) and sub.attr.lower().endswith("git"):
             return True
     return False
 
 
+def _git_bound_names(tree):
+    """Every name the module assigns from an expression spelling git, followed
+    through chains of assignment - so `cmd = ["git", "init"]` and a second
+    name copied from it are both read as git."""
+    bound = set()
+    while True:
+        more = set(t.id for node in ast.walk(tree)
+                   if isinstance(node, ast.Assign) and _names_git(node.value, bound)
+                   for t in node.targets
+                   if isinstance(t, ast.Name) and t.id not in bound)
+        if not more:
+            return bound
+        bound |= more
+
+
+def _subprocess_spellings(tree):
+    """`(module names, {local name: runner})`: `subprocess` itself and every
+    alias it is imported as, and which of its checked runners are imported
+    bare."""
+    modules, direct = {"subprocess"}, {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules |= set(a.asname or a.name for a in node.names
+                           if a.name == "subprocess")
+        elif isinstance(node, ast.ImportFrom) and node.module == "subprocess":
+            direct.update((a.asname or a.name, a.name) for a in node.names
+                          if a.name in _CHECKED_RUNNERS)
+    return modules, direct
+
+
+def _runner_of(func, modules, direct):
+    """The subprocess runner a call's `func` names, or None."""
+    if (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
+            and func.value.id in modules):
+        return func.attr
+    if isinstance(func, ast.Name):
+        return direct.get(func.id)
+    return None
+
+
 def bare_git_calls(source):
-    """The line of every `subprocess.run(<git ...>, check=True)` in `source`,
-    sorted: a fixture git call whose failure would raise without git's own
-    message. A call with no `check` reads its own exit and is not one."""
+    """The line of every checked git call in `source` that bypasses the fixture
+    helper, sorted: `run(<git ...>, check=True)`, `check_call` or
+    `check_output` on `subprocess` under any name it is imported as - a call
+    whose failure would raise without git's own message. A `run` with no
+    `check` reads its own exit and is not one."""
+    tree = ast.parse(source)
+    modules, direct = _subprocess_spellings(tree)
+    bound = _git_bound_names(tree)
     found = []
-    for node in ast.walk(ast.parse(source)):
-        if not (isinstance(node, ast.Call) and node.args
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "run"
-                and isinstance(node.func.value, ast.Name)
-                and node.func.value.id == "subprocess"):
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and node.args):
             continue
-        checked = any(kw.arg == "check" and isinstance(kw.value, ast.Constant)
-                      and kw.value.value is True for kw in node.keywords)
-        if checked and _names_git(node.args[0]):
+        runner = _runner_of(node.func, modules, direct)
+        checked = runner in ("check_call", "check_output") or (
+            runner == "run"
+            and any(kw.arg == "check" and isinstance(kw.value, ast.Constant)
+                    and kw.value.value is True for kw in node.keywords))
+        if checked and _names_git(node.args[0], bound):
             found.append(node.lineno)
     return sorted(found)
+
+
+def tests_dir_git_bypasses(tests_dir):
+    """`(scanned file names, {file: lines})` over every `.py` in `tests_dir`:
+    the set is the directory's, so a suite added later is read too."""
+    names = sorted(n for n in os.listdir(tests_dir) if n.endswith(".py"))
+    bare = {}
+    for name in names:
+        with open(os.path.join(tests_dir, name), "r", encoding="utf-8") as fh:
+            lines = bare_git_calls(fh.read())
+        if lines:
+            bare[name] = lines
+    return names, bare
 
 
 def _fixture_git_case(check, preferred):
     """A fixture git call that fails raises with git's own message and the argv,
     one that hangs names its timeout, a child failing in one under the pinned
-    locale is reported by the tail that holds the raised line, and no suite
-    whose fixtures run git reaches it around the helper or reports a pinned
-    child by its head."""
+    locale is reported by the tail that holds the raised line, no pinned child
+    is reported by its head, and no suite in the tests directory reaches git
+    around the helper."""
     here = os.path.dirname(os.path.abspath(__file__))
     scratch = _harness.fixture_root("drive-fixture-git-")
     try:
@@ -6826,12 +6885,6 @@ def _fixture_git_case(check, preferred):
             [sys.executable, "-c", _GIT_CHILD, here, scratch], preferred)
     finally:
         _harness.remove_tree(scratch)
-    bare = {}
-    for name in _GIT_FIXTURE_SUITES:
-        with open(os.path.join(here, name), "r", encoding="utf-8") as fh:
-            lines = bare_git_calls(fh.read())
-        if lines:
-            bare[name] = lines
     with open(os.path.abspath(__file__), "r", encoding="utf-8") as fh:
         pinned = _harness.between(fh.read(), 'ASCII_BLOCK = "fm-block"',
                                   "def _stage_cases(")
@@ -6841,15 +6894,45 @@ def _fixture_git_case(check, preferred):
           "fails raises with git's own decoded message, and every "
           "locale-pinned child case reports the tail of the child's stderr, "
           "through one helper each (the failing call's message, the hung "
-          "call's, the pinned child's reported tail, git calls around the "
-          "helper by suite and line, head clips and missing tail reporters in "
-          "the pinned-child block): %r"
-          % ((said, waited, err[-300:], bare, heads, tails),),
+          "call's, the pinned child's reported tail, head clips and missing "
+          "tail reporters in the pinned-child block): %r"
+          % ((said, waited, err[-300:], heads, tails),),
           not failed and _TAIL_NEEDLE in said and "(exit " in said
           and not hung and "did not finish within 1s" in waited
           and not ok and _TAIL_NEEDLE in err
           and len(err.encode("utf-8")) <= 600
-          and bare == {} and heads == 0 and tails == [])
+          and heads == 0 and tails == [])
+    scanned, bare = tests_dir_git_bypasses(_harness.TESTS_DIR)
+    # Each call in the twin is one spelling: the calls on lines 2, 4, 5, 7 and
+    # 10 are checked git calls (an alias, a bare `check_output`, `check_call`,
+    # a local lower-case prefix, a name copied from one assigned a git argv);
+    # the last three lines are not (an unchecked run, a checked run of
+    # something else, the helper). A scan reporting every call fails the
+    # second half; the old reading - `subprocess.run` and an upper-case prefix
+    # only - fails the first.
+    wide = ("import subprocess as _sp\n"
+            "_sp.run(['git', 'init'], check=True)\n"
+            "from subprocess import check_output as co\n"
+            "co(['git', 'rev-parse', 'HEAD'])\n"
+            "_sp.check_call(['git', 'add', '-A'])\n"
+            "git = ['git', '-c', 'user.name=t']\n"
+            "_sp.run(git + ['commit'], check=True)\n"
+            "_ini = ['git', 'init', '-q']\n"
+            "again = _ini\n"
+            "_sp.run(again, cwd=root, check=True)\n"
+            "_sp.run(_ini, cwd=root)\n"
+            "_sp.run([sys.executable, 'x.py'], check=True)\n"
+            "_harness.git(root, 'add', '-A')\n")
+    check("the case P125-R156 asks for, locking the behaviour at HEAD (every "
+          ".py in the tests directory is read - the set is the directory's, "
+          "not a list - and none reaches git through a checked subprocess "
+          "call around the fixture helper; a twin spelling each shape the "
+          "scan must read is reported on exactly those lines: %d file(s) "
+          "scanned, bypasses %r, twin %r)"
+          % (len(scanned), bare, bare_git_calls(wide)),
+          len(scanned) > 10 and "test_drive_phase.py" in scanned
+          and "_harness.py" in scanned and bare == {}
+          and bare_git_calls(wide) == [2, 4, 5, 7, 10])
     twin = ("subprocess.run(_GIT + argv, cwd=root, check=True)\n"
             "subprocess.run(['git', '-C', root, 'add', '-A'], check=True)\n"
             "subprocess.run(_GIT + argv, cwd=root, capture_output=True)\n"

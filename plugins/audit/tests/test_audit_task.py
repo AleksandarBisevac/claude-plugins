@@ -181,10 +181,8 @@ def _at_kit(tmp):
             # whatever `init.defaultBranch` the machine's gitconfig carries, so
             # a verb that checks "forks from main" read a different fixture on
             # a runner whose git falls back to its built-in default.
-            subprocess.run(["git", "init", "-q", "-b", "main", proj],
-                           check=True,
-                           stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL)
+            _harness.git(None, "init", "-q", "-b", "main", proj,
+                         prefix=("git",))
         return proj, mpath
 
     def mk_empty(name):
@@ -271,10 +269,10 @@ def _at_kit(tmp):
         return proj, mpath, head.stdout.decode("utf-8", "replace").strip()
 
     def git(proj, *a):
-        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
-                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
-        subprocess.run(["git", "-C", proj] + list(a), check=True, env=env,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # The author and committer identity as config rather than environment:
+        # the same name and address for both, which is all a commit reads.
+        _harness.git(None, *a, prefix=("git", "-C", proj, "-c", "user.name=t",
+                                       "-c", "user.email=t@t"))
 
     return (run, run_on_stdin, base_manifest, mk, mk_empty, task_in, _pin, _unpin,
             _PD_SHA, pd_fixture, pd_repo, git)
@@ -7481,9 +7479,8 @@ def _close_cases(check):
             refuses for exactly that reason."""
             proj, mp = mk_empty(name)
             # Named branch, for the reason `mk()` gives.
-            subprocess.run(["git", "init", "-q", "-b", "main", proj],
-                           check=True, stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL)
+            _harness.git(None, "init", "-q", "-b", "main", proj,
+                         prefix=("git",))
             _git_q(proj, ["add", "-A"])
             _git_q(proj, ["commit", "-qm", "fixture"])
             tree = os.path.join(tmp, name + "-wt")
@@ -9304,13 +9301,12 @@ def _record_cases(check):
         import _branch
 
         def head_of(proj):
-            return subprocess.check_output(
-                ["git", "-C", proj, "symbolic-ref", "--short", "-q", "HEAD"]
-            ).decode().strip()
+            return _harness.git(None, "-C", proj, "symbolic-ref", "--short",
+                                "-q", "HEAD", prefix=("git",)).strip()
 
         def sha_of(proj, ref):
-            return subprocess.check_output(
-                ["git", "-C", proj, "rev-parse", ref]).decode().strip()
+            return _harness.git(None, "-C", proj, "rev-parse", ref,
+                                prefix=("git",)).strip()
 
         def entry_repo(name, manifest=None):
             proj, mp = mk(name, manifest or base_manifest(), git=True)
@@ -11266,9 +11262,8 @@ def _record_cases(check):
                         exist_ok=True)
             with open(os.path.join(rr_proj, rel), "w") as fh:
                 fh.write("def test_x():\n    assert True\n")
-        subprocess.run(["git", "-C", rr_proj, "add", "--"] + rr_suites,
-                       check=True, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL)
+        _harness.git(None, "-C", rr_proj, "add", "--", *rr_suites,
+                     prefix=("git",))
         rr_named = ("the 1 suite file(s) pytest %s, read from its FAILED "
                     "<path> lines" % (_ff_ev.NAMED_FAILING,))
         # A file OUTSIDE the project, real on disk, so an absolute spelling of

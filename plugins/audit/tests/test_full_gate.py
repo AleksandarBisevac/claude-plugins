@@ -18,7 +18,6 @@ answers.
 """
 import json
 import os
-import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -63,15 +62,13 @@ def _full_repo(name, fullgate=("ok",), buildcommands=None):
         json.dump({"meta": meta,
                   "phases": [{"id": "P1", "title": "one", "status": "in_progress",
                              "tasks": []}]}, fh)
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=("git",))
     tops = sorted(set(s.split("/", 1)[0] for s in _TRACKED_SUITES))
     for arg in (["add", "--", "docs", ".claude"] + tops,
                 ["-c", "user.email=fixture@example.com",
                  "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
                  "commit", "-qm", "fixture"]):
-        subprocess.run(["git", "-C", root] + arg, check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _harness.git(None, *arg, prefix=("git", "-C", root))
     return root, mpath
 
 
@@ -203,9 +200,8 @@ _TAIL_BASIS = ("no runner reader named a suite; the failure was read off the "
 
 
 def _git_head(root):
-    return subprocess.run(["git", "-C", root, "rev-parse", "HEAD"],
-                          check=True, stdout=subprocess.PIPE,
-                          universal_newlines=True).stdout.strip()
+    return _harness.git(None, "-C", root, "rev-parse", "HEAD",
+                        prefix=("git",)).strip()
 
 
 def _learn_repo(name):

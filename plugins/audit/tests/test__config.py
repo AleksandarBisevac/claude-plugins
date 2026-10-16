@@ -1214,8 +1214,7 @@ def _cases(check):
         if not shutil.which("git"):
             print("SKIP h3-h7 (git is not on PATH)")
         else:
-            subprocess.run(["git", "init", "-q", str(tmp_h)], check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _harness.git(None, "init", "-q", str(tmp_h), prefix=("git",))
             check("h3 a git repo with no lock -> no verdict",
                   M.manifest_lock_conflict(tmp_h, cfg_h, MAN, MAN, "s") is None)
             lockmod = M._load_lock_lib()
@@ -1320,19 +1319,14 @@ def _cases(check):
               "what keeps a monorepo's gitRoot declaration working when the "
               "project dir is not itself a repo",
               _w3["watched"] is True and "names no working tree" in _w3["basis"])
-        _ini = ["git", "init", "-q"]
-        subprocess.run(_ini, cwd=str(wprim), check=True, capture_output=True,
-                       timeout=20)
-        subprocess.run(["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
-                        "commit", "-q", "--allow-empty", "-m", "base"],
-                       cwd=str(wprim), check=True, capture_output=True,
-                       timeout=20)
-        subprocess.run(["git", "worktree", "add", "-q", str(wlink), "-b", "w"],
-                       cwd=str(wprim), check=True, capture_output=True,
-                       timeout=30)
+        _harness.git(str(wprim), "init", "-q", prefix=("git",), timeout=20)
+        _harness.git(str(wprim), "-c", "user.email=t@t.t", "-c", "user.name=t",
+                     "commit", "-q", "--allow-empty", "-m", "base",
+                     prefix=("git",), timeout=20)
+        _harness.git(str(wprim), "worktree", "add", "-q", str(wlink), "-b", "w",
+                     prefix=("git",), timeout=30)
         wother.mkdir(parents=True, exist_ok=True)
-        subprocess.run(_ini, cwd=str(wother), check=True, capture_output=True,
-                       timeout=20)
+        _harness.git(str(wother), "init", "-q", prefix=("git",), timeout=20)
         _w4 = M.command_tree({"cwd": str(wprim / "pkg")}, wprim, wcfg)
         check("w4 a subdirectory of the watched tree IS the watched tree - git "
               "is asked, not the path separator counted",
@@ -1572,8 +1566,8 @@ def _cases(check):
         for n in range(8):
             (wlink / ("deep%d" % n)).mkdir(parents=True, exist_ok=True)
         (wlink / "nested").mkdir(parents=True, exist_ok=True)
-        subprocess.run(_ini, cwd=str(wlink / "nested"), check=True,
-                       capture_output=True, timeout=20)
+        _harness.git(str(wlink / "nested"), "init", "-q", prefix=("git",),
+                     timeout=20)
         _tm_link = wlink / "via-link"
         _tm_linked = True
         try:

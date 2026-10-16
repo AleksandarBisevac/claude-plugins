@@ -246,8 +246,7 @@ def _shell_cases(check):
           and M.NO_POSIX_SH in g_text
           and d_res["exit"] is None and d_res["error"] == M.NO_POSIX_SH)
     root = _harness.fixture_root("proc-group-nosh-")
-    subprocess.run(["git", "init", "-q", root], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _harness.git(None, "init", "-q", root, prefix=("git",))
     mp = os.path.join(root, "audit-plan.json")
     with open(mp, "w") as fh:
         json.dump({"meta": {"version": 2, "buildCommands": {"lint": "true"}},

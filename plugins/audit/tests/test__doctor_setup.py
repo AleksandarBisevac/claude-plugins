@@ -351,8 +351,7 @@ def _cases(check):
                   "there: %r" % (_detail(rep, "git"),),
                   _levels(rep, "git") == ["FINDING"] and got is None)
 
-            subprocess.run(["git", "init", "-q", tmp], check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _harness.git(None, "init", "-q", tmp, prefix=("git",))
             rep = base.Report()
             got = M.check_git(rep, tmp, {})
             check("ds6 ...and a real repository resolves, RETURNING the toplevel "
@@ -1201,7 +1200,7 @@ def _merge_driver_cases(check):
         repo = os.path.join(tmp, "repo")
         mpath = os.path.join(repo, "docs", "audit", "audit-plan.json")
         os.makedirs(os.path.dirname(mpath))
-        subprocess.run(["git", "init", "-q", repo], check=True)
+        _harness.git(None, "init", "-q", repo, prefix=("git",))
         with open(mpath, "w", encoding="utf-8") as fh:
             json.dump(_manifest(), fh)
 
@@ -1274,7 +1273,7 @@ def _merge_driver_cases(check):
         def put(lines):
             with open(hplan, "w", encoding="utf-8") as fh:
                 fh.write("\n".join(lines) + "\n")
-        subprocess.run(["git", "init", "-q", "-b", "main", hist], check=True)
+        _harness.git(None, "init", "-q", "-b", "main", hist, prefix=("git",))
         put(["{", '  "a": 1', "}"])
         hg("add", "-A")
         hg("commit", "-qm", "base")

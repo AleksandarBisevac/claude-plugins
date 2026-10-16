@@ -4206,16 +4206,14 @@ def _lock_recipe_cases(check):
     try:
         main_tree = os.path.join(tmp, "main")
         linked = os.path.join(tmp, "linked")
-        quiet = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
-        subprocess.run(["git", "init", "-q", main_tree], check=True, **quiet)
-        subprocess.run(["git", "-C", main_tree, "-c", "user.email=a@b", "-c",
-                        "user.name=a", "-c", "commit.gpgsign=false", "commit",
-                        "-q", "--allow-empty", "-m", "base"], check=True, **quiet)
-        subprocess.run(["git", "-C", main_tree, "worktree", "add", "-q", "-b",
-                        "wt", linked], check=True, **quiet)
-        common = subprocess.run(["git", "-C", main_tree, "rev-parse",
-                                 "--git-common-dir"], stdout=subprocess.PIPE,
-                                check=True).stdout.decode().strip()
+        _harness.git(None, "init", "-q", main_tree, prefix=("git",))
+        _harness.git(None, "-C", main_tree, "-c", "user.email=a@b", "-c",
+                     "user.name=a", "-c", "commit.gpgsign=false", "commit",
+                     "-q", "--allow-empty", "-m", "base", prefix=("git",))
+        _harness.git(None, "-C", main_tree, "worktree", "add", "-q", "-b",
+                     "wt", linked, prefix=("git",))
+        common = _harness.git(None, "-C", main_tree, "rev-parse",
+                              "--git-common-dir", prefix=("git",)).strip()
         lock_file = os.path.join(os.path.realpath(os.path.join(main_tree, common)),
                                  "audit-locks", "user-e2e.lock")
         # One shared identity for both runs: the case parallel subagents of one

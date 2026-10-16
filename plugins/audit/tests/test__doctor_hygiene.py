@@ -72,17 +72,14 @@ def _cases(check):
               and "cannot reach version control" in _detail(rep, "hygiene"))
 
         if have_git:
-            subprocess.run(["git", "init", "-q", tmp], check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _harness.git(None, "init", "-q", tmp, prefix=("git",))
             for k, v in (("user.email", "p@example.com"), ("user.name", "P")):
-                subprocess.run(["git", "-C", tmp, "config", k, v], check=True)
+                _harness.git(None, "-C", tmp, "config", k, v, prefix=("git",))
             with open(os.path.join(tmp, "a.py"), "w", encoding="utf-8") as fh:
                 fh.write("x = 1\n")
-            subprocess.run(["git", "-C", tmp, "add", "-A"], check=True,
-                           stdout=subprocess.DEVNULL)
-            subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false",
-                            "commit", "-q", "-m", "i"], check=True,
-                           stdout=subprocess.DEVNULL)
+            _harness.git(None, "-C", tmp, "add", "-A", prefix=("git",))
+            _harness.git(None, "-C", tmp, "-c", "commit.gpgsign=false",
+                         "commit", "-q", "-m", "i", prefix=("git",))
 
             rep = base.Report()
             M.check_locks(rep, tmp, tmp, mrel)
@@ -188,11 +185,10 @@ def _cases(check):
                   _levels(rep, "hygiene") == ["OK"]
                   and "stay out of git (ledger)" in _detail(rep, "hygiene"))
 
-            subprocess.run(["git", "-C", tmp, "add", "-f", ".claude/usage"],
-                           check=True, stdout=subprocess.DEVNULL)
-            subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false",
-                            "commit", "-q", "-m", "leak"], check=True,
-                           stdout=subprocess.DEVNULL)
+            _harness.git(None, "-C", tmp, "add", "-f", ".claude/usage",
+                         prefix=("git",))
+            _harness.git(None, "-C", tmp, "-c", "commit.gpgsign=false",
+                         "commit", "-q", "-m", "leak", prefix=("git",))
             rep = base.Report()
             M.check_local_artifacts(rep, tmp, {}, cfgmod, None, tmp)
             check("dh10 a ledger COMMITTED before the marker existed is what an "
@@ -204,12 +200,10 @@ def _cases(check):
             pidfile = os.path.join(tmp, ".claude", "audit-panel.json")
             with open(pidfile, "w", encoding="utf-8") as fh:
                 json.dump({"port": 1, "token": "t"}, fh)
-            subprocess.run(["git", "-C", tmp, "add", "-f",
-                            ".claude/audit-panel.json"], check=True,
-                           stdout=subprocess.DEVNULL)
-            subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false",
-                            "commit", "-q", "-m", "pid"], check=True,
-                           stdout=subprocess.DEVNULL)
+            _harness.git(None, "-C", tmp, "add", "-f",
+                         ".claude/audit-panel.json", prefix=("git",))
+            _harness.git(None, "-C", tmp, "-c", "commit.gpgsign=false",
+                         "commit", "-q", "-m", "pid", prefix=("git",))
             rep = base.Report()
             M.check_local_artifacts(rep, tmp, {}, cfgmod, None, tmp)
             check("dh11 the panel pidfile gets its OWN row, because its repair "
@@ -232,11 +226,9 @@ def _cases(check):
             with open(os.path.join(journal, "2026-01.a.jsonl"), "w",
                       encoding="utf-8") as fh:
                 fh.write("{}\n")
-            subprocess.run(["git", "-C", tmp, "add", "-A"], check=True,
-                           stdout=subprocess.DEVNULL)
-            subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false",
-                            "commit", "-q", "-m", "j"], check=True,
-                           stdout=subprocess.DEVNULL)
+            _harness.git(None, "-C", tmp, "add", "-A", prefix=("git",))
+            _harness.git(None, "-C", tmp, "-c", "commit.gpgsign=false",
+                         "commit", "-q", "-m", "j", prefix=("git",))
             rep = base.Report()
             M.check_local_artifacts(rep, tmp, {}, cfgmod, None, tmp)
             check("dh13 a TRACKED journal is never reported here. It is the "
@@ -281,12 +273,10 @@ def _cases(check):
                   "git: %r" % ([r["detail"] for r in _log_rows],),
                   _log_rows == [])
 
-            subprocess.run(["git", "-C", tmp, "add", "-f",
-                            ".claude/audit-panel.log"], check=True,
-                           stdout=subprocess.DEVNULL)
-            subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false",
-                            "commit", "-q", "-m", "log"], check=True,
-                           stdout=subprocess.DEVNULL)
+            _harness.git(None, "-C", tmp, "add", "-f",
+                         ".claude/audit-panel.log", prefix=("git",))
+            _harness.git(None, "-C", tmp, "-c", "commit.gpgsign=false",
+                         "commit", "-q", "-m", "log", prefix=("git",))
             rep = base.Report()
             M.check_local_artifacts(rep, tmp, {}, cfgmod, None, tmp)
             _log_rows = [r for r in rep.rows if r["check"] == "hygiene"
@@ -348,12 +338,10 @@ def _cases(check):
             check("dh32 an UNTRACKED pidfile temp draws no row: %r"
                   % ([r["detail"] for r in _tmp_rows],), _tmp_rows == [])
 
-            subprocess.run(["git", "-C", tmp, "add", "-f",
-                            ".claude/audit-panel.json.tmp-abc"], check=True,
-                           stdout=subprocess.DEVNULL)
-            subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false",
-                            "commit", "-q", "-m", "tmp"], check=True,
-                           stdout=subprocess.DEVNULL)
+            _harness.git(None, "-C", tmp, "add", "-f",
+                         ".claude/audit-panel.json.tmp-abc", prefix=("git",))
+            _harness.git(None, "-C", tmp, "-c", "commit.gpgsign=false",
+                         "commit", "-q", "-m", "tmp", prefix=("git",))
             rep = base.Report()
             M.check_local_artifacts(rep, tmp, {}, cfgmod, None, tmp)
             _tmp_rows = [r for r in rep.rows if r["check"] == "hygiene"

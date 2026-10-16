@@ -11,7 +11,6 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import os
-import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -1236,13 +1235,11 @@ def _fr_repo(root):
           "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
 
     def sh(*args):
-        subprocess.run(git + list(args), cwd=root, check=True,
-                       capture_output=True, timeout=30)
+        _harness.git(root, *args, prefix=git, timeout=30)
 
     def rev():
-        out = subprocess.run(git + ["rev-parse", "HEAD"], cwd=root, check=True,
-                             capture_output=True, timeout=30)
-        return out.stdout.decode("utf-8").strip()
+        return _harness.git(root, "rev-parse", "HEAD", prefix=git,
+                            timeout=30).strip()
 
     sh("init", "-q")
     with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
