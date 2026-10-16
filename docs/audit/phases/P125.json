@@ -7645,7 +7645,12 @@
       "fixes": [
         "P125-R84"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-16T00:31:31Z.5b1a27",
+        "status": "passed",
+        "at": "2026-10-16T00:31:31Z"
+      }
     },
     {
       "id": "P125.99-0h5",
@@ -9449,7 +9454,7 @@
     {
       "id": "P125.125-0h5",
       "title": "Every git process in the sweep runs with background maintenance off, set once in the runner's environment",
-      "status": "in_progress",
+      "status": "done",
       "description": "Follows P125.122 (F690/F679): git 2.53 spawns a detached 'git maintenance run --auto' after fixture commits; P125.122 switched it off in the shared and five suite-local prefixes, but 72 test files call git directly, including the test__invariants._git clone that failed in CI 38792231809. Set it once in the sweep runner's child environment (GIT_CONFIG_COUNT/KEY_n/VALUE_n beside GIT_CONFIG_NOSYSTEM), measured with GIT_TRACE on a suite outside the prefixes, and keep isolation_drift's documents in step.",
       "files": [
         "tools/sweep-selftests.py",
@@ -9484,14 +9489,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0b6218a398dc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/sweep-selftests.py: GIT_ENV now carries GIT_CONFIG_COUNT=3 with KEY_1/VALUE_1 maintenance.auto=false and KEY_2/VALUE_2 gc.auto=0 beside user.useConfigOnly; new is_ambient_git_config() (regex _GIT_CONFIG_PAIR_RE) drops the caller's own GIT_CONFIG_COUNT/KEY_n/VALUE_n in ambient_env() before the runner's set is laid on, so the runner's set is all of it. New cases: gm0 (titled with the tests.add clause; the caller's count 6, an opposite maintenance.auto at index 1 and a stray index 5 all gone, each key counted exactly once), gm1/gm2 (a run_one child that calls bare git, traces a commit: 0 maintenance spawns with the runner env and its git reads maintenance.auto back as false; deny twin with the protocol pairs removed plus maintenance.autoDetach=false spawns exactly 1), gm3 (_harness.NO_AUTO_MAINTENANCE keys are a subset of the runner set), gm4 (gate-parity isolation_drift over the real tree: the git config family holds both keys and has no prose finding). CLAUDE.md, CONTRIBUTING.md and the _harness.fixture_root() docstring name `maintenance.auto`, `gc.auto` and `GIT_CONFIG_COUNT`; the _harness NO_AUTO_MAINTENANCE comment says it stays for suites run outside the sweep. Outside the declared files: plugins/audit/tests/test_commit_task_work.py _traced_commit_spawns now strips the protocol pairs from its env, because the full sweep turned its deny twin ctw-nm2 red (spawns []) once the runner switched maintenance off; the plan gate allowed the edit. tools/gate-parity.py needed no change: filtered_env_families() already derives the family from GIT_ENV. Runs (worktree): full sweep exit 0, 335/335 files ok, 16460 cases (first run exit 1 on ctw-nm2, before the fix above); --encoding cp1252 exit 0, 335/335; --selftest exit 0, 104/104; gate-parity.py exit 0; gate-parity --selftest exit 0 132/132; ruff exit 0; vermin exit 0. Git versions: CI run 38823888314 (base SHA f645b245) checkout logs print git 2.55.0 on ubuntu-latest and 2.56.0.windows.2 on windows-latest, both past 2.31; gm1 also asks the child's own git to read maintenance.auto back, so an older git fails there. Measurement (GIT_TRACE=<file> python3 tools/sweep-selftests.py plugins/audit/tests/test__invariants.py): HEAD runner from a git archive export 199 'run_command: git maintenance run' lines, this runner 1 (195 commits in each trace). The one left is git receive-pack in a local push: the local transport runs 'unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS GIT_PREFIX' before receive-pack, so neither this set nor any -c prefix reaches the remote side. A probe showed GIT_CONFIG_GLOBAL pointing at a file does reach it (0 spawns), but that changes how the home channel works, so I did not do it here.",
+        "descriptive": "Every git the sweep starts runs with background maintenance off, set once in the runner; one push-side spawn per local push is left over and needs a follow-up decision."
       },
       "startedAt": "2026-10-15T23:29:06Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T00:21:07Z",
+      "verifiedBy": [
+        "every sweep child's environment carries maintenance.auto=false and gc.auto=0 through GIT_CONFIG_COUNT, so no git process in any suite spawns detached maintenance, and the isolation documents name the family (gm0 ...)",
+        "gm1",
+        "gm2",
+        "gm3",
+        "gm4"
+      ],
       "reviewPerTask": "phase",
       "testEvidence": {
         "runId": "2026-10-16T00:21:03Z.35cd6f",
@@ -9503,7 +9514,18 @@
           "at": "2026-10-16T00:10:43Z",
           "text": "files widened by plugins/audit/tests/test_commit_task_work.py: widened by the integration answer"
         }
-      ]
+      ],
+      "intentCheck": {
+        "answer": "deferred",
+        "commit": "0b6218a398dc",
+        "at": "2026-10-16T00:21:07Z"
+      },
+      "redFirst": {
+        "at": "2026-10-15T23:59:37Z",
+        "basis": "`python3 tools/sweep-selftests.py --selftest` in a throwaway tree at HEAD exited 1 with 4 of 104 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code, the task's run with its inline suite tools/sweep-selftests.py laid over as HEAD's copy plus its 4 test hunk(s), 5 other hunk(s) held at HEAD), each passing with the working tree's implementation - every sweep child's environment carries maintenance.auto=false and gc.auto=0 through GIT_CONFIG_COUNT, so no git process in any suite spawns detached maintenance, and the isolation documents name the family (gm0 the runner's set is the whole of the protocol a child sees - both keys once each beside the identity refusal, the count covering exactly them, and none of the caller's pairs left over): {'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_1': 'maintenance.auto', 'GIT_CONFIG_VALUE_1': 'true', 'GIT_CONFIG_KEY_5': 'core.hooksPath', 'GIT_CONFIG_VALUE_5': '/caller', 'GIT_CONFIG_KEY_0': 'user.useConfigOnly', 'GIT_CONFIG_VALUE_0': 'true'} (house FAIL): SELFTEST FAILED: 100/104 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
     },
     {
       "id": "P125.126-0h5",

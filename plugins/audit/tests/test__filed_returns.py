@@ -1068,10 +1068,35 @@ def _journaled_cases(check):
           "about checking one: %r" % (nothing,),
           nothing == (None, None, None, None))
 
+    # A DELETED RETURN whose filing row is in the journal. rj9 holds the
+    # no-row half, and `other` below is the over-fire direction: a row for
+    # ANOTHER return must not turn an unfiled one into a problem.
+    os.remove(path)
+    gone = M.read_filed_return_checked(path, [row], root)
+    bare = M.read_filed_return_checked(path, [dict(row, stateHash=None)], root)
+    other = M.read_filed_return_checked(
+        M.return_path(root, {"id": "P1.7", "startedAt": _START}, "executor"),
+        [row], root)
+    check("a filed return whose file was deleted reads as a problem naming "
+          "the filing row's digest and the missing file, never as unfiled "
+          "(rj10 %r; a row recording no digest still refuses: %r; a row for "
+          "another return refuses nothing: %r)" % (gone, bare[2], other),
+          gone[0] is None and gone[1] is None and gone[3] is None
+          and gone[2] is not None and row["stateHash"] in gone[2]
+          and path in gone[2] and "missing" in gone[2]
+          and M.filed_mismatch(path, [row], root) == gone[2]
+          and bare[2] is not None and path in bare[2] and "missing" in bare[2]
+          and other == (None, None, None, None))
+    claims, why = M.claims_from_return(root, task, [row], root)
+    check("rj10c `claims_from_return` reads through the checked read, so a "
+          "deleted return is a problem for the claims too, not an absence: %r"
+          % ((claims, why),),
+          claims is None and why is not None and row["stateHash"] in why)
+
     pin_path = os.path.join(root, "pin.txt")
     with open(pin_path, "w", encoding="utf-8") as fh:
         fh.write("pin\n")
-    check("rj6 `return_digest` spells a file's sha256 exactly as "
+    check("rj6`return_digest` spells a file's sha256 exactly as "
           "`_journal_io.file_hash` would - duplicated because that module is "
           "this one's own layer-mate, so the two are pinned equal here "
           "rather than left to drift apart in silence: %r"

@@ -13258,6 +13258,37 @@ def _return_cases(check):
           == "filed technical"
           and ("executor return: %s" % (_fr.UNCHECKED_LEAD,)) in rj4[1])
 
+    # A DELETED return whose filing row is in the journal is a missing file,
+    # not an unfiled one: the reviewer's recorded `diverges` must not be
+    # deletable into a `matches` close.
+    def deleted_close(name, role, *flags):
+        pr, mp = project(name)
+        file_return(pr, "executor", _fr_executor())
+        file_return(pr, "reviewer", _fr_reviewer("diverges"))
+        for each in ("executor", "reviewer"):
+            _journal_io.append_from_cli(pr, _fr.filed_return_row(
+                derived(pr, each), pr, "P1.1", each, "proved"))
+        gone = derived(pr, role)
+        os.remove(gone)
+        held = read(mp)
+        res = close(pr, *flags)
+        return (res, os.path.basename(gone),
+                read(mp) == held and task(mp).get("status") == "in_progress")
+
+    dr_rev = deleted_close("dr-fj-del-rev", "reviewer", "--intent", "matches")
+    dr_exe = deleted_close("dr-fj-del-exe", "executor", "--from-return")
+    dr_exe_plain = deleted_close("dr-fj-del-exe-plain", "executor",
+                                 "--intent", "matches")
+    check("a task whose filed reviewer or executor return was deleted cannot "
+          "be closed, and the refusal names the missing return (fj4 reviewer "
+          "%r; executor under --from-return %r; executor, plain form %r)"
+          % ((dr_rev[0][0], dr_rev[0][1][:300]),
+             (dr_exe[0][0], dr_exe[0][1][:300]),
+             (dr_exe_plain[0][0], dr_exe_plain[0][1][:300])),
+          all(res[0][0] == M.E_USAGE and "missing" in res[0][1]
+              and res[1] in res[0][1] and res[2]
+              for res in (dr_rev, dr_exe, dr_exe_plain)))
+
     proj, mpath = project("dr-fr-mixed")
     file_return(proj, "executor", _fr_executor())
     file_return(proj, "reviewer", _fr_reviewer())

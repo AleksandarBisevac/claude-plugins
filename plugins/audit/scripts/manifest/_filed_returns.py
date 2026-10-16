@@ -734,6 +734,15 @@ def refiling_refusal(rows, path, checkout):
                row.get("stateHash") or "none recorded"))
 
 
+def _missing_problem(path, recorded):
+    """Why a return the journal recorded filed is refused when its file is
+    gone: deleting it undoes nothing the row recorded, and reading it as
+    unfiled would let a close fall through to a rule meant for a review nobody
+    ran."""
+    return ("%s is missing: the journal recorded it filed (digest %s) and the "
+            "file is gone" % (path, recorded or "none recorded"))
+
+
 def filed_digest_problem(path, row):
     """None, or why `path` is refused against the `RETURN_FILED_ACTION` row
     that named it: the row's own recorded `stateHash` and what `path` hashes to
@@ -747,6 +756,8 @@ def filed_digest_problem(path, row):
     present = return_digest(path)
     if present == recorded:
         return None
+    if present is None:
+        return _missing_problem(path, recorded)
     return ("%s has changed since the journal recorded it filed: the row "
             "carries %s and it now hashes to %s" % (path, recorded, present))
 
@@ -785,7 +796,9 @@ def read_filed_return_checked(path, rows, checkout):
     journal already carries for it. THE READ EVERY CLOSER MAKES -
     `plain_read_violations` reports a closer reaching the plain one - so a
     return edited after it was filed is a problem, never read as it now stands
-    with nothing to say so.
+    with nothing to say so. A return whose file is GONE while a filing row
+    names it is a problem too (the row's digest and the missing file), never
+    four Nones: only a return no row names reads as unfiled.
 
     `rows` is the journal's full read (`_journal_io.read_all`), or None when the
     caller could not read it; this module may not import `_journal_io`, so the
@@ -796,6 +809,11 @@ def read_filed_return_checked(path, rows, checkout):
     than being refused or passing as checked."""
     text, body, problem = read_filed_return(path)
     if text is None:
+        if problem is None and not (path and os.path.isfile(path)):
+            gone = already_filed_row(rows, path, checkout)
+            if gone is not None:
+                return None, None, _missing_problem(
+                    path, gone.get("stateHash")), None
         return text, body, problem, None
     row = already_filed_row(rows, path, checkout)
     if row is None or not row.get("stateHash"):
