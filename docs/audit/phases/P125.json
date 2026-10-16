@@ -10293,11 +10293,14 @@
       "files": [
         "SECURITY.md",
         "plugins/audit/schema/audit-config.schema.json",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__panel_settings.py"
       ],
       "tests": {
         "mode": "tdd",
-        "add": [],
+        "add": [
+          "plugins/audit/tests/test__panel_settings.py: no shipped document or schema text states the retired ladder rung in any spelling (no phase in_progress, nothing running, but no phase running) as the tier for a plan with phases"
+        ],
         "expectRedFirst": true,
         "gate": [
           "selftests",
@@ -10361,9 +10364,9 @@
         ".github/workflows/ci.yml"
       ],
       "tests": {
-        "mode": "tdd",
+        "mode": "gate-only",
         "add": [],
-        "expectRedFirst": true,
+        "expectRedFirst": false,
         "gate": [
           "selftests",
           "validate",
