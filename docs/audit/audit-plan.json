@@ -2295,7 +2295,8 @@
       "P123.21",
       "P123.38",
       "P123.50-64p",
-      "P125.41-0h5"
+      "P125.41-0h5",
+      "P125.142-0h5"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -2701,7 +2702,8 @@
       "P125.8",
       "P125.19",
       "P125.22",
-      "P125.45-0h5"
+      "P125.45-0h5",
+      "P125.142-0h5"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
