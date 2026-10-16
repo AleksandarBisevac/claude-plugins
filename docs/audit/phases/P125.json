@@ -1,7 +1,7 @@
 {
   "id": "P125",
   "title": "Process simplification and cost: affected-test gates, converging reviews, honest prices",
-  "status": "in_progress",
+  "status": "done",
   "description": "Merges the handoff's phase 2 (process simplification, sketch section 0) and phase 4 (cost: F597 and F577 first, then research N1-N5, then sketch section 3 incl. 3a) into one phase so it is reviewed once. Order inside the phase follows the handoff: the meter's dedup (F597) lands before any task that produces or prints a cost figure, because every figure after it would otherwise be biased in the plugin's favour; the price table (F577/N1) lands before Haiku-first review (N2) and the CI cost gate, because Haiku 5.5 is priced at `_default` today. Process items: affected-test gates per task with the full gate once per phase (F596, incl. its e2e extension), derived follower scope, review convergence (F605), one-command release. Cost items: one price table with effective dates and record-time stamping (3a), the CLI's costUSD beside the plugin's reading, the reviewer's diff computed once (N5), Haiku-first review behind a config key (N2), the git-snapshot report (N4), maxTurns caps (N12), cache-friendly dispatch prompts and briefs, an enforced one-line hand-back (F567), a CI cost regression gate over recorded sessions, and a design-and-measurement task only for running the phase cycle as a plugin Workflow (N3, implementation needs a paid probe). F575 is not included: it was addressed by P119.7 and P121.12. Prices were verified against Anthropic's pricing and models pages on 2026-10-10 (quoted in openChoices). No task makes a paid model call. Open choices settled by the orchestrator under the user's overnight mandate (2026-10-10), each the structurally correct option: one price table living in hooks/_config.py with _usage_core deriving it; no shipped _default row (a project-declared one is still honoured); effectiveFrom = the date the plugin first read the rate, older rows labelled; ship the published rate and show the CLI reading beside it, calling neither the bill; a carried low goes to a pending task in one plan-level carry-forward phase; Haiku-first review off by default behind review.cascade; e2e selection = runner related list + changed list + meta.coupling, else every spec with the reason printed; followers for user projects from meta.followers.command plus F599 companions; hand-backs enforced by a SubagentStop hook after a payload probe; the CI cost gate reads redacted committed recordings; maxTurns = 2x the largest measured request count with the command beside it; F575 closed in the register after one timed run.",
   "desiredOutcome": "A task gate runs what the change can break, sign-off converges in at most the configured rounds, and every cost figure is priced at the rate in effect when it was recorded.",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "96c8de25dc13bd16be4defc85290434bfc2752ae",
   "branch": "audit/p125-process-simplification-and-cos",
-  "mergedAt": null,
+  "mergedAt": "2026-10-16T16:39:22Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -12225,5 +12225,6 @@
     "runId": "2026-10-16T16:39:13Z.f2f73d",
     "status": "passed",
     "at": "2026-10-16T16:39:13Z"
-  }
+  },
+  "mergedHead": "edee7b74840ef88233ab86c741326e7d4f6a0fb4"
 }
