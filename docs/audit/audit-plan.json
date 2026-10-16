@@ -4689,7 +4689,8 @@
       "P125.72-0h5",
       "P125.79-0h5",
       "P125.86-0h5",
-      "P125.89-0h5"
+      "P125.89-0h5",
+      "P125.127-0h5"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -5845,7 +5846,8 @@
       "P125.72-0h5",
       "P125.79-0h5",
       "P125.86-0h5",
-      "P125.89-0h5"
+      "P125.89-0h5",
+      "P125.127-0h5"
     ],
     "plugins/audit/tests/test_audit_status.py": [
       "P25.2",
