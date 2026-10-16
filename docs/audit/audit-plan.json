@@ -1137,7 +1137,8 @@
       "P123.20",
       "P125.2",
       "P128.9-0h5",
-      "P128.10-0h5"
+      "P128.10-0h5",
+      "P125.139-0h5"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -1981,7 +1982,8 @@
       "P128.11-0h5",
       "P128.6-0h5",
       "P125.19",
-      "P125.106-0h5"
+      "P125.106-0h5",
+      "P125.139-0h5"
     ],
     "plugins/audit/commands/audit.md": [
       "P1.6",
@@ -4125,7 +4127,8 @@
       "P125.112-0h5",
       "P125.88-0h5",
       "P128.31-0h5",
-      "P128.37-0h5"
+      "P128.37-0h5",
+      "P125.139-0h5"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -6087,7 +6090,8 @@
       "P128.24-0h5",
       "P128.31-0h5",
       "P128.37-0h5",
-      "P125.136-0h5"
+      "P125.136-0h5",
+      "P125.139-0h5"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -8693,7 +8697,8 @@
       "P125.116-0h5",
       "P128.32-0h5",
       "P128.35-0h5",
-      "P125.128-0h5"
+      "P125.128-0h5",
+      "P125.139-0h5"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -8797,7 +8802,8 @@
       "P125.131-0h5",
       "P125.134-0h5",
       "P125.136-0h5",
-      "P125.128-0h5"
+      "P125.128-0h5",
+      "P125.139-0h5"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6",
@@ -8833,7 +8839,8 @@
       "P125.86-0h5",
       "P125.98-0h5",
       "P125.123-0h5",
-      "P125.91-0h5"
+      "P125.91-0h5",
+      "P125.139-0h5"
     ],
     "plugins/audit/tests/test__filed_returns.py": [
       "P118.3",
@@ -8862,7 +8869,8 @@
       "P125.71-0h5",
       "P125.86-0h5",
       "P125.98-0h5",
-      "P125.123-0h5"
+      "P125.123-0h5",
+      "P125.139-0h5"
     ],
     "plugins/audit/agents/guide.md": [
       "P118.9",
