@@ -1191,8 +1191,10 @@
         "severity": "med",
         "file": ".github/workflows/ci.yml:134,205",
         "issue": "contradicts task clause \"Citations survive there: .github/workflows/ci.yml:134,468,480,561,735,1068,1107\". The diff removes the ids at 468, 480, 561, 735, 1068 and 1107 (and at 745, 747, 907 and 983, which the widened lint found). It leaves line 134 (`- name: F117 - what os.kill(pid, 0) does on Windows (a MEASUREMENT, not a gate)`) and line 205 (`echo \"F117: panel-server._pid_alive() asks os.kill(pid, 0). ...\"`) as they were. Both are still at HEAD fb733fc6: `git grep` over every .yml/.yaml/.toml/.css/.tape/.gitignore/.gitattributes file at HEAD finds the fault shape on these two lines and nowhere else. The executor disclosed this and gave the reason that the lines are a YAML value and shell output, not comments, so the comment lint does not read them. That is a fair account of what the lint can see, but the task named :134 as a citation that survives. A step name and an echo line are also more public than a comment: they appear on every CI run page and in every log. The .py side of the same scan already reads every string literal for this reason (`_py_other_literal_citations`).",
-        "resolution": "Swap the id for the constraint it stands for, in the step name and the echo. For example `- name: what os.kill(pid, 0) does on Windows (a MEASUREMENT, not a gate)` and `echo \"panel-server._pid_alive() asks os.kill(pid, 0). On this runner:\"`. Then confirm with `git grep -nP '\\bF(?:\\d{1,4}|-[A-Z]?-?\\d{1,4})[a-z]?\\b' -- '*.yml'` that no fault-shaped token is left. No change to the lint is needed.",
-        "fixTask": "P125.133-0h5"
+        "resolution": "fixed in P125.133-0h5 (10d7eee58ec9): Swap the id for the constraint it stands for, in the step name and the echo. For example `- name: what os.kill(pid, 0) does on Windows (a MEASUREMENT, not a gate)` and `echo \"panel-server._pid_alive() asks os.kill(pid, 0). On this runner:\"`. Then confirm with `git grep -nP '\\bF(?:\\d{1,4}|-[A-Z]?-?\\d{1,4})[a-z]?\\b' -- '*.yml'` that no fault-shaped token is left. No change to the lint is needed.",
+        "fixTask": "P125.133-0h5",
+        "commit": "10d7eee58ec9",
+        "status": "fixed"
       },
       {
         "id": "P125-R146",
@@ -1327,7 +1329,7 @@
         "resolution": "Run the call through Popen with stdout/stderr sent to scratch files, or kill and then communicate(timeout=<short>) and fall back to closing the pipes, so the timeout bounds the call on both platforms."
       }
     ],
-    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 51 with a recorded fix commit]"
+    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 52 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -10458,7 +10460,7 @@
     {
       "id": "P125.133-0h5",
       "title": "fix P125-R145: contradicts task clause \"Citations survive there: .github/work...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause \"Citations survive there: .github/workflows/ci.yml:134,468,480,561,735,1068,1107\". The diff removes the ids at 468, 480, 561, 735, 1068 and 1107 (and at 745, 747, 907 and 983, which the widened lint found). It leaves line 134 (`- name: F117 - what os.kill(pid, 0) does on Windows (a MEASUREMENT, not a gate)`) and line 205 (`echo \"F117: panel-server._pid_alive() asks os.kill(pid, 0). ...\"`) as they were. Both are still at HEAD fb733fc6: `git grep` over every .yml/.yaml/.toml/.css/.tape/.gitignore/.gitattributes file at HEAD finds the fault shape on these two lines and nowhere else. The executor disclosed this and gave the reason that the lines are a YAML value and shell output, not comments, so the comment lint does not read them. That is a fair account of what the lint can see, but the task named :134 as a citation that survives. A step name and an echo line are also more public than a comment: they appear on every CI run page and in every log. The .py side of the same scan already reads every string literal for this reason (`_py_other_literal_citations`).\n\nResolution asked: Swap the id for the constraint it stands for, in the step name and the echo. For example `- name: what os.kill(pid, 0) does on Windows (a MEASUREMENT, not a gate)` and `echo \"panel-server._pid_alive() asks os.kill(pid, 0). On this runner:\"`. Then confirm with `git grep -nP '\\bF(?:\\d{1,4}|-[A-Z]?-?\\d{1,4})[a-z]?\\b' -- '*.yml'` that no fault-shaped token is left. No change to the lint is needed.",
       "files": [
         ".github/workflows/ci.yml"
@@ -10486,13 +10488,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "10d7eee58ec9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Edited .github/workflows/ci.yml only: line 134 step name now '- name: what os.kill(pid, 0) does on Windows (a MEASUREMENT, not a gate)'; line 205 echo now 'echo \"panel-server._pid_alive() asks os.kill(pid, 0). On this runner:\"'. git grep -nP fault-shape over '*.yml' printed nothing (exit 1 = no match). Step name referenced elsewhere only in review evidence/manifest text (docs/audit/...), no test pins it. python3 tools/gate-parity.py exit 0. python3 tools/sweep-selftests.py exit 0 (335/335 files ok, 16472 cases). Other brief gate commands not run (runsGate own-tests; nothing of its own).",
+        "descriptive": "CI step name and log line no longer carry the fault id; constraint stated instead."
       },
       "startedAt": "2026-10-16T08:38:53Z",
-      "completedAt": null,
+      "completedAt": "2026-10-16T09:30:30Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -10516,12 +10518,23 @@
         "runId": "2026-10-16T09:30:28Z.5f7c40",
         "status": "passed",
         "at": "2026-10-16T09:30:28Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "10d7eee58ec9",
+        "at": "2026-10-16T09:30:30Z",
+        "basis": "a fix task for P125-R145: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task, expectRedFirst false; no test owed",
+        "at": "n/a"
       }
     },
     {
       "id": "P125.134-0h5",
       "title": "fix P125-R147: contradicts task clause (3) 'run the drive and integrate suite...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "contradicts task clause (3) 'run the drive and integrate suites with LC_ALL=C PYTHONUTF8=0 ... and add that run as a case', which the fix task quotes. The fix task's text names two gaps: 'The integrate suite (test_integrate_task.py) and the other drive blocks have no case.' The diff closes only the integrate half (_integrate_ascii_case runs test_integrate_task.py --selftest whole under ASCII_ENV). The drive suite under the ASCII locale is still only ASCII_BLOCK = 'fm-block'. The executor's own reasoning for choosing option (a) is that the sweep's --encoding pass 'pins no locale on Windows'. That reasoning applies just as much to the drive suite's other blocks, so on Windows those blocks get no ASCII run, and nothing records where they are covered. The technical outcome admits this ('The drive suite's other blocks are still not re-run under ASCII'), but the descriptive claim says 'closing the clause-3 gap', which overstates what the diff does.\n\nResolution asked: Pick one. (1) Re-run the drive suite's remaining stages, not al-block itself (it would recurse), under ASCII_ENV through _harness.run_stage, as fm-block is run. (2) Or state in _ascii_locale_cases's docstring, beside the ASCII_BLOCK comment, that the sweep's --encoding pass is the cover for the drive suite's other blocks on POSIX and that nothing covers them on Windows, and correct the descriptive claim to match.",
       "files": [
         "plugins/audit/tests/test_drive_phase.py"
@@ -10549,14 +10562,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-16T09:30:32Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -10571,16 +10584,41 @@
       ],
       "fixes": [
         "P125-R147"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.135-0h5",
       "title": "fix P125-R151: `_cli_cost_payload` wraps the CLI-vs-plugin comparison in `exc...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "`_cli_cost_payload` wraps the CLI-vs-plugin comparison in `except Exception: return []`. In this same payload, `[]` means 'every recorded CLI figure agreed with the plugin's': the browse note renders nothing for an empty list (`if(... !diff.length) return null`). So a comparison that raised reads on the panel as agreement, a silent pass. At HEAD the report's loader handles the same call the other way. `_usage_load._cli_cost` docstring: 'None, not `[]`: an empty list says every recorded CLI figure agreed, and a comparison that raised has said nothing of the kind', and the report prints the reason. The panel still collapses the failure to `[]`, even though its HEAD docstring says 'The report carries the same list, so the two surfaces cannot disagree'. The two surfaces do disagree on exactly this case. The new test (test__panel_usage.py `_cli_cost_cases`) covers only the success path, so nothing can see it.\n\nResolution asked: Return `(None, '<ExcType>: <msg>')` from the panel, as `_usage_load._cli_cost` does. Ship `cliCost: null` plus a `cliCostReason` key, declared in `_usage_shape`. Have `browseCliNote` (and the usage-view.js line) print the could-not-compare sentence with that reason when `cliCost` is null. Add a case that makes `ul.cli_cost_entries` raise and asserts that the payload carries None plus the reason, not `[]`.",
       "files": [
         "plugins/audit/scripts/panel/_panel_usage.py",
-        "plugins/audit/tests/test__panel_usage.py"
+        "plugins/audit/tests/test__panel_usage.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/scripts/report/_usage_load.py",
+        "plugins/audit/scripts/ui/panel/browse-dialog.js",
+        "tools/ui-tests/usage-edges.test.mjs",
+        "plugins/audit/tests/test_usage_ledger.py",
+        "plugins/audit/tests/test__usage_load.py",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
       ],
       "tests": {
         "mode": "tdd",
@@ -10605,14 +10643,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-16T09:30:35Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -10627,7 +10665,8 @@
       ],
       "fixes": [
         "P125-R151"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.136-0h5",
@@ -10687,7 +10726,7 @@
     {
       "id": "P125.137-0h5",
       "title": "fix P125-R160: contradicts task clause 'Find the platform difference ... A ca...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "contradicts task clause 'Find the platform difference ... A case pins platform independence': payload() still serves \"schemas\": dict(SCHEMAS), and SCHEMAS is built with os.path.join at import. On Windows it serialises as schema\\\\audit-config.schema.json and schema\\\\audit-plan.schema.json, 2 bytes larger (probe: 133604 native, 133606 with Windows-spelled SCHEMAS). These are exactly the 2 bytes of CI's 200001 that the claim left unexplained. p5's backslash build cannot see them, because _backslash_payload_bytes swaps M.os at call time, after SCHEMAS was bound with the real separator. The payload is still platform-dependent, and the case meant to pin that passes over it.\n\nResolution asked: Spell SCHEMAS with '/' (load_schema already joins it under root, which opens on both platforms), as was done for the agent card's file. Make the platform case see module-level constants too: rebuild the payload with the module re-imported under the shim, or assert that json.dumps(payload()) contains no backslash-separated plugin path.",
       "files": [
         "plugins/audit/scripts/config/_help.py",
@@ -10716,14 +10755,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-16T09:30:37Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -10742,7 +10781,8 @@
       ],
       "fixes": [
         "P125-R160"
-      ]
+      ],
+      "reviewPerTask": "phase"
     },
     {
       "id": "P125.138-0h5",
