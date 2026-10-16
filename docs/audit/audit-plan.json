@@ -894,7 +894,8 @@
       "P127.6-bgr",
       "P127.8-bgr",
       "P128.7-0h5",
-      "P125.47-0h5"
+      "P125.47-0h5",
+      "P125.99-0h5"
     ],
     ".gitignore": [
       "P4.4",
@@ -1566,7 +1567,8 @@
       "P125.75-0h5",
       "P125.105-0h5",
       "P125.107-0h5",
-      "P125.81-0h5"
+      "P125.81-0h5",
+      "P125.99-0h5"
     ],
     "docs/design/audit-concurrency-report.md": [
       "P60.3"
@@ -1615,7 +1617,8 @@
       "P125.75-0h5",
       "P125.105-0h5",
       "P125.107-0h5",
-      "P125.81-0h5"
+      "P125.81-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots": [
       "P53.9",
@@ -1667,7 +1670,8 @@
       "P125.75-0h5",
       "P125.105-0h5",
       "P125.107-0h5",
-      "P125.81-0h5"
+      "P125.81-0h5",
+      "P125.99-0h5"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
@@ -1694,7 +1698,8 @@
       "P125.75-0h5",
       "P125.105-0h5",
       "P125.107-0h5",
-      "P125.81-0h5"
+      "P125.81-0h5",
+      "P125.99-0h5"
     ],
     "examples/acme-store/acme-store-audit.md": [
       "P13.3",
@@ -1711,7 +1716,8 @@
       "P125.75-0h5",
       "P125.105-0h5",
       "P125.107-0h5",
-      "P125.81-0h5"
+      "P125.81-0h5",
+      "P125.99-0h5"
     ],
     "examples/acme-store/audit-plan.json": [
       "P50.3",
@@ -4748,7 +4754,8 @@
     "plugins/audit/scripts/ui/panel-css/status-colours.css": [
       "P32.7",
       "P80.15-rtb",
-      "P109.1"
+      "P109.1",
+      "P125.99-0h5"
     ],
     "plugins/audit/scripts/ui/panel.css": [
       "P11.1"
@@ -4807,7 +4814,8 @@
     ],
     "plugins/audit/scripts/ui/report-css/badges.css": [
       "P32.7",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P125.99-0h5"
     ],
     "plugins/audit/scripts/ui/report.css": [
       "P11.2"
@@ -7336,7 +7344,8 @@
       "P125.26",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.81-0h5"
+      "P125.81-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/authors.png": [
       "P84.7-791",
@@ -7358,7 +7367,8 @@
       "P125.26",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.81-0h5"
+      "P125.81-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/dark.png": [
       "P84.7-791",
@@ -7380,7 +7390,8 @@
       "P125.26",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.81-0h5"
+      "P125.81-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/demo-gate.gif": [
       "P84.7-791",
@@ -7413,7 +7424,8 @@
       "P125.26",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.81-0h5"
+      "P125.81-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/filtered.png": [
       "P84.7-791",
@@ -7435,7 +7447,8 @@
       "P125.26",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.81-0h5"
+      "P125.81-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/filters.png": [
       "P84.7-791",
@@ -7457,7 +7470,8 @@
       "P125.26",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.81-0h5"
+      "P125.81-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/mobile.png": [
       "P84.7-791",
@@ -7479,7 +7493,8 @@
       "P125.26",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.81-0h5"
+      "P125.81-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/overview.png": [
       "P84.7-791",
@@ -7501,7 +7516,8 @@
       "P125.26",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.81-0h5"
+      "P125.81-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/panel-appearance.png": [
       "P80.8",
@@ -7530,7 +7546,8 @@
       "P125.56-0h5",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/panel-blocks.png": [
       "P80.8",
@@ -7559,7 +7576,8 @@
       "P125.56-0h5",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/panel-composition-expanded.png": [
       "P80.8",
@@ -7588,7 +7606,8 @@
       "P125.56-0h5",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/panel-composition.png": [
       "P80.8",
@@ -7617,7 +7636,8 @@
       "P125.56-0h5",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/panel-confirm.png": [
       "P80.8",
@@ -7646,7 +7666,8 @@
       "P125.56-0h5",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/panel-dark.png": [
       "P80.8",
@@ -7675,7 +7696,8 @@
       "P125.56-0h5",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/panel-gate.png": [
       "P80.8",
@@ -7704,7 +7726,8 @@
       "P125.56-0h5",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/panel-guards.png": [
       "P80.8",
@@ -7733,7 +7756,8 @@
       "P125.56-0h5",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/panel-help.png": [
       "P80.8",
@@ -7762,7 +7786,8 @@
       "P125.56-0h5",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/panel-mobile.png": [
       "P80.8",
@@ -7791,7 +7816,8 @@
       "P125.56-0h5",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/panel-monthly.png": [
       "P80.8",
@@ -7820,7 +7846,8 @@
       "P125.56-0h5",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/panel-overview.png": [
       "P80.8",
@@ -7849,7 +7876,8 @@
       "P125.56-0h5",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/panel-person.png": [
       "P80.8",
@@ -7878,7 +7906,8 @@
       "P125.56-0h5",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/panel-policy-expanded.png": [
       "P80.8",
@@ -7907,7 +7936,8 @@
       "P125.56-0h5",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/panel-policy.png": [
       "P80.8",
@@ -7936,7 +7966,8 @@
       "P125.56-0h5",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/panel-proposals.png": [
       "P80.8",
@@ -7965,7 +7996,8 @@
       "P125.56-0h5",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.99-0h5"
     ],
     "docs/screenshots/panel-usage.png": [
       "P80.8",
@@ -7994,7 +8026,8 @@
       "P125.56-0h5",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P125.99-0h5"
     ],
     "tools/ui-tests/evidence-read-error.test.mjs": [
       "P80.15-rtb"
@@ -8158,7 +8191,8 @@
       "P125.56-0h5"
     ],
     "plugins/audit/scripts/ui/panel-css/app-shell.css": [
-      "P105.3"
+      "P105.3",
+      "P125.99-0h5"
     ],
     "tools/ui-tests/server-offline.test.mjs": [
       "P105.3",
@@ -8988,7 +9022,8 @@
       "P123.28",
       "P126.1",
       "P125.26",
-      "P125.81-0h5"
+      "P125.81-0h5",
+      "P125.99-0h5"
     ],
     "tools/ui-checks/responsive.mjs": [
       "P123.28",
@@ -9026,7 +9061,8 @@
       "P123.88-64p",
       "P123.90-64p",
       "P126.1",
-      "P125.26"
+      "P125.26",
+      "P125.99-0h5"
     ],
     ".github/sweep-costs.json": [
       "P127.2-bgr",
@@ -9150,6 +9186,39 @@
     ],
     "tools/ui-tests/table-fit.test.mjs": [
       "P125.81-0h5"
+    ],
+    "plugins/audit/scripts/ui/panel-css/appearance-table.css": [
+      "P125.99-0h5"
+    ],
+    "plugins/audit/scripts/ui/panel-css/base-controls.css": [
+      "P125.99-0h5"
+    ],
+    "plugins/audit/scripts/ui/panel-css/browse-dialog.css": [
+      "P125.99-0h5"
+    ],
+    "plugins/audit/scripts/ui/panel-css/labels-and-hints.css": [
+      "P125.99-0h5"
+    ],
+    "plugins/audit/scripts/ui/panel-css/overview-filters.css": [
+      "P125.99-0h5"
+    ],
+    "plugins/audit/scripts/ui/panel-css/overview-rows.css": [
+      "P125.99-0h5"
+    ],
+    "plugins/audit/scripts/ui/panel-css/settings-form.css": [
+      "P125.99-0h5"
+    ],
+    "plugins/audit/scripts/ui/panel-css/tooltip.css": [
+      "P125.99-0h5"
+    ],
+    "plugins/audit/scripts/ui/report-css/motion-and-print.css": [
+      "P125.99-0h5"
+    ],
+    "plugins/audit/scripts/ui/report-css/segments.css": [
+      "P125.99-0h5"
+    ],
+    "plugins/audit/scripts/ui/report-css/usage.css": [
+      "P125.99-0h5"
     ]
   },
   "bugs": [
