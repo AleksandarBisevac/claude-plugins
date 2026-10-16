@@ -1,0 +1,19 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_audit_lookup.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-16T01:51:48Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_lookup.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 105 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - a re-review brief shows the fix tasks and every task closed after the earlier review, repeats none that round reviewed, and gives every owed task a section (P1.1 answered by the filed return, P1.4 its fix, P1.5 closed after it: sections, owed): (['P1.4'], ['P1.5']) (house FAIL): SELFTEST FAILED: 104/105 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-lookup.py compose_phase_brief: the shown set and the owed list now derive from one set - every task with a commit that no filed phase return answers at that commit (_fr.answered_entries keyed on (id, commit)). Tasks a filed return answers are listed once in 'Re-review scope' with the return's path and are not given sections; fix tasks and tasks closed after the round are shown; owed is drawn from shown, so every owed task has a section. With no filed return nothing is known reviewed and everything is shown, as a first round always did. 'Reviewed' is read off the filed return's task entries rather than ancestry of its head, because the filing verb writes one entry per owed task bound to its commit and refuses a return missing one, while an ancestor test misreads a rewritten branch. Tests: new case in test_audit_lookup.py (fixture: P1.1 answered by a filed return, P1.4 fix task, P1.5 later non-fix task; asserts sections == [P1.4, P1.5], owed == [P1.5], each owed has a section); bf52's fixture now records the earlier round as a filed return answering P1.1-P1.3, which its own text already claimed. test_audit_lookup.py --selftest: 105/105, exit 0. tools/sweep-selftests.py exit 0 (335/335 files); --encoding cp1252 exit 0; tools/measure-context.py --gate exit 0; ruff and vermin clean on both files. P125 phase brief computed in-process after the fix (compose_phase_brief, nothing written): 48 task sections, 20 owed, none owed without a section, 2288423 bytes (fix-task sections 1297888 bytes, later-task sections 710259 bytes).",
+    "descriptive": "A re-review brief now gives a section to every task it owes an answer, and repeats none an earlier round's filed return already answered."
+  },
+  "testsAdded": [
+    "a re-review brief shows the fix tasks and every task closed after the earlier review, repeats none that round reviewed, and gives every owed task a section"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:b5472a581d86aa385b8a2fc3dab2844a10bad6efec3103b6d2ec391e0d218c2c\",\"dirtyDigest\":\"sha256:35533deff6699b43a274f4348f8e808aa40ae14bd8ef660d86a649a9c7be1efb\",\"dirtyPaths\":{\"plugins/audit/scripts/status/audit-lookup.py\":\"27c72be038ed58ef\",\"plugins/audit/tests/test_audit_lookup.py\":\"e8013d9dd8ce6dce\"},\"head\":\"cea81903\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/tests/test_audit_lookup.py\"],\"scopeDigest\":\"sha256:951af6bb3d1d708e5c2b80ba8960c7fa6038bddce6a168de0a8a91e31f45aced\",\"v\":2}"
+}

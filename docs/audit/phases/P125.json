@@ -9681,7 +9681,7 @@
     {
       "id": "P125.127-0h5",
       "title": "A re-review brief shows every task the earlier round did not review, so every owed task has its section",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F695, a regression from P125.5 (a8c9d75e). audit-lookup's phase brief sets shown = fixers when any fix task exists, so tasks added after the last review that are not fix tasks (P125.105-.126 here) are owed answers but get no section, diff or claim. Derive shown and owed from one set: every task the earlier round did not review.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -9710,16 +9710,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-16T01:37:40Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-16T02:02:35Z.b91a92",
+        "status": "passed",
+        "at": "2026-10-16T02:02:35Z"
+      }
     }
   ],
   "request": "One phase of plugin 3.3.0 (the user wants fewer review rounds) covering the planned process simplification and cost work: next-minor sketch sections 0 and 3 (incl. 3a, prices taken when a cost is recorded), the cost research's N1-N5 (N12 if cheap; N3 as design and offline measurement only), and the faults F596 (affected tests per task, incl. e2e), F597 (meter dedup), F577 (price table), F605 (review loop does not converge), F567 (hand-back rule nothing enforces), F575 if still open. Handoff phase order 2 (process simplification) and 4 (cost) merged.",

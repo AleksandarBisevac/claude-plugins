@@ -1320,25 +1320,42 @@ def compose_phase_brief(manifest, phase, ctx):
     mechanical = _fr.phase_answers(
         ctx["evidence"], phase, build,
         lambda entries: _evio.resolved_commands(manifest, entries))
-    # A RE-REVIEW HANDS BACK ONLY WHAT CHANGED SINCE THE LAST ONE. A fix task
-    # among `listed` means this phase already carries findings from an earlier
-    # round; the tasks that round already reviewed are not reviewed twice, so
-    # only the fix task(s) get a per-task section here. `owed` below still
-    # reads the full `listed`, because which tasks the review MECHANICALLY
-    # owes answers to is unaffected - a fix task is never owed them
-    # (`_owed_line`), so filtering `listed` itself would just drop the same
-    # entries `owed_answer` already excludes, for the wrong reason.
-    fixers = [t for t in listed if _fr.is_fix_task(t, phase)]
-    shown = fixers if fixers else listed
+    # A RE-REVIEW SHOWS WHAT NO EARLIER ROUND REVIEWED, AND NOTHING IT DID.
+    # What an earlier round reviewed is read off its filed return, entry by
+    # entry at the commit it answered - the record the filing verb writes for
+    # every owed task and refuses to leave one out of. Its head is not used:
+    # an ancestor test misreads a rewritten branch, and a task closed by hand
+    # after the round is just as absent from the return as from that head.
+    # So the shown set is every task with a diff whose commit no return
+    # answers - the fix tasks and every task closed since - and `owed` below
+    # is drawn from the same set, which is why each owed task has a section.
+    # With no filed return nothing is known to be reviewed, and all is shown.
+    def answered_by(task):
+        return answered.get((str(task.get("id")), task.get("commit")))
+    reviewed = [t for t in listed if answered_by(t) is not None]
+    shown = [t for t in listed if answered_by(t) is None]
+    fixers = [t for t in shown if _fr.is_fix_task(t, phase)]
+    scope = []
+    if reviewed:
+        returns = sorted(set(answered_by(t)[0] for t in reviewed))
+        scope += [
+            "An earlier round reviewed these, answered by %s at the commit "
+            "each records, so they are not repeated here: %s"
+            % (", ".join(returns),
+               ", ".join(str(t.get("id")) for t in reviewed)),
+            "Shown below is every task no filed return answers - the fix "
+            "tasks and every task closed since: %s"
+            % (", ".join(str(t.get("id")) for t in shown) or "none",)]
     if fixers:
-        lines += _section("Re-review scope", [
+        scope += [
             "This phase already carries findings from an earlier review; "
-            "only the fix task(s) below are shown here - the tasks that "
-            "round reviewed are not repeated: %s"
+            "its fix task(s) are among the tasks shown: %s"
             % (", ".join(str(t.get("id")) for t in fixers),),
             "A new `low` finding in these fixes is carried (`--answer carry "
             "--to <task or bug id>`), not looped into another fix and another "
-            "round; only a `med` or `high` one owes a fix."])
+            "round; only a `med` or `high` one owes a fix."]
+    if scope:
+        lines += _section("Re-review scope", scope)
     for task in shown:
         tid = str(task.get("id"))
         entries, whose = _task_gate(manifest, phase, task)
@@ -1376,7 +1393,7 @@ def compose_phase_brief(manifest, phase, ctx):
         lines += _section("Tasks with no diff", [
             "Closed with no commit (a no-change close) or cancelled, so there "
             "is no diff to review: %s" % (", ".join(skipped),)])
-    owed = [str(t.get("id")) for t in listed
+    owed = [str(t.get("id")) for t in shown
             if _fr.owed_answer(t, phase, live, answered)]
     if owed_why:
         lines += _section("Review answers owed per task", [

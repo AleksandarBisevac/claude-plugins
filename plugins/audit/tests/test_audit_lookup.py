@@ -1545,6 +1545,17 @@ def _brief_cases(check):
         "maxAttempts": 3,
         "testEvidence": {"runId": "run-4", "status": "passed", "at": "z"}})
     proj9, mpath9 = project("bf-phase-rereview", rereview)
+    # The earlier round is on the record the way a real one is: its filed
+    # return answers the three tasks at their commits.
+    round9 = os.path.join(proj9, "docs", "audit", "evidence", "returns", "P1",
+                          "%s.reviewer.json" % ("9" * 40,))
+    os.makedirs(os.path.dirname(round9))
+    with open(round9, "w", encoding="utf-8") as fh:
+        json.dump({"findings": [], "intent": {"answer": "matches"},
+                   "verdict": "findings",
+                   "tasks": [{"id": "P1.%d" % n, "commit": c * 40,
+                              "answer": "matches"}
+                             for n, c in ((1, "a"), (2, "b"), (3, "c"))]}, fh)
     brief(proj9, mpath9, "P1", "phase")
     text9 = read(brief_file(proj9, "P1", "phase.md")) or ""
     check("bf52 a re-review brief - this phase already carries a finding whose "
@@ -1570,6 +1581,54 @@ def _brief_cases(check):
           and "not looped" in _scope9
           and "--answer carry --to" in _scope9
           and "`med` or `high`" in _scope9)
+
+    # ---- a re-review shows what the earlier round did not review -------------
+    # The earlier round is the filed phase return: it answers P1.1 at its
+    # commit. P1.4 fixes that round's finding; P1.5 is an ordinary task closed
+    # after it. A brief that shows only fix tasks owes P1.5 an answer while
+    # giving it no section, so the sections and the owed list are both read.
+    later = _bf_signed_phase()
+    later_phase = later["phases"][0]
+    later_phase["tasks"] = [later_phase["tasks"][0]]
+    later_phase["review"] = {"findings": [
+        {"id": "P1-R1", "severity": "med", "file": "src/m1.py:1",
+         "issue": "x", "resolution": "y", "fixTask": "P1.4"}]}
+    later_phase["tasks"] += [
+        {"id": "P1.4", "title": "fix1", "status": "done",
+         "description": "fix the finding", "files": ["src/m1.py"],
+         "fixes": ["P1-R1"],
+         "tests": {"mode": "regression", "add": [], "expectRedFirst": False,
+                   "gate": ["python3 tests/t1.py"]},
+         "commit": "e" * 40, "startedAt": _BF_START, "attempts": 1,
+         "maxAttempts": 3},
+        {"id": "P1.5", "title": "later1", "status": "done",
+         "description": "a task added after the review", "files": ["src/m5.py"],
+         "tests": {"mode": "gate-only", "add": [], "expectRedFirst": False,
+                   "gate": ["python3 tests/t5.py"]},
+         "commit": "f" * 40, "startedAt": _BF_START, "attempts": 1,
+         "maxAttempts": 3}]
+    proj10, mpath10 = project("bf-phase-rereview-later", later)
+    first_round = os.path.join(proj10, "docs", "audit", "evidence", "returns",
+                               "P1", "%s.reviewer.json" % ("9" * 40,))
+    os.makedirs(os.path.dirname(first_round))
+    with open(first_round, "w", encoding="utf-8") as fh:
+        json.dump({"findings": [], "intent": {"answer": "matches"},
+                   "verdict": "findings",
+                   "tasks": [{"id": "P1.1", "commit": "a" * 40,
+                              "answer": "matches"}]}, fh)
+    brief(proj10, mpath10, "P1", "phase")
+    text10 = read(brief_file(proj10, "P1", "phase.md")) or ""
+    shown10 = [ln.split()[1] for ln in text10.splitlines()
+               if ln.startswith("## P1.")]
+    owed10 = [ln.split(": ", 1)[1] for ln in text10.splitlines()
+              if ln.startswith("owed: ")]
+    check("a re-review brief shows the fix tasks and every task closed after "
+          "the earlier review, repeats none that round reviewed, and gives "
+          "every owed task a section (P1.1 answered by the filed return, P1.4 "
+          "its fix, P1.5 closed after it: sections, owed): %r"
+          % ((shown10, owed10),),
+          shown10 == ["P1.4", "P1.5"] and owed10 == ["P1.5"]
+          and all(t in shown10 for t in owed10))
 
     # ---- a wave task's brief says which tree it works in --------------------
     # The tree comes from the driver's state, which is where `add_tree` records
