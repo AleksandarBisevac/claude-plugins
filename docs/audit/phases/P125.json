@@ -10044,7 +10044,9 @@
         "plugins/audit/schema/audit-plan.schema.json",
         "plugins/audit/scripts/manifest/_manifest_rules.py",
         "plugins/audit/tests/test_drive_phase.py",
-        "plugins/audit/tests/test__manifest_rules.py"
+        "plugins/audit/tests/test__manifest_rules.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py"
       ],
       "tests": {
         "mode": "tdd",

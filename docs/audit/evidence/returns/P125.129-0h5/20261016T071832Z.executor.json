@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "vitest": "pass",
+    "sweep": "fail",
+    "capture-screenshots --check": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-16T07:39:38Z",
+    "basis": "`npx vitest run tools/ui-tests/usage-edges.test.mjs` in a throwaway tree at HEAD exited 1, but no case --case names failed an assertion as the task's own: an 'other' row whose every tail value is unpriced reads 'unpriced', never $0.00 (more values than SHOWN[dim], none of the tail priced) (AssertionError: expected 'other (2) - show 2 more150 - $0.00' to contain 'unpriced') (with showCost off the tab prints no per-task dollar figure > a model no rate covers > an 'other' row whose every tail value is unpriced reads 'unpriced', never $0.00 (more values than SHOWN[dim], none of the tail priced): tools/ui-tests/usage-edges.test.mjs (with showCost off the tab prints no per-task dollar figure > a model no rate covers > an 'other' row whose every tail value is unpriced reads 'unpriced', never $0.00 (more values than SHOWN[dim], none of the tail priced)) builds a test title at run time (`.each`, a template or a variable) that may be this one, so which test failed cannot be told) - Tests  1 failed | 47 passed (48); --case an 'other' row whose every tail value is unpriced reads 'unpriced', never $0.00 names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "usage-metrics.js: tail row sums unpriced tokens from unp map (tailUnp) and prints uAllUnpriced(more[0],tailUnp)?'unpriced':uCost(more[1]). usage-edges.test.mjs: renderUnpriced takes optional tailRows; added the clause case and a deny twin (priced tail keeps a dollar figure). Full npx vitest run: 827 passed. Sweep: 334/335 files ok; only test__refs.py fails (sc1/sc2: panel screenshots stale vs panel source digest, expected, not captured). capture-screenshots --check exit 0. Files changed: plugins/audit/scripts/ui/panel/usage-metrics.js, tools/ui-tests/usage-edges.test.mjs.",
+    "descriptive": "The panel's 'other (N)' ranked row now reads 'unpriced' when its whole tail is unpriced, matching the report."
+  },
+  "testsAdded": [
+    "an 'other' row whose every tail value is unpriced reads 'unpriced', never $0.00 (more values than SHOWN[dim], none of the tail priced)",
+    "...and an 'other' row with priced tokens keeps its figure [the twin: a tail that always says unpriced fails here]"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:f516bd8e8547774f9216926c50dccdba740735306cfdc805f8ca554f9eb24431\",\"dirtyDigest\":\"sha256:8e316569e7b2611199abd09b5f08141fa05b91e4d3448775c429ae75f897437e\",\"dirtyPaths\":{\"plugins/audit/scripts/ui/panel/usage-metrics.js\":\"5417131a90f79673\",\"tools/ui-tests/usage-edges.test.mjs\":\"ef0dbc62a5de60f4\"},\"head\":\"2f18a15a\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/ui/panel/usage-metrics.js\",\"tools/ui-tests/usage-edges.test.mjs\"],\"scopeDigest\":\"sha256:cb49a7302e1e479a4e893a93a3e7eeb0e5abc0ef9a02b11c469de78df9192c2f\",\"v\":2}"
+}
