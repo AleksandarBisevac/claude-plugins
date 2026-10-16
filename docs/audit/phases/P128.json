@@ -710,7 +710,7 @@
     {
       "id": "P128.14-0h5",
       "title": "test_audit_task rv13's writer goes through the shared sharing-denial helper, so a Windows denial is waited out",
-      "status": "in_progress",
+      "status": "done",
       "description": "F654: CI run 38488610602 (windows-latest) had test_audit_task rv13 red in one draw only; the CI study (quality-gates-internal studies/C-ci-study.md) places it in the sharing-race class P125.38 fixes through one helper in _output.py. Check whether rv13's writer already goes through that helper after P125.38; if it does, close with that evidence; if not, route it through it. No per-site retry.",
       "files": [
         "plugins/audit/tests/test_audit_task.py",
@@ -741,19 +741,32 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b9119227d37a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Evidence (no code change owed): rv13's writer is `audit-task.py finding` -> cmd_finding -> _locked_finding -> _write_plan -> _write_add -> _panel_write._atomic_write_json -> _manifest_io.atomic_write_json -> atomic_write_text (_manifest_io.py:1220), which calls _output.while_shared(lambda: os.replace(tmp, path)); that helper is P125.38-0h5's (commit 92d4b076). The lock claim/unlink paths (_locks.py:647,751,793,1377) and journal paths (_journal_io.py:1051,1182,2282) use it too. No per-site retry anywhere. Added to plugins/audit/tests/test_audit_task.py (_record_cases, after rv13) one case, titled with the tests.add clause: four concurrent `finding` processes of one session run through a `python -c` wrapper that, in each child, raises PermissionError(EACCES) on its first three os.replace calls onto each .json destination, then delegates to the real call; asserts exits all 0, four findings land under P2-R1..R4, and the injected-denial log shows >=4 denials (12 observed) so it cannot pass vacuously. Because the harness refuses duplicate case ids and the tests.add clause begins `rv13`, I renamed the existing case label from `rv13 RED-FIRST:` to `rv13a RED-FIRST:` (nothing else in the repo references the id; test__refs.py has an unrelated rv13). Run: python3 plugins/audit/tests/test_audit_task.py --selftest --stage at7-block -> exit 0, 232/232. ruff and vermin on the file exit 0. Not run: the full sweep, other blocks, browser gates (per addendum). HEAD printed 5ba3b0fe in tree claude-plugins-P128.14-0h5 before the first edit; the plan gate refused nothing.",
+        "descriptive": "rv13's race is now locked with a simulated Windows sharing denial on the manifest writer; the writer already waits it out via the shared helper, so F654 needs no code fix."
       },
       "startedAt": "2026-10-16T20:36:39Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T21:25:43Z",
+      "verifiedBy": [
+        "rv13 with a simulated sharing denial on the writer it races still passes"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-16T21:12:48Z.3eeb26",
         "status": "passed",
         "at": "2026-10-16T21:12:48Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b9119227d37a",
+        "at": "2026-10-16T21:25:43Z",
+        "return": "docs/audit/evidence/returns/P128.14-0h5/20261016T203639Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "mode regression, expectRedFirst false: the writer already goes through the helper, so the new case is green on HEAD code by design. Non-vacuity shown by mutation in my own worktree (restored byte-identical, git diff of the file empty): replacing _output.while_shared(lambda: os.replace(tmp, path)) in _manifest_io.atomic_write_text with a bare os.replace turned the new case FAIL (231/232) while rv13a stayed PASS.",
+        "at": "not run through the helper"
       }
     },
     {
@@ -781,28 +794,40 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "plugins/audit/tests/test__gate_derive.py: with a recorded spelling and a sibling path-scoped entry, a task touching tools/affected.py derives 'python3 tools/sweep-selftests.py <its suites>', the runner path untouched": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__gate_derive.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/governance/_gate_derive.py",
+            "find": "if \"{paths}\" in spelling_tpl:",
+            "replace": "if False:"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [],
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-16T20:36:42Z",
+      "startedAt": "2026-10-16T21:26:27Z",
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-16T21:23:45Z.ce3181",
-        "status": "failed",
-        "at": "2026-10-16T21:23:45Z"
+        "runId": "2026-10-16T21:38:53Z.a6ad15",
+        "status": "passed",
+        "at": "2026-10-16T21:38:53Z"
       }
     },
     {

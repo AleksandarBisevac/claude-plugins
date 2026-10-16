@@ -1,0 +1,34 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test__gate_derive.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__affected_tests.py --selftest": "pass",
+    "ruff check (the two touched files)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-16T21:27:53Z",
+    "basis": "`python3 plugins/audit/tests/test__gate_derive.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 49 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dg-both a sibling's own path-scoped gate AND a declared spelling both exist - the spelling wins (mutation: prefer the sibling over the spelling -> red): {'entries': ['npm test -- ph.test.ts'], 'basis': 'selected by import graph and recorded couplings only', 'derived': True, 'narrowed': True, 'lines': [], 'shapeSource': 'P1.1', 'attribution': {'testsAdd': ['ph.test.ts'], 'coupling': [], 'importers': [], 'changed': [], 'lastFailed': [], 'union': ['ph.test.ts']}} (house FAIL) and 2 more: SELFTEST FAILED: 46/49 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Attempt 2 fix only: the tests.add case and dg-recorded fixture named plugins/audit/tests/test__affected.py (not in tree), which made test__refs.py c5 fail. Repointed both mentions in plugins/audit/tests/test__gate_derive.py to the existing plugins/audit/tests/test__affected_tests.py and fixed a garbled comment. resolve_shape (_gate_derive.py) unchanged from attempt 1: recorded derived.spelling wins, a spelling without {paths} is skipped with its reason and the sibling is then read; only the {paths} slot is substituted. All attempt-1 cases kept (task case verbatim, dg-both flipped, dg-both-nopaths). HEAD printed before edit: 5ba3b0fe. Results: test__gate_derive 49/49 exit 0, test__refs 351/351 exit 0, test__affected_tests 22/22, ruff clean. Schema description (derived.spelling) left to P128.40 as told.",
+    "descriptive": "A recorded gate spelling now wins over a sibling task's entry and only its {paths} slot is substituted, so a narrowed gate keeps its runner."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__gate_derive.py: with a recorded spelling and a sibling path-scoped entry, a task touching tools/affected.py derives 'python3 tools/sweep-selftests.py <its suites>', the runner path untouched"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test__gate_derive.py: with a recorded spelling and a sibling path-scoped entry, a task touching tools/affected.py derives 'python3 tools/sweep-selftests.py <its suites>', the runner path untouched": {
+      "file": "plugins/audit/scripts/governance/_gate_derive.py",
+      "find": "if \"{paths}\" in spelling_tpl:",
+      "replace": "if False:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__gate_derive.py",
+        "--selftest"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:8a1afb3f9bff1dd1ca1c9b4d9a4d601c83c79073140263f0ab4b51bb7c3e0c64\",\"dirtyDigest\":\"sha256:69a656d5627c5ffaf3119f4bf2e0aaaec70ee312973c718684f4f8192878ece7\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_gate_derive.py\":\"eff4f6a63ea9ce0f\",\"plugins/audit/tests/test__gate_derive.py\":\"4e48b2a0943fe064\"},\"head\":\"5ba3b0fe\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_gate_derive.py\",\"plugins/audit/tests/test__gate_derive.py\"],\"scopeDigest\":\"sha256:5ab98f4a543aba6d373dd94e8260461f0d5ce44a590c7982314eeae5b1f09b0f\",\"v\":2}"
+}

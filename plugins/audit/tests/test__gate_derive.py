@@ -644,8 +644,8 @@ def _cases(check):
           and neither_result["narrowed"] is False
           and neither_result["shapeSource"] is None)
 
-    # --- dg-both: a sibling AND a declared spelling both exist - the SIBLING --
-    # wins (its entry is evidence the runner already accepted it).
+    # --- dg-both: a sibling AND a declared spelling both exist - the SPELLING -
+    # wins (it is the recorded record of how the gate narrows).
     both_manifest = _manifest(
         meta={"buildCommands": build,
              "phaseGate": {"mode": "shadow",
@@ -653,11 +653,49 @@ def _cases(check):
         phase=_phase(tasks=[_sibling(["npm test -- ph.test.ts"])]))
     both_result = M.derive(both_manifest, both_manifest["phases"][0], {})
     check("dg-both a sibling's own path-scoped gate AND a declared spelling "
-          "both exist - the sibling wins (mutation: prefer the spelling over "
-          "the sibling -> red): %r" % (both_result,),
-          both_result["shapeSource"] == "P1.1"
-          and both_result["entries"] == ["npm test -- ph.test.ts"]
-          and "pytest" not in " ".join(both_result["entries"]))
+          "both exist - the spelling wins (mutation: prefer the sibling over "
+          "the spelling -> red): %r" % (both_result,),
+          both_result["shapeSource"] == M.SPELLING_SOURCE
+          and both_result["entries"] == ["pytest ph.test.ts"]
+          and "npm" not in " ".join(both_result["entries"]))
+
+    # --- dg-both-nopaths: the spelling has no {paths}, so the sibling is read -
+    # and the reason for skipping the spelling is still printed.
+    bn_manifest = _manifest(
+        meta={"buildCommands": build,
+             "phaseGate": {"mode": "shadow",
+                          "derived": {"spelling": "pytest tests/"}}},
+        phase=_phase(tasks=[_sibling(["npm test -- ph.test.ts"])]))
+    bn_result = M.derive(bn_manifest, bn_manifest["phases"][0], {})
+    check("dg-both-nopaths an unusable spelling falls through to the sibling, "
+          "with the reason printed: %r" % (bn_result,),
+          bn_result["shapeSource"] == "P1.1"
+          and bn_result["entries"] == ["npm test -- ph.test.ts"]
+          and any("carries no {paths} placeholder" in l
+                  for l in bn_result["lines"]))
+
+    # --- dg-recorded: the RECORDED spelling wins over a sibling's entry, and -
+    # only its {paths} slot is substituted. The sibling's gate is spelled with
+    # another runner, so a re-point of it would hand the task a gate that is
+    # not the recorded one.
+    rec_manifest = _manifest(
+        meta={"buildCommands": build,
+             "phaseGate": {"mode": "shadow",
+                          "derived": {"spelling":
+                                      "python3 tools/sweep-selftests.py {paths}"}}},
+        phase=_phase(tasks=[_task(
+            "P1.1", files=["tools/affected.py"],
+            tests={"gate": ["python3 plugins/audit/tests/test__affected_tests.py"],
+                   "gateBasis": "tests.add"})]))
+    rec_result = M.derive(rec_manifest, rec_manifest["phases"][0], {})
+    check("with a recorded spelling and a sibling path-scoped entry, a task "
+          "touching tools/affected.py derives 'python3 tools/sweep-selftests.py "
+          "<its suites>', the runner path untouched: %r" % (rec_result,),
+          rec_result["narrowed"] is True
+          and rec_result["shapeSource"] == M.SPELLING_SOURCE
+          and rec_result["entries"] == [
+              "python3 tools/sweep-selftests.py "
+              "plugins/audit/tests/test__affected_tests.py"])
 
     # --- dg-spelling-nopaths: a spelling with no {paths} placeholder is -------
     # ignored, with a printed reason.

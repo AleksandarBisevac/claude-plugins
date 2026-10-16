@@ -135,32 +135,35 @@ SPELLING_SOURCE = "meta.phaseGate.derived.spelling"
 
 def resolve_shape(phase, build, derived_cfg):
     """`(shape, source, lines)` -- where THIS phase's path-scoped shape comes
-    from, in the order the schema declares: a sibling task's own path-scoped
-    gate entry FIRST (`source` is that task's id), `meta.phaseGate.derived
-    .spelling` SECOND (`source` is `SPELLING_SOURCE`), or `(None, None, ...)`
-    when neither exists.
+    from: `meta.phaseGate.derived.spelling` FIRST (`source` is
+    `SPELLING_SOURCE`), a sibling task's own path-scoped gate entry SECOND
+    (`source` is that task's id), or `(None, None, ...)` when neither exists.
 
-    THE SIBLING WINS ON PURPOSE: its entry is EVIDENCE this project's runner
-    already accepted it (`path_scoped_sibling`'s own docstring says why), and
-    a declared `spelling` is unverified by comparison -- read only when no
-    sibling supplies one, never in preference to one that does.
+    THE RECORDED SPELLING WINS ON PURPOSE: it is the one place the project
+    wrote down how its gate narrows, with the single slot the derivation
+    fills. A sibling's entry is one task's own gate, and re-pointing it
+    replaces every path-shaped word in it -- the runner included -- so a
+    sibling spelled with another runner turned a narrowed gate into a run of
+    one suite. A sibling is read only when no usable spelling exists.
 
     A `spelling` carrying no literal `{paths}` placeholder is IGNORED, with a
     printed reason (`lines`) rather than a silent fallback -- the schema says
     the derivation substitutes the placeholder with the resolved file list,
-    and a template with nowhere to substitute into cannot do that.
+    and a template with nowhere to substitute into cannot do that. The sibling
+    is then read, and the reason stays in `lines`.
     """
-    shape, owner = path_scoped_sibling(phase, build)
-    if shape is not None:
-        return shape, owner, []
     derived_cfg = derived_cfg if isinstance(derived_cfg, dict) else {}
     spelling_tpl = derived_cfg.get("spelling")
-    if not (isinstance(spelling_tpl, str) and spelling_tpl.strip()):
-        return None, None, []
-    if "{paths}" not in spelling_tpl:
-        return None, None, ["spelling: skipped - meta.phaseGate.derived.spelling "
-                            "carries no {paths} placeholder"]
-    return [spelling_tpl], SPELLING_SOURCE, []
+    lines = []
+    if isinstance(spelling_tpl, str) and spelling_tpl.strip():
+        if "{paths}" in spelling_tpl:
+            return [spelling_tpl], SPELLING_SOURCE, []
+        lines.append("spelling: skipped - meta.phaseGate.derived.spelling "
+                     "carries no {paths} placeholder")
+    shape, owner = path_scoped_sibling(phase, build)
+    if shape is not None:
+        return shape, owner, lines
+    return None, None, lines
 
 
 def repointed(entries, build, paths):
