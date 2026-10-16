@@ -404,13 +404,15 @@ function uBars(facts,dim,title){
   out.push(row);}
  if(tail.length){
   const more=tail.reduce((a,x)=>[a[0]+x[1][0],a[1]+x[1][1]],[0,0]);
+  const tailUnp=tail.reduce((a,x)=>a+(unp.get(x[0])||0),0);
   out.push(el('div',{class:'urow pick tail',
     onclick:()=>{SHOWN[dim]=limit+TOP;renderUsage();}},
    el('span',{class:'unm mut'},'other ('+tail.length+') - show '+
      Math.min(TOP,tail.length)+' more'),
    el('span',{class:'bar'},el('i',{style:'width:'+(100*more[0]/peak).toFixed(1)+
      '%;background:var(--bar-neutral);opacity:.45'})),
-   el('span',{class:'uamt'},uTok(more[0])+(USAGE.showCost?' - '+uCost(more[1]):''))));}
+   el('span',{class:'uamt'},uTok(more[0])+(USAGE.showCost?' - '+
+     (uAllUnpriced(more[0],tailUnp)?'unpriced':uCost(more[1])):''))));}
  // Expanding costs one click, so collapsing must too. This used to be an `else if`
  // on the tail being empty, which meant the way back only appeared after paging
  // through the whole list - thirty clicks at 233 rows. And paging is the wrong tool

@@ -565,7 +565,7 @@ describe('with showCost off the tab prints no per-task dollar figure', () => {
   describe('a model no rate covers', () => {
     // 'mystery' is wholly unpriced: cost 0 because nothing priced it, not
     // because it was free. 'opus' is priced, with a figure under its tokens.
-    function renderUnpriced(withUnpriced, extra) {
+    function renderUnpriced(withUnpriced, extra, tailRows) {
       const { ctx, root } = recordingPanel();
       const { F } = reach(ctx, ['F']);
       const row = (model, tokens, cost, unpriced, day) => {
@@ -579,6 +579,7 @@ describe('with showCost off the tab prints no per-task dollar figure', () => {
       };
       const facts = [row('opus', 4000, 2.5, 0, 1)];
       if (withUnpriced) facts.push(row('mystery', 2500, 0, 2500, 2));
+      (tailRows || []).forEach((t, i) => facts.push(row(t[0], t[1], t[2], t[3], 3 + (i % 6))));
       const usage = Object.assign({ facts, enabled: true, counts: { phases: 1 },
         showCost: true, taskMeta: { T1: { status: 'pending', risk: 'low' } } },
       extra || {});
@@ -614,6 +615,29 @@ describe('with showCost off the tab prints no per-task dollar figure', () => {
       expect(opus.length).toBe(1);
       expect(opus[0]).toMatch(DOLLAR);
       expect(opus[0]).not.toContain('unpriced');
+    });
+
+    // Seven more priced models fill the visible eight; the rest is the tail.
+    const headFill = Array.from({ length: 7 }, (_, i) => ['m' + i, 3000, 1, 0]);
+    const otherRow = (r) => r.rows.filter((s) => s.startsWith('other ('));
+
+    it("an 'other' row whose every tail value is unpriced reads 'unpriced', never $0.00 "
+      + '(more values than SHOWN[dim], none of the tail priced)', () => {
+      const r = renderUnpriced(false, {}, headFill.concat([['u1', 100, 0, 100], ['u2', 50, 0, 50]]));
+      const other = otherRow(r);
+      expect(other.length).toBe(1);
+      expect(other[0]).toContain('unpriced');
+      expect(other[0]).not.toContain('$0.00');
+      expect(other[0]).not.toMatch(DOLLAR);
+    });
+
+    it("...and an 'other' row with priced tokens keeps its figure "
+      + '[the twin: a tail that always says unpriced fails here]', () => {
+      const r = renderUnpriced(false, {}, headFill.concat([['u1', 100, 0, 100], ['p1', 50, 0.5, 0]]));
+      const other = otherRow(r);
+      expect(other.length).toBe(1);
+      expect(other[0]).toMatch(DOLLAR);
+      expect(other[0]).not.toContain('unpriced');
     });
 
     it('the cost tile states how many tokens its figure leaves out', () => {

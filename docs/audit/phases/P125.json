@@ -341,8 +341,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:1352-1363 and plugins/audit/reference/phase-signoff.md:104-115",
         "issue": "Task clause (5) says every planned test carries a 'must fail if' line and the drive applies it in a temp tree after the executor files; the diff wires nothing (run_falsifier stays unreferenced by the pipeline) and rewrites phase-signoff.md to 'A planned test MAY carry a falsifier ... nothing in the pipeline calls it automatically', contradicts task clause (5). The executor documents why (no schema field in its files). | Orchestrator item 7: recorded as carried to P128 by an earlier decision. At 8e7c5121 run_falsifier (drive-phase.py:1300) still has no caller, and docs/audit/phases/P128.json names no falsifier or 'must fail if' task, so the carry is not on the plan.",
-        "resolution": "Open a follow-up task owning schema/_manifest_rules plus the wiring, or amend clause (5) on the plan; do not leave the delivered text as the answer to the clause.",
-        "fixTask": "P125.128-0h5"
+        "resolution": "fixed in P125.128-0h5 (4819e25e66af): Open a follow-up task owning schema/_manifest_rules plus the wiring, or amend clause (5) on the plan; do not leave the delivered text as the answer to the clause.",
+        "fixTask": "P125.128-0h5",
+        "commit": "4819e25e66af",
+        "status": "fixed"
       },
       {
         "id": "P125-R39",
@@ -1319,7 +1321,7 @@
         "resolution": "Run the call through Popen with stdout/stderr sent to scratch files, or kill and then communicate(timeout=<short>) and fall back to closing the pipes, so the timeout bounds the call on both platforms."
       }
     ],
-    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 47 with a recorded fix commit]"
+    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 48 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -10036,7 +10038,7 @@
     {
       "id": "P125.128-0h5",
       "title": "fix P125-R38: Task clause (5) says every planned test carries a 'must fail if...",
-      "status": "in_progress",
+      "status": "done",
       "description": "Task clause (5) says every planned test carries a 'must fail if' line and the drive applies it in a temp tree after the executor files; the diff wires nothing (run_falsifier stays unreferenced by the pipeline) and rewrites phase-signoff.md to 'A planned test MAY carry a falsifier ... nothing in the pipeline calls it automatically', contradicts task clause (5). The executor documents why (no schema field in its files). | Orchestrator item 7: recorded as carried to P128 by an earlier decision. At 8e7c5121 run_falsifier (drive-phase.py:1300) still has no caller, and docs/audit/phases/P128.json names no falsifier or 'must fail if' task, so the carry is not on the plan.\n\nResolution asked: Open a follow-up task owning schema/_manifest_rules plus the wiring, or amend clause (5) on the plan; do not leave the delivered text as the answer to the clause.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -10074,14 +10076,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4819e25e66af",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Schema: optional additive tests.falsifiers object (keyed by the verbatim tests.add entry, as tests.addMap is) and $defs/falsifier {file, find, replace, command[], timeout>=1}; beside tests.add rather than a structured entry because every reader of tests.add parses its entries as '<path>: <what>' strings. Rules (_manifest_rules): falsifier_problems / task_falsifiers / _check_falsifiers in validate(); rules.falsifier.{unknown-test,find-empty,path,command,no-op} WARNINGS (COMPATIBILITY.md: a plan that validated keeps validating), shape faults left to the schema's one warning. Drive (drive-phase.py): falsify() runs in advance() after the gate is marked green, before any reviewer dispatch or close, on the tree the gate measured; per declared falsifier ONE copy (git ls-files --cached --others --exclude-standard) and TWO runs - the unmutated copy first (must exit 0, so a copy fault cannot read as a kill; design accepted by the orchestrator), then the mutant - each bounded by the falsifier's timeout or FALSIFIER_TIMEOUT=300. survived and could-not-run (malformed, find absent, unmutated copy not green, build broken, timeout, cannot start) stop the close at the new `falsifier` decision (retry | accept --reason | block); all killed -> did-line 'falsifier <task> killed by ...' and the close goes on. DECISIONS/STEPS/SIGNAL_VERBS rows and an accept branch in apply_answer added. phase-signoff.md rewritten to describe this. Followers: PLUGIN-BUILD-GUIDE.md module map regenerated (_deps.py --write-map; the new drive-phase -> _manifest_rules edge); gen-demo-manifest.py SCHEMA_EXEMPTIONS rows for tests.falsifiers and falsifier.{file,find,replace,command,timeout}, demo artifacts unchanged. Runs in the task tree: tools/sweep-selftests.py exit 0 (335/335 files); --encoding cp1252 exit 0 (335/335); tools/measure-context.py --gate exit 0; ruff exit 0; vermin exit 0; fv-block 8/8 and test__manifest_rules 167/167, each run twice. Red before the fix: fv-block 6/8 exit 1, test__manifest_rules 165/167 exit 1.",
+        "descriptive": "A planned test's declared falsifier is now applied by the drive after the executor files, and a test that survives its mutant, or a falsifier that cannot run, stops the close."
       },
       "startedAt": "2026-10-16T07:18:29Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T08:12:49Z",
+      "verifiedBy": [
+        "a planned test that carries a 'must fail if' line has it applied by the drive in a throwaway tree after the executor files, and a test that still passes under the mutation stops the close (fv6)",
+        "fv7 the falsifier decision is held until answered, and `accept` with a reason goes on to the close",
+        "the plan schema and the rules accept a planned test's 'must fail if' falsifier and refuse a malformed one (fz1)",
+        "fz2 the drive's reading of a task's falsifiers is the rules' own"
+      ],
       "notes": [
         {
           "at": "2026-10-16T07:18:21Z",
@@ -10108,6 +10115,18 @@
         "runId": "2026-10-16T08:12:47Z.25be37",
         "status": "passed",
         "at": "2026-10-16T08:12:47Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "4819e25e66af",
+        "at": "2026-10-16T08:12:49Z",
+        "basis": "a fix task for P125-R38: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-16T08:01:41Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage fv-block` in a throwaway tree at HEAD exited 1 with 2 of 8 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - a planned test that carries a 'must fail if' line has it applied by the drive in a throwaway tree after the executor files, and a test that still passes under the mutation stops the close (fv6: a test that exits 0 under its declared mutation is the `falsifier` decision naming `survived`, the task stays in progress and nothing is closed, and the executor's own file is untouched by the mutant; one the mutation turns red closes, its did-line naming the kill; a mutation whose `find` is not in the file is the same decision as `could-not-run`, never a pass; a task declaring no falsifier closes with no falsifier line at all: [('absent', 'reviewer', 'done', True, '[drive-phase] P1: gate P1.1 green; stamp current; closed P1.1 at f2b8ff3\\ndispatch audit:audit-reviewer P1 model=sonnet brief=.claude/state/briefs/P1/phase.md\\nthen: next P1 --answer sign-off --reason <the summary>\\nDescription starts with the id; dispatch nothing alongside.', 'changed by P1.1\\n'), ('none', 'reviewer', 'done', True, '[drive-phase] P1: gate P1.1 green; stamp current; closed P1.1 at 134ae73\\ndispatch audit:audit-reviewer P1 model=sonnet brief=.claude/state/briefs/P1/phase.md\\nthen: next P1 --answer sign-off --reason <the summary>\\nDescription starts with the id; dispatch nothing alongside.', 'changed by P1.1\\n'), ('strict', 'reviewer', 'done', True, '[drive-phase] P1: gate P1.1 green; stamp current; closed P1.1 at a44bad3\\ndispatch audit:audit-reviewer P1 model=sonnet brief=.claude/state/briefs/P1/phase.md\\nthen: next P1 --answer sign-off --reason <the summary>\\nDescription starts with the id; dispatch nothing alongside.', 'changed by P1.1\\n'), ('weak', 'reviewer', 'done', True, '[drive-phase] P1: gate P1.1 green; stamp current; closed P1.1 at 56efe2f\\ndispatch audit:audit-reviewer P1 model=sonnet brief=.claude/state/briefs/P1/phase.md\\nthen: next P1 --answer sign-off --reason <the summary>\\nDescription starts with the id; dispatch nothing alongside.', 'changed by P1.1\\n')]) (house FAIL): SELFTEST FAILED: 6/8 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -10117,7 +10136,8 @@
       "description": "contradicts task clause 'every surface (audit-usage, the report, the panel) prints unpriced beside its tokens instead of a dollar figure' (P125-R1, resolution: \"Render 'unpriced' beside the tokens of a model that has no price\"). The diff adds `costOf` to uBars' head rows but leaves the tail row unchanged: `const more=tail.reduce((a,x)=>[a[0]+x[1][0],a[1]+x[1][1]],[0,0]);` ... `uTok(more[0])+(USAGE.showCost?' - '+uCost(more[1]):'')`. So an 'other (N)' row whose every token is unpriced still reads '$0.00' in the panel. The report's `_ranked` does handle this case: the same diff makes its 'other (%d)' row sum `unpricedTokens` (`_usage_overview.py:399-403`). The README sentence this diff adds (README.md:991 at HEAD) claims the opposite: a row whose every token is unpriced reads `unpriced` 'in ... the panel's ranked lists'. HEAD still has the line unchanged (usage-metrics.js:413).\n\nResolution asked: Sum the tail's unpriced tokens from the `unp` map (`tail.reduce` over `unp.get(k)`) and print `uAllUnpriced(more[0], tailUnp) ? 'unpriced' : uCost(more[1])` on the tail row. Add a usage-edges case where more than SHOWN[dim] values exist and every tail value is unpriced, asserting the 'other' row reads 'unpriced' and never '$0.00'.",
       "files": [
         "plugins/audit/scripts/ui/panel/usage-metrics.js",
-        "tools/ui-tests/usage-edges.test.mjs"
+        "tools/ui-tests/usage-edges.test.mjs",
+        "docs/screenshots/captured-at.json"
       ],
       "tests": {
         "mode": "tdd",
@@ -10164,12 +10184,21 @@
         {
           "at": "2026-10-16T07:18:21Z",
           "text": "no tests.add clause for P125-R127: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        },
+        {
+          "at": "2026-10-16T08:28:21Z",
+          "text": "files widened by docs/screenshots/captured-at.json: widened by the integration answer"
         }
       ],
       "fixes": [
         "P125-R127"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-16T08:38:44Z.61d5f9",
+        "status": "passed",
+        "at": "2026-10-16T08:38:44Z"
+      }
     },
     {
       "id": "P125.130-0h5",
