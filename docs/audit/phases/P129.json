@@ -1,0 +1,654 @@
+{
+  "id": "P129",
+  "title": "Deferred work held for S5, F3 and F5",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "Each task here runs only when its named precondition lands: the S5 guard lexer (P128.15, .28, .29), the end of F3 (P128.9), the end of F5 (P128.10), or a split of the carried P125 findings (P128.36).",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P129.1-izt",
+      "title": "A task's model follows its recorded complexity as well as its risk, with the reason shown before approval",
+      "status": "cancelled",
+      "description": "F634 (owner-raised, measured on the testbed): `audit-task._model_floor` routes opus only for `risk: high`, and risk is blast radius, not difficulty - nearly every testbed task ran on Sonnet, including the plan's hardest code (an astronomy core, a WebGL sky layer), because each was low risk; no planning step asks about difficulty. (1) A task records `complexity` (low/med/high) with a one-line basis, separate from risk, written by planning (init synthesis, `/audit:phase add`, `audit-task add`/`scope`) and validated by the manifest schema and rules (additive: a plan without it stays valid and reads as unrecorded, never defaulted). (2) Routing: opus when risk is high OR complexity is high, else sonnet; the caller's explicit `--model` still wins; a config key (`executor.modelByComplexity`, documented in COMPATIBILITY.md as added) can turn the complexity arm off. (3) The plan preview and `/audit:status` show each task's model and the reason it was chosen (risk, complexity, or the caller). (4) Escalation: after a retry, or a med+ finding on a Sonnet attempt, the next attempt of that task runs on opus, journaled with the reason. Red-first: two low-risk fixture tasks - a WebGL scene marked complexity high and a copy edit marked low - route to opus and sonnet; a retried Sonnet task's next dispatch names opus and the journal row says why. Faults: F634.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/scripts/config/_config_rules.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a low-risk task with complexity high routes to opus and one with complexity low to sonnet; an explicit --model wins; a plan without complexity stays valid and reads as unrecorded",
+          "plugins/audit/tests/test_drive_phase.py: after a retry on a sonnet attempt the next dispatch names opus and the journal row records why"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Re-added as a pending task: a zero-attempt block cannot return to pending without starting it, and a blocked task reddens every gate plan-wide."
+      },
+      "startedAt": null,
+      "completedAt": "2026-10-16T19:24:39Z",
+      "verifiedBy": [],
+      "movedFrom": {
+        "id": "P128.9-0h5",
+        "phase": "P128",
+        "at": "2026-10-16T19:22:43Z",
+        "previous": {
+          "id": "P125.20",
+          "phase": "P125",
+          "at": "2026-10-13T23:26:28Z"
+        }
+      },
+      "blockedReason": "CONSOLIDATED-PLAN.md section 2.7 holds this task on the owner until after F3."
+    },
+    {
+      "id": "P129.2-izt",
+      "title": "Parallel waves respect a shared external-resource budget: resources in config, needs on a task, and status says why a task was held",
+      "status": "cancelled",
+      "description": "F508 (deferred feature; its revisit trigger - a waves verb - has fired with P124's waves). Today parallel safety is disjoint `files` plus `dependsOn` only, so two tasks that each start a dev server on one port, or hit one rate-limited API, run side by side (the testbed's port 3100 collision is the live shape). Add `resources: {name: capacity}` to audit.config.json (schema + config rules, additive, documented in COMPATIBILITY.md), `needs: [name]` on a task (plan schema + rules, additive), cap wave membership where waves are computed so a wave never holds more tasks needing a resource than its capacity, and have status/the drive say which task was held and for which resource. In the scheduler, not in executor prose. Red-first: two ready tasks both needing `port3100` with capacity 1 never share a wave, the held one is named with the resource; without `resources` the waves are unchanged. Faults: F508.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/config/_config_rules.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__status_facts.py: two ready tasks needing one capacity-1 resource never share a wave and the held one names the resource; no resources config leaves waves unchanged"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Re-added as a pending task: a zero-attempt block cannot return to pending without starting it, and a blocked task reddens every gate plan-wide."
+      },
+      "startedAt": null,
+      "completedAt": "2026-10-16T19:24:40Z",
+      "verifiedBy": [],
+      "movedFrom": {
+        "id": "P128.10-0h5",
+        "phase": "P128",
+        "at": "2026-10-16T19:22:44Z",
+        "previous": {
+          "id": "P125.21",
+          "phase": "P125",
+          "at": "2026-10-13T23:26:30Z"
+        }
+      },
+      "blockedReason": "CONSOLIDATED-PLAN.md section 2.7 moves this task to its own phase after F5."
+    },
+    {
+      "id": "P129.3-izt",
+      "title": "The bash write guard grades the patch family (patch, git apply, ed/ex) as writers, by the operation",
+      "status": "cancelled",
+      "description": "F658. Guard command-reading code: lands with the consolidated plan's single lexer (S5, D10: written by an agent; if the API safeguard refuses, stop and report). Grade by the operation (tree before/after) rather than adding spellings.",
+      "files": [
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_guard_bash_writes.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_bash_writes.py: patch -p0 < f writing an out-of-plan source file gets the same verdict as python3 - <<EOF writing it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Re-added as a pending task: a zero-attempt block cannot return to pending without starting it, and a blocked task reddens every gate plan-wide."
+      },
+      "startedAt": null,
+      "completedAt": "2026-10-16T19:24:42Z",
+      "verifiedBy": [],
+      "blockedReason": "Lands with S5 (the guard lexer, F4 last), per its own description.",
+      "movedFrom": {
+        "id": "P128.15-0h5",
+        "phase": "P128",
+        "at": "2026-10-16T19:22:45Z"
+      }
+    },
+    {
+      "id": "P129.4-izt",
+      "title": "The plan gate's shell arm grades an interpreter write it cannot resolve to a path as unresolved, not as no write",
+      "status": "cancelled",
+      "description": "Register F684 (fail-open, present at v3.3.0). _eval_write_targets sees only direct-call writes; p = Path(x); p.write_text(...) and loops pass ungraded. Orchestrator writes this guard code.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: a heredoc body that writes through a variable-held path or a loop is refused in a governed tree as an unresolved write, and a read-only body stays allowed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Re-added as a pending task: a zero-attempt block cannot return to pending without starting it, and a blocked task reddens every gate plan-wide."
+      },
+      "startedAt": null,
+      "completedAt": "2026-10-16T19:24:43Z",
+      "verifiedBy": [],
+      "blockedReason": "Guard command-reading code: held for an owner decision on who writes it.",
+      "notes": [
+        {
+          "at": "2026-10-16T18:45:26Z",
+          "text": "Owner decision 2026-10-16: deferred to the S5 guard lexer (F4); not patched before it."
+        }
+      ],
+      "movedFrom": {
+        "id": "P128.28-0h5",
+        "phase": "P128",
+        "at": "2026-10-16T19:22:46Z"
+      }
+    },
+    {
+      "id": "P129.5-izt",
+      "title": "The plan gate's shell arm reads the task-tree binding, as the edit arm does",
+      "status": "cancelled",
+      "description": "Register F685 (present at v3.3.0). guard-secrets-read's _ungoverned_write_target reads the worktree's stale shard instead of _config.task_binding, so one file gets two verdicts by tool and undeclared shell writes pass on the free slot in a bound tree. Orchestrator writes this guard code.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: in a tree bound to a task, a shell write to a declared file is allowed and one to an undeclared file is refused, with no free slot, matching the edit arm"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Re-added as a pending task: a zero-attempt block cannot return to pending without starting it, and a blocked task reddens every gate plan-wide."
+      },
+      "startedAt": null,
+      "completedAt": "2026-10-16T19:24:45Z",
+      "verifiedBy": [],
+      "blockedReason": "Guard command-reading code: held for an owner decision on who writes it.",
+      "notes": [
+        {
+          "at": "2026-10-16T18:45:27Z",
+          "text": "Owner decision 2026-10-16: deferred to the S5 guard lexer (F4); not patched before it."
+        }
+      ],
+      "movedFrom": {
+        "id": "P128.29-0h5",
+        "phase": "P128",
+        "at": "2026-10-16T19:22:48Z"
+      }
+    },
+    {
+      "id": "P129.6-izt",
+      "title": "Work the low findings carried from P125's phase review",
+      "status": "cancelled",
+      "description": "The target of P125's carried low findings (both review rounds). Each carried finding names its file, issue and resolution in P125's review; work them here in groups by file, splitting into tasks as their scope becomes clear. None held 3.4.0: lows are carried, not looped into another fix round.",
+      "files": [],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Re-added as a pending task: a zero-attempt block cannot return to pending without starting it, and a blocked task reddens every gate plan-wide."
+      },
+      "startedAt": null,
+      "completedAt": "2026-10-16T19:24:46Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-16T16:14:23Z",
+          "text": "Also carried from P125's fourth review round (signed off with them open as low): P125-R170 - file-return keys the shown-brief record by --head as typed, so a short head filed directly bypasses the check (expand with rev-parse or refuse a short head, with a case); P125-R171 - record_falsifiers keeps a plan-held entry, so after a retry an executor's corrected falsifier is dropped silently and the brief stops asking (let the current start's return replace an entry written by an earlier start of the same task, with a case)."
+        }
+      ],
+      "blockedReason": "Must be split into one task per carried finding before it can run.",
+      "movedFrom": {
+        "id": "P128.36-0h5",
+        "phase": "P128",
+        "at": "2026-10-16T19:22:49Z"
+      }
+    },
+    {
+      "id": "P129.7-izt",
+      "title": "A task's model follows its recorded complexity as well as its risk, with the reason shown before approval",
+      "status": "pending",
+      "description": "Held: the end of F3, held on the owner. Supersedes P129.1-izt (moved from P128.9-0h5).\n\nF634 (owner-raised, measured on the testbed): `audit-task._model_floor` routes opus only for `risk: high`, and risk is blast radius, not difficulty - nearly every testbed task ran on Sonnet, including the plan's hardest code (an astronomy core, a WebGL sky layer), because each was low risk; no planning step asks about difficulty. (1) A task records `complexity` (low/med/high) with a one-line basis, separate from risk, written by planning (init synthesis, `/audit:phase add`, `audit-task add`/`scope`) and validated by the manifest schema and rules (additive: a plan without it stays valid and reads as unrecorded, never defaulted). (2) Routing: opus when risk is high OR complexity is high, else sonnet; the caller's explicit `--model` still wins; a config key (`executor.modelByComplexity`, documented in COMPATIBILITY.md as added) can turn the complexity arm off. (3) The plan preview and `/audit:status` show each task's model and the reason it was chosen (risk, complexity, or the caller). (4) Escalation: after a retry, or a med+ finding on a Sonnet attempt, the next attempt of that task runs on opus, journaled with the reason. Red-first: two low-risk fixture tasks - a WebGL scene marked complexity high and a copy edit marked low - route to opus and sonnet; a retried Sonnet task's next dispatch names opus and the journal row says why. Faults: F634.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/scripts/config/_config_rules.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a low-risk task with complexity high routes to opus and one with complexity low to sonnet; an explicit --model wins; a plan without complexity stays valid and reads as unrecorded",
+          "plugins/audit/tests/test_drive_phase.py: after a retry on a sonnet attempt the next dispatch names opus and the journal row records why"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P125.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P129.8-izt",
+      "title": "Parallel waves respect a shared external-resource budget: resources in config, needs on a task, and status says why a task was held",
+      "status": "pending",
+      "description": "Held: the end of F5. Supersedes P129.2-izt (moved from P128.10-0h5).\n\nF508 (deferred feature; its revisit trigger - a waves verb - has fired with P124's waves). Today parallel safety is disjoint `files` plus `dependsOn` only, so two tasks that each start a dev server on one port, or hit one rate-limited API, run side by side (the testbed's port 3100 collision is the live shape). Add `resources: {name: capacity}` to audit.config.json (schema + config rules, additive, documented in COMPATIBILITY.md), `needs: [name]` on a task (plan schema + rules, additive), cap wave membership where waves are computed so a wave never holds more tasks needing a resource than its capacity, and have status/the drive say which task was held and for which resource. In the scheduler, not in executor prose. Red-first: two ready tasks both needing `port3100` with capacity 1 never share a wave, the held one is named with the resource; without `resources` the waves are unchanged. Faults: F508.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/config/_config_rules.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__status_facts.py: two ready tasks needing one capacity-1 resource never share a wave and the held one names the resource; no resources config leaves waves unchanged"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P129.9-izt",
+      "title": "The bash write guard grades the patch family (patch, git apply, ed/ex) as writers, by the operation",
+      "status": "pending",
+      "description": "Held: the S5 guard lexer (F4). Owner decision 2026-10-16. Supersedes P129.3-izt (moved from P128.15-0h5).\n\nF658. Guard command-reading code: lands with the consolidated plan's single lexer (S5, D10: written by an agent; if the API safeguard refuses, stop and report). Grade by the operation (tree before/after) rather than adding spellings.",
+      "files": [
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_guard_bash_writes.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_bash_writes.py: patch -p0 < f writing an out-of-plan source file gets the same verdict as python3 - <<EOF writing it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P129.10-izt",
+      "title": "The plan gate's shell arm grades an interpreter write it cannot resolve to a path as unresolved, not as no write",
+      "status": "pending",
+      "description": "Held: the S5 guard lexer (F4). Owner decision 2026-10-16. Supersedes P129.4-izt (moved from P128.28-0h5).\n\nRegister F684 (fail-open, present at v3.3.0). _eval_write_targets sees only direct-call writes; p = Path(x); p.write_text(...) and loops pass ungraded. Orchestrator writes this guard code.\n\nNote (2026-10-16T18:45:26Z): Owner decision 2026-10-16: deferred to the S5 guard lexer (F4); not patched before it.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: a heredoc body that writes through a variable-held path or a loop is refused in a governed tree as an unresolved write, and a read-only body stays allowed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P129.11-izt",
+      "title": "The plan gate's shell arm reads the task-tree binding, as the edit arm does",
+      "status": "pending",
+      "description": "Held: the S5 guard lexer (F4). Owner decision 2026-10-16. Supersedes P129.5-izt (moved from P128.29-0h5).\n\nRegister F685 (present at v3.3.0). guard-secrets-read's _ungoverned_write_target reads the worktree's stale shard instead of _config.task_binding, so one file gets two verdicts by tool and undeclared shell writes pass on the free slot in a bound tree. Orchestrator writes this guard code.\n\nNote (2026-10-16T18:45:27Z): Owner decision 2026-10-16: deferred to the S5 guard lexer (F4); not patched before it.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: in a tree bound to a task, a shell write to a declared file is allowed and one to an undeclared file is refused, with no free slot, matching the edit arm"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P129.12-izt",
+      "title": "Work the low findings carried from P125's phase review",
+      "status": "pending",
+      "description": "Held: split into one task per carried P125 finding first. Supersedes P129.6-izt (moved from P128.36-0h5).\n\nThe target of P125's carried low findings (both review rounds). Each carried finding names its file, issue and resolution in P125's review; work them here in groups by file, splitting into tasks as their scope becomes clear. None held 3.4.0: lows are carried, not looped into another fix round.\n\nNote (2026-10-16T16:14:23Z): Also carried from P125's fourth review round (signed off with them open as low): P125-R170 - file-return keys the shown-brief record by --head as typed, so a short head filed directly bypasses the check (expand with rev-parse or refuse a short head, with a case); P125-R171 - record_falsifiers keeps a plan-held entry, so after a retry an executor's corrected falsifier is dropped silently and the brief stops asking (let the current start's return replace an entry written by an earlier start of the same task, with a case).",
+      "files": [],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
