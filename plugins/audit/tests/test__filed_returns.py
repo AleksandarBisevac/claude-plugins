@@ -379,6 +379,32 @@ def _held_cases(check):
           M.review_key(t, _phase([]), "phase")[0] == "phase"
           and M.review_key(t, _phase([]), "always")[0] == "always")
 
+    # A round reviewed what its brief showed. A return records that in
+    # `shown`; one filed before the list existed records it only in `tasks`.
+    rounds = [("r1", {"tasks": [{"id": "P1.1", "commit": "a" * 12}]}, None),
+              ("r2", {"tasks": [{"id": "P1.2", "commit": "b" * 12}],
+                      "shown": [{"id": "P1.2", "commit": "b" * 12},
+                                {"id": "P1.4", "commit": "e" * 12}]}, None),
+              ("r3", {"tasks": [], "shown": [{"id": "P1.4",
+                                              "commit": "e" * 12}]}, None)]
+    seen = M.reviewed_entries(rounds) if hasattr(M, "reviewed_entries") else None
+    check("pk5 what each round reviewed is its `tasks` entries and its `shown` "
+          "list, keyed on the commit, the first return to name a commit "
+          "winning; an older return with no list reads as its entries: %r"
+          % (seen,),
+          seen == {("P1.1", "a" * 12): "r1", ("P1.2", "b" * 12): "r2",
+                   ("P1.4", "e" * 12): "r2"})
+    parsed = [M.parse_shown(s) if hasattr(M, "parse_shown") else None
+              for s in ("P1.1@%s,P1.4@%s" % ("a" * 12, "e" * 40), "",
+                        "P1.1", "P1.1@zz", "P1.1@%s,P1.1@%s" % ("a" * 12,
+                                                               "a" * 12))]
+    check("pk6 a `--shown` list reads as its (id, commit) pairs in order, and "
+          "an empty list, a pair with no commit, a commit that is not hex and "
+          "a task named twice each read as a problem with no pairs: %r"
+          % (parsed,),
+          parsed[0] == ([("P1.1", "a" * 12), ("P1.4", "e" * 40)], None)
+          and all(p is not None and p[0] == [] and p[1] for p in parsed[1:]))
+
     with open(os.path.join(_output.PLUGIN_ROOT, "schema",
                            "audit-plan.schema.json"), "r", encoding="utf-8") as fh:
         ic = json.load(fh)["$defs"]["intentCheck"]["properties"]

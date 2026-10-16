@@ -1318,8 +1318,10 @@
         "severity": "med",
         "file": "CLAUDE.md:255-258; CONTRIBUTING.md:233-236; plugins/audit/tests/_harness.py:185-189; tools/sweep-selftests.py:1880-1885",
         "issue": "contradicts task clause 'so no git process in any suite spawns detached maintenance' (tests.add): on a local push, git's local transport unsets GIT_CONFIG_COUNT before receive-pack, so the runner's set never reaches the remote side. Under the runner's exact environment, a `git push` to a local bare repo traced 'run_command: git maintenance run --auto --quiet --detach' (my probe, git 2.53), and the executor measured the same (1 left in test__invariants). The three isolation documents still say no git a suite starts, 'through a fixture prefix or bare', leaves a detached housekeeping run, and the gm0 title claims it for every git process.",
-        "resolution": "Close the gap or name it. Either reach receive-pack (fixture remotes set receive.autogc=false and maintenance.auto=false in their own config, or the runner points GIT_CONFIG_GLOBAL at a runner-owned file that the home channel excuses), with a traced local-push case beside gm1/gm2. Or, if that is deferred, state the receive-pack exception in all three documents and the case title, and file the follow-up the claim calls for.",
-        "fixTask": "P125.138-0h5"
+        "resolution": "fixed in P125.138-0h5 (6764eb63bd5b): Close the gap or name it. Either reach receive-pack (fixture remotes set receive.autogc=false and maintenance.auto=false in their own config, or the runner points GIT_CONFIG_GLOBAL at a runner-owned file that the home channel excuses), with a traced local-push case beside gm1/gm2. Or, if that is deferred, state the receive-pack exception in all three documents and the case title, and file the follow-up the claim calls for.",
+        "fixTask": "P125.138-0h5",
+        "commit": "6764eb63bd5b",
+        "status": "fixed"
       },
       {
         "id": "P125-R162",
@@ -1337,7 +1339,7 @@
         "resolution": "Run the call through Popen with stdout/stderr sent to scratch files, or kill and then communicate(timeout=<short>) and fall back to closing the pipes, so the timeout bounds the call on both platforms."
       }
     ],
-    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 56 with a recorded fix commit]"
+    "outcome": "[findings: 163 - 3 high, 58 med, 102 low; 57 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -10907,7 +10909,7 @@
     {
       "id": "P125.138-0h5",
       "title": "fix P125-R161: contradicts task clause 'so no git process in any suite spawns...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause 'so no git process in any suite spawns detached maintenance' (tests.add): on a local push, git's local transport unsets GIT_CONFIG_COUNT before receive-pack, so the runner's set never reaches the remote side. Under the runner's exact environment, a `git push` to a local bare repo traced 'run_command: git maintenance run --auto --quiet --detach' (my probe, git 2.53), and the executor measured the same (1 left in test__invariants). The three isolation documents still say no git a suite starts, 'through a fixture prefix or bare', leaves a detached housekeeping run, and the gm0 title claims it for every git process.\n\nResolution asked: Close the gap or name it. Either reach receive-pack (fixture remotes set receive.autogc=false and maintenance.auto=false in their own config, or the runner points GIT_CONFIG_GLOBAL at a runner-owned file that the home channel excuses), with a traced local-push case beside gm1/gm2. Or, if that is deferred, state the receive-pack exception in all three documents and the case title, and file the follow-up the claim calls for.",
       "files": [
         "CLAUDE.md",
@@ -10940,14 +10942,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6764eb63bd5b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Closed the receive-pack gap. tools/sweep-selftests.py: run_one now allocates a per-child directory (mkdtemp prefix sg-) outside both watched channels, writes a runner-owned git config holding receive.autogc=false into it (git_global_env) and points the child's GIT_CONFIG_GLOBAL at it; git_global_debris() reads it back with scratch_debris so a suite's `git config --global` (which now lands there instead of the watched home) is reported, labelled 'git global config'. The file carries receive.autogc ONLY: a probe (git 2.53) showed that key alone takes the receive-pack spawn to zero, and copying maintenance.auto/gc.auto into it turned test_commit_task_work.py's ctw-nm2 deny twin red (that suite strips only the GIT_CONFIG_COUNT pairs to measure its prefix alone), so the file is held to the one key receive-pack reads. Probes: GIT_CONFIG_COUNT set -> 1 spawn on push; global file with receive.autogc=false -> 0; empty global -> 1; `-c maintenance.auto=false -c gc.auto=0` on the push -> 1 (lost too). Suites that set their own GIT_CONFIG_GLOBAL (test__id_shape, test_gen_demo_manifest, test__doctor_hygiene, test__doctor_setup, test__merge_install, test_close_phase, test__panel_viewer, test_merge_manifest, test__doctor_policy; close-phase.py itself sets os.devnull) win for their own git; the COUNT pairs still reach every git there but a local push's receive side; the documents name that exception. plugins/audit/tests/_harness.py: new _receive_pack_cases runs a fixture suite through the sweep's own run_one, traces a bare-git push to a local bare repo: rp1 (titled with the tests.add clause) asserts receive-pack ran, 0 spawns, GIT_CONFIG_GLOBAL outside cwd and HOME, receive.autogc reads false; rp2 deny twin swaps the global file for one holding only maintenance.autoDetach=false and asserts exactly 1 foreground spawn. Also a comment that the harness -c prefix does not reach a local push's receive side, and the fixture_root docstring. CLAUDE.md and CONTRIBUTING.md isolation passages name GIT_CONFIG_GLOBAL and receive.autogc and the self-set exception; 'Four things' replaced with unnumbered wording. gate-parity isolation_drift derives the new family ('gitconf': GIT_CONFIG_GLOBAL) and reported CLAUDE.md and CONTRIBUTING.md as drift before the doc edits. Red: on the pre-fix runner rp1 FAILED with global None, with spawns 1 (84/85). Runs, exit codes: _harness.py --selftest 0 (85/85); full sweep 0 (335/335 files); --encoding cp1252 0 (335/335, both halves); sweep --selftest 0 (104/104); gate-parity 0; gate-parity --selftest 0 (132/132); ruff 0; vermin 0. Measurement GIT_TRACE over test__invariants inside the sweep, twice with a gap: HEAD runner 1 and 1 maintenance spawns, this runner 0 and 0 (receive-pack lines 3 each). Whole-sweep shared trace after: 0 maintenance/gc spawns over 57574 lines (suites that set their own GIT_TRACE are not visible there). Deviation: the case lives in _harness.py, the tests.add file, not beside gm1/gm2, and the test command is the harness selftest, because the red helper locates a house red only in a declared test file the command runs and tools/sweep-selftests.py is implementation (stays at HEAD in the red tree). gm0 title left unchanged.",
+        "descriptive": "A local git push inside the sweep no longer leaves a detached maintenance run on the receiving repository; the isolation documents now say how and name the one exception."
       },
       "startedAt": "2026-10-16T10:32:59Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T11:45:56Z",
+      "verifiedBy": [
+        "plugins/audit/tests/_harness.py: Close the gap or name it (rp1 ...)",
+        "plugins/audit/tests/_harness.py: rp2 ...while the same push with the runner's global file swapped ... spawns exactly one"
+      ],
       "notes": [
         {
           "at": "2026-10-16T07:18:26Z",
@@ -10978,6 +10983,18 @@
         "runId": "2026-10-16T11:45:54Z.512dde",
         "status": "passed",
         "at": "2026-10-16T11:45:54Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "6764eb63bd5b",
+        "at": "2026-10-16T11:45:56Z",
+        "basis": "a fix task for P125-R161: the phase review raised the finding; the fix's own diff is unreviewed unless sign-off re-reviews it"
+      },
+      "redFirst": {
+        "at": "2026-10-16T11:18:48Z",
+        "basis": "`python3 plugins/audit/tests/_harness.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 85 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - Close the gap or name it (rp1 the gap closed: a traced `git push` to a local bare repository, from a suite calling bare git under the sweep's own environment, reaches receive-pack and spawns NO maintenance there - the runner's `GIT_CONFIG_GLOBAL` file, which sits outside both watched directories, is what reaches it, and the child's git reads receive.autogc=false back from it): {'global': None, 'cwd': '<outside-repo>', 'home': '<outside-repo>', 'autogc': '', 'with': {'receive': 3, 'spawns': 1}, 'deny': {'receive': 3, 'spawns': 1}} (house FAIL): SELFTEST FAILED: 84/85 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -11043,7 +11060,12 @@
       "fixes": [
         "P125-R162"
       ],
-      "reviewPerTask": "phase"
+      "reviewPerTask": "phase",
+      "testEvidence": {
+        "runId": "2026-10-16T12:06:58Z.ff6a7f",
+        "status": "passed",
+        "at": "2026-10-16T12:06:58Z"
+      }
     },
     {
       "id": "P125.140-0h5",

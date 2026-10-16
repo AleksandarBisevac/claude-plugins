@@ -1208,7 +1208,7 @@ def _brief_cases(check):
           and "submit P1 --role reviewer" in ptext6
           and "--head %s" % (head,) in ptext6 and "file-return" not in ptext6
           and "inherited" in ptext6.lower() and "red-first" in ptext6.lower()
-          and "answered by returns/P1/" in ptext6)
+          and "recorded by returns/P1/" in ptext6)
 
     unowed = _bf_signed_phase()
     for task in unowed["phases"][0]["tasks"]:
@@ -1629,6 +1629,69 @@ def _brief_cases(check):
           % ((shown10, owed10),),
           shown10 == ["P1.4", "P1.5"] and owed10 == ["P1.5"]
           and all(t in shown10 for t in owed10))
+
+    # ---- a round's reviewed set is what its brief showed, not what it owed ---
+    # A fix task is owed no answer, so no `tasks` entry can mark it reviewed;
+    # the filed return's `shown` list does. Round one answered P1.1; round two
+    # showed the fix tasks P1.4 and P1.6, owing neither. Since then P1.5 closed
+    # and P1.6 was redone at a new commit, so round three shows those two and
+    # repeats neither P1.1 nor P1.4. A reading keyed on the id alone would
+    # drop P1.6 too, which is the other way to get this wrong.
+    third = _bf_signed_phase()
+    third_phase = third["phases"][0]
+    third_phase["tasks"] = [third_phase["tasks"][0]]
+    third_phase["review"] = {"findings": [
+        {"id": "P1-R%d" % n, "severity": "med", "file": "src/m1.py:1",
+         "issue": "x", "resolution": "y", "fixTask": "P1.%d" % n}
+        for n in (4, 6)]}
+
+    def closed(tid, commit, fixes=None):
+        task = {"id": tid, "title": "t" + tid, "status": "done",
+                "description": "closed " + tid, "files": ["src/%s.py" % (tid,)],
+                "tests": {"mode": "gate-only", "add": [], "expectRedFirst": False,
+                          "gate": ["python3 tests/t.py"]},
+                "commit": commit, "startedAt": _BF_START, "attempts": 1,
+                "maxAttempts": 3}
+        if fixes:
+            task["fixes"] = fixes
+        return task
+    third_phase["tasks"] += [closed("P1.4", "e" * 40, ["P1-R4"]),
+                             closed("P1.5", "f" * 40),
+                             closed("P1.6", "d" * 40, ["P1-R6"])]
+    proj11, mpath11 = project("bf-phase-round-three", third)
+    rounds11 = os.path.join(proj11, "docs", "audit", "evidence", "returns", "P1")
+    os.makedirs(rounds11)
+    for name, body in (
+            ("9" * 40, {"tasks": [{"id": "P1.1", "commit": "a" * 40,
+                                   "answer": "matches"}]}),
+            ("8" * 40, {"tasks": [],
+                        "shown": [{"id": "P1.4", "commit": "e" * 40},
+                                  {"id": "P1.6", "commit": "c" * 40}]})):
+        with open(os.path.join(rounds11, "%s.reviewer.json" % (name,)), "w",
+                  encoding="utf-8") as fh:
+            json.dump(dict(body, findings=[], verdict="findings",
+                           intent={"answer": "matches"}), fh)
+    git(proj11, "init", "-q")
+    git(proj11, "add", "-A")
+    git(proj11, "commit", "-qm", "round three")
+    brief(proj11, mpath11, "P1", "phase")
+    text11 = read(brief_file(proj11, "P1", "phase.md")) or ""
+    shown11 = [ln.split()[1] for ln in text11.splitlines()
+               if ln.startswith("## P1.")]
+    owed11 = [ln.split(": ", 1)[1] for ln in text11.splitlines()
+              if ln.startswith("owed: ")]
+    check("Record what a round reviewed, not only what it owed (round three: "
+          "the fix task P1.4 round two showed is not shown again, P1.5 closed "
+          "since is, and so is P1.6, redone at a commit round two never "
+          "showed; sections, owed): %r" % ((shown11, owed11),),
+          shown11 == ["P1.5", "P1.6"] and owed11 == ["P1.5"])
+    submit11 = [ln for ln in text11.splitlines() if " submit P1 " in ln]
+    want11 = "--shown P1.5@%s,P1.6@%s" % ("f" * 40, "d" * 40)
+    check("the phase brief's filing command carries the set it shows, each "
+          "task at the commit its section names, so the filing verb records "
+          "what this round reviewed: %r" % (submit11,),
+          len(submit11) == 1 and submit11[0].count("--shown ") == 1
+          and want11 in submit11[0])
 
     # ---- a wave task's brief says which tree it works in --------------------
     # The tree comes from the driver's state, which is where `add_tree` records

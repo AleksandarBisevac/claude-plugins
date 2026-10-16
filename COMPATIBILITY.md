@@ -379,7 +379,10 @@ is still true of a nested key.
   records the task's intent as `deferred` and refuses every `--intent` word (a fix task
   `add --fixes` recorded closes only `not-asked` with its basis); the phase review
   answers each task at sign-off, in a `tasks` array it files with `file-return <phaseId>
-  --role reviewer --head <sha>`; and `/audit:phase signoff` — under `--verdict skipped`
+  --role reviewer --head <sha>` (a brief now adds `--shown`, the tasks it showed, which the
+  verb records beside `tasks` as a `shown` list so the next round leaves them out; the flag
+  is optional, and a return filed without the list — by an older plugin — reads as its
+  `tasks` entries alone, as before); and `/audit:phase signoff` — under `--verdict skipped`
   as under `passed` — and `close-phase.py` at its own merge refuse while a task that
   records a commit lacks its three answers bound to that commit. `close-phase.py` asks
   the plan it is handed, the copy on disk in the worktree holding the branch and the copy

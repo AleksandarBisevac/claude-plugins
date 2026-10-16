@@ -1665,6 +1665,29 @@ def _submit_cases(check):
     check("ds8q ALLOW: a prefix that is not the recorded commit's is still the "
           "verb's refusal: %r" % ((code_q, text_q),), code_q == 1)
 
+    # The set a phase brief showed reaches the filing verb unchanged: the brief
+    # prints it as `--shown` on this command, and the verb records it.
+    root_s, mpath_s = _repo("phaseshown", task_ids=TASKS[:1], per_task="phase")
+    drive(M, root_s, mpath_s, phase_review=False)
+    recorded_s = tasks_of(mpath_s)["P1.1"].get("commit") or ""
+    review_s = {"findings": [], "intent": {"answer": "matches", "note": "done"},
+                "verdict": "clean",
+                "tasks": [dict(entry, commit=recorded_s)]}
+    head_s = _head(root_s)
+    code_s, text_s = _submit(None, root_s, mpath_s, PHASE, review_s,
+                             role="reviewer",
+                             tail=["--head", head_s, "--shown",
+                                   "P1.1@%s" % (recorded_s,)])
+    project_s, config_s = _evio.project_config_for(mpath_s, root_s)
+    filed_s = _fr.phase_returns(_evio.evidence_dir(project_s, config_s), PHASE)
+    check("ds8s a phase review submitted with `--shown` files a return "
+          "recording that set: %r"
+          % ((code_s, text_s, [(body or {}).get("shown")
+                               for _rel, body, _why in filed_s]),),
+          code_s == 0 and recorded_s != "" and len(filed_s) == 1
+          and (filed_s[0][1] or {}).get("shown")
+          == [{"id": "P1.1", "commit": recorded_s}])
+
     # The hand-back line is `submit`'s too, so its cases run in this block,
     # reading the phase review's two prints above for the reviewer's half.
     _handback_cases(check, M, ((code, text), (code_2, text_2)))

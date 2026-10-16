@@ -1069,6 +1069,60 @@ def answered_entries(returns):
     return answered
 
 
+# WHAT A ROUND REVIEWED IS WHAT ITS BRIEF SHOWED, NOT ONLY WHAT IT OWED. A fix
+# task is owed no `tasks` entry, so the entries cannot say a round read its
+# diff. The brief prints the set it showed on its filing command (`--shown`),
+# and the filing verb writes it here. Recomputing that set later is not
+# possible: it depends on the plan as it stood when the brief was composed,
+# which no record keeps. A return filed before the list existed reads as its
+# entries alone.
+SHOWN_FIELD = "shown"
+_SHOWN_COMMIT = re.compile(r"^[0-9a-f]{7,40}$")
+
+
+def parse_shown(text):
+    """`([(task id, commit), ...], None)` off a `--shown` value - comma-separated
+    `id@commit` pairs, in the order given - or `([], problem)`."""
+    pairs, seen = [], set()
+    items = [p.strip() for p in str(text or "").split(",")]
+    if items == [""]:
+        return [], "`--shown` names no task"
+    for item in items:
+        tid, at, commit = item.partition("@")
+        if not tid or not at or not commit:
+            return [], "`--shown` item %r is not `id@commit`" % (item,)
+        if not _SHOWN_COMMIT.match(commit):
+            return [], ("`--shown` item %r names %r, not a commit SHA in "
+                        "lower-case hex" % (item, commit))
+        if tid in seen:
+            return [], "`--shown` names %s twice" % (tid,)
+        seen.add(tid)
+        pairs.append((tid, commit))
+    return pairs, None
+
+
+def shown_record(pairs):
+    """The `shown` list a filed return carries for `parse_shown`'s pairs."""
+    return [{"id": tid, "commit": commit} for tid, commit in pairs]
+
+
+def reviewed_entries(returns):
+    """`{(task id, commit): rel}` off `phase_returns`'s list - every commit a
+    filed round reviewed: its `tasks` entries and its `shown` list, the first
+    return to name a commit winning."""
+    seen = {}
+    for rel, body, _problem in returns:
+        if not isinstance(body, dict):
+            continue
+        for key in ("tasks", SHOWN_FIELD):
+            entries = body.get(key)
+            for entry in entries if isinstance(entries, list) else []:
+                if isinstance(entry, dict) and entry.get("id") \
+                        and entry.get("commit"):
+                    seen.setdefault((str(entry["id"]), entry["commit"]), rel)
+    return seen
+
+
 def _entry_problems(entry, label):
     problems = ["%s lacks `%s`" % (label, key) for key in PHASE_ENTRY_KEYS
                 if key not in entry]

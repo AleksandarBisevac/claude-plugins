@@ -49,6 +49,7 @@ Usage:
   audit-task.py file-return <taskId> --role executor|reviewer [manifest]
                 [--project-dir DIR] [--takeover] [--json]  < return.json
   audit-task.py file-return <phaseId> --role reviewer --head <sha> [manifest]
+                [--shown ID@SHA,...]
                 [--project-dir DIR] [--takeover] [--json]  < return.json
   audit-task.py move <taskId> --to <phaseId> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
@@ -5365,6 +5366,14 @@ def cmd_file_return(args, out):
                    or ("[audit-task] REFUSED: %s. Nothing written."
                        % (_fr.head_problem(head),) if _fr.head_problem(head)
                        else None))
+    shown = None
+    if refusal is None and args.shown is not None:
+        shown, problem = _fr.parse_shown(args.shown)
+        if head is None:
+            problem = ("`--shown` records what a PHASE brief showed, and goes "
+                       "with --head")
+        if problem:
+            refusal = "[audit-task] REFUSED: %s. Nothing written." % (problem,)
     if refusal:
         out(refusal)
         return E_USAGE
@@ -5387,7 +5396,7 @@ def cmd_file_return(args, out):
     return _under_lock(args, project, out,
                        lambda config, mpath: _locked_file_return(
                            args, project, mpath, tid, role, text, out,
-                           config=config, head=head, body=body))
+                           config=config, head=head, body=body, shown=shown))
 
 
 def _phase_return_refusal(project, config, mpath, phase, role, head, body,
@@ -5458,9 +5467,11 @@ def _phase_return_gate(project, config, mpath, phase, role, head):
 
 
 def _locked_file_return(args, project, mpath, tid, role, text, out, config=None,
-                        head=None, body=None):
+                        head=None, body=None, shown=None):
     """Write one return, once. The manifest is read for the task's current start,
-    or for a phase return the tasks it owes, and never written."""
+    or for a phase return the tasks it owes, and never written. A phase return
+    given `shown` (`_fr.parse_shown`'s pairs) records them as what its round
+    reviewed."""
     try:
         assembled = _mio.load_manifest(mpath)
     except Exception as exc:
@@ -5473,9 +5484,20 @@ def _locked_file_return(args, project, mpath, tid, role, text, out, config=None,
         if refusal:
             out(refusal)
             return E_USAGE
-        # Filed as typed unless the verb filled an answer: a return it
-        # completed is written whole, its `computedAnswers` naming the fill.
-        if _fr.COMPUTED_FIELD in done:
+        outside = sorted(set(t for t, _c in shown or [])
+                         - set(str(t.get("id")) for t in node.get("tasks") or []
+                               if isinstance(t, dict)))
+        if outside:
+            out("[audit-task] REFUSED: `--shown` names %s, not a task of phase "
+                "%s. Nothing written." % (", ".join(outside), tid))
+            return E_USAGE
+        # Filed as typed unless the verb filled an answer or records what the
+        # brief showed: such a return is written whole, its `computedAnswers`
+        # naming the fill and its `shown` the set.
+        if shown:
+            done = dict(done)
+            done[_fr.SHOWN_FIELD] = _fr.shown_record(shown)
+        if _fr.COMPUTED_FIELD in done or shown:
             text = json.dumps(done, indent=2) + "\n"
         return _file_once_report(args, project, path, tid, role, text, out,
                                  {"head": head})
@@ -13285,8 +13307,8 @@ VERB_FLAGS = {
              "from_return"),
     # `file-return` takes the role and nothing that could name a path; the
     # return itself arrives on stdin. A phase return adds the head its brief
-    # was computed at, which keys the file.
-    "file-return": ("role", "head"),
+    # was computed at, which keys the file, and the tasks that brief showed.
+    "file-return": ("role", "head", "shown"),
     "scope": ("files", "tests_mode", "tests_add", "gate", "gate_clear",
               "gate_set", "gate_drop", "description", "risk", "blocked_by", "depends_on", "introduces"),
     "retarget": ("gate", "gate_clear", "gate_drop", "gate_set", "area",
@@ -13651,6 +13673,11 @@ def build_parser():
     # computed at, which keys the file.
     p.add_argument("--head", default=None, metavar="SHA",
                    help="file-return: a phase return's head, as its brief names it")
+    # `file-return` only, for a PHASE return: the tasks its brief showed, which
+    # the verb records as what that round reviewed.
+    p.add_argument("--shown", default=None, metavar="ID@SHA,...",
+                   help="file-return: the tasks a phase brief showed, as its "
+                        "filing command names them")
     # `bug-add` only. The three sentences of a bug report beside its
     # `--description`, one flag per field and spelled as the field. The title
     # stays the POSITIONAL, for `--rename`'s reason above: a `--title` flag

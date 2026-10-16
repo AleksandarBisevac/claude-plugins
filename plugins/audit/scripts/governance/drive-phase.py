@@ -142,7 +142,8 @@ Usage:
   drive-phase.py brief <id> --role executor|reviewer|phase [manifest]
                  [--project-dir DIR]
   drive-phase.py submit <taskId|phaseId> --role executor|reviewer [manifest]
-                 [--head SHA] [--project-dir DIR] [--case ID ...]
+                 [--head SHA] [--shown ID@SHA,...]
+                 [--project-dir DIR] [--case ID ...]
                  [--introduces SYMBOL ...] [--deps-from DIR] [--verbose]
                  [-- <test command>]  < return.json
 
@@ -4249,6 +4250,8 @@ def submit(ctx, manifest, args, cmd, text):
             body["tasks"] = agreed_commits(phase, body["tasks"])
             text = json.dumps(body, indent=2) + "\n"
     extra = ["--head", head] if head else []
+    if args.shown is not None:
+        extra += ["--shown", args.shown]
     out, stop = _verb_or_stop(ctx, "audit-task.py", [
         "file-return", args.id, "--role", args.role, ctx["manifest"],
         "--project-dir", ctx["project"]] + extra, stdin=text)
@@ -4622,6 +4625,9 @@ def build_parser():
     sbm.add_argument("--role", required=True, choices=_fr.RETURN_ROLES)
     sbm.add_argument("--head", default=None, metavar="SHA",
                      help="a phase review's head, as its brief names it")
+    sbm.add_argument("--shown", default=None, metavar="ID@SHA,...",
+                     help="the tasks a phase review's brief showed, as its "
+                          "filing command names them; recorded by the verb")
     sbm.add_argument("--project-dir", dest="project_dir", default=None)
     sbm.add_argument("--case", action="append", default=[],
                      help="passed to the red-first helper; needs a test command")

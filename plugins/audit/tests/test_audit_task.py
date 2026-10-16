@@ -14474,6 +14474,65 @@ def _held_cases(check):
           and "--intent-basis" in r22[1] and after == before
           and r23[0] == 0 and answer(mpathx, "P1.2") == "not-asked")
 
+    # ---- the set a round's brief showed, recorded at filing -------------------
+    # A fix task is owed no answer, so no `tasks` entry can say a round reviewed
+    # it; the `--shown` list the brief's command carries does, and the verb
+    # writes it into the return beside `tasks`.
+    def shown_project(name):
+        return project(name, [ph(
+            "P1", [done_tk("P1.1", _FR_SHA),
+                   done_tk("P1.2", _HD_SHA2, fixes=["P1-R1"])],
+            reviewPerTask="phase",
+            review={"findings": [finding("P1-R1", fixTask="P1.2")]})])
+
+    def filed_body(proj):
+        try:
+            with open(os.path.join(returns(proj, "P1"), "%s.reviewer.json"
+                                   % (_HD_HEAD,)), encoding="utf-8") as fh:
+                return json.load(fh)
+        except (OSError, ValueError):
+            return None
+
+    def file_shown(proj, *shown):
+        return verb(proj, "file-return", "P1", "--role", "reviewer", "--head",
+                    _HD_HEAD, *shown,
+                    stdin=_hd_return([_hd_entry("P1.1", _FR_SHA)]))
+    projs, _ms = shown_project("shown-recorded")
+    s1 = file_shown(projs, "--shown", "P1.1@%s,P1.2@%s" % (_FR_SHA, _HD_SHA2))
+    body_s1 = filed_body(projs) or {}
+    check("hd40 a phase return filed with `--shown` records that set beside "
+          "`tasks`, each task at the commit the brief showed, the fix task "
+          "owed no entry included: %r" % ((s1, body_s1.get("shown")),),
+          s1[0] == 0
+          and body_s1.get("shown") == [{"id": "P1.1", "commit": _FR_SHA},
+                                       {"id": "P1.2", "commit": _HD_SHA2}]
+          and [e.get("id") for e in body_s1.get("tasks") or []] == ["P1.1"])
+    projo, _mo = shown_project("shown-absent")
+    s2 = file_shown(projo)
+    body_s2 = filed_body(projo)
+    # The other direction: a verb that always wrote the key would still pass
+    # hd40, and would make an older brief's filing claim a set nobody named.
+    check("hd41 ALLOW: the same return filed with no `--shown` files as it "
+          "always did, carrying no `shown` key: %r" % ((s2[0], body_s2),),
+          s2[0] == 0 and isinstance(body_s2, dict) and "shown" not in body_s2)
+    bad = []
+    for label, arg in (("outside the phase", "P9.9@%s" % (_HD_SHA3,)),
+                       ("no commit", "P1.2"),
+                       ("a commit that is not hex", "P1.2@nothex"),
+                       ("named twice", "P1.2@%s,P1.2@%s" % (_HD_SHA2, _HD_SHA2))):
+        projb, _mb = shown_project("shown-bad-%d" % (len(bad),))
+        got = file_shown(projb, "--shown", arg)
+        bad.append((label, got[0], got[1][-120:], filed_body(projb)))
+    task_shown = verb(projs, "file-return", "P1.1", "--role", "reviewer",
+                      "--shown", "P1.1@%s" % (_FR_SHA,), stdin=_hd_return([]))
+    check("hd42 a `--shown` pair naming a task outside the phase, with no "
+          "commit, with a commit that is not hex, or twice is refused, writing "
+          "nothing, and a task's return takes no `--shown`: %r"
+          % ((bad, task_shown[0], task_shown[1][-120:]),),
+          all(code == M.E_USAGE and "--shown" in said and body is None
+              for _l, code, said, body in bad)
+          and task_shown[0] == M.E_USAGE and "--shown" in task_shown[1])
+
 
 def _batch_doc(**over):
     """A planning file in the shape `add --from-file` reads: the request as

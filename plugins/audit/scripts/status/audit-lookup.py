@@ -89,6 +89,7 @@ import argparse
 import json
 import os
 import pathlib
+import shlex
 import subprocess
 import sys
 import time
@@ -1213,17 +1214,24 @@ def existing_test_lines(ctx, phase, head):
 
 
 def _review_owed(ctx, phase):
-    """`(live, answered, problem)` - the config's `review.perTask` now (read only
-    where a task with a commit records no key), and the commits filed phase
-    returns already answer."""
+    """`(live, answered, reviewed, problem)` - the config's `review.perTask` now
+    (read only where a task with a commit records no key), the commits filed
+    phase returns already answer, and every commit a filed round reviewed
+    (`_fr.reviewed_entries`)."""
     live, problem = None, None
     if any(t.get("commit") and _fr.review_key(t, phase, None)[1] == "config"
            for t in phase.get("tasks") or [] if isinstance(t, dict)):
         live, problem = _config_rules.review_per_task_mode(ctx["config"])
     filed = _fr.phase_returns(ctx["evidence"], str(phase.get("id")))
     unread = [why for _rel, _body, why in filed if why]
-    return live, _fr.answered_entries(filed), problem or (
-        "; ".join(unread) if unread else None)
+    return (live, _fr.answered_entries(filed), _fr.reviewed_entries(filed),
+            problem or ("; ".join(unread) if unread else None))
+
+
+def shown_argument(tasks):
+    """The `--shown` value naming `tasks` at the commit each records, in their
+    order: what a phase brief showed, for the filing verb to record."""
+    return ",".join("%s@%s" % (t.get("id"), t.get("commit")) for t in tasks)
 
 
 def _owed_line(task, phase, live, answered):
@@ -1284,7 +1292,7 @@ def compose_phase_brief(manifest, phase, ctx):
     on it."""
     pid = str(phase.get("id"))
     head, head_why = _head(ctx)
-    live, answered, owed_why = _review_owed(ctx, phase)
+    live, answered, seen, owed_why = _review_owed(ctx, phase)
     lines = ["# Brief for %s (reviewer, mode: phase)" % (pid,), "",
              "Computed by audit-lookup.py brief from %s at %s, plugin copy %s."
              % (ctx["manifest"], ctx["at"], ctx["plugin"]),
@@ -1321,30 +1329,36 @@ def compose_phase_brief(manifest, phase, ctx):
         ctx["evidence"], phase, build,
         lambda entries: _evio.resolved_commands(manifest, entries))
     # A RE-REVIEW SHOWS WHAT NO EARLIER ROUND REVIEWED, AND NOTHING IT DID.
-    # What an earlier round reviewed is read off its filed return, entry by
-    # entry at the commit it answered - the record the filing verb writes for
-    # every owed task and refuses to leave one out of. Its head is not used:
-    # an ancestor test misreads a rewritten branch, and a task closed by hand
+    # What an earlier round reviewed is read off its filed return at the
+    # commit of each task: the `tasks` entries it answered, and the `shown`
+    # list the filing verb records from this brief's own `--shown` - the one
+    # record of a fix task, which is owed no entry. Its head is not used: an
+    # ancestor test misreads a rewritten branch, and a task closed by hand
     # after the round is just as absent from the return as from that head.
-    # So the shown set is every task with a diff whose commit no return
-    # answers - the fix tasks and every task closed since - and `owed` below
-    # is drawn from the same set, which is why each owed task has a section.
-    # With no filed return nothing is known to be reviewed, and all is shown.
-    def answered_by(task):
-        return answered.get((str(task.get("id")), task.get("commit")))
-    reviewed = [t for t in listed if answered_by(t) is not None]
-    shown = [t for t in listed if answered_by(t) is None]
+    # So the shown set is every task with a diff at a commit no round
+    # reviewed - every task closed since, and every fix since - and `owed`
+    # below is drawn from the same set, which is why each owed task has a
+    # section: a task still owed is shown even where a round's list names it.
+    # With no filed return nothing is known reviewed, and all shows.
+    def reviewed_by(task):
+        return seen.get((str(task.get("id")), task.get("commit")))
+
+    def is_shown(task):
+        return (reviewed_by(task) is None
+                or _fr.owed_answer(task, phase, live, answered))
+    reviewed = [t for t in listed if not is_shown(t)]
+    shown = [t for t in listed if is_shown(t)]
     fixers = [t for t in shown if _fr.is_fix_task(t, phase)]
     scope = []
     if reviewed:
-        returns = sorted(set(answered_by(t)[0] for t in reviewed))
+        returns = sorted(set(reviewed_by(t) for t in reviewed))
         scope += [
-            "An earlier round reviewed these, answered by %s at the commit "
+            "An earlier round reviewed these, recorded by %s at the commit "
             "each records, so they are not repeated here: %s"
             % (", ".join(returns),
                ", ".join(str(t.get("id")) for t in reviewed)),
-            "Shown below is every task no filed return answers - the fix "
-            "tasks and every task closed since: %s"
+            "Shown below is every task no filed round reviewed at its commit "
+            "- every task closed since, fix tasks included: %s"
             % (", ".join(str(t.get("id")) for t in shown) or "none",)]
     if fixers:
         scope += [
@@ -1400,8 +1414,12 @@ def compose_phase_brief(manifest, phase, ctx):
             "Which tasks are owed their answers could not be read: %s. Sign-off "
             "and its filing refuse until it can." % (owed_why,)])
         return lines
-    file_cmd = submit_command(ctx, pid, "reviewer",
-                              " --head %s" % (head or "<head>",))
+    # The set this brief shows rides on its filing command, so the verb can
+    # record what the round reviewed - fix tasks included, which no `tasks`
+    # entry ever names - and the next round's brief leaves it out.
+    file_cmd = submit_command(ctx, pid, "reviewer", " --head %s%s" % (
+        head or "<head>",
+        " --shown %s" % (shlex.quote(shown_argument(shown)),) if shown else ""))
     if not owed:
         # FILED EVEN WHEN NOTHING IS OWED: the step driver reads the phase
         # review's findings from the filed return, so a return handed back
