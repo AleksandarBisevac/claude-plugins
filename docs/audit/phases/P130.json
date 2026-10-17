@@ -29,7 +29,7 @@
     {
       "id": "P130.1",
       "title": "Every sweep leg is graded by the plain rules, and the codec leg's summary counts what it graded",
-      "status": "in_progress",
+      "status": "done",
       "description": "Plan F1.1, invariant I15; absorbs P128.20 (register F677). (1) `grade()` in tools/sweep-selftests.py (def at :899 on 571becfd) loses its `encoding_pass` argument: a leg run under `--encoding`, alone or with `--spaced`, requires the `N/M cases passed` contract, counts cases, and reds a migrated file that prints the contract, exactly as the plain leg does. (2) A leg's heading names both conditions when both apply (`encoding pass (cp1252), spaced sweep`); each single condition keeps the heading it has today. (3) The codec leg's summary counts cases and migrated files the way the plain leg's does, so it never prints a count it did not take (P128.20's fault). (4) The grade-level case `g5` (:1721) goes; new cases run real children through `sweep()` in a scratch repository and assert: the codec reached the child; a live suite's cases are counted; a contract-free suite is red; a suite that swallows its own UnicodeEncodeError and exits 0 is red; a migrated file printing the contract is red; a combined-leg child sees cp1252 and a spaced, linked TMPDIR; the headings are pinned. (5) The ci.yml comment under the cp1252 step that describes the weak grade (ci.yml:271-276) is rewritten; no matrix literal changes. Starting point: korak0/C-work/sweep-grade.patch (or studies/C-poc/sweep-grade-v2.patch); at 571becfd its first hunk, the module docstring, no longer applies and the remaining hunks apply with offsets, so the docstring hunk is redone by hand. Acceptance: `python3 tools/sweep-selftests.py --selftest; echo $?` gives 0, run twice with a gap; `python3 korak0/C-work/probe/mutations.py <patched export>` reports every row killed and none NOT APPLIED (the plan cited studies/C-poc/probe/mutations.py, which holds the F1.2 checker rows instead); `grep -n encoding_pass tools/sweep-selftests.py` finds nothing.",
       "files": [
         "tools/sweep-selftests.py",
@@ -98,19 +98,35 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b15778767c25",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/sweep-selftests.py: grade() loses encoding_pass (def now grade(rel_path, code, output, covered, debris=()); sweep() no longer passes it); docstring explains one grade for every leg; _leg_label joins both conditions ('encoding pass (cp1252), spaced sweep'), single conditions unchanged; module usage docstring redone by hand (cp1252 line reworded, combined invocation line added). Old g5 and the encoding_pass use in h1 removed (h1 re-worded to the migrated row). Three new cases run real children through sweep() in a scratch repository (fixtures without a .py extension so the basename lints do not read them as references): live suite counted with codec reaching child; contract-free suite red; suite swallowing its own UnicodeEncodeError and exiting 0 red; migrated file printing the contract red; migrated pointer file green and counted; summary line of the codec leg rendered off those real rows ('2/5 files ok, 1 migrated to tests/, 3 cases') vs plain-leg line unchanged; combined cp1252+spaced child sees ENC=cp1252 and a spaced, linked TMPDIR; headings pinned for all four label combos. .github/workflows/ci.yml: comment under the cp1252 step rewritten (no matrix literal touched). Evidence: `python3 tools/sweep-selftests.py --selftest` exit 0, 106/106, twice (second after a 20 s gap, exit 0 again); full `python3 tools/sweep-selftests.py --quiet` exit 0 (335/335 files, 16648 cases); real `--encoding cp1252 --quiet` exit 0 (335/335, 153 migrated, 16648 cases - identical counts to the plain leg, so the stricter grade narrows nothing); `--encoding cp1252 --spaced` on one real suite exit 0 with heading 'encoding pass (cp1252), spaced sweep: 1 files'. ruff and vermin on the file exit 0. `grep -n encoding_pass tools/sweep-selftests.py` finds nothing (exit 1). An earlier full sweep went red in test__output (prose-number lint: three 'N cases' literals) and test__refs (basename lints on the fixtures); both were mine and fixed (counts built with %d, fixtures extension-less), then both re-ran green. Mutation probe: korak0/C-work/probe/mutations.py cannot be run as-is on this tree - it matches cases by id (g5/g5b/cb0/lb0) while the task requires the tests.add clause as the case title, and its anchors are pre-571becfd; I wrote an equivalent probe (scratchpad, matches by title prefix, asserts each anchor occurs once) with nine rows: R1 old codec grade, R2 codec not reaching the child, R3 combined leg drops spaced, R4 old heading, R5 over-fire (no case count read), R6 summary without migrated count, R7 summary without case count, R8 migrated-prints-contract rule removed, R9 contract-required rule removed - all KILLED, none NOT APPLIED, file restored byte for byte. Requirement answers: (1) tools/sweep-selftests.py:~899 grade signature and ~943 removal; sweep() call ~1318; (2) _leg_label ~1360; (3) summary: falls out of the single grade (cases/skipped now taken on the codec leg), pinned by the summary case at ~2599; (4) g5 deleted (~1729 comment replaces it), new real-child cases at ~2500-2640; (5) .github/workflows/ci.yml:271-276 rewritten. Not run: korak0 probe verbatim (reason above); browser gates and verify.sh (orchestrator forbade).",
+        "descriptive": "Every sweep leg - the cp1252 one, the spaced one and both together - is now graded by the plain rules, and the codec leg's summary counts the cases and migrated files it really took."
       },
       "startedAt": "2026-10-17T15:54:48Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T16:49:44Z",
+      "verifiedBy": [
+        "a cp1252 leg reds a contract-free suite and a migrated file that prints the contract, and counts a live suite's cases, exactly as the plain leg does",
+        "the codec leg's summary line carries the case and migrated-file counts it took, and the plain leg's summary is unchanged",
+        "a combined --encoding cp1252 --spaced child sees both conditions and the leg heading names both"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-17T16:48:27Z.34783f",
         "status": "passed",
         "at": "2026-10-17T16:48:27Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "b15778767c25",
+        "at": "2026-10-17T16:49:44Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-17T16:33:00Z",
+        "basis": "`python3 tools/sweep-selftests.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 106 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, the task's run with its inline suite tools/sweep-selftests.py laid over as HEAD's copy plus its 4 test hunk(s), 10 other hunk(s) held at HEAD), each passing with the working tree's implementation - a cp1252 leg reds a contract-free suite and a migrated file that prints the contract, and counts a live suite's cases, exactly as the plain leg does: the codec really reached the child (True), the live suite's cases are COUNTED rather than zeroed (0), a suite that exits 0 without its contract is red (None), so is one that swallowed its own UnicodeEncodeError and exited 0 - the codec failure a grade without the contract called green (None) - and a file listed as MIGRATED that still prints the contract is red (None) (house FAIL) and 2 more: SELFTEST FAILED: 103/106 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -144,12 +160,12 @@
         ],
         "expectRedFirst": true,
         "gate": [
-          "python3 tools/sweep-selftests.py tools/gate-parity.py tools/ci-verified.py tools/release.py tools/sweep-selftests.py",
+          "selftests",
           "lint",
           "report",
           "shots",
           "interactive",
-          "npx vitest run"
+          "vitest"
         ],
         "gateBasis": "declared"
       },
@@ -202,7 +218,7 @@
         ],
         "expectRedFirst": true,
         "gate": [
-          "python3 tools/sweep-selftests.py plugins/audit/tests/test__surface_digest.py plugins/audit/tests/test__refs.py plugins/audit/tests/test__output.py",
+          "selftests",
           "shots"
         ],
         "gateBasis": "declared"
@@ -227,7 +243,12 @@
       "startedAt": "2026-10-17T15:54:51Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T17:59:06Z.1b0972",
+        "status": "failed",
+        "at": "2026-10-17T17:59:06Z"
+      }
     },
     {
       "id": "P130.4",
@@ -272,13 +293,12 @@
         ],
         "expectRedFirst": false,
         "gate": [
-          "python3 tools/sweep-selftests.py plugins/audit/tests/test__config.py plugins/audit/tests/test_commit_task_work.py",
+          "selftests",
           "lint",
           "report",
           "shots",
           "interactive",
-          "npx vitest run",
-          "docs/audit/audit-plan.json"
+          "vitest"
         ],
         "gateBasis": "declared"
       },
@@ -345,13 +365,12 @@
         ],
         "expectRedFirst": false,
         "gate": [
-          "python3 tools/sweep-selftests.py plugins/audit/tests/test__commit_trail.py plugins/audit/tests/test__config.py",
+          "selftests",
           "lint",
           "report",
           "shots",
           "interactive",
-          "npx vitest run",
-          "docs/audit/audit-plan.json"
+          "vitest"
         ],
         "gateBasis": "declared"
       },
@@ -410,13 +429,12 @@
         ],
         "expectRedFirst": true,
         "gate": [
-          "python3 tools/sweep-selftests.py plugins/audit/tests/test_drive_phase.py plugins/audit/tests/test__manifest_rules.py plugins/audit/tests/test_audit_task.py",
+          "selftests",
           "lint",
           "report",
           "shots",
           "interactive",
-          "npx vitest run",
-          "docs/audit/audit-plan.json"
+          "vitest"
         ],
         "gateBasis": "declared"
       },
@@ -487,13 +505,12 @@
         ],
         "expectRedFirst": false,
         "gate": [
-          "python3 tools/sweep-selftests.py tools/prove-gates.py plugins/audit/tests/test__deps.py",
+          "selftests",
           "lint",
           "report",
           "shots",
           "interactive",
-          "npx vitest run",
-          "docs/audit/audit-plan.json"
+          "vitest"
         ],
         "gateBasis": "declared"
       },
