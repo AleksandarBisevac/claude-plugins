@@ -57,9 +57,23 @@
         "file": "tools/capture-screenshots.mjs:6584-6609",
         "issue": "The pinned-context assertion runs inside shot(), so a leg that never reaches shot() (e.g. the ladderCtx / prioCtx pages at 7340 and 7415, which drive checks without a shutter) is pinned by option only and unasserted. Today harmless, since they produce no image.",
         "resolution": "No action needed unless those contexts ever begin to photograph; if they do, they pass through shot() and are covered. Optionally note this in the PINNED_CONTEXT comment."
+      },
+      {
+        "id": "P128-R6",
+        "severity": "low",
+        "file": "plugins/audit/tests/_harness.py:1098-1131",
+        "issue": "The diff changes the answer of _locks.pid_alive for a zombie (True -> False), and the untouched _harness.py states the old one: the comment at 1099-1104 says the product rule 'counts it ALIVE ... the product rule is left as it is', which is now false. _harness._is_zombie and _pid_present (alive is None or not _is_zombie) now duplicate the rule _locks._is_zombie holds, in a second copy that can drift. Both sides of the boundary (product rule, harness restatement of it) are named; the executor disclosed this as NOT DONE because the plan gate refused the file.",
+        "resolution": "Follow-up task owning _harness.py: reduce _pid_present to `_locks.pid_alive(pid) is not False`, delete the harness _is_zombie, rewrite the comment to say the product rule now reads a zombie as gone. _group_present keeps its own ps walk."
+      },
+      {
+        "id": "P128-R7",
+        "severity": "low",
+        "file": "plugins/audit/tests/test__locks.py:556-565 (pz3) against plugins/audit/scripts/governance/_locks.py:1270-1276",
+        "issue": "pz3, the over-fire direction of the new retry in acquire, cannot go red: if the `continue` fired on every dead verdict (the mutation pz3 exists to catch), acquire would re-judge the same standing claim forever, because the `continue` skips the `time.monotonic() >= deadline` check and there is no sleep. A regression would hang the suite until the sweep's per-file timeout instead of failing the case. The executor says the same ('would hang rather than fail; not separately mutated'). The 'second direction' case is therefore unproven in the way the repo's no-silent-pass rule asks.",
+        "resolution": "Bound the retry so a mutation fails by assertion: count retries (a small cap, e.g. re-ask at most a few times, then fall through to the refusal), or make the continue honour the deadline. pz3 then goes red with code != E_STALE instead of hanging. Run the unconditional-continue mutation once to confirm."
       }
     ],
-    "outcome": "[findings: 5 - 0 high, 1 med, 4 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 7 - 0 high, 1 med, 6 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1316,7 +1330,7 @@
     {
       "id": "P128.24-0h5",
       "title": "scope refuses an unsplit path list and lets a never-existing path be dropped",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F665. scope accepted one space-joined value of 31 real paths as a single file, and the attempted task could never drop it.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1361,19 +1375,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "71fedb958e4b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/manifest/audit-task.py: new _unsplit_parts (an entry that stats to nothing whose whitespace-separated parts all exist) wired into _files_refusal, which both add and scope call, so the refusal names the parts and says to join with commas (lines ~558-620); new _never_existed (not on disk AND `git log --all -n1 -- :(literal)path` empty; git unavailable/not a repo => False, i.e. keeps the refusal), passed into _narrowings(changes, project=None, git_root=None) so a dropped `files` entry that never existed no longer counts as a narrowing; the single caller in _locked_scope passes project and the config gitRoot. The pathspec is spelled through _output.posix_rel (a first draft used os.path.relpath and px2 in test__output.py caught it). Test: one case in test_audit_task.py (_reshape_cases, group uj) titled with the tests.add clause verbatim, covering: pending-task unsplit entry refused naming both parts and manifest byte-identical; attempted task drops the unsplit entry via --files a,b with fileIndex re-derived; second directions: dropping an existing uncommitted file still refused, dropping a committed-then-deleted file still refused, a real file named 'one.ts two.ts' (parts also exist) is accepted. Mutations run in a scratch copy, each red: never_existed always False, never_existed ignoring git history, unsplit check disabled, unsplit without own-entry stat, never_existed without disk stat.\n\nRequirement clauses: 'scope accepted one space-joined value of 31 real paths as a single file' -> refused now, audit-task.py _unsplit_parts + _files_refusal (also covers add, same flag); 'the attempted task could never drop it' -> _narrowings/_never_existed, audit-task.py, drop accepted when the path never existed.\n\nclaims:\n1 audit-task.py _unsplit_parts docstring: 'reads the disk' = os.path.exists on entry then on each part; _never_existed docstring: disk stat then git log --all, False when git cannot answer (code != 0)\n2 5 mutations in a scratch copy of plugins/, each gave 194/195 with the case red (never_existed->False; ->code==0 only; unsplit disabled; own-entry stat removed; disk stat removed); restored by copying the original; over-fire directions are the existing-file, deleted-file and spaced-real-file legs\n3 class = a --files entry that names no real path: grepped _files_refusal( callers: add and scope both route through it, fixed once there; _narrowings( has one production caller (updated) and one selftest call with one arg (default keeps behaviour). Left: --tests-add / --outputs unsplit lists, not reported and not the same flag\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded\n6 n/a - no guard over commands; the narrowing decision reads the disk and git history, not spelling\n7 n/a - no number written in prose",
+        "descriptive": "scope refuses a space-joined list of real paths as one file, and an attempted task can drop a path that never existed."
       },
       "startedAt": "2026-10-17T00:35:57Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T02:07:55Z",
+      "verifiedBy": [
+        "a declared path that does not exist but whose whitespace-split parts all do is refused naming the parts, and an attempted task may drop a path that never existed"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-17T01:40:56Z.151e96",
         "status": "passed",
         "at": "2026-10-17T01:40:56Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "71fedb958e4b",
+        "at": "2026-10-17T02:07:55Z",
+        "return": "docs/audit/evidence/returns/P128.24-0h5/20261017T003557Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-17T01:21:26Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage at2-block` in a throwaway tree at HEAD exited 1 with 1 of 195 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - a declared path that does not exist but whose whitespace-split parts all do is refused naming the parts, and an attempted task may drop a path that never existed (pending unsplit=0 'WARNING: you are standing in <outside-repo>, and this writes the plan under <outside-repo>'; attempted drop=2 'WARNING: you are standing in <outside-repo>, and this writes the plan under <outside-repo>'; real drop=2 'WARNING: you are standing in <outside-repo>, and this writes the plan under <outside-repo>'; deleted drop=2 'WARNING: you are standing in <outside-repo>, and this writes the plan under <outside-repo>'; spaced real=0 'WARNING: you are standing in <outside-repo>, and this writes the plan under <outside-repo>') (house FAIL): SELFTEST FAILED: 194/195 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1633,7 +1661,8 @@
       "description": "Register F693. _locks.pid_alive is os.kill(pid, 0), true for a zombie; callers asking about pids they do not own read a dead process as alive until reaped.",
       "files": [
         "plugins/audit/scripts/governance/_locks.py",
-        "plugins/audit/tests/test__locks.py"
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/tests/test_run_test_gate.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1651,7 +1680,19 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "plugins/audit/tests/test__locks.py: pid_alive reads an unreaped zombie as gone and a live process as alive": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__locks.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/governance/_locks.py",
+            "find": "    return pid == os.getpid() or not _is_zombie(pid)",
+            "replace": "    return True"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [],
@@ -1670,10 +1711,16 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-17T02:06:38Z.93e828",
-        "status": "failed",
-        "at": "2026-10-17T02:06:38Z"
-      }
+        "runId": "2026-10-17T02:33:53Z.cfa9d3",
+        "status": "passed",
+        "at": "2026-10-17T02:33:53Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-17T02:22:23Z",
+          "text": "files widened by plugins/audit/tests/test_run_test_gate.py: widened by the integration answer"
+        }
+      ]
     },
     {
       "id": "P128.34-0h5",

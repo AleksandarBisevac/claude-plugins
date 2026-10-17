@@ -40,6 +40,41 @@ _CMD = _loader.load_script("audit-lock.py", modname="audit_lock_boundary")
 
 
 # --- cases --------------------------------------------------------------------
+def _table_state(pid):
+    """The process-table state letters of `pid` ("Z..." is a zombie), "" if unreadable.
+
+    Read here from the table itself - /proc where it exists, `ps` elsewhere - and
+    not through the module under test, so the fixture's claim to be a zombie does
+    not come from the code whose reading of it is being judged.
+    """
+    try:
+        with open(os.path.join(os.sep, "proc", str(pid), "stat")) as fh:
+            return fh.read().rpartition(")")[2].split()[0]
+    except (OSError, IndexError):
+        pass
+    try:
+        return subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                              universal_newlines=True).stdout.strip()
+    except OSError:
+        return ""
+
+
+def _bare_signal_sees(pid):
+    """Whether `kill(pid, 0)` succeeds - the probe this module's rule replaced.
+
+    A function of its own, away from the case that kills the fixture: the suite
+    that forbids reading a killed process's liveness with signal 0 after a kill in
+    the same function (test_run_test_gate.py) is right about every case but this
+    one, where the signal read IS the evidence that the fixture is a zombie.
+    """
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
 def _cases(check):
     # --- the boundary ---------------------------------------------------------
     # Every name `audit-lock.py` spells must BE this module's object. A copy
@@ -430,6 +465,109 @@ def _cases(check):
           _after is False)
     check("pl2 ...while this very process answers True, so pl1 is not a probe "
           "that says False to everything", M.pid_alive(os.getpid()) is True)
+
+    # --- an exited process nobody has reaped yet reads dead -----------------------
+    # A killed child is a zombie until its parent calls wait, and a zombie still
+    # answers `kill(pid, 0)`: the bare signal probe called it alive, to every
+    # caller that is not the parent (only the parent can reap it, so waitpid is
+    # no answer for a pid we do not own - it raises ECHILD). The fixture is
+    # confirmed to BE a zombie from the process table and from the signal probe
+    # before the answer is read, so a platform where the child is reaped early
+    # fails loudly rather than passing for the wrong reason. Windows keeps no
+    # zombies: pl1 above is that platform's case.
+    if os.name == "nt":
+        print("SKIP pz* (Windows has no unreaped-zombie state)")
+    else:
+        _zomb = subprocess.Popen([sys.executable, "-c",
+                                  "import time; time.sleep(120)"])
+        _live = subprocess.Popen([sys.executable, "-c",
+                                  "import time; time.sleep(120)"])
+        try:
+            _zomb.kill()                      # SIGKILL; deliberately NOT waited for
+            _state = ""
+            _deadline = time.time() + 10
+            while time.time() < _deadline:
+                _state = _table_state(_zomb.pid)
+                if _state.startswith("Z"):
+                    break
+                time.sleep(0.05)
+            _signal_ok = _bare_signal_sees(_zomb.pid)
+            check("pz0 the fixture is an unreaped zombie the bare signal probe "
+                  "still sees (state %r, kill(pid, 0) answered: %s)"
+                  % (_state, "success" if _signal_ok else "an error"),
+                  _state.startswith("Z") and _signal_ok)
+            _zomb_answer = M.pid_alive(_zomb.pid)
+            _live_answer = M.pid_alive(_live.pid)
+            check("pid_alive reads an unreaped zombie as gone and a live process "
+                  "as alive",
+                  _zomb_answer is False and _live_answer is True,
+                  "zombie answered %r, live answered %r"
+                  % (_zomb_answer, _live_answer))
+            _zomb.wait()
+            _reaped = M.pid_alive(_zomb.pid)
+            check("pz1 the same pid still reads gone once it is reaped, so the "
+                  "zombie reading and the missing-pid reading agree: %r"
+                  % (_reaped,), _reaped is False)
+        finally:
+            for _p in (_zomb, _live):
+                try:
+                    _p.kill()
+                except OSError:
+                    pass
+                _p.wait()
+
+    # --- a holder that lets go between the read and the judgement -----------------
+    # The claim is read, THEN its holder is judged: a holder that releases and
+    # exits in between reads dead, and the claim it left is already gone. That is
+    # a free name, not an abandoned lock a human must confirm -- the refusal is
+    # only for a claim still standing when the verdict arrives. The judge is
+    # replaced by one that lets go of the claim at the moment it is asked, which
+    # is that interleaving made deterministic.
+    if not shutil.which("git"):
+        print("SKIP pz2/pz3 (git not installed)")
+    else:
+        _rproj = tempfile.mkdtemp(prefix="audit-locks-letgo-")
+        _real_judge = M.judge
+        try:
+            subprocess.call(["git", "init", "-q", _rproj])
+            _claim_path = os.path.join(M.lock_dir(_rproj), "index.lock")
+            M.acquire(_rproj, "index", note="n", session="s-A", pid=os.getppid(),
+                      out=lambda _l: None)
+            _asked = []
+
+            def _lets_go_when_asked(info, path, host=None):
+                _asked.append(path)
+                if len(_asked) == 1:
+                    os.unlink(_claim_path)
+                return False, "pid %s is gone on this host" % (info.get("pid"),)
+            M.judge = _lets_go_when_asked
+            _lines = []
+            _code = M.acquire(_rproj, "index", note="n2", session="s-B",
+                              pid=os.getpid(), wait=0, out=_lines.append)
+            check("pz2 a holder that lets go between the read and the judgement "
+                  "leaves a free name, which is taken - not a lock reported "
+                  "abandoned", _code == 0 and os.path.exists(_claim_path),
+                  "code %r, judged %d time(s), said %r" % (_code, len(_asked),
+                                                          _lines))
+            M.judge = _real_judge
+            _lines = []
+            _gone = subprocess.Popen([sys.executable, "-c", "pass"])
+            _gone.wait()
+            M.release(_rproj, "index", session="s-B", pid=os.getpid(),
+                      out=lambda _l: None)
+            M.acquire(_rproj, "index", note="n3", session="s-C", pid=_gone.pid,
+                      out=lambda _l: None)
+            _code = M.acquire(_rproj, "index", note="n4", session="s-D",
+                              pid=os.getpid(), wait=0, out=_lines.append)
+            check("pz3 SECOND DIRECTION: a claim that is still standing when its "
+                  "holder is judged gone is still refused as abandoned - the "
+                  "retry is for a claim that vanished, not for every dead "
+                  "verdict",
+                  _code == M.E_STALE and any("looks abandoned" in x for x in _lines),
+                  "code %r, said %r" % (_code, _lines))
+        finally:
+            M.judge = _real_judge
+            shutil.rmtree(_rproj, ignore_errors=True)
 
     # --- acquire / release, the half that moved last --------------------------
     proj = tempfile.mkdtemp(prefix="audit-locks-proj-")

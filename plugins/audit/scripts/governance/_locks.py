@@ -150,6 +150,9 @@ TOKEN_ENV = "AUDIT_LOCK_TOKENS"
 def pid_alive(pid):
     """True / False / None (unknown). None is the caller's cue to fall back to age.
 
+    An exited process still waiting for its parent to reap it (a zombie) is
+    False: it answers the signal probe, and it is not running.
+
     NOT os.kill(pid, 0) on Windows: CPython implements os.kill there as
     OpenProcess + TerminateProcess(handle, sig), so signal 0 would TERMINATE the
     process it was asked about -- with exit code 0, invisibly. CI runs
@@ -165,13 +168,44 @@ def pid_alive(pid):
         return _pid_alive_windows(pid)
     try:
         os.kill(pid, 0)
-        return True
     except ProcessLookupError:
         return False
     except PermissionError:
-        return True             # exists, owned by another user
+        pass                    # exists, owned by another user - may still be a zombie
     except Exception:
         return None
+    # The signal probe is true of a zombie: an exited process stays in the table
+    # until its PARENT reaps it, and only the parent can (waitpid on any other
+    # pid raises ECHILD). To every other caller that is a dead process answering
+    # "present", so the table's own state letter is the second question. This
+    # process is never one: it is running this line.
+    return pid == os.getpid() or not _is_zombie(pid)
+
+
+def _is_zombie(pid):
+    """True only when the process table says `pid` has exited and awaits its parent.
+
+    /proc/<pid>/stat where it exists (Linux; the state letter follows the last
+    ")" because the command name may itself hold spaces and parentheses), `ps -o
+    stat=` otherwise (macOS has no /proc). Anything unreadable - no ps, a hidden
+    /proc, a timeout - is False: a process that cannot be asked about stays
+    "present", which is what the bare signal said before this second question
+    existed, so the fallback never turns a live holder into a gone one.
+    """
+    try:
+        with open(os.path.join(os.sep, "proc", str(pid), "stat"),
+                  encoding="utf-8", errors="replace") as fh:
+            return fh.read().rpartition(")")[2].split()[0] == "Z"
+    except (OSError, IndexError):
+        pass
+    try:
+        out = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             encoding="utf-8", errors="replace",
+                             timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return out.strip().startswith("Z")
 
 
 def _pid_alive_windows(pid):
@@ -1233,6 +1267,13 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
             # reads it dead.
         stamp = _claim_stamp(path)
         live, basis = judge(current, path)
+        if not live and not takeover and (stamp is None
+                                          or _claim_stamp(path) != stamp):
+            # THE CLAIM JUDGED DEAD IS NOT THE ONE ON DISK NOW. A holder that
+            # releases and exits between the read and the verdict reads gone, and
+            # a refusal over a claim that no longer stands sends a human to
+            # confirm an abandonment nobody left. Ask the name again instead.
+            continue
         if takeover or not live or time.monotonic() >= deadline:
             break
         time.sleep(POLL_SECONDS)

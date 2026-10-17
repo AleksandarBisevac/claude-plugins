@@ -8207,7 +8207,7 @@ def _liveness_cases(check):
           % (first_look, solo_gone, product_says_alive, grp_gone, self_gone,
              offenders),
           first_look is True and solo_gone is True
-          and product_says_alive is True and grp_gone is True
+          and product_says_alive is False and grp_gone is True
           and self_gone is False and not offenders
           and _single_look_reads(bad, "x.py") == [4]
           and _single_look_reads(fine, "x.py") == []
