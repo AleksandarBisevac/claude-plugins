@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clauses: (1) 'Make _pid_present read _locks.pid_alive(pid) is not False' - diff body is `return _locks.pid_alive(pid) is not False`. (2) 'delete the duplicate' - _is_zombie is removed from tests/_harness.py; the only remaining _is_zombie is the product's own _locks.py:185, which pid_alive consults at _locks.py:182 (`pid == os.getpid() or not _is_zombie(pid)`). (3) 'correct the comment to state what the code does' - new comment says a zombie answers kill(pid,0), pid_alive reads the process table state letter too and counts it gone, _pid_present is that rule and nothing more. Checked against _locks.pid_alive at HEAD: its docstring and body agree (zombie -> False; unknown -> None; None maps to present under `is not False`, same as the old `alive is None` branch). The executor's outcome describes the diff accurately; the diff touches only tests/_harness.py. The liveness AST pin in test_run_test_gate.py (_LIVENESS_HOMES, _single_look_reads) is unaffected: _pid_present now holds no signal-0 read, and the home-exemption case still evaluates to []. _group_present is untouched, out of the task's scope.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor filed not-attempted: 'gate-only task: no test added; a harness refactor with unchanged behaviour'. tests.add is none, so no red is owed.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate selects `python3 tools/sweep-selftests.py`, which runs the whole project, so the question is not asked. Read for relevance only: test_run_test_gate.py _liveness_cases (about 8150-8215) calls _harness._pid_present and gone_within and asserts the zombie reading against _locks.pid_alive directly; that case still exercises the changed path."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

@@ -2308,7 +2308,7 @@
     {
       "id": "P128.41-izt",
       "title": "A wave member carry ref stays local unless the project opts in to pushing it",
-      "status": "in_progress",
+      "status": "done",
       "description": "P128.22 made submit of a wave member push refs/audit/carry/<taskId> to origin on every filing, with no setting. That publishes unfinished work to a remote the operator never asked to push to - for a public origin it is in the open the moment it is filed - and contradicts the rule that the plugin never pushes on its own (the ci/ cadence of P128.2 is explicitly configured). Make the carry ref local by default; push it only under an explicit config key (for example a boolean under the existing ci root or a new carry key), validated by _config_rules, published in the schema and the README configuration table, and offered in Settings like ci. The resume path must still find a local carry, and say plainly that a carry not pushed does not travel to another machine. Keep every P128.22 case green; the cr-block clone case opts in.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2364,14 +2364,17 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "22c695744c29",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Clauses: (1) carry ref local by default: drive-phase.py carry_pushes()/carry_remote() gate every remote contact (push, fetch, delete) on ci.pushCarry; carry_work writes the local ref then returns before any push (drive-phase.py ~2600-2625). (2) explicit config key: ci.pushCarry boolean; _config_rules.py KNOWN_CI + carry_push_setting() + _check_ci finding for non-bool (a string/number/null is refused, not read as either). (3) schema: audit-config.schema.json ci.pushCarry boolean. (4) README configuration table row ci.pushCarry (cv1 in test__config_rules green, 165/165). (5) Settings: _panel_settings.py FIELD_HELP['ci.pushCarry'], bool field in the ci group, group blurb extended; test__panel_settings.py ps4 widened and new ps5 (74/74). (6) resume path finds a local carry: case 'a tree lost where the carry was made is recut from the local carry' in cl-block; restore_carry's not-found message says carries are pushed only under ci.pushCarry so one made elsewhere did not travel. (7) says plainly a carry not pushed does not travel: filing did-line 'local only: nothing is pushed unless ci.pushCarry is true, so it does not travel to another machine' (asserted); drive-phase.py module docstring rewritten. (8) every P128.22 case green: cr-block opts in via _wave_repo(..., ci={'pushCarry': True}) (new ci param on the fixture), 15/15 for cl+cr; full sweep 335/335 files ok, 16616 cases, exit 0. Push direction proved with git's own GIT_TRACE: default / no ci block / ci block without key / pushCarry false / pushCarry 'yes' each show zero 'git push' in the trace and an empty origin; opt-in shows exactly one and a carry on the bare origin (premise counted so the regex cannot be vacuous). Not done: reference/config.md (outside this task's files) has no pushCarry section; the README row carries the detail. Plan-gate note: a python-heredoc write to _panel_settings.py was refused ('outside the running task files'); I redid it with the Edit tool, which the gate allowed. Remote deletion on close is skipped under the default, so a carry pushed earlier under opt-in and then opted out stays on origin.",
+        "descriptive": "A wave member's carry ref now stays local unless ci.pushCarry is true; the default drive makes no push, and the filing says the carry does not travel to another machine."
       },
       "startedAt": "2026-10-17T06:24:54Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T07:02:31Z",
+      "verifiedBy": [
+        "with no carry setting a filed wave member writes refs/audit/carry/<taskId> locally and makes no push to any remote, and only an explicit opt-in pushes it to origin",
+        "ps5 the carry push is a switch the panel offers, off unless turned on, and the validator accepts a boolean and refuses every other spelling rather than reading it as either"
+      ],
       "notes": [
         {
           "at": "2026-10-17T00:27:27Z",
@@ -2383,6 +2386,18 @@
         "runId": "2026-10-17T07:02:02Z.390777",
         "status": "passed",
         "at": "2026-10-17T07:02:02Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "22c695744c29",
+        "at": "2026-10-17T07:02:31Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-17T06:48:05Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage cl-block` in a throwaway tree at HEAD exited 1 with 8 of 10 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `cl-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - plugins/audit/tests/test_drive_phase.py: with no carry setting a filed wave member writes refs/audit/carry/<taskId> locally and makes no push to any remote, and only an explicit opt-in pushes it to origin (no ci block: the filing wrote the carry in the repository and the origin holds none, with 1 git push in the trace: ['P1.1'] ['P1.1']) (house FAIL) and 7 more: SELFTEST FAILED: 2/10 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2483,7 +2498,12 @@
       "startedAt": "2026-10-17T06:24:58Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T07:47:46Z.dada4c",
+        "status": "passed",
+        "at": "2026-10-17T07:47:46Z"
+      }
     },
     {
       "id": "P128.44-izt",
@@ -2530,7 +2550,12 @@
       "startedAt": "2026-10-17T06:25:01Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T07:29:51Z.b17f83",
+        "status": "failed",
+        "at": "2026-10-17T07:29:51Z"
+      }
     },
     {
       "id": "P128.45-izt",

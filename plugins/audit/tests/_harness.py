@@ -1097,38 +1097,15 @@ def staged_main(argv, stages, namespace, prefix):
 
 # --- waiting for a killed process to be gone ------------------------------------
 # A killed child stays a zombie until its parent reaps it, and a zombie still
-# answers `kill(pid, 0)` - the product's own liveness rule, `_locks.pid_alive`,
-# counts it ALIVE (it is that signal and nothing more). One look a fixed time
-# after a kill therefore reads a successful teardown as a survivor on a loaded
-# runner. The wait below polls to a deadline and adds the zombie reading as
-# test-side knowledge; the product rule is left as it is.
-def _is_zombie(pid):
-    """True when the process exists but has exited and is only waiting to be reaped.
-
-    /proc where it exists (Linux), `ps -o stat=` elsewhere (macOS); unreadable is
-    False, so a platform that cannot say never turns a live process into a gone one.
-    """
-    try:
-        with open(os.path.join(os.sep, "proc", str(pid), "stat")) as fh:
-            return fh.read().rpartition(")")[2].split()[0] == "Z"
-    except (OSError, IndexError):
-        pass
-    try:
-        out = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
-                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                             universal_newlines=True).stdout
-    except OSError:
-        return False
-    return out.strip().startswith("Z")
-
-
+# answers `kill(pid, 0)`. The product's liveness rule, `_locks.pid_alive`, reads
+# the process table's state letter as well and counts that zombie as gone, so
+# `_pid_present` is that rule and nothing more. One look a fixed time after a
+# kill still reads a successful teardown as a survivor on a loaded runner, so the
+# wait below polls to a deadline instead.
 def _pid_present(pid):
-    """A pid that is running: `_locks.pid_alive` says so and it is not a zombie."""
+    """A pid that is not known to be gone: `_locks.pid_alive` is True or unknown (None)."""
     import _locks
-    alive = _locks.pid_alive(pid)
-    if alive is False:
-        return False
-    return alive is None or not _is_zombie(pid)
+    return _locks.pid_alive(pid) is not False
 
 
 def _group_present(pgid):
