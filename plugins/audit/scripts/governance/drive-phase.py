@@ -2730,7 +2730,7 @@ def step_member(ctx, state, task_id):
             return "idle", None
         parked = (state["wave"].get("parked") or {}).get(task_id)
         if parked is not None:
-            if pending_still_applies(manifest, parked):
+            if pending_still_applies(ctx, manifest, parked):
                 return "parked", None
             state["wave"]["parked"].pop(task_id, None)
             write_state(ctx, state)
@@ -2775,7 +2775,7 @@ def walk_wave(ctx, state):
     by_id = _mio.tasks_by_id(manifest)
     parked = state["wave"].get("parked") or {}
     for task_id in sorted(parked, key=_id_key):
-        if pending_still_applies(manifest, parked[task_id]):
+        if pending_still_applies(ctx, manifest, parked[task_id]):
             state["pending"] = parked.pop(task_id)
             write_state(ctx, state)
             return render_decision(ctx, state["pending"])
@@ -3061,9 +3061,13 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
     return None
 
 
-def pending_still_applies(manifest, pending):
+def pending_still_applies(ctx, manifest, pending):
     """A decision about a task that was since closed, cancelled or re-started by
-    hand is about a state that no longer exists."""
+    hand is about a state that no longer exists - and so is a no-executor-return
+    decision once that return is filed for the start it was raised for: the task
+    is in progress under the same start, so the status and the start alone keep
+    it, and a parked one would stop the drive on a line about a return that is
+    there."""
     if not pending.get("task"):
         return True
     task = _mio.tasks_by_id(manifest).get(pending["task"]) or {}
@@ -3071,8 +3075,11 @@ def pending_still_applies(manifest, pending):
         return True
     if pending["decision"] == "scope-gap":
         return task.get("status") == "pending"
-    return (task.get("status") == "in_progress"
-            and start_key(task) == pending.get("start"))
+    if not (task.get("status") == "in_progress"
+            and start_key(task) == pending.get("start")):
+        return False
+    return (pending["decision"] != "no-executor-return"
+            or already_filed(ctx, task) is None)
 
 
 # --- the drive ---------------------------------------------------------------------
@@ -4354,7 +4361,7 @@ def drive_locked(ctx, state, answer, reason, fixes):
     """The body of `drive`, run with the phase lock held."""
     manifest, phase = load_phase(ctx)
     pending = state.get("pending")
-    if pending and not pending_still_applies(manifest, pending):
+    if pending and not pending_still_applies(ctx, manifest, pending):
         state.pop("pending", None)
         write_state(ctx, state)
         pending = None
@@ -5030,7 +5037,7 @@ def explain(ctx, subject):
     for pending in [state.get("pending")] + list(parked):
         if (isinstance(pending, dict)
                 and subject == (pending.get("task") or ctx["phase"])
-                and pending_still_applies(manifest, pending)):
+                and pending_still_applies(ctx, manifest, pending)):
             return E_OK, explain_text(render_decision(ctx, pending)["lines"])
     kept = read_explain(ctx)
     if kept and subject in (kept.get("subjects") or []):

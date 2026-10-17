@@ -1316,7 +1316,7 @@
     {
       "id": "P128.24-0h5",
       "title": "scope refuses an unsplit path list and lets a never-existing path be dropped",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F665. scope accepted one space-joined value of 31 real paths as a single file, and the attempted task could never drop it.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1338,28 +1338,48 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "plugins/audit/tests/test_audit_task.py: a declared path that does not exist but whose whitespace-split parts all do is refused naming the parts, and an attempted task may drop a path that never existed": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_audit_task.py",
+              "--selftest",
+              "--stage",
+              "at2-block"
+            ],
+            "file": "plugins/audit/scripts/manifest/audit-task.py",
+            "find": "    return code == 0 and not sha",
+            "replace": "    return False"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [],
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-17T00:35:57Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T01:40:56Z.151e96",
+        "status": "passed",
+        "at": "2026-10-17T01:40:56Z"
+      }
     },
     {
       "id": "P128.25-0h5",
       "title": "Screenshot capture pins its browser locale and timezone, so committed images carry no host format",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F680. capture-screenshots.mjs sets no locale/timezone; the report's date inputs render the host placeholder (dd. mm. 2026.) in committed shots since v3.3.0.",
       "files": [
         "tools/capture-screenshots.mjs"
@@ -1403,14 +1423,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b8f79175af05",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/capture-screenshots.mjs only. Added exported PINNED_CONTEXT {locale en-US, timezoneId UTC, numberSample '1,234,567.5'} and pure exported pinProblem(facts); pageContextFacts reads Intl locale, navigator.language, Intl timezone and (1234567.5).toLocaleString() from the live page; shot() calls pinProblem before the --check return (so every shutter asks, in --check too); assertPinDetectorRejects(browser) runs first in main()'s try and opens a deliberate de-DE/Asia/Tokyo context, failing the run if pinProblem does not reject it (the control is not an unpinned context, since on an en-US/UTC host that is indistinguishable). All 9 browser.newContext sites for captures now carry locale: PIN_LOCALE, timezoneId: PIN_TIMEZONE; chromium.launch also gets --lang=en-US. Header comment of --check updated. Probes (Playwright, this macOS host, AppleLocale en_US@rg=rszzzz, tz Europe/Belgrade): context locale/timezoneId reach Intl, navigator.language, Date and toLocaleString. BUT the native <input type=date> placeholder ('dd. mm. yyyy.') did NOT move under: context locale (en-US,en,en-GB,en-CA,en-AU,fr-FR,ja-JP,de-DE,sr-RS all identical), element lang, --lang=en-US/en-GB/en, env LANG/LC_ALL/LANGUAGE, CFFIXED_USER_HOME with a planted .GlobalPreferences; only --lang=de-DE / fr-FR changed it. Playwright also refuses '-AppleLocale en_US' launch args ('Arguments can not specify page to be opened'). Gates: --check exit 0 (green run emitted the control note); full sweep 335/335 files ok exit 0; npx vitest run 56 files / 830 tests passed. Falsifier verified by hand in a throwaway copy tools/.fals-tmp.mjs (removed): replacing the control context's de-DE/Asia/Tokyo with en-US/UTC under --check --only report exited 1 with 'context pin: a de-DE / Asia/Tokyo context passed pinProblem'. Requirement clauses: (a) set locale/timezone: done at the 9 newContext sites (grep -n 'locale: PIN_LOCALE' tools/capture-screenshots.mjs); asserted before shutter: done in shot(); unpinned fails the check: done (red above). (b) 'report's date inputs render the host placeholder in committed shots': NOT fixed, because no lever was found for the native control on macOS with a regional-format override; documented in PINNED_CONTEXT's doc comment, so committed shots of those inputs remain host-shaped on such a host. No PNGs were regenerated (capture is the orchestrator's browser step).",
+        "descriptive": "Capture contexts now run en-US/UTC and every shutter asserts it, with a negative control; the native date-input placeholder remains host-shaped on macOS regional overrides, documented not fixed."
       },
       "startedAt": "2026-10-16T23:24:48Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T00:35:39Z",
+      "verifiedBy": [
+        "tools/capture-screenshots.mjs: the capture context runs with a pinned locale and timezone, asserted before the first shutter, and an unpinned context fails the check"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-17T00:26:59Z.3e8917",
@@ -1426,12 +1448,24 @@
           "at": "2026-10-17T00:29:00Z",
           "text": "falsifier could-not-run for `tools/capture-screenshots.mjs: the capture context runs with a pinned locale and timezone, asserted before the first shutter, and an unpinned context fails the check` accepted at the close: The falsifier could not run against an .mjs browser tool. The red was watched directly before the fix: capture-screenshots --check exited 1 with 25 unpinned-context problems, and the run now carries a negative control that fails it when the detector stops rejecting a de-DE/Asia/Tokyo context. The falsifier is retired under F1.6 by owner decision. (mutation at tools/capture-screenshots.mjs:6572; the command exited 2 on the unmutated copy, so a red under the mutant would prove nothing - painted paths: OK: no machine identity in the text read from stdin (2 line(s), 6 detector(s) applied)\nplaywright is not available. Run with:\n  npx --yes --package=playwright@1.56.0 node tools/capture-screenshots.mjs)"
         }
-      ]
+      ],
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "b8f79175af05",
+        "at": "2026-10-17T00:35:39Z",
+        "return": "docs/audit/evidence/returns/P128.25-0h5/20261016T232448Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-16T23:47:05Z",
+        "basis": "`node tools/capture-screenshots.mjs --check` in a throwaway tree at HEAD: inline suite tools/capture-screenshots.mjs (its test file is its implementation file): it is not Python, and an inline suite's test hunks are read from Python definitions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
+      }
     },
     {
       "id": "P128.27-0h5",
       "title": "A parked no-return decision is dropped once the return it is about is filed",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F683. pending_still_applies keeps a parked no-executor-return decision while the task is in_progress with the same start, even after its return is filed; the drive then stops on a false line (P125.108, P125.110).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1453,23 +1487,43 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "plugins/audit/tests/test_drive_phase.py: a no-executor-return decision parked while other dispatches were due is dropped on the next run once the member's return is filed, and the member advances": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_drive_phase.py",
+              "--selftest",
+              "--stage",
+              "wp-block"
+            ],
+            "file": "plugins/audit/scripts/governance/drive-phase.py",
+            "find": "or already_filed(ctx, task) is None)",
+            "replace": "or True)"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [],
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-17T00:35:59Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T01:55:00Z.65d8b2",
+        "status": "passed",
+        "at": "2026-10-17T01:55:00Z"
+      }
     },
     {
       "id": "P128.31-0h5",
@@ -1561,7 +1615,7 @@
     {
       "id": "P128.33-0h5",
       "title": "The product liveness rule counts an unreaped zombie as gone",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F693. _locks.pid_alive is os.kill(pid, 0), true for a zombie; callers asking about pids they do not own read a dead process as alive until reaped.",
       "files": [
         "plugins/audit/scripts/governance/_locks.py",
@@ -1590,16 +1644,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-17T00:36:01Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P128.34-0h5",
@@ -2005,6 +2060,105 @@
           "text": "tdd by default (init.md's mode rule): no mode was named and the title leads with no refactor or config word, so it adds or changes observable behaviour"
         }
       ]
+    },
+    {
+      "id": "P128.42-izt",
+      "title": "A parked no-return decision of any role is dropped once that role return is filed for the current start",
+      "status": "pending",
+      "description": "P128.27 made pending_still_applies drop a parked no-executor-return decision once the executor return is filed (drive-phase.py around 3064-3079). The sibling no-reviewer-return decision (drive-phase.py around 1862-1863) has the same shape and was left standing: a reviewer return filed after the decision was parked still reads as missing. This is the verified cause of register fault F702 (2026-10-16, P128.12: the drive reported no-reviewer-return while the return was filed, then closed on it one run later). Fix the class, not the instance: one rule over every parked no-<role>-return decision, keyed by role, so a role added later is covered without a second edit; a case per role plus one asserting every no-*-return decision name the drive can emit is handled by that rule.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a no-reviewer-return decision parked while the reviewer worked is dropped on the next run once the reviewer return is filed, and the task advances to its close"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P128.27-0h5"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-17T00:54:16Z",
+          "text": "tdd by default (init.md's mode rule): no mode was named and the title leads with no refactor or config word, so it adds or changes observable behaviour"
+        }
+      ]
+    },
+    {
+      "id": "P128.43-izt",
+      "title": "The test harness reads process liveness through the product rule instead of its own zombie copy",
+      "status": "pending",
+      "description": "P128.33 made _locks.pid_alive count an unreaped zombie as gone. plugins/audit/tests/_harness.py still carries a comment (around lines 1099-1104) saying the product rule counts a zombie alive, which is now false, and _harness._is_zombie duplicates the new rule. Make _pid_present read _locks.pid_alive(pid) is not False, delete the duplicate, and correct the comment to state what the code does. The plan gate refused this edit inside P128.33 because the file was outside that task.",
+      "files": [
+        "plugins/audit/tests/_harness.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "before-you-claim"
+      ],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P128.33-0h5"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "reviewPerTask": "signals",

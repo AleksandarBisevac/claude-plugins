@@ -1,0 +1,37 @@
+{
+  "gates": {
+    "own-tests: python3 plugins/audit/tests/test_audit_task.py --selftest --stage at2-block": "pass (195/195)",
+    "python3 plugins/audit/tests/test_audit_task.py --selftest": "pass (1058/1058)",
+    "python3 tools/sweep-selftests.py --quiet": "pass (exit 0, 335/335 files ok); an earlier full run also failed once in tools/gate-parity.py case vsh6 (a dash INT-handling case, not touched here), which passes alone 141/141 and was green in the final full run",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8-": "pass (reports min 3.7)"
+  },
+  "redFirst": {
+    "at": "2026-10-17T01:21:26Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage at2-block` in a throwaway tree at HEAD exited 1 with 1 of 195 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - a declared path that does not exist but whose whitespace-split parts all do is refused naming the parts, and an attempted task may drop a path that never existed (pending unsplit=0 'WARNING: you are standing in <outside-repo>, and this writes the plan under <outside-repo>'; attempted drop=2 'WARNING: you are standing in <outside-repo>, and this writes the plan under <outside-repo>'; real drop=2 'WARNING: you are standing in <outside-repo>, and this writes the plan under <outside-repo>'; deleted drop=2 'WARNING: you are standing in <outside-repo>, and this writes the plan under <outside-repo>'; spaced real=0 'WARNING: you are standing in <outside-repo>, and this writes the plan under <outside-repo>') (house FAIL): SELFTEST FAILED: 194/195 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "plugins/audit/scripts/manifest/audit-task.py: new _unsplit_parts (an entry that stats to nothing whose whitespace-separated parts all exist) wired into _files_refusal, which both add and scope call, so the refusal names the parts and says to join with commas (lines ~558-620); new _never_existed (not on disk AND `git log --all -n1 -- :(literal)path` empty; git unavailable/not a repo => False, i.e. keeps the refusal), passed into _narrowings(changes, project=None, git_root=None) so a dropped `files` entry that never existed no longer counts as a narrowing; the single caller in _locked_scope passes project and the config gitRoot. The pathspec is spelled through _output.posix_rel (a first draft used os.path.relpath and px2 in test__output.py caught it). Test: one case in test_audit_task.py (_reshape_cases, group uj) titled with the tests.add clause verbatim, covering: pending-task unsplit entry refused naming both parts and manifest byte-identical; attempted task drops the unsplit entry via --files a,b with fileIndex re-derived; second directions: dropping an existing uncommitted file still refused, dropping a committed-then-deleted file still refused, a real file named 'one.ts two.ts' (parts also exist) is accepted. Mutations run in a scratch copy, each red: never_existed always False, never_existed ignoring git history, unsplit check disabled, unsplit without own-entry stat, never_existed without disk stat.\n\nRequirement clauses: 'scope accepted one space-joined value of 31 real paths as a single file' -> refused now, audit-task.py _unsplit_parts + _files_refusal (also covers add, same flag); 'the attempted task could never drop it' -> _narrowings/_never_existed, audit-task.py, drop accepted when the path never existed.\n\nclaims:\n1 audit-task.py _unsplit_parts docstring: 'reads the disk' = os.path.exists on entry then on each part; _never_existed docstring: disk stat then git log --all, False when git cannot answer (code != 0)\n2 5 mutations in a scratch copy of plugins/, each gave 194/195 with the case red (never_existed->False; ->code==0 only; unsplit disabled; own-entry stat removed; disk stat removed); restored by copying the original; over-fire directions are the existing-file, deleted-file and spaced-real-file legs\n3 class = a --files entry that names no real path: grepped _files_refusal( callers: add and scope both route through it, fixed once there; _narrowings( has one production caller (updated) and one selftest call with one arg (default keeps behaviour). Left: --tests-add / --outputs unsplit lists, not reported and not the same flag\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded\n6 n/a - no guard over commands; the narrowing decision reads the disk and git history, not spelling\n7 n/a - no number written in prose",
+    "descriptive": "scope refuses a space-joined list of real paths as one file, and an attempted task can drop a path that never existed."
+  },
+  "testsAdded": [
+    "a declared path that does not exist but whose whitespace-split parts all do is refused naming the parts, and an attempted task may drop a path that never existed"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_audit_task.py: a declared path that does not exist but whose whitespace-split parts all do is refused naming the parts, and an attempted task may drop a path that never existed": {
+      "file": "plugins/audit/scripts/manifest/audit-task.py",
+      "find": "    return code == 0 and not sha",
+      "replace": "    return False",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_task.py",
+        "--selftest",
+        "--stage",
+        "at2-block"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:eff0def5c5c05a9f1942e9577cc0db11ea6fb455c11d0ee8a3329bbd5d9ad638\",\"dirtyDigest\":\"sha256:2cbf3d54d3186e62fc6b3acb37fd46c8c846e1924873e4a2f97f2fe6767ee4a7\",\"dirtyPaths\":{\"plugins/audit/scripts/manifest/audit-task.py\":\"468798fbaf1dbade\",\"plugins/audit/tests/test_audit_task.py\":\"0f7c579a75a708e6\"},\"head\":\"b8f79175\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:a5e8d48bddb77973dc0bfef6b12209d31f398f394394bcf7790fb05bd8897afd\",\"v\":2}"
+}

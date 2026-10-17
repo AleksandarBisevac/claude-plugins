@@ -1,0 +1,37 @@
+{
+  "gates": {
+    "own-tests (test_drive_phase.py --stage wp-block)": "pass",
+    "tools/sweep-selftests.py --quiet": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8-": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-17T00:53:51Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage wp-block` in a throwaway tree at HEAD exited 1 with 1 of 2 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests on HEAD's code failing only the unknown-stage check for `wp-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - wp1 (house FAIL): SELFTEST FAILED: 1/2 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py pending_still_applies now takes ctx first (drive-phase.py:3064) and, for a no-executor-return decision whose task is still in_progress under the same start, applies only while already_filed(ctx, task) is None (drive-phase.py:3078-3079). All 4 call sites updated: step_member (2733), walk_wave (2778), drive_locked (4364), explain (5040), so the wave's parked decisions, the single pending and the explain verb read the same rule. Test: new block _wave_parked_return_cases (stage wp-block) in test_drive_phase.py; wp0 pins the fixture (P1.1 reviewer dispatched while P1.2's no-executor-return waits parked, so a vacuous pass is impossible); wp1 files P1.2's executor late, runs next, asserts parked entry gone, pending is not no-executor-return, P1.2 has one passed gate row, and the print does not name no-executor-return. Red on current code seen first: wp1 FAIL (parked kept, rows []); green after fix: 2/2. Sweep: 335/335 files ok, 16571 cases, background exit code 0. ruff clean; vermin min 3.7. Requirement clauses: (1) keeps-parked-while-in_progress-same-start fixed at drive-phase.py:3078-3079; (2) the drive no longer stops on the false line: wp1 third-next print has no no-executor-return, test_drive_phase.py wp1. Left, not fixed (out of scope): the sibling decision no-reviewer-return (drive-phase.py:1862-1863) has the same shape - a reviewer return filed late leaves a parked one standing; worth a register entry.",
+    "descriptive": "A parked no-executor-return decision is dropped once the member's return is filed, so the member advances instead of the drive stopping on a false line."
+  },
+  "testsAdded": [
+    "wp1 a no-executor-return decision parked while other dispatches were due is dropped on the next run once the member's return is filed, and the member advances"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_drive_phase.py: a no-executor-return decision parked while other dispatches were due is dropped on the next run once the member's return is filed, and the member advances": {
+      "file": "plugins/audit/scripts/governance/drive-phase.py",
+      "find": "or already_filed(ctx, task) is None)",
+      "replace": "or True)",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_drive_phase.py",
+        "--selftest",
+        "--stage",
+        "wp-block"
+      ]
+    }
+  },
+  "claims": "claims:\n1 drive-phase.py:3064-3079 is the rule the docstring states (status, same start, and for no-executor-return no filed return); callers 2733, 2778, 4364, 5040 pass ctx\n2 mutation: wp1 red on the unfixed code (parked kept, rows []) before the fix; falsifier or-True is run by the drive after the green gate; allow side: wp0 pins that the decision is parked while the return is absent\n3 grep pending_still_applies: 5 hits in drive-phase.py, all updated; sibling class no-reviewer-return (1862-1863) left because outside this task, reported\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:b2232a509e997ff30182686f8691dc4ec75f93bed2aafd3a133a6c049b56a052\",\"dirtyDigest\":\"sha256:b5ad397336a35cec29449587ebead65c1acab246c54d92b69fa83bc1e8047b78\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/drive-phase.py\":\"eda9241e23d57c2d\",\"plugins/audit/tests/test_drive_phase.py\":\"c818bc147873651f\"},\"head\":\"b8f79175\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:bb3370ec4abd31abb195d7262570faf805464dc4ba35f2601c17aa288c817a00\",\"v\":2}"
+}

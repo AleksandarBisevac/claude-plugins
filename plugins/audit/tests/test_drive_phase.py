@@ -4139,6 +4139,43 @@ def _wave_red_sibling_cases(check):
           code == 0 and instruction(again) == ("decide", "gate-red", None))
 
 
+def _wave_parked_return_cases(check):
+    M, why = _load("drive_phase_wave_parked")
+    if M is None:
+        check("wp1 the driver loads", False, why)
+        return
+    root, mpath = _wave_repo("waveparked", 2, per_task="always")
+    _code, first = _next_wave(M, root, mpath)
+    sent = _dispatched(first)
+    # Only the first member's executor comes back; the second is graded as one
+    # that returned nothing, and its decision is parked behind the first's
+    # reviewer dispatch, which is due in the same print.
+    _file_wave_executor(root, mpath, "P1.1")
+    _code, second = _next_wave(M, root, mpath)
+    parked = (((_drive_state(root).get("wave") or {}).get("parked") or {})
+              .get("P1.2") or {})
+    check("wp0 the fixture parks where it means to: the first member's reviewer "
+          "is dispatched while the second's no-executor-return decision waits "
+          "parked: %r %r %r" % (sent, parked, second),
+          sent == ["P1.1", "P1.2"]
+          and _dispatched(second, "reviewer") == ["P1.1"]
+          and parked.get("decision") == "no-executor-return")
+    # The return the decision is about is filed late, by the member itself.
+    late = _file_wave_executor(root, mpath, "P1.2")
+    _code, third = _next_wave(M, root, mpath)
+    state = _drive_state(root)
+    held = ((state.get("wave") or {}).get("parked") or {}).get("P1.2")
+    pending = state.get("pending") or {}
+    rows = [r.get("status") for r in _rows_of(root, mpath, "P1.2")]
+    check("wp1 a no-executor-return decision parked while other dispatches were "
+          "due is dropped on the next run once the member's return is filed, and "
+          "the member advances: %r %r %r %r %r"
+          % (late, held, pending, rows, third),
+          late[0] == 0 and held is None
+          and pending.get("decision") != "no-executor-return"
+          and "no-executor-return" not in third and rows == ["passed"])
+
+
 # A member's record check, run as a gate entry in the member's tree: every
 # record file the phase tree has committed is, in this tree, the phase tree's
 # committed bytes, and no record file the phase tree no longer has is left over.
@@ -6421,6 +6458,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("nf-block", "_landing_cases"), ("bk-block", "_blocked_cases"),
           ("cn-block", "_chain_next_cases"),
           ("wv-block", "_wave_cases"), ("wr-block", "_wave_red_sibling_cases"),
+          ("wp-block", "_wave_parked_return_cases"),
           ("wq-block", "_wave_record_cases"),
           ("wqm-block", "_wave_record_mutant_cases"),
           ("wq4-block", "_wave_sibling_record_cases"),
