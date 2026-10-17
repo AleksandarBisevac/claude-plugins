@@ -45,6 +45,7 @@ import _output                                     # noqa: E402
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _tree_stamp                                 # noqa: E402
+import _invariants                                 # noqa: E402
 import _proc_group                                 # noqa: E402
 import _runner_output                              # noqa: E402
 import _filed_returns                              # noqa: E402
@@ -273,6 +274,131 @@ def _recorder_cases(check):
           % (moved_code, moved_text.count("moved: other.txt")),
           moved_code == M.E_STALE
           and moved_text.count("moved: other.txt") == 1)
+
+
+def _nested_repo(prefix):
+    """A committed repository whose PROJECT sits one directory under its git
+    root: the plan, its shard, a journal and a file of source live under `app/`,
+    with the project's own marker and config there, so the git root and the
+    project are two directories. `(root, manifest path)`."""
+    root = _seeded_repo(prefix)
+    app = os.path.join(root, "app")
+    audit = os.path.join(app, "docs", "audit")
+    for where in (os.path.join(audit, "phases"), os.path.join(audit, "journal"),
+                  os.path.join(app, "src"), os.path.join(app, ".claude")):
+        os.makedirs(where)
+    _write(os.path.join(app, ".claude", "audit.config.json"),
+           json.dumps({"manifestPath": "docs/audit/audit-plan.json"}))
+    index = {"meta": MANIFEST["meta"],
+             "phases": [{"id": "P1", "shard": "phases/P1.json"}]}
+    _write(os.path.join(audit, "audit-plan.json"), json.dumps(index))
+    _write(os.path.join(audit, "phases", "P1.json"),
+           json.dumps(MANIFEST["phases"][0]))
+    _write(os.path.join(audit, "journal", "2026-10.a.jsonl"), "{}\n")
+    _write(os.path.join(audit, "journal-notes.md"), "notes\n")
+    # Not the bytes the git root's own `src/mine.py` holds, so a digest read at
+    # the wrong level cannot equal the right one by coincidence.
+    _write(os.path.join(app, "src", "mine.py"), "v = 7\n")
+    _git(root, "add", "app")
+    _git(root, "commit", "-q", "-m", "nested plan")
+    return root, os.path.join(audit, "audit-plan.json")
+
+
+def _nested_record_cases(check):
+    root, man_path = _nested_repo("stamp-door-nested-")
+    audit = os.path.join(root, "app", "docs", "audit")
+    code, text = _run(["take", "--project", root, "--manifest", man_path,
+                       "--files", "app/src/mine.py"])
+    line = _tree_stamp.format_stamp(_tree_stamp.parse_stamp(text)[0] or {})
+    # What a refresh or a journal append does to a member tree after the stamp.
+    _write(os.path.join(audit, "journal", "2026-10.b.jsonl"), "{}\n")
+    _write(os.path.join(audit, "journal", "2026-10.a.jsonl"), "{}\n{}\n")
+    _write(os.path.join(audit, "phases", "P1.json"),
+           json.dumps(dict(MANIFEST["phases"][0], status="done")))
+    kept_code, kept_text = _run(["compare", "--project", root], stdin_text=line)
+    real = os.path.realpath
+    shared = _invariants.record_rels(
+        real(man_path), None, real(os.path.join(root, "app")), real(root))
+    excluded, _label, _note = M.recorder_exclusion(root, man_path)
+    check("sv30 in a project nested under its git root, the stamp's record "
+          "exclusion reads the shared git-root-relative record set, so a "
+          "journal change in the member tree is not graded as the task's "
+          "change (take=%r compare=%r excluded=%r shared=%r): %s"
+          % (code, kept_code, excluded, shared, kept_text.strip()[:200]),
+          code == 0 and kept_code == 0 and _tree_stamp.CURRENT in kept_text
+          and excluded == sorted(shared) and "app/docs/audit/journal" in excluded)
+    # The deny twin: a file BESIDE the journal and a source edit are work, so an
+    # exclusion that swallowed `app/docs/audit` whole would read them as records.
+    _write(os.path.join(audit, "journal-notes.md"), "changed\n")
+    notes_code, notes_text = _run(["compare", "--project", root], stdin_text=line)
+    check("sv31 ...and a change beside the journal, not under it, is still the "
+          "task's: stale, exit 1, that path named once: exit=%r named=%r"
+          % (notes_code, notes_text.count("moved: app/docs/audit/journal-notes.md")),
+          notes_code == M.E_STALE
+          and notes_text.count("moved: app/docs/audit/journal-notes.md") == 1)
+
+
+class _Stub(object):
+    """A bag of attributes standing in for a module the drive reads."""
+
+    def __init__(self, **attrs):
+        self.__dict__.update(attrs)
+
+
+def _nested_drive_cases(check):
+    """What the drive hands a member's tree when the project sits under its git
+    root: the gate and the standing-approval digest read the project's own
+    directory inside the checkout, where the declared files and the
+    project-relative records are, and not the checkout's top."""
+    root, man_path = _nested_repo("stamp-drive-nested-")
+    app = os.path.join(root, "app")
+    DP = _loader.load_script("drive-phase.py", modname="dp_for_nested")
+    nested = {"project": app, "gitRoot": root}
+    flat = {"project": root, "gitRoot": root}
+    check("sv32 the member's project directory is the checkout's top for a "
+          "project that IS the git root and the project's place under it for a "
+          "nested one, and nothing for no tree: %r"
+          % ((DP.member_project(nested, root), DP.member_project(flat, root),
+              DP.member_project(nested, None)),),
+          DP.member_project(nested, root) == os.path.join(root, "app")
+          and DP.member_project(flat, root) == root
+          and DP.member_project(nested, None) is None)
+    seen = []
+    DP.run_verb = lambda ctx, script, args, **kw: (seen.append((script, list(args)))
+                                                 or (0, "", ""))
+    DP.record_gate(dict(nested, manifest=man_path), {"id": "P1"}, {"id": "P1.1"},
+                   tree=root)
+    DP.record_gate(dict(flat, manifest=man_path), {"id": "P1"}, {"id": "P1.1"},
+                   tree=root)
+    DP.record_gate(dict(nested, manifest=man_path), {"id": "P1"}, {"id": "P1.1"})
+    trees = [a[a.index("--tree") + 1] if "--tree" in a else None
+             for _s, a in seen]
+    check("sv33 the gate is measured in the project's directory inside the "
+          "member's checkout - run-test-gate takes its --tree as where the "
+          "project is - and with no --tree for no member: %r" % (trees,),
+          trees == [os.path.join(root, "app"), root, None])
+
+    task = {"id": "P1.1", "files": ["src/mine.py"]}
+    entries = []
+    fake_cfg = _Stub(
+        standing_approval=lambda rows: {"armed": True, "since": "then"},
+        standing_use_entry=lambda tid, pid, digest, approval: {"digest": digest})
+    DP._journal_io = _Stub(
+        read_all=lambda project: [],
+        append_from_cli_why=lambda project, entry: (entries.append(entry)
+                                                    or (True, None)))
+    DP._loader = _Stub(load_hooks_config=lambda modname=None: fake_cfg)
+    ctx = dict(nested, manifest=man_path, config={}, did=[])
+    DP.standing_use(ctx, {"id": "P1"}, task, tree=root)
+    want, _basis = _tree_stamp.scope_digest(app, ["src/mine.py"])
+    wrong, _b = _tree_stamp.scope_digest(root, ["src/mine.py"])
+    got = entries[0].get("digest") if entries else None
+    check("sv34 the standing approval's scope digest is taken over the declared "
+          "files where the project sits in the member's tree, so the digest "
+          "names the file's bytes - at the checkout's top the same relative "
+          "path is a file that is not there: got=%r want=%r top=%r did=%r"
+          % (got, want, wrong, ctx["did"]),
+          got is not None and got == want and want != wrong)
 
 
 def _plan_repo(prefix):
@@ -5294,6 +5420,8 @@ STAGES = (
     ("sv-compare", "_compare_cases"),
     ("sv-shape", "_shape_cases"),
     ("sv-recorder", "_recorder_cases"),
+    ("sv-nested", "_nested_record_cases"),
+    ("sv-nested-drive", "_nested_drive_cases"),
     ("sv-recorder-dirty", "_recorder_dirty_cases"),
     ("sr-red", "_red_cases"),
     ("sr-tally", "_tally_cases"),

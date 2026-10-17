@@ -1570,7 +1570,7 @@
     {
       "id": "P128.31-0h5",
       "title": "A fix task whose resolution asks only for a test over existing behaviour is minted regression",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F688. P125.109 and P125.90 were minted tdd for test-only work; a case that passes at HEAD cannot be filed under tdd, so both were cancelled and re-added as regression.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1592,33 +1592,54 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "plugins/audit/tests/test_audit_task.py: a finding whose resolution only asks to add a test for named existing behaviour mints a regression task with a mutation-proof note, even when it names a source file": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_audit_task.py",
+              "--selftest",
+              "--stage",
+              "cz-block"
+            ],
+            "file": "plugins/audit/scripts/manifest/audit-task.py",
+            "find": "if args.tests_mode is None and scope[\"testOnly\"]:",
+            "replace": "if False and scope[\"testOnly\"]:"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [],
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-17T02:33:57Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T03:25:38Z.b89ecd",
+        "status": "passed",
+        "at": "2026-10-17T03:25:38Z"
+      }
     },
     {
       "id": "P128.32-0h5",
       "title": "Record exclusions in the stamp, standing-use and gate commands agree for a project nested under its git root",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F691 (found at P125.93's return). stamp-verification take/compare/red and drive-phase.standing_use exclude records through _evidence_io.recorded_paths (project-relative) while the member tree is the checkout root; the drive also passes the checkout root as run-test-gate's --tree, which runs commands there as if it were the project dir. Latent for nested projects; this repo is not nested.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
         "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/tests/test_stamp_verification.py"
+        "plugins/audit/tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1636,28 +1657,54 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "plugins/audit/tests/test_stamp_verification.py: in a project nested under its git root, the stamp's record exclusion reads the shared git-root-relative record set, so a journal change in the member tree is not graded as the task's change": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_stamp_verification.py",
+              "--selftest",
+              "--stage",
+              "sv-nested"
+            ],
+            "file": "plugins/audit/scripts/governance/stamp-verification.py",
+            "find": "    return sorted(set(_invariants.record_rels(\n        manifest, None, os.path.realpath(owner), real, config=config))), []",
+            "replace": "    return _evidence_io.recorded_paths(real, manifest)"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [],
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-17T02:34:00Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T03:52:40Z.bf28be",
+        "status": "passed",
+        "at": "2026-10-17T03:52:40Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-17T03:37:53Z",
+          "text": "files widened by PLUGIN-BUILD-GUIDE.md: written byte for byte at integration by `python3 plugins/audit/scripts/_deps.py --write-map` (_deps.map_drift)"
+        }
+      ]
     },
     {
       "id": "P128.33-0h5",
       "title": "The product liveness rule counts an unreaped zombie as gone",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F693. _locks.pid_alive is os.kill(pid, 0), true for a zombie; callers asking about pids they do not own read a dead process as alive until reaped.",
       "files": [
         "plugins/audit/scripts/governance/_locks.py",
@@ -1701,14 +1748,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c7d50204d13b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_locks.pid_alive (plugins/audit/scripts/governance/_locks.py:150-183) keeps os.kill(pid,0) as the first question and, when it succeeds or raises PermissionError, asks a second: pid==os.getpid() is alive, otherwise not _is_zombie(pid). New _is_zombie (_locks.py:185-209) reads /proc/<pid>/stat (state letter after the last ')') where it exists, else `ps -o stat= -p <pid>` (10 s timeout, utf-8/replace); anything unreadable is not-a-zombie, i.e. stays 'present' as before. Windows branch untouched (no zombie state; pl1 is its case). Probed on this macOS (Darwin 25.6.0, arm64): a SIGKILLed, unreaped child -> os.kill(pid,0) succeeds, `ps -o stat=` prints 'Z', /proc absent, os.waitpid(1, WNOHANG) on a non-child raises ChildProcessError(ECHILD) so waitpid is no answer for a pid not owned; after the parent reaps, os.kill raises ProcessLookupError. Linux not probed: reasoned from proc(5) (state Z in field 3 of /proc/<pid>/stat) and kill(2) (succeeds for a zombie). SECOND CHANGE, caused by the first and found by the full sweep: test_close_phase lk6/lk7 went red intermittently (e.g. 3 of 6 runs; HEAD export 0 of 6) with 'index looks abandoned ... pid N is gone'. Cause: acquire reads a held claim then judges its holder; a holder that releases and exits in between used to read ALIVE for as long as it stayed an unreaped zombie, which masked an existing read-then-judge window; with zombies now gone the window shows. acquire (_locks.py ~1268-1276) now re-asks the name when the holder is judged dead but the claim judged is no longer the file on disk (stamp None or changed) instead of refusing E_STALE; a claim still standing is refused as before. After the fix test_close_phase 269/269 on 6 consecutive runs. THIRD: an encoding lint (test__output en5) flagged the new open()/subprocess.run() without encoding; both now name encoding=utf-8, errors=replace. FOURTH, test_run_test_gate.py (outside `files`; the plan gate allowed the Edit): the liveness case asserted product_says_alive is True for the zombie solo child (the defect pinned as expected); changed to `is False` (line 8210) because the case's own title already says a zombie counts as gone on the product's liveness rule. NOT DONE: tests/_harness.py (comment at ~1099-1104 says the product rule 'counts it ALIVE ... the product rule is left as it is', now false, and _harness._is_zombie/_pid_present duplicate the new rule) - the Edit was refused verbatim: '[require-plan] plugins/audit/tests/_harness.py is outside task P128.33-0h5, the task this worktree is bound to ... it is declared by P72.1, P92.1, ... a different task. Only that task's files are open here.' A follow-up should reduce _pid_present to `_locks.pid_alive(pid) is not False`, delete harness _is_zombie and rewrite that comment; _group_present keeps its own ps walk (no product rule for groups). Requirement clause: 'Register F693. _locks.pid_alive is os.kill(pid, 0), true for a zombie; callers asking about pids they do not own read a dead process as alive until reaped.' -> DONE at _locks.py:150-209, case at plugins/audit/tests/test__locks.py (block headed 'an exited process nobody has reaped yet reads dead'), callers (_proc_group._gone, stamp-verification, panel-server, tools/_suite, audit-lock) all go through pid_alive so none needed a change. Added cases: the tests.add clause verbatim; pz0 (fixture is a Z-state zombie that kill(pid,0) still accepts, read from the process table by test-side _table_state, not by the code under test), pz1 (reaped pid still False), pz2/pz3 (let-go-between-read-and-judge retried; still-standing claim still E_STALE). Helper _bare_signal_sees is module-level because test_run_test_gate forbids a signal-0 read after a kill in one function. Falsifier for pz3's over-fire direction (unconditional continue) would hang rather than fail; not separately mutated.",
+        "descriptive": "A dead process nobody has reaped yet no longer reads as a live lock holder, and the lock re-asks a name whose claim vanished mid-judgement instead of calling it abandoned."
       },
       "startedAt": "2026-10-17T00:36:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T02:33:55Z",
+      "verifiedBy": [
+        "pid_alive reads an unreaped zombie as gone and a live process as alive",
+        "pz0 the fixture is an unreaped zombie the bare signal probe still sees",
+        "pz1 the same pid still reads gone once it is reaped",
+        "pz2 a holder that lets go between the read and the judgement leaves a free name, which is taken - not a lock reported abandoned",
+        "pz3 SECOND DIRECTION: a claim that is still standing when its holder is judged gone is still refused as abandoned"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-17T02:33:53Z.cfa9d3",
@@ -1720,12 +1773,24 @@
           "at": "2026-10-17T02:22:23Z",
           "text": "files widened by plugins/audit/tests/test_run_test_gate.py: widened by the integration answer"
         }
-      ]
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c7d50204d13b",
+        "at": "2026-10-17T02:33:55Z",
+        "return": "docs/audit/evidence/returns/P128.33-0h5/20261017T003601Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-17T01:29:11Z",
+        "basis": "`python3 plugins/audit/tests/test__locks.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 137 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pid_alive reads an unreaped zombie as gone and a live process as alive (zombie answered True, live answered True) (house FAIL): SELFTEST FAILED: 135/137 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
     },
     {
       "id": "P128.34-0h5",
       "title": "The help payload carries only what the drawer reads",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F694. payload.fields is read by nothing in the product (the drawer asks per path); one tool uses it as an oracle and three documents describe it.",
       "files": [
         "plugins/audit/scripts/config/_help.py",
@@ -1759,16 +1824,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-17T02:34:02Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P128.35-0h5",

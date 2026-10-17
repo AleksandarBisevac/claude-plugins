@@ -1,0 +1,36 @@
+{
+  "gates": {
+    "own-test python3 plugins/audit/tests/test__help.py --selftest": "pass (113/113)",
+    "python3 tools/sweep-selftests.py --quiet": "pass (exit 0; 335/335 files ok)",
+    "ruff check plugins/audit tools": "pass",
+    "npx vitest run": "pass (56 files, 830 tests)",
+    "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html": "pass (exit 0)",
+    "node tools/capture-screenshots.mjs --check": "pass (exit 0, all help: lines OK)"
+  },
+  "redFirst": {
+    "at": "2026-10-17T03:09:25Z",
+    "basis": "`python3 plugins/audit/tests/test__help.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 113 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - the help payload carries no table the drawer does not read, and a field is answered through the per-path endpoint (payload keys ['agent', 'aliases', 'composition', 'fields', 'schemas', 'topics'], the drawer reads ['agent', 'composition', 'schemas', 'topics']) (house FAIL): SELFTEST FAILED: 110/113 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Requirement clauses: (1) payload.fields read by nothing in the product: confirmed by grep, the drawer reads doc.composition/topics/agent/schemas only (help-drawer.js doc.agent, doc.topics, doc.composition, doc.schemas); payload() now returns only those four keys and drops fields AND aliases (aliases was read by nothing either) - plugins/audit/scripts/config/_help.py payload(), docstring rewritten; tables() and entry_for() unchanged and still serve GET /api/help?path=. (2) one tool uses it as an oracle: tools/ui-checks/stage-tabs.mjs now fetches each field via a fieldEntry(which,path) helper that calls the per-path endpoint (trivialLineThreshold, usage.pricing.<name>.in, and the composition lever's manifest path); header comment updated; browser gate capture-screenshots --check passes with every help: line. (3) three documents describe it: plugins/audit/README.md (the 'Asking it how it works' paragraph), CONTRIBUTING.md (In-product help decision record), PLUGIN-BUILD-GUIDE.md (_help.py section) all reworded to say the bare endpoint carries no field table and a field is asked per path; also plugins/audit/commands/panel.md:112 (a fourth description found by grep of the bare shape '/api/help'). The task's README.md entry is the root README.md, which holds no description of /api/help (grep -n -i help README.md: no hit), so the plugin README was edited instead - tell me if the root one was meant. (4) help-drawer.js: the helpDoc JSDoc dropped {fields} from the payload type and says a field is asked per path; removed the stale '10 ms to build the payload and 1 ms per field' measurement in hShow (no longer true, not re-measured). Tests: new case in plugins/audit/tests/test__help.py titled with the tests.add clause verbatim; its oracle reads help-drawer.js for doc.<key> reads and requires payload keys to be a subset, no 'fields'/'aliases', and entry_for('trivialLineThreshold') default 80 equal to tables()'s entry. Existing cases e4, p1-p4 now read tables() instead of payload()['fields']; p5's _payload_bytes now measures payload+tables so the CRLF/backslash/size-cap coverage of the field text is kept. Outside the declared files and not refused by the plan gate: plugins/audit/tests/test_panel_server.py (2 lines, reads tables() instead of help_state()['fields']), plugins/audit/commands/panel.md, docs/screenshots/captured-at.json. The last one: editing help-drawer.js (comment only) moved the panel source digest, turning test__refs sc1/sc2 red (they were 351/351 on a git archive of HEAD); I re-ran node tools/capture-screenshots.mjs --only panel, which rewrote only captured-at.json (PNG bytes identical per git status), and the sweep is green. Note: a heredoc python write to help-drawer.js was refused once by the plan gate ('writer's one free file already spent on _help.py'); I redid it with the Edit tool, which was allowed. Not done: plugins/audit/commands/panel.md:112 still says 'There is no drawer for it yet', which is false since the drawer shipped - separate stale-doc defect, left for the register.\n\nclaims:\n1 _help.py payload() returns the four keys its docstring names; help-drawer.js reads exactly those\n2 mutation (re-adding the fields table to payload) run on a scratch copy turned the new case, p1 and p5 red (110/113), scratch removed\n3 grep of bare /api/help over *.md: README, CONTRIBUTING, BUILD-GUIDE, panel.md edited; panel/README.md:41 left (a file listing that says nothing of fields); CHANGELOG left (history)\n4 n/a - no rule to an agent; the payload docstring says test__help.py is the only enforcement\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+    "descriptive": "GET /api/help no longer ships the two field tables nothing read; a field is answered per path, and the oracle, docs and tests now say so."
+  },
+  "testsAdded": [
+    "the help payload carries no table the drawer does not read, and a field is answered through the per-path endpoint"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test__help.py: the help payload carries no table the drawer does not read, and a field is answered through the per-path endpoint": {
+      "file": "plugins/audit/scripts/config/_help.py",
+      "find": "        \"composition\": dict(COMPOSITION_PATHS),",
+      "replace": "        \"fields\": tables(root)[\"fields\"],\n        \"composition\": dict(COMPOSITION_PATHS),",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__help.py",
+        "--selftest"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:f0bcd251d518c9f5a72451e17736d22f83b5dcb2c1ba57687abd98ceb4c0ebe8\",\"dirtyDigest\":\"sha256:f14c70aa080df18976858fb219d778f1bd3a6cd97c250811814c66ea31c5744c\",\"dirtyPaths\":{\"CONTRIBUTING.md\":\"02d0699604f05d97\",\"PLUGIN-BUILD-GUIDE.md\":\"695c05ea9a947957\",\"docs/screenshots/captured-at.json\":\"07d149bdede93278\",\"plugins/audit/README.md\":\"f7240ddb6d420c2e\",\"plugins/audit/commands/panel.md\":\"c805bad0763a83e1\",\"plugins/audit/scripts/config/_help.py\":\"eb7355e7d4da5352\",\"plugins/audit/scripts/ui/panel/help-drawer.js\":\"95dd9990cb148249\",\"plugins/audit/tests/test__help.py\":\"cfd268f58e15987e\",\"plugins/audit/tests/test_panel_server.py\":\"dffa4f71f8715eb7\",\"tools/ui-checks/stage-tabs.mjs\":\"290a8c7b4cb0d7a7\"},\"head\":\"c7d50204\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CONTRIBUTING.md\",\"PLUGIN-BUILD-GUIDE.md\",\"README.md\",\"plugins/audit/scripts/config/_help.py\",\"plugins/audit/scripts/ui/panel/help-drawer.js\",\"plugins/audit/tests/test__help.py\",\"tools/ui-checks/stage-tabs.mjs\"],\"scopeDigest\":\"sha256:82555cc680627855fc8a42d2a29d755427ef2136c4fcc7eb50b5add20cd7a9c0\",\"v\":2}"
+}

@@ -336,6 +336,7 @@ _output.install_path()
 
 import _tree_stamp  # noqa: E402  (the ONE tree identity, shared with run-test-gate)
 import _evidence_io  # noqa: E402  (recorded_paths: what the recorder writes, left out)
+import _invariants  # noqa: E402  (record_rels: the one git-root-relative record set)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader: single file OR shards)
 import _task_outputs  # noqa: E402  (covers: the one rule for a declared path)
 import _proc_group  # noqa: E402  (a child tree stopped whole; a stop signal as an exception)
@@ -402,17 +403,16 @@ def recorder_exclusion(project, manifest):
 
     THE SAME DERIVATION ON BOTH SIDES. `take` passes `--manifest` as given and
     `compare` passes the `manifest` the stamp stored, and both go through here to
-    `_evidence_io.recorded_paths` - the one list of what this plugin writes into
-    a tree. Left in, the first journal row or manifest write after a stamp would
-    move its content field and every stamp would go stale on the orchestrator's
-    own bookkeeping. `manifest` is an absolute path or None; `label` is it
+    `_checkout_records` - the one list of what this plugin writes into a tree.
+    Left in, the first journal row or manifest write after a stamp would move
+    its content field and every stamp would go stale on the orchestrator's own
+    bookkeeping. `manifest` is an absolute path or None; `label` is it
     project-relative where it sits inside the project, else relative to the
     checkout holding it, so a stamp compared from another working directory
     finds it (`stored_manifest`) and none carries an absolute path. A manifest
     outside the project is then READ AS the project's copy at that relative
-    path, on both sides. `note` is None unless
-    `recorded_paths` reported a write it could not exclude, which is said rather
-    than absorbed."""
+    path, on both sides. `note` is None unless `recorded_paths` reported a write
+    it could not exclude, which is said rather than absorbed."""
     root = os.path.abspath(project)
     path, label = manifest or None, None
     if path:
@@ -421,13 +421,43 @@ def recorder_exclusion(project, manifest):
             rel = _own_checkout_rel(path)
         label = rel if rel is not None else path
         path = stored_manifest(root, label)
-    excluded, dropped = _evidence_io.recorded_paths(root, path)
+    excluded, dropped = _checkout_records(root, path)
     note = None
     if dropped:
         note = ("%d recorder write(s) could not be left out and stay inside the "
                 "content field: %s"
                 % (len(dropped), _output.some_of([d for d, _why in dropped])))
     return excluded, label, note
+
+
+def _checkout_records(root, path):
+    """`(excluded, dropped)` - the recorder's paths in the spelling `git ls-files`
+    prints for the tree at `root`: relative to the checkout, which is not the
+    project's directory when the project sits under its git root.
+
+    `_invariants.record_rels` over the project the manifest belongs to, because
+    integrate-task, audit-task and commit-task-work already treat exactly that
+    set as the records; `_evidence_io.recorded_paths` spells them relative to the
+    project it is handed, and handed the checkout root of a nested project it
+    also looks for the journal and the evidence directory beside the root rather
+    than under the project, so a journal row written after the stamp was graded
+    as the task's change.
+
+    A write outside the checkout is not in `ls-files` at all, so there is nothing
+    to leave out and `record_rels` omits it; `dropped` is therefore empty on that
+    branch. The two cases that give the old answer back are no manifest (nothing
+    names a project, so the root is the project) and a manifest whose project
+    lies outside `root` (a path the checkout does not hold)."""
+    real = os.path.realpath(root)
+    if path is None:
+        return _evidence_io.recorded_paths(real, None)
+    manifest = os.path.realpath(path)
+    owner, config = _evidence_io.project_config_for(manifest)
+    inside = _output.posix_rel(os.path.realpath(owner), real)
+    if inside == ".." or inside.startswith("../"):
+        return _evidence_io.recorded_paths(real, manifest)
+    return sorted(set(_invariants.record_rels(
+        manifest, None, os.path.realpath(owner), real, config=config))), []
 
 
 def _own_checkout_rel(path):

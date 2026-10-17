@@ -1,0 +1,37 @@
+{
+  "gates": {
+    "own-test: python3 plugins/audit/tests/test_audit_task.py --selftest --stage cz-block": "pass (36/36)",
+    "python3 plugins/audit/tests/test_audit_task.py --selftest (all stages)": "pass (1063/1063)",
+    "python3 tools/sweep-selftests.py --quiet": "pass (exit 0; 335/335 files ok, 16582 cases)",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- (scripts/manifest + test_audit_task.py)": "pass (min 3.7)"
+  },
+  "redFirst": {
+    "at": "2026-10-17T02:52:16Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage cz-block` in a throwaway tree at HEAD exited 1 with 3 of 36 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cz13 (house FAIL) and 2 more: SELFTEST FAILED: 33/36 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-task.py: new _CHANGE_CLAUSE regex and _only_asks_for_test(resolution) (audit-task.py ~3134-3160): true when the resolution opens with a test-ask (_ASKS_FOR_TEST.match) and no later clause asks for a change. _fix_scope returns a new key testOnly (all targeted findings test-only; ~line 3378). _fix_task_args: with no caller --tests-mode and testOnly, mode = regression plus a note 'regression, not tdd: <ids> only ask(s) for a test over behaviour the code already has ... prove it by mutation ... declare that as its falsifier' (~line 3538), taking precedence over the newTests->tdd arm, so it applies even when the finding names a source file; the unplaced-test remedy sentence names --tests-mode regression in that case. An explicit --tests-mode still wins; a resolution that also asks for a change (e.g. 'Fix the label and add a test', 'Add a test ..., then rename the prop') stays tdd (unknown verbs fall to tdd, the old default). Tests: test_audit_task.py cz-block gains 5 checks titled with the tests.add clause verbatim (2 positive: placed / unplaced; 3 ALLOW: also-asks-for-change, later-clause change, explicit --tests-mode tdd); cz13 expectations updated (R1 and R4 now regression, not red-first) since its premise 'a finding asking for a test is tdd' is exactly what this task reverses. Requirement clauses: (1) test-only resolution -> regression: audit-task.py:3538; (2) mutation-proof note: audit-task.py:3539-3545, asserted 'mutation' + finding id in test; (3) even when it names a source file: tests use components/Why.tsx and lib/x.ts; (4) not tdd when the resolution asks for more: ALLOW arms. Not done: no doc/help-text edit (files scope was the two files); help text for --fixes unchanged.\n\nclaims:\n1 audit-task.py:3538 (mode branch) and _only_asks_for_test do what the note and docstring say; docstring claims only the start-anchored test ask and the absence of a change clause, both visible in the two lines of the function\n2 falsifier below (disable the testOnly branch) -> new positive cases red; ALLOW arms (P1.4, P1.5, P1.6) pass at HEAD by construction and are the over-fire guard; the pre-fix FAIL x2 watched at 34/36\n3 grep testOnly/_ASKS_FOR_TEST: other consumers of _ASKS_FOR_TEST are _fix_scope asking list (unchanged); batch fix path goes through the same _fix_task_args, so one site; cz19/cz24 (asks-for-test findings with a path already named) still pass unchanged\n4 n/a - no rule addressed to an agent beyond the note text on the task, which names the mutation procedure\n5 n/a - no timing recorded\n6 n/a - reads the finding's resolution text by design (a finding's prose is the input, not a command)\n7 n/a - no number written",
+    "descriptive": "A fix task for a finding that only asks to add a test over existing behaviour is now minted regression with a mutation-proof note instead of an uncloseable red-first tdd task."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_audit_task.py: a finding whose resolution only asks to add a test for named existing behaviour mints a regression task with a mutation-proof note, even when it names a source file"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_audit_task.py: a finding whose resolution only asks to add a test for named existing behaviour mints a regression task with a mutation-proof note, even when it names a source file": {
+      "file": "plugins/audit/scripts/manifest/audit-task.py",
+      "find": "if args.tests_mode is None and scope[\"testOnly\"]:",
+      "replace": "if False and scope[\"testOnly\"]:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_task.py",
+        "--selftest",
+        "--stage",
+        "cz-block"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:9966383d32f941137695481b5fb13aa3032705729b1389f347a7075ea4e8d51a\",\"dirtyDigest\":\"sha256:2cbf3d54d3186e62fc6b3acb37fd46c8c846e1924873e4a2f97f2fe6767ee4a7\",\"dirtyPaths\":{\"plugins/audit/scripts/manifest/audit-task.py\":\"9658fdf7662ebcb7\",\"plugins/audit/tests/test_audit_task.py\":\"74088b36b749effa\"},\"head\":\"c7d50204\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:54faff343abb9bcb9cee5252c5c5748f8d5b9211342931c21d83d3c3550d1ef3\",\"v\":2}"
+}

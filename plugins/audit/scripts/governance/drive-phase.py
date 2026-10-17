@@ -1196,14 +1196,35 @@ def project_relative(ctx, path):
     return path if rel.startswith("..") else rel.replace(os.sep, "/")
 
 
+def member_project(ctx, tree):
+    """The project's directory inside `tree`, a checkout of the git root: `tree`
+    itself where the project IS the git root (or `tree` is None), else `tree`
+    with the project's place under `ctx["gitRoot"]` appended.
+
+    A member's worktree is a checkout of the whole repository, so for a project
+    nested under its git root its top is not where the project's files, the
+    gate's commands or the project-relative record paths are. Everything that
+    reads a task's declared `files` or runs the gate's commands reads them from
+    here; the stamp helper is the other kind of caller, reading git-root-relative
+    paths, and is handed the checkout's top."""
+    if not tree:
+        return tree
+    rel = os.path.relpath(ctx["project"], ctx["gitRoot"])
+    if rel == "." or rel == ".." or rel.startswith(".." + os.sep):
+        return tree
+    return os.path.join(tree, *rel.split(os.sep))
+
+
 def record_gate(ctx, phase, task, tree=None, no_reuse=False):
     """`(code, stdout, stderr)` of the task's recorded gate run - measured in
-    `tree` when the task runs in a tree of its own, and recorded in the
-    project's ledger either way. `no_reuse` measures even where an earlier
-    verdict on the same tree could be repeated: what a `rerun` asks for."""
+    the project's directory inside `tree` (`member_project`) when the task runs
+    in a tree of its own, and recorded in the project's ledger either way.
+    `no_reuse` measures even where an earlier verdict on the same tree could be
+    repeated: what a `rerun` asks for."""
+    where = member_project(ctx, tree)
     return run_verb(ctx, "run-test-gate.py", [
         ctx["manifest"], phase["id"], "--task", task["id"], "--record",
-        "--project-dir", ctx["project"]] + (["--tree", tree] if tree else [])
+        "--project-dir", ctx["project"]] + (["--tree", where] if where else [])
         + (["--no-reuse"] if no_reuse else []))
 
 
@@ -1998,8 +2019,12 @@ def standing_use(ctx, phase, task, tree=None):
         return None
     excluded, _dropped = _evio.recorded_paths(ctx["project"], ctx["manifest"],
                                               ctx["config"])
-    digest, basis = _tree_stamp.scope_digest(tree or ctx["project"],
-                                             task.get("files"), excluded=excluded)
+    # `excluded` and the declared `files` are both project-relative, so the
+    # digest reads them where the project is in the member's tree, not at the
+    # top of its checkout.
+    digest, basis = _tree_stamp.scope_digest(
+        member_project(ctx, tree) or ctx["project"], task.get("files"),
+        excluded=excluded)
     if digest is None:
         ctx["did"].append("standing approval not used for %s: its scope digest "
                           "could not be taken (%s)" % (task["id"], basis))
