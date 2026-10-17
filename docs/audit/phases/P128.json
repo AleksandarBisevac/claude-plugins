@@ -48,7 +48,8 @@
         "severity": "low",
         "file": "tools/check-git-pipeline.py:2506-2528",
         "issue": "The nt branch of _shim_dir and of the k15 working shim writes .cmd files and is untested on Windows (the executor says so). On the windows CI leg a .cmd found by shutil.which and run without a shell, and a cmd shim that forwards %* to sys.executable, are assumptions; a failure there would turn k13-k15 red on CI only.",
-        "resolution": "Confirm on the first windows CI run after this lands (ci-every-phase dispatch). If k13-k15 go red there, build the shims as .bat or add the extension to PATHEXT in the case env."
+        "resolution": "Confirm on the first windows CI run after this lands (ci-every-phase dispatch). If k13-k15 go red there, build the shims as .bat or add the extension to PATHEXT in the case env.",
+        "fixTask": "P128.56-izt"
       },
       {
         "id": "P128-R4",
@@ -102,22 +103,26 @@
         "severity": "low",
         "file": "plugins/audit/scripts/panel/_panel_state.py:310-326",
         "issue": "help_state() is the function that serves the bare GET /api/help and still documents it as 'what every field means, and how the four concepts work'. After this diff its return value (_help.payload()) carries no field text at all; fields are answered by help_field() for ?path=. The diff reworded payload()'s docstring, README, CONTRIBUTING, PLUGIN-BUILD-GUIDE and panel.md for exactly this, but left the docstring of the function across the boundary saying the opposite.",
-        "resolution": "Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET /api/help?path=&doc=).",
-        "fixTask": "P128.52-izt"
+        "resolution": "fixed in P128.52-izt (c2f24e545ec0): Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET /api/help?path=&doc=).",
+        "fixTask": "P128.52-izt",
+        "commit": "c2f24e545ec0",
+        "status": "fixed"
       },
       {
         "id": "P128-R10",
         "severity": "med",
         "file": "tools/capture-screenshots.mjs:6808-6830",
         "issue": "The deliverable of this task is the writing-path wiring in shot(): the `leak && !ACCEPT_HOST_DATE_FORMAT` refusal, the 'WRITING ... as asked' note, and the `nativeDateInput {regionalFormat, hostFormatAccepted}` entry passed to recordCapture. No test that any gate or vitest run selects reaches it. The nine vitest cases cover only the pure helpers (regionalFormatProblem, regionalFormatBasis, dateInputProblem), and the gate's `shots` command is `--check`, which returns before the refusal. The executor's three mutations were all on those pure functions. Deleting the refusal or the hostFormatAccepted record would leave every recorded gate and the vitest file green. The evidence for the wiring is a manual run (fake osascript, scratch --out) that is not repeatable from the tree.",
-        "resolution": "Extract the decision in shot() into one pure exported function, e.g. shotDateInputDecision(name, count, facts, accept) returning {refuse, note, extra}, and unit-test it in both directions: leaking host without accept refuses, with accept returns extra.hostFormatAccepted === true, a clean host and a shot with no input return an extra without hostFormatAccepted or no extra. Alternatively add a vitest case that spawns the tool with a fake osascript on PATH."
+        "resolution": "Extract the decision in shot() into one pure exported function, e.g. shotDateInputDecision(name, count, facts, accept) returning {refuse, note, extra}, and unit-test it in both directions: leaking host without accept refuses, with accept returns extra.hostFormatAccepted === true, a clean host and a shot with no input return an extra without hostFormatAccepted or no extra. Alternatively add a vitest case that spawns the tool with a fake osascript on PATH.",
+        "fixTask": "P128.53-izt"
       },
       {
         "id": "P128-R11",
         "severity": "low",
         "file": "tools/capture-screenshots.mjs:6827-6830 (reader missing: plugins/audit/scripts/_refs.py screenshot_capture_drift)",
         "issue": "The escape is recorded (`hostFormatAccepted: true`) but nothing reads the record. screenshot_capture_drift grades version, source digest and hash, and does not look at nativeDateInput. A shot written under --accept-host-date-format therefore passes every committed-artifact check and `--check`, and a reader of the sidecar is the only way to learn it is host-shaped. The record says so honestly, but it is a basis with no claim attached. Capture time is loud (note and warning); the committed state is not.",
-        "resolution": "File a follow-up task: have screenshot_capture_drift, or the release-set check, report any image whose entry has hostFormatAccepted true, so a release cannot ship host-shaped pictures unnoticed. That is a separate file from this task's scope, so it should be a tracked task rather than an inline edit."
+        "resolution": "File a follow-up task: have screenshot_capture_drift, or the release-set check, report any image whose entry has hostFormatAccepted true, so a release cannot ship host-shaped pictures unnoticed. That is a separate file from this task's scope, so it should be a tracked task rather than an inline edit.",
+        "fixTask": "P128.55-izt"
       },
       {
         "id": "P128-R12",
@@ -131,10 +136,11 @@
         "severity": "med",
         "file": "tools/gate-parity.py:3647-3658",
         "issue": "The new else branch treats any control result of zero leftover directories as a legitimate skip, including when the shell is dash. Before the diff the dash branch was check(..., len(left) == 1), so a dash that no longer left its directory behind (a dash build that honours a RETURN trap, or a changed _RETURN_TRAP_FUNC that stopped reproducing the defect) turned the suite RED. Now skip(..., absent=len(left)==0) is True in that case, so the suite is green with 'vsh5 SKIPPED HERE - under dash ... install dash to run the control'. That is the vacuous-control state the control exists to catch, and the text tells the reader to install a shell that is already running. The skip's absent evidence is read off the control's own result rather than off the platform, which is what skip()'s docstring says it must not do.",
-        "resolution": "Make the skip conditional on the shell not being dash, for example: if len(left)==1 -> real control; elif dash is None -> skip(..., len(left)==0); else check('vsh5 ... under dash the RETURN-trap spelling left %d directories, so vsh2-vsh4 and vsh9 cannot see the defect', False). That keeps the labelled skip for the no-dash machine and keeps the old red for dash."
+        "resolution": "Make the skip conditional on the shell not being dash, for example: if len(left)==1 -> real control; elif dash is None -> skip(..., len(left)==0); else check('vsh5 ... under dash the RETURN-trap spelling left %d directories, so vsh2-vsh4 and vsh9 cannot see the defect', False). That keeps the labelled skip for the no-dash machine and keeps the old red for dash.",
+        "fixTask": "P128.54-izt"
       }
     ],
-    "outcome": "[findings: 13 - 0 high, 4 med, 9 low; 6 with a recorded fix commit]"
+    "outcome": "[findings: 13 - 0 high, 4 med, 9 low; 7 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -3263,7 +3269,7 @@
     {
       "id": "P128.52-izt",
       "title": "fix P128-R9: help_state() is the function that serves the bare GET /api/help ...",
-      "status": "in_progress",
+      "status": "done",
       "description": "help_state() is the function that serves the bare GET /api/help and still documents it as 'what every field means, and how the four concepts work'. After this diff its return value (_help.payload()) carries no field text at all; fields are answered by help_field() for ?path=. The diff reworded payload()'s docstring, README, CONTRIBUTING, PLUGIN-BUILD-GUIDE and panel.md for exactly this, but left the docstring of the function across the boundary saying the opposite.\n\nResolution asked: Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET /api/help?path=&doc=).",
       "files": [
         "plugins/audit/scripts/panel/_panel_state.py",
@@ -3306,14 +3312,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c2f24e545ec0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/panel/_panel_state.py help_state() docstring (line ~310-318): summary now says it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET /api/help?path=&doc=); body says the payload carries no field text. Requirement clauses: (1) reword summary to topics/card/lever map -> _panel_state.py:311-312; (2) say a field is answered by help_field() (GET ...?path=&doc=) -> _panel_state.py:312. Test added at plugins/audit/tests/test__panel_state.py:~378-388 reading the first docstring paragraph of M.help_state and the live keys of M.help_state() (== agent, composition, schemas, topics; no field table). Bare GET /api/help returns exactly _help.payload() (panel-server.py:395-401, when no ?path=): keys composition (the lever map, COMPOSITION_PATHS), topics, agent (guide_card), schemas (the SCHEMAS name map); no field text. The schemas name map is not named in the summary line, left because the task asked only for topics/card/lever map.",
+        "descriptive": "help_state()'s docstring no longer claims the bare /api/help carries field meanings; a case pins the wording to the payload's real keys."
       },
       "startedAt": "2026-10-17T12:15:20Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T12:43:27Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__panel_state.py: Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET ..."
+      ],
       "notes": [
         {
           "at": "2026-10-17T09:08:34Z",
@@ -3340,6 +3348,268 @@
         "runId": "2026-10-17T12:42:03Z.db0fea",
         "status": "passed",
         "at": "2026-10-17T12:42:03Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c2f24e545ec0",
+        "at": "2026-10-17T12:43:27Z",
+        "return": "docs/audit/evidence/returns/P128.52-izt/20261017T121520Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-17T12:29:50Z",
+        "basis": "`python3 plugins/audit/tests/test__panel_state.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 39 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET ...: '`GET /api/help` — what every field means, and how the four concepts work.' (house FAIL): SELFTEST FAILED: 38/39 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P128.53-izt",
+      "title": "fix P128-R10: The deliverable of this task is the writing-path wiring in shot...",
+      "status": "in_progress",
+      "description": "The deliverable of this task is the writing-path wiring in shot(): the `leak && !ACCEPT_HOST_DATE_FORMAT` refusal, the 'WRITING ... as asked' note, and the `nativeDateInput {regionalFormat, hostFormatAccepted}` entry passed to recordCapture. No test that any gate or vitest run selects reaches it. The nine vitest cases cover only the pure helpers (regionalFormatProblem, regionalFormatBasis, dateInputProblem), and the gate's `shots` command is `--check`, which returns before the refusal. The executor's three mutations were all on those pure functions. Deleting the refusal or the hostFormatAccepted record would leave every recorded gate and the vitest file green. The evidence for the wiring is a manual run (fake osascript, scratch --out) that is not repeatable from the tree.\n\nResolution asked: Extract the decision in shot() into one pure exported function, e.g. shotDateInputDecision(name, count, facts, accept) returning {refuse, note, extra}, and unit-test it in both directions: leaking host without accept refuses, with accept returns extra.hostFormatAccepted === true, a clean host and a shot with no input return an extra without hostFormatAccepted or no extra. Alternatively add a vitest case that spawns the tool with a fake osascript on PATH.",
+      "files": [
+        "tools/capture-screenshots.mjs"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-17T12:43:56Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-17T12:43:50Z",
+          "text": "scope: tools/capture-screenshots.mjs, every path the finding(s) P128-R10 name"
+        },
+        {
+          "at": "2026-10-17T12:43:50Z",
+          "text": "no suite: tools/capture-screenshots.mjs - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-17T12:43:50Z",
+          "text": "no tests.add clause for P128-R10: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P128-R10"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T13:22:22Z.f3abf8",
+        "status": "passed",
+        "at": "2026-10-17T13:22:22Z"
+      }
+    },
+    {
+      "id": "P128.54-izt",
+      "title": "fix P128-R13: The new else branch treats any control result of zero leftover ...",
+      "status": "in_progress",
+      "description": "The new else branch treats any control result of zero leftover directories as a legitimate skip, including when the shell is dash. Before the diff the dash branch was check(..., len(left) == 1), so a dash that no longer left its directory behind (a dash build that honours a RETURN trap, or a changed _RETURN_TRAP_FUNC that stopped reproducing the defect) turned the suite RED. Now skip(..., absent=len(left)==0) is True in that case, so the suite is green with 'vsh5 SKIPPED HERE - under dash ... install dash to run the control'. That is the vacuous-control state the control exists to catch, and the text tells the reader to install a shell that is already running. The skip's absent evidence is read off the control's own result rather than off the platform, which is what skip()'s docstring says it must not do.\n\nResolution asked: Make the skip conditional on the shell not being dash, for example: if len(left)==1 -> real control; elif dash is None -> skip(..., len(left)==0); else check('vsh5 ... under dash the RETURN-trap spelling left %d directories, so vsh2-vsh4 and vsh9 cannot see the defect', False). That keeps the labelled skip for the no-dash machine and keeps the old red for dash.",
+      "files": [
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-17T12:44:00Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-17T12:43:51Z",
+          "text": "scope: tools/gate-parity.py, every path the finding(s) P128-R13 name"
+        },
+        {
+          "at": "2026-10-17T12:43:51Z",
+          "text": "no suite: tools/gate-parity.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-17T12:43:51Z",
+          "text": "no tests.add clause for P128-R13: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P128-R13"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T13:39:05Z.231fd8",
+        "status": "passed",
+        "at": "2026-10-17T13:39:05Z"
+      }
+    },
+    {
+      "id": "P128.55-izt",
+      "title": "fix P128-R11: The escape is recorded (`hostFormatAccepted: true`) but nothing...",
+      "status": "pending",
+      "description": "The escape is recorded (`hostFormatAccepted: true`) but nothing reads the record. screenshot_capture_drift grades version, source digest and hash, and does not look at nativeDateInput. A shot written under --accept-host-date-format therefore passes every committed-artifact check and `--check`, and a reader of the sidecar is the only way to learn it is host-shaped. The record says so honestly, but it is a basis with no claim attached. Capture time is loud (note and warning); the committed state is not.\n\nResolution asked: File a follow-up task: have screenshot_capture_drift, or the release-set check, report any image whose entry has hostFormatAccepted true, so a release cannot ship host-shaped pictures unnoticed. That is a separate file from this task's scope, so it should be a tracked task rather than an inline edit.",
+      "files": [
+        "tools/capture-screenshots.mjs",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__refs.py: File a follow-up task: have screenshot_capture_drift, or the release-set check, report any image whose entry has hostFormatAccepted true, so a release cannot ..."
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-17T12:43:53Z",
+          "text": "scope: tools/capture-screenshots.mjs, plugins/audit/scripts/_refs.py, every path the finding(s) P128-R11 name"
+        },
+        {
+          "at": "2026-10-17T12:43:53Z",
+          "text": "scope: plugins/audit/tests/test__refs.py, the suite that tests plugins/audit/scripts/_refs.py (python: its import closure reaches plugins/audit/scripts/_refs.py)"
+        },
+        {
+          "at": "2026-10-17T12:43:53Z",
+          "text": "no suite: tools/capture-screenshots.mjs - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
+        }
+      ],
+      "fixes": [
+        "P128-R11"
+      ]
+    },
+    {
+      "id": "P128.56-izt",
+      "title": "fix P128-R3: The nt branch of _shim_dir and of the k15 working shim writes .c...",
+      "status": "in_progress",
+      "description": "The nt branch of _shim_dir and of the k15 working shim writes .cmd files and is untested on Windows (the executor says so). On the windows CI leg a .cmd found by shutil.which and run without a shell, and a cmd shim that forwards %* to sys.executable, are assumptions; a failure there would turn k13-k15 red on CI only.\n\nResolution asked: Confirm on the first windows CI run after this lands (ci-every-phase dispatch). If k13-k15 go red there, build the shims as .bat or add the extension to PATHEXT in the case env.",
+      "files": [
+        "tools/check-git-pipeline.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-17T12:44:04Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-17T12:43:55Z",
+          "text": "scope: tools/check-git-pipeline.py, every path the finding(s) P128-R3 name"
+        },
+        {
+          "at": "2026-10-17T12:43:55Z",
+          "text": "no suite: tools/check-git-pipeline.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-17T12:43:55Z",
+          "text": "no tests.add clause for P128-R3: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P128-R3"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T13:51:05Z.5e6afa",
+        "status": "passed",
+        "at": "2026-10-17T13:51:05Z"
       }
     }
   ],

@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "tools/ui-tests/capture-provenance.test.mjs:352-358",
+   "issue": "The wiring case 'shot() obeys the refusal, prints the note, records the extra, and passes the flag' is four independent regex matches over shot()'s body. None asks where the refusal sits relative to the shutter call. Moving `await page.screenshot(...)` above `if (decision.refuse) { fail(...); return; }` leaves every regex matching and the file count of shutter calls unchanged, so the picture is written before the refusal and all 32 vitest cases stay green. The executor's own return concedes it cannot prove order. Order is the whole point of a refusal, so the deliverable's wiring is only partly pinned.",
+   "resolution": "In that case add `expect(body.indexOf('if (decision.refuse)')).toBeGreaterThan(-1)` and `expect(body.indexOf('if (decision.refuse)')).toBeLessThan(body.search(/\\.screenshot\\b/))`, and likewise recordCapture after the shutter call. Index comparisons need no browser."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'Extract the decision in shot() into one pure exported function ... returning {refuse, note, extra}, and unit-test it in both directions'. The diff adds exported pure shotWriteDecision(name,count,facts,accept) returning {refuse,note,extra}. shot() calls it with regionalFormat() and ACCEPT_HOST_DATE_FORMAT and obeys refuse (fail + return), note, and extra (recordCapture), all after the CHECK return and before the shutter call. Behaviour is unchanged: the message text is identical, hostFormatAccepted is present only on an accepted leak, and extra is null when the shot holds no date input. Unit cases cover refuse without accept, accepted leak with hostFormatAccepted true, clean host with and without accept, no-input shot, and null facts. The executor's outcome describes this diff accurately. One wording slip: it says '+5...' for the second describe block, which holds five cases; that is harmless. I ran npx vitest run tools/ui-tests/capture-provenance.test.mjs once: 32 passed. I read the source-reading wiring cases against shot(). They go red if shot() drops the shotWriteDecision call, passes something other than ACCEPT_HOST_DATE_FORMAT, loses the return after fail(decision.refuse), drops the note or the extra, re-inlines dateInputProblem or hostFormatAccepted, or gains a second shutter call outside shot(). They stay green if the refusal is moved after the shutter call (finding 1).",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "The executor filed could-not-prove with the helper's refusal verbatim: 'task P128.53-izt declares no test file, so a throwaway at HEAD would prove nothing about this task's test'. That holds as a refusal reason and I echo it. Nothing handed shows a red, so I do not upgrade it to proved. The executor's M1-M10 mutation run is a described run, not a recorded red under stamp-verification.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate's selftests entry is `python3 tools/sweep-selftests.py`, which runs the whole project, so the bound is not narrower than the project. The validate, plugin-validate, gate, report, lint, shots (`--check`) and interactive entries are not test selections that exercise the shot() decision. I did not judge individual inherited tests."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

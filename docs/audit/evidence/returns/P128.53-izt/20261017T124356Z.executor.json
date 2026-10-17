@@ -1,0 +1,33 @@
+{
+  "gates": {
+    "vitest tools/ui-tests/capture-provenance.test.mjs": "pass",
+    "npx vitest run (full)": "pass",
+    "node tools/capture-screenshots.mjs --check": "pass",
+    "python3 tools/sweep-selftests.py --quiet": "pass",
+    "ruff check plugins/audit tools": "pass"
+  },
+  "redFirst": {
+    "status": "could-not-prove",
+    "at": "2026-10-17T13:08:10Z",
+    "basis": "P128.53-izt declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P128.53-izt declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "HEAD c2f24e54 before first edit. tools/capture-screenshots.mjs: new exported pure shotWriteDecision(name,count,facts,accept) -> {refuse,note,extra} (defined just above shot()); shot() now calls it with regionalFormat() and ACCEPT_HOST_DATE_FORMAT and obeys decision.refuse (fail+return), decision.note (note), decision.extra (recordCapture). Behaviour unchanged: extra is null when no date input; hostFormatAccepted present only when a leak was written by request. tools/ui-tests/capture-provenance.test.mjs (declared test file; plan gate allowed the write): +6 cases in describe 'shotWriteDecision' (refuse on leak without accept; write+note+record hostFormatAccepted on accept; clean host writes with no refuse/note/hostFormatAccepted key for both accept values; no-input shot on leaking host records nothing; null facts refuse 'not asked' unless accepted) and +5... in describe 'every image is written by shot() alone' (source read: exactly one non-comment .screenshot / ['screenshot'] hit, inside shot(); detector sees a planted call outside shot(); comment-only lines ignored; shot() holds one shotWriteDecision call and no dateInputProblem( / hostFormatAccepted copy; shot() obeys refuse/note/extra and passes ACCEPT_HOST_DATE_FORMAT). Mutation run on a scratch-driven copy, file restored in finally (git diff --stat shows only the two intended files): M1 refusal deleted, M2 acceptance record dropped, M3 acceptance always claimed, M4 clean host refused, M5 note dropped, M6 shot ignores refusal, M7 extra not recorded, M8 flag not passed, M9 bare page.screenshot elsewhere, M10 shot re-inlines dateInputProblem: every one exit 1 with 1-2 vitest failures; unmutated 32/32. (A first mutation pass was discarded: my wiring regex used [^)]* and failed on the unmutated file; fixed to .* and reran all ten.) Gates: npx vitest run -> exit 0, 56 files / 849 tests; node tools/capture-screenshots.mjs --check -> exit 0 'OK: capture preconditions hold'; python3 tools/sweep-selftests.py --quiet -> exit 0 (335/335 files ok, 16636 cases), run in my tree; the tool moved it to the background after 600 s and I read 'sweep_exit=0' from the same command's output; ruff check plugins/audit tools -> exit 0. tools/verify.sh not run, as ordered. The wiring tests are source reads: they fail when a part of the decision is dropped but cannot prove statement order. tests.add is 'none' for this task and the manifest lists no tests.add entries, so no falsifier is keyed and test titles have no tests.add clause to quote verbatim; this is a reported gap.\n\nclaims:\n1 capture-screenshots.mjs shotWriteDecision (above shot()) does what its docstring says; shot() calls it and uses refuse/note/extra at the lines after the visibleDateInputs CHECK return\n2 M1-M10 above, each red, file restored, unmutated 32/32; allow twins (clean host, no-input shot, comment-only line) are cases of their own and M4/M3 turned them red\n3 grep -n 'screenshot(' tools/capture-screenshots.mjs: 1 code hit (inside shot()); other occurrences are comments or a template string; the new source test counts them\n4 the 'only shot() writes images' rule that lived in a comment is now enforced by the vitest case 'finds shot() and exactly one shutter call, inside it'\n5 n/a - no property recorded\n6 n/a - no guard reading a command\n7 n/a - no number written into prose",
+    "descriptive": "The writing-path decision in shot() is now one pure exported function tested in both directions, and a vitest case fails if any image is written outside shot()."
+  },
+  "testsAdded": [
+    "shotWriteDecision: REFUSES a leaking host without the flag: no note, nothing to record",
+    "shotWriteDecision: WRITES a leaking host when accepted, says so, and records the acceptance",
+    "shotWriteDecision: WRITES a clean host without refusing, noting or claiming an acceptance",
+    "shotWriteDecision: WRITES a shot with no date input on a leaking host, recording nothing",
+    "shotWriteDecision: REFUSES when the host was never asked",
+    "every image is written by shot() alone: finds shot() and exactly one shutter call, inside it",
+    "every image is written by shot() alone: sees a shutter call placed outside shot()",
+    "every image is written by shot() alone: ignores a comment line that merely names the call",
+    "every image is written by shot() alone: shot() takes its refusal from shotWriteDecision and keeps no copy of it",
+    "every image is written by shot() alone: shot() obeys the refusal, prints the note, records the extra, and passes the flag"
+  ],
+  "falsifiers": {},
+  "stamp": "audit-stamp: {\"content\":\"sha256:7a3aa2672e81533e760294ebec825931ec1970a1714eef429508aace66b265ae\",\"dirtyDigest\":\"sha256:4f0e0d16e7e3c62ce8a09e6b93be553fdfdcbe7c31f465556282b30dd5c0c0c9\",\"dirtyPaths\":{\"tools/capture-screenshots.mjs\":\"cd8f98042881be17\",\"tools/ui-tests/capture-provenance.test.mjs\":\"c5241eb11ecaeaba\"},\"head\":\"c2f24e54\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/capture-screenshots.mjs\"],\"scopeDigest\":\"sha256:c3d6dcee57b52e81418925ecb19ef18bb553b2b0a9da5293f9a1b90cacfff29b\",\"v\":2}"
+}

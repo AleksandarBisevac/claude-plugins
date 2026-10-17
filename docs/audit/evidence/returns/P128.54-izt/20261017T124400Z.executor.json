@@ -1,0 +1,25 @@
+{
+  "gates": {
+    "sweep-selftests (python3 tools/sweep-selftests.py --quiet, foreground, in the task tree)": "pass",
+    "gate-parity selftest (python3 tools/gate-parity.py --selftest)": "pass",
+    "ruff check tools/gate-parity.py": "pass",
+    "vermin -t=3.8- tools/gate-parity.py": "pass"
+  },
+  "redFirst": {
+    "status": "could-not-prove",
+    "at": "2026-10-17T13:08:42Z",
+    "basis": "P128.54-izt declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P128.54-izt declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/gate-parity.py: vsh5 skip is now conditional on what the shell IS. New helpers return_trap_honoured(shell) (probes the shell directly with a one-line function-scoped RETURN trap; dash prints 'bad trap', sh/bash print 'honoured') and return_trap_verdict(dash_present, left_count, honoured) -> control|skip|fail (helper defs just above _verify_cleanup_cases; call site in the 'The control' block). Skip only when no dash on PATH AND the fallback shell honours the trap when probed AND zero directories were left; dash on PATH with 0 left, or any other count, is check(vsh5 ..., False) naming the count, dash presence and probe result. The skip text no longer tells a dash user to install dash. New cases: vsh10 (all 12 combinations of dash/count/honoured against an independent expected table), vsh11 (two stub shells, one printing the word, one silent, so the probe separates both directions on any machine), vsh12 (real dash must be probed not-honoured; labelled skip via house skip() if no dash is installed, not a silent branch). Mutations, each restored (diff against backup clean): old behaviour (skip whenever left==0) -> vsh10 FAIL 145/146; skip branch returns fail -> vsh10 FAIL 145/146; probe always True -> vsh11 and vsh12 FAIL 144/146; dash that stops leaving its directory (_RETURN_TRAP_FUNC mktemp replaced) -> vsh5 FAIL 145/146 with 'left 0 directories (dash on PATH: True, probed: False)'. Unmutated: gate-parity selftest 146/146, full sweep exit 0 (335/335 files, 16639 cases). Requirement clauses: (1) skip conditional on non-dash: gate-parity.py return_trap_verdict + vsh5 block; (2) dash with len(left)==1 keeps real control; (3) dash with other counts keeps the red, as check(..., False); (4) no-dash machine keeps a labelled skip via _harness.skip. Deviation from the suggested spelling: the skip's absent evidence is the direct probe plus no-dash, with len(left)==0 only as the consistency condition, because the reviewer asked that it be read off the shell and not the control result. Not run: browser gates and verify.sh (forbidden by the orchestrator addendum). The no-dash path was not exercised end-to-end on this machine (dash is at /bin/dash); it is covered by vsh10/vsh11 on the verdict and probe functions.",
+    "descriptive": "The vsh5 RETURN-trap control can no longer go vacuously green under dash: only a dash-less machine whose shell provably honours the trap may skip, and a dash that stops reproducing the defect turns the suite red again."
+  },
+  "testsAdded": [
+    "vsh10",
+    "vsh11",
+    "vsh12"
+  ],
+  "claims": "claims:\n1 gate-parity.py return_trap_verdict (skip only if not dash_present and left==0 and honoured) and return_trap_honoured (probes the shell directly); the vsh5 comment describes those three outcomes only\n2 four mutations red then restored (old behaviour -> vsh10 red; skip->fail -> vsh10 red, i.e. over-fire/under-fire both directions; probe always True -> vsh11+vsh12 red; dash stops leaving dir -> vsh5 red); restored file diffed identical to backup, __pycache__ purged between cycles\n3 class = a skip whose absent evidence is the control's own result: grep 'skip(check' tools/gate-parity.py shows this one call site for this shell control; other skip() users are outside this task's file and not touched\n4 n/a - no rule addressed to an agent\n5 n/a - no timing or property recorded\n6 n/a - no guard over commands; the probe reads what the shell prints when run\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:62062819573fc90adbfbb4b046acc9884b50a1b1dc635138804441053d4550fc\",\"dirtyDigest\":\"sha256:cb02c12066431c530da322939c8d5acac6130a4d43ae13792917dd8ce3ef4c0a\",\"dirtyPaths\":{\"tools/gate-parity.py\":\"61bc21c795f24c22\"},\"head\":\"c2f24e54\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/gate-parity.py\"],\"scopeDigest\":\"sha256:35f09668a4fc4deab96361d3a529178e151c94c44dae90d309062acfd146f024\",\"v\":2}"
+}

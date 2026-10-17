@@ -3557,6 +3557,33 @@ def run_in_scratch_shell(sh, root, script, mode=None):
             sorted(os.listdir(scratch)))
 
 
+def return_trap_honoured(shell):
+    """True when `shell` runs a function-scoped RETURN trap, asked directly.
+
+    The skip for a missing control has to rest on what the shell IS, so it is
+    probed here with a one-line function rather than inferred from how many
+    directories the control left. A shell that rejects the signal name (dash
+    prints `bad trap`) or runs nothing answers False."""
+    done = subprocess.run(
+        [shell, "-c", "f() { trap 'echo honoured' RETURN; return 0; }; f"],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    return b"honoured" in done.stdout
+
+
+def return_trap_verdict(dash_present, left_count, honoured):
+    """'control', 'skip' or 'fail' for the RETURN-trap control.
+
+    Only a machine with no dash may skip, and only when the shell it fell back
+    on provably honours the trap and left nothing behind. Dash on PATH never
+    skips: a dash that no longer leaves its directory is a control that stopped
+    working, and it must turn the suite red."""
+    if left_count == 1:
+        return "control"
+    if not dash_present and left_count == 0 and honoured:
+        return "skip"
+    return "fail"
+
+
 def _verify_cleanup_cases(check):
     from _suite import remove_tree
     dash = shutil.which("dash")
@@ -3634,27 +3661,36 @@ def _verify_cleanup_cases(check):
                   code == want and "status=" not in out and left == [])
 
         # The control. If the shell in use ran a RETURN trap, the cases above
-        # could not have seen the defect and their green would say nothing. It is
-        # asked of the shell the cases ran under, not of dash by name: a machine
-        # with no dash whose `sh` still leaves the directory behind is a real
-        # control, and one whose `sh` honours the trap (bash in POSIX mode) is a
-        # skip the run SAYS it took, through the house helper, so a reader of a
-        # clean run sees that the control did not run. A directory count other
-        # than none or one is neither a control nor a skip, and fails.
+        # could not have seen the defect and their green would say nothing. Three
+        # outcomes, decided by return_trap_verdict(): the directory is left behind
+        # (a real control); the shell is not dash, honours the trap when asked
+        # directly, and left nothing (a skip the run SAYS it took, through the
+        # house helper); or anything else, which is red - above all a dash that
+        # stopped leaving its directory, because that is the vacuous state this
+        # control exists to catch and "install dash" would tell the reader to
+        # install the shell already running.
         _, _, left = run_in_scratch_shell(shell, root, _RETURN_TRAP_FUNC,
                                           mode="same")
-        if len(left) == 1:
+        honoured = return_trap_honoured(shell)
+        verdict = return_trap_verdict(dash is not None, len(left), honoured)
+        if verdict == "control":
             check("vsh5 the cases can see the defect they guard - the removed "
                   "`trap ... RETURN` spelling leaves its directory behind under "
                   "%s: left=%r" % (ran, left), True)
-        else:
+        elif verdict == "skip":
             from _harness import skip
             skip(check, "vsh5",
-                 "under %s the removed `trap ... RETURN` spelling left %d "
-                 "directories behind (the shell honours the trap), so vsh2-vsh4 "
-                 "and vsh9 above could not have seen the defect it guards; "
-                 "install dash to run the control: left=%r"
-                 % (ran, len(left), left), len(left) == 0)
+                 "under %s (no dash on PATH) a function-scoped `trap ... RETURN` "
+                 "runs when probed directly and the removed spelling left no "
+                 "directory behind, so vsh2-vsh4 and vsh9 above could not have "
+                 "seen the defect it guards; install dash to run the control: "
+                 "left=%r" % (ran, left), honoured and len(left) == 0)
+        else:
+            check("vsh5 the cases can see the defect they guard - under %s the "
+                  "removed `trap ... RETURN` spelling left %d directories "
+                  "(dash on PATH: %s, RETURN trap honoured when probed: %s), so "
+                  "vsh2-vsh4 and vsh9 cannot see the defect: left=%r"
+                  % (ran, len(left), dash is not None, honoured, left), False)
 
         # The signal half: TERM and INT must END the run with the directory
         # removed, not remove it and let the script carry on.
@@ -5401,6 +5437,51 @@ def _cases(check):
           and len(_sg_b_gone) == 1 and "no such step" in _sg_b_gone[0][2])
 
     _verify_cleanup_cases(check)
+
+    # The verdict behind vsh5, in all its corners. The dash rows are the ones
+    # that must stay red: a dash that left nothing is a control that stopped
+    # working, not a machine without one. The no-dash row that skips is the
+    # over-fire direction - a verdict that always failed would pass every row but it.
+    _rt = [(d, n, h, return_trap_verdict(d, n, h))
+           for d in (True, False) for n in (0, 1, 2) for h in (True, False)]
+    _rt_want = {(d, n, h): ("control" if n == 1 else
+                            "skip" if (not d and n == 0 and h) else "fail")
+                for d in (True, False) for n in (0, 1, 2) for h in (True, False)}
+    check("vsh10 the RETURN-trap control skips only with no dash on PATH, a shell "
+          "that honours the trap when probed and no directory left; dash with "
+          "nothing left, a shell with nothing left that does not honour the trap, "
+          "and two directories all fail: %r"
+          % ([r for r in _rt if _rt_want[r[:3]] != r[3]],),
+          all(_rt_want[r[:3]] == r[3] for r in _rt)
+          and return_trap_verdict(True, 0, True) == "fail"
+          and return_trap_verdict(False, 0, True) == "skip")
+    # The probe reads what the shell PRINTS, so two stub "shells" separate its
+    # verdicts on any machine: one that prints the word, one that prints nothing.
+    _rt_root = tempfile.mkdtemp(prefix="return-trap-probe-")
+    try:
+        _rt_stubs = {}
+        for _name, _body in (("says", "echo honoured\n"), ("silent", "true\n")):
+            _rt_stubs[_name] = os.path.join(_rt_root, _name)
+            with io.open(_rt_stubs[_name], "w", encoding="utf-8", newline="\n") as fh:
+                fh.write("#!/bin/sh\n" + _body)
+            os.chmod(_rt_stubs[_name], 0o755)
+        _rt_says = return_trap_honoured(_rt_stubs["says"])
+        _rt_silent = return_trap_honoured(_rt_stubs["silent"])
+    finally:
+        from _suite import remove_tree
+        remove_tree(_rt_root)
+    check("vsh11 the direct probe reads the shell's own answer: a shell that prints "
+          "the trap's word is honoured and one that prints nothing is not: %r / %r"
+          % (_rt_says, _rt_silent), _rt_says is True and _rt_silent is False)
+    _rt_dash = shutil.which("dash")
+    if _rt_dash is None:
+        from _harness import skip
+        skip(check, "vsh12", "no dash on PATH, so dash's own refusal of the RETURN "
+             "trap is not probed", _rt_dash is None)
+    else:
+        check("vsh12 dash rejects the RETURN trap when probed directly, so no dash "
+              "machine can reach the skip: %r" % (_rt_dash,),
+              return_trap_honoured(_rt_dash) is False)
 
 
 def _selftest():

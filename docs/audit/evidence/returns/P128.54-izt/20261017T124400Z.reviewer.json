@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'make the skip conditional on the shell not being dash ... keep the old red for dash'. The diff adds return_trap_verdict(dash_present, left_count, honoured): left==1 -> control; no dash AND left==0 AND the fallback shell honours the trap when probed directly -> skip; everything else (above all dash on PATH with 0 left) -> check(..., False) naming count, dash presence and probe result. The skip text no longer tells a dash user to install dash. This deviates slightly from the suggested spelling (skip's absent is the direct probe plus no-dash, not len(left)==0 alone), which is stricter and consistent with skip()'s docstring. The filed outcome describes the diff: helpers, vsh5 branches, and vsh10/vsh11/vsh12 all exist as claimed. I ran python3 tools/gate-parity.py --selftest once in the task tree: ALL PASS 146/146, matching the claimed figure, with vsh10-vsh12 passing (vsh12 against /bin/dash returns not-honoured).",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "Executor filed could-not-prove with the helper's verbatim refusal: 'task P128.54-izt declares no test file, so a throwaway at HEAD would prove nothing about this task's test'. That reason holds (no test file in files/tests.add; tests.add is none; the new cases vsh10-vsh12 live in the same file as the code). The executor also reports four restore-verified mutations going red (old behaviour, skip->fail, probe always True, dash that stops leaving its directory), but those are not a red-first run before the fix and I did not re-run them.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "tests.gate entries read: sweep-selftests (python3 tools/sweep-selftests.py), validate-manifest, plugin validate, audit-status --gate, render-report, ruff+vermin, and the two browser gates. Only the sweep selects tests touching this behaviour, and within it the single file whose behaviour is changed is tools/gate-parity.py --selftest; vsh2-vsh4/vsh9 run verify.sh's functions in a real shell and assert directory absence, so they would fail if the cleanup were deleted. vsh5's own control now fails on dash when the defect cannot be reproduced. The browser gates and the manifest/plugin validators do not touch this code. No test that would pass vacuously over the deleted behaviour was found."
+ },
+ "verdict": "clean",
+ "tasks": []
+}
