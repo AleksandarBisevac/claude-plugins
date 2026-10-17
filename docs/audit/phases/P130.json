@@ -177,8 +177,11 @@
         "expectRedFirst": true,
         "gate": [
           "selftests",
-          "lint",
+          "validate",
+          "plugin-validate",
+          "gate",
           "report",
+          "lint",
           "shots",
           "interactive",
           "vitest"
@@ -212,7 +215,7 @@
     {
       "id": "P130.3",
       "title": "A screenshot is stale exactly when what the page receives changed, not when _ui_theme.py's prose did",
-      "status": "in_progress",
+      "status": "done",
       "description": "Plan F1.3, invariant I13. Today `_output.ui_surface_digests()` (:900) hashes the raw bytes of every source a surface is assembled from plus `_ui_theme.py`, so a docstring edit there owes a recapture of all 25 committed PNGs. (1) Each surface's digest is taken over what the page receives: the report as `_report_ui.CSS + \"\\0\" + _report_ui.SCRIPT`, the panel as `_panel_page.UI_HTML`. (2) The plugin version is replaced by a fixed token before hashing, and every frozenset that reaches the assembled text is sorted first (`THEME_SINGLE`'s repr changes between interpreter runs). (3) PREMISE CORRECTION: the plan put this in _output.py, but _deps.LAYERS puts _output at layer 0, _report_ui at 4 and _panel_page at 6, and a lower layer may not import a higher one; the digest therefore lives in a new module above both (plugins/audit/scripts/_surface_digest.py, new, with its LAYERS entry, PLUGIN-BUILD-GUIDE tree line and section, PATH_PREAMBLE, `safe_stdio()` first and a suite in plugins/audit/tests/), and `ui_surface_sources()` stays where it is. (4) Its callers are repointed: tools/capture-screenshots.mjs (asks for the digest through python -c, about :6293) and `_refs.screenshot_capture_drift()` (:3439). (5) docs/screenshots/captured-at.json is rewritten once, because the meaning of its digest changes; that recapture is the orchestrator's (the capture lock is machine-wide), never an agent's. Acceptance: `python3 studies/K-poc/shot-digest.py studies/K-poc/shot/{base,prose,token}` gives the same digest for the prose edit and a different one for the token edit; `node tools/capture-screenshots.mjs --check` exits 0. NEW PATHS (absent at 571becfd, created by this task): plugins/audit/scripts/_surface_digest.py, plugins/audit/tests/test__surface_digest.py.",
       "files": [
         "plugins/audit/scripts/_surface_digest.py",
@@ -273,19 +276,34 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8e382f8c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "HEAD 79a84766, tree claude-plugins-P130.3. (1) NEW plugins/audit/scripts/_surface_digest.py: surface_texts() (:78) returns report = _report_ui.CSS + NUL + _report_ui.SCRIPT and panel = _panel_page.UI_HTML; surface_digests() (:110) hashes each, keeps the old {digests, unassigned, error} shape, unassigned/walk errors still from _output.ui_surface_sources(). (2) without_version() (:91) swaps the QUOTED plugin version for VERSION_TOKEN (:75) before hashing; the frozenset half of the clause is NOT a code change: the digest is over assembled text, which is byte-identical across PYTHONHASHSEED values (probe: seeds 1,2,3 gave identical digests; sd1 runs seeds 1,2,3,4) - THEME_SINGLE is already emitted via sorted() at panel/_panel_write.py:1749, so there is no frozenset repr in the text to sort; the premise applied to the study's table-serialising design, not to hashing the page. (3) layer placement: _deps.LAYERS entry _deps.py:645 (layer 7, above _panel_page 6 and _report_ui 4), PLUGIN-BUILD-GUIDE.md tree line :182, fence line :411, section '### plugins/audit/scripts/_surface_digest.py' plus rewritten ui_surface_sources/_surface_digest paragraphs, PATH_PREAMBLE pasted, safe_stdio first in __main__, --selftest points at tests/. _output.ui_surface_digests and _UI_TOKEN_LAYER and the hashlib import are REMOVED; ui_surface_sources stays (_output.py:807). (4) callers: tools/capture-screenshots.mjs loadUiSourceDigests (:6287) now runs _surface_digest.py --json (reads stdout even on exit 1; resolveScript count stays 13); _refs.py: _refs is layer 3 and may not import a layer-7 module, so screenshot_capture_drift(repo_root=None, ui=None) (:3490) takes the answer as ui or, when None, calls _ui_digests_by_command() (:3377) which RUNS _surface_digest.py --json as a child (no import edge; layer_violations unchanged) and turns a crash/timeout/wrong shape into an error finding. (5) docs/screenshots/captured-at.json NOT touched - the recapture is the orchestrator's. Tests: NEW plugins/audit/tests/test__surface_digest.py (8 cases; copies scripts/hooks/.claude-plugin to a temp dir and digests it in children with different PYTHONHASHSEED, PYTHONDONTWRITEBYTECODE=1 - a same-second same-length edit/restore reproduced a stale .pyc giving the EDITED digest 0a61ab60a139, probe in my scratchpad); test__refs.py: sc11-sc19 rewritten to inject ui=, old sc14 (token layer) replaced by the required stale-digest case, sc24-sc26 added for the command contract (ok, exit-1-with-answer, crash, bad shape, missing script, and the finding it becomes); test__output.py: us1 repointed, us7/us10/us13 retired (they guarded the raw-byte digest), us4-us6/us8/us9/us11/us12 rewritten over ui_surface_sources, _surface_digest.py added to sc11/sc13 covered lists. Gates: test__surface_digest 8/8; test__output 266/266 (before the last list edit it was 264 then green); test__deps 331/331; vitest 56 files 851 tests exit 0; capture-screenshots --check exit 0 and printed 'ui pages: panel 70b40bfc1bd4, report 1a57c86f5091'; ruff, vermin, gate-parity, bench-hooks --gate exit 0. FULL SWEEP (python3 tools/sweep-selftests.py --quiet, foreground-equivalent, exit 1, run twice): the only red that is MINE is test__refs sc1 and sc2, and they are red because the committed sidecar still holds the OLD-meaning digests ('areas.png was captured from a report page digesting d4128a81fcda and it now digests 1a57c86f5091') - they go green on the orchestrator's recapture and cannot before. The first sweep also showed test__surface_digest sd2-sd4 red; that was the stale-pyc bug above, fixed (3 isolated reruns green, then green inside the second full sweep). The second sweep's other red was tools/gate-parity.py vsh6/vsh9 (SIGINT timing under 8 workers); gate-parity.py alone exits 0 and the first full sweep passed it - not a file I touched. REFUSALS (plan gate, verbatim): Edit plugins/audit/scripts/_ui_theme.py -> '[require-plan] plugins/audit/scripts/_ui_theme.py is outside task P130.3 ... it is declared by P20.5, P50.5, P109.1, P122.8-z4y, P123.65-64p, P130.7, P130.8, P130.9, a different task'; Edit .gitattributes -> '[require-plan] .gitattributes is outside task P130.3 ... declared by BF2.1, P36.13, P94.4, P121.10-eof'. Both are comment-only and now stale: _ui_theme.py:872 still names ui_surface_digests() (should say ui_surface_sources()) and .gitattributes:26-32 still says the digest reads the token layer's raw bytes. Also: one Bash heredoc write to _output.py was refused by the gate ('no phase is in_progress ... free file already spent on _refs.py'), after an earlier heredoc had edited _refs.py; I redid the _output.py edits with the Edit tool, which the gate allowed. ACCEPTANCE: studies/K-poc/shot-digest.py and studies/K-poc/shot/{base,prose,token} are not in this repository (the script lives under quality-gates-internal/reports/2026-10-14-cost-code-ci-analysis/studies/K-poc/ and the shot dirs do not exist anywhere), so that command was not run; its claim is held instead by sd1 (prose edit: digests equal; token edit: both digests differ; two seeds equal).",
+        "descriptive": "A prose or comment edit in _ui_theme.py no longer owes a screenshot recapture: each surface is digested over the page it sends, the version is a fixed token, and the sidecar rule asks the new _surface_digest.py command; one recapture by the orchestrator turns the two live sidecar cases green."
       },
       "startedAt": "2026-10-17T15:54:51Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T20:57:16Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__surface_digest.py: a prose-only edit of _ui_theme.py leaves both surface digests unchanged, a token value edit changes them, and two interpreter runs give the same digest",
+        "plugins/audit/tests/test__refs.py: a sidecar entry whose digest differs from the assembled-surface digest is reported stale by screenshot_capture_drift, naming the surface"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-17T18:56:50Z.fe9e53",
         "status": "passed",
         "at": "2026-10-17T18:56:50Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8e382f8c",
+        "at": "2026-10-17T20:57:16Z",
+        "return": "docs/audit/evidence/returns/P130.3/20261017T155451Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-17T16:35:53Z",
+        "basis": "`python3 tools/sweep-selftests.py plugins/audit/tests/test__surface_digest.py` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: ModuleNotFoundError: No module named '_surface_digest'; HEAD's own tests on HEAD's code are not green (no tally or error reader matched its output, so no line of it is quoted as decisive) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -332,8 +350,11 @@
         "expectRedFirst": false,
         "gate": [
           "selftests",
-          "lint",
+          "validate",
+          "plugin-validate",
+          "gate",
           "report",
+          "lint",
           "shots",
           "interactive",
           "vitest"
@@ -358,12 +379,18 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-17T20:58:57Z",
+          "text": "Rewritten per plans/2026-10-17-redesign-implementation section 4: drop the commit_message triple (S2.5 deletes commit-manifest-index.py and commit-audit-state.py, two of its three copies). The dead definitions, the duplicated guard payloads and the ISO helpers stay in scope."
+        }
+      ]
     },
     {
       "id": "P130.5",
       "title": "Each side has one git runner, and every caller keeps its own timeout and output truncation",
-      "status": "pending",
+      "status": "cancelled",
       "description": "Plan F1.6 (S3), the git-wrapper part, drafted apart from F1.6 because it reaches twenty-five modules. `git grep -E '^def _?git[A-Za-z0-9_]*\\(' HEAD -- plugins/audit/scripts plugins/audit/hooks` matches 43 definitions at 571becfd (the same at edbbb86e), but that pattern also matches helpers that do not spawn git (`git_root_dir`, `git_root_rel`, `git_user_name`). (1) The wrappers in scope are the functions whose body spawns git; the outcome lists them, derived by reading each body, not by the name pattern. (2) Hooks may not import scripts/, so there are two homes: hooks/_config.py for the hook side and one scripts module, placed in _deps.LAYERS, for the rest. (3) Every caller keeps its timeout (the `timeout=` each wrapper defaults to today, 15 and 60 seconds among them), its output truncation and its error shape; a caller that differs passes its value explicitly rather than losing it. (4) No git argv changes. Acceptance: the full sweep is green, including tools/check-git-pipeline.py against a real repository; `git grep` for each removed wrapper name finds no definition; ruff and vermin clean.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -426,10 +453,10 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: Merged into the redesign's two-store phase (S2.9): several of its 28 files are deleted or demoted there, so unifying first and deleting after pays twice (plans/2026-10-17-redesign-implementation section 4)."
       },
       "startedAt": null,
-      "completedAt": null,
+      "completedAt": "2026-10-17T20:57:29Z",
       "verifiedBy": []
     },
     {
@@ -468,8 +495,11 @@
         "expectRedFirst": true,
         "gate": [
           "selftests",
-          "lint",
+          "validate",
+          "plugin-validate",
+          "gate",
           "report",
+          "lint",
           "shots",
           "interactive",
           "vitest"
@@ -544,8 +574,11 @@
         "expectRedFirst": false,
         "gate": [
           "selftests",
-          "lint",
+          "validate",
+          "plugin-validate",
+          "gate",
           "report",
+          "lint",
           "shots",
           "interactive",
           "vitest"
@@ -781,7 +814,7 @@
           "lint",
           "shots",
           "interactive",
-          "npx vitest run"
+          "vitest"
         ],
         "gateBasis": "declared"
       },
@@ -799,9 +832,11 @@
         "P130.2",
         "P130.3",
         "P130.4",
-        "P130.5",
         "P130.6",
-        "P130.7"
+        "P130.7",
+        "P130.10-ywo",
+        "P130.11-ywo",
+        "P130.12-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -866,7 +901,7 @@
           "lint",
           "shots",
           "interactive",
-          "npx vitest run"
+          "vitest"
         ],
         "gateBasis": "declared"
       },
@@ -892,6 +927,163 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P130.10-ywo",
+      "title": "One function answers what a task's gate is, so a green verdict that carries derived affected steps can be committed",
+      "status": "pending",
+      "description": "run-test-gate.py records a task's verdict under every step it ran: the declared entries plus the derived `affected/related` and `affected/python` steps it adds when the task gate is narrower than the phase gate (STEP_PREFIX in _affected_tests.py). gate_mismatch in _verdict_binding.py compares the recorded step names with the declared entries and refuses, and a fresh recorded run adds the same steps again, so such a task can never be committed without --override-verdict. Make one function the answer to 'which steps of a recorded row are the declared gate' and have both the recorder and the committer's comparison call it: the derived steps are measured, never declared. The function lives in the lowest module both callers may import (_evidence_io, which _verdict_binding already imports; layer_violations() decides). A widened or narrowed declared gate, a changed gateDigest and a changed gateSource still refuse. Acceptance: (1) a plan with meta.phaseGate.derived whose task gate is narrower than the phase gate records a green row carrying affected steps, and commit-task-work commits it with no override; (2) a row whose declared steps differ from the task's entries is still refused with the existing sentence; (3) a row whose declared entries match but whose gateDigest differs is still refused; (4) the derived-step prefix is spelled in one module only (a grep for the literal finds one definition); (5) _deps layer_violations() reports nothing.",
+      "files": [
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "plugins/audit/scripts/governance/_affected_tests.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test__verdict_binding.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__verdict_binding.py: a recorded row whose steps are the declared entries followed by affected/related and affected/python steps has no gate mismatch, while a row whose declared part differs, or whose gateDigest differs, still has one",
+          "plugins/audit/tests/test_commit_task_work.py: on a fixture plan with a derived phase gate, a green recorded run of a narrower task gate commits without --override-verdict"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.11-ywo",
+      "title": "Fix BUG-25-izt: red-first reads Playwright no-tests-found as red",
+      "status": "pending",
+      "description": "",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: a new Playwright spec whose HEAD run prints real Playwright no-tests-found output is read as red and proves once the spec passes on the work"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "bugId": "BUG-25-izt",
+      "notes": [
+        {
+          "at": "2026-10-17T20:58:44Z",
+          "text": "Repro and expected (BUG-25-izt): at HEAD a new Playwright spec prints Playwright own no-tests-found result, which the red-first helper must read as the red baseline and then record proved once the spec passes. The fixture must be real Playwright output captured from an installed Playwright (1.64.1 is installed in the study scratch), not a hand-built string. Load skills writing-python, no-silent-pass, verifying-external-behavior."
+        }
+      ]
+    },
+    {
+      "id": "P130.12-ywo",
+      "title": "Fix BUG-24-izt: /audit:usage compares like with like against the CLI cumulative cost",
+      "status": "pending",
+      "description": "",
+      "files": [
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/tests/test_audit_usage.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_usage.py: under --since the CLI-vs-plugin line is withheld with its reason printed, and without a filter it compares whole-session ledger rows against the CLI figure, labelling the CLI side as including requests no transcript entry records"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "bugId": "BUG-24-izt",
+      "notes": [
+        {
+          "at": "2026-10-17T20:58:46Z",
+          "text": "Repro and expected (BUG-24-izt): /audit:usage --by attr --since <a day after a long session started> compares a filtered ledger window against the CLI cumulative session cost (session fb1bddcc: Opus CLI 463.63 vs plugin 126.75, unfiltered ledger 366.23). Compare whole-session unfiltered rows, or withhold the line under a filter with the reason printed, and label the CLI figure as including requests no transcript entry records (compaction, away summaries, titles, auto-mode classifier). Load writing-python, no-silent-pass, before-you-claim."
+        }
+      ]
     }
   ],
   "request": "ok, sve preporuke (owner, 2026-10-14, approving CONSOLIDATED-PLAN.md) / Nova faza za F1 (Recommended) (owner, 2026-10-16, where the F1 tasks live)",
