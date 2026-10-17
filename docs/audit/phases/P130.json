@@ -339,7 +339,7 @@
     {
       "id": "P130.6",
       "title": "The falsifier is retired: the drive no longer records, runs or decides on a planned test's mutation",
-      "status": "pending",
+      "status": "blocked",
       "description": "Owner decision 2026-10-16 (P128.17 cancelled: the falsifier leaves the shipped tree under F1.6). PREMISE CORRECTION: P128.17 described `run_falsifier` as having no caller, but by 571becfd the feature is wired end to end (it shipped in 3.4.0's Added section): the executor declares falsifiers in its return, `record_falsifiers` writes them with `audit-task.py scope --falsifiers`, `run_falsifier` (drive-phase.py:1474) applies each in a throwaway tree after a green gate, and the `falsifier` decision stops the close. Retiring it is a removal from a live path. (1) drive-phase.py loses `run_falsifier`, `mutation_site`, `note_falsifiers`, `record_falsifiers`, the falsifier stage of the close, `FALSIFIER_TIMEOUT`, the `decide-falsifier` line and the `falsifier` decision with its answer handling, and `returned_falsifier_problems`. (2) An executor return that still carries a `falsifiers` field is filed and the field is not read (an agent body older than this change must not be refused); `_filed_returns.return_falsifiers` and `falsifier_gaps` go. (3) `audit-task.py scope` loses `--falsifiers`, and both argument-hint surfaces (commands/task.md, README.md) lose it. (4) _manifest_rules.py loses `task_falsifiers` and `falsifier_problems` and their `rules.falsifier.*` warnings. (5) The schema keeps `tests.falsifiers` and `$defs/falsifier` accepted, described as retired and read by nothing, so no plan that validated stops validating or starts warning; its removal is a 4.0.0 item beside `meta.muted` (an owner choice, see openChoices). (6) audit-lookup.py's brief text, agents/audit-executor.md, reference/execute-task.md and reference/phase-signoff.md stop describing it; the executor body shrinks (8,756 of its 9,000-byte ceiling at 571becfd, `python3 tools/measure-context.py --tree plugins/audit`), which the quality study's byte-neutral rule for agent bodies counts as headroom. (7) gen-demo-manifest.py's schema-coverage rows for the field say it is retired. (8) CHANGELOG.md records the removal under Removed. Acceptance: `git grep -n -i falsifier HEAD -- plugins/audit/scripts plugins/audit/agents plugins/audit/commands plugins/audit/reference` finds only the retirement notes; the full sweep is green.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -399,7 +399,8 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "blockedReason": "Superseded: the task gate that caused the scope-gap was malformed; it is rewritten to run the suites through tools/sweep-selftests.py, so this decision no longer applies."
     },
     {
       "id": "P130.7",
