@@ -9894,6 +9894,9 @@
     ],
     "tools/ui-tests/gate-card-wait.test.mjs": [
       "P130.17-ywo"
+    ],
+    "vitest.config.mjs": [
+      "P130.4"
     ]
   },
   "bugs": [
