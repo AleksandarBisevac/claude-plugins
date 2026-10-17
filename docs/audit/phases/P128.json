@@ -63,8 +63,10 @@
         "severity": "low",
         "file": "tools/capture-screenshots.mjs:6584-6609",
         "issue": "The pinned-context assertion runs inside shot(), so a leg that never reaches shot() (e.g. the ladderCtx / prioCtx pages at 7340 and 7415, which drive checks without a shutter) is pinned by option only and unasserted. Today harmless, since they produce no image.",
-        "resolution": "No action needed unless those contexts ever begin to photograph; if they do, they pass through shot() and are covered. Optionally note this in the PINNED_CONTEXT comment.",
-        "fixTask": "P128.47-izt"
+        "resolution": "fixed in P128.47-izt (12987662ce01): No action needed unless those contexts ever begin to photograph; if they do, they pass through shot() and are covered. Optionally note this in the PINNED_CONTEXT comment.",
+        "fixTask": "P128.47-izt",
+        "commit": "12987662ce01",
+        "status": "fixed"
       },
       {
         "id": "P128-R6",
@@ -121,9 +123,16 @@
         "file": "tools/ui-tests/capture-provenance.test.mjs (outside task `files` and `tests.add`)",
         "issue": "The task is tdd with expectRedFirst true and added exported pure functions, so the test file is owed. It was not declared in `files` or `tests.add`. That is why the helper refused the red-first and the filed return carries testsAdded [] while its outcome claims nine cases in that file. The cases are real and pass on one run: 22 passed in the file. The omission leaves the plan's record of what the task changed incomplete and makes the red-first unprovable by construction.",
         "resolution": "Declare tools/ui-tests/capture-provenance.test.mjs in `files` and `tests.add` for this task (with a --introduces red-first, since the symbols are new) before it closes."
+      },
+      {
+        "id": "P128-R13",
+        "severity": "med",
+        "file": "tools/gate-parity.py:3647-3658",
+        "issue": "The new else branch treats any control result of zero leftover directories as a legitimate skip, including when the shell is dash. Before the diff the dash branch was check(..., len(left) == 1), so a dash that no longer left its directory behind (a dash build that honours a RETURN trap, or a changed _RETURN_TRAP_FUNC that stopped reproducing the defect) turned the suite RED. Now skip(..., absent=len(left)==0) is True in that case, so the suite is green with 'vsh5 SKIPPED HERE - under dash ... install dash to run the control'. That is the vacuous-control state the control exists to catch, and the text tells the reader to install a shell that is already running. The skip's absent evidence is read off the control's own result rather than off the platform, which is what skip()'s docstring says it must not do.",
+        "resolution": "Make the skip conditional on the shell not being dash, for example: if len(left)==1 -> real control; elif dash is None -> skip(..., len(left)==0); else check('vsh5 ... under dash the RETURN-trap spelling left %d directories, so vsh2-vsh4 and vsh9 cannot see the defect', False). That keeps the labelled skip for the no-dash machine and keeps the old red for dash."
       }
     ],
-    "outcome": "[findings: 12 - 0 high, 3 med, 9 low; 4 with a recorded fix commit]"
+    "outcome": "[findings: 13 - 0 high, 4 med, 9 low; 5 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2838,7 +2847,7 @@
     {
       "id": "P128.47-izt",
       "title": "fix P128-R5: The pinned-context assertion runs inside shot(), so a leg that n...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The pinned-context assertion runs inside shot(), so a leg that never reaches shot() (e.g. the ladderCtx / prioCtx pages at 7340 and 7415, which drive checks without a shutter) is pinned by option only and unasserted. Today harmless, since they produce no image.\n\nResolution asked: No action needed unless those contexts ever begin to photograph; if they do, they pass through shot() and are covered. Optionally note this in the PINNED_CONTEXT comment.",
       "files": [
         "tools/capture-screenshots.mjs"
@@ -2866,13 +2875,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "12987662ce01",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Edited only the PINNED_CONTEXT doc comment in tools/capture-screenshots.mjs (base 1d97cd45). The old sentence said shot() asks each page, 'so a context added later without them fails the run' - an overclaim, since the assertion lives in shot() and a context never photographed is never asked. Rewritten to 'IF a picture is taken from it', and a paragraph 'THE ASSERTION LIVES IN shot(), NOT IN newContext' added naming the three non-photographing contexts (responsive-ladder, phase-order, usage share-link), why that is harmless, and that a picture taken by any route other than shot() would bypass it. No code, no test file added or changed. Verified: the only .screenshot( call in the file is inside shot() (grep: one comment hit, one code hit); no shot(ladder|prio|share) call exists (grep: no match). Gates: node --check exit 0; capture-screenshots.mjs --check exit 0 ('OK (exit 0): capture preconditions hold - report + panel'); npx vitest run exit 0 (56 files, 839 tests); python3 tools/sweep-selftests.py --quiet exit 0 ('335/335 files ok'). Requirement clauses: (1) 'no action needed unless contexts begin to photograph; then they pass through shot()' - stated in the comment, tools/capture-screenshots.mjs lines ~6540-6552; (2) 'optionally note in the PINNED_CONTEXT comment' - done, same lines. The description's line numbers (7340/7415) had moved; the contexts are ladderCtx and prioCtx in the report leg, found by name.",
+        "descriptive": "The pinned-context comment no longer overclaims: it says the locale/timezone assertion only covers pages that are photographed through shot()."
       },
       "startedAt": "2026-10-17T11:05:20Z",
-      "completedAt": null,
+      "completedAt": "2026-10-17T12:15:14Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -2896,6 +2905,18 @@
         "runId": "2026-10-17T11:47:33Z.1e7cbb",
         "status": "passed",
         "at": "2026-10-17T11:47:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "12987662ce01",
+        "at": "2026-10-17T12:15:14Z",
+        "return": "docs/audit/evidence/returns/P128.47-izt/20261017T110520Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "could-not-prove",
+        "at": "2026-10-17T11:31:37Z",
+        "basis": "P128.47-izt declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P128.47-izt declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+        "source": "red-first-helper"
       }
     },
     {

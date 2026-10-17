@@ -3634,17 +3634,27 @@ def _verify_cleanup_cases(check):
                   code == want and "status=" not in out and left == [])
 
         # The control. If the shell in use ran a RETURN trap, the cases above
-        # could not have seen the defect and their green would say nothing.
-        if dash:
-            _, _, left = run_in_scratch_shell(shell, root, _RETURN_TRAP_FUNC,
-                                              mode="same")
+        # could not have seen the defect and their green would say nothing. It is
+        # asked of the shell the cases ran under, not of dash by name: a machine
+        # with no dash whose `sh` still leaves the directory behind is a real
+        # control, and one whose `sh` honours the trap (bash in POSIX mode) is a
+        # skip the run SAYS it took, through the house helper, so a reader of a
+        # clean run sees that the control did not run. A directory count other
+        # than none or one is neither a control nor a skip, and fails.
+        _, _, left = run_in_scratch_shell(shell, root, _RETURN_TRAP_FUNC,
+                                          mode="same")
+        if len(left) == 1:
             check("vsh5 the cases can see the defect they guard - the removed "
                   "`trap ... RETURN` spelling leaves its directory behind under "
-                  "dash: left=%r" % (left,), len(left) == 1)
+                  "%s: left=%r" % (ran, left), True)
         else:
-            check("vsh5 SKIPPED HERE - no `dash` on PATH (the cases ran under "
-                  "%s), so a RETURN trap cannot be shown to leave a directory "
-                  "behind" % (ran,), dash is None)
+            from _harness import skip
+            skip(check, "vsh5",
+                 "under %s the removed `trap ... RETURN` spelling left %d "
+                 "directories behind (the shell honours the trap), so vsh2-vsh4 "
+                 "and vsh9 above could not have seen the defect it guards; "
+                 "install dash to run the control: left=%r"
+                 % (ran, len(left), left), len(left) == 0)
 
         # The signal half: TERM and INT must END the run with the directory
         # removed, not remove it and let the script carry on.
