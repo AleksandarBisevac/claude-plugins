@@ -1,7 +1,7 @@
 {
   "id": "P128",
   "title": "Consolidated solution: orchestration by scripts, a smaller plugin, a simpler CI",
-  "status": "in_progress",
+  "status": "done",
   "description": "Holds the work the owner's 2026-10-14 decisions (D1-D10 of the cost/code/CI synthesis, quality-gates-internal reports/2026-10-14-cost-code-ci-analysis) moved out of P125 until the segment studies (orchestration, code, CI) produce one consolidated plan. Its tasks are re-planned from those studies before any starts.",
   "desiredOutcome": "A task through the plugin costs about 1.25x a plain session above a measured size threshold, the main loop reads one signal line per step, scripts+hooks shrink toward 115k lines with code not above its 3.4.0 count, and CI runs in at most 8 minutes from one executable description of the gate set.",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "82f1b3b393d6a174646d79a4f65ccd030c37a438",
   "branch": "audit/p128-consolidated-solution-orchestr",
-  "mergedAt": null,
+  "mergedAt": "2026-10-17T15:31:39Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -3881,5 +3881,6 @@
     "runId": "2026-10-17T15:29:11Z.dea07f",
     "status": "passed",
     "at": "2026-10-17T15:29:11Z"
-  }
+  },
+  "mergedHead": "70fd0e0d8f429be25cb94a6ae288255ab5a2a5cb"
 }
