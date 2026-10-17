@@ -28,14 +28,16 @@
         "severity": "low",
         "file": "tools/verify.sh:453-459",
         "issue": "The regenerated ledger directory is still not removed on a signal. ledger_reproducible makes $regen under $TMPDIR and removes it by an explicit rm -rf after ledger_compare returns; an INT or TERM arriving while the generator runs now exits through the new 'exit 130/143' traps, which remove only $WORKDIR, so verify-ledger-* is left behind on that path. The task asks for cleanup 'on every return path', which is met, but the signal path the executor added in the same change leaves the very leak the title names.",
-        "resolution": "Create the directory under the already-trapped workdir: regen=$(mktemp -d \"$WORKDIR/ledger-XXXXXX\"). The EXIT trap then covers return, signal and plain exit, and the explicit rm can stay as the early release. Adjust vsh2-vsh4 so their scratch TMPDIR check looks at the workdir."
+        "resolution": "Create the directory under the already-trapped workdir: regen=$(mktemp -d \"$WORKDIR/ledger-XXXXXX\"). The EXIT trap then covers return, signal and plain exit, and the explicit rm can stay as the early release. Adjust vsh2-vsh4 so their scratch TMPDIR check looks at the workdir.",
+        "fixTask": "P128.49-izt"
       },
       {
         "id": "P128-R2",
         "severity": "low",
         "file": "tools/gate-parity.py:3568-3573",
         "issue": "The vsh5 control passes vacuously when no dash is on PATH: the check is check('vsh5 SKIPPED HERE ...', dash is None), which is True exactly in that branch. It is labelled, but it prints PASS. Likewise vsh2-vsh4 then run under whatever 'sh' is, which may be bash in POSIX mode where a RETURN trap would work, so those cases could not see the defect on that machine.",
-        "resolution": "Acceptable as labelled for a machine without dash; if the suite has a skip vocabulary, use it so a reader of a clean run sees the control did not run. Otherwise leave as is."
+        "resolution": "Acceptable as labelled for a machine without dash; if the suite has a skip vocabulary, use it so a reader of a clean run sees the control did not run. Otherwise leave as is.",
+        "fixTask": "P128.50-izt"
       },
       {
         "id": "P128-R3",
@@ -49,14 +51,16 @@
         "severity": "med",
         "file": "tools/capture-screenshots.mjs:6516-6527,6583-6609",
         "issue": "contradicts task clause: the description's fault is 'the report's date inputs render the host placeholder (dd. mm. 2026.) in committed shots', and the task title says committed images 'carry no host format'. The diff pins Intl/Date/navigator.language/number format, but not the native <input type=date> placeholder, which is the one symptom the clause names. I reproduced the limit read-only (in-memory element screenshots, nothing written): on this host (AppleLocale en_US@rg=rszzzz) a bare date input hashes identically under context locale en-US and de-DE with --lang=en-US, and differs only under --lang=de-DE. So the limit is real and the executor's disclosure is accurate. But the disclosure lives only in a code comment: the non-check capture that writes the PNGs prints nothing, and shot()'s pinProblem cannot see the placeholder (it is not in the DOM). A maintainer regenerating shots on such a host commits host-shaped 'filters' / date-input pixels with every check green and a 'pinned' label that now over-claims.",
-        "resolution": "Make the residual visible at the moment it matters instead of only in a comment. Options, structurally preferred first: (a) in the writing path of shot() (not --check), on darwin read the OS regional format (`defaults read -g AppleLocale`, region suffix `@rg=` other than US) and refuse, or at least print a loud note naming the shots that contain a native date input; (b) add the same reading to machineFingerprint() so --repro and the provenance line quote it. Node's own Intl.DateTimeFormat().resolvedOptions().locale is NOT usable for this: it reports en-US on the overridden host. Alternatively file the date-placeholder half as its own open task/fault so it is tracked rather than documented-away."
+        "resolution": "Make the residual visible at the moment it matters instead of only in a comment. Options, structurally preferred first: (a) in the writing path of shot() (not --check), on darwin read the OS regional format (`defaults read -g AppleLocale`, region suffix `@rg=` other than US) and refuse, or at least print a loud note naming the shots that contain a native date input; (b) add the same reading to machineFingerprint() so --repro and the provenance line quote it. Node's own Intl.DateTimeFormat().resolvedOptions().locale is NOT usable for this: it reports en-US on the overridden host. Alternatively file the date-placeholder half as its own open task/fault so it is tracked rather than documented-away.",
+        "fixTask": "P128.46-izt"
       },
       {
         "id": "P128-R5",
         "severity": "low",
         "file": "tools/capture-screenshots.mjs:6584-6609",
         "issue": "The pinned-context assertion runs inside shot(), so a leg that never reaches shot() (e.g. the ladderCtx / prioCtx pages at 7340 and 7415, which drive checks without a shutter) is pinned by option only and unasserted. Today harmless, since they produce no image.",
-        "resolution": "No action needed unless those contexts ever begin to photograph; if they do, they pass through shot() and are covered. Optionally note this in the PINNED_CONTEXT comment."
+        "resolution": "No action needed unless those contexts ever begin to photograph; if they do, they pass through shot() and are covered. Optionally note this in the PINNED_CONTEXT comment.",
+        "fixTask": "P128.47-izt"
       },
       {
         "id": "P128-R6",
@@ -70,21 +74,24 @@
         "severity": "low",
         "file": "plugins/audit/tests/test__locks.py:556-565 (pz3) against plugins/audit/scripts/governance/_locks.py:1270-1276",
         "issue": "pz3, the over-fire direction of the new retry in acquire, cannot go red: if the `continue` fired on every dead verdict (the mutation pz3 exists to catch), acquire would re-judge the same standing claim forever, because the `continue` skips the `time.monotonic() >= deadline` check and there is no sleep. A regression would hang the suite until the sweep's per-file timeout instead of failing the case. The executor says the same ('would hang rather than fail; not separately mutated'). The 'second direction' case is therefore unproven in the way the repo's no-silent-pass rule asks.",
-        "resolution": "Bound the retry so a mutation fails by assertion: count retries (a small cap, e.g. re-ask at most a few times, then fall through to the refusal), or make the continue honour the deadline. pz3 then goes red with code != E_STALE instead of hanging. Run the unconditional-continue mutation once to confirm."
+        "resolution": "Bound the retry so a mutation fails by assertion: count retries (a small cap, e.g. re-ask at most a few times, then fall through to the refusal), or make the continue honour the deadline. pz3 then goes red with code != E_STALE instead of hanging. Run the unconditional-continue mutation once to confirm.",
+        "fixTask": "P128.51-izt"
       },
       {
         "id": "P128-R8",
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py:3137-3147",
         "issue": "The comment above _CHANGE_CLAUSE (and the executor's outcome, 'unknown verbs fall to tdd, the old default') says a verb missing from the list leaves a task at tdd. The code does the opposite: _only_asks_for_test is true when _CHANGE_CLAUSE does NOT match, so an unlisted change verb makes the resolution look test-only and mints regression with no red-first. Probed with the two regexes extracted from the file: 'Add a test for the label, then relocate the prop' -> test-only (regression); 'Add a test for the label and rework the parser' -> test-only; 'Add a test for X; the label should be capitalized' -> test-only; whereas the listed verb 'then fix the prop' -> tdd. A fix task that does require a code change therefore silently loses its red-first discipline whenever its verb is outside the closed list, which is the failure direction the comment promises cannot happen. No test covers an unlisted verb, so the false claim is unguarded.",
-        "resolution": "Pick the safe direction on purpose and make the code match: invert the test so regression needs positive evidence, e.g. treat the resolution as test-only only when, after the leading test ask, the rest is a single clause with no further separator-introduced clause (no ', ', '; ', '. ', ' and ', ' then ' continuation beyond the test noun phrase), instead of enumerating change verbs. If the enumeration is kept, correct the comment and outcome to say an unlisted verb yields regression, and add an ALLOW case with an unlisted verb ('then relocate the prop') stating the chosen behaviour."
+        "resolution": "Pick the safe direction on purpose and make the code match: invert the test so regression needs positive evidence, e.g. treat the resolution as test-only only when, after the leading test ask, the rest is a single clause with no further separator-introduced clause (no ', ', '; ', '. ', ' and ', ' then ' continuation beyond the test noun phrase), instead of enumerating change verbs. If the enumeration is kept, correct the comment and outcome to say an unlisted verb yields regression, and add an ALLOW case with an unlisted verb ('then relocate the prop') stating the chosen behaviour.",
+        "fixTask": "P128.48-izt"
       },
       {
         "id": "P128-R9",
         "severity": "low",
         "file": "plugins/audit/scripts/panel/_panel_state.py:310-326",
         "issue": "help_state() is the function that serves the bare GET /api/help and still documents it as 'what every field means, and how the four concepts work'. After this diff its return value (_help.payload()) carries no field text at all; fields are answered by help_field() for ?path=. The diff reworded payload()'s docstring, README, CONTRIBUTING, PLUGIN-BUILD-GUIDE and panel.md for exactly this, but left the docstring of the function across the boundary saying the opposite.",
-        "resolution": "Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET /api/help?path=&doc=)."
+        "resolution": "Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET /api/help?path=&doc=).",
+        "fixTask": "P128.52-izt"
       }
     ],
     "outcome": "[findings: 9 - 0 high, 2 med, 7 low; 0 with a recorded fix commit]"
@@ -2621,7 +2628,7 @@
     {
       "id": "P128.45-izt",
       "title": "A task gate and a phase gate derive their path-scoped shape through one resolver",
-      "status": "in_progress",
+      "status": "done",
       "description": "P128.16 made _gate_derive.resolve_shape try the recorded spelling first; P128.40 and P128.44 then corrected the prose in five places, and the class still leaks: _gate_derive.py around lines 128-129 still calls the spelling the second shape source, and audit-task.py _task_gate_setup (around line 2678) calls _path_scoped_sibling directly and never resolve_shape, so /audit:task add reads sibling entries only and ignores a recorded spelling while derive-phase-gate honours it. Fix the structure, not the text: _task_gate_setup obtains its shape from resolve_shape (one resolver, one order), the stale comment states what the code does, and a case asserts that no caller outside _gate_derive picks a shape source on its own (for example by walking the AST for calls to _path_scoped_sibling outside _gate_derive). Update verbs-in-full.md / README wording only if the behaviour they describe changes, and say which.",
       "files": [
         "plugins/audit/scripts/governance/_gate_derive.py",
@@ -2676,14 +2683,20 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "25e81fd27b18",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Requirement clauses. (1) _task_gate_setup obtains its shape from resolve_shape, one resolver and one order: audit-task.py _task_gate_setup now calls _gate_derive.resolve_shape(phase, build, meta.phaseGate.derived) (about line 2740); the _path_scoped_sibling alias is deleted (about line 2557). _point (about line 2618) fills a spelling via new _gate_derive.point_shape, led by meta.phaseGate.always; _spelled_in words the basis; derive() in _gate_derive.py now calls the same point_shape instead of its inline substitution. (2) Stale comment states what the code does: _gate_derive.py lines 128-134 no longer call the spelling the second source; it says the spelling is the FIRST source tried and that no caller outside picks path_scoped_sibling. (3) A case asserts no caller outside _gate_derive picks a shape source: test__gate_derive.py os1 (the AST detector reports a call, attribute, import, bare name and getattr string), os2 (allow case: resolve_shape, a comment, a docstring are not uses), os3 (walks every .py under SCRIPTS_DIR and HOOKS_DIR except _gate_derive.py, requires the walk to have reached audit-task.py and derive-phase-gate.py, asserts no use). (4) tests.add case: test_audit_task.py tg15 (titled with the tests.add clause verbatim after the id) plus tg15c second-direction case (spelling without {paths} is skipped, sibling read); tg14 updated to assert the alias is gone. (5) verbs-in-full.md wording DID change because behaviour changed: plugins/audit/reference/verbs-in-full.md the three-defaults list and the --failing-from paragraphs now name the recorded spelling first; PLUGIN-BUILD-GUIDE.md gets one sentence on point_shape and os3. README.md: no wording describes this, not changed. Behaviour change for /audit:task add users: in a plan whose meta.phaseGate.derived.spelling carries {paths}, the task gate is now [meta.phaseGate.always..., spelling filled with the task's quoted tests.add or files paths] and the printed basis reads 'in the spelling meta.phaseGate.derived.spelling records'; before it was the sibling's entry re-pointed. A spelling with no {paths}, or no spelling, behaves exactly as before. The no-sibling-and-no-spelling basis sentence now names both sources. Edge decisions: a gate-only task with no suite files in a spelling-sourced plan with no meta.phaseGate.always gets the phase's wide testGate (source phase-no-paths) because a template has no path-less entry to carry through; the fix-task companion arm (_unit_runner_paths) sees a spelling shape with no path-shaped tokens, so a spelling-sourced plan yields no runner-config companions (before, a sibling supplied them); a spelling-skipped reason that resolve_shape returns is not echoed by add (not done: _task_gate_setup keeps its five-value return that other callers unpack; noted in a comment). Not run: tools/verify.sh and browser gates (forbidden by the orchestrator). Evidence: full `python3 tools/sweep-selftests.py --quiet` run in the foreground from the task tree, exit 0, 335/335 files ok, 16621 cases; ruff exit 0; vermin exit 0. Mutation proofs in a scratch copy: replacing the resolve_shape call with path_scoped_sibling made tg15 and os3 red and left tg15c green; removing the string-value match in the detector made os2 (allow) and os3 red. The plan gate refused one python heredoc write to audit-task.py ('outside the running task files ... free file already spent on _gate_derive.py'); I did not retry it that way and used the Edit tool, which the gate allowed.",
+        "descriptive": "/audit:task add now reads the project's recorded path-scoped spelling first, like derive-phase-gate, through one resolver, and a lint keeps every other script off the sibling source."
       },
       "startedAt": "2026-10-17T08:06:42Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T09:07:53Z",
+      "verifiedBy": [
+        "tg15 /audit:task add over a plan whose meta.phaseGate.derived.spelling carries {paths} takes its task gate from that spelling, not a sibling task entry, because it reads the shape through _gate_derive.resolve_shape",
+        "tg15c SECOND-DIRECTION CASE: a spelling that carries no {paths} is skipped, and the sibling's spelling is read",
+        "os1 a call to the sibling source from outside the resolver is named, by its line",
+        "os2 ALLOW CASE: asking resolve_shape, or writing the name in a comment or a docstring, is not a use of the source",
+        "os3 no caller outside _gate_derive picks a shape source on its own"
+      ],
       "notes": [
         {
           "at": "2026-10-17T06:46:00Z",
@@ -2699,7 +2712,446 @@
         "runId": "2026-10-17T09:07:51Z.798514",
         "status": "passed",
         "at": "2026-10-17T09:07:51Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "25e81fd27b18",
+        "at": "2026-10-17T09:07:53Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-17T08:25:50Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage at5-block` in a throwaway tree at HEAD exited 1 with 2 of 88 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tg14 (house FAIL), tg15 (house FAIL): SELFTEST FAILED: 86/88 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P128.46-izt",
+      "title": "fix P128-R4: contradicts task clause: the description's fault is 'the report'...",
+      "status": "in_progress",
+      "description": "contradicts task clause: the description's fault is 'the report's date inputs render the host placeholder (dd. mm. 2026.) in committed shots', and the task title says committed images 'carry no host format'. The diff pins Intl/Date/navigator.language/number format, but not the native <input type=date> placeholder, which is the one symptom the clause names. I reproduced the limit read-only (in-memory element screenshots, nothing written): on this host (AppleLocale en_US@rg=rszzzz) a bare date input hashes identically under context locale en-US and de-DE with --lang=en-US, and differs only under --lang=de-DE. So the limit is real and the executor's disclosure is accurate. But the disclosure lives only in a code comment: the non-check capture that writes the PNGs prints nothing, and shot()'s pinProblem cannot see the placeholder (it is not in the DOM). A maintainer regenerating shots on such a host commits host-shaped 'filters' / date-input pixels with every check green and a 'pinned' label that now over-claims.\n\nResolution asked: Make the residual visible at the moment it matters instead of only in a comment. Options, structurally preferred first: (a) in the writing path of shot() (not --check), on darwin read the OS regional format (`defaults read -g AppleLocale`, region suffix `@rg=` other than US) and refuse, or at least print a loud note naming the shots that contain a native date input; (b) add the same reading to machineFingerprint() so --repro and the provenance line quote it. Node's own Intl.DateTimeFormat().resolvedOptions().locale is NOT usable for this: it reports en-US on the overridden host. Alternatively file the date-placeholder half as its own open task/fault so it is tracked rather than documented-away.",
+      "files": [
+        "tools/capture-screenshots.mjs"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-17T09:08:35Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-17T09:08:26Z",
+          "text": "scope: tools/capture-screenshots.mjs, every path the finding(s) P128-R4 name"
+        },
+        {
+          "at": "2026-10-17T09:08:26Z",
+          "text": "no suite: tools/capture-screenshots.mjs - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-17T09:08:26Z",
+          "text": "no tests.add clause for P128-R4: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P128-R4"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T09:51:48Z.d69fda",
+        "status": "passed",
+        "at": "2026-10-17T09:51:48Z"
+      }
+    },
+    {
+      "id": "P128.47-izt",
+      "title": "fix P128-R5: The pinned-context assertion runs inside shot(), so a leg that n...",
+      "status": "pending",
+      "description": "The pinned-context assertion runs inside shot(), so a leg that never reaches shot() (e.g. the ladderCtx / prioCtx pages at 7340 and 7415, which drive checks without a shutter) is pinned by option only and unasserted. Today harmless, since they produce no image.\n\nResolution asked: No action needed unless those contexts ever begin to photograph; if they do, they pass through shot() and are covered. Optionally note this in the PINNED_CONTEXT comment.",
+      "files": [
+        "tools/capture-screenshots.mjs"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-17T09:08:26Z",
+          "text": "scope: tools/capture-screenshots.mjs, every path the finding(s) P128-R5 name"
+        },
+        {
+          "at": "2026-10-17T09:08:26Z",
+          "text": "no suite: tools/capture-screenshots.mjs - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-17T09:08:26Z",
+          "text": "no tests.add clause for P128-R5: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P128-R5"
+      ]
+    },
+    {
+      "id": "P128.48-izt",
+      "title": "fix P128-R8: The comment above _CHANGE_CLAUSE (and the executor's outcome, 'u...",
+      "status": "in_progress",
+      "description": "The comment above _CHANGE_CLAUSE (and the executor's outcome, 'unknown verbs fall to tdd, the old default') says a verb missing from the list leaves a task at tdd. The code does the opposite: _only_asks_for_test is true when _CHANGE_CLAUSE does NOT match, so an unlisted change verb makes the resolution look test-only and mints regression with no red-first. Probed with the two regexes extracted from the file: 'Add a test for the label, then relocate the prop' -> test-only (regression); 'Add a test for the label and rework the parser' -> test-only; 'Add a test for X; the label should be capitalized' -> test-only; whereas the listed verb 'then fix the prop' -> tdd. A fix task that does require a code change therefore silently loses its red-first discipline whenever its verb is outside the closed list, which is the failure direction the comment promises cannot happen. No test covers an unlisted verb, so the false claim is unguarded.\n\nResolution asked: Pick the safe direction on purpose and make the code match: invert the test so regression needs positive evidence, e.g. treat the resolution as test-only only when, after the leading test ask, the rest is a single clause with no further separator-introduced clause (no ', ', '; ', '. ', ' and ', ' then ' continuation beyond the test noun phrase), instead of enumerating change verbs. If the enumeration is kept, correct the comment and outcome to say an unlisted verb yields regression, and add an ALLOW case with an unlisted verb ('then relocate the prop') stating the chosen behaviour.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: Pick the safe direction on purpose and make the code match: invert the test so regression needs positive evidence, e.g"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "plugins/audit/tests/test_audit_task.py: Pick the safe direction on purpose and make the code match: invert the test so regression needs positive evidence, e.g": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_audit_task.py",
+              "--selftest",
+              "--stage",
+              "cz-block"
+            ],
+            "file": "plugins/audit/scripts/manifest/audit-task.py",
+            "find": " and not _CLAUSE_JOIN.search(text)",
+            "replace": ""
+          }
+        }
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-17T09:08:38Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-17T09:08:28Z",
+          "text": "scope: plugins/audit/scripts/manifest/audit-task.py, every path the finding(s) P128-R8 name"
+        },
+        {
+          "at": "2026-10-17T09:08:28Z",
+          "text": "scope: plugins/audit/tests/test_audit_task.py, the suite that tests plugins/audit/scripts/manifest/audit-task.py (python: its import closure reaches plugins/audit/scripts/manifest/audit-task.py)"
+        }
+      ],
+      "fixes": [
+        "P128-R8"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T10:04:39Z.acc197",
+        "status": "passed",
+        "at": "2026-10-17T10:04:39Z"
+      }
+    },
+    {
+      "id": "P128.49-izt",
+      "title": "fix P128-R1: The regenerated ledger directory is still not removed on a signa...",
+      "status": "in_progress",
+      "description": "The regenerated ledger directory is still not removed on a signal. ledger_reproducible makes $regen under $TMPDIR and removes it by an explicit rm -rf after ledger_compare returns; an INT or TERM arriving while the generator runs now exits through the new 'exit 130/143' traps, which remove only $WORKDIR, so verify-ledger-* is left behind on that path. The task asks for cleanup 'on every return path', which is met, but the signal path the executor added in the same change leaves the very leak the title names.\n\nResolution asked: Create the directory under the already-trapped workdir: regen=$(mktemp -d \"$WORKDIR/ledger-XXXXXX\"). The EXIT trap then covers return, signal and plain exit, and the explicit rm can stay as the early release. Adjust vsh2-vsh4 so their scratch TMPDIR check looks at the workdir.",
+      "files": [
+        "tools/verify.sh"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-17T09:08:41Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-17T09:08:28Z",
+          "text": "scope: tools/verify.sh, every path the finding(s) P128-R1 name"
+        },
+        {
+          "at": "2026-10-17T09:08:28Z",
+          "text": "no suite: tools/verify.sh - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-17T09:08:28Z",
+          "text": "no tests.add clause for P128-R1: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P128-R1"
+      ],
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P128.50-izt",
+      "title": "fix P128-R2: The vsh5 control passes vacuously when no dash is on PATH: the c...",
+      "status": "pending",
+      "description": "The vsh5 control passes vacuously when no dash is on PATH: the check is check('vsh5 SKIPPED HERE ...', dash is None), which is True exactly in that branch. It is labelled, but it prints PASS. Likewise vsh2-vsh4 then run under whatever 'sh' is, which may be bash in POSIX mode where a RETURN trap would work, so those cases could not see the defect on that machine.\n\nResolution asked: Acceptable as labelled for a machine without dash; if the suite has a skip vocabulary, use it so a reader of a clean run sees the control did not run. Otherwise leave as is.",
+      "files": [
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-17T09:08:30Z",
+          "text": "scope: tools/gate-parity.py, every path the finding(s) P128-R2 name"
+        },
+        {
+          "at": "2026-10-17T09:08:30Z",
+          "text": "no suite: tools/gate-parity.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-17T09:08:30Z",
+          "text": "no tests.add clause for P128-R2: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P128-R2"
+      ]
+    },
+    {
+      "id": "P128.51-izt",
+      "title": "fix P128-R7: pz3, the over-fire direction of the new retry in acquire, cannot...",
+      "status": "pending",
+      "description": "pz3, the over-fire direction of the new retry in acquire, cannot go red: if the `continue` fired on every dead verdict (the mutation pz3 exists to catch), acquire would re-judge the same standing claim forever, because the `continue` skips the `time.monotonic() >= deadline` check and there is no sleep. A regression would hang the suite until the sweep's per-file timeout instead of failing the case. The executor says the same ('would hang rather than fail; not separately mutated'). The 'second direction' case is therefore unproven in the way the repo's no-silent-pass rule asks.\n\nResolution asked: Bound the retry so a mutation fails by assertion: count retries (a small cap, e.g. re-ask at most a few times, then fall through to the refusal), or make the continue honour the deadline. pz3 then goes red with code != E_STALE instead of hanging. Run the unconditional-continue mutation once to confirm.",
+      "files": [
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/scripts/governance/_locks.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__locks.py: Bound the retry so a mutation fails by assertion: count retries (a small cap, e.g"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-17T09:08:32Z",
+          "text": "scope: plugins/audit/tests/test__locks.py, plugins/audit/scripts/governance/_locks.py, every path the finding(s) P128-R7 name"
+        },
+        {
+          "at": "2026-10-17T09:08:32Z",
+          "text": "scope: plugins/audit/tests/test__locks.py, the suite that tests plugins/audit/scripts/governance/_locks.py (python: its import closure reaches plugins/audit/scripts/governance/_locks.py)"
+        },
+        {
+          "at": "2026-10-17T09:08:32Z",
+          "text": "no test runner in this task's gate for the test P128-R7 asks for: the gate is ['selftests', 'validate', 'plugin-validate', 'gate', 'report', 'lint', 'shots', 'interactive'], derived as the phase's testGate, wide -- no sibling task in P128 declares a path-scoped gate entry to read this project's spelling off; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P128-R7"
+      ]
+    },
+    {
+      "id": "P128.52-izt",
+      "title": "fix P128-R9: help_state() is the function that serves the bare GET /api/help ...",
+      "status": "pending",
+      "description": "help_state() is the function that serves the bare GET /api/help and still documents it as 'what every field means, and how the four concepts work'. After this diff its return value (_help.payload()) carries no field text at all; fields are answered by help_field() for ?path=. The diff reworded payload()'s docstring, README, CONTRIBUTING, PLUGIN-BUILD-GUIDE and panel.md for exactly this, but left the docstring of the function across the boundary saying the opposite.\n\nResolution asked: Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET /api/help?path=&doc=).",
+      "files": [
+        "plugins/audit/scripts/panel/_panel_state.py",
+        "plugins/audit/tests/test__panel_state.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__panel_state.py: Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET ..."
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-17T09:08:34Z",
+          "text": "scope: plugins/audit/scripts/panel/_panel_state.py, every path the finding(s) P128-R9 name"
+        },
+        {
+          "at": "2026-10-17T09:08:34Z",
+          "text": "scope: plugins/audit/tests/test__panel_state.py, the suite that tests plugins/audit/scripts/panel/_panel_state.py (python: its import closure reaches plugins/audit/scripts/panel/_panel_state.py)"
+        }
+      ],
+      "fixes": [
+        "P128-R9"
+      ]
     }
   ],
   "reviewPerTask": "signals",

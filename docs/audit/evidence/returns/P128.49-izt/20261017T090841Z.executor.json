@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "sweep-selftests (full, foreground-started, auto-backgrounded by the 600s tool timeout; exit read from the captured pipe)": "pass",
+    "ruff check tools/gate-parity.py": "pass",
+    "gate-parity --selftest": "pass"
+  },
+  "redFirst": {
+    "status": "could-not-prove",
+    "at": "2026-10-17T09:24:21Z",
+    "basis": "P128.49-izt declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P128.49-izt declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "HEAD 25e81fd2 before first edit. tools/verify.sh: ledger_reproducible now does regen=$(mktemp -d \"$WORKDIR/ledger-XXXXXX\") (verify.sh:456); explicit rm -rf \"$regen\" kept as early release (verify.sh:459); comment block above ledger_compare (verify.sh:433-440) rewritten to say the dir lives under the trapped workdir. tools/gate-parity.py (not in the task files; the Edit was not refused by the plan gate): _GENERATOR_STUB gains term/int modes that signal the parent shell mid-generator; run_ledger now runs under the script's own WORKDIR+trap preamble cut from the shipped file and prints workdir_left=[...] after the function returns; vsh2-vsh4 additionally assert workdir_left=[] and the scratch TMPDIR empty; new vsh9 (TERM->143, INT->130, no 'status=' verdict printed, TMPDIR empty). The 'trapped' preamble computation was hoisted so vsh6 reuses it. Requirement clauses: (1) create dir under trapped workdir - verify.sh:456; (2) explicit rm stays as early release - verify.sh:459, and vsh2-4 'workdir_left=[]' proves it (mutation above); (3) adjust vsh2-vsh4 to look at the workdir - gate-parity.py vsh2-vsh4 now check workdir_left=[] plus TMPDIR; (4) TERM-during-generator case that goes red if the dir leaks - vsh9, shown red twice. Full python3 tools/sweep-selftests.py --quiet: 335/335 files ok, 16631 cases, exit 0 (the tool auto-backgrounded it after 600s; vsh6 INT passed in it).",
+    "descriptive": "A TERM or INT during the ledger regeneration step in verify.sh no longer leaves a verify-ledger directory behind; the directory is now inside the workdir the exit trap removes."
+  },
+  "testsAdded": [],
+  "falsifiers": {},
+  "claims": "claims:\n1 verify.sh:433-440 comment now says the dir is under $WORKDIR and covered by the exit trap; the line that does it is verify.sh:456\n2 explicit rm deleted -> vsh2/3/4 red (140/143) -> restored; regen dir moved back under TMPDIR -> vsh9 TERM and INT red (141/143) -> restored 143/143\n3 grep verify-ledger/mktemp in tools/verify.sh: the only other mktemp is WORKDIR itself (already trapped); gate-parity.py vsh5's old-spelling control deliberately still makes a dir under TMPDIR (left because it is the control)\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:965d8f957cb53cf2a158b5f99d99392d310603da0f52070828638a049962f4bc\",\"dirtyDigest\":\"sha256:e26e101da57164f659d2482fd08d835b8a4b515aeb9e8ecbbaa4c673d1b7f985\",\"dirtyPaths\":{\"tools/gate-parity.py\":\"ba279fafe64e818d\",\"tools/verify.sh\":\"9e002abf0bacc335\"},\"head\":\"25e81fd2\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/verify.sh\"],\"scopeDigest\":\"sha256:b96203f284f17e6a5deb1472a3fe146710289dbe2befd5ffe937144bc54fa0c2\",\"v\":2}"
+}

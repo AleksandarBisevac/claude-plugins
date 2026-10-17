@@ -16952,16 +16952,31 @@ def _introduces_cases(check):
             finding("P1-R4", "components/Both.tsx",
                     resolution="Add a test for the label, then rename the prop"),
             finding("P1-R5", "components/Chosen.tsx",
-                    resolution="Add a test for the chosen label")])
+                    resolution="Add a test for the chosen label"),
+            # Three changes asked for in words no verb list holds: regression
+            # needs positive evidence that the resolution is a lone test ask.
+            finding("P1-R6", "components/Move.tsx",
+                    resolution="Add a test for the label, then relocate the prop"),
+            finding("P1-R7", "components/Rework.tsx",
+                    resolution="Add a test for the label and rework the parser"),
+            finding("P1-R8", "components/Cap.tsx",
+                    resolution="Add a test for X; the label should be capitalized"),
+            finding("P1-R9", "components/Stop.tsx",
+                    resolution="Add a test that pins the label.")])
         write(proj, "components/Other.test.tsx")
         for rel in ("components/Why.tsx", "components/Plain.tsx", "lib/x.ts",
-                    "components/Both.tsx", "components/Chosen.tsx"):
+                    "components/Both.tsx", "components/Chosen.tsx",
+                    "components/Move.tsx", "components/Rework.tsx",
+                    "components/Cap.tsx", "components/Stop.tsx"):
             write(proj, rel)
         for n in (1, 2, 3, 4):
             verb(proj, "add", "Fix %d" % n, "--phase", "P1", "--fixes",
                  "P1-R%d" % n)
         verb(proj, "add", "Fix 5", "--phase", "P1", "--fixes", "P1-R5",
              "--tests-mode", "tdd")
+        for n in (6, 7, 8, 9):
+            verb(proj, "add", "Fix %d" % n, "--phase", "P1", "--fixes",
+                 "P1-R%d" % n)
         got = tasks(mpath)
 
         def tnotes(tid):
@@ -16990,6 +17005,37 @@ def _introduces_cases(check):
         check("%s (ALLOW: a --tests-mode the caller chose is not overruled: %r)"
               % (clause, (disc("P1.6"),)), disc("P1.6") == ("tdd", True)
               and "mutation" not in tnotes("P1.6"))
+        safe = ("Pick the safe direction on purpose and make the code match: "
+                "invert the test so regression needs positive evidence, e.g")
+        check("%s (a change asked for in a verb no list holds - relocate, rework, "
+              "a bare 'should' - stays tdd and red-first: %r)"
+              % (safe, [disc("P1.7"), disc("P1.8"), disc("P1.9")]),
+              [disc("P1.7"), disc("P1.8"), disc("P1.9")] == [("tdd", True)] * 3
+              and all("mutation" not in tnotes(t)
+                      for t in ("P1.7", "P1.8", "P1.9")))
+        check("%s (ALLOW: a lone test ask ending in a full stop is still "
+              "regression, so the evidence is the absence of a second clause and "
+              "not the absence of a stop: %r)" % (safe, disc("P1.10")),
+              disc("P1.10") == ("regression", False)
+              and "mutation" in tnotes("P1.10"))
+        table = (("Add a test for the parser", True),
+                 ("Add a test for the label, then relocate the prop", False),
+                 ("Add a test for the label then relocate the prop", False),
+                 ("Add a test for the label while relocating the prop", False),
+                 ("Add a test for the label so the prop moves", False),
+                 ("Add a test for the label and rework the parser", False),
+                 ("Add a test for X; the label should be capitalized", False),
+                 ("Add a test for X. Capitalize the label", False),
+                 ("Add a test for X - capitalize the label", False),
+                 ("Add a test for the label (relocate the prop)", False),
+                 ("Fix the label and add a test for it", False),
+                 ("Add a test for lib/x.ts:12", True),
+                 ("- `Add a test for the empty state`.", True),
+                 ("", False), (None, False))
+        got_table = [(r, M._only_asks_for_test(r)) for r, _w in table]
+        check("%s (the resolution table, each row read by _only_asks_for_test: "
+              "%r)" % (safe, [g for g, w in zip(got_table, table) if g[1] != w[1]]),
+              all(g[1] == w[1] for g, w in zip(got_table, table)))
 
         # ---- a script the suite loads, a ui part, a document -------------------
         # Three kinds of finding came back from a fix task with no suite: a

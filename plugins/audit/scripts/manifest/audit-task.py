@@ -3176,17 +3176,24 @@ _FINDING_PATH = re.compile(r"^[\w@.\-/\[\]()]+\.[A-Za-z][A-Za-z0-9]*$")
 _ASKS_FOR_TEST = re.compile(
     r"\b(?:add|write|create|introduce|cover|include)\b[^.;\n]{0,60}?"
     r"\b(?:tests?|specs?|test cases?)\b", re.IGNORECASE)
-# A change asked for in a clause of its own: the verb opens the resolution, or
-# follows a stop, a comma, or `and`/`then`/`also`/`but`. Read as a refusal to
-# call the resolution test-only, so a verb missing from the list leaves a task
-# at tdd, which is the discipline a fix task has always had.
-_CHANGE_CLAUSE = re.compile(
-    r"(?:[.;:,!?]\s*|\b(?:and|then|also|but|plus|after|before)\s+)"
-    r"(?:fix|change|rename|replace|remove|refactor|rewrite|update|make|ensure|"
-    r"guard|handle|return|throw|set|move|delete|use|wrap|validate|implement|"
-    r"correct|stop|prevent|avoid|reject|raise|show|emit|print|extract|split|"
-    r"drop|add\s+(?:a|an|the)\s+(?!tests?\b|specs?\b|test cases?\b|"
-    r"regression\b|unit\b|e2e\b)\w+)\b", re.IGNORECASE)
+# What ends the lone test ask. A resolution is test-only on POSITIVE evidence: it
+# opens by asking for a test and is one clause, with nothing after the test noun
+# phrase that joins a second thing to it. This pattern lists the joins - a
+# comma or semicolon, a sentence stop, a spaced dash or an opening parenthesis,
+# a conjunction or subordinator (`and`, `then`, `while`, `so`, `when`, ...) and a
+# modal (`should`, `must`) - and not the verbs of a change, which no list can
+# close. So a resolution carrying any join is read as asking for more than a test
+# and stays at tdd whatever its verb: a verb nobody listed ("then relocate the
+# prop") cannot turn it test-only. What it cannot see is a second ask with no
+# join at all ("Add a test for X relocate the prop"); that reads as test-only.
+# The price of the join list erring wide is a lone test ask read as tdd, which
+# the caller overrides with --tests-mode.
+_CLAUSE_JOIN = re.compile(
+    r"[,;]|[:.!?](?:\s|$)|\s[-\u2013\u2014]+\s|\s\(|"
+    r"\b(?:and|then|also|but|plus|after|before|while|so|because|since|once|"
+    r"until|when|whenever|if|which|whereas|instead|too|should|must|needs?|"
+    r"will|would|can|could|may|might|has\s+to|have\s+to|ought)\b",
+    re.IGNORECASE)
 _STYLESHEET_EXTENSIONS = ("css", "scss", "sass", "less", "styl")
 # A tests.add clause is one line a reader scans, not the resolution reprinted.
 _CLAUSE_LIMIT = 160
@@ -3196,13 +3203,16 @@ _FIRST_SENTENCE = re.compile(r"(.+?)(?:[.!?](?:\s|$)|;)")
 
 
 def _only_asks_for_test(resolution):
-    """True when the resolution opens by asking for a test and asks for no
-    change to the code: the behaviour it names already exists, so the test
-    passes at HEAD and no red run can be taken of it. Anything that also asks
-    for a change (`_CHANGE_CLAUSE`) is not test-only, and neither is a
-    resolution that asks for a test after saying something else."""
+    """True when the resolution opens by asking for a test and is nothing but
+    that ask: the behaviour it names already exists, so the test passes at HEAD
+    and no red run can be taken of it. It needs positive evidence - the text
+    opens with the test ask and holds no clause join (`_CLAUSE_JOIN`) once a
+    closing stop is dropped - so a resolution that continues past the test in
+    any verb, and one that asks for a test only after saying something else, are
+    not test-only. A continuation carrying no join at all is not seen."""
     text = " ".join(str(resolution or "").split()).lstrip(" -*`\"'")
-    return bool(_ASKS_FOR_TEST.match(text)) and not _CHANGE_CLAUSE.search(text)
+    text = text.rstrip(" .!?`\"'")
+    return bool(_ASKS_FOR_TEST.match(text)) and not _CLAUSE_JOIN.search(text)
 
 
 def _finding_paths(text):

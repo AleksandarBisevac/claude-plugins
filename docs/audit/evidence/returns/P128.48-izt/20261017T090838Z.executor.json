@@ -1,0 +1,37 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_audit_task.py --selftest --stage cz-block": "pass",
+    "python3 tools/sweep-selftests.py --quiet": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-17T09:24:52Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage cz-block` in a throwaway tree at HEAD exited 1 with 2 of 47 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - Pick the safe direction on purpose and make the code match: invert the test so regression needs positive evidence, e.g (a change asked for in a verb no list holds - relocate, rework, a bare 'should' - stays tdd and red-first: [('regression', False), ('regression', False), ('regression', False)]) (house FAIL) and 1 more: SELFTEST FAILED: 45/47 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-task.py: _CHANGE_CLAUSE (closed list of change verbs, true when absent => unlisted verb minted regression) replaced by _CLAUSE_JOIN (comma/semicolon, sentence stop, spaced dash, opening paren, conjunctions/subordinators, modals); _only_asks_for_test (audit-task.py:3203) is true only when the text opens with the test ask and, after dropping a closing stop, holds no join. Comment above _CLAUSE_JOIN (audit-task.py:3179-3194) rewritten to say what the code does and names the limit (a second ask with no join at all is not seen). test_audit_task.py cz-block: end-to-end findings R6-R9 plus a direct 15-row table over M._only_asks_for_test, titled with the tests.add clause verbatim; ALLOW cases: 'Add a test that pins the label.' stays regression, 'Add a test for the parser' and the backticked form stay test-only. Mutations: rstrip removed -> 45/47 (allow case + table red); join check removed -> 44/47 (original ALLOW arm + both new cases red); restored -> 47/47. Full python3 tools/sweep-selftests.py --quiet: exit 0, 335/335 files ok, 16632 cases.",
+    "descriptive": "A fix finding whose resolution asks for a test and then any change in an unlisted verb now stays tdd with red-first, instead of silently minting regression."
+  },
+  "testsAdded": [
+    "Pick the safe direction on purpose and make the code match: invert the test so regression needs positive evidence, e.g (a change asked for in a verb no list holds - relocate, rework, a bare 'should' - stays tdd and red-first)",
+    "Pick the safe direction on purpose and make the code match: invert the test so regression needs positive evidence, e.g (ALLOW: a lone test ask ending in a full stop is still regression)",
+    "Pick the safe direction on purpose and make the code match: invert the test so regression needs positive evidence, e.g (the resolution table, each row read by _only_asks_for_test)"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_audit_task.py: Pick the safe direction on purpose and make the code match: invert the test so regression needs positive evidence, e.g": {
+      "file": "plugins/audit/scripts/manifest/audit-task.py",
+      "find": " and not _CLAUSE_JOIN.search(text)",
+      "replace": "",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_task.py",
+        "--selftest",
+        "--stage",
+        "cz-block"
+      ]
+    }
+  },
+  "claims": "claims:\n1 audit-task.py:3203-3212 _only_asks_for_test does what its docstring and the _CLAUSE_JOIN comment (3179-3194) say; the comment states the unseen case (a second ask with no join) instead of claiming 'whatever its verb'\n2 join check removed -> 44/47 (original ALLOW arm and both new cases red); rstrip removed (over-fire on a trailing full stop) -> 45/47, allow case red; restored 47/47; pycache purged between cycles\n3 grep for _CHANGE_CLAUSE / CHANGE_CLAUSE / 'change verb' / 'unknown verb' over *.py,*.md,*.sh: no remaining reference to the old name; the other 'unknown verb' hits (argparse dispatch, _proposals.py, cp1 case) are unrelated and left; the only other caller of the predicate is the testOnly key at audit-task.py:3421 which reads the same function\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded\n6 n/a - no guard; the decision reads the resolution text only because the resolution is free text, and the limit is stated in the comment\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:152b4b568e86aa270675ffee198c7b7b4c6e1526abf282cf997b3a87d00b7996\",\"dirtyDigest\":\"sha256:2cbf3d54d3186e62fc6b3acb37fd46c8c846e1924873e4a2f97f2fe6767ee4a7\",\"dirtyPaths\":{\"plugins/audit/scripts/manifest/audit-task.py\":\"6ee46381f4ffa2de\",\"plugins/audit/tests/test_audit_task.py\":\"60bd6e74ff11d998\"},\"head\":\"25e81fd2\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:8f8b1714a7917356f6343b4d5ead060b36613e9a84b9e658c44402ae05bef609\",\"v\":2}"
+}
