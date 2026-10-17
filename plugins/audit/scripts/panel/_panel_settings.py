@@ -346,6 +346,13 @@ FIELD_HELP = {
         "only.",
     "ci.workflow":
         "The workflow file dispatched on the phase's ci/ branch. Unset uses ci.yml.",
+    "ci.pushCarry":
+        "Push a filed wave member's carry ref to origin. Off by default: the carry "
+        "stays in this repository and does not travel to another machine, so "
+        "nothing unfinished is published. On, the filing pushes it, which puts "
+        "that work on origin (in the open, if origin is public) so a drive "
+        "resumed on another machine can recover it; closing the task deletes it "
+        "there.",
     "executor.maxHours":
         "How many hours a single spawned executor may be continued onto further "
         "tasks — never re-spawned — before the orchestrator prefers handing it "
@@ -702,7 +709,9 @@ SETTINGS_GROUPS = (
                  "Set either number and the step driver pushes the phase tip to "
                  "its ci/ branch and dispatches the workflow there at the close "
                  "that makes it due, without waiting; it reads the run at the next "
-                 "close, and a red files a bug. Leave both empty for landing only.",
+                 "close, and a red files a bug. Leave both empty for landing only. "
+                 "The last switch is the one other thing the driver may push: a "
+                 "wave member's carry ref, off unless you turn it on.",
         "fields": (
             {"path": "ci.cadence.closes", "label": "Task closes between CI runs",
              "kind": "int", "min": 1, "placeholder": "landing only"},
@@ -710,6 +719,8 @@ SETTINGS_GROUPS = (
              "kind": "number", "min": 0, "placeholder": "landing only"},
             {"path": "ci.workflow", "label": "Workflow dispatched",
              "kind": "text", "placeholder": "ci.yml"},
+            {"path": "ci.pushCarry", "label": "Push wave members' carry refs to origin",
+             "kind": "bool"},
         ),
     },
 )

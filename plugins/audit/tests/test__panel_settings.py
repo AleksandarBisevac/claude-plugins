@@ -188,10 +188,21 @@ def _cases(check):
           "workflow, with the floors the validator accepts and refuses: %r"
           % (_ci,),
           [f["path"] for f in _ci] == ["ci.cadence.closes", "ci.cadence.hours",
-                                        "ci.workflow"]
+                                        "ci.workflow", "ci.pushCarry"]
           and not _vc.validate_config({"ci": {"cadence": {"closes": 1}}})[0]
           and _vc.validate_config({"ci": {"cadence": {"closes": 0}}})[0]
           and "0 is refused" in M.FIELD_HELP["ci.cadence.closes"])
+    _push = [f for f in _ci if f["path"] == "ci.pushCarry"]
+    check("ps5 the carry push is a switch the panel offers, off unless turned on, "
+          "and the validator accepts a boolean and refuses every other spelling "
+          "rather than reading it as either: %r" % (_push,),
+          len(_push) == 1 and _push[0]["kind"] == "bool"
+          and "does not travel to another machine" in M.FIELD_HELP["ci.pushCarry"]
+          and _vc.carry_push_setting({}) == (False, None)
+          and _vc.carry_push_setting({"ci": {"pushCarry": True}}) == (True, None)
+          and not _vc.validate_config({"ci": {"pushCarry": False}})[0]
+          and all(_vc.validate_config({"ci": {"pushCarry": bad}})[0]
+                  for bad in ("yes", 1, 0, None)))
     check("_cfg_enums() is JSON-serializable (panel-server bakes it into UI_HTML "
           "with json.dumps)", json.dumps(M._cfg_enums(), sort_keys=True))
 

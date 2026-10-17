@@ -53,6 +53,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 import _harness                                   # sets sys.path for scripts/ + hooks/
@@ -3934,12 +3935,13 @@ WAVE_LINE_BYTES = 200
 
 
 def _wave_repo(prefix, width, red=(), per_task="phase", setup=None,
-               spare_file=False):
+               spare_file=False, ci=None):
     """A two-task fixture whose config sets `executor.waveWidth` to `width`
     (left out when None) and roots task trees in a fixture directory of their
     own, and whose tasks' gates are the own-diff check - or a gate that always
     fails, for each id in `red`. `setup` is `executor.worktreeSetup`, and
-    `spare_file` commits a third source file, for a task added later."""
+    `spare_file` commits a third source file, for a task added later, and `ci`
+    is the config's `ci` block when given."""
     root, mpath = _repo(prefix, task_ids=TASKS[:2], per_task=per_task)
     trees = os.path.realpath(_harness.fixture_root("drive-trees-%s-" % (prefix,)))
     cfg_path = os.path.join(root, ".claude", "audit.config.json")
@@ -3954,6 +3956,8 @@ def _wave_repo(prefix, width, red=(), per_task="phase", setup=None,
         with open(os.path.join(root, "src", "f3.txt"), "w", encoding="utf-8") as fh:
             fh.write("v0\n")
     cfg["executor"] = executor
+    if ci is not None:
+        cfg["ci"] = ci
     with open(cfg_path, "w", encoding="utf-8") as fh:
         json.dump(cfg, fh)
     with open(os.path.join(root, "check_own.py"), "w", encoding="utf-8") as fh:
@@ -6361,7 +6365,7 @@ def _carry_cases(check):
     if M is None:
         check(clause("the driver loads"), False, why)
         return
-    root, mpath = _wave_repo("carry", 2)
+    root, mpath = _wave_repo("carry", 2, ci={"pushCarry": True})
     bare = os.path.realpath(_harness.fixture_root("drive-origin-"))
     _harness.git(bare, "init", "-q", "--bare")
     _harness.git(root, "remote", "add", "origin", bare)
@@ -6419,13 +6423,97 @@ def _carry_cases(check):
           _carry_refs(fresh) == [] and _carry_refs(bare) == [])
 
     # No origin: the filing stands, the carry is local, and the print says so.
-    solo, solo_path = _wave_repo("carrysolo", 2)
+    solo, solo_path = _wave_repo("carrysolo", 2, ci={"pushCarry": True})
     _code, sent_first = _next_wave(M, solo, solo_path)
     code, text = _file_wave_executor(solo, solo_path, _dispatched(sent_first)[0])
     check(clause("with no origin the carry stays in a local ref and the filing "
                  "says it is local only: %r %r" % (text, _carry_refs(solo))),
           code == 0 and "local only: the repository has no origin" in text
           and _carry_refs(solo) == ["P1.1"])
+
+
+CARRY_LOCAL_CLAUSE = ("plugins/audit/tests/test_drive_phase.py: with no carry "
+                      "setting a filed wave member writes refs/audit/carry/<taskId> "
+                      "locally and makes no push to any remote, and only an "
+                      "explicit opt-in pushes it to origin")
+# A git push as the trace names it, whatever flags precede the verb.
+_GIT_PUSH = re.compile(r"\bgit (?:-\S+ (?:\S+ )?)*push\b")
+
+
+def _traced_filing(M, ci, name):
+    """File the first wave member of a fixture whose origin is a bare repository,
+    with git's own trace recording every command the filing starts. -> `(root,
+    mpath, bare, text, pushes, sent)`: `pushes` is the number of `git push` the
+    trace names, which counts an attempt the remote refused or never saw."""
+    root, mpath = _wave_repo(name, 2, ci=ci)
+    bare = os.path.realpath(_harness.fixture_root("drive-origin-"))
+    _harness.git(bare, "init", "-q", "--bare")
+    _harness.git(root, "remote", "add", "origin", bare)
+    _harness.git(root, "push", "-q", "origin", "HEAD:refs/heads/main")
+    _code, first = _next_wave(M, root, mpath)
+    sent = _dispatched(first)
+    fd, trace = tempfile.mkstemp(prefix="git-trace-")
+    os.close(fd)
+    held = os.environ.get("GIT_TRACE")
+    os.environ["GIT_TRACE"] = trace
+    try:
+        _code, text = _file_wave_executor(root, mpath, sent[0])
+    finally:
+        if held is None:
+            os.environ.pop("GIT_TRACE", None)
+        else:
+            os.environ["GIT_TRACE"] = held
+    with open(trace, encoding="utf-8", errors="replace") as fh:
+        lines = fh.read().splitlines()
+    os.unlink(trace)
+    return root, mpath, bare, text, len([ln for ln in lines if _GIT_PUSH.search(ln)]), sent
+
+
+def _carry_local_cases(check):
+    def clause(detail):
+        return "%s (%s)" % (CARRY_LOCAL_CLAUSE, detail)
+
+    M, why = _load("drive_phase_carry_local")
+    if M is None:
+        check(clause("the driver loads"), False, why)
+        return
+    for label, ci in (("no ci block", None),
+                      ("ci block without the key", {"workflow": "ci.yml"}),
+                      ("pushCarry false", {"pushCarry": False}),
+                      ("pushCarry the string yes", {"pushCarry": "yes"})):
+        root, mpath, bare, text, pushes, sent = _traced_filing(
+            M, ci, "carrylocal")
+        check(clause("%s: the filing wrote the carry in the repository and the "
+                     "origin holds none, with %d git push in the trace: %r %r"
+                     % (label, pushes, _carry_refs(root), _carry_refs(bare))),
+              sent[:1] == ["P1.1"] and _carry_refs(root) == ["P1.1"]
+              and _carry_refs(bare) == [] and pushes == 0)
+        check(clause("%s: the filing says the carry is local and does not travel "
+                     "to another machine: %r" % (label, text)),
+              "local only" in text and "does not travel to another machine" in text
+              and "ci.pushCarry" in text)
+    # The resume path: a tree lost on THIS machine is recut from the local carry.
+    gone = _tree_of(root, "P1.1")
+    shutil.rmtree(gone)
+    _harness.git(root, "worktree", "prune")
+    state_path = os.path.join(root, ".claude", "state", "drive", "%s.json" % (PHASE,))
+    with open(state_path, encoding="utf-8") as fh:
+        state = json.load(fh)
+    state["wave"]["trees"].pop("P1.1", None)
+    with open(state_path, "w", encoding="utf-8") as fh:
+        json.dump(state, fh)
+    _code, again = _next_wave(M, root, mpath)
+    check(clause("a tree lost where the carry was made is recut from the local "
+                 "carry: %r" % (again[:400],)),
+          "work of P1.1 restored from refs/audit/carry/P1.1" in again)
+    # Opt-in: the same filing pushes, and the trace names the push.
+    root, mpath, bare, text, pushes, sent = _traced_filing(
+        M, {"pushCarry": True}, "carrypush")
+    check(clause("pushCarry true: the origin holds the carry and the trace names "
+                 "exactly one git push: %d %r %r"
+                 % (pushes, _carry_refs(bare), text)),
+          _carry_refs(bare) == ["P1.1"] and pushes == 1
+          and "and pushed to origin" in text)
 
 
 STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
@@ -6486,6 +6574,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("gt-block", "_git_stdin_cases"),
           ("ci-block", "_ci_cadence_cases"),
           ("cr-block", "_carry_cases"),
+          ("cl-block", "_carry_local_cases"),
           ("sl-block", "_slice_cases"),
           ("sb-block", "_stage_cases"))
 

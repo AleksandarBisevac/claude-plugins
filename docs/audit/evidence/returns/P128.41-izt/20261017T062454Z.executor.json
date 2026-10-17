@@ -1,0 +1,41 @@
+{
+  "gates": {
+    "own-test (test_drive_phase.py --stage cl-block)": "pass",
+    "test_drive_phase.py --stage cl-block --stage cr-block": "pass",
+    "test__panel_settings.py --selftest": "pass",
+    "test__config_rules.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py --quiet": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8-": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-17T06:48:05Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage cl-block` in a throwaway tree at HEAD exited 1 with 8 of 10 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `cl-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - plugins/audit/tests/test_drive_phase.py: with no carry setting a filed wave member writes refs/audit/carry/<taskId> locally and makes no push to any remote, and only an explicit opt-in pushes it to origin (no ci block: the filing wrote the carry in the repository and the origin holds none, with 1 git push in the trace: ['P1.1'] ['P1.1']) (house FAIL) and 7 more: SELFTEST FAILED: 2/10 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Clauses: (1) carry ref local by default: drive-phase.py carry_pushes()/carry_remote() gate every remote contact (push, fetch, delete) on ci.pushCarry; carry_work writes the local ref then returns before any push (drive-phase.py ~2600-2625). (2) explicit config key: ci.pushCarry boolean; _config_rules.py KNOWN_CI + carry_push_setting() + _check_ci finding for non-bool (a string/number/null is refused, not read as either). (3) schema: audit-config.schema.json ci.pushCarry boolean. (4) README configuration table row ci.pushCarry (cv1 in test__config_rules green, 165/165). (5) Settings: _panel_settings.py FIELD_HELP['ci.pushCarry'], bool field in the ci group, group blurb extended; test__panel_settings.py ps4 widened and new ps5 (74/74). (6) resume path finds a local carry: case 'a tree lost where the carry was made is recut from the local carry' in cl-block; restore_carry's not-found message says carries are pushed only under ci.pushCarry so one made elsewhere did not travel. (7) says plainly a carry not pushed does not travel: filing did-line 'local only: nothing is pushed unless ci.pushCarry is true, so it does not travel to another machine' (asserted); drive-phase.py module docstring rewritten. (8) every P128.22 case green: cr-block opts in via _wave_repo(..., ci={'pushCarry': True}) (new ci param on the fixture), 15/15 for cl+cr; full sweep 335/335 files ok, 16616 cases, exit 0. Push direction proved with git's own GIT_TRACE: default / no ci block / ci block without key / pushCarry false / pushCarry 'yes' each show zero 'git push' in the trace and an empty origin; opt-in shows exactly one and a carry on the bare origin (premise counted so the regex cannot be vacuous). Not done: reference/config.md (outside this task's files) has no pushCarry section; the README row carries the detail. Plan-gate note: a python-heredoc write to _panel_settings.py was refused ('outside the running task files'); I redid it with the Edit tool, which the gate allowed. Remote deletion on close is skipped under the default, so a carry pushed earlier under opt-in and then opted out stays on origin.",
+    "descriptive": "A wave member's carry ref now stays local unless ci.pushCarry is true; the default drive makes no push, and the filing says the carry does not travel to another machine."
+  },
+  "testsAdded": [
+    "with no carry setting a filed wave member writes refs/audit/carry/<taskId> locally and makes no push to any remote, and only an explicit opt-in pushes it to origin",
+    "ps5 the carry push is a switch the panel offers, off unless turned on, and the validator accepts a boolean and refuses every other spelling rather than reading it as either"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_drive_phase.py: with no carry setting a filed wave member writes refs/audit/carry/<taskId> locally and makes no push to any remote, and only an explicit opt-in pushes it to origin": {
+      "file": "plugins/audit/scripts/governance/drive-phase.py",
+      "find": "    return push is True",
+      "replace": "    return True",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_drive_phase.py",
+        "--selftest",
+        "--stage",
+        "cl-block"
+      ]
+    }
+  },
+  "claims": "claims:\n1 drive-phase.py carry_pushes/carry_remote/carry_work: default path appends the local-only did-line and returns before any git push; asserted by cl-block text checks\n2 falsifier 'return push is True' -> 'return True' in drive-phase.py gave 8 FAIL in cl-block, restored, 10/10; allow case: pushCarry true shows exactly one push and a ref on the bare origin\n3 grep of carry_remote callers: carried_commit, drop_carry, carry_work - all three go through the gate; left: restore_carry message now reads carry_pushes too\n4 n/a - no rule addressed to an agent; the opt-in is enforced by carry_remote and the validator\n5 n/a - no property measured\n6 decision reads the config value (JSON true) and git's own trace of executed pushes, not a command spelling\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:a97f30d19d020c34d0fabc461b04ea44e9a8d5b3e96be043a42a1bcd76eefc7b\",\"dirtyDigest\":\"sha256:d0eb5cc44af2108ae925cbe67a10791b20083ed2a0a5a3cf3b12e18755d464ef\",\"dirtyPaths\":{\"plugins/audit/README.md\":\"d867a772e7332f40\",\"plugins/audit/schema/audit-config.schema.json\":\"7825aeb6800625be\",\"plugins/audit/scripts/config/_config_rules.py\":\"0e6f370378c58843\",\"plugins/audit/scripts/governance/drive-phase.py\":\"34294d4e76d70138\",\"plugins/audit/scripts/panel/_panel_settings.py\":\"251e3cf6a1705dd7\",\"plugins/audit/tests/test__panel_settings.py\":\"fef03022ab828b3f\",\"plugins/audit/tests/test_drive_phase.py\":\"fcb0eaedec9725b6\"},\"head\":\"badd6aa4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/README.md\",\"plugins/audit/schema/audit-config.schema.json\",\"plugins/audit/scripts/config/_config_rules.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/panel/_panel_settings.py\",\"plugins/audit/tests/test__panel_settings.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:118127418f1b1b2467e67c03cd742c4f0dba15a71487cda5213b3adf4d311a6e\",\"v\":2}"
+}

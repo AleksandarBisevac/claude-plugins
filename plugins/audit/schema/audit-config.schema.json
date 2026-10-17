@@ -519,7 +519,7 @@
     },
     "ci": {
       "type": "object",
-      "description": "When a long phase asks CI about itself before it lands. Absent: landing only.",
+      "description": "When a long phase asks CI about itself before it lands, and whether the driver pushes a wave member's carry ref. Absent: landing only, and nothing pushed.",
       "additionalProperties": true,
       "properties": {
         "cadence": {
@@ -543,6 +543,10 @@
           "type": "string",
           "minLength": 1,
           "description": "The workflow file dispatched on ci/<phase>. Absent: ci.yml."
+        },
+        "pushCarry": {
+          "type": "boolean",
+          "description": "Whether a filed wave member's carry ref (refs/audit/carry/<taskId>) is pushed to origin. Absent or false: the carry stays in this repository and does not travel to another machine. True: the filing pushes it, the next drive on another machine can fetch it, and closing the task deletes it from origin."
         }
       }
     }

@@ -1,0 +1,17 @@
+{
+  "gates": {
+    "selftests": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task: no test added; a harness refactor with unchanged behaviour",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "In plugins/audit/tests/_harness.py (tree claude-plugins-P128.43-izt, base badd6aa4): deleted _is_zombie (the duplicate of _locks._is_zombie, which pid_alive already consults); _pid_present is now `return _locks.pid_alive(pid) is not False` (_harness.py ~1105-1109), so None (unknown) still counts as present, as before; rewrote the comment above it (~1099-1104) to say a zombie answers kill(pid,0), the product rule pid_alive reads the process table too and counts it gone, _pid_present is that rule and nothing more, and the wait polls to a deadline. Requirement clauses: (1) make _pid_present read pid_alive(pid) is not False - done, _harness.py:~1107; (2) delete the duplicate - done, _is_zombie gone, grep -rn _is_zombie plugins tools .claude finds only _locks.py; (3) correct the comment - done, _harness.py:1099-1104. _group_present left unchanged (own ps-based group rule, out of scope). Verification: `python3 tools/sweep-selftests.py --quiet` in the task tree printed '335/335 files ok, 153 migrated to tests/, 16604 cases' (the wrapper's exit echo was empty because zsh spells it pipestatus; the tool reported exit code 0 for the pipeline, and the summary line is the sweep's own verdict); `ruff check plugins/audit/tests/_harness.py` -> All checks passed. Not run, per the orchestrator addendum: verify.sh, browser gates.",
+    "descriptive": "The test harness now reads process liveness through the product rule, with no zombie copy and no false comment."
+  },
+  "testsAdded": [],
+  "claims": "claims:\n1 _harness.py:1099-1104 comment now states only what _pid_present does (delegates to _locks.pid_alive, scripts/_locks.py:150-182 where a zombie is False); _pid_present body is the one-line return\n2 n/a - no check added or touched; existing liveness pins in test_run_test_gate.py (_LIVENESS_HOMES, ~8115) stayed green in the 335/335 sweep\n3 grep -rn '_is_zombie' plugins tools .claude: remaining hits only the product's _locks.py (the rule itself); grep gone_within/_pid_present: callers test__proc_group.py:411 and test_run_test_gate.py:8180-8291 all go through the same function, no other copy of the zombie reading in the harness; _group_present's 'Z' check left because it reads a process group, which pid_alive does not answer\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:8b2f3610844a72e5ee866b9f6439475194bd84f5045858a5d6e69e26507661e1\",\"dirtyDigest\":\"sha256:da46cf3bf7fcf63775df6fb94bafcdc0dfbfb6f32c78c5a08ac7cd539c2025e7\",\"dirtyPaths\":{\"plugins/audit/tests/_harness.py\":\"994be84c3ccb9a11\"},\"head\":\"badd6aa4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/_harness.py\"],\"scopeDigest\":\"sha256:760083bc72e63c330bda4b02d49b6d8da9663f2b14b613ba8e570d1d6567adfa\",\"v\":2}"
+}

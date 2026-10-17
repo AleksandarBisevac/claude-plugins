@@ -2247,7 +2247,7 @@
     {
       "id": "P128.40-izt",
       "title": "The schema describes the recorded gate spelling as the first source a narrowed gate tries",
-      "status": "in_progress",
+      "status": "done",
       "description": "P128.16 made _gate_derive.resolve_shape try meta.phaseGate.derived.spelling first and read a sibling task path-scoped entry only when no usable spelling exists (a spelling without {paths} is skipped with its printed reason). The schema description of derived.spelling (plugins/audit/schema/audit-plan.schema.json, around line 293) still says the spelling is the SECOND source and that the sibling always wins. Reword it to state the new order and the {paths} fall-through, and check every other description in the schema that states the old order. The plan gate refused this edit inside P128.16 because the file was outside that task.",
       "files": [
         "plugins/audit/schema/audit-plan.schema.json"
@@ -2279,25 +2279,36 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "badd6aa479da",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "HEAD 12d13a03. Reworded one description: plugins/audit/schema/audit-plan.schema.json:293 (meta.phaseGate.derived.spelling). Requirement clauses: (1) state the new order - done at :293, spelling is the FIRST source, matching _gate_derive.py resolve_shape (def at :136; spelling tried first, returns [spelling_tpl], SPELLING_SOURCE when '{paths}' in it; sibling via path_scoped_sibling only on fall-through). (2) state the {paths} fall-through - done at :293: a spelling without {paths} is skipped with a printed reason (resolve_shape appends 'spelling: skipped - ... carries no {paths} placeholder' to lines) and the first sibling task with a path-scoped tests.gate entry is re-pointed instead. Also stated: neither source -> wide gate, derived basis 'phase-no-spelling' (_gate_derive.py:631-636), and usable spelling with no resolved test path -> wide gate with reason (_gate_derive.py:709). Literal substitution of shell-quoted paths stated per _gate_derive.py:718-727. (3) check every other schema description stating the old order - grep for 'sibling' and 'spelling' over the schema: hits at :285 (no order claim, left), :1841 gateBasis (task-level, left because it is written by audit-task.py _ordinary_task_gate/_task_gate_setup, which calls path_scoped_sibling only, never resolve_shape - the sibling-only wording is true there), :2329 (unrelated 'sibling of ado'). No other schema description states the old order. Gate: python3 tools/sweep-selftests.py --quiet exit 0 (335/335 files ok, run in my tree). JSON parses. NOT DONE (outside this task's files, stale old-order statements still at HEAD): plugins/audit/scripts/governance/derive-phase-gate.py:20-25 docstring ('SECOND source ... sibling always wins'); PLUGIN-BUILD-GUIDE.md:3600-3607 and :4958-4961 and :4990 ('SECOND'); plugins/audit/commands/init.md:484 says nothing of order (fine); plugins/audit/scripts/governance/_affected_tests.py:331 says 'a sibling task's path-scoped entry, else derived.spelling' (old order); CHANGELOG.md:1147 is history, left. These need their own task.",
+        "descriptive": "The schema now tells a reader that a usable derived.spelling is tried first and a sibling's path-scoped gate entry only when it is absent or lacks {paths}."
       },
       "startedAt": "2026-10-17T04:20:28Z",
-      "completedAt": null,
+      "completedAt": "2026-10-17T06:24:51Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-17T06:23:55Z.8a9d7d",
         "status": "passed",
         "at": "2026-10-17T06:23:55Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "badd6aa479da",
+        "at": "2026-10-17T06:24:51Z",
+        "return": "docs/audit/evidence/returns/P128.40-izt/20261017T042028Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task, tests.add is none; a schema description edit adds no test",
+        "at": "n/a"
       }
     },
     {
       "id": "P128.41-izt",
       "title": "A wave member carry ref stays local unless the project opts in to pushing it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P128.22 made submit of a wave member push refs/audit/carry/<taskId> to origin on every filing, with no setting. That publishes unfinished work to a remote the operator never asked to push to - for a public origin it is in the open the moment it is filed - and contradicts the rule that the plugin never pushes on its own (the ci/ cadence of P128.2 is explicitly configured). Make the carry ref local by default; push it only under an explicit config key (for example a boolean under the existing ci root or a new carry key), validated by _config_rules, published in the schema and the README configuration table, and offered in Settings like ci. The resume path must still find a local carry, and say plainly that a carry not pushed does not travel to another machine. Keep every P128.22 case green; the cr-block clone case opts in.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2324,7 +2335,21 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "plugins/audit/tests/test_drive_phase.py: with no carry setting a filed wave member writes refs/audit/carry/<taskId> locally and makes no push to any remote, and only an explicit opt-in pushes it to origin": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_drive_phase.py",
+              "--selftest",
+              "--stage",
+              "cl-block"
+            ],
+            "file": "plugins/audit/scripts/governance/drive-phase.py",
+            "find": "    return push is True",
+            "replace": "    return True"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -2337,14 +2362,14 @@
       "dependsOn": [
         "P128.22-0h5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-17T06:24:54Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2352,7 +2377,13 @@
           "at": "2026-10-17T00:27:27Z",
           "text": "tdd by default (init.md's mode rule): no mode was named and the title leads with no refactor or config word, so it adds or changes observable behaviour"
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T07:02:02Z.390777",
+        "status": "passed",
+        "at": "2026-10-17T07:02:02Z"
+      }
     },
     {
       "id": "P128.42-izt",
@@ -2411,7 +2442,7 @@
     {
       "id": "P128.43-izt",
       "title": "The test harness reads process liveness through the product rule instead of its own zombie copy",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P128.33 made _locks.pid_alive count an unreaped zombie as gone. plugins/audit/tests/_harness.py still carries a comment (around lines 1099-1104) saying the product rule counts a zombie alive, which is now false, and _harness._is_zombie duplicates the new rule. Make _pid_present read _locks.pid_alive(pid) is not False, delete the duplicate, and correct the comment to state what the code does. The plan gate refused this edit inside P128.33 because the file was outside that task.",
       "files": [
         "plugins/audit/tests/_harness.py"
@@ -2442,21 +2473,22 @@
       "dependsOn": [
         "P128.33-0h5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-17T06:24:58Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P128.44-izt",
       "title": "Every description of the narrowed-gate shape order states the recorded spelling first",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P128.16 made _gate_derive.resolve_shape try meta.phaseGate.derived.spelling first and a sibling task path-scoped entry only when no usable spelling exists; P128.40 corrected the schema. Five other descriptions still state the old order (sibling first, spelling second): derive-phase-gate.py docstring around lines 20-25, _affected_tests.py docstring around line 331, and PLUGIN-BUILD-GUIDE.md around lines 3600-3607, 4958-4961 and 4990. Reword each to what resolve_shape does at HEAD, including the {paths} fall-through. Then grep the whole tree for any further sentence stating the order (sibling, spelling, wins, second source) and fix or list each; CHANGELOG.md entries are history and stay.",
       "files": [
         "plugins/audit/scripts/governance/derive-phase-gate.py",
@@ -2488,6 +2520,58 @@
       "dependsOn": [
         "P128.40-izt"
       ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-17T06:25:01Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P128.45-izt",
+      "title": "A task gate and a phase gate derive their path-scoped shape through one resolver",
+      "status": "pending",
+      "description": "P128.16 made _gate_derive.resolve_shape try the recorded spelling first; P128.40 and P128.44 then corrected the prose in five places, and the class still leaks: _gate_derive.py around lines 128-129 still calls the spelling the second shape source, and audit-task.py _task_gate_setup (around line 2678) calls _path_scoped_sibling directly and never resolve_shape, so /audit:task add reads sibling entries only and ignores a recorded spelling while derive-phase-gate honours it. Fix the structure, not the text: _task_gate_setup obtains its shape from resolve_shape (one resolver, one order), the stale comment states what the code does, and a case asserts that no caller outside _gate_derive picks a shape source on its own (for example by walking the AST for calls to _path_scoped_sibling outside _gate_derive). Update verbs-in-full.md / README wording only if the behaviour they describe changes, and say which.",
+      "files": [
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test__gate_derive.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: /audit:task add over a plan whose meta.phaseGate.derived.spelling carries {paths} takes its task gate from that spelling, not a sibling task entry, because it reads the shape through _gate_derive.resolve_shape"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P128.44-izt"
+      ],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,
@@ -2497,7 +2581,13 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-17T06:46:00Z",
+          "text": "tdd by default (init.md's mode rule): no mode was named and the title leads with no refactor or config word, so it adds or changes observable behaviour"
+        }
+      ]
     }
   ],
   "reviewPerTask": "signals",

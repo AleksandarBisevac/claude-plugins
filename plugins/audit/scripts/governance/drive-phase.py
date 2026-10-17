@@ -92,13 +92,18 @@ reaches any of this: the drive is the serial one, row for row.
 
 WHERE A FILED MEMBER'S WORK LIVES BETWEEN FILING AND CLOSE: in its tree, and also
 in `refs/audit/carry/<taskId>`, a commit on the tree's HEAD that `submit` writes
-(in a scratch index, so the tree is untouched) and pushes to `origin` when the
-repository has one. A hand-off that moves machines carries the records and not
-the trees, so the next `next` with no wave recorded reopens one over the
-in-progress tasks whose return is filed and whose carry exists here or on
-`origin`, and a tree cut for a filed member starts from its carry. A `submit`
-that could not push says so on its did-line: the work is then in this
-repository's ref alone. A task's carry is taken down when it is terminal.
+(in a scratch index, so the tree is untouched). The ref stays in this
+repository: the driver pushes it to `origin` only where the config sets
+`ci.pushCarry` to true, because a push publishes unfinished work to a remote the
+operator never named, and a driver that pushes of its own accord is not one to
+leave running. A hand-off that moves machines carries the records and not
+the trees, so with the key set the next `next` with no wave recorded reopens one
+over the in-progress tasks whose return is filed and whose carry exists here or
+on `origin`, and a tree cut for a filed member starts from its carry; without it
+the same reopening finds the carries of this clone only, and a carry made on
+another machine is not there to find. A `submit` that did not push says so on its
+did-line, and why: the work is then in this repository's ref alone. A task's
+carry is taken down when it is terminal, on `origin` too only under the key.
 
 WHAT THE DRIVER KEEPS: one file per phase under `stateDir/drive/`, holding what no
 verb records - which brief it handed to an agent for which start, whether it
@@ -2583,8 +2588,22 @@ def carry_commit(tree, records, task_id):
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def carry_pushes(ctx):
+    """Whether the project asked for carries to travel: `ci.pushCarry` is true.
+    A value the config rules refuse reads as no, not as yes - the unreadable
+    setting is said by `carry_work`, and the validator and the doctor name it."""
+    push, _problem = _config_rules.carry_push_setting(ctx["config"])
+    return push is True
+
+
 def carry_remote(ctx):
-    """The remote the carry travels by, or None when the repository has none."""
+    """The remote the carry travels by, or None when the carry travels by none:
+    the project did not set `ci.pushCarry`, or the repository has no `origin`.
+    Every contact with the remote - the push, the fetch that finds a carry made
+    elsewhere, the delete that takes one down - asks here, so the opt-in is read
+    in one place and a default drive starts no git call that names a remote."""
+    if not carry_pushes(ctx):
+        return None
     code, out, _err = carry_git(ctx["gitRoot"], ["remote"])
     names = out.decode("utf-8", "replace").split() if code == 0 else []
     return CARRY_REMOTE if CARRY_REMOTE in names else None
@@ -2603,10 +2622,18 @@ def carry_work(ctx, task, tree, records):
     if code != 0:
         ctx["did"].append("work of %s not carried: update-ref %s" % (task["id"], err))
         return
+    if not carry_pushes(ctx):
+        _push, problem = _config_rules.carry_push_setting(ctx["config"])
+        ctx["did"].append("work of %s carried in %s, local only: %s, so it does "
+                          "not travel to another machine" % (
+                              task["id"], ref, _clip(problem, 100) if problem else
+                              "nothing is pushed unless ci.pushCarry is true"))
+        return
     remote = carry_remote(ctx)
     if remote is None:
         ctx["did"].append("work of %s carried in %s, local only: the repository "
-                          "has no %s" % (task["id"], ref, CARRY_REMOTE))
+                          "has no %s, so it does not travel to another machine"
+                          % (task["id"], ref, CARRY_REMOTE))
         return
     code, _out, err = carry_git(ctx["gitRoot"], ["push", "-q", remote,
                                                  "+%s:%s" % (ref, ref)])
@@ -2642,9 +2669,12 @@ def restore_carry(ctx, task, tree):
         return
     sha = carried_commit(ctx, task["id"])
     if sha is None:
-        ctx["did"].append("%s is filed and its tree is new, and no %s exists here "
-                          "or on %s: the work cannot be recovered" % (
-                              task["id"], carry_ref(task["id"]), CARRY_REMOTE))
+        where = ("here or on %s" % (CARRY_REMOTE,) if carry_pushes(ctx) else
+                 "here (carries are pushed only under ci.pushCarry, so one "
+                 "filed on another machine did not travel)")
+        ctx["did"].append("%s is filed and its tree is new, and no %s exists %s: "
+                          "the work cannot be recovered" % (
+                              task["id"], carry_ref(task["id"]), where))
         return
     code, out, err = carry_git(tree, ["status", "--porcelain", "--untracked-files=all"])
     if code != 0 or out.strip():

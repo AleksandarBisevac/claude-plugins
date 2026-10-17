@@ -104,7 +104,11 @@ REVIEW_PER_TASK_MODES = ("always", "phase", "signals")
 # triggers (`closes`: every N task closes, `hours`: every H hours of phase time,
 # either or both); `workflow` is the workflow file dispatched, `ci.yml` unless it
 # names another. Nothing in `ci` set means landing only, as before the key existed.
-KNOWN_CI = {"cadence", "workflow"}
+# `pushCarry` is the one key here that is not about CI: it is where the step
+# driver's other act on the remote is switched on, and it lives beside the
+# cadence because both are the project saying "the driver may push" - absent,
+# the driver pushes nothing of its own accord.
+KNOWN_CI = {"cadence", "workflow", "pushCarry"}
 KNOWN_CI_CADENCE = {"closes", "hours"}
 CI_WORKFLOW_DEFAULT = "ci.yml"
 
@@ -209,6 +213,26 @@ def ci_cadence_setting(config):
     return {"closes": closes if "closes" in raw else None,
             "hours": hours if "hours" in raw else None,
             "workflow": workflow.strip()}, None
+
+
+def carry_push_setting(config):
+    """`(push, problem)` - `ci.pushCarry` as `config` sets it: `False` when the
+    key is absent (a filed wave member's carry ref stays in this repository),
+    `True` only when it is the JSON `true`; `(None, problem)` for any other
+    value.
+
+    REFUSED, NOT FOLDED INTO ABSENT: `"yes"` or `1` read as `false` would be an
+    operator who asked for the carry on the remote and silently did not get it,
+    and read as `true` would publish unfinished work on a spelling nobody
+    checked."""
+    block = (config or {}).get("ci")
+    if not isinstance(block, dict) or "pushCarry" not in block:
+        return False, None
+    value = block["pushCarry"]
+    if isinstance(value, bool):
+        return value, None
+    return None, ("ci.pushCarry is %r, not true or false - fix the config "
+                  "(/audit:doctor names it); it is not read as either" % (value,))
 
 
 def _valid_wave_width(value):
@@ -651,9 +675,10 @@ def _check_review(review, findings, warnings):
 
 
 def _check_ci(ci, findings, warnings):
-    """When a long phase asks CI about itself. A FINDING for a value the drive
-    refuses to read (`ci_cadence_setting`), `_check_executor`'s reason: only a
-    finding refuses the panel's save."""
+    """When a long phase asks CI about itself, and whether the driver pushes a
+    carry. A FINDING for a value the drive refuses to read (`ci_cadence_setting`,
+    `carry_push_setting`), `_check_executor`'s reason: only a finding refuses the
+    panel's save."""
     if ci is None:
         return
     if not isinstance(ci, dict):
@@ -667,6 +692,10 @@ def _check_ci(ci, findings, warnings):
         for k in _real_keys(cadence):
             if k not in KNOWN_CI_CADENCE:
                 warnings.append("unknown ci.cadence key %r" % k)
+    if "pushCarry" in ci:
+        _push, problem = carry_push_setting({"ci": ci})
+        if problem:
+            findings.append(problem)
     if "cadence" in ci:
         _setting, problem = ci_cadence_setting({"ci": ci})
         if problem:
@@ -841,8 +870,9 @@ OFF_ROOT = {
                   "policy would not import the scripts-side module on every "
                   "tool call",
         "ci": "no hook reads it: only the step driver does, through "
-              "ci_cadence_setting, which treats an absent key as landing only - "
-              "so there is no shipped value for DEFAULTS to carry",
+              "ci_cadence_setting and carry_push_setting, which treat an absent "
+              "key as landing only and as no push - so there is no shipped "
+              "value for DEFAULTS to carry",
     },
 }
 
