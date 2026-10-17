@@ -825,6 +825,12 @@
       "title": "Deferred work held for S5, F3 and F5",
       "status": "pending",
       "shard": "phases/P129.json"
+    },
+    {
+      "id": "P130",
+      "title": "One executable description of CI, and a plugin that ships only what it runs",
+      "status": "pending",
+      "shard": "phases/P130.json"
     }
   ],
   "fileIndex": {
@@ -846,7 +852,8 @@
       "P59.12",
       "P109.9",
       "P123.52-64p",
-      "P125.68-0h5"
+      "P125.68-0h5",
+      "P130.8"
     ],
     ".claude/settings.json": [
       "P37.2",
@@ -856,7 +863,8 @@
       "P37.1"
     ],
     ".claude/skills/before-you-claim/evals/evals.json": [
-      "P37.1"
+      "P37.1",
+      "P130.8"
     ],
     ".claude/skills/before-you-claim/references/questions.md": [
       "P37.1"
@@ -902,7 +910,11 @@
       "P128.7-0h5",
       "P125.47-0h5",
       "P125.99-0h5",
-      "P125.133-0h5"
+      "P125.133-0h5",
+      "P130.1",
+      "P130.2",
+      "P130.8",
+      "P130.9"
     ],
     ".gitignore": [
       "P4.4",
@@ -1069,7 +1081,11 @@
       "P119.6-g0k",
       "P119.9-g0k",
       "P119.10-g0k",
-      "P121.19-eof"
+      "P121.19-eof",
+      "P130.2",
+      "P130.6",
+      "P130.7",
+      "P130.9"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1146,7 +1162,8 @@
       "P129.2-izt",
       "P125.139-0h5",
       "P129.7-izt",
-      "P129.8-izt"
+      "P129.8-izt",
+      "P130.8"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -1198,7 +1215,11 @@
       "P125.72-0h5",
       "P128.34-0h5",
       "P125.125-0h5",
-      "P125.138-0h5"
+      "P125.138-0h5",
+      "P130.2",
+      "P130.7",
+      "P130.8",
+      "P130.9"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -1464,7 +1485,12 @@
       "P128.19-0h5",
       "P128.32-0h5",
       "P128.44-izt",
-      "P128.45-izt"
+      "P128.45-izt",
+      "P130.2",
+      "P130.3",
+      "P130.7",
+      "P130.8",
+      "P130.9"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1556,7 +1582,8 @@
       "P123.72-64p",
       "P128.6-0h5",
       "P125.39-0h5",
-      "P125.132-0h5"
+      "P125.132-0h5",
+      "P130.8"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -1653,7 +1680,8 @@
       "P123.62-64p",
       "P123.65-64p",
       "P123.70-64p",
-      "P123.88-64p"
+      "P123.88-64p",
+      "P130.3"
     ],
     "docs/screenshots/captured-at.json": [
       "P63.9",
@@ -1907,7 +1935,8 @@
       "P125.142-0h5",
       "P128.2-0h5",
       "P128.41-izt",
-      "P128.34-0h5"
+      "P128.34-0h5",
+      "P130.6"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -1962,7 +1991,8 @@
       "P125.22",
       "P125.50-0h5",
       "P125.106-0h5",
-      "P125.142-0h5"
+      "P125.142-0h5",
+      "P130.6"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -2004,7 +2034,8 @@
       "P125.19",
       "P125.106-0h5",
       "P125.139-0h5",
-      "P125.144-0h5"
+      "P125.144-0h5",
+      "P130.8"
     ],
     "plugins/audit/commands/audit.md": [
       "P1.6",
@@ -2318,7 +2349,8 @@
       "P123.38",
       "P123.50-64p",
       "P125.41-0h5",
-      "P125.142-0h5"
+      "P125.142-0h5",
+      "P130.6"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -2436,7 +2468,10 @@
       "P125.68-0h5",
       "P125.77-0h5",
       "P125.94-0h5",
-      "P129.9-izt"
+      "P129.9-izt",
+      "P130.4",
+      "P130.5",
+      "P130.8"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -2448,7 +2483,8 @@
       "P109.5",
       "P123.46-64p",
       "P125.42-0h5",
-      "P125.58-0h5"
+      "P125.58-0h5",
+      "P130.8"
     ],
     "plugins/audit/hooks/guard-bash-writes.py": [
       "P4.2",
@@ -2476,18 +2512,24 @@
       "P123.72-64p",
       "P129.3-izt",
       "P125.68-0h5",
-      "P129.9-izt"
+      "P129.9-izt",
+      "P130.4",
+      "P130.5",
+      "P130.8"
     ],
     "plugins/audit/hooks/guard-capabilities.py": [
       "P15.4",
-      "P72.1"
+      "P72.1",
+      "P130.8"
     ],
     "plugins/audit/hooks/guard-edits.py": [
       "P1.4",
       "P2.1",
       "P15.4",
       "P41.5",
-      "P72.1"
+      "P72.1",
+      "P130.4",
+      "P130.8"
     ],
     "plugins/audit/hooks/guard-history-rewrite.py": [
       "P29.2",
@@ -2505,7 +2547,9 @@
       "P97.1",
       "P99.1",
       "P110.3",
-      "P123.34"
+      "P123.34",
+      "P130.5",
+      "P130.8"
     ],
     "plugins/audit/hooks/guard-secrets-read.py": [
       "P1.4",
@@ -2559,7 +2603,10 @@
       "P129.4-izt",
       "P129.5-izt",
       "P129.10-izt",
-      "P129.11-izt"
+      "P129.11-izt",
+      "P130.4",
+      "P130.5",
+      "P130.8"
     ],
     "plugins/audit/hooks/hooks.json": [
       "P1.2",
@@ -2599,7 +2646,9 @@
       "P109.6",
       "P108.10-4gh",
       "P123.29",
-      "P123.46-64p"
+      "P123.46-64p",
+      "P130.4",
+      "P130.8"
     ],
     "plugins/audit/hooks/meter-usage.py": [
       "P15.4",
@@ -2614,7 +2663,8 @@
       "P125.3",
       "P125.39-0h5",
       "P125.52-0h5",
-      "P125.76-0h5"
+      "P125.76-0h5",
+      "P130.8"
     ],
     "plugins/audit/hooks/py-launch.sh": [
       "P1.2",
@@ -2633,7 +2683,8 @@
       "P42.4",
       "P72.1",
       "P122.1",
-      "P123.46-64p"
+      "P123.46-64p",
+      "P130.8"
     ],
     "plugins/audit/hooks/require-plan.py": [
       "P1.3",
@@ -2665,7 +2716,9 @@
       "P123.40-64p",
       "P123.46-64p",
       "P125.40-0h5",
-      "P125.47-0h5"
+      "P125.47-0h5",
+      "P130.4",
+      "P130.8"
     ],
     "plugins/audit/reference/execute-task.md": [
       "P55.21",
@@ -2729,7 +2782,9 @@
       "P125.19",
       "P125.22",
       "P125.45-0h5",
-      "P125.142-0h5"
+      "P125.142-0h5",
+      "P130.6",
+      "P130.8"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -2883,7 +2938,10 @@
       "P125.19",
       "P128.17-0h5",
       "P125.128-0h5",
-      "P125.142-0h5"
+      "P125.142-0h5",
+      "P130.6",
+      "P130.8",
+      "P130.9"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -2960,7 +3018,8 @@
       "P125.142-0h5",
       "P129.7-izt",
       "P129.8-izt",
-      "P128.40-izt"
+      "P128.40-izt",
+      "P130.6"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -3050,12 +3109,18 @@
       "P125.99-0h5",
       "P125.107-0h5",
       "P125.108-0h5",
-      "P125.115-0h5"
+      "P125.115-0h5",
+      "P130.3",
+      "P130.4",
+      "P130.5",
+      "P130.7",
+      "P130.8"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
       "P15.4",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/_loader.py": [
       "P10.1",
@@ -3063,7 +3128,8 @@
       "P51.2",
       "P122.8-z4y",
       "P123.25",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P130.8"
     ],
     "plugins/audit/scripts/_output.py": [
       "P9.3",
@@ -3101,7 +3167,11 @@
       "P125.38-0h5",
       "P125.68-0h5",
       "P125.71-0h5",
-      "P125.72-0h5"
+      "P125.72-0h5",
+      "P130.3",
+      "P130.7",
+      "P130.8",
+      "P130.9"
     ],
     "plugins/audit/scripts/_refs.py": [
       "P23.1",
@@ -3138,14 +3208,21 @@
       "P125.51-0h5",
       "P125.54-0h5",
       "P125.57-0h5",
-      "P128.55-izt"
+      "P128.55-izt",
+      "P130.2",
+      "P130.3",
+      "P130.7",
+      "P130.8"
     ],
     "plugins/audit/scripts/_ui_theme.py": [
       "P20.5",
       "P50.5",
       "P109.1",
       "P122.8-z4y",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P130.7",
+      "P130.8",
+      "P130.9"
     ],
     "plugins/audit/scripts/config/_config_rules.py": [
       "P47.1",
@@ -3162,7 +3239,9 @@
       "P128.2-0h5",
       "P129.7-izt",
       "P129.8-izt",
-      "P128.41-izt"
+      "P128.41-izt",
+      "P130.8",
+      "P130.9"
     ],
     "plugins/audit/scripts/config/_help.py": [
       "P10.2",
@@ -3180,13 +3259,17 @@
       "P125.65-0h5",
       "P125.124-0h5",
       "P128.34-0h5",
-      "P125.137-0h5"
+      "P125.137-0h5",
+      "P130.7",
+      "P130.8",
+      "P130.9"
     ],
     "plugins/audit/scripts/config/validate-config.py": [
       "P15.4",
       "P47.1",
       "P122.8-z4y",
-      "P123.33"
+      "P123.33",
+      "P130.8"
     ],
     "plugins/audit/scripts/demo/gen-demo-manifest.py": [
       "P10.3",
@@ -3224,7 +3307,11 @@
       "P123.11",
       "P123.74-64p",
       "P125.2",
-      "P125.128-0h5"
+      "P125.128-0h5",
+      "P130.5",
+      "P130.6",
+      "P130.7",
+      "P130.8"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
@@ -3236,7 +3323,8 @@
       "P122.8-z4y",
       "P123.24",
       "P123.33",
-      "P125.2"
+      "P125.2",
+      "P130.8"
     ],
     "plugins/audit/scripts/git/_worktrees.py": [
       "P18.1",
@@ -3253,7 +3341,9 @@
       "P124.2",
       "P123.41-64p",
       "P123.65-64p",
-      "P125.68-0h5"
+      "P125.68-0h5",
+      "P130.5",
+      "P130.8"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
@@ -3305,7 +3395,10 @@
       "P123.19",
       "P123.41-64p",
       "P123.67-64p",
-      "P123.73-64p"
+      "P123.73-64p",
+      "P130.4",
+      "P130.5",
+      "P130.8"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -3322,7 +3415,9 @@
       "P124.2",
       "P124.6",
       "P124.15-k2x",
-      "P123.46-64p"
+      "P123.46-64p",
+      "P130.4",
+      "P130.8"
     ],
     "plugins/audit/scripts/governance/_evidence_io.py": [
       "P29.4",
@@ -3395,7 +3490,9 @@
       "P123.65-64p",
       "P123.74-64p",
       "P125.54-0h5",
-      "P125.61-0h5"
+      "P125.61-0h5",
+      "P130.4",
+      "P130.8"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -3426,7 +3523,9 @@
       "P123.92-64p",
       "P126.7",
       "P125.32-0h5",
-      "P125.88-0h5"
+      "P125.88-0h5",
+      "P130.5",
+      "P130.8"
     ],
     "plugins/audit/scripts/governance/_journal_io.py": [
       "P29.3",
@@ -3475,7 +3574,9 @@
       "P123.24",
       "P123.65-64p",
       "P125.38-0h5",
-      "P125.68-0h5"
+      "P125.68-0h5",
+      "P130.5",
+      "P130.8"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -3504,11 +3605,13 @@
       "P126.11-13q",
       "P125.38-0h5",
       "P128.33-0h5",
-      "P128.51-izt"
+      "P128.51-izt",
+      "P130.8"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/governance/_scoped_commit.py": [
       "P29.5",
@@ -3531,7 +3634,8 @@
       "P123.45-64p",
       "P123.58-64p",
       "P125.34-0h5",
-      "P125.118-0h5"
+      "P125.118-0h5",
+      "P130.8"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -3542,7 +3646,9 @@
       "P71.4-zso",
       "P74.3-qq5",
       "P100.1",
-      "P118.11-v7t"
+      "P118.11-v7t",
+      "P130.5",
+      "P130.8"
     ],
     "plugins/audit/scripts/governance/audit-journal.py": [
       "BF1.1",
@@ -3563,7 +3669,9 @@
       "P102.10",
       "P122.8-z4y",
       "P123.33",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P130.5",
+      "P130.8"
     ],
     "plugins/audit/scripts/governance/audit-lock.py": [
       "P34.2",
@@ -3580,7 +3688,8 @@
       "P106.10-b6f",
       "P118.2",
       "P122.8-z4y",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P130.8"
     ],
     "plugins/audit/scripts/governance/commit-audit-state.py": [
       "P28.2",
@@ -3601,7 +3710,9 @@
       "P118.14-v7t",
       "P122.8-z4y",
       "P125.92-0h5",
-      "P125.118-0h5"
+      "P125.118-0h5",
+      "P130.4",
+      "P130.8"
     ],
     "plugins/audit/scripts/governance/commit-manifest-index.py": [
       "P29.5",
@@ -3623,7 +3734,9 @@
       "P102.10",
       "P122.8-z4y",
       "P123.21",
-      "P125.34-0h5"
+      "P125.34-0h5",
+      "P130.4",
+      "P130.8"
     ],
     "plugins/audit/scripts/governance/commit-task-work.py": [
       "P71.1",
@@ -3651,14 +3764,17 @@
       "P125.53-0h5",
       "P125.88-0h5",
       "P125.114-0h5",
-      "P125.118-0h5"
+      "P125.118-0h5",
+      "P130.4",
+      "P130.8"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
       "P42.6",
       "P102.10",
       "P122.8-z4y",
       "P123.43-64p",
-      "P125.42-0h5"
+      "P125.42-0h5",
+      "P130.8"
     ],
     "plugins/audit/scripts/governance/run-test-gate.py": [
       "P22.1",
@@ -3736,7 +3852,9 @@
       "P125.54-0h5",
       "P125.51-0h5",
       "P125.93-0h5",
-      "P128.19-0h5"
+      "P128.19-0h5",
+      "P130.5",
+      "P130.8"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -3800,7 +3918,9 @@
       "P125.80-0h5",
       "P128.21-0h5",
       "P128.32-0h5",
-      "P128.38"
+      "P128.38",
+      "P130.5",
+      "P130.8"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -3812,7 +3932,8 @@
       "P102.10",
       "P118.2",
       "P118.8",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/_areas.py": [
       "P15.4",
@@ -3824,19 +3945,24 @@
       "P75.4-j5h",
       "P80.21-rtb",
       "P118.9",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.7",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/_branch.py": [
       "P18.2",
       "P18.5",
       "P64.1",
       "P69.4-j6r",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/_commit_trail.py": [
       "P69.4-j6r",
       "P76.1",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.5",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/_id_refs.py": [
       "P61.7",
@@ -3847,7 +3973,8 @@
       "P61.1",
       "P61.8",
       "P75.2-j5h",
-      "P76.3-6qa"
+      "P76.3-6qa",
+      "P130.5"
     ],
     "plugins/audit/scripts/manifest/_manifest_crossrefs.py": [
       "P22.5",
@@ -3862,7 +3989,8 @@
       "P96.1",
       "P122.8-z4y",
       "P123.20",
-      "P123.21"
+      "P123.21",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/_manifest_io.py": [
       "P10.4",
@@ -3897,7 +4025,8 @@
       "P123.65-64p",
       "P123.75-64p",
       "P123.76-64p",
-      "P125.38-0h5"
+      "P125.38-0h5",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/_manifest_merge.py": [
       "P60.1"
@@ -3935,7 +4064,8 @@
       "P123.49-64p",
       "P123.65-64p",
       "P123.62-64p",
-      "P125.8"
+      "P125.8",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -3955,7 +4085,9 @@
       "P122.8-z4y",
       "P123.20",
       "P123.65-64p",
-      "P125.128-0h5"
+      "P125.128-0h5",
+      "P130.6",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/_manifest_vocab.py": [
       "P18.2",
@@ -3989,12 +4121,14 @@
       "P129.1-izt",
       "P129.2-izt",
       "P129.7-izt",
-      "P129.8-izt"
+      "P129.8-izt",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
       "P62.1",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P130.5"
     ],
     "plugins/audit/scripts/manifest/_priority.py": [
       "P63.8",
@@ -4002,7 +4136,8 @@
       "P123.33",
       "P123.65-64p",
       "P123.75-64p",
-      "P123.76-64p"
+      "P123.76-64p",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/_proposals.py": [
       "P32.1",
@@ -4015,12 +4150,16 @@
       "P122.10-z4y",
       "P123.7",
       "P123.20",
-      "P123.43-64p"
+      "P123.43-64p",
+      "P130.4",
+      "P130.7",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/_warning_groups.py": [
       "P51.5",
       "P55.6",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/audit-task.py": [
       "P22.9",
@@ -4180,7 +4319,11 @@
       "P125.144-0h5",
       "P129.7-izt",
       "P128.45-izt",
-      "P128.48-izt"
+      "P128.48-izt",
+      "P130.4",
+      "P130.5",
+      "P130.6",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -4188,7 +4331,8 @@
       "P61.11",
       "P65.1",
       "P102.10",
-      "P123.8"
+      "P123.8",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/migrate-manifest.py": [
       "P10.3",
@@ -4202,12 +4346,14 @@
       "P123.8",
       "P123.23",
       "P123.33",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/read-ado-links.py": [
       "P63.8",
       "P69.3",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/repair-commits.py": [
       "P31.6",
@@ -4215,18 +4361,23 @@
       "P69.4-j6r",
       "P122.8-z4y",
       "P122.10-z4y",
-      "P123.43-64p"
+      "P123.43-64p",
+      "P130.4",
+      "P130.5",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/repair-tests-add.py": [
       "P55.12",
       "P122.8-z4y",
       "P122.10-z4y",
-      "P123.43-64p"
+      "P123.43-64p",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/resolve-branch.py": [
       "P22.8",
       "P64.1",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
@@ -4235,7 +4386,8 @@
       "P108.10-4gh",
       "P122.8-z4y",
       "P122.10-z4y",
-      "P123.20"
+      "P123.20",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/validate-manifest.py": [
       "P1.5",
@@ -4254,7 +4406,8 @@
       "P118.2",
       "P122.8-z4y",
       "P123.20",
-      "P123.33"
+      "P123.33",
+      "P130.8"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
@@ -4276,24 +4429,28 @@
       "P122.8-z4y",
       "P123.54-64p",
       "P123.65-64p",
-      "P123.62-64p"
+      "P123.62-64p",
+      "P130.8"
     ],
     "plugins/audit/scripts/panel/_panel_discovery.py": [
       "P12.2",
       "P85.1",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/panel/_panel_page.py": [
       "P47.3",
       "P122.8-z4y",
-      "P123.33"
+      "P123.33",
+      "P130.8"
     ],
     "plugins/audit/scripts/panel/_panel_policy.py": [
       "P59.10",
       "P63.2",
       "P63.13",
       "P122.8-z4y",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P130.8"
     ],
     "plugins/audit/scripts/panel/_panel_runstate.py": [
       "P49.3",
@@ -4303,7 +4460,8 @@
       "P123.46-64p",
       "P123.65-64p",
       "P125.40-0h5",
-      "P125.68-0h5"
+      "P125.68-0h5",
+      "P130.8"
     ],
     "plugins/audit/scripts/panel/_panel_settings.py": [
       "P12.1",
@@ -4322,7 +4480,8 @@
       "P125.6",
       "P125.95-0h5",
       "P128.2-0h5",
-      "P128.41-izt"
+      "P128.41-izt",
+      "P130.8"
     ],
     "plugins/audit/scripts/panel/_panel_state.py": [
       "P12.3",
@@ -4339,7 +4498,9 @@
       "P123.33",
       "P123.65-64p",
       "P123.62-64p",
-      "P128.52-izt"
+      "P128.52-izt",
+      "P130.5",
+      "P130.8"
     ],
     "plugins/audit/scripts/panel/_panel_ui.py": [
       "P11.1",
@@ -4348,7 +4509,8 @@
       "P15.4",
       "P36.13",
       "P122.8-z4y",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P130.8"
     ],
     "plugins/audit/scripts/panel/_panel_usage.py": [
       "P49.2",
@@ -4367,7 +4529,8 @@
       "P125.75-0h5",
       "P125.105-0h5",
       "P125.107-0h5",
-      "P125.135-0h5"
+      "P125.135-0h5",
+      "P130.8"
     ],
     "plugins/audit/scripts/panel/_panel_write.py": [
       "P12.4",
@@ -4399,7 +4562,8 @@
       "P123.65-64p",
       "P123.75-64p",
       "P123.76-64p",
-      "P125.38-0h5"
+      "P125.38-0h5",
+      "P130.8"
     ],
     "plugins/audit/scripts/panel/panel-server.py": [
       "P10.2",
@@ -4428,7 +4592,8 @@
       "P121.14-eof",
       "P123.23",
       "P123.46-64p",
-      "P126.11-13q"
+      "P126.11-13q",
+      "P130.8"
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
       "P32.7",
@@ -4444,7 +4609,8 @@
       "P122.8-z4y",
       "P123.15",
       "P123.65-64p",
-      "P126.1"
+      "P126.1",
+      "P130.8"
     ],
     "plugins/audit/scripts/report/_report_html.py": [
       "P13.1",
@@ -4467,7 +4633,8 @@
       "P123.28",
       "P123.33",
       "P123.65-64p",
-      "P126.1"
+      "P126.1",
+      "P130.8"
     ],
     "plugins/audit/scripts/report/_report_md.py": [
       "P51.9",
@@ -4478,7 +4645,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P122.8-z4y",
-      "P123.33"
+      "P123.33",
+      "P130.8"
     ],
     "plugins/audit/scripts/report/_report_page.py": [
       "P63.6",
@@ -4491,7 +4659,8 @@
       "P123.54-64p",
       "P123.65-64p",
       "P123.70-64p",
-      "P126.1"
+      "P126.1",
+      "P130.8"
     ],
     "plugins/audit/scripts/report/_report_ui.py": [
       "P11.2",
@@ -4499,7 +4668,8 @@
       "P15.4",
       "P36.13",
       "P122.8-z4y",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P130.8"
     ],
     "plugins/audit/scripts/report/_report_usage.py": [
       "P13.2",
@@ -4514,7 +4684,8 @@
       "P125.4",
       "P125.75-0h5",
       "P125.105-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P130.8"
     ],
     "plugins/audit/scripts/report/render-report.py": [
       "P3.3",
@@ -4541,7 +4712,9 @@
       "P123.46-64p",
       "P123.65-64p",
       "P123.62-64p",
-      "P126.1"
+      "P126.1",
+      "P130.8",
+      "P130.9"
     ],
     "plugins/audit/scripts/status/_doctor_ado.py": [
       "P57.5",
@@ -4549,7 +4722,8 @@
       "P122.9-z4y",
       "P123.33",
       "P123.65-64p",
-      "P125.68-0h5"
+      "P125.68-0h5",
+      "P130.8"
     ],
     "plugins/audit/scripts/status/_doctor_completions.py": [
       "P69.2",
@@ -4562,7 +4736,8 @@
       "P122.9-z4y",
       "P123.15",
       "P123.33",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P130.8"
     ],
     "plugins/audit/scripts/status/_doctor_hygiene.py": [
       "P18.6",
@@ -4578,18 +4753,21 @@
       "P122.9-z4y",
       "P123.33",
       "P123.65-64p",
-      "P125.68-0h5"
+      "P125.68-0h5",
+      "P130.8"
     ],
     "plugins/audit/scripts/status/_doctor_policy.py": [
       "P18.6",
       "P63.8",
       "P64.2",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/status/_doctor_report.py": [
       "P53.5",
       "P122.8-z4y",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P130.8"
     ],
     "plugins/audit/scripts/status/_doctor_setup.py": [
       "P54.3",
@@ -4616,7 +4794,9 @@
       "P123.65-64p",
       "P125.12",
       "P125.40-0h5",
-      "P128.2-0h5"
+      "P128.2-0h5",
+      "P130.5",
+      "P130.8"
     ],
     "plugins/audit/scripts/status/_doctor_trail.py": [
       "P36.9",
@@ -4652,7 +4832,8 @@
       "P125.42-0h5",
       "P125.52-0h5",
       "P125.77-0h5",
-      "P125.83-0h5"
+      "P125.83-0h5",
+      "P130.8"
     ],
     "plugins/audit/scripts/status/_gate_feed.py": [
       "P48.3",
@@ -4660,7 +4841,8 @@
       "P122.8-z4y",
       "P122.9-z4y",
       "P123.49-64p",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P130.8"
     ],
     "plugins/audit/scripts/status/_status_facts.py": [
       "P32.7",
@@ -4695,7 +4877,8 @@
       "P123.65-64p",
       "P123.70-64p",
       "P129.2-izt",
-      "P129.8-izt"
+      "P129.8-izt",
+      "P130.8"
     ],
     "plugins/audit/scripts/status/audit-doctor.py": [
       "P10.3",
@@ -4721,7 +4904,8 @@
       "P125.12",
       "P125.2",
       "P125.40-0h5",
-      "P125.42-0h5"
+      "P125.42-0h5",
+      "P130.8"
     ],
     "plugins/audit/scripts/status/audit-lookup.py": [
       "P56.3",
@@ -4770,7 +4954,9 @@
       "P128.35-0h5",
       "P125.139-0h5",
       "P125.142-0h5",
-      "P125.144-0h5"
+      "P125.144-0h5",
+      "P130.6",
+      "P130.8"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -4825,14 +5011,17 @@
       "P129.1-izt",
       "P125.59-0h5",
       "P125.75-0h5",
-      "P129.7-izt"
+      "P129.7-izt",
+      "P130.8"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
       "P67.3-2e7",
       "P77.2",
       "P122.8-z4y",
-      "P128.39"
+      "P128.39",
+      "P130.5",
+      "P130.8"
     ],
     "plugins/audit/scripts/ui/panel-css/status-colours.css": [
       "P32.7",
@@ -4920,7 +5109,8 @@
       "P104.13-tog",
       "P122.8-z4y",
       "P125.75-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P130.8"
     ],
     "plugins/audit/scripts/usage/audit-usage.py": [
       "P10.3",
@@ -4950,7 +5140,8 @@
       "P125.2",
       "P125.76-0h5",
       "P125.75-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P130.8"
     ],
     "plugins/audit/scripts/usage/usage_ledger.py": [
       "P14.1",
@@ -4984,7 +5175,8 @@
       "P125.97-0h5",
       "P125.75-0h5",
       "P125.107-0h5",
-      "P125.135-0h5"
+      "P125.135-0h5",
+      "P130.8"
     ],
     "plugins/audit/templates/audit-plan.starter.json": [
       "P1.5"
@@ -5007,7 +5199,8 @@
       "P50.8",
       "P63.8",
       "P80.21-rtb",
-      "P118.9"
+      "P118.9",
+      "P130.7"
     ],
     "plugins/audit/tests/test__branch.py": [
       "P18.2",
@@ -5017,7 +5210,8 @@
     ],
     "plugins/audit/tests/test__commit_trail.py": [
       "P59.13",
-      "P69.4-j6r"
+      "P69.4-j6r",
+      "P130.5"
     ],
     "plugins/audit/tests/test__config.py": [
       "P41.5",
@@ -5074,7 +5268,9 @@
       "P125.40-0h5",
       "P125.77-0h5",
       "P125.94-0h5",
-      "P125.136-0h5"
+      "P125.136-0h5",
+      "P130.4",
+      "P130.5"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
@@ -5119,7 +5315,8 @@
       "P125.61-0h5",
       "P125.99-0h5",
       "P125.107-0h5",
-      "P125.108-0h5"
+      "P125.108-0h5",
+      "P130.7"
     ],
     "plugins/audit/tests/test__deps.py: a field added to one copy of the explorer return contract and not the other is a finding": [
       "P32.5"
@@ -5307,7 +5504,8 @@
       "P125.124-0h5",
       "P128.34-0h5",
       "P125.137-0h5",
-      "P125.141-0h5"
+      "P125.141-0h5",
+      "P130.7"
     ],
     "plugins/audit/tests/test__id_refs.py": [
       "P61.7",
@@ -5500,7 +5698,8 @@
       "P96.1",
       "P123.20",
       "P123.21",
-      "P125.128-0h5"
+      "P125.128-0h5",
+      "P130.6"
     ],
     "plugins/audit/tests/test__manifest_vocab.py": [
       "P20.6",
@@ -5593,7 +5792,9 @@
       "P128.4-0h5",
       "P128.6-0h5",
       "P125.38-0h5",
-      "P125.68-0h5"
+      "P125.68-0h5",
+      "P130.3",
+      "P130.7"
     ],
     "plugins/audit/tests/test__panel_composition.py": [
       "P18.7",
@@ -5698,7 +5899,8 @@
       "P123.7",
       "P123.20",
       "P123.43-64p",
-      "P125.136-0h5"
+      "P125.136-0h5",
+      "P130.7"
     ],
     "plugins/audit/tests/test__proposals.py: add-phase's allocator returns highest-plus-one over the shared taken set, and refuses P0": [
       "P32.1"
@@ -5758,7 +5960,10 @@
       "P125.136-0h5",
       "P125.142-0h5",
       "P125.144-0h5",
-      "P128.55-izt"
+      "P128.55-izt",
+      "P130.2",
+      "P130.3",
+      "P130.7"
     ],
     "plugins/audit/tests/test__report_html.py": [
       "P25.1",
@@ -5849,7 +6054,8 @@
     "plugins/audit/tests/test__ui_theme.py": [
       "P20.5",
       "P20.6",
-      "P109.1"
+      "P109.1",
+      "P130.7"
     ],
     "plugins/audit/tests/test__usage_economics.py": [
       "P49.2",
@@ -5965,7 +6171,8 @@
       "P125.127-0h5",
       "P125.139-0h5",
       "P125.142-0h5",
-      "P125.144-0h5"
+      "P125.144-0h5",
+      "P130.6"
     ],
     "plugins/audit/tests/test_audit_status.py": [
       "P25.2",
@@ -6170,7 +6377,8 @@
       "P125.144-0h5",
       "P129.7-izt",
       "P128.45-izt",
-      "P128.48-izt"
+      "P128.48-izt",
+      "P130.6"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -6275,7 +6483,8 @@
       "P125.64-0h5",
       "P125.102-0h5",
       "P125.92-0h5",
-      "P125.118-0h5"
+      "P125.118-0h5",
+      "P130.4"
     ],
     "plugins/audit/tests/test_commit_manifest_index.py": [
       "P29.5",
@@ -6292,7 +6501,8 @@
       "P73.7-9h1",
       "P123.21",
       "P125.64-0h5",
-      "P125.102-0h5"
+      "P125.102-0h5",
+      "P130.4"
     ],
     "plugins/audit/tests/test_commit_task_work.py": [
       "P71.1",
@@ -6321,7 +6531,8 @@
       "P125.88-0h5",
       "P125.118-0h5",
       "P125.122-0h5",
-      "P125.125-0h5"
+      "P125.125-0h5",
+      "P130.4"
     ],
     "plugins/audit/tests/test_detect_plan_skip.py": [
       "P72.1",
@@ -6364,7 +6575,8 @@
       "P118.4",
       "P118.6",
       "P123.24",
-      "P123.74-64p"
+      "P123.74-64p",
+      "P130.7"
     ],
     "plugins/audit/tests/test_guard_bash_writes.py": [
       "P20.1",
@@ -6389,14 +6601,16 @@
       "P125.40-0h5",
       "P129.3-izt",
       "P125.136-0h5",
-      "P129.9-izt"
+      "P129.9-izt",
+      "P130.4"
     ],
     "plugins/audit/tests/test_guard_capabilities.py": [
       "P72.1"
     ],
     "plugins/audit/tests/test_guard_edits.py": [
       "P41.5",
-      "P72.1"
+      "P72.1",
+      "P130.4"
     ],
     "plugins/audit/tests/test_guard_history_rewrite.py": [
       "P29.2",
@@ -6475,7 +6689,8 @@
       "P129.5-izt",
       "P125.136-0h5",
       "P129.10-izt",
-      "P129.11-izt"
+      "P129.11-izt",
+      "P130.4"
     ],
     "plugins/audit/tests/test_harvest_worktree.py": [
       "P43.3"
@@ -6506,7 +6721,8 @@
       "P108.10-4gh",
       "P108.13-4gh",
       "P123.26",
-      "P123.29"
+      "P123.29",
+      "P130.4"
     ],
     "plugins/audit/tests/test_manage_worktrees.py": [
       "P18.4",
@@ -6642,7 +6858,8 @@
       "P123.37",
       "P123.40-64p",
       "P125.40-0h5",
-      "P125.136-0h5"
+      "P125.136-0h5",
+      "P130.4"
     ],
     "plugins/audit/tests/test_resolve_branch.py": [
       "P64.1"
@@ -6855,7 +7072,8 @@
     "pyproject.toml": [
       "P9.1",
       "P87.10-bpl",
-      "P123.71-64p"
+      "P123.71-64p",
+      "P130.8"
     ],
     "test__locks.py: a lock this session already holds is ours, by session id or by pid": [
       "P22.11"
@@ -6880,7 +7098,8 @@
       "P20.6",
       "P32.8",
       "P128.6-0h5",
-      "P125.39-0h5"
+      "P125.39-0h5",
+      "P130.8"
     ],
     "tools/capture-demo-gif.py": [
       "P59.13",
@@ -6913,7 +7132,10 @@
       "P128.46-izt",
       "P128.47-izt",
       "P128.53-izt",
-      "P128.55-izt"
+      "P128.55-izt",
+      "P130.3",
+      "P130.8",
+      "P130.9"
     ],
     "tools/check-committed-pii.py": [
       "P51.4",
@@ -6948,7 +7170,8 @@
       "P84.3",
       "P84.5-791",
       "P84.7-791",
-      "P103.13-xi3"
+      "P103.13-xi3",
+      "P130.9"
     ],
     "tools/check-example-ledgers.py: a committed row whose status is not a schema enum member is a finding, and so is a passed verdict carrying a mutated tree": [
       "P32.10"
@@ -7001,7 +7224,8 @@
       "P125.56-0h5",
       "P125.81-0h5",
       "P125.130-0h5",
-      "P125.140-0h5"
+      "P125.140-0h5",
+      "P130.9"
     ],
     "tools/gate-parity.py": [
       "P19.2",
@@ -7053,7 +7277,11 @@
       "P128.12-0h5",
       "P128.50-izt",
       "P128.49-izt",
-      "P128.54-izt"
+      "P128.54-izt",
+      "P130.2",
+      "P130.7",
+      "P130.8",
+      "P130.9"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -7139,7 +7367,11 @@
       "P125.27",
       "P125.51-0h5",
       "P125.53-0h5",
-      "P125.68-0h5"
+      "P125.68-0h5",
+      "P130.2",
+      "P130.7",
+      "P130.8",
+      "P130.9"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -7170,7 +7402,12 @@
       "P125.73-0h5",
       "P128.20-0h5",
       "P125.125-0h5",
-      "P125.138-0h5"
+      "P125.138-0h5",
+      "P130.1",
+      "P130.2",
+      "P130.7",
+      "P130.8",
+      "P130.9"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -7215,7 +7452,10 @@
       "P128.12-0h5",
       "P125.47-0h5",
       "P125.56-0h5",
-      "P128.49-izt"
+      "P128.49-izt",
+      "P130.2",
+      "P130.8",
+      "P130.9"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
@@ -7228,7 +7468,8 @@
       "P123.48-64p",
       "P128.16-0h5",
       "P125.49-0h5",
-      "P128.45-izt"
+      "P128.45-izt",
+      "P130.8"
     ],
     "plugins/audit/tests/test__gate_derive.py": [
       "P79.2",
@@ -7257,7 +7498,9 @@
       "P123.49-64p",
       "P125.44-0h5",
       "P125.49-0h5",
-      "P128.44-izt"
+      "P128.44-izt",
+      "P130.4",
+      "P130.8"
     ],
     "plugins/audit/tests/test_derive_phase_gate.py": [
       "P79.3",
@@ -7284,7 +7527,8 @@
       "P102.10",
       "P122.8-z4y",
       "P123.15",
-      "P123.43-64p"
+      "P123.43-64p",
+      "P130.8"
     ],
     "plugins/audit/tests/test_import_evidence.py": [
       "P80.5",
@@ -7310,7 +7554,8 @@
       "P102.10",
       "P122.8-z4y",
       "P123.62-64p",
-      "P125.68-0h5"
+      "P125.68-0h5",
+      "P130.8"
     ],
     "plugins/audit/tests/test_full_gate.py": [
       "P80.10",
@@ -7343,7 +7588,8 @@
       "P80.16-rtb",
       "P123.52-64p",
       "P125.68-0h5",
-      "P125.100-0h5"
+      "P125.100-0h5",
+      "P130.8"
     ],
     "plugins/audit/tests/test_verify_invariants.py": [
       "P75.1",
@@ -7362,15 +7608,18 @@
     "plugins/audit/scripts/manifest/_manifest_ado.py": [
       "P75.4-j5h",
       "P75.5-j5h",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/_ado_conventions.py": [
       "P75.4-j5h",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/_ado_fields.py": [
       "P75.4-j5h",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/_ado_parent.py": [
       "P75.4-j5h",
@@ -7378,14 +7627,16 @@
       "P122.8-z4y",
       "P123.65-64p",
       "P123.75-64p",
-      "P123.76-64p"
+      "P123.76-64p",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/_ado_tracked.py": [
       "P75.4-j5h",
       "P122.8-z4y",
       "P123.65-64p",
       "P123.75-64p",
-      "P123.76-64p"
+      "P123.76-64p",
+      "P130.8"
     ],
     "plugins/audit/tests/_harness.py": [
       "P72.1",
@@ -7418,7 +7669,8 @@
       "P102.9",
       "P122.8-z4y",
       "P125.12",
-      "P128.39"
+      "P128.39",
+      "P130.8"
     ],
     "plugins/audit/tests/test__claude_home.py": [
       "P77.2",
@@ -7433,7 +7685,8 @@
       "P122.8-z4y",
       "P127.9-bgr",
       "P127.10-bgr",
-      "P125.117-0h5"
+      "P125.117-0h5",
+      "P130.8"
     ],
     "plugins/audit/tests/test__proc_group.py": [
       "P77.3-6u9",
@@ -7454,7 +7707,8 @@
       "P81.10",
       "P100.2",
       "P100.4-zxo",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/tests/test__verdict_binding.py": [
       "P74.3-qq5",
@@ -7470,7 +7724,8 @@
       "P74.9-qq5",
       "P102.10",
       "P122.8-z4y",
-      "P123.15"
+      "P123.15",
+      "P130.8"
     ],
     "plugins/audit/tests/test_record_outside_run.py": [
       "P74.9-qq5"
@@ -7481,7 +7736,8 @@
     ],
     "plugins/audit/scripts/report/_usage_viz.py": [
       "P85.2",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/tests/test__report_usage.py": [
       "P85.2",
@@ -8233,13 +8489,16 @@
       "P87.13-bpl",
       "P87.14-bpl",
       "P125.54-0h5",
-      "P125.61-0h5"
+      "P125.61-0h5",
+      "P130.2",
+      "P130.9"
     ],
     "plugins/audit/scripts/governance/propose-gates.py": [
       "P80.15-rtb",
       "P102.10",
       "P122.8-z4y",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P130.8"
     ],
     "plugins/audit/tests/test_propose_gates.py": [
       "P80.15-rtb"
@@ -8248,7 +8507,10 @@
       "P87.1",
       "P87.3-bpl",
       "P109.9",
-      "P125.9"
+      "P125.9",
+      "P130.2",
+      "P130.7",
+      "P130.8"
     ],
     "docs/audit/phases/P85.json": [
       "P91.1"
@@ -8290,7 +8552,8 @@
     ],
     "plugins/audit/tests/test__panel_ui.py": [
       "P109.1",
-      "P124.13-k2x"
+      "P124.13-k2x",
+      "P130.7"
     ],
     "package.json": [
       "P109.3"
@@ -8314,7 +8577,9 @@
       "P109.9",
       "P100.3-zxo",
       "P123.31",
-      "P126.11-13q"
+      "P126.11-13q",
+      "P130.7",
+      "P130.8"
     ],
     "docs/research/guard-refusals-by-owner.md": [
       "P110.1",
@@ -8337,7 +8602,8 @@
       "P122.8-z4y",
       "P123.65-64p",
       "P125.48-0h5",
-      "P125.80-0h5"
+      "P125.80-0h5",
+      "P130.8"
     ],
     "plugins/audit/tests/test__runner_output.py": [
       "P102.3",
@@ -8349,11 +8615,13 @@
     "plugins/audit/scripts/manifest/migrate-json-encoding.py": [
       "P102.10",
       "P122.8-z4y",
-      "P122.10-z4y"
+      "P122.10-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/status/audit-logs.py": [
       "P102.10",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/ui/panel/proposals-view.js": [
       "P105.2",
@@ -8404,7 +8672,8 @@
     "tools/ui-tests/ado-panel.test.mjs": [
       "P105.7",
       "P105.10-m32",
-      "P125.56-0h5"
+      "P125.56-0h5",
+      "P130.8"
     ],
     "plugins/audit/tests/test_hooks.py": [
       "P108.1",
@@ -8462,7 +8731,8 @@
       "P125.3",
       "P125.75-0h5",
       "P125.77-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P130.8"
     ],
     "plugins/audit/tests/test__usage_core.py": [
       "P104.2",
@@ -8479,19 +8749,22 @@
       "P104.11-tog",
       "P104.14-tog",
       "P122.8-z4y",
-      "P125.75-0h5"
+      "P125.75-0h5",
+      "P130.8"
     ],
     "plugins/audit/scripts/report/_usage_markdown.py": [
       "P104.4",
       "P104.11-tog",
       "P122.8-z4y",
       "P125.75-0h5",
-      "P125.107-0h5"
+      "P125.107-0h5",
+      "P130.8"
     ],
     "plugins/audit/scripts/report/_usage_detail.py": [
       "P104.4",
       "P104.11-tog",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/tests/test__usage_overview.py": [
       "P104.4",
@@ -8539,7 +8812,8 @@
       "P105.8-m32"
     ],
     "plugins/audit/scripts/ui/panel/README.md": [
-      "P105.10-m32"
+      "P105.10-m32",
+      "P130.8"
     ],
     "examples/panel.sh": [
       "P105.9-m32",
@@ -8561,7 +8835,8 @@
       "P122.8-z4y",
       "P125.75-0h5",
       "P125.107-0h5",
-      "P125.135-0h5"
+      "P125.135-0h5",
+      "P130.8"
     ],
     "plugins/audit/tests/test__usage_load.py": [
       "P104.1",
@@ -8578,7 +8853,8 @@
       "P122.8-z4y",
       "P123.65-64p",
       "P125.4",
-      "P125.2"
+      "P125.2",
+      "P130.8"
     ],
     "plugins/audit/tests/test__usage_spend.py": [
       "P104.1",
@@ -8605,7 +8881,9 @@
     "plugins/audit/scripts/usage/_usage_bench.py": [
       "P104.11-tog",
       "P123.8",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P130.8",
+      "P130.9"
     ],
     "plugins/audit/scripts/ui/panel/browse-dialog.js": [
       "P104.16-tog",
@@ -8619,7 +8897,8 @@
     "plugins/audit/scripts/panel/_panel_paths.py": [
       "P104.17-tog",
       "P122.8-z4y",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P130.8"
     ],
     "plugins/audit/tests/test__panel_paths.py": [
       "P104.17-tog"
@@ -8641,7 +8920,8 @@
     ],
     "plugins/audit/scripts/manifest/materialize-proposal.py": [
       "P102.13-ptn",
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/tests/test_materialize_proposal.py": [
       "P102.13-ptn",
@@ -8659,7 +8939,8 @@
       "P115.3-4yc",
       "P115.4-4yc",
       "P122.8-z4y",
-      "P123.41-64p"
+      "P123.41-64p",
+      "P130.8"
     ],
     "plugins/audit/tests/test__live_copy.py": [
       "P115.3-4yc",
@@ -8669,7 +8950,8 @@
     "tools/ui-tests/overview-outcome.test.mjs": [
       "P115.3-4yc",
       "P115.4-4yc",
-      "P115.5-4yc"
+      "P115.5-4yc",
+      "P130.9"
     ],
     "tools/measure-context.py": [
       "P117.1",
@@ -8811,7 +9093,10 @@
       "P129.7-izt",
       "P129.8-izt",
       "P128.41-izt",
-      "P128.42-izt"
+      "P128.42-izt",
+      "P130.5",
+      "P130.6",
+      "P130.8"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -8923,7 +9208,8 @@
       "P129.7-izt",
       "P129.8-izt",
       "P128.41-izt",
-      "P128.42-izt"
+      "P128.42-izt",
+      "P130.6"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6",
@@ -8962,7 +9248,10 @@
       "P125.91-0h5",
       "P125.139-0h5",
       "P125.142-0h5",
-      "P125.144-0h5"
+      "P125.144-0h5",
+      "P130.5",
+      "P130.6",
+      "P130.8"
     ],
     "plugins/audit/tests/test__filed_returns.py": [
       "P118.3",
@@ -8994,7 +9283,8 @@
       "P125.123-0h5",
       "P125.139-0h5",
       "P125.142-0h5",
-      "P125.144-0h5"
+      "P125.144-0h5",
+      "P130.6"
     ],
     "plugins/audit/agents/guide.md": [
       "P118.9",
@@ -9029,7 +9319,8 @@
       "P128.4-0h5",
       "P129.1-izt",
       "P129.7-izt",
-      "P128.45-izt"
+      "P128.45-izt",
+      "P130.8"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -9054,72 +9345,92 @@
       "P121.17-eof"
     ],
     "plugins/audit/scripts/manifest/_task_outputs.py": [
-      "P122.1"
+      "P122.1",
+      "P130.8"
     ],
     "plugins/audit/tests/test__task_outputs.py": [
       "P122.1"
     ],
     "plugins/audit/scripts/_excerpt.py": [
-      "P123.6-z4y"
+      "P123.6-z4y",
+      "P130.8"
     ],
     "plugins/audit/tests/test__excerpt.py": [
       "P123.6-z4y"
     ],
     "plugins/audit/scripts/manifest/_ado_fetch.py": [
       "P123.6-z4y",
-      "P125.68-0h5"
+      "P125.68-0h5",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/_ado_connect.py": [
       "P123.6-z4y",
       "P122.9-z4y",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P130.8"
     ],
     "plugins/audit/scripts/_cli_fmt.py": [
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/demo/_demo_cast.py": [
       "P122.8-z4y",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/_ado_drift.py": [
       "P122.8-z4y",
-      "P123.33"
+      "P123.33",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/_manifest_typos.py": [
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/ado-connect.py": [
       "P122.8-z4y",
       "P123.41-64p",
       "P123.65-64p",
-      "P125.68-0h5"
+      "P125.68-0h5",
+      "P130.4",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/check-ado-item.py": [
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/explain-ado-drift.py": [
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/fetch-ado-items.py": [
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/resolve-ado-parent.py": [
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.4",
+      "P130.8"
     ],
     "plugins/audit/scripts/manifest/resolve-ado-tracked.py": [
       "P122.8-z4y",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P130.8"
     ],
     "plugins/audit/scripts/panel/_panel_viewer.py": [
       "P122.8-z4y",
-      "P123.65-64p"
+      "P123.65-64p",
+      "P130.5",
+      "P130.8"
     ],
     "plugins/audit/scripts/usage/_usage_coverage.py": [
-      "P122.8-z4y"
+      "P122.8-z4y",
+      "P130.8"
     ],
     "plugins/audit/scripts/usage/_usage_routing.py": [
       "P122.8-z4y",
-      "P125.2"
+      "P125.2",
+      "P130.8"
     ],
     "plugins/audit/scripts/_machine_paths.py": [
       "P122.9-z4y",
@@ -9129,7 +9440,8 @@
       "P126.16-13q",
       "P125.27",
       "P125.67-0h5",
-      "P125.78-0h5"
+      "P125.78-0h5",
+      "P130.8"
     ],
     "plugins/audit/tests/test__machine_paths.py": [
       "P122.9-z4y",
@@ -9142,7 +9454,8 @@
       "P125.78-0h5"
     ],
     "plugins/audit/scripts/governance/_wave.py": [
-      "P124.1"
+      "P124.1",
+      "P130.8"
     ],
     "plugins/audit/tests/test__wave.py": [
       "P124.1"
@@ -9154,7 +9467,9 @@
       "P125.61-0h5",
       "P125.68-0h5",
       "P125.110-0h5",
-      "P125.88-0h5"
+      "P125.88-0h5",
+      "P130.5",
+      "P130.8"
     ],
     "plugins/audit/tests/test_integrate_task.py": [
       "P124.4",
@@ -9167,13 +9482,15 @@
       "P125.122-0h5"
     ],
     "plugins/audit/scripts/governance/_runner_collects.py": [
-      "P124.9"
+      "P124.9",
+      "P130.8"
     ],
     "plugins/audit/tests/test__runner_collects.py": [
       "P124.9"
     ],
     "plugins/audit/scripts/manifest/_scope_companions.py": [
-      "P124.10"
+      "P124.10",
+      "P130.8"
     ],
     "plugins/audit/tests/test__scope_companions.py": [
       "P124.10"
@@ -9230,7 +9547,8 @@
       "P124.16-k2x"
     ],
     "plugins/audit/scripts/manifest/_json_schema.py": [
-      "P123.20"
+      "P123.20",
+      "P130.8"
     ],
     "plugins/audit/tests/test__json_schema.py": [
       "P123.20"
@@ -9264,7 +9582,8 @@
       "P125.75-0h5"
     ],
     "plugins/audit/hooks": [
-      "P123.46-64p"
+      "P123.46-64p",
+      "P130.9"
     ],
     "_deps.py": [
       "P123.54-64p"
@@ -9298,7 +9617,9 @@
       "P127.2-bgr",
       "P127.4-bgr",
       "P127.6-bgr",
-      "P127.8-bgr"
+      "P127.8-bgr",
+      "P130.8",
+      "P130.9"
     ],
     "docs/audit/phases/P127.json": [
       "P127.8-bgr"
@@ -9310,7 +9631,8 @@
       "P125.8",
       "P125.45-0h5",
       "P125.49-0h5",
-      "P128.44-izt"
+      "P128.44-izt",
+      "P130.8"
     ],
     "plugins/audit/tests/test__affected_tests.py": [
       "P125.8",
@@ -9330,7 +9652,9 @@
     "tools/release.py": [
       "P125.11",
       "P125.57-0h5",
-      "P125.74-0h5"
+      "P125.74-0h5",
+      "P130.2",
+      "P130.8"
     ],
     "plugins/audit/hooks/hold-handback.py": [
       "P128.6-0h5"
@@ -9453,6 +9777,78 @@
     ],
     "plugins/audit/scripts/ui/report-css/usage.css": [
       "P125.99-0h5"
+    ],
+    "tools/ci-verified.py": [
+      "P130.2"
+    ],
+    "plugins/audit/scripts/_surface_digest.py": [
+      "P130.3"
+    ],
+    "plugins/audit/tests/test__surface_digest.py": [
+      "P130.3"
+    ],
+    "tools/find-shared-candidates.mjs": [
+      "P130.7"
+    ],
+    "plugins/audit/tests/test__report_ui.py": [
+      "P130.7"
+    ],
+    "plugins/audit/scripts/ui/shared/README.md": [
+      "P130.7"
+    ],
+    ".claude/skills/refactoring-the-assembled-ui/SKILL.md": [
+      "P130.7",
+      "P130.8"
+    ],
+    ".claude/skills/writing-javascript/SKILL.md": [
+      "P130.7"
+    ],
+    ".claude/skills/writing-python/SKILL.md": [
+      "P130.7"
+    ],
+    "plugins/audit/tests": [
+      "P130.8"
+    ],
+    "tests": [
+      "P130.8",
+      "P130.9"
+    ],
+    "tools/lints": [
+      "P130.8",
+      "P130.9"
+    ],
+    "tools/lints/_deps.py": [
+      "P130.8"
+    ],
+    "tools/lints/_refs.py": [
+      "P130.8"
+    ],
+    "tools/ui-tests/number-format.test.mjs": [
+      "P130.8"
+    ],
+    "tools/ui-tests/prototype-keys.test.mjs": [
+      "P130.8"
+    ],
+    "tools/ui-tests/report-prototype-keys.test.mjs": [
+      "P130.8"
+    ],
+    ".claude/skills/no-silent-pass/SKILL.md": [
+      "P130.8"
+    ],
+    "plugins/audit/scripts/demo": [
+      "P130.9"
+    ],
+    "tools/demo": [
+      "P130.9"
+    ],
+    "tools/bench-report.py": [
+      "P130.9"
+    ],
+    "tools/_usage_bench.py": [
+      "P130.9"
+    ],
+    "plugins/audit/scripts": [
+      "P130.9"
     ]
   },
   "bugs": [
