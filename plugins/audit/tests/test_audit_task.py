@@ -14951,6 +14951,128 @@ def _batch_cases(check):
           "`audit-status.py --phase` and reads a phase with no branch as `not "
           "started yet`: %r" % (gaps,), gaps == [])
     _batch_stdin_cases(check, project, batch, tree_bytes, section, heredoc)
+    _batch_remedy_cases(check, project, batch, tree_bytes)
+
+
+def _batch_remedy_cases(check, project, batch, tree_bytes):
+    """Every `add` flag passed beside `--from-file`, and the remedy the verb
+    gives for it, followed: the remedy must name a place in the file the batch
+    reads, and the file edited as the remedy says must then be accepted. The
+    table below is written here, not read off the verb, so a remedy that names
+    a key the batch does not read is a disagreement between two places."""
+
+    def task_edit(**kv):
+        return lambda d: d["tasks"][0].update(kv)
+
+    def tests_edit(**kv):
+        return lambda d: d["tasks"][0]["tests"].update(kv)
+
+    # dest -> (value the flag takes or None, the path the remedy must name,
+    # the edit that follows it). `fixes` is graded by the batch's own reader
+    # only: a finding to fix is plan state this fixture does not hold, and a
+    # refusal for THAT is a different refusal from the unread key.
+    remedies = {
+        "phase": ("P2", "phase.id", lambda d: d["phase"].update(id="P2")),
+        "skills": ("writing-python", "tasks[].skills",
+                   task_edit(skills=["writing-python"])),
+        "model": ("sonnet", "tasks[].model", task_edit(model="sonnet")),
+        "files": ("src/c.ts", "tasks[].files", task_edit(files=["src/c.ts"])),
+        "outputs": ("out/c.txt", "tasks[].outputs",
+                    task_edit(outputs=["out/c.txt"])),
+        "risk": ("high", "tasks[].risk", task_edit(risk="high")),
+        "blocked_by": ("P1.1", "tasks[].blockedBy",
+                       task_edit(blockedBy=["P1.1"])),
+        "depends_on": ("P1.1", "tasks[].dependsOn",
+                       task_edit(dependsOn=["P1.1"])),
+        "description": ("why", "tasks[].description",
+                        task_edit(description="why")),
+        "tests_mode": ("regression", "tasks[].tests.mode",
+                       tests_edit(mode="regression")),
+        "tests_add": ("tests/c.test.ts: c", "tasks[].tests.add",
+                      tests_edit(add=["tests/c.test.ts: c"])),
+        "gate": ("test", "tasks[].tests.gate", tests_edit(gate=["test"])),
+        "gate_clear": (None, "tasks[].tests.gate", tests_edit(gate=[])),
+        "fixes": ("finding-a", "tasks[].fixes",
+                  task_edit(fixes=["finding-a"])),
+        "title": ("a title", "tasks[].title", task_edit(title="a title")),
+    }
+    keyless = {"bug": "B1", "introduces": "sym", "failing_from": "run1"}
+    parser = M.build_parser()
+    option = dict((a.dest, a.option_strings[0]) for a in parser._actions
+                  if a.option_strings)
+    flags = set(M.VERB_FLAGS["add"]) - {"from_file", "dry_run"}
+    gaps = sorted(flags - set(remedies) - set(keyless))
+    gaps += sorted((set(remedies) | set(keyless)) - flags - {"title"})
+
+    def follow(dest):
+        """Why this flag's remedy fails, or None when it holds."""
+        proj, _m = project("remedy-" + dest)
+        before = tree_bytes(proj)
+        doc = _batch_doc()
+        path = batch(proj, doc)
+        if dest == "title":
+            argv = ["add", "a title", os.path.join(
+                proj, "docs", "audit", "audit-plan.json"), "--from-file", path]
+        else:
+            value = remedies.get(dest, (keyless.get(dest),))[0]
+            argv = (["add", "--from-file", path, option[dest]]
+                    + ([] if value is None else [value]))
+        code, txt = _cli(argv, proj)
+        if code != M.E_USAGE or tree_bytes(proj) != before:
+            return "not refused cleanly: %r" % ((code, txt[-160:]),)
+        if dest in keyless:
+            if "no key in the file" not in txt or "put %s" % option[dest] in txt:
+                return "a flag with no key points at the file: %r" % (txt[-200:],)
+            return None
+        _v, want, edit = remedies[dest]
+        named = re.findall(r"`([^`]+)`", txt)
+        if want not in named:
+            return "remedy does not name `%s`: %r" % (want, txt[-200:])
+        edit(doc)
+        if M.batch_problems(doc):
+            return "the file edited as told is refused: %r" % (
+                M.batch_problems(doc),)
+        if dest == "fixes":
+            return None
+        again, again_txt = _cli(["add", "--from-file", batch(proj, doc)], proj)
+        if again != 0:
+            return "the file edited as told leads to another refusal: %r" % (
+                (again, again_txt[-200:]),)
+        return None
+
+    def dry_run():
+        """The dry run the remedy for `--dry-run` used to point at the file
+        for: exit 0 beside the file, nothing written, and the ids it reports
+        are the ones the real call then writes."""
+        proj, _m = project("remedy-dry-run")
+        before = tree_bytes(proj)
+        path = batch(proj, _batch_doc())
+        code, txt = _cli(["add", "--from-file", path, "--dry-run", "--json"],
+                         proj)
+        try:
+            seen = json.loads(txt)
+        except ValueError:
+            return "no JSON on stdout: %r" % ((code, txt[-200:]),)
+        kept = tree_bytes(proj) == before
+        real_code, real_txt = _cli(["add", "--from-file", path, "--json"], proj)
+        real = json.loads(real_txt) if real_code == 0 else {}
+        if not (code == 0 and seen.get("dryRun") is True and kept
+                and seen.get("written") == [] and seen.get("tasks")
+                and seen.get("tasks") == real.get("tasks")
+                and seen.get("id") == real.get("id")):
+            return "dry run %r kept=%r written %r vs real %r" % (
+                (code, seen.get("dryRun"), seen.get("tasks")), kept,
+                seen.get("written"), (real_code, real.get("tasks")))
+        return None
+
+    failures = [(d, follow(d)) for d in sorted(set(remedies) | set(keyless))]
+    failures.append(("dry_run", dry_run()))
+    failures = [f for f in failures if f[1]]
+    check("following each add --from-file refusal's own remedy is accepted, so "
+          "a remedy that leads to another refusal fails: every flag of `add` "
+          "is graded here (unlisted: %r), %d flags followed, and the failures "
+          "are %r" % (gaps, len(remedies) + len(keyless) + 1, failures),
+          not gaps and not failures and len(remedies) + len(keyless) >= 10)
 
 
 def _cli_in(argv, cwd, text, env_over=None):

@@ -132,7 +132,10 @@ Usage:
   reads that document off stdin, a quoted heredoc, an empty one refused) under one
   lock, in one write, revalidated once; a malformed file, a dependency neither
   the plan nor the file holds, or another `add` flag beside it is refused
-  with nothing written (`batch_problems` reads the file's shape). Under --json every refusal is one object,
+  with nothing written (`batch_problems` reads the file's shape); the refusal
+  names the key each flag's value belongs under. `--dry-run` is the one flag
+  that goes beside it: the batch is built and the plan validated in memory,
+  and nothing is written. Under --json every refusal is one object,
   {ok: false, exit, refused, findings}, never prose on stdout.
   A --tests-add value reaches `files` through the PATH it names, written as
   "<path>: <what it asserts>"; the field is free prose, so an entry
@@ -7824,6 +7827,22 @@ BATCH_TASK_KEYS = ("key", "title", "description", "files", "outputs", "risk",
                    "model", "skills", "tests", "dependsOn", "blockedBy",
                    "fixes")
 BATCH_TESTS_KEYS = ("mode", "add", "gate")
+# Where the file takes the value of each `add` flag, for the refusal that sends
+# a caller from the flag to the file: the path of the key, or None for a flag
+# the batch has no key for. Not listed: `from_file` (the batch itself) and
+# `dry_run` (a mode of the call, the one flag allowed beside the file). A flag
+# `add` gains and this map lacks reads as "no key in the file", which is the
+# honest default and not a silent pass: the test that walks `VERB_FLAGS["add"]`
+# fails on it by name.
+BATCH_FLAG_KEYS = {
+    "phase": "phase.id", "skills": "tasks[].skills", "model": "tasks[].model",
+    "files": "tasks[].files", "outputs": "tasks[].outputs",
+    "risk": "tasks[].risk", "blocked_by": "tasks[].blockedBy",
+    "depends_on": "tasks[].dependsOn", "description": "tasks[].description",
+    "tests_mode": "tasks[].tests.mode", "tests_add": "tasks[].tests.add",
+    "gate": "tasks[].tests.gate", "gate_clear": "tasks[].tests.gate",
+    "fixes": "tasks[].fixes", "title": "tasks[].title",
+    "bug": None, "introduces": None, "failing_from": None}
 _RISKS = ("low", "med", "high")
 _TEST_MODES = ("tdd", "regression", "gate-only")
 
@@ -8021,23 +8040,41 @@ def read_batch(path, stream=None):
 
 
 def _batch_stray_flags(args):
-    """The `add` flags passed beside `--from-file`, as the caller spelled them.
-    The file carries every field, so a flag beside it has no task to land on."""
+    """`(spelling, dest)` for each `add` flag passed beside `--from-file`, as
+    the caller spelled it. The file carries every field, so a flag beside it
+    has no task to land on; `--dry-run` is a mode of the call, not a field,
+    and is not one of them."""
     parser = build_parser()
     flags = option_dests(parser)
     default = dict((a.dest, a.default)
                    for a in getattr(parser, "_actions", ()))
-    return [flags.get(d, d) for d in VERB_FLAGS["add"]
-            if d != "from_file" and getattr(args, d, None) != default.get(d)]
+    return [(flags.get(d, d), d) for d in VERB_FLAGS["add"]
+            if d not in ("from_file", "dry_run")
+            and getattr(args, d, None) != default.get(d)]
+
+
+def _batch_stray_refusal(stray):
+    """The refusal for flags beside `--from-file`: for each, the key of the file
+    its value goes under, or that the batch has no key for it. A remedy naming
+    a key the batch does not read would send the caller to the next refusal."""
+    parts = ["%s is `%s` in the file" % (spelling, BATCH_FLAG_KEYS[dest])
+             for spelling, dest in stray if BATCH_FLAG_KEYS.get(dest)]
+    unplaced = [spelling for spelling, dest in stray
+                if not BATCH_FLAG_KEYS.get(dest)]
+    if unplaced:
+        parts.append("%s has no key in the file - add that task with `add` "
+                     "alone" % (", ".join(unplaced),))
+    return ("[audit-task] add --from-file reads the phase and every task from "
+            "the file, so it takes nothing beside it but --dry-run -- %s; "
+            "nothing written" % ("; ".join(parts),))
 
 
 def _cmd_batch_add(args, out):
     _manifest_from_positional(args)
-    stray = _batch_stray_flags(args) + (["a title"] if args.title else [])
+    stray = _batch_stray_flags(args) + (
+        [("a title", "title")] if args.title else [])
     if stray:
-        out("[audit-task] add --from-file reads the phase and every task from "
-            "the file, so it takes nothing beside it -- put %s in the file; "
-            "nothing written" % (", ".join(stray),))
+        out(_batch_stray_refusal(stray))
         return E_USAGE
     project = _resolve_project(args)
     if not os.path.isdir(project):
@@ -8200,6 +8237,10 @@ def _locked_batch_add(args, project, config, mpath, doc, out, seed=None):
             if task["id"] not in entry:
                 entry.append(task["id"])
 
+    if args.dry_run:
+        return _batch_dry_run_report(args, out, vm, assembled, phase, pid, ids,
+                                     appends, gate_basis)
+
     snap = _snapshot(_write_paths(project, mpath, raw_index, pid,
                                   new_phase=None if appends else phase))
     try:
@@ -8267,6 +8308,40 @@ def _locked_batch_add(args, project, config, mpath, doc, out, seed=None):
     if warn_side:
         for line in _side_branch_warning(pid, side):
             out(line)
+    return 0
+
+
+def _batch_dry_run_report(args, out, vm, assembled, phase, pid, ids, appends,
+                          gate_basis):
+    """`add --from-file --dry-run`: the batch built, the plan validated IN
+    MEMORY with it, nothing written and nothing journaled.
+
+    The validator is the one the real batch re-reads from disk, over the plan
+    the write would have produced, so a finding here is the finding the write
+    would have rolled back on. The ids are the ones the allocator took under
+    the lock this call holds; the same file run for real next allocates the
+    same ones unless the plan changed between the two."""
+    findings, warnings = vm.validate(assembled)
+    if findings:
+        out("[audit-task] DRY RUN: the batch would leave the manifest invalid "
+            "-- nothing written")
+        for line in findings:
+            out("FINDING: " + line)
+        return E_INVALID
+    if args.as_json:
+        result = {"ok": True, "dryRun": True, "id": pid, "phase": phase,
+                  "tasks": ids, "written": [], "testGateBasis": gate_basis,
+                  "appended": appends,
+                  "warnings": _wg.collapse_machine(warnings, assembled)}
+        result.update(project_basis_key(args))
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    out("[audit-task] DRY RUN: would %s %s%s -- nothing written, and the plan "
+        "validates with it" % (
+            "add %s to" % (", ".join(ids),) if appends else "add phase",
+            pid, "" if appends else " with %s" % (", ".join(ids),)))
+    for line in _wg.collapse(warnings, assembled):
+        out("WARNING: " + line)
     return 0
 
 
@@ -13676,14 +13751,16 @@ def build_parser():
     # `add` only. Build and validate the task in memory and write nothing.
     p.add_argument("--dry-run", dest="dry_run", action="store_true", default=False,
                    help="add: build the task and validate the plan with it, and "
-                        "write nothing - no manifest, no journal row")
+                        "write nothing - no manifest, no journal row; beside "
+                        "--from-file it does the same for the whole batch")
     # `add` only. A FAILED-FIRST fix task: point the new task's gate at the
     # suites a red sign-off run's own steps NAMED as failing, rather than at
     # the ordinary tests.add/files/phase-wide chain. The runId is opaque and
     # looked up through `_evidence_io.row_by_run`, never parsed -- see
     # `_failing_from_lookup`'s docstring for the three things the row must be.
     # `add` only. A phase and its tasks from one JSON file, in one write; the
-    # file carries every field, so no other `add` flag is read beside it.
+    # file carries every field, so no other `add` flag is read beside it but
+    # `--dry-run`, which is a mode of the call and not a field.
     p.add_argument("--from-file", dest="from_file", default=None,
                    metavar="PATH",
                    help="add: a new phase and its tasks from one JSON file "

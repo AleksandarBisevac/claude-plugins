@@ -1148,7 +1148,7 @@
     {
       "id": "P128.22-0h5",
       "title": "A filed task's work travels in a ref, so a pause that moves machines keeps it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F661. A filed-but-uncommitted task's work lived only in its wave tree, so the machine move lost it while the plan said rerun; the handover's unblock line was also a no-op. Carry a filed task's diff in a ref (or have pause push each tree and refuse to report paused until it has), and make the handover's unblock line follow blocked_remedy.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1193,19 +1193,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f62183d8864e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Carry (drive-phase.py): submit of a wave member now writes the tree's work as a commit on the tree's HEAD (scratch index, record paths left out) into refs/audit/carry/<id> and pushes it to origin (carry_work, carry_commit; say 'local only' on the did-line with no origin or a failed push, never raising). Resume: wave_step with no recorded wave and width>=2 reopens a wave over in-progress tasks whose executor return is filed and whose carry exists locally or on origin (carried_members); step_member calls restore_carry after add_tree, which fetches the ref if absent and applies its diff to a clean fresh tree only for a member whose return is filed for its current start; drop_carry removes the ref locally and on origin when the member is terminal. submit_tree's state read split out as wave_state. Module docstring section added. Test (test_drive_phase.py, stage cr-block, 7 cases titled with the tests.add clause + parenthesised detail): red first seen (carry ref missing, resumed gate red 'GATE RED check_own.py src/f1.txt', 2/4), then green 7/7 after the change; falsifier run by hand in the shared tree copy then restored from a backup (5/7 with restore_carry call replaced by pass). Full sweep: 335/335 files ok, 16568 cases (exit 0). ruff, vermin, gate-parity, test__output, test__deps green. NOT DONE: 'make the handover's unblock line follow blocked_remedy' - the handover is a hand-written file in the private repo (quality-gates-internal/plans/2026-10-14-handover-machine-move.md:33), nothing under plugins/ or tools/ generates a handover or a pause report (grep -rIi handover plugins tools finds only unrelated hand-off wording), and drive-phase.py's blocked_remedy (line ~3978 before edits) already prints start/unblock correctly for a stalled print; so no code change applies and the doc line lives outside this repo. Also NOT DONE: a separate 'pause' verb - the carry at filing makes the pause safe without one. Untested: the record-path exclusion inside carry_commit (no record diff exists in the tree at filing time in the fixture). Known limit: width 1 on the resuming machine never reopens a wave (carry is only left by wave members), said in carried_members' docstring.",
+        "descriptive": "A filed wave member's work now survives losing its tree: it is carried in a pushed ref and a drive resumed on a fresh clone restores it and closes the task with its bytes."
       },
       "startedAt": "2026-10-16T23:24:44Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T00:03:39Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py: a pause with a filed wave member, its tree deleted and the drive resumed on a fresh clone, finds the member's work"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-17T00:03:19Z.113758",
         "status": "passed",
         "at": "2026-10-17T00:03:19Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "f62183d8864e",
+        "at": "2026-10-17T00:03:39Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-16T23:44:19Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage cr-block` in a throwaway tree at HEAD exited 1 with 4 of 7 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `cr-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - plugins/audit/tests/test_drive_phase.py: a pause with a filed wave member, its tree deleted and the drive resumed on a fresh clone, finds the member's work (both wave members filed, and the origin holds a carry ref for each: [0, 0] []) (house FAIL) and 3 more: SELFTEST FAILED: 3/7 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1233,7 +1247,21 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "plugins/audit/tests/test_audit_task.py: following each add --from-file refusal's own remedy is accepted, so a remedy that leads to another refusal fails": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_audit_task.py",
+              "--selftest",
+              "--stage",
+              "fb-block"
+            ],
+            "file": "plugins/audit/scripts/manifest/audit-task.py",
+            "find": "\"phase\": \"phase.id\", \"skills\": \"tasks[].skills\"",
+            "replace": "\"phase\": \"phase.ident\", \"skills\": \"tasks[].skills\""
+          }
+        }
       },
       "model": "sonnet",
       "skills": [],
@@ -1250,7 +1278,12 @@
       "startedAt": "2026-10-16T23:24:46Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T00:15:18Z.2fef82",
+        "status": "passed",
+        "at": "2026-10-17T00:15:18Z"
+      }
     },
     {
       "id": "P128.24-0h5",
@@ -1319,7 +1352,21 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "tools/capture-screenshots.mjs: the capture context runs with a pinned locale and timezone, asserted before the first shutter, and an unpinned context fails the check": {
+            "command": [
+              "node",
+              "tools/capture-screenshots.mjs",
+              "--check",
+              "--only",
+              "report"
+            ],
+            "file": "tools/capture-screenshots.mjs",
+            "find": "browser.newContext({ locale: 'de-DE', timezoneId: 'Asia/Tokyo' })",
+            "replace": "browser.newContext({ locale: 'en-US', timezoneId: 'UTC' })"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [],
@@ -1336,7 +1383,18 @@
       "startedAt": "2026-10-16T23:24:48Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T00:26:59Z.3e8917",
+        "status": "passed",
+        "at": "2026-10-17T00:26:59Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-17T00:27:01Z",
+          "text": "falsifier could-not-run for `tools/capture-screenshots.mjs: the capture context runs with a pinned locale and timezone, asserted before the first shutter, and an unpinned context fails the check`: mutation at tools/capture-screenshots.mjs:6572 (the command exited 2 on the unmutated copy, so a red under the mutant would prove nothing - painted paths: OK: no machine identity in the text read from stdin (2 line(s), 6 detector(s) applied)\nplaywright is not available. Run with:\n  npx --yes --package=playwright@1.56.0 node tools/capture-screenshots.mjs)"
+        }
+      ]
     },
     {
       "id": "P128.27-0h5",
@@ -1855,6 +1913,66 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P128.41-izt",
+      "title": "A wave member carry ref stays local unless the project opts in to pushing it",
+      "status": "pending",
+      "description": "P128.22 made submit of a wave member push refs/audit/carry/<taskId> to origin on every filing, with no setting. That publishes unfinished work to a remote the operator never asked to push to - for a public origin it is in the open the moment it is filed - and contradicts the rule that the plugin never pushes on its own (the ci/ cadence of P128.2 is explicitly configured). Make the carry ref local by default; push it only under an explicit config key (for example a boolean under the existing ci root or a new carry key), validated by _config_rules, published in the schema and the README configuration table, and offered in Settings like ci. The resume path must still find a local carry, and say plainly that a carry not pushed does not travel to another machine. Keep every P128.22 case green; the cr-block clone case opts in.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/config/_config_rules.py",
+        "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/README.md",
+        "plugins/audit/scripts/panel/_panel_settings.py",
+        "plugins/audit/tests/test__panel_settings.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: with no carry setting a filed wave member writes refs/audit/carry/<taskId> locally and makes no push to any remote, and only an explicit opt-in pushes it to origin"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P128.22-0h5"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-17T00:27:27Z",
+          "text": "tdd by default (init.md's mode rule): no mode was named and the title leads with no refactor or config word, so it adds or changes observable behaviour"
+        }
+      ]
     }
   ],
   "reviewPerTask": "signals",
