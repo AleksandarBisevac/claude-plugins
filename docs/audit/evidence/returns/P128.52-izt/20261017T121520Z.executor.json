@@ -1,0 +1,33 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test__panel_state.py --selftest": "pass (39/39, exit 0)",
+    "python3 tools/sweep-selftests.py --quiet": "pass (335/335 files ok, 16636 cases, exit 0)"
+  },
+  "redFirst": {
+    "at": "2026-10-17T12:29:50Z",
+    "basis": "`python3 plugins/audit/tests/test__panel_state.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 39 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET ...: '`GET /api/help` \u2014 what every field means, and how the four concepts work.' (house FAIL): SELFTEST FAILED: 38/39 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "plugins/audit/scripts/panel/_panel_state.py help_state() docstring (line ~310-318): summary now says it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET /api/help?path=&doc=); body says the payload carries no field text. Requirement clauses: (1) reword summary to topics/card/lever map -> _panel_state.py:311-312; (2) say a field is answered by help_field() (GET ...?path=&doc=) -> _panel_state.py:312. Test added at plugins/audit/tests/test__panel_state.py:~378-388 reading the first docstring paragraph of M.help_state and the live keys of M.help_state() (== agent, composition, schemas, topics; no field table). Bare GET /api/help returns exactly _help.payload() (panel-server.py:395-401, when no ?path=): keys composition (the lever map, COMPOSITION_PATHS), topics, agent (guide_card), schemas (the SCHEMAS name map); no field text. The schemas name map is not named in the summary line, left because the task asked only for topics/card/lever map.",
+    "descriptive": "help_state()'s docstring no longer claims the bare /api/help carries field meanings; a case pins the wording to the payload's real keys."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__panel_state.py: Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET ..."
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test__panel_state.py: Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET ...": {
+      "file": "plugins/audit/scripts/panel/_panel_state.py",
+      "find": "`GET /api/help` \u2014 serves the topics",
+      "replace": "`GET /api/help` \u2014 what every field means; serves the topics",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__panel_state.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n1 _panel_state.py help_state() docstring now says only what _help.payload() returns (keys asserted by the new case at test__panel_state.py ~385-388; route at panel-server.py:395-401)\n2 case was red on the old docstring (38/39, FAIL printed the old summary) then green 39/39; falsifier (re-adding 'what every field means') declared; over-fire direction: keys asserted so a payload regaining field text goes red\n3 grep -rn 'every field means\\|what every field' plugins tools README.md CONTRIBUTING.md PLUGIN-BUILD-GUIDE.md: 3 hits - the new test (negation, intended); panel.html:9 button title and help-drawer.js:2 describe the whole Help drawer, which does answer fields via help_field, so left because true of the drawer not of the bare route\n4 n/a \u2014 no rule to an agent\n5 n/a \u2014 no property recorded\n6 n/a \u2014 no guard\n7 n/a \u2014 no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:f1204bdd10551200b01f6de6f7d2bfc194ddcc7f3b0ca81aca60b18438c66655\",\"dirtyDigest\":\"sha256:647d409b75b2d841269a7fe7390c57bbe6e7c3cdcf944c193cf09991dd300e96\",\"dirtyPaths\":{\"plugins/audit/scripts/panel/_panel_state.py\":\"cf27f5724d634f02\",\"plugins/audit/tests/test__panel_state.py\":\"f928dfb8c95919ec\"},\"head\":\"75905109\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/panel/_panel_state.py\",\"plugins/audit/tests/test__panel_state.py\"],\"scopeDigest\":\"sha256:f7b4a2153e7b1e516bd47778e66dba5e56e4a45425d1446498901bf65e6deeac\",\"v\":2}"
+}

@@ -371,6 +371,19 @@ def _cases(check):
     check("...and every one of them is actually defined here rather than merely "
           "expected: %r" % ([n for n in _moved if not hasattr(M, n)],),
           len(_defined) == len(_moved))
+    # The summary paragraph of `help_state()` is read against what the bare route
+    # returns, so it cannot go on describing a field table the payload no longer
+    # carries. Over-fire direction: the keys are asserted too, so a payload that
+    # regained field text would turn this red instead of leaving the words true.
+    _hs_doc = " ".join((M.help_state.__doc__ or "").split("\n\n")[0].split())
+    _hs_keys = sorted(M.help_state())
+    check("Reword help_state()'s summary line to say it serves the topics, the "
+          "guide's card and the lever map, and that a field is answered by "
+          "help_field() (GET ...: %r" % (_hs_doc,),
+          "topics" in _hs_doc and "card" in _hs_doc and "lever map" in _hs_doc
+          and "help_field()" in _hs_doc and "?path=" in _hs_doc
+          and "what every field means" not in _hs_doc
+          and _hs_keys == ["agent", "composition", "schemas", "topics"])
     # `_journalmod`'s memo is ONE dict, not a copy per module: the write path in
     # panel-server swaps a stub module into it and this module's `journal_state`
     # has to see the same swap, or each side would test a journal the other does

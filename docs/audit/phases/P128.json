@@ -38,8 +38,10 @@
         "severity": "low",
         "file": "tools/gate-parity.py:3568-3573",
         "issue": "The vsh5 control passes vacuously when no dash is on PATH: the check is check('vsh5 SKIPPED HERE ...', dash is None), which is True exactly in that branch. It is labelled, but it prints PASS. Likewise vsh2-vsh4 then run under whatever 'sh' is, which may be bash in POSIX mode where a RETURN trap would work, so those cases could not see the defect on that machine.",
-        "resolution": "Acceptable as labelled for a machine without dash; if the suite has a skip vocabulary, use it so a reader of a clean run sees the control did not run. Otherwise leave as is.",
-        "fixTask": "P128.50-izt"
+        "resolution": "fixed in P128.50-izt (759051090e79): Acceptable as labelled for a machine without dash; if the suite has a skip vocabulary, use it so a reader of a clean run sees the control did not run. Otherwise leave as is.",
+        "fixTask": "P128.50-izt",
+        "commit": "759051090e79",
+        "status": "fixed"
       },
       {
         "id": "P128-R3",
@@ -132,7 +134,7 @@
         "resolution": "Make the skip conditional on the shell not being dash, for example: if len(left)==1 -> real control; elif dash is None -> skip(..., len(left)==0); else check('vsh5 ... under dash the RETURN-trap spelling left %d directories, so vsh2-vsh4 and vsh9 cannot see the defect', False). That keeps the labelled skip for the no-dash machine and keeps the old red for dash."
       }
     ],
-    "outcome": "[findings: 13 - 0 high, 4 med, 9 low; 5 with a recorded fix commit]"
+    "outcome": "[findings: 13 - 0 high, 4 med, 9 low; 6 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -3094,7 +3096,7 @@
     {
       "id": "P128.50-izt",
       "title": "fix P128-R2: The vsh5 control passes vacuously when no dash is on PATH: the c...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The vsh5 control passes vacuously when no dash is on PATH: the check is check('vsh5 SKIPPED HERE ...', dash is None), which is True exactly in that branch. It is labelled, but it prints PASS. Likewise vsh2-vsh4 then run under whatever 'sh' is, which may be bash in POSIX mode where a RETURN trap would work, so those cases could not see the defect on that machine.\n\nResolution asked: Acceptable as labelled for a machine without dash; if the suite has a skip vocabulary, use it so a reader of a clean run sees the control did not run. Otherwise leave as is.",
       "files": [
         "tools/gate-parity.py"
@@ -3122,13 +3124,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "759051090e79",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/gate-parity.py, _verify_cleanup_cases (control block, around line 3636-3660). Before: the vsh5 control ran only if dash was on PATH; otherwise check('vsh5 SKIPPED HERE ...', dash is None) printed PASS from a hand-written always-true condition. Now: the RETURN-trap control is run under the shell the cases actually ran under (dash if present, else sh), not under dash by name. If it leaves exactly one directory, it is a real control and passes (check, same label as before, 'under <shell>'). Otherwise it calls the house helper `_harness.skip(check, 'vsh5', mechanism, absent=len(left)==0)` (plugins/audit/tests/_harness.py:423, imported inside the function after `from _suite import remove_tree` has put tests/ on sys.path). skip() is the suite's skip vocabulary: label 'vsh5 SKIPPED HERE - ...' and it FAILS when absent is false. The skip text says vsh2-vsh4 and vsh9 could not have seen the defect on this shell and to install dash. Requirement clauses: (1) 'use the skip vocabulary if the suite has one' -> done, _harness.skip, gate-parity.py around 3650; (2) vsh2-vsh4 running under a shell where a RETURN trap works -> not made to fail or be skipped individually, because the control is the single statement that says they could not see the defect; the vsh5 skip line names vsh2-vsh4 and vsh9 explicitly; per-case skips were not done because that shell may still catch the defect through other paths (vsh6, vsh7, vsh8 do not depend on the RETURN trap); (3) a control that did not run must not print PASS unlabelled -> the skip label carries SKIPPED HERE and an unexpected directory count fails. Evidence: `python3 tools/gate-parity.py --selftest` exit 0, 143/143, vsh5 real control under dash on this machine. Scratch driver (scratchpad/probe50.py, outside the repo) with shutil.which('dash') patched to None: sh here honours the trap (left=[]), output 'PASS vsh5 SKIPPED HERE - under sh ... left 0 directories behind ... install dash', 143/143. Same driver with the control's result forced to two directories: 'FAIL vsh5 SKIPPED HERE ... (skipped on a platform that HAS this mechanism ...)', exit 1, 142/143. `ruff check tools/gate-parity.py` exit 0. `python3 tools/sweep-selftests.py --quiet` run in the foreground in the task tree: exit 0, 335/335 files ok, 16634 cases. Did not run capture-screenshots, check-report-interactive or verify.sh, per the addendum. HEAD before first edit: 1d97cd45.",
+        "descriptive": "gate-parity's vsh5 control now runs under the shell the cleanup cases used and, where that shell cannot show the defect, reports a labelled skip through the house helper (failing on an unexpected result) instead of a hand-written always-true PASS."
       },
       "startedAt": "2026-10-17T11:05:23Z",
-      "completedAt": null,
+      "completedAt": "2026-10-17T12:15:18Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -3152,6 +3154,18 @@
         "runId": "2026-10-17T12:01:49Z.f6de04",
         "status": "passed",
         "at": "2026-10-17T12:01:49Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "759051090e79",
+        "at": "2026-10-17T12:15:18Z",
+        "return": "docs/audit/evidence/returns/P128.50-izt/20261017T110523Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "could-not-prove",
+        "at": "2026-10-17T11:25:32Z",
+        "basis": "P128.50-izt declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P128.50-izt declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+        "source": "red-first-helper"
       }
     },
     {
@@ -3249,7 +3263,7 @@
     {
       "id": "P128.52-izt",
       "title": "fix P128-R9: help_state() is the function that serves the bare GET /api/help ...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "help_state() is the function that serves the bare GET /api/help and still documents it as 'what every field means, and how the four concepts work'. After this diff its return value (_help.payload()) carries no field text at all; fields are answered by help_field() for ?path=. The diff reworded payload()'s docstring, README, CONTRIBUTING, PLUGIN-BUILD-GUIDE and panel.md for exactly this, but left the docstring of the function across the boundary saying the opposite.\n\nResolution asked: Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET /api/help?path=&doc=).",
       "files": [
         "plugins/audit/scripts/panel/_panel_state.py",
@@ -3271,21 +3285,33 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "plugins/audit/tests/test__panel_state.py: Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET ...": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__panel_state.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/panel/_panel_state.py",
+            "find": "`GET /api/help` — serves the topics",
+            "replace": "`GET /api/help` — what every field means; serves the topics"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [],
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-17T12:15:20Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -3296,11 +3322,25 @@
         {
           "at": "2026-10-17T09:08:34Z",
           "text": "scope: plugins/audit/tests/test__panel_state.py, the suite that tests plugins/audit/scripts/panel/_panel_state.py (python: its import closure reaches plugins/audit/scripts/panel/_panel_state.py)"
+        },
+        {
+          "at": "2026-10-17T12:42:19Z",
+          "text": "falsifier could-not-run for `plugins/audit/tests/test__panel_state.py: Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET ...`: mutation at plugins/audit/scripts/panel/_panel_state.py:311 (the mutation broke the build rather than failing the test - PASS u1 no module the split produced imports `_panel_state` or the write path above it - the read side sits BELOW both, and an edge back up is an ImportError at panel start-up before it is ever a lint failure: [])"
+        },
+        {
+          "at": "2026-10-17T12:42:34Z",
+          "text": "falsifier could-not-run for `plugins/audit/tests/test__panel_state.py: Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET ...` accepted at the close: The falsifier could not run; the task red-first proof is recorded proved independently, and the falsifier is retired under F1.6 by owner decision 2026-10-16. (mutation at plugins/audit/scripts/panel/_panel_state.py:311; the mutation broke the build rather than failing the test - PASS u1 no module the split produced imports `_panel_state` or the write path above it - the read side sits BELOW both, and an edge back up is an ImportError at panel start-up before it is ever a lint failure: [])"
         }
       ],
       "fixes": [
         "P128-R9"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T12:42:03Z.db0fea",
+        "status": "passed",
+        "at": "2026-10-17T12:42:03Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

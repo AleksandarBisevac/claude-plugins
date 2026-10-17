@@ -308,12 +308,14 @@ def journal_state(project, limit=JOURNAL_PAGE):
 
 # --- in-product help ------------------------------------------------------------
 def help_state():
-    """`GET /api/help` — what every field means, and how the four concepts work.
+    """`GET /api/help` — serves the topics, the guide's card and the lever map;
+    a field is answered by `help_field()` (`GET /api/help?path=&doc=`), not here.
 
-    Costs nothing to ask and nothing to answer: the field text is EXTRACTED from
-    the two shipped schemas at request time, so the drawer cannot drift from the
-    document a reader is told to trust, and the concept pages derive every
-    executable rule from the code that executes it (`_help` states which). The
+    Costs nothing to ask and nothing to answer: the field text a `help_field()`
+    call returns is EXTRACTED from the two shipped schemas at request time, so the
+    drawer cannot drift from the document a reader is told to trust, and the
+    concept pages derive every executable rule from the code that executes it
+    (`_help` states which). This payload itself carries no field text. The
     conversational half — the `audit:guide` agent — is a card in this payload
     rather than something the panel spawns: a question a static page already
     answers should not silently bill for a model.

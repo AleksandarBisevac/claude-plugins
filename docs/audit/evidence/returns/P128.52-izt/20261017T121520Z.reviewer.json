@@ -1,0 +1,14 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause: 'Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET /api/help?path=&doc=)'. Diff (_panel_state.py:311-312) now reads 'serves the topics, the guide's card and the lever map; a field is answered by `help_field()` (`GET /api/help?path=&doc=`), not here.' Verified at HEAD working tree: _help.payload() (_help.py:1548-1553) returns exactly composition (lever map), topics, agent (guide card), schemas (name map), no field text; panel-server.py:395-401 routes bare /api/help to help_state() and ?path= to help_field(). The body edit ('the field text a help_field() call returns', 'This payload itself carries no field text') is also true. The executor's outcome describes the diff accurately, including that the schemas name map is not named in the summary line (the clause did not ask for it). The one test run (test__panel_state.py --selftest) exits 0, 39/39.",
+  "missing": [],
+  "redFirst": "proved",
+  "redFirstBasis": "Executor's redFirst is 'proved' with a command (test__panel_state.py --selftest in a throwaway tree at HEAD), exit 1, 38/39, the task's own case failing and printing the old 'what every field means' summary, then green with the working-tree implementation; that is a collected test of the task's own failing an assertion, so the basis holds. The case's logic also separates old from new text (asserts 'what every field means' absent and the topics/card/lever map/help_field()/?path= words present).",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate includes `python3 tools/sweep-selftests.py`, which runs the whole project, so the question is not bounded to a selected subset; the change is a docstring plus one added selftest case, so no inherited test depends on the reworded behaviour."
+ },
+ "verdict": "clean"
+}
