@@ -233,14 +233,15 @@
         ],
         "expectRedFirst": false,
         "gate": [
-          "python3 plugins/audit/tests/test__config.py plugins/audit/tests/test_commit_task_work.py",
+          "python3 tools/sweep-selftests.py plugins/audit/tests/test__config.py plugins/audit/tests/test_commit_task_work.py",
           "lint",
           "report",
           "shots",
           "interactive",
-          "npx vitest run"
+          "npx vitest run",
+          "docs/audit/audit-plan.json"
         ],
-        "gateBasis": "tests.add"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [
@@ -305,14 +306,15 @@
         ],
         "expectRedFirst": false,
         "gate": [
-          "python3 plugins/audit/tests/test__commit_trail.py plugins/audit/tests/test__config.py",
+          "python3 tools/sweep-selftests.py plugins/audit/tests/test__commit_trail.py plugins/audit/tests/test__config.py",
           "lint",
           "report",
           "shots",
           "interactive",
-          "npx vitest run"
+          "npx vitest run",
+          "docs/audit/audit-plan.json"
         ],
-        "gateBasis": "tests.add"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [
@@ -369,14 +371,15 @@
         ],
         "expectRedFirst": true,
         "gate": [
-          "python3 plugins/audit/tests/test_drive_phase.py plugins/audit/tests/test_drive_phase.py plugins/audit/tests/test__manifest_rules.py plugins/audit/tests/test_audit_task.py",
+          "python3 tools/sweep-selftests.py plugins/audit/tests/test_drive_phase.py plugins/audit/tests/test__manifest_rules.py plugins/audit/tests/test_audit_task.py",
           "lint",
           "report",
           "shots",
           "interactive",
-          "npx vitest run"
+          "npx vitest run",
+          "docs/audit/audit-plan.json"
         ],
-        "gateBasis": "tests.add"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [
@@ -444,14 +447,15 @@
         ],
         "expectRedFirst": false,
         "gate": [
-          "python3 tools/prove-gates.py plugins/audit/tests/test__deps.py",
+          "python3 tools/sweep-selftests.py tools/prove-gates.py plugins/audit/tests/test__deps.py",
           "lint",
           "report",
           "shots",
           "interactive",
-          "npx vitest run"
+          "npx vitest run",
+          "docs/audit/audit-plan.json"
         ],
-        "gateBasis": "tests.add"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [
