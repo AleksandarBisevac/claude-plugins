@@ -197,8 +197,7 @@
           "report",
           "lint",
           "shots",
-          "interactive",
-          "vitest"
+          "interactive"
         ],
         "gateBasis": "declared"
       },
@@ -370,8 +369,7 @@
           "report",
           "lint",
           "shots",
-          "interactive",
-          "vitest"
+          "interactive"
         ],
         "gateBasis": "declared"
       },
@@ -476,7 +474,7 @@
     {
       "id": "P130.6",
       "title": "The falsifier is retired: the drive no longer records, runs or decides on a planned test's mutation",
-      "status": "in_progress",
+      "status": "done",
       "description": "Owner decision 2026-10-16 (P128.17 cancelled: the falsifier leaves the shipped tree under F1.6). PREMISE CORRECTION: P128.17 described `run_falsifier` as having no caller, but by 571becfd the feature is wired end to end (it shipped in 3.4.0's Added section): the executor declares falsifiers in its return, `record_falsifiers` writes them with `audit-task.py scope --falsifiers`, `run_falsifier` (drive-phase.py:1474) applies each in a throwaway tree after a green gate, and the `falsifier` decision stops the close. Retiring it is a removal from a live path. (1) drive-phase.py loses `run_falsifier`, `mutation_site`, `note_falsifiers`, `record_falsifiers`, the falsifier stage of the close, `FALSIFIER_TIMEOUT`, the `decide-falsifier` line and the `falsifier` decision with its answer handling, and `returned_falsifier_problems`. (2) An executor return that still carries a `falsifiers` field is filed and the field is not read (an agent body older than this change must not be refused); `_filed_returns.return_falsifiers` and `falsifier_gaps` go. (3) `audit-task.py scope` loses `--falsifiers`, and both argument-hint surfaces (commands/task.md, README.md) lose it. (4) _manifest_rules.py loses `task_falsifiers` and `falsifier_problems` and their `rules.falsifier.*` warnings. (5) The schema keeps `tests.falsifiers` and `$defs/falsifier` accepted, described as retired and read by nothing, so no plan that validated stops validating or starts warning; its removal is a 4.0.0 item beside `meta.muted` (an owner choice, see openChoices). (6) audit-lookup.py's brief text, agents/audit-executor.md, reference/execute-task.md and reference/phase-signoff.md stop describing it; the executor body shrinks (8,756 of its 9,000-byte ceiling at 571becfd, `python3 tools/measure-context.py --tree plugins/audit`), which the quality study's byte-neutral rule for agent bodies counts as headroom. (7) gen-demo-manifest.py's schema-coverage rows for the field say it is retired. (8) CHANGELOG.md records the removal under Removed. Acceptance: `git grep -n -i falsifier HEAD -- plugins/audit/scripts plugins/audit/agents plugins/audit/commands plugins/audit/reference` finds only the retirement notes; the full sweep is green.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -532,14 +530,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "71f356162de1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Retired the falsifier. drive-phase.py: removed run_falsifier, mutation_site, note_falsifiers, record_falsifiers, falsify, returned_falsifier_problems, FALSIFIER_TIMEOUT, the decide-falsifier line, the falsifier decision and its accept handler, the close stage, the submit gap line, and the helpers only they used (_copy_tree, _run_in, tree_paths, _BUILD_BROKEN, _excerpt_build_line) plus the now-unused _manifest_rules import. _filed_returns.py: removed return_falsifiers, falsifier_gaps, RETURN_FALSIFIERS and the return-shape check, so a return carrying a falsifiers field of any shape is filed and the field is not read. _manifest_rules.py: removed task_falsifiers, falsifier_problems, FALSIFIER_FIELDS, _check_falsifiers and every rules.falsifier.* warning. audit-task.py: removed scope --falsifiers (parser, VERB_FLAGS, usage text, _falsifiers_arg, the merge), tests.falsifiers from _WIDENABLE, and the 'declare that as its falsifier' fix-task note. audit-lookup.py: removed FALSIFIER_RULE and falsifier_rule from the executor brief. gen-demo-manifest.py: the schema-coverage rows say retired. Schema: tests.falsifiers and $defs/falsifier kept and accepted, descriptions say retired and read by nothing, removal a 4.0.0 item beside meta.muted. audit-executor.md (8227 bytes now, was 8756 at 571becfd per the task text; python3 tools/measure-context.py --tree plugins/audit), execute-task.md, phase-signoff.md, commands/task.md and README.md stop describing it. CHANGELOG.md Removed entry. PLUGIN-BUILD-GUIDE.md module map regenerated with python3 plugins/audit/scripts/_deps.py --write-map because drive-phase no longer imports _manifest_rules (the sweep's test__deps g1 case was red on exactly that fence). Tests: replaced the old falsifier cases in test_drive_phase.py (fv5-fv7, fp1-fp4), test__manifest_rules.py (fz1, fz2), test__filed_returns.py (fz1, fz2); added the four tests.add cases plus fp0b, fz2/fz3 style retirement pins and rf2 (no verb flag table holds falsifiers). Full sweep python3 tools/sweep-selftests.py --quiet exit 0 (337/337 files). Red proofs by stamp-verification.py red against a HEAD throwaway: all four cases proved. Compatibility: a plan carrying tests.falsifiers still validates with no finding and no rules.falsifier warning (the two faults the schema's own keywords refuse keep their one schema warning, as before). No falsifiers declared in this return: the field is read by nothing after this change, so there is no mutation the drive would run. The plan gate refused one python-heredoc write to audit-task.py ('outside the running task files ... one free file already spent on _manifest_rules.py'); every later write to it went through the Edit tool, which the gate allowed.",
+        "descriptive": "The falsifier is gone from the drive, the filing verb, the validator and the executor's brief; tests.falsifiers stays accepted in the schema as a retired key so no plan stops validating."
       },
       "startedAt": "2026-10-17T15:55:04Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T23:06:34Z",
+      "verifiedBy": [
+        "a task whose tests carry falsifiers closes after a green gate without applying any mutation and without a falsifier decision",
+        "an executor return that still carries a falsifiers field is filed and the field is not written to the task",
+        "a plan carrying tests.falsifiers validates with no finding and no rules.falsifier warning",
+        "scope --falsifiers is a usage error and writes nothing"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-17T23:06:22Z.d631a7",
@@ -563,7 +566,19 @@
           "at": "2026-10-17T22:51:06Z",
           "text": "no falsifier declared for `plugins/audit/tests/test_audit_task.py: scope --falsifiers is a usage error and writes nothing`: the executor's return names no change it must fail against, so the drive cannot try it"
         }
-      ]
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "71f356162de1",
+        "at": "2026-10-17T23:06:34Z",
+        "return": "docs/audit/evidence/returns/P130.6/20261017T155504Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-17T22:37:35Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage fp-block --stage fv-block` in a throwaway tree at HEAD exited 1 with 5 of 11 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - a task whose tests carry falsifiers closes after a green gate without applying any mutation and without a falsifier decision (fp1: with a falsifier planned, `next` closes the task, the falsifier's command never ran - <outside-repo> absent - the executor's file is as the executor left it, no `falsifier` decision or word is printed and the task holds no note: ('in_progress', False, 'changed by P1.1\\n', '[drive-phase] P1: gate P1.1 green; stamp current\\ndecide falsifier P1.1: a planned test under its declared mutation: survived for `src/f1.txt: the file says the task changed it` at src/f1.txt:1 (the command still exited 0 against the mutant)\\nsurvived: the test cannot fail its own mutant - retry spend', ['falsifier survived for `src/f1.txt: the file says the task changed it`: mutation at src/f1.txt:1 (the command still exited 0 against the mutant)'])) (house FAIL): SELFTEST FAILED: 6/11 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
     },
     {
       "id": "P130.7",
@@ -874,7 +889,16 @@
         "P130.7",
         "P130.10-ywo",
         "P130.11-ywo",
-        "P130.12-ywo"
+        "P130.12-ywo",
+        "P130.13-ywo",
+        "P130.14-ywo",
+        "P130.15-ywo",
+        "P130.16-ywo",
+        "P130.17-ywo",
+        "P130.18-ywo",
+        "P130.19-ywo",
+        "P130.20-ywo",
+        "P130.21-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -995,8 +1019,7 @@
           "report",
           "lint",
           "shots",
-          "interactive",
-          "vitest"
+          "interactive"
         ],
         "gateBasis": "declared"
       },
@@ -1043,8 +1066,7 @@
           "report",
           "lint",
           "shots",
-          "interactive",
-          "vitest"
+          "interactive"
         ],
         "gateBasis": "declared"
       },
@@ -1095,8 +1117,7 @@
           "report",
           "lint",
           "shots",
-          "interactive",
-          "vitest"
+          "interactive"
         ],
         "gateBasis": "declared"
       },
@@ -1122,6 +1143,453 @@
           "text": "Repro and expected (BUG-24-izt): /audit:usage --by attr --since <a day after a long session started> compares a filtered ledger window against the CLI cumulative session cost (session fb1bddcc: Opus CLI 463.63 vs plugin 126.75, unfiltered ledger 366.23). Compare whole-session unfiltered rows, or withhold the line under a filter with the reason printed, and label the CLI figure as including requests no transcript entry records (compaction, away summaries, titles, auto-mode classifier). Load writing-python, no-silent-pass, before-you-claim."
         }
       ]
+    },
+    {
+      "id": "P130.13-ywo",
+      "title": "unblock returns a task blocked with attempts left to pending, without running it",
+      "status": "pending",
+      "description": "Fault F699. `audit-task.py unblock <id> --reason` refuses a task that is blocked with fewer attempts spent than its ceiling: `_unblock_refusal` (plugins/audit/scripts/manifest/audit-task.py:7361) answers 'is blocked with N of M attempt(s) spent -- `start <id>` still runs it and clears its block, so there is no spent count to reset'. A task blocked on purpose (held, 0 attempts) therefore has no way back to pending except `start`, which runs it, or cancel plus re-add, which loses `movedFrom` lineage and `notes`. The verb is defined as 'reset the spent attempts', so with none spent it has nothing to do; no other verb clears a block without running the task. Fix: `unblock` on a BLOCKED task with attempts below the ceiling clears the block - status pending, `blockedReason` removed - and leaves `attempts` as it is (the count is reset only when it has reached the ceiling, as today). It still takes the human's `--reason`, writes through `_write_plan`, journals `task.unblock` with the reason and the changes, and reports `adoEchoOwed` as it does for a blocked task today. A task that is pending, in_progress with attempts left, done or cancelled is still refused, each with its existing sentence. Update the verb's own comment block above `cmd_unblock` (:7335), the `_unblock_refusal` docstring, `plugins/audit/commands/task.md`'s `unblock` subcommand section and the `/audit:task` row of `plugins/audit/README.md` (which says 'a task with attempts left is refused, since `start` still runs it') so all of them describe both arms. The existing case ub1 in test_audit_task.py asserts the refusal for its fixture task blocked with attempts left and is rewritten, not deleted: that arm becomes an ALLOW case. Acceptance: (1) a pending task blocked with a reason and no attempts, then unblocked with a reason, reads pending with no `blockedReason`, its `attempts`, `notes` and `movedFrom` unchanged, and one `task.unblock` journal row carries the reason; (2) a task blocked with attempts spent below the ceiling behaves the same and keeps its count; (3) a blocked task at the ceiling still has its count reset to zero and goes to pending, exactly as before; (4) unblock of a pending task, of an in_progress task with attempts left, of a done task and of a phase id is refused and writes nothing; (5) the usage block, VERB_FLAGS, commands/task.md and the README row agree on what the verb does.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: unblock of a task blocked with no attempts spent puts it back to pending with blockedReason removed, attempts, notes and movedFrom unchanged, and one task.unblock journal row carrying the reason; the same for a task blocked with attempts below the ceiling",
+          "plugins/audit/tests/test_audit_task.py: unblock still resets the count of a blocked task at the ceiling, and still refuses a pending task, an in_progress task with attempts left, a done task and a phase id, writing nothing"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.6"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.14-ywo",
+      "title": "For a project nested under its git root, the stamp helper, the follower recipes and the phase gate all read the member project",
+      "status": "pending",
+      "description": "Faults F708 and F709, the remainder of the nested-project fix. Two path bases still meet in one call. (a) The stamp helper: `take_stamp` and `red_block` in plugins/audit/scripts/governance/drive-phase.py (:4548 and :4519) call `stamp-verification.py take|red --project <tree or gitRoot> --manifest <m> --task <id>`; the task's `files` are PROJECT-relative, but `resolve_scope` (plugins/audit/scripts/governance/stamp-verification.py:377) and `_red_scope` (:3345, `expand_declared(root, task.get('files'))` with root = the checkout's top) read them against the checkout's top, so for a project under `app/` the declared-file part of a stamp digests `<top>/src/x.py` instead of `<top>/app/src/x.py`, and `red` looks for the task's test files in the wrong directory. The existing nested case sv30 in test_stamp_verification.py sidesteps this by passing `--files app/src/mine.py`. (b) The follower recipes: `follow_red_gate` (drive-phase.py:1343) runs each recipe in `tree or ctx['gitRoot']`; a recipe is printed by a gate step, which runs in the project directory, so its paths are project-relative and it must run in `member_project(ctx, tree)` - or `ctx['project']` when there is no tree. (c) The phase gate: `phase_gate` (drive-phase.py:3720) calls `run-test-gate.py ... --project-dir ctx['project']` with no `--tree`, and `red_gate_stop` / `run_signoff` call `verify-invariants.py --project ctx['project']`. Read at HEAD, run-test-gate's `tree_of` takes no `--tree` as 'measure the project itself', and `ctx['project']` is the nested directory, so this third may already be right: settle it with a case rather than a reading, and change code only if the case is red. (d) The `falsify` fallback the fault names is retired by the in-flight task that removes the falsifier; confirm no `tree or ctx['gitRoot']` root for it survives. Fix for (a): one function turns a task's project-relative entries into the checkout-relative form the stamp reads - the project's offset under its own git root (as `member_project` computes it, or from `_output.project_of_manifest(--manifest)` relative to that manifest's git top), prefixed onto each entry - and both `take --task` and `red` call it; a project that IS its git root gets byte-identical stamps. `compare` keeps reading the scope recorded inside the stamp. Then the `member_project` docstring's sentence that the stamp helper 'reads git-root-relative paths, and is handed the checkout's top' is rewritten to say what is true after the change. Acceptance: (1) in the `_nested_repo` fixture (project under `app/`), `take --project <top> --manifest <app manifest> --task <id>` for a task declaring `src/mine.py` records the digest of `app/src/mine.py`, and after an edit to that file `compare` reports it moved by its checkout-relative path; (2) `red` in the same fixture finds the task's test file under `app/` and runs; (3) for a project that is its git root, take and red produce what they produced before (the existing cases stay green unchanged); (4) `follow_red_gate` runs a recipe in the project's directory inside the member tree for a nested project, and in `ctx['project']` with no tree; (5) a nested-project case pins the argv `phase_gate` and the invariants run receive to the nested project directory; (6) no caller in drive-phase.py hands a task-declared path or a recipe to the checkout's top for a nested project (the return lists every `ctx['gitRoot']` use it kept and why).",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: in a project nested under its git root, take with --task (project-relative files) digests the file under the project directory, compare names it moved after an edit, and red finds the task's test file under the project; a project that is its git root stamps exactly as before",
+          "plugins/audit/tests/test_drive_phase.py: for a nested project, follow_red_gate runs a follower recipe in the project's directory inside the member tree (ctx project with no tree), and phase_gate and the invariants run are handed the nested project directory"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.6"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.15-ywo",
+      "title": "commands/panel.md describes the help drawer the panel ships instead of saying there is none",
+      "status": "pending",
+      "description": "Fault F710. plugins/audit/commands/panel.md, the 'Help, over the API only' item (:112-119, the sentence at :116), says 'There is **no drawer for it yet**; say so rather than sending someone clicking for an ⓘ that is not there.' The drawer ships: plugins/audit/scripts/ui/panel/help-drawer.js builds it (`openHelp`, `openHelpIndex`), and the ⓘ hint in hints.js opens it beside a field. The command file is read by the model, so it instructs the model to tell users something false. Fix: rewrite the item to describe the drawer as it ships - what opens it, what it shows (field descriptions extracted from the schemas, the concept pages) - and keep the pointer to the `audit:guide` subagent for a question the schema does not answer; retitle the item so it no longer says 'over the API only'. The same file holds other 'no … yet' sentences (the Areas item says there is no form for `meta.areas`): check each against the shipped panel and fix any that is stale in this task, naming the ones that are still true in the return. Acceptance: (1) commands/panel.md says nowhere that the help drawer is absent; (2) the help item names how the drawer opens, and that naming matches the panel's code; (3) every remaining 'no … yet' sentence in the file was checked against the panel, and the return lists the verdict for each; (4) the new case is red on the current file and green after the edit.",
+      "files": [
+        "plugins/audit/commands/panel.md",
+        "plugins/audit/tests/test_panel_server.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_panel_server.py: while the assembled panel page carries the help drawer, the help item in commands/panel.md does not say the drawer is absent and names the control that opens it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "before-you-claim",
+        "no-silent-pass"
+      ],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.16-ywo",
+      "title": "A verb adds or replaces a meta.buildCommands key on an existing plan",
+      "status": "pending",
+      "description": "Fault F714, part (b). No `audit-task.py` verb or config setting writes a `meta.buildCommands` key on an existing plan: only `/audit:init` (a new plan) and the panel's `PUT /api/composition` (plugins/audit/scripts/panel/_panel_write.py, `apply_composition` :2344) do, and the panel needs a browser session token. A fix task that had to add the `vitest` key stopped on this and was cancelled, and the redesign plan routes every buildCommands edit through the panel for the same reason. Fix: a new `audit-task.py` verb that sets one key - `build-command <key> --command \"<cmd>\" [manifest]` - adding the key when absent and refusing an existing key unless `--replace` is passed (the refusal names the current value); `--remove` drops a key and is refused while any task's or phase's gate entry names it. The command text is judged by `_machine_paths.executed_value_refusal`, the judgement the panel already applies to the same field (`_EXECUTED_ROWS` in _panel_write.py), and is written byte for byte. The write goes through the plan's lock, `_write_plan` and the validator, and journals one row naming the key, the old and the new value and the reason. Wire it everywhere a verb is declared: the usage block at the top of audit-task.py, `VERB_FLAGS`, the argparse table, `plugins/audit/commands/task.md` (argument-hint, description and a subcommand section) and the `/audit:task` row in `plugins/audit/README.md`. Adding a verb is free under COMPATIBILITY.md; no existing key's reading changes. Acceptance: (1) on a plan without `vitest`, `build-command vitest --command 'npx vitest run'` adds the key, revalidates, and writes one journal row; (2) the same call on a plan that has the key is refused naming the current value and writes nothing, and with `--replace` it replaces it; (3) a command carrying a machine path is refused with the panel's sentence; (4) `--remove` of a key a gate entry still names is refused naming the entry, and of an unused key removes it; (5) the usage block, VERB_FLAGS, commands/task.md and the README row all name the verb with the same flags.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: build-command adds an absent meta.buildCommands key and journals it, refuses an existing key without --replace and replaces it with --replace, refuses a command carrying a machine path, and refuses --remove of a key a gate entry names, writing nothing on every refusal",
+          "plugins/audit/tests/test_audit_task.py: the build-command verb is in the usage block and in VERB_FLAGS with exactly the flags commands/task.md documents"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.6"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.17-ywo",
+      "title": "The panel browser check's poll-window waits derive from the panel's poll interval, settled by repeated measurement first",
+      "status": "pending",
+      "description": "Fault F716, one sighting. `node tools/capture-screenshots.mjs --check` once failed with 'gate card: an event appended to plan-gate-events.jsonl never reached the Overview table within 6.5s' and passed on the immediate rerun. `assertGateCard` (tools/capture-screenshots.mjs:5188) appends a line and waits a hand-written 6500 ms (:5215) for it to appear; the panel polls run-status every 5000 ms (`startRunPoll`, plugins/audit/scripts/ui/panel/run-status.js:214), so the margin over one poll is what is left for the poll's own round trip and the repaint, and an append that lands just after a poll leaves only that margin. The same literal stands at :4501, :4528, :4823 and :4836, so it is one class. Step one is measurement, not a fix: the repeated `--check` runs are the orchestrator's, because the capture lock is machine-wide, so the executor first makes the check say the elapsed time at which each poll-window wait was satisfied (a note line per wait), and hands over the command to run it repeatedly idle and under a parallel sweep. Fix: one exported function returns the poll-window wait from the panel's poll interval as the assembled panel declares it (read off the page's script, never retyped) plus a margin the function documents, and every one of those waits uses it; if the measurement shows misses beyond that bound, the bound comes from the measured round trip and the return says so. If the repeated runs show no miss and the waits are already inside the bound, close no-change with the measurement in the outcome. Acceptance: (1) no hand-written poll-window wait remains in capture-screenshots.mjs (a grep for the literal finds none); (2) each poll-window wait prints its elapsed time in --check; (3) the vitest case is red if the interval and the wait are allowed to diverge; (4) the return carries the orchestrator-ready command for the repeated measurement and, once run, its spread. NEW PATH (absent at HEAD, created by this task): tools/ui-tests/gate-card-wait.test.mjs, which vitest.config.mjs's include glob already covers.",
+      "files": [
+        "tools/capture-screenshots.mjs",
+        "tools/ui-tests/gate-card-wait.test.mjs"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/ui-tests/gate-card-wait.test.mjs: the poll-window wait capture-screenshots.mjs exports is computed from the poll interval the assembled panel script declares and exceeds it by the documented margin, and a changed interval moves the wait"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-javascript",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.18-ywo",
+      "title": "A gate entry is checked for shape where it is written, and --gate-set leaves a trailing manifest positional alone",
+      "status": "pending",
+      "description": "Faults F720 and F721. (a) `add --from-file` minted tasks of this phase with gate entries such as `python3 plugins/audit/tests/test__config.py plugins/audit/tests/test_commit_task_work.py`, which run the first suite with the second as its argument, and one entry naming the same suite twice. Read at HEAD, that derivation came from the installed 3.4.0 copy, whose `_task_gate_setup` read a sibling's shape before the recorded spelling; HEAD resolves through `_gate_derive.resolve_shape` (plugins/audit/scripts/manifest/audit-task.py:2698, spelling first) and, for the same tasks, gives `python3 tools/sweep-selftests.py <suites>`. What HEAD still lacks is the other half the fault asks: nothing checks a gate entry's shape where it is written, so a hand-written or sibling-derived entry of that shape is accepted by `add`, `add --from-file`, `scope --gate` and `scope --gate-set`, and the validator says nothing. Fix: one predicate, in the lowest module both audit-task.py and the validator reach (`_manifest_phases.py`, beside `gate_entry_paths` and `is_suite_path`; layer_violations() decides), reports an entry that is not a `meta.buildCommands` key whose first path-shaped word is itself a suite file and that names a further suite path, and an entry naming one path twice. The write verbs refuse such an entry, naming it and naming `meta.phaseGate.derived.spelling` when the plan records one; `_manifest_rules.py` reports it on an existing plan as a WARNING, never an error, because COMPATIBILITY.md promises validation stays additive. (b) `scope <id> --gate-set a b c docs/audit/audit-plan.json` writes the manifest path as a fourth gate entry, because `--gate-set` is declared with `nargs='*'` (audit-task.py:13854) and swallows the positional after it; passing the manifest first works. Fix: when the manifest positional is absent and the last `--gate-set` value names an existing file the manifest loader reads as a plan, that value is the manifest, not a gate entry - `retarget` shares the flag and the fix; and a gate entry naming an existing JSON manifest file is refused at write time in any position. The parser's comment beside `--gate-set` says both. Acceptance: (1) an `add --from-file` batch whose tasks each name several Python suites in tests.add and no gate, on a plan that records the spelling and holds siblings with `python3 tools/sweep-selftests.py ...` entries, gives each task one spelled entry naming all its suites; (2) `add`, `add --from-file`, `scope --gate` and `scope --gate-set` refuse `python3 a/test_x.py a/test_y.py` and an entry naming one suite twice, writing nothing; (3) validate-manifest reports such an entry already in a plan as a warning and exits as it did before; (4) `scope <id> --gate-set a b <manifest>` and `scope <manifest> <id> --gate-set a b` write the same gate, `[a, b]`; (5) a gate entry that is a manifest path is refused in either order.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/tests/test__manifest_rules.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__manifest_phases.py: the gate-entry shape predicate reports an entry whose first path word is a suite file followed by another suite path, and an entry naming one path twice, and reports nothing for a buildCommands key, a spelled sweep entry or a single-suite entry",
+          "plugins/audit/tests/test_audit_task.py: add, add --from-file, scope --gate and scope --gate-set refuse a malformed gate entry and write nothing; an add --from-file batch of several Python suites per task gets one spelled entry per task; scope --gate-set with the manifest positional last writes the same gate as with it first, and a manifest path as a gate entry is refused",
+          "plugins/audit/tests/test__manifest_rules.py: a plan already holding a malformed gate entry draws a warning naming the task and the entry, and no error"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.6"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.19-ywo",
+      "title": "The .gitattributes and _ui_theme.py comments state the screenshot digest that exists",
+      "status": "pending",
+      "description": "Fault F722. The screenshot staleness digest moved from `_output.ui_surface_digests()`, which hashed `_ui_theme.py`'s raw bytes, to plugins/audit/scripts/_surface_digest.py, which hashes the assembled page text; `_output.ui_surface_sources()` (plugins/audit/scripts/_output.py:807) stayed. Two comments still describe the removed function: .gitattributes:26-32 says `ui_surface_digests()` hashes `_ui_theme.py` as a member of both surfaces, reading raw bytes, so an unpinned CRLF checkout moved every digest; plugins/audit/scripts/_ui_theme.py:872 says the anchor's walk needs the UI directory for `ui_surface_digests()`. No function of that name exists at HEAD (`git grep ui_surface_digests` hits only these two comments and the plan's own history under docs/audit/). Fix: rewrite both comments to the reason that holds now. For the .gitattributes pin on `_ui_theme.py`, find which reader still needs its bytes fixed - a check that reads the file as bytes or matches multi-line anchors in it (tools/prove-gates.py replaces anchors in it, test__ui_theme.py reads it) - and say that reader; if none does, drop the pin and say so in the return. The `_ui_theme.py` comment names `ui_surface_sources()` and `_surface_digest.py` as they are. Acceptance: (1) `git grep ui_surface_digests -- . ':!docs/audit'` returns nothing; (2) the .gitattributes comment names a reader that exists and reads `_ui_theme.py`'s bytes, or the pin is gone with the reason in the return; (3) the new case is red on the current comments and green after.",
+      "files": [
+        ".gitattributes",
+        "plugins/audit/scripts/_ui_theme.py",
+        "plugins/audit/tests/test__ui_theme.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__ui_theme.py: every backticked function call named in the comments of .gitattributes, and the one beside UI_DIR in _ui_theme.py, is a function defined under plugins/audit/scripts or tools"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "before-you-claim",
+        "no-silent-pass"
+      ],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.20-ywo",
+      "title": "done refuses a missing or swallowed --technical value with a REFUSED line on stderr and a non-zero exit",
+      "status": "pending",
+      "description": "F724. audit-task.py done: a trailing `--technical` with no value exits 2 with an argparse usage error and no REFUSED line; `--technical docs/audit/audit-plan.json` exits 0 and records the manifest path as outcome.technical, swallowing the positional (same class as the --gate-set positional swallow); done's own refusals go to stdout without a REFUSED: prefix. Fix: a value for --technical that is the manifest path (or any existing .json path the verb would read as its manifest) is refused naming the flag; a flag given without a value is refused with `REFUSED: --technical needs a value` on stderr, exit 2; done's refusals print on stderr with the REFUSED: prefix the other verbs use. Acceptance: (1) `done <id> --technical` exits non-zero, stderr starts with REFUSED and names --technical, nothing written; (2) `done <id> --technical <manifest>` is refused and the manifest stays the positional; (3) an existing done refusal case now finds REFUSED: on stderr; (4) an ordinary done with --technical \"text\" still writes it.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: done with a valueless --technical exits non-zero with a REFUSED line on stderr and writes nothing; done whose --technical value is the manifest path is refused and the positional is kept"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.6"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.21-ywo",
+      "title": "The retired falsifier schema properties say they are retired and read by nothing",
+      "status": "pending",
+      "description": "F726. plugins/audit/schema/audit-plan.schema.json (around $defs/falsifier, lines ~1860-1880): the property descriptions of the retired falsifier definition still describe the stage in the present tense, and `timeout` names drive-phase.py's FALSIFIER_TIMEOUT, which no longer exists. Reword each property description to say the field is retired and read by nothing, and remove the reference to the deleted constant; the schema still accepts the fields. Acceptance: (1) no description under $defs/falsifier names FALSIFIER_TIMEOUT or describes behaviour in the present tense; (2) a plan carrying tests.falsifiers still validates; (3) a case in test__manifest_rules.py reads the schema and fails on a falsifier property description that lacks the word retired.",
+      "files": [
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/tests/test__manifest_rules.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__manifest_rules.py: every property description under the schema's $defs/falsifier says retired and none names FALSIFIER_TIMEOUT"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "before-you-claim"
+      ],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.6"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "ok, sve preporuke (owner, 2026-10-14, approving CONSOLIDATED-PLAN.md) / Nova faza za F1 (Recommended) (owner, 2026-10-16, where the F1 tasks live)",
