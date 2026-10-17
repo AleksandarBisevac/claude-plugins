@@ -2004,7 +2004,7 @@
     {
       "id": "P128.37-0h5",
       "title": "The fix-task deriver maps loader-loaded scripts, ui parts and documents to the suite or check that covers them",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F697. Four of twelve round-3 fix tasks came without a suite: drive-phase.py (loaded via _loader, not imported), a panel JS part, docs and ci.yml.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -2049,19 +2049,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3d3d503eb4fa",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Worktree <outside-repo>, base 12d13a03. Changes in plugins/audit/scripts/manifest/audit-task.py (the fix-task deriver, _suites_for / _fix_task_args). Requirement clauses: (1) a script loaded through _loader is mapped to its suite: _loaded_by_constant (audit-task.py:3434) reads a module-level NAME = \"x.py\" handed to a loader call (the callee test is _affected_tests._is_loader), and _suites_for adds those suites to the reached set (3512); on the real repo _suites_for now maps plugins/audit/scripts/governance/drive-phase.py to plugins/audit/tests/test_drive_phase.py (before: unmapped, 7 suites import it and none named for it). The same blind spot lives in _affected_tests._refs (literal-only), which is outside this task's files and untouched. (2) a ui part is mapped: for a non-.py, non-document source _suites_for takes the single test file naming it as a quoted string, else the one of several named x.test.* / x.spec.* (_named_for, 3399; naming search 3536); real repo: help-drawer.js -> test__help.py. Ambiguity is not guessed: it stays unmapped with 'N test files name it and none is named for it (...)' and the fix task keeps tdd with the existing no-tests.add note. (3) a document: _DOCUMENT_EXTENSIONS (3414: .md .rst .yml .yaml; .txt deliberately excluded after test_drive_phase fb3 went red on src/f1.txt fixtures) is never mapped by a name mention; _fix_task_args (3625) writes a 'no suite: <doc> - a document...' note naming the files that name it (_checks_naming, 3468; e.g. tools/gate-parity.py for ci.yml) or saying nothing names it, and when every declared source is such a document and the caller picked no mode, the mode is gate-only with the reason 'gate-only, not tdd: ...' (3659). A document beside a source stays tdd. Tests: six new + two ALLOW cases in _introduces_cases (test_audit_task.py:16946 onward), each titled with the tests.add clause verbatim as prefix; stage cz-block 44/44. Mutations run in a scratch copy of the plugin (not the worktree): constant-off, constant-overfire (no loader test), ui-naming-off, ui-overfire (pick first of many), ui-named-for-off, doc-gateonly-off, doc-gateonly-overfire, doc-checks-off - all eight turned cz-block red (42-43/44). Full python3 tools/sweep-selftests.py --quiet: first run 334/335 (test_drive_phase fb3, my .txt over-reach, fixed), second run 335/335 files ok, 16596 cases, exit 0. ruff clean; vermin clean on the touched files. Did not run tools/verify.sh or the browser gates. Plan gate: a python heredoc writing audit-task.py was refused (change magnitude 163 > 80) and I redid it with the Edit tool, which was allowed; no other file touched.",
+        "descriptive": "A fix task over a finding on a loader-loaded script, a ui part or a document now names the suite or check that covers it, or is gate-only with the reason, instead of coming back with no case."
       },
       "startedAt": "2026-10-17T04:20:25Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T06:09:17Z",
+      "verifiedBy": [
+        "a finding on a script loaded through _loader, on a ui part, or on a document mints a fix task naming the suite or check that covers it, or gate-only with the reason"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-17T06:09:04Z.057b08",
         "status": "passed",
         "at": "2026-10-17T06:09:04Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "3d3d503eb4fa",
+        "at": "2026-10-17T06:09:17Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-17T05:00:16Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage cz-block` in a throwaway tree at HEAD exited 1 with 6 of 44 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - a finding on a script loaded through _loader, on a ui part, or on a document mints a fix task naming the suite or check that covers it, or gate-only with the reason (a script a suite loads through a module constant, beside a second suite that loads it by literal: the one named for it, scoped and named in tests.add: (['tests/test_other.py'], ['scripts/gov/drive-it.py', 'tests/test_other.py', 'vitest.config.ts'])) (house FAIL) and 5 more: SELFTEST FAILED: 38/44 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2275,9 +2289,9 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-17T05:44:31Z.ee9c88",
-        "status": "failed",
-        "at": "2026-10-17T05:44:31Z"
+        "runId": "2026-10-17T06:23:55Z.8a9d7d",
+        "status": "passed",
+        "at": "2026-10-17T06:23:55Z"
       }
     },
     {

@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause 'Reword it to state the new order and the {paths} fall-through': schema.json:293 now calls spelling the FIRST source, says a usable spelling wins over every sibling, and says a spelling without {paths} is skipped with a printed reason and falls through to the first sibling task whose own tests.gate carries a path-scoped entry. Each sentence checked against _gate_derive.resolve_shape at the task tree (12d13a03): spelling tried first and returned only when '{paths}' is in it (:158-160); otherwise the 'spelling: skipped - ... carries no {paths} placeholder' line is appended and path_scoped_sibling is read (:161-166). The 'runner included' rationale matches the docstring :142-147. The basis 'phase-no-spelling' with neither source matches :631-636. The wide gate with a printed reason when a usable spelling has no test path matches :709-716. Literal substitution of the shell-quoted file list matches :718-727. Clause 'check every other description in the schema that states the old order': spelling/sibling hits are :285 (no order claim), :1425/:1432/:1377/:2329 (unrelated 'sibling'), and :1841 task-level gateBasis. The :1841 wording is sibling-only, and that is true because audit-task.py calls path_scoped_sibling only (:2677) and never resolve_shape; the only resolve_shape callers outside _gate_derive are _affected_tests.py:337 and derive-phase-gate. The JSON still parses. The executor's outcome describes the diff: one description at :293 changed, nothing else. The stale statements it lists in derive-phase-gate.py, PLUGIN-BUILD-GUIDE.md and _affected_tests.py are owned by P128.44 per the orchestrator, so they are not filed here.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor filed not-attempted: gate-only task, tests.add is none, a schema description edit adds no test. The mode owes none.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "The gate's selftests entry is python3 tools/sweep-selftests.py, which runs the whole project, so the bound is not narrower than the project and the question is not asked. No test reads the changed sentence's content that I could name from reading, and none was run."
+ },
+ "verdict": "clean",
+ "tasks": []
+}
