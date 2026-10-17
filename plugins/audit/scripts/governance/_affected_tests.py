@@ -327,8 +327,9 @@ def already_wide(task_entries, phase_entries):
 
 def entries_for(suites, phase, meta, project, lister=None):
     """`(steps, widen)` -- `[(name, command)]`, one or more per arm, each in the
-    project's own path-scoped spelling (`_gate_derive.resolve_shape`: a sibling
-    task's path-scoped entry, else `meta.phaseGate.derived.spelling`). The name
+    project's own path-scoped spelling (`_gate_derive.resolve_shape`:
+    `meta.phaseGate.derived.spelling` when it carries a `{paths}` placeholder,
+    else a sibling task's path-scoped entry). The name
     is `affected/<arm>: <suites>`, which is how a recorded row attributes each
     suite to its arm. No spelling means no command can run them: `widen`."""
     meta = meta if isinstance(meta, dict) else {}

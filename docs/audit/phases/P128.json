@@ -2457,7 +2457,7 @@
     {
       "id": "P128.43-izt",
       "title": "The test harness reads process liveness through the product rule instead of its own zombie copy",
-      "status": "in_progress",
+      "status": "done",
       "description": "P128.33 made _locks.pid_alive count an unreaped zombie as gone. plugins/audit/tests/_harness.py still carries a comment (around lines 1099-1104) saying the product rule counts a zombie alive, which is now false, and _harness._is_zombie duplicates the new rule. Make _pid_present read _locks.pid_alive(pid) is not False, delete the duplicate, and correct the comment to state what the code does. The plan gate refused this edit inside P128.33 because the file was outside that task.",
       "files": [
         "plugins/audit/tests/_harness.py"
@@ -2490,19 +2490,30 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "10072dbd5538",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "In plugins/audit/tests/_harness.py (tree claude-plugins-P128.43-izt, base badd6aa4): deleted _is_zombie (the duplicate of _locks._is_zombie, which pid_alive already consults); _pid_present is now `return _locks.pid_alive(pid) is not False` (_harness.py ~1105-1109), so None (unknown) still counts as present, as before; rewrote the comment above it (~1099-1104) to say a zombie answers kill(pid,0), the product rule pid_alive reads the process table too and counts it gone, _pid_present is that rule and nothing more, and the wait polls to a deadline. Requirement clauses: (1) make _pid_present read pid_alive(pid) is not False - done, _harness.py:~1107; (2) delete the duplicate - done, _is_zombie gone, grep -rn _is_zombie plugins tools .claude finds only _locks.py; (3) correct the comment - done, _harness.py:1099-1104. _group_present left unchanged (own ps-based group rule, out of scope). Verification: `python3 tools/sweep-selftests.py --quiet` in the task tree printed '335/335 files ok, 153 migrated to tests/, 16604 cases' (the wrapper's exit echo was empty because zsh spells it pipestatus; the tool reported exit code 0 for the pipeline, and the summary line is the sweep's own verdict); `ruff check plugins/audit/tests/_harness.py` -> All checks passed. Not run, per the orchestrator addendum: verify.sh, browser gates.",
+        "descriptive": "The test harness now reads process liveness through the product rule, with no zombie copy and no false comment."
       },
       "startedAt": "2026-10-17T06:24:58Z",
-      "completedAt": null,
+      "completedAt": "2026-10-17T07:48:44Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-17T07:47:46Z.dada4c",
         "status": "passed",
         "at": "2026-10-17T07:47:46Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "10072dbd5538",
+        "at": "2026-10-17T07:48:44Z",
+        "return": "docs/audit/evidence/returns/P128.43-izt/20261017T062458Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task: no test added; a harness refactor with unchanged behaviour",
+        "at": "n/a"
       }
     },
     {
@@ -2552,9 +2563,9 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-17T07:29:51Z.b17f83",
-        "status": "failed",
-        "at": "2026-10-17T07:29:51Z"
+        "runId": "2026-10-17T08:05:37Z.4a6637",
+        "status": "passed",
+        "at": "2026-10-17T08:05:37Z"
       }
     },
     {

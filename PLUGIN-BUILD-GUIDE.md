@@ -3598,11 +3598,13 @@ through `facts`, supplied by the caller — no subprocess, no git, inside the
 function itself.
 
 `resolve_shape(phase, build, derived_cfg)` is where the path-scoped shape a
-narrowed gate repoints comes from — a sibling task's own `path_scoped_sibling`
-entries FIRST (evidence the runner already accepted them), and only when none
-exists, `meta.phaseGate.derived.spelling` SECOND, when it carries a literal
-`{paths}` placeholder (ignored, with a printed reason, when it does not).
-Neither existing is `phase-no-spelling`, unchanged. `derive()`'s own result
+narrowed gate repoints comes from — `meta.phaseGate.derived.spelling` FIRST,
+when it carries a literal `{paths}` placeholder (the one place the project
+recorded how its gate narrows; a spelling without the placeholder is skipped,
+with a printed reason, and the next source is read), and only when no usable
+spelling exists, a sibling task's own `path_scoped_sibling` entries SECOND
+(one task's own gate, whose repointing replaces every path-shaped word in it,
+the runner included). Neither existing is `phase-no-spelling`, unchanged. `derive()`'s own result
 carries `shapeSource` — the sibling's task id, or the literal
 `meta.phaseGate.derived.spelling` — so a reader can tell which of the two
 supplied the shape; a spelling-sourced shape is filled by literal `{paths}`
@@ -4956,9 +4958,10 @@ declares.
 phase's gate is stated in terms of, carried through only as the DISPLAY label (`entry`) this
 file's own lines and `testGateDerived` name, never resolved or run for a listing.
 **`meta.phaseGate.derived.spelling` is that runner's own path-scoped RUN command**, carrying a
-`{paths}` placeholder — the SECOND shape source `_gate_derive.resolve_shape` tries, read only
-when no sibling task's own gate carries a path-scoped entry: the sibling's entry is EVIDENCE the
-runner already accepted it, so it wins whenever both exist. `{paths}` is filled by LITERAL
+`{paths}` placeholder — the FIRST shape source `_gate_derive.resolve_shape` tries; a sibling
+task's own path-scoped gate entry is read only when no usable spelling exists, because repointing
+a sibling's entry replaces every path-shaped word in it, the runner included, so the recorded
+spelling wins whenever both exist. `{paths}` is filled by LITERAL
 substitution with the shell-quoted, resolved test paths — never through `repointed()`, because
 the placeholder is not a path-shaped token that function would recognize. A `spelling` with no
 `{paths}` placeholder is ignored, with a printed reason; with neither a sibling nor a usable
@@ -4986,7 +4989,7 @@ an actual mismatched answer rather than as no answer at all having been produced
 **`derived-empty` IS reachable from this runner, from TWO triggers, and `_gate_derive.derive()` is
 the ONLY place either is computed.** `meta.phaseGate.derived.listing.all` is the first: an ALL
 listing free to run, exit 0 and name no suite (a sibling-sourced shape can never return an empty
-`test_paths`, so this is what makes the basis reachable at all) — caught before coupling,
+`test_paths`, so on a sibling-sourced shape this is the only trigger) — caught before coupling,
 importers, changed or last-failed ever run. `meta.phaseGate.derived.spelling` is the second: when
 the shape came from THAT source and, after every arm has had its turn, `test_paths` is still
 empty, substituting `{paths}` with nothing would make the gate mean either the WHOLE suite or

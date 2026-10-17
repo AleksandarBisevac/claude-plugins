@@ -19,10 +19,13 @@ runner this phase's gate is stated in terms of, carried through only as a
 DISPLAY label (the `entry` this file's own lines and `testGateDerived` name),
 never resolved or run for a listing. `meta.phaseGate.derived.spelling` is that
 runner's own path-scoped RUN command, carrying a `{paths}` placeholder -- it
-is the SECOND source `_gate_derive.resolve_shape` tries for the shape a
-narrowed gate repoints, read only when no sibling task's own gate carries a
-path-scoped entry (the sibling always wins -- its entry is evidence the
-runner already accepted it, `spelling` is not). `{paths}` is filled with the
+is the FIRST source `_gate_derive.resolve_shape` tries for the shape a
+narrowed gate repoints. A sibling task's own path-scoped gate entry is read
+only when no usable spelling exists - a `spelling` with no literal `{paths}`
+placeholder is skipped with a printed reason and the sibling is read instead
+(the recorded spelling wins because a sibling's entry is one task's own gate,
+and repointing it replaces every path-shaped word in it, the runner
+included). `{paths}` is filled with the
 shell-quoted, resolved test paths by LITERAL substitution, never through
 `repointed()` (the placeholder is not a path-shaped token that function would
 recognize). The TWO LISTINGS this file actually
