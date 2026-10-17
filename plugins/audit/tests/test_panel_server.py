@@ -195,13 +195,14 @@ def _cases(check):
           and "/api/gate-events/prune" not in _get_src)
     check("...and it serves _help.payload() rather than a second assembly of the "
           "same thing", _help_pay == _help.payload())
-    _hcfg = _help_pay["fields"]["config"]
+    _htables = _help.tables()["fields"]
+    _hcfg = _htables["config"]
     _unexplained = [p for p in M._settings_paths()
                     if not (_help.lookup(_hcfg, p) or {}).get("description")]
     check("every control the Settings form renders can be explained from the "
           "SCHEMA - the drawer's whole contract, and the reason none of this text "
           "is retyped here: %r" % (_unexplained,), not _unexplained)
-    _hman = _help_pay["fields"]["manifest"]
+    _hman = _htables["manifest"]
     _uncomp = [k for k, p in _help_pay["composition"].items()
                if not (_help.lookup(_hman, p) or {}).get("description")]
     check("...and so can every composition lever, under the panel's own name for "

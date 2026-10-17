@@ -1496,11 +1496,10 @@ def tables(root=None):
     every field, ready to serve, and where each folded copy's children live.
 
     The enrichment (a config field's default, either field's concept page) lives
-    here rather than inside `payload()` so a single-path lookup answers with
-    exactly what the whole payload would have said about that path. Two builders
-    would be two answers, and the drawer shows one right after the other. The
-    fold lives here for the same reason: `entry_for` resolves through the very
-    aliases the payload serves."""
+    here rather than in `entry_for()` so every reader of the tables sees one
+    build: two assemblies would be two answers about one field. The fold lives here
+    for the same reason: `entry_for` resolves through the very aliases built
+    alongside the table."""
     root = plugin_root(root)
     defaults = {"config": config_defaults(), "manifest": {}}
     built = {which: _enriched(which, root, defaults[which]) for which in DOCS}
@@ -1530,21 +1529,23 @@ def entry_for(path, doc="config", root=None):
 
 
 def payload(root=None):
-    """Everything `GET /api/help` serves: the fields, the topics, the agent.
+    """Everything `GET /api/help` serves: the topics, the agent card and
+    the two small maps the drawer reads.
 
     Project-independent on purpose. This is documentation, not state — the live
     verdicts belong to `/api/policy`, the live trail to `/api/journal`, and a help
     drawer that quietly mixed the two would let a reader believe a worked example
     was their own repository.
 
-    `fields` is folded: a path below an `aliases` prefix is documented under the
-    canonical prefix it maps to, and `lookup(table, path, aliases)` is the one
-    reader that knows it — which is why the drawer asks `entry_for` per field."""
+    There is no field table here, and that is the point of this shape: the drawer
+    opens one field at a time and asks `entry_for` for it over
+    `GET /api/help?path=`, which resolves a path through the fold and the aliases
+    on the server. A whole-table copy in this payload was read by nothing in the
+    product, so a caller that wants the tables calls `tables()` or `entry_for()`
+    rather than looking for a key of this dict. `test__help.py` is what holds the
+    payload's keys to the ones `help-drawer.js` reads."""
     root = plugin_root(root)
-    tbl = tables(root)
     return {
-        "fields": tbl["fields"],
-        "aliases": tbl["aliases"],
         "composition": dict(COMPOSITION_PATHS),
         "topics": topics(root),
         "agent": guide_card(root),

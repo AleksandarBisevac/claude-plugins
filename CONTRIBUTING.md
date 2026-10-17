@@ -896,9 +896,10 @@ feels generic" is not, and is not a reason to spend a rename.
 
 ### In-product help (decided 2026-08-10, v0.31.0): a static endpoint and an agent you invoke, never an auto-triggering skill
 
-Help ships in two halves, and the split is the decision. `GET /api/help` extracts every field
-description from the two schemas at request time and adds four concept pages derived from the
-code that executes each rule — it costs nothing to ask and nothing to answer. `agents/guide.md`
+Help ships in two halves, and the split is the decision. `GET /api/help?path=` extracts a field's
+description from the two schemas at request time, and the bare `GET /api/help` carries four
+concept pages derived from the code that executes each rule and no field table, because the drawer
+asks per path — it costs nothing to ask and nothing to answer. `agents/guide.md`
 answers the rest conversationally, from the plugin's own documents, with a citation per claim.
 
 A third option was available and rejected: a skill, which would auto-trigger on "how does the

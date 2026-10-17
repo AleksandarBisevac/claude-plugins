@@ -41,10 +41,11 @@ const HCACHE=new Map(),HSTACK=[];
  */
 const hRefName=r=>r.label||r.path||(r.topic?'this':'')||'this';
 /**
- * The help payload — every field entry, every topic, the guide's card — fetched
- * once per session.
+ * The help payload — every topic, the guide's card, the lever map — fetched once
+ * per session. It carries no field table: a field is asked for by path, through
+ * `helpField`, so the drawer holds only what it opens.
  *
- * @returns {Promise<{fields: Object<string, *>, composition: Object<string, string>, topics: Array<Object<string, *>>, agent: (Object<string, *>|null), schemas: Object<string, string>}>}
+ * @returns {Promise<{composition: Object<string, string>, topics: Array<Object<string, *>>, agent: (Object<string, *>|null), schemas: Object<string, string>}>}
  *   the payload; it rejects if the endpoint does not answer, and the caller draws
  *   the failure rather than an empty drawer
  */
@@ -316,10 +317,8 @@ function hVal(v){return v===null?'null':(Array.isArray(v)
  * Open the drawer on one view, and fill it in.
  *
  * The dialog is shown BEFORE the awaits so the press has an effect at once, and the
- * content goes in afterwards in one go rather than staged — measured at 10 ms to
- * build the payload and 1 ms per field after that, so there is nothing worth
- * staging, and a header painted early would only be the previous field's title for
- * those 10 ms.
+ * content goes in afterwards in one go rather than staged — a header painted
+ * early would only be the previous view's title until the answers arrive.
  *
  * A failed request draws the failure inside the drawer instead of leaving it empty:
  * the reader pressed something, so something has to answer.

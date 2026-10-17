@@ -109,7 +109,7 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   validation and change echo as Plan & models. There is **no form for it yet**; say so rather than
   sending someone looking for a tab that is not there. Edit `meta.areas` by hand, or let
   `/audit:init` write it.
-- **Help, over the API only (v0.31).** `GET /api/help` serves every config and manifest field
+- **Help, over the API only (v0.31).** `GET /api/help?path=` answers any config or manifest field
   with the description its **schema** gives it — extracted at request time, so the panel and the
   file your editor validates cannot say different things — plus four concept pages (how the plan
   gate grades, how an area resolves a reviewer, how a policy reaches a verdict, what the journal

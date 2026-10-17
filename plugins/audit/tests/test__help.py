@@ -41,6 +41,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import json
 import os
+import re
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -52,8 +53,9 @@ import _help as M                                  # noqa: E402
 
 
 # --- the payload under another platform's conventions --------------------------
-# `GET /api/help` is fetched once per drawer session and parsed whole, so its size
-# is a serving cost that has a ceiling. The ceiling stays fixed; HEADROOM is the
+# `GET /api/help` is fetched once per drawer session and parsed whole, and the
+# tables behind its per-path form are built from the same sources, so the size of
+# all of it is a serving cost that has a ceiling. The ceiling stays fixed; HEADROOM is the
 # margin that has to stay free under it at all times. It is larger than the whole
 # config table, so no single schema addition can be the byte that crosses the
 # line: crossing it has to be a decision to spend the margin, made in this file,
@@ -63,7 +65,11 @@ PAYLOAD_HEADROOM = 40000
 
 
 def _payload_bytes(root=None):
-    return len(json.dumps(M.payload(root)))
+    """Every byte `/api/help` can serve: the payload and the per-path tables that
+    `entry_for` answers from. The tables left the payload, but the field text is the
+    part a CRLF checkout or a backslash separator changes, so measuring the payload
+    alone would stop watching the one thing the cap and the platform cases exist for."""
+    return len(json.dumps([M.payload(root), M.tables(root)]))
 
 
 def _crlf_root():
@@ -123,7 +129,6 @@ def _backslash_paths(node):
     """Every served string that spells a file path with a backslash between two
     path words. Walks the payload object itself, so the backslash is one
     character, not the doubled form `json.dumps` writes."""
-    import re
     pat = re.compile(r"[\w.-]+\\[\w.-]+\.(?:json|md|py)\b")
     if isinstance(node, str):
         return [node] if pat.search(node) else []
@@ -273,10 +278,10 @@ def _cases(check):
           e2["entry"]["description"], repr(e2))
     check("e3 an exact path answers as itself, not as some shape it resembles",
           (M.entry_for("journal.dir") or {}).get("key") == "journal.dir")
-    check("e4 the enrichment is the payload's own - a lookup and the full payload "
+    check("e4 the enrichment is the table's own - a lookup and the full table "
           "cannot describe one field differently",
           M.entry_for("trivialLineThreshold")["entry"] ==
-          M.payload()["fields"]["config"]["trivialLineThreshold"])
+          M.tables()["fields"]["config"]["trivialLineThreshold"])
     check("e5 an unknown path and an unknown document are both None, so the "
           "drawer says it has no entry rather than opening on nothing",
           M.entry_for("nothing.like.this") is None
@@ -780,27 +785,45 @@ def _cases(check):
 
     # --- the payload --------------------------------------------------------------
     pay = M.payload()
-    check("p1 the payload carries both schemas' fields, the topics and the agent",
-          set(pay) == {"fields", "aliases", "composition", "topics", "agent",
-                       "schemas"}
-          and pay["fields"]["config"] and pay["fields"]["manifest"]
+    _tbl = M.tables()["fields"]
+    check("p1 the payload carries the topics, the agent, the lever map and the "
+          "schema names - and the tables are read through tables()",
+          set(pay) == {"composition", "topics", "agent", "schemas"}
+          and _tbl["config"] and _tbl["manifest"]
           and len(pay["topics"]) == 4
           and (pay["agent"] or {}).get("name") == M.GUIDE)
+    # The drawer asks `GET /api/help?path=` for each field it opens, so a whole
+    # table in the payload is bytes sent for nobody. The oracle for "read" is the
+    # drawer's own source: every key of the payload must be reached as `doc.<key>`
+    # there, and no table may be.
+    with open(os.path.join(M.plugin_root(), "scripts", "ui", "panel",
+                           "help-drawer.js"), encoding="utf-8") as _fh:
+        _drawer_reads = set(re.findall(r"\bdoc\.(\w+)", _fh.read()))
+    _one = M.entry_for("trivialLineThreshold")
+    check("the help payload carries no table the drawer does not read, and a "
+          "field is answered through the per-path endpoint",
+          not set(pay) - _drawer_reads
+          and "fields" not in pay and "aliases" not in pay
+          and (_one or {}).get("entry", {}).get("default") == 80
+          and (_one or {}).get("entry") ==
+          M.tables()["fields"]["config"]["trivialLineThreshold"],
+          "payload keys %r, the drawer reads %r"
+          % (sorted(pay), sorted(_drawer_reads)))
     check("p2 a field's default rides along, so an empty box means something",
-          pay["fields"]["config"]["trivialLineThreshold"]["default"] == 80)
+          _tbl["config"]["trivialLineThreshold"]["default"] == 80)
     check("p3 fields link to the concept page that explains them",
-          pay["fields"]["config"]["policy.skills.deny"]["topic"] == "policy"
-          and pay["fields"]["config"]["journal.enabled"]["topic"] == "journal"
-          and pay["fields"]["config"]["enforce"]["topic"] == "gate-tiers"
-          and pay["fields"]["manifest"]["meta.areas"]["topic"] == "areas")
+          _tbl["config"]["policy.skills.deny"]["topic"] == "policy"
+          and _tbl["config"]["journal.enabled"]["topic"] == "journal"
+          and _tbl["config"]["enforce"]["topic"] == "gate-tiers"
+          and _tbl["manifest"]["meta.areas"]["topic"] == "areas")
     check("p3b planGate is documented and opens the gate page, beside the "
           "legacy flag it replaces",
-          pay["fields"]["config"].get("planGate", {}).get("topic") == "gate-tiers"
-          and "ask" in (pay["fields"]["config"].get("planGate", {})
+          _tbl["config"].get("planGate", {}).get("topic") == "gate-tiers"
+          and "ask" in (_tbl["config"].get("planGate", {})
                         .get("enum") or []))
     check("p4 ...and every topic a field names exists",
-          not [p for p, e in list(pay["fields"]["config"].items())
-               + list(pay["fields"]["manifest"].items())
+          not [p for p, e in list(_tbl["config"].items())
+               + list(_tbl["manifest"].items())
                if e.get("topic") and e["topic"] not in
                {t["id"] for t in pay["topics"]}])
     # Three builds, one size: natively, from CRLF sources, and with a backslash

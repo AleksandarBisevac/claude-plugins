@@ -1833,11 +1833,12 @@ the git root (e.g. `test/docs/audit/audit-plan.json`) so its status history can 
 
 Two answers, and the cheap one comes first.
 
-**The panel serves its own field documentation.** `GET /api/help` returns every dotted config
-and manifest path with the description the **schema** gives it — extracted at request time from
-`schema/audit-config.schema.json` and `schema/audit-plan.schema.json`, never re-typed, so what
-the panel tells you and what your editor validates against cannot drift apart. Alongside the
-fields it carries four concept pages — how the plan gate grades itself, how an area resolves a
+**The panel serves its own field documentation.** `GET /api/help?path=<dotted path>` answers any
+config or manifest path with the description the **schema** gives it — extracted at request time
+from `schema/audit-config.schema.json` and `schema/audit-plan.schema.json`, never re-typed, so
+what the panel tells you and what your editor validates against cannot drift apart. The bare
+`GET /api/help` carries no field table, because the drawer asks per path; it carries four
+concept pages — how the plan gate grades itself, how an area resolves a
 reviewer, how a capability policy reaches a verdict, what the journal can and cannot prove — and
 each of those derives its rule from the code that executes it (the tier table is
 `_config.plan_gate_mode`'s own answers; the policy page is a worked example run through the

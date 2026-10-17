@@ -434,14 +434,20 @@ export async function assertOverviewWorks(page, { note, fail, tabTo }) {
 
 /* ---- the help drawer -------------------------------------------------------
  *
- * Every oracle here is `GET /api/help` — the payload itself, fetched inside the
- * page — and never the drawer's own output. That is the only way this proves
+ * Every oracle here is `GET /api/help` — the payload for the topics and levers, the
+ * per-path form (`?doc=&path=`) for a field, both fetched inside the page — and
+ * never the drawer's own output. That is the only way this proves
  * anything: the whole claim of the feature is that what you read came out of the
  * shipped schemas and out of the code that runs the rule, so a check that compared
  * the drawer with the drawer would be green for a page that invented every word.
  */
 export async function assertHelpDrawerWorks(page, declared, { note, fail, tabTo }) {
   const doc = await page.evaluate(() => api('GET', '/api/help'));
+  // A field's entry as the server resolves it. The payload carries no field table:
+  // the drawer asks per path, so the oracle asks the same endpoint the same way.
+  const fieldEntry = (which, path) => page.evaluate(
+    ([w, p]) => api('GET', `/api/help?doc=${w}&path=${encodeURIComponent(p)}`),
+    [which, path]).then((r) => r.entry);
 
   // --- no ⓘ opens on an empty page -------------------------------------------
   // Through the real endpoint, path by path, the way the drawer asks. `_help`
@@ -515,7 +521,7 @@ export async function assertHelpDrawerWorks(page, declared, { note, fail, tabTo 
       sources: [...d.querySelectorAll('.dsrc span')].map((s) => s.textContent),
     };
   });
-  const want = doc.fields.config.trivialLineThreshold;
+  const want = await fieldEntry('config', 'trivialLineThreshold');
   if (field.path !== 'trivialLineThreshold'
       || !field.means.includes(want.description)) {
     fail(`help: the drawer for "trivialLineThreshold" does not carry the `
@@ -669,7 +675,7 @@ export async function assertHelpDrawerWorks(page, declared, { note, fail, tabTo 
              srcs: [...d.querySelectorAll('.dsrc span')].map((s) => s.textContent),
              means: d.textContent };
   });
-  const shape = doc.fields.config['usage.pricing.<name>.in'];
+  const shape = await fieldEntry('config', 'usage.pricing.<name>.in');
   if (concrete.path !== 'usage.pricing.claude-opus-4-1.in'
       || !concrete.srcs.some((s) => s === 'documented as usage.pricing.<name>.in')
       || !concrete.means.includes(shape.description)) {
@@ -708,8 +714,9 @@ export async function assertHelpDrawerWorks(page, declared, { note, fail, tabTo 
              text: d.textContent };
   });
   const leverPath = doc.composition.taskModel;
+  const leverEntry = await fieldEntry('manifest', leverPath);
   if (lever.path !== leverPath
-      || !lever.text.includes(doc.fields.manifest[leverPath].description)) {
+      || !lever.text.includes(leverEntry.description)) {
     fail(`help: the task model lever opened on ${JSON.stringify(lever.path)} rather `
        + `than ${leverPath}, or without the manifest schema's words`);
   } else {

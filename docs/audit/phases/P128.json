@@ -78,9 +78,16 @@
         "file": "plugins/audit/scripts/manifest/audit-task.py:3137-3147",
         "issue": "The comment above _CHANGE_CLAUSE (and the executor's outcome, 'unknown verbs fall to tdd, the old default') says a verb missing from the list leaves a task at tdd. The code does the opposite: _only_asks_for_test is true when _CHANGE_CLAUSE does NOT match, so an unlisted change verb makes the resolution look test-only and mints regression with no red-first. Probed with the two regexes extracted from the file: 'Add a test for the label, then relocate the prop' -> test-only (regression); 'Add a test for the label and rework the parser' -> test-only; 'Add a test for X; the label should be capitalized' -> test-only; whereas the listed verb 'then fix the prop' -> tdd. A fix task that does require a code change therefore silently loses its red-first discipline whenever its verb is outside the closed list, which is the failure direction the comment promises cannot happen. No test covers an unlisted verb, so the false claim is unguarded.",
         "resolution": "Pick the safe direction on purpose and make the code match: invert the test so regression needs positive evidence, e.g. treat the resolution as test-only only when, after the leading test ask, the rest is a single clause with no further separator-introduced clause (no ', ', '; ', '. ', ' and ', ' then ' continuation beyond the test noun phrase), instead of enumerating change verbs. If the enumeration is kept, correct the comment and outcome to say an unlisted verb yields regression, and add an ALLOW case with an unlisted verb ('then relocate the prop') stating the chosen behaviour."
+      },
+      {
+        "id": "P128-R9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/panel/_panel_state.py:310-326",
+        "issue": "help_state() is the function that serves the bare GET /api/help and still documents it as 'what every field means, and how the four concepts work'. After this diff its return value (_help.payload()) carries no field text at all; fields are answered by help_field() for ?path=. The diff reworded payload()'s docstring, README, CONTRIBUTING, PLUGIN-BUILD-GUIDE and panel.md for exactly this, but left the docstring of the function across the boundary saying the opposite.",
+        "resolution": "Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET /api/help?path=&doc=)."
       }
     ],
-    "outcome": "[findings: 8 - 0 high, 2 med, 6 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 9 - 0 high, 2 med, 7 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1577,7 +1584,7 @@
     {
       "id": "P128.31-0h5",
       "title": "A fix task whose resolution asks only for a test over existing behaviour is minted regression",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F688. P125.109 and P125.90 were minted tdd for test-only work; a case that passes at HEAD cannot be filed under tdd, so both were cancelled and re-added as regression.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1622,19 +1629,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b2f677c99fbf",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: new _CHANGE_CLAUSE regex and _only_asks_for_test(resolution) (audit-task.py ~3134-3160): true when the resolution opens with a test-ask (_ASKS_FOR_TEST.match) and no later clause asks for a change. _fix_scope returns a new key testOnly (all targeted findings test-only; ~line 3378). _fix_task_args: with no caller --tests-mode and testOnly, mode = regression plus a note 'regression, not tdd: <ids> only ask(s) for a test over behaviour the code already has ... prove it by mutation ... declare that as its falsifier' (~line 3538), taking precedence over the newTests->tdd arm, so it applies even when the finding names a source file; the unplaced-test remedy sentence names --tests-mode regression in that case. An explicit --tests-mode still wins; a resolution that also asks for a change (e.g. 'Fix the label and add a test', 'Add a test ..., then rename the prop') stays tdd (unknown verbs fall to tdd, the old default). Tests: test_audit_task.py cz-block gains 5 checks titled with the tests.add clause verbatim (2 positive: placed / unplaced; 3 ALLOW: also-asks-for-change, later-clause change, explicit --tests-mode tdd); cz13 expectations updated (R1 and R4 now regression, not red-first) since its premise 'a finding asking for a test is tdd' is exactly what this task reverses. Requirement clauses: (1) test-only resolution -> regression: audit-task.py:3538; (2) mutation-proof note: audit-task.py:3539-3545, asserted 'mutation' + finding id in test; (3) even when it names a source file: tests use components/Why.tsx and lib/x.ts; (4) not tdd when the resolution asks for more: ALLOW arms. Not done: no doc/help-text edit (files scope was the two files); help text for --fixes unchanged.\n\nclaims:\n1 audit-task.py:3538 (mode branch) and _only_asks_for_test do what the note and docstring say; docstring claims only the start-anchored test ask and the absence of a change clause, both visible in the two lines of the function\n2 falsifier below (disable the testOnly branch) -> new positive cases red; ALLOW arms (P1.4, P1.5, P1.6) pass at HEAD by construction and are the over-fire guard; the pre-fix FAIL x2 watched at 34/36\n3 grep testOnly/_ASKS_FOR_TEST: other consumers of _ASKS_FOR_TEST are _fix_scope asking list (unchanged); batch fix path goes through the same _fix_task_args, so one site; cz19/cz24 (asks-for-test findings with a path already named) still pass unchanged\n4 n/a - no rule addressed to an agent beyond the note text on the task, which names the mutation procedure\n5 n/a - no timing recorded\n6 n/a - reads the finding's resolution text by design (a finding's prose is the input, not a command)\n7 n/a - no number written",
+        "descriptive": "A fix task for a finding that only asks to add a test over existing behaviour is now minted regression with a mutation-proof note instead of an uncloseable red-first tdd task."
       },
       "startedAt": "2026-10-17T02:33:57Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T04:05:43Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py: a finding whose resolution only asks to add a test for named existing behaviour mints a regression task with a mutation-proof note, even when it names a source file"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-17T03:25:38Z.b89ecd",
         "status": "passed",
         "at": "2026-10-17T03:25:38Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "b2f677c99fbf",
+        "at": "2026-10-17T04:05:43Z",
+        "return": "docs/audit/evidence/returns/P128.31-0h5/20261017T023357Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-17T02:52:16Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage cz-block` in a throwaway tree at HEAD exited 1 with 3 of 36 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cz13 (house FAIL) and 2 more: SELFTEST FAILED: 33/36 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1824,7 +1845,11 @@
         "plugins/audit/scripts/ui/panel/help-drawer.js",
         "README.md",
         "PLUGIN-BUILD-GUIDE.md",
-        "CONTRIBUTING.md"
+        "CONTRIBUTING.md",
+        "docs/screenshots/captured-at.json",
+        "plugins/audit/README.md",
+        "plugins/audit/commands/panel.md",
+        "plugins/audit/tests/test_panel_server.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1873,10 +1898,16 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-17T04:04:10Z.12c1b4",
+        "runId": "2026-10-17T04:20:19Z.67f571",
         "status": "passed",
-        "at": "2026-10-17T04:04:10Z"
-      }
+        "at": "2026-10-17T04:20:19Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-17T04:06:12Z",
+          "text": "files widened by docs/screenshots/captured-at.json, plugins/audit/README.md, plugins/audit/commands/panel.md, plugins/audit/tests/test_panel_server.py: widened by the integration answer"
+        }
+      ]
     },
     {
       "id": "P128.35-0h5",

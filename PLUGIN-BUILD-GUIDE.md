@@ -5838,7 +5838,9 @@ The zero-token half of "what does this field mean" and "how does this actually w
 `/api/help` and the panel's help drawer. Field descriptions are extracted from
 `schema/audit-config.schema.json`/`schema/audit-plan.schema.json` via `fields()`, never
 restated by hand — a second copy of that prose is a second thing to drift, which this repo has
-already shipped once. Topics are derived from the executable rule where one exists (the plan
+already shipped once. A field reaches the drawer one path at a time through `entry_for()`; `payload()`
+carries the topics, the guide's card and the two small maps and no field table, and
+`test__help.py` holds its keys to the ones `help-drawer.js` reads. Topics are derived from the executable rule where one exists (the plan
 gate's tiers from `_config.plan_gate_mode`, area resolution from `_areas`' own pinned sentences,
 policy precedence from a worked `_policy.resolve` example) and are pointers, not restatements,
 where the rule lives only in prose. `guide_card()` reads `agents/guide.md`'s frontmatter
