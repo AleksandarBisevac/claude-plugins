@@ -6796,6 +6796,41 @@ async function assertDateInputCheckWorks(browser) {
   }
 }
 
+/**
+ * What shot() does once it holds a picture it could write: refuse it, or write it and
+ * what the sidecar records beside it. Pure; `accept` is --accept-host-date-format.
+ *
+ * Returns `{refuse, note, extra}`. `refuse` is the failure text, or null to write;
+ * `note` is the line to print when writing a host-shaped picture on request, or null;
+ * `extra` is the entry recordCapture merges, or null when the shot holds no native
+ * date input and so owes no host format. `hostFormatAccepted` is present only when a
+ * leak was written by request, never as `false`, so a committed entry that carries it
+ * is one that was accepted.
+ *
+ * Extracted from shot() because the refusal sat after the `--check` return, where no
+ * case or gate reached it.
+ */
+export function shotWriteDecision(name, count, facts, accept) {
+  const leak = dateInputProblem(name, count, facts);
+  if (leak && !accept) {
+    return {
+      refuse: `${name}: refusing to write — ${leak}. Or pass --accept-host-date-format `
+            + 'to write it anyway; the sidecar then records that its date fields are '
+            + 'host-shaped',
+      note: null,
+      extra: null,
+    };
+  }
+  return {
+    refuse: null,
+    note: leak ? `${name}: WRITING a picture whose date inputs are host-shaped, as asked` : null,
+    extra: count ? { nativeDateInput: {
+      regionalFormat: regionalFormatBasis(facts),
+      ...(leak ? { hostFormatAccepted: true } : {}),
+    } } : null,
+  };
+}
+
 async function shot(page, name, { full = false, dialog = false } = {}) {
   await settle(page);
   await noToast(page, name);
@@ -6822,21 +6857,16 @@ async function shot(page, name, { full = false, dialog = false } = {}) {
     if (dateInputs) DATE_INPUT_SHOTS.push(name);
     return;
   }
-  const leak = dateInputProblem(name, dateInputs, regionalFormat());
-  if (leak && !ACCEPT_HOST_DATE_FORMAT) {
-    fail(`${name}: refusing to write — ${leak}. Or pass --accept-host-date-format `
-       + 'to write it anyway; the sidecar then records that its date fields are '
-       + 'host-shaped');
+  const decision = shotWriteDecision(name, dateInputs, regionalFormat(), ACCEPT_HOST_DATE_FORMAT);
+  if (decision.refuse) {
+    fail(decision.refuse);
     return;
   }
-  if (leak) note(`${name}: WRITING a picture whose date inputs are host-shaped, as asked`);
+  if (decision.note) note(decision.note);
   mkdirSync(OUT, { recursive: true });
   const file = path.join(OUT, `${name}.png`);
   await page.screenshot({ path: file, fullPage: full });
-  recordCapture(name, file, currentLeg(), dateInputs ? { nativeDateInput: {
-    regionalFormat: regionalFormatBasis(regionalFormat()),
-    ...(leak ? { hostFormatAccepted: true } : {}),
-  } } : null);
+  recordCapture(name, file, currentLeg(), decision.extra);
   note(`wrote ${path.relative(REPO, file)} (${statSync(file).size} B)`);
 }
 

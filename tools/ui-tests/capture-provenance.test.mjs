@@ -20,11 +20,13 @@
 // quietly for ever — and the always-fires case is the one that looks vacuous and
 // gets cut.
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { fixtureProblem, mergeCaptureRecord, regionalFormatProblem,
-         regionalFormatBasis, dateInputProblem } from '../capture-screenshots.mjs';
+         regionalFormatBasis, dateInputProblem,
+         shotWriteDecision } from '../capture-screenshots.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PY = process.env.PYTHON || 'python3';
@@ -229,5 +231,135 @@ describe('regionalFormatProblem / dateInputProblem: a host format must not reach
 
   it('lets a shot with a date input through on a host whose format is clean', () => {
     expect(dateInputProblem('filters', 3, mac())).toBe(null);
+  });
+});
+
+// THE WRITING PATH, DECIDED IN ONE PURE FUNCTION. shot() used to carry the refusal,
+// the "WRITING ... as asked" note and the sidecar entry inline, where no case could
+// reach them: the gate's capture command is --check, which returns before them, and
+// the cases above exercise only the helpers underneath. Deleting the refusal or the
+// hostFormatAccepted record left every recorded gate green. shotWriteDecision is what
+// shot() now obeys, so these cases are the wiring's evidence.
+//
+// THREE OUTCOMES, EACH PINNED: refuse on a leak without acceptance, write and RECORD
+// the acceptance with it, and write on a clean host without claiming any acceptance.
+// The last two are the allow twins — a decision that always records hostFormatAccepted,
+// or one that refuses a clean host, passes the first case alone.
+describe('shotWriteDecision: what shot() does once the shutter is ready to write', () => {
+  const mac = (over) => ({ platform: 'darwin', identifier: 'en_US', template: 'M/d/y',
+                           reference: 'M/d/y', ...over });
+  const serbia = mac({ identifier: 'en_US@rg=rszzzz', template: 'd. M. y.' });
+
+  it('REFUSES a leaking host without the flag: no note, nothing to record', () => {
+    const d = shotWriteDecision('filters', 2, serbia, false);
+    expect(d.refuse).toContain('filters');
+    expect(d.refuse).toContain('en_US@rg=rszzzz');
+    expect(d.refuse).toContain('--accept-host-date-format');
+    expect(d.note).toBe(null);
+    expect(d.extra).toBe(null);
+  });
+
+  it('WRITES a leaking host when accepted, says so, and records the acceptance', () => {
+    const d = shotWriteDecision('filters', 2, serbia, true);
+    expect(d.refuse).toBe(null);
+    expect(d.note).toContain('filters');
+    expect(d.note).toContain('WRITING');
+    expect(d.extra).toEqual({ nativeDateInput: {
+      regionalFormat: 'en_US@rg=rszzzz', hostFormatAccepted: true } });
+  });
+
+  // Allow twin: on a clean host the flag is irrelevant, and the entry must not claim
+  // an acceptance nobody gave. toEqual treats an undefined-valued key as absent, so
+  // the key itself is asked about.
+  it('WRITES a clean host without refusing, noting or claiming an acceptance', () => {
+    for (const accept of [false, true]) {
+      const d = shotWriteDecision('filters', 2, mac(), accept);
+      expect(d.refuse).toBe(null);
+      expect(d.note).toBe(null);
+      expect(d.extra).toEqual({ nativeDateInput: { regionalFormat: 'en_US' } });
+      expect('hostFormatAccepted' in d.extra.nativeDateInput).toBe(false);
+    }
+  });
+
+  it('WRITES a shot with no date input on a leaking host, recording nothing', () => {
+    for (const accept of [false, true]) {
+      const d = shotWriteDecision('overview', 0, serbia, accept);
+      expect(d.refuse).toBe(null);
+      expect(d.note).toBe(null);
+      expect(d.extra).toBe(null);
+    }
+  });
+
+  it('REFUSES when the host was never asked, flag or no flag only deciding the rest', () => {
+    expect(shotWriteDecision('filters', 1, null, false).refuse).toContain('not asked');
+    expect(shotWriteDecision('filters', 1, null, true).refuse).toBe(null);
+  });
+});
+
+// A RULE THAT LIVED IN A COMMENT: every image this tool writes goes through shot(),
+// because shot() is where the pinned-context, fixture and date-input checks run. A
+// second call site photographs without them. This reads the source, so it needs no
+// browser and cannot be skipped by a leg that never reaches a shot.
+//
+// Lines that are wholly comments are skipped; a trailing comment that names the call
+// is counted, which fails loud rather than letting a real call hide behind one.
+describe('every image is written by shot() alone', () => {
+  const SRC = readFileSync(path.join(REPO, 'tools', 'capture-screenshots.mjs'), 'utf8');
+  const LINES = SRC.split('\n');
+  const SHUTTER = /\.\s*screenshot\b|\[\s*['"`]screenshot['"`]\s*\]/;
+  const isCommentLine = (l) => /^\s*(\/\/|\*|\/\*)/.test(l);
+  const hits = (lines) => lines.map((text, i) => ({ n: i + 1, text }))
+    .filter((l) => !isCommentLine(l.text) && SHUTTER.test(l.text));
+  const bounds = (lines) => {
+    const start = lines.findIndex((l) => l.startsWith('async function shot('));
+    const end = lines.findIndex((l, i) => i > start && l === '}');
+    return { start: start + 1, end: end + 1 };
+  };
+
+  it('finds shot() and exactly one shutter call, inside it', () => {
+    const { start, end } = bounds(LINES);
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const found = hits(LINES);
+    expect(found.map((h) => h.n).filter((n) => n < start || n > end)).toEqual([]);
+    expect(found.length).toBe(1);
+  });
+
+  // Prove the detector can see a violation: a bare call after shot() is counted and
+  // placed outside its body, so the case above would go red on it.
+  it('sees a shutter call placed outside shot()', () => {
+    const planted = [...LINES, 'async function sneak(page) {',
+                     '  await page.screenshot({ path: "x.png" });', '}'];
+    const { start, end } = bounds(planted);
+    const outside = hits(planted).filter((h) => h.n < start || h.n > end);
+    expect(outside.length).toBe(1);
+    expect(outside[0].text).toContain('page.screenshot');
+  });
+
+  it('ignores a comment line that merely names the call', () => {
+    expect(hits(['// page.screenshot(x)', ' * .screenshot(y)']).length).toBe(0);
+  });
+
+  // The decision is made in shotWriteDecision, not re-derived in shot(): a second
+  // copy of the refusal there would be the one no case reaches.
+  it('shot() takes its refusal from shotWriteDecision and keeps no copy of it', () => {
+    const { start, end } = bounds(LINES);
+    const body = LINES.slice(start - 1, end).join('\n');
+    expect(body.match(/shotWriteDecision\(/g).length).toBe(1);
+    expect(body).not.toContain('dateInputProblem(');
+    expect(body).not.toContain('hostFormatAccepted');
+  });
+
+  // The decision only matters if shot() obeys all three parts of it and hands over
+  // the real flag. This is a source read, not a run: it fails when a part is dropped
+  // (the refusal no longer fails the run, the sidecar entry no longer reaches
+  // recordCapture) but cannot prove the order of the statements.
+  it('shot() obeys the refusal, prints the note, records the extra, and passes the flag', () => {
+    const { start, end } = bounds(LINES);
+    const body = LINES.slice(start - 1, end).join('\n');
+    expect(body).toMatch(/shotWriteDecision\(.*, ACCEPT_HOST_DATE_FORMAT\)/);
+    expect(body).toMatch(/if \(decision\.refuse\) \{\s*fail\(decision\.refuse\);\s*return;/);
+    expect(body).toMatch(/if \(decision\.note\) note\(decision\.note\);/);
+    expect(body).toMatch(/recordCapture\(.*, decision\.extra\)/);
   });
 });
