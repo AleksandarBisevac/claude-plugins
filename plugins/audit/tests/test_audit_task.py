@@ -16855,13 +16855,14 @@ def _introduces_cases(check):
         modes = [(got[i]["tests"]["mode"], got[i]["tests"]["expectRedFirst"])
                  for i in ("P1.2", "P1.3", "P1.4", "P1.5")]
         check("cz13 a fix task's discipline is the rule `--bug` uses when the "
-              "caller picked none: a finding whose resolution asks for a test, one "
-              "naming a test file that does not exist yet, one asking for neither "
-              "and one asking where the repo shows no place for a test all name a "
-              "source file, so each is tdd and red-first - none is gate-only: %r"
-              % (modes,),
-              modes == [("tdd", True), ("tdd", True), ("tdd", True),
-                        ("tdd", True)])
+              "caller picked none: a finding naming a test file that does not "
+              "exist yet and one asking for neither a test nor anything but a "
+              "change are tdd and red-first; the two whose resolution only asks "
+              "for a test over what exists (placed beside its source, or with "
+              "no place for it) are regression, not red-first - none is "
+              "gate-only: %r" % (modes,),
+              modes == [("regression", False), ("tdd", True), ("tdd", True),
+                        ("regression", False)])
         check("cz14 ...the new test file is named in tests.add and in `files`, so "
               "the gate runs it: %r" % (got["P1.2"]["tests"],),
               got["P1.2"]["tests"]["add"][0].startswith("components/Why.test.tsx")
@@ -16881,6 +16882,61 @@ def _introduces_cases(check):
               % (((tasks(mpath).get("P1.2") or {}).get("tests") or {}).get("mode"),),
               ((tasks(mpath).get("P1.2") or {}).get("tests") or {}).get("mode")
               == "gate-only")
+
+        # ---- a finding that only asks for a test over what exists ------------
+        # A test over behaviour the code already has passes at HEAD, so a tdd
+        # task for it is cancelled and re-added; the discipline is regression and
+        # the proof of the case is a mutation, written on the task.
+        clause = ("a finding whose resolution only asks to add a test for named "
+                  "existing behaviour mints a regression task with a "
+                  "mutation-proof note, even when it names a source file")
+        proj, mpath = project("fx-only-test", [
+            finding("P1-R1", "components/Why.tsx",
+                    resolution="Add a test that pins the empty-state label"),
+            finding("P1-R2", "lib/x.ts", resolution="Add a test for the parser"),
+            finding("P1-R3", "components/Plain.tsx",
+                    resolution="Fix the label and add a test for it"),
+            finding("P1-R4", "components/Both.tsx",
+                    resolution="Add a test for the label, then rename the prop"),
+            finding("P1-R5", "components/Chosen.tsx",
+                    resolution="Add a test for the chosen label")])
+        write(proj, "components/Other.test.tsx")
+        for rel in ("components/Why.tsx", "components/Plain.tsx", "lib/x.ts",
+                    "components/Both.tsx", "components/Chosen.tsx"):
+            write(proj, rel)
+        for n in (1, 2, 3, 4):
+            verb(proj, "add", "Fix %d" % n, "--phase", "P1", "--fixes",
+                 "P1-R%d" % n)
+        verb(proj, "add", "Fix 5", "--phase", "P1", "--fixes", "P1-R5",
+             "--tests-mode", "tdd")
+        got = tasks(mpath)
+
+        def tnotes(tid):
+            return " ".join(n.get("text", "")
+                            for n in got[tid].get("notes") or [])
+
+        def disc(tid):
+            return (got[tid]["tests"]["mode"], got[tid]["tests"]["expectRedFirst"])
+        check("%s (a source file with a test placed beside it: %r)"
+              % (clause, (disc("P1.2"), tnotes("P1.2")[-300:])),
+              disc("P1.2") == ("regression", False)
+              and "mutation" in tnotes("P1.2") and "P1-R1" in tnotes("P1.2"))
+        check("%s (a source file with no place for the test: %r)"
+              % (clause, (disc("P1.3"), tnotes("P1.3")[-300:])),
+              disc("P1.3") == ("regression", False)
+              and "mutation" in tnotes("P1.3") and "P1-R2" in tnotes("P1.3"))
+        # ALLOW arms: the reading that fired on every test-asking finding would
+        # pass the two above, so only these tell the two versions apart.
+        check("%s (ALLOW: a resolution that also asks for a change stays tdd "
+              "and red-first, with no mutation note: %r)"
+              % (clause, (disc("P1.4"), tnotes("P1.4")[-200:])),
+              disc("P1.4") == ("tdd", True) and "mutation" not in tnotes("P1.4"))
+        check("%s (ALLOW: a change asked for after the test, in a later clause, "
+              "stays tdd: %r)" % (clause, (disc("P1.5"),)),
+              disc("P1.5") == ("tdd", True))
+        check("%s (ALLOW: a --tests-mode the caller chose is not overruled: %r)"
+              % (clause, (disc("P1.6"),)), disc("P1.6") == ("tdd", True)
+              and "mutation" not in tnotes("P1.6"))
 
         # ---- a fix task is never scoped to nothing by accident ----------------
         proj, mpath = project("fx-nopath", [

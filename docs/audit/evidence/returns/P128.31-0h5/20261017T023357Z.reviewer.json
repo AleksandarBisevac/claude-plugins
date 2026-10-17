@@ -1,0 +1,20 @@
+{
+ "findings": [
+  {"id": 1, "severity": "med",
+   "file": "plugins/audit/scripts/manifest/audit-task.py:3137-3147",
+   "issue": "The comment above _CHANGE_CLAUSE (and the executor's outcome, 'unknown verbs fall to tdd, the old default') says a verb missing from the list leaves a task at tdd. The code does the opposite: _only_asks_for_test is true when _CHANGE_CLAUSE does NOT match, so an unlisted change verb makes the resolution look test-only and mints regression with no red-first. Probed with the two regexes extracted from the file: 'Add a test for the label, then relocate the prop' -> test-only (regression); 'Add a test for the label and rework the parser' -> test-only; 'Add a test for X; the label should be capitalized' -> test-only; whereas the listed verb 'then fix the prop' -> tdd. A fix task that does require a code change therefore silently loses its red-first discipline whenever its verb is outside the closed list, which is the failure direction the comment promises cannot happen. No test covers an unlisted verb, so the false claim is unguarded.",
+   "resolution": "Pick the safe direction on purpose and make the code match: invert the test so regression needs positive evidence, e.g. treat the resolution as test-only only when, after the leading test ask, the rest is a single clause with no further separator-introduced clause (no ', ', '; ', '. ', ' and ', ' then ' continuation beyond the test noun phrase), instead of enumerating change verbs. If the enumeration is kept, correct the comment and outcome to say an unlisted verb yields regression, and add an ALLOW case with an unlisted verb ('then relocate the prop') stating the chosen behaviour."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "diverges",
+  "note": "Clauses: (1) test-only resolution -> regression: done, audit-task.py _fix_task_args sets mode regression when scope testOnly and no caller --tests-mode. (2) mutation-proof note: done, note names the finding ids, 'prove it by mutation', and the falsifier. (3) even when it names a source file: done, the testOnly arm precedes the newTests->tdd arm, and the tests use Why.tsx and lib/x.ts. (4) not tdd when the resolution asks for more: only for the closed verb list; an unlisted change verb is classed test-only and goes regression (see finding 1). The executor's claim 'unknown verbs fall to tdd, the old default' and the code comment saying the same do not describe the diff: the diff routes them to regression. Otherwise the outcome matches the diff (cz13 expectations were updated consistently with the reversed premise).",
+  "missing": [],
+  "redFirst": "proved",
+  "redFirstBasis": "Executor's basis: 'python3 plugins/audit/tests/test_audit_task.py --selftest --stage cz-block' in a throwaway tree at HEAD exited 1, 3 of 36 collected cases failing an assertion (cz13 and the task's own cases), each passing with the working-tree implementation. That is a command, a non-zero exit, a collected test failing an assertion and a second run with the implementation, so the word holds. I did not re-run it.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate holds 'selftests' = python3 tools/sweep-selftests.py, which runs the whole project, plus validate/lint/report/browser commands that select no particular test; the question is bounded by a selecting command and none selects a narrower set."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

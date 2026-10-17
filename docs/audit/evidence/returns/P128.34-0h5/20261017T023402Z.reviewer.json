@@ -1,0 +1,23 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/scripts/panel/_panel_state.py:310-326",
+   "issue": "help_state() is the function that serves the bare GET /api/help and still documents it as 'what every field means, and how the four concepts work'. After this diff its return value (_help.payload()) carries no field text at all; fields are answered by help_field() for ?path=. The diff reworded payload()'s docstring, README, CONTRIBUTING, PLUGIN-BUILD-GUIDE and panel.md for exactly this, but left the docstring of the function across the boundary saying the opposite.",
+   "resolution": "Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET /api/help?path=&doc=)."}
+ ],
+ "preExisting": [
+  {"id": 2, "severity": "low", "file": "plugins/audit/commands/panel.md:112-118",
+   "issue": "The edited bullet still says 'There is no drawer for it yet; say so rather than sending someone clicking for an i that is not there', but the help drawer ships (help-drawer.js). The executor noted this and left it.",
+   "resolution": "File as its own stale-doc fault in the register."}
+ ],
+ "intent": {
+  "answer": "matches",
+  "note": "Description: 'payload.fields is read by nothing in the product (the drawer asks per path); one tool uses it as an oracle and three documents describe it.' Checked against the diff: (a) help-drawer.js reads only doc.agent, doc.topics, doc.composition and doc.schemas (grep of ui/); payload() now returns exactly composition/topics/agent/schemas, with fields and aliases dropped, and tables()/entry_for()/help_field() still serve GET /api/help?path=. No other reader of payload()['fields'] or ['aliases'] remains in plugins/ or tools/ (the only ones, test_panel_server.py and test__help.py, were moved to tables()). (b) the one oracle, tools/ui-checks/stage-tabs.mjs, now asks the per-path endpoint for trivialLineThreshold, usage.pricing.<name>.in and the lever path. (c) the three documents: CONTRIBUTING.md and PLUGIN-BUILD-GUIDE.md are edited; the root README.md named in the task's file list holds no description of /api/help (grep for api/help, help drawer, field documentation: no hit), so the executor edited plugins/audit/README.md, where the description lives, and also panel.md. No panel help text is left without a payload behind it: the drawer's topics, agent card, lever map and schema labels all remain in the payload, and fields come per path. The claim describes the diff accurately, including the out-of-scope files (test_panel_server.py, panel.md, captured-at.json digest refresh, which follows from touching help-drawer.js and was confirmed as only uiDigest changes). Not run: vitest and the report-interactive gate, because the diff changes no report or JS logic (comment-only edit in help-drawer.js); the recorded gate run passed. I ran test__help.py --selftest once: 113/113 pass, exit 0.",
+  "missing": [],
+  "redFirst": "proved",
+  "redFirstBasis": "Executor's basis holds: a named command (python3 plugins/audit/tests/test__help.py --selftest) at HEAD exited 1, 3 of 113 collected tests failed an assertion with the task's own case among them, and each passed with the working tree's implementation; the failure message names the payload keys vs the drawer's reads. A falsifier is also recorded (re-adding the fields table to payload()).",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "The task's tests.gate 'selftests' entry is python3 tools/sweep-selftests.py, which runs the whole project, and other entries (validate, lint, shots, interactive) are not test selections of this behaviour; so the question has no bound narrower than the whole suite."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

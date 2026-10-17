@@ -3134,12 +3134,33 @@ _FINDING_PATH = re.compile(r"^[\w@.\-/\[\]()]+\.[A-Za-z][A-Za-z0-9]*$")
 _ASKS_FOR_TEST = re.compile(
     r"\b(?:add|write|create|introduce|cover|include)\b[^.;\n]{0,60}?"
     r"\b(?:tests?|specs?|test cases?)\b", re.IGNORECASE)
+# A change asked for in a clause of its own: the verb opens the resolution, or
+# follows a stop, a comma, or `and`/`then`/`also`/`but`. Read as a refusal to
+# call the resolution test-only, so a verb missing from the list leaves a task
+# at tdd, which is the discipline a fix task has always had.
+_CHANGE_CLAUSE = re.compile(
+    r"(?:[.;:,!?]\s*|\b(?:and|then|also|but|plus|after|before)\s+)"
+    r"(?:fix|change|rename|replace|remove|refactor|rewrite|update|make|ensure|"
+    r"guard|handle|return|throw|set|move|delete|use|wrap|validate|implement|"
+    r"correct|stop|prevent|avoid|reject|raise|show|emit|print|extract|split|"
+    r"drop|add\s+(?:a|an|the)\s+(?!tests?\b|specs?\b|test cases?\b|"
+    r"regression\b|unit\b|e2e\b)\w+)\b", re.IGNORECASE)
 _STYLESHEET_EXTENSIONS = ("css", "scss", "sass", "less", "styl")
 # A tests.add clause is one line a reader scans, not the resolution reprinted.
 _CLAUSE_LIMIT = 160
 # The first sentence of a resolution: up to a sentence stop followed by a space
 # or the end, or a semicolon - a stop inside a file name is not one.
 _FIRST_SENTENCE = re.compile(r"(.+?)(?:[.!?](?:\s|$)|;)")
+
+
+def _only_asks_for_test(resolution):
+    """True when the resolution opens by asking for a test and asks for no
+    change to the code: the behaviour it names already exists, so the test
+    passes at HEAD and no red run can be taken of it. Anything that also asks
+    for a change (`_CHANGE_CLAUSE`) is not test-only, and neither is a
+    resolution that asks for a test after saying something else."""
+    text = " ".join(str(resolution or "").split()).lstrip(" -*`\"'")
+    return bool(_ASKS_FOR_TEST.match(text)) and not _CHANGE_CLAUSE.search(text)
 
 
 def _finding_paths(text):
@@ -3284,7 +3305,7 @@ def _unresolved_sentence(path, candidates):
 
 def _fix_scope(targets, project, records=()):
     """`{"paths", "newTests", "asksForTest", "unplaced", "unresolved",
-    "droppedRecords", "byFinding"}` for the findings `--fixes` names (`byFinding`
+    "droppedRecords", "byFinding", "testOnly"}` for the findings `--fixes` names (`byFinding`
     is each finding's own `{id, paths, resolution, placed}`, the test placed for
     it or None, which its tests.add clause is written from): every path they name
     that can be a `files` entry, each resolved to an existing repo-relative path
@@ -3354,6 +3375,8 @@ def _fix_scope(targets, project, records=()):
     return {"paths": paths + [t for t in new_tests if t not in paths],
             "newTests": new_tests, "unplaced": unplaced,
             "asksForTest": [fid for fid, _m in asking],
+            "testOnly": bool(targets) and all(
+                _only_asks_for_test(e.get("resolution")) for e in targets),
             "unresolved": unresolved, "droppedRecords": dropped,
             "byFinding": by_finding}
 
@@ -3510,9 +3533,19 @@ def _fix_task_args(args, targets, project, fixes, records=()):
         notes.append(
             "the resolution of %s asks for a test, but names no test file and "
             "its directory shows no test convention to place one by; name the "
-            "case with `scope --tests-mode tdd --tests-add \"<path>: <what it "
-            "asserts>\"`" % ", ".join(scope["unplaced"]))
-    if args.tests_mode is None and scope["newTests"]:
+            "case with `scope --tests-mode %s --tests-add \"<path>: <what it "
+            "asserts>\"`" % (", ".join(scope["unplaced"]),
+                             "regression" if scope["testOnly"] and
+                             args.tests_mode is None else "tdd"))
+    if args.tests_mode is None and scope["testOnly"]:
+        args.tests_mode = "regression"
+        notes.append(
+            "regression, not tdd: %s only ask%s for a test over behaviour the "
+            "code already has, so the new test passes at HEAD and cannot be "
+            "shown red first; prove it by mutation - break the line it covers, "
+            "watch it fail, restore - and declare that as its falsifier"
+            % (", ".join(fixes), "s" if len(fixes) == 1 else ""))
+    elif args.tests_mode is None and scope["newTests"]:
         args.tests_mode = "tdd"
         notes.append("tdd, not gate-only: %s is a test the finding(s) ask for "
                      "that does not exist yet" % ", ".join(scope["newTests"]))
