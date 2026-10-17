@@ -63,7 +63,9 @@
  *
  * --check writes nothing. It asserts the DOM facts that the captures depend on —
  * chiefly that progress-bar fills have a real painted width. That assertion is
- * portable, which pixel comparison is not, for the reasons above. Run --check in CI;
+ * portable, which pixel comparison is not, for the reasons above. It also asserts,
+ * before each shutter, that the page runs under the pinned locale and timezone
+ * (PINNED_CONTEXT). Run --check in CI;
  * run the capture locally when a UI change lands.
  *
  * --repro writes nothing into the repo either. It captures twice into throwaway
@@ -4372,6 +4374,7 @@ async function assertFilterPersistence(page, browser, panelUrl) {
   }
   // The share link, in a NEW context: no localStorage, only the URL.
   const shareCtx = await browser.newContext({
+    locale: PIN_LOCALE, timezoneId: PIN_TIMEZONE,
     viewport: { width: 1200, height: 900 }, deviceScaleFactor: 1,
     reducedMotion: 'reduce', colorScheme: 'light',
   });
@@ -6499,10 +6502,93 @@ async function pageFixtureFacts(page) {
   });
 }
 
+/**
+ * The locale and timezone every capture context runs under, and the one number
+ * format that proves the locale reached the page rather than only the option bag.
+ *
+ * A context with neither option inherits the HOST's: `Intl`, `toLocaleString()` and
+ * `Date` then render the machine's grouping separators and its zone, and those
+ * strings are painted into a committed PNG. The pair is spread into every
+ * `newContext` call below (as PIN_LOCALE / PIN_TIMEZONE), and `shot()` asks each page
+ * what it actually runs under before the shutter, so a context added later without
+ * them fails the run on any host that is not already en-US in UTC. The browser is
+ * also launched with `--lang` set to the same locale, which keeps its own UI
+ * language from following the host.
+ *
+ * WHAT THIS DOES NOT PIN, probed on macOS with the host's regional format overridden
+ * to Serbia: the placeholder of a native `<input type=date>` (`dd. mm. yyyy.`). It is
+ * painted by the browser from the OS regional format, and none of the context
+ * `locale` (nine values tried), the element's `lang`, `--lang=en-US`, the process
+ * environment or `CFFIXED_USER_HOME` moved it; only a non-English `--lang` did
+ * (`de-DE` and `fr-FR` each changed it), which would not be a pin to en-US. So a
+ * committed shot of those inputs is still host-shaped on such a host, and --check
+ * cannot see it.
+ */
+export const PINNED_CONTEXT = Object.freeze({
+  locale: 'en-US', timezoneId: 'UTC', numberSample: '1,234,567.5',
+});
+const { locale: PIN_LOCALE, timezoneId: PIN_TIMEZONE } = PINNED_CONTEXT;
+
+/**
+ * Why the page described by `facts` is not running under `pin`, or null.
+ *
+ * `facts` is what `pageContextFacts` read out of the live page. A missing fact is a
+ * violation, not a pass: a page that could not be asked has not been shown to be
+ * pinned.
+ */
+export function pinProblem(facts, pin = PINNED_CONTEXT) {
+  if (!facts) return 'the page was not asked which locale and timezone it runs under';
+  const want = [
+    ['Intl locale', facts.locale, pin.locale],
+    ['navigator.language', facts.language, pin.locale],
+    ['Intl timezone', facts.timeZone, pin.timezoneId],
+    [`(1234567.5).toLocaleString()`, facts.number, pin.numberSample],
+  ];
+  const wrong = want.filter(([, got, wanted]) => got !== wanted)
+    .map(([what, got, wanted]) => `${what} is ${JSON.stringify(got)}, not ${JSON.stringify(wanted)}`);
+  return wrong.length
+    ? `the capture context is not pinned (${wrong.join('; ')}) — dates and numbers `
+      + `would be painted in this host's format`
+    : null;
+}
+
+/** What the live page runs under — the input to pinProblem. */
+async function pageContextFacts(page) {
+  return page.evaluate(() => ({
+    locale: Intl.DateTimeFormat().resolvedOptions().locale,
+    language: navigator.language,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    number: (1234567.5).toLocaleString(),
+  }));
+}
+
+/**
+ * Proof that pinProblem can fail, from a context that is pinned to something
+ * else on purpose. An unpinned context cannot serve as the control: on a host that
+ * already runs en-US in UTC it is indistinguishable from a pinned one, and the
+ * detector would pass without ever having rejected anything.
+ */
+async function assertPinDetectorRejects(browser) {
+  const ctx = await browser.newContext({ locale: 'de-DE', timezoneId: 'Asia/Tokyo' });
+  try {
+    const problem = pinProblem(await pageContextFacts(await ctx.newPage()));
+    if (problem) note('context pin: a de-DE / Asia/Tokyo context is rejected, so the check can fail');
+    else fail('context pin: a de-DE / Asia/Tokyo context passed pinProblem, so an '
+            + 'unpinned context would pass it too');
+  } finally {
+    await ctx.close();
+  }
+}
+
 async function shot(page, name, { full = false, dialog = false } = {}) {
   await settle(page);
   await noToast(page, name);
   if (!dialog) await noDialog(page, name);
+  const unpinned = pinProblem(await pageContextFacts(page));
+  if (unpinned) {
+    fail(`${name}: ${unpinned}`);
+    return;
+  }
   // BEFORE the `--check` return, so the gate exercises this too: a check that only
   // ran on the mode that writes files would be proved by the run nobody makes in CI.
   const notFixture = fixtureProblem(await pageFixtureFacts(page),
@@ -6950,7 +7036,9 @@ async function main() {
   // would have chosen; it is the model CI resolves to today, so --check does not
   // move there. A capture taken on a host that WAS choosing overlay will move by
   // those 15px — which is the drift this removes, not one it introduces.
-  const browser = await chromium.launch({ args: ['--disable-features=OverlayScrollbar'] });
+  const browser = await chromium.launch({
+    args: ['--disable-features=OverlayScrollbar', `--lang=${PIN_LOCALE}`],
+  });
 
   // Everything the run started, put back. A function rather than the `finally`
   // body because a stalled run can reach it from the stall watch as well, and it
@@ -6976,6 +7064,7 @@ async function main() {
   const stopStallWatch = watchForStall(() => [panel, polPanel], browser, cleanUp);
 
   try {
+    await assertPinDetectorRejects(browser);
     // ---- report shots, from the committed example -------------------------------
     if (wanted('report')) {
       legsRun.push('report');
@@ -6990,6 +7079,7 @@ async function main() {
       const url = `http://127.0.0.1:${port}/acme-store-audit.html`;
 
       const ctx = await browser.newContext({
+        locale: PIN_LOCALE, timezoneId: PIN_TIMEZONE,
         viewport: { width: 1200, height: 900 },
         deviceScaleFactor: 1,
         reducedMotion: 'reduce',      // the fix for the empty-bar hero image
@@ -7220,6 +7310,7 @@ async function main() {
       await ctx.close();
 
       const darkCtx = await browser.newContext({
+        locale: PIN_LOCALE, timezoneId: PIN_TIMEZONE,
         viewport: { width: 1200, height: 900 }, deviceScaleFactor: 1,
         reducedMotion: 'reduce', colorScheme: 'dark',
       });
@@ -7231,6 +7322,7 @@ async function main() {
       await darkCtx.close();
 
       const mobCtx = await browser.newContext({
+        locale: PIN_LOCALE, timezoneId: PIN_TIMEZONE,
         viewport: { width: 360, height: 800 }, deviceScaleFactor: 1,
         reducedMotion: 'reduce', colorScheme: 'light', isMobile: false,
       });
@@ -7246,6 +7338,7 @@ async function main() {
       // assertion at any width before this — 360x800 was opened, photographed,
       // and asserted nothing — so this is the first time any of it is measured.
       const ladderCtx = await browser.newContext({
+        locale: PIN_LOCALE, timezoneId: PIN_TIMEZONE,
         viewport: { width: 1200, height: 900 }, deviceScaleFactor: 1,
         reducedMotion: 'reduce', colorScheme: 'light',
       });
@@ -7320,6 +7413,7 @@ async function main() {
       const { server: prioServer, port: prioPort } = await serveDir(prioOut);
       servers.push(prioServer);
       const prioCtx = await browser.newContext({
+        locale: PIN_LOCALE, timezoneId: PIN_TIMEZONE,
         viewport: { width: 1200, height: 900 }, deviceScaleFactor: 1,
         reducedMotion: 'reduce', colorScheme: 'light',
       });
@@ -7364,6 +7458,7 @@ async function main() {
         GIT_CONFIG_GLOBAL: gitcfg, GIT_CONFIG_NOSYSTEM: '1',
       });
       const ctx = await browser.newContext({
+        locale: PIN_LOCALE, timezoneId: PIN_TIMEZONE,
         viewport: { width: 1200, height: 900 }, deviceScaleFactor: 1,
         reducedMotion: 'reduce', colorScheme: 'light',
         acceptDownloads: true,        // the Usage tab's CSV export is driven below
@@ -7811,6 +7906,7 @@ async function main() {
       // checked — what this UI does on a phone. 390x844 is the viewport the Usage
       // bar was measured against when it was made to stop pinning below 34rem.
       const mobCtx = await browser.newContext({
+        locale: PIN_LOCALE, timezoneId: PIN_TIMEZONE,
         viewport: { width: 390, height: 844 }, deviceScaleFactor: 1,
         reducedMotion: 'reduce', colorScheme: 'light',
       });
@@ -8275,6 +8371,7 @@ async function main() {
         // first attempt at this shot hid two capability rows behind it. A viewport
         // that fits the view leaves the bar where it really sits, at the end.
         const pctx = await browser.newContext({
+          locale: PIN_LOCALE, timezoneId: PIN_TIMEZONE,
           viewport: { width: 1200, height: 1680 }, deviceScaleFactor: 1,
           reducedMotion: 'reduce', colorScheme: 'light',
         });

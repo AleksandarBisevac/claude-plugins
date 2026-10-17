@@ -43,9 +43,23 @@
         "file": "tools/check-git-pipeline.py:2506-2528",
         "issue": "The nt branch of _shim_dir and of the k15 working shim writes .cmd files and is untested on Windows (the executor says so). On the windows CI leg a .cmd found by shutil.which and run without a shell, and a cmd shim that forwards %* to sys.executable, are assumptions; a failure there would turn k13-k15 red on CI only.",
         "resolution": "Confirm on the first windows CI run after this lands (ci-every-phase dispatch). If k13-k15 go red there, build the shims as .bat or add the extension to PATHEXT in the case env."
+      },
+      {
+        "id": "P128-R4",
+        "severity": "med",
+        "file": "tools/capture-screenshots.mjs:6516-6527,6583-6609",
+        "issue": "contradicts task clause: the description's fault is 'the report's date inputs render the host placeholder (dd. mm. 2026.) in committed shots', and the task title says committed images 'carry no host format'. The diff pins Intl/Date/navigator.language/number format, but not the native <input type=date> placeholder, which is the one symptom the clause names. I reproduced the limit read-only (in-memory element screenshots, nothing written): on this host (AppleLocale en_US@rg=rszzzz) a bare date input hashes identically under context locale en-US and de-DE with --lang=en-US, and differs only under --lang=de-DE. So the limit is real and the executor's disclosure is accurate. But the disclosure lives only in a code comment: the non-check capture that writes the PNGs prints nothing, and shot()'s pinProblem cannot see the placeholder (it is not in the DOM). A maintainer regenerating shots on such a host commits host-shaped 'filters' / date-input pixels with every check green and a 'pinned' label that now over-claims.",
+        "resolution": "Make the residual visible at the moment it matters instead of only in a comment. Options, structurally preferred first: (a) in the writing path of shot() (not --check), on darwin read the OS regional format (`defaults read -g AppleLocale`, region suffix `@rg=` other than US) and refuse, or at least print a loud note naming the shots that contain a native date input; (b) add the same reading to machineFingerprint() so --repro and the provenance line quote it. Node's own Intl.DateTimeFormat().resolvedOptions().locale is NOT usable for this: it reports en-US on the overridden host. Alternatively file the date-placeholder half as its own open task/fault so it is tracked rather than documented-away."
+      },
+      {
+        "id": "P128-R5",
+        "severity": "low",
+        "file": "tools/capture-screenshots.mjs:6584-6609",
+        "issue": "The pinned-context assertion runs inside shot(), so a leg that never reaches shot() (e.g. the ladderCtx / prioCtx pages at 7340 and 7415, which drive checks without a shutter) is pinned by option only and unasserted. Today harmless, since they produce no image.",
+        "resolution": "No action needed unless those contexts ever begin to photograph; if they do, they pass through shot() and are covered. Optionally note this in the PINNED_CONTEXT comment."
       }
     ],
-    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 5 - 0 high, 1 med, 4 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1225,7 +1239,7 @@
     {
       "id": "P128.23-0h5",
       "title": "A batch add has a dry run that its own refusal names correctly",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F662. add --from-file --dry-run says to put --dry-run in the file; the file with dryRun is refused as an unread key.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1270,19 +1284,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4b8a594e7e77",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: BATCH_FLAG_KEYS maps each add flag dest to the file key it belongs under (None for bug/introduces/failing_from, which the batch has no key for) at ~line 7870; _batch_stray_flags now returns (spelling, dest) and skips dry_run; new _batch_stray_refusal names the key per flag ('--risk is `tasks[].risk` in the file') and says 'has no key in the file - add that task with `add` alone' for the keyless ones; _cmd_batch_add uses it. New _batch_dry_run_report, called from _locked_batch_add before the snapshot: builds the batch, validates the plan in memory, writes and journals nothing, reports ids (text or --json with dryRun true, written []). Updated module --help text, --dry-run and --from-file parser comments/help. Requirement clauses: 'add --from-file --dry-run says to put --dry-run in the file' -> --dry-run is now accepted beside --from-file (stray filter + _batch_dry_run_report); 'the file with dryRun is refused as an unread key' -> unchanged on purpose: dryRun is a mode of the call, not a file field, and no refusal now sends anyone to it. Test: _batch_remedy_cases in test_audit_task.py, called from _batch_cases, one case titled with the tests.add clause verbatim: for every add flag (table written in the test, coverage-checked against VERB_FLAGS['add']) it runs the flag beside --from-file, requires a clean refusal that names the table's key path in backticks, edits the file as told, requires batch_problems empty and (except fixes, which needs plan findings) a real exit-0 add; keyless flags must say 'no key in the file'; --dry-run must exit 0, leave the tree bytes unchanged, and report the same ids the real run then writes. Also removed an F-id literal from the test fixture after test__deps rc16 flagged it. Not touched: commands/phase.md and other docs (outside files).",
+        "descriptive": "add --from-file now has a working --dry-run, and its refusals for stray flags name the file key each belongs under instead of pointing at keys the batch rejects."
       },
       "startedAt": "2026-10-16T23:24:46Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T00:28:46Z",
+      "verifiedBy": [
+        "following each add --from-file refusal's own remedy is accepted, so a remedy that leads to another refusal fails"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-17T00:15:18Z.2fef82",
         "status": "passed",
         "at": "2026-10-17T00:15:18Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "4b8a594e7e77",
+        "at": "2026-10-17T00:28:46Z",
+        "return": "docs/audit/evidence/returns/P128.23-0h5/20261016T232446Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-16T23:51:44Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage fb-block` in a throwaway tree at HEAD exited 1 with 1 of 19 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - following each add --from-file refusal's own remedy is accepted, so a remedy that leads to another refusal fails: every flag of `add` is graded here (unlisted: []), 19 flags followed, and the failures are [('blocked_by', \"remedy does not name `tasks[].blockedBy`: '[audit-task] add --from-file reads the phase and every task from the file, so it takes nothing beside it -- put --blocked-by in the file; nothing written\\\\n'\"), ('bug', \"a flag with no key points at the file: '[audit-task] add --from-file reads the phase and every task from the file, so it takes nothing beside it -- put --bug in the file; nothing written\\\\n'\"), ('depends_on', \"remedy does not name `tasks[].dependsOn`: '[audit-task] add --from-file reads the phase and every task from the file, so it takes nothing beside it -- put --depends-on in the file; nothing written\\\\n'\"), ('description', \"remedy does not name `tasks[].description`: '[audit-task] add --from-file reads the phase and every task from the file, so it takes nothing beside it -- put --description in the file; nothing written\\\\n'\"), ('failing_from', \"a flag with no key points at the file: '[audit-task] add --from-file reads the phase and every task from the file, so it takes nothing beside it -- put --failing-from in the file; nothing written\\\\n'\"), ('files', \"remedy does not name `tasks[].files`: '[audit-task] add --from-file reads the phase and every task from the file, so it takes nothing beside it -- put --files in the file; nothing written\\\\n'\"), ('fixes', \"remedy does not name `tasks[].fixes`: '[audit-task] add --from-file reads the phase and every task from the file, so it takes nothing beside it -- put --fixes in the file; nothing written\\\\n'\"), ('gate', \"remedy does not name `tasks[].tests.gate`: '[audit-task] add --from-file reads the phase and every task from the file, so it takes nothing beside it -- put --gate in the file; nothing written\\\\n'\"), ('gate_clear', \"remedy does not name `tasks[].tests.gate`: '[audit-task] add --from-file reads the phase and every task from the file, so it takes nothing beside it -- put --gate-clear in the file; nothing written\\\\n'\"), ('introduces', \"a flag with no key points at the file: '[audit-task] add --from-file reads the phase and every task from the file, so it takes nothing beside it -- put --introduces in the file; nothing written\\\\n'\"), ('model', \"remedy does not name `tasks[].model`: '[audit-task] add --from-file reads the phase and every task from the file, so it takes nothing beside it -- put --model in the file; nothing written\\\\n'\"), ('outputs', \"remedy does not name `tasks[].outputs`: '[audit-task] add --from-file reads the phase and every task from the file, so it takes nothing beside it -- put --outputs in the file; nothing written\\\\n'\"), ('phase', \"remedy does not name `phase.id`: '[audit-task] add --from-file reads the phase and every task from the file, so it takes nothing beside it -- put --phase in the file; nothing written\\\\n'\"), ('risk', \"remedy does not name `tasks[].risk`: '[audit-task] add --from-file reads the phase and every task from the file, so it takes nothing beside it -- put --risk in the file; nothing written\\\\n'\"), ('skills', \"remedy does not name `tasks[].skills`: '[audit-task] add --from-file reads the phase and every task from the file, so it takes nothing beside it -- put --skills in the file; nothing written\\\\n'\"), ('tests_add', \"remedy does not name `tasks[].tests.add`: '[audit-task] add --from-file reads the phase and every task from the file, so it takes nothing beside it -- put --tests-add in the file; nothing written\\\\n'\"), ('tests_mode', \"remedy does not name `tasks[].tests.mode`: '[audit-task] add --from-file reads the phase and every task from the file, so it takes nothing beside it -- put --tests-mode in the file; nothing written\\\\n'\"), ('title', \"remedy does not name `tasks[].title`: '[audit-task] add --from-file reads the phase and every task from the file, so it takes nothing beside it -- put a title in the file; nothing written\\\\n'\"), ('dry_run', \"dry run (2, None, None) kept=True written None vs real (0, ['P2.1', 'P2.2'])\")] (house FAIL): SELFTEST FAILED: 18/19 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1393,6 +1421,10 @@
         {
           "at": "2026-10-17T00:27:01Z",
           "text": "falsifier could-not-run for `tools/capture-screenshots.mjs: the capture context runs with a pinned locale and timezone, asserted before the first shutter, and an unpinned context fails the check`: mutation at tools/capture-screenshots.mjs:6572 (the command exited 2 on the unmutated copy, so a red under the mutant would prove nothing - painted paths: OK: no machine identity in the text read from stdin (2 line(s), 6 detector(s) applied)\nplaywright is not available. Run with:\n  npx --yes --package=playwright@1.56.0 node tools/capture-screenshots.mjs)"
+        },
+        {
+          "at": "2026-10-17T00:29:00Z",
+          "text": "falsifier could-not-run for `tools/capture-screenshots.mjs: the capture context runs with a pinned locale and timezone, asserted before the first shutter, and an unpinned context fails the check` accepted at the close: The falsifier could not run against an .mjs browser tool. The red was watched directly before the fix: capture-screenshots --check exited 1 with 25 unpinned-context problems, and the run now carries a negative control that fails it when the detector stops rejecting a de-DE/Asia/Tokyo context. The falsifier is retired under F1.6 by owner decision. (mutation at tools/capture-screenshots.mjs:6572; the command exited 2 on the unmutated copy, so a red under the mutant would prove nothing - painted paths: OK: no machine identity in the text read from stdin (2 line(s), 6 detector(s) applied)\nplaywright is not available. Run with:\n  npx --yes --package=playwright@1.56.0 node tools/capture-screenshots.mjs)"
         }
       ]
     },
