@@ -21,7 +21,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P128-R1",
@@ -78,7 +78,9 @@
         "severity": "low",
         "file": "plugins/audit/tests/_harness.py:1098-1131",
         "issue": "The diff changes the answer of _locks.pid_alive for a zombie (True -> False), and the untouched _harness.py states the old one: the comment at 1099-1104 says the product rule 'counts it ALIVE ... the product rule is left as it is', which is now false. _harness._is_zombie and _pid_present (alive is None or not _is_zombie) now duplicate the rule _locks._is_zombie holds, in a second copy that can drift. Both sides of the boundary (product rule, harness restatement of it) are named; the executor disclosed this as NOT DONE because the plan gate refused the file.",
-        "resolution": "Follow-up task owning _harness.py: reduce _pid_present to `_locks.pid_alive(pid) is not False`, delete the harness _is_zombie, rewrite the comment to say the product rule now reads a zombie as gone. _group_present keeps its own ps walk."
+        "resolution": "Follow-up task owning _harness.py: reduce _pid_present to `_locks.pid_alive(pid) is not False`, delete the harness _is_zombie, rewrite the comment to say the product rule now reads a zombie as gone. _group_present keeps its own ps walk.",
+        "status": "accepted-open",
+        "acceptedReason": "P128 lands the process-simplification and fault-fix wave; every per-task review finding was fixed by its own fix task (P128.46-P128.57) except three kept as recorded. R6 was resolved by P128.43 (the harness reads _locks.pid_alive). R12 was resolved when P128.46 was widened to declare its test file. R15 (the plan gate set runs no vitest) needs a meta.buildCommands key no CLI verb can add; it is an owner action through the panel, recorded as register fault F714, and its fix task P128.58 was cancelled for that reason. Per-task reviewer answers continued over: P128.25-0h5 intent diverges: The divergence is the native date-input placeholder half, which follows the OS regional format and is filed as the med finding of this task for its own fix; the locale and timezone pin that did land is correct and carries a negative control, so it stays.; P128.31-0h5 intent diverges: The divergence is the med finding: an unlisted change verb mints regression with no red-first while the comment and the outcome say tdd. It is real and is fixed by its own fix task before phase sign-off; the clauses that did land match the description."
       },
       {
         "id": "P128-R7",
@@ -135,7 +137,9 @@
         "severity": "low",
         "file": "tools/ui-tests/capture-provenance.test.mjs (outside task `files` and `tests.add`)",
         "issue": "The task is tdd with expectRedFirst true and added exported pure functions, so the test file is owed. It was not declared in `files` or `tests.add`. That is why the helper refused the red-first and the filed return carries testsAdded [] while its outcome claims nine cases in that file. The cases are real and pass on one run: 22 passed in the file. The omission leaves the plan's record of what the task changed incomplete and makes the red-first unprovable by construction.",
-        "resolution": "Declare tools/ui-tests/capture-provenance.test.mjs in `files` and `tests.add` for this task (with a --introduces red-first, since the symbols are new) before it closes."
+        "resolution": "Declare tools/ui-tests/capture-provenance.test.mjs in `files` and `tests.add` for this task (with a --introduces red-first, since the symbols are new) before it closes.",
+        "status": "accepted-open",
+        "acceptedReason": "P128 lands the process-simplification and fault-fix wave; every per-task review finding was fixed by its own fix task (P128.46-P128.57) except three kept as recorded. R6 was resolved by P128.43 (the harness reads _locks.pid_alive). R12 was resolved when P128.46 was widened to declare its test file. R15 (the plan gate set runs no vitest) needs a meta.buildCommands key no CLI verb can add; it is an owner action through the panel, recorded as register fault F714, and its fix task P128.58 was cancelled for that reason. Per-task reviewer answers continued over: P128.25-0h5 intent diverges: The divergence is the native date-input placeholder half, which follows the OS regional format and is filed as the med finding of this task for its own fix; the locale and timezone pin that did land is correct and carries a negative control, so it stays.; P128.31-0h5 intent diverges: The divergence is the med finding: an unlisted change verb mints regression with no red-first while the comment and the outcome say tdd. It is real and is fixed by its own fix task before phase sign-off; the clauses that did land match the description."
       },
       {
         "id": "P128-R13",
@@ -152,20 +156,26 @@
         "severity": "low",
         "file": "tools/ui-tests/capture-provenance.test.mjs:352-358",
         "issue": "The wiring case 'shot() obeys the refusal, prints the note, records the extra, and passes the flag' is four independent regex matches over shot()'s body. None asks where the refusal sits relative to the shutter call. Moving `await page.screenshot(...)` above `if (decision.refuse) { fail(...); return; }` leaves every regex matching and the file count of shutter calls unchanged, so the picture is written before the refusal and all 32 vitest cases stay green. The executor's own return concedes it cannot prove order. Order is the whole point of a refusal, so the deliverable's wiring is only partly pinned.",
-        "resolution": "In that case add `expect(body.indexOf('if (decision.refuse)')).toBeGreaterThan(-1)` and `expect(body.indexOf('if (decision.refuse)')).toBeLessThan(body.search(/\\.screenshot\\b/))`, and likewise recordCapture after the shutter call. Index comparisons need no browser.",
-        "fixTask": "P128.57-izt"
+        "resolution": "fixed in P128.57-izt (194f23742a58): In that case add `expect(body.indexOf('if (decision.refuse)')).toBeGreaterThan(-1)` and `expect(body.indexOf('if (decision.refuse)')).toBeLessThan(body.search(/\\.screenshot\\b/))`, and likewise recordCapture after the shutter call. Index comparisons need no browser.",
+        "fixTask": "P128.57-izt",
+        "commit": "194f23742a58",
+        "status": "fixed"
       },
       {
         "id": "P128-R15",
         "severity": "med",
         "file": "tools/ui-tests/capture-provenance.test.mjs:369-414 (task tests.gate)",
         "issue": "The recorded gate (selftests, validate, plugin-validate, gate, report, lint, shots, interactive) never executes capture-provenance.test.mjs. `tools/sweep-selftests.py` has no vitest reference and no .py/.sh/.yml in the tree names the file except a comment in tools/capture-screenshots.mjs:6452; `shots` is `capture-screenshots.mjs --check`, which returns before the refusal/shutter path (shot() returns at `if (CHECK)`). So the 'passed' gate run says nothing about the order pin: moving page.screenshot above the refusal leaves every listed gate green. Only `npx vitest run` (tools/verify.sh:369, ci.yml:791) runs it, and that is not a tests.gate entry. The fix is therefore unguarded by the recorded gate.",
-        "resolution": "Add a gate entry for this task that runs the file, e.g. `vitest` -> `npx vitest run tools/ui-tests/capture-provenance.test.mjs`, so the recorded run covers the new cases."
+        "resolution": "Add a gate entry for this task that runs the file, e.g. `vitest` -> `npx vitest run tools/ui-tests/capture-provenance.test.mjs`, so the recorded run covers the new cases.",
+        "fixTask": "P128.58-izt",
+        "status": "accepted-open",
+        "acceptedReason": "P128 lands the process-simplification and fault-fix wave; every per-task review finding was fixed by its own fix task (P128.46-P128.57) except three kept as recorded. R6 was resolved by P128.43 (the harness reads _locks.pid_alive). R12 was resolved when P128.46 was widened to declare its test file. R15 (the plan gate set runs no vitest) needs a meta.buildCommands key no CLI verb can add; it is an owner action through the panel, recorded as register fault F714, and its fix task P128.58 was cancelled for that reason. Per-task reviewer answers continued over: P128.25-0h5 intent diverges: The divergence is the native date-input placeholder half, which follows the OS regional format and is filed as the med finding of this task for its own fix; the locale and timezone pin that did land is correct and carries a negative control, so it stays.; P128.31-0h5 intent diverges: The divergence is the med finding: an unlisted change verb mints regression with no red-first while the comment and the outcome say tdd. It is real and is fixed by its own fix task before phase sign-off; the clauses that did land match the description."
       }
     ],
-    "outcome": "[findings: 15 - 0 high, 5 med, 10 low; 11 with a recorded fix commit]"
+    "outcome": "[findings: 15 - 0 high, 5 med, 10 low; 12 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "P128 lands the process-simplification and fault-fix wave; every per-task review finding was fixed by its own fix task (P128.46-P128.57) except three kept as recorded. R6 was resolved by P128.43 (the harness reads _locks.pid_alive). R12 was resolved when P128.46 was widened to declare its test file. R15 (the plan gate set runs no vitest) needs a meta.buildCommands key no CLI verb can add; it is an owner action through the panel, recorded as register fault F714, and its fix task P128.58 was cancelled for that reason. Per-task reviewer answers continued over: P128.25-0h5 intent diverges: The divergence is the native date-input placeholder half, which follows the OS regional format and is filed as the med finding of this task for its own fix; the locale and timezone pin that did land is correct and carries a negative control, so it stays.; P128.31-0h5 intent diverges: The divergence is the med finding: an unlisted change verb mints regression with no red-first while the comment and the outcome say tdd. It is real and is fixed by its own fix task before phase sign-off; the clauses that did land match the description.",
   "tasks": [
     {
       "id": "P128.1-0h5",
@@ -3736,7 +3746,7 @@
     {
       "id": "P128.57-izt",
       "title": "fix P128-R14: The wiring case 'shot() obeys the refusal, prints the note, rec...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The wiring case 'shot() obeys the refusal, prints the note, records the extra, and passes the flag' is four independent regex matches over shot()'s body. None asks where the refusal sits relative to the shutter call. Moving `await page.screenshot(...)` above `if (decision.refuse) { fail(...); return; }` leaves every regex matching and the file count of shutter calls unchanged, so the picture is written before the refusal and all 32 vitest cases stay green. The executor's own return concedes it cannot prove order. Order is the whole point of a refusal, so the deliverable's wiring is only partly pinned.\n\nResolution asked: In that case add `expect(body.indexOf('if (decision.refuse)')).toBeGreaterThan(-1)` and `expect(body.indexOf('if (decision.refuse)')).toBeLessThan(body.search(/\\.screenshot\\b/))`, and likewise recordCapture after the shutter call. Index comparisons need no browser.",
       "files": [
         "tools/ui-tests/capture-provenance.test.mjs"
@@ -3766,14 +3776,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "194f23742a58",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Edited only tools/ui-tests/capture-provenance.test.mjs. Printed HEAD before first edit: c9c816bd. Added helpers codeBody (shot() body with comment lines dropped, :377) and orderProblems (:382, reports a missing anchor as a problem rather than comparing -1, refusal-after-shutter, recordCapture-before-shutter) and two cases: 'the case P128-R14 asks for, locking the behaviour at HEAD' (:395; asserts indexOf('if (decision.refuse)') > -1, shutter search > -1, refusal index < shutter index, shutter index < recordCapture index, orderProblems == []) and 'reports a shutter call moved above the refusal' (:406; the detector's other direction: plants the moved statement in a copy of the real body and expects exactly 'the refusal sits after the shutter call'). Added two section markers (:40, :301) because the file crossed 400 lines and the sweep's tn0 navigability case went red (first sweep: 330/331 in test__deps.py, FAIL tn0 '410 lines but only 0 section marker(s)'). Runs: capture-provenance vitest 34 passed (34) exit 0; full npx vitest run: 56 files, 851 passed (851) at the first run, exit 0 and re-run exit 0 after markers; python3 tools/sweep-selftests.py --quiet: SWEEP_EXIT 0, '335/335 files ok, 153 migrated to tests/, 16646 cases'. Requirement clauses: (1) add indexOf(refusal) > -1 : :396 ; (2) refusal < shutter : :398 (uses SHUTTER regex over comment-stripped body, a superset of /\\.screenshot\\b/ that also catches the bracket form); (3) likewise recordCapture after the shutter: :399; (4) no browser: pure source index comparison; (5) decision.refuse-before-shutter mutation proven red then restored: done in scratch copy, shared tree's tools/capture-screenshots.mjs never touched (git status shows only the test file from me). Deviation: the resolution said 'in that case add'; I put the assertions in a new case carrying the tests.add title verbatim rather than the existing case, so the title matches the brief; the existing case is unchanged. No falsifier filed (regression mode). Not run: tools/verify.sh, capture-screenshots writes, shots/interactive/lint gates (brief's own-tests mode).",
+        "descriptive": "shot()'s statement order is now pinned: the refusal precedes the shutter and recordCapture follows it, proven red by moving each in a scratch copy."
       },
       "startedAt": "2026-10-17T14:37:14Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T15:14:18Z",
+      "verifiedBy": [
+        "the case P128-R14 asks for, locking the behaviour at HEAD",
+        "reports a shutter call moved above the refusal"
+      ],
       "notes": [
         {
           "at": "2026-10-17T14:37:13Z",
@@ -3792,14 +3805,81 @@
         "runId": "2026-10-17T15:12:44Z.95491e",
         "status": "passed",
         "at": "2026-10-17T15:12:44Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "194f23742a58",
+        "at": "2026-10-17T15:14:18Z",
+        "return": "docs/audit/evidence/returns/P128.57-izt/20261017T143714Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task: the code already has the order the new case pins, so the case is green at HEAD by design (no red owed). The reds were watched by hand in a throwaway copy built from git archive HEAD under the scratchpad, not in the shared tree and not through the helper. Mutation 1: page.screenshot moved above `if (decision.refuse)` in that copy: the new case failed (x the case P128-R14 asks for, locking the behaviour at HEAD, toBeLessThan on refusal vs shutter index) while the older 'shot() obeys the refusal...' case stayed green, which is the gap R14 names. Mutation 2: recordCapture moved above the shutter: failed with 'AssertionError: expected 1096 to be less than 1027'. Restored copy: passes.",
+        "at": "2026-10-17 16:4x local (scratch copy under the session scratchpad mut/)"
       }
+    },
+    {
+      "id": "P128.58-izt",
+      "title": "fix P128-R15: The recorded gate (selftests, validate, plugin-validate, gate, ...",
+      "status": "cancelled",
+      "description": "The recorded gate (selftests, validate, plugin-validate, gate, report, lint, shots, interactive) never executes capture-provenance.test.mjs. `tools/sweep-selftests.py` has no vitest reference and no .py/.sh/.yml in the tree names the file except a comment in tools/capture-screenshots.mjs:6452; `shots` is `capture-screenshots.mjs --check`, which returns before the refusal/shutter path (shot() returns at `if (CHECK)`). So the 'passed' gate run says nothing about the order pin: moving page.screenshot above the refusal leaves every listed gate green. Only `npx vitest run` (tools/verify.sh:369, ci.yml:791) runs it, and that is not a tests.gate entry. The fix is therefore unguarded by the recorded gate.\n\nResolution asked: Add a gate entry for this task that runs the file, e.g. `vitest` -> `npx vitest run tools/ui-tests/capture-provenance.test.mjs`, so the recorded run covers the new cases.",
+      "files": [
+        "tools/ui-tests/capture-provenance.test.mjs"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/ui-tests/capture-provenance.test.mjs: the case P128-R15 asks for, locking the behaviour at HEAD"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: No supported route adds a meta.buildCommands key to an existing plan from the CLI (only /audit:init for a new plan and the panel PUT /api/composition, which needs the browser session token). Adding a vitest build command is an owner action through the panel; recorded in the register."
+      },
+      "startedAt": "2026-10-17T15:14:31Z",
+      "completedAt": "2026-10-17T15:16:09Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-17T15:14:30Z",
+          "text": "scope: tools/ui-tests/capture-provenance.test.mjs, every path the finding(s) P128-R15 name"
+        },
+        {
+          "at": "2026-10-17T15:14:30Z",
+          "text": "no test runner in this task's gate for the test P128-R15 asks for: the gate is ['selftests', 'validate', 'plugin-validate', 'gate', 'report', 'lint', 'shots', 'interactive'], derived as the phase's testGate, wide -- no sibling task in P128 declares a path-scoped gate entry to read this project's spelling off; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P128-R15"
+      ],
+      "reviewPerTask": "signals"
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "d55605e4-ee14-4690-adce-d240ad64810b",
-    "branch": "audit/p128-consolidated-solution-orchestr",
-    "at": "2026-10-16T18:38:31Z"
-  },
-  "startedAt": "2026-10-16T18:38:31Z"
+  "startedAt": "2026-10-16T18:38:31Z",
+  "testEvidence": {
+    "runId": "2026-10-17T15:29:11Z.dea07f",
+    "status": "passed",
+    "at": "2026-10-17T15:29:11Z"
+  }
 }
