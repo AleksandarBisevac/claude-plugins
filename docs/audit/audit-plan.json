@@ -1462,7 +1462,8 @@
       "P129.7-izt",
       "P129.8-izt",
       "P128.19-0h5",
-      "P128.32-0h5"
+      "P128.32-0h5",
+      "P128.44-izt"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -7233,7 +7234,8 @@
       "P123.20",
       "P123.49-64p",
       "P125.44-0h5",
-      "P125.49-0h5"
+      "P125.49-0h5",
+      "P128.44-izt"
     ],
     "plugins/audit/tests/test_derive_phase_gate.py": [
       "P79.3",
@@ -9280,7 +9282,8 @@
     "plugins/audit/scripts/governance/_affected_tests.py": [
       "P125.8",
       "P125.45-0h5",
-      "P125.49-0h5"
+      "P125.49-0h5",
+      "P128.44-izt"
     ],
     "plugins/audit/tests/test__affected_tests.py": [
       "P125.8",
