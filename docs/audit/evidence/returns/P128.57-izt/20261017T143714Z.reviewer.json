@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "med", "file": "tools/ui-tests/capture-provenance.test.mjs:369-414 (task tests.gate)",
+   "issue": "The recorded gate (selftests, validate, plugin-validate, gate, report, lint, shots, interactive) never executes capture-provenance.test.mjs. `tools/sweep-selftests.py` has no vitest reference and no .py/.sh/.yml in the tree names the file except a comment in tools/capture-screenshots.mjs:6452; `shots` is `capture-screenshots.mjs --check`, which returns before the refusal/shutter path (shot() returns at `if (CHECK)`). So the 'passed' gate run says nothing about the order pin: moving page.screenshot above the refusal leaves every listed gate green. Only `npx vitest run` (tools/verify.sh:369, ci.yml:791) runs it, and that is not a tests.gate entry. The fix is therefore unguarded by the recorded gate.",
+   "resolution": "Add a gate entry for this task that runs the file, e.g. `vitest` -> `npx vitest run tools/ui-tests/capture-provenance.test.mjs`, so the recorded run covers the new cases."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'expect(body.indexOf(\"if (decision.refuse)\")).toBeGreaterThan(-1) and ...toBeLessThan(body.search(/\\.screenshot\\b/)), and likewise recordCapture after the shutter call. Index comparisons need no browser.' The diff adds, in tools/ui-tests/capture-provenance.test.mjs, a comment-stripped shot() body (codeBody), an orderProblems helper with a missing-anchor guard, and a case asserting refusal index > -1, shutter index > -1, refusal < shutter < recordCapture('. Source at tools/capture-screenshots.mjs:6863-6871 has exactly that order, so the case is green at HEAD by design. It uses the SHUTTER regex (superset of /\\.screenshot\\b/) instead of the literal one asked, and puts the assertions in a new case instead of the existing one; the executor discloses both, and the existing case is untouched, so the pin is the same. A second case plants the moved statement and expects exactly 'the refusal sits after the shutter call', so the detector is shown to fire. The executor's outcome describes the diff accurately: two helpers, two cases, two section markers (lines 40 and 301) added for the 400-line navigability lint. Only that test file changed.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Regression task; the executor's basis holds: the order already exists, so green at HEAD is by design. I reproduced the red myself in a git-archive copy of HEAD under the scratchpad (not the shared tree): with page.screenshot moved above `if (decision.refuse)` in tools/capture-screenshots.mjs, 'the case P128-R14 asks for, locking the behaviour at HEAD' failed, while the older 'shot() obeys the refusal...' case stayed green. The other failures in that scratch copy (POSIX scratch root, windows temp root, empty read) are the copy's environment and not the mutation. Shared tree: `npx vitest run tools/ui-tests/capture-provenance.test.mjs` gave 34 passed.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "Read tests.gate: sweep-selftests (Python selftests), validate-manifest, plugin validate, audit-status --gate, render-report, ruff/vermin, capture-screenshots --check, check-report-interactive. None selects a test of shot()'s refusal/shutter/record order (no vitest entry), so the question has nothing to bound it. See finding 1."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

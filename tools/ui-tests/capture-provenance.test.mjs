@@ -37,6 +37,8 @@ const PY = process.env.PYTHON || 'python3';
 const WORK = path.resolve(path.sep, 'tmp', 'audit-shots-501');
 const served = (port, dir) => new Map([[port, dir]]);
 
+// --- the refusals as pure functions ------------------------------------------
+
 describe('fixtureProblem: the shutter may only open on this run\'s own fixture', () => {
   it('accepts a panel whose project is inside the claimed scratch tree', () => {
     const facts = { origin: 'http://127.0.0.1:51234', project: path.join(WORK, 'big') };
@@ -296,6 +298,8 @@ describe('shotWriteDecision: what shot() does once the shutter is ready to write
   });
 });
 
+// --- the wiring of shot() ----------------------------------------------------
+
 // A RULE THAT LIVED IN A COMMENT: every image this tool writes goes through shot(),
 // because shot() is where the pinned-context, fixture and date-input checks run. A
 // second call site photographs without them. This reads the source, so it needs no
@@ -361,5 +365,50 @@ describe('every image is written by shot() alone', () => {
     expect(body).toMatch(/if \(decision\.refuse\) \{\s*fail\(decision\.refuse\);\s*return;/);
     expect(body).toMatch(/if \(decision\.note\) note\(decision\.note\);/);
     expect(body).toMatch(/recordCapture\(.*, decision\.extra\)/);
+  });
+
+  // ORDER, which the case above cannot see: the refusal is only a refusal if it sits
+  // BEFORE the shutter, and the sidecar entry only describes a picture if it sits
+  // AFTER it. Moving the shutter call above the refusal leaves every regex above
+  // matching and the file's count of shutter calls at one, so the picture would be
+  // written and then refused. Index comparisons over the statements need no browser.
+  // Comment lines are dropped first, so a remark that names the call cannot stand in
+  // for it; an anchor that is missing fails the case rather than comparing -1.
+  const codeBody = (lines) => {
+    const { start, end } = bounds(lines);
+    return lines.slice(start - 1, end).filter((l) => !isCommentLine(l)).join('\n');
+  };
+  const REFUSAL = 'if (decision.refuse)';
+  const orderProblems = (body) => {
+    const refusal = body.indexOf(REFUSAL);
+    const shutter = body.search(SHUTTER);
+    const record = body.indexOf('recordCapture(');
+    if (refusal < 0 || shutter < 0 || record < 0) {
+      return ['anchor missing: refusal ' + refusal + ', shutter ' + shutter + ', record ' + record];
+    }
+    return [
+      ...(refusal < shutter ? [] : ['the refusal sits after the shutter call']),
+      ...(shutter < record ? [] : ['recordCapture sits before the shutter call']),
+    ];
+  };
+
+  it('the case P128-R14 asks for, locking the behaviour at HEAD', () => {
+    const body = codeBody(LINES);
+    expect(body.indexOf(REFUSAL)).toBeGreaterThan(-1);
+    expect(body.search(SHUTTER)).toBeGreaterThan(-1);
+    expect(body.indexOf(REFUSAL)).toBeLessThan(body.search(SHUTTER));
+    expect(body.search(SHUTTER)).toBeLessThan(body.indexOf('recordCapture('));
+    expect(orderProblems(body)).toEqual([]);
+  });
+
+  // The detector's other direction: the same body with the shutter statement moved
+  // above the refusal must be reported, so the case above can go red.
+  it('reports a shutter call moved above the refusal', () => {
+    const shutterLine = '  await page.screenshot({ path: file, fullPage: full });';
+    const moved = codeBody(LINES).split('\n').filter((l) => l !== shutterLine);
+    expect(moved.length).toBe(codeBody(LINES).split('\n').length - 1);
+    const at = moved.findIndex((l) => l.includes(REFUSAL));
+    moved.splice(at, 0, shutterLine);
+    expect(orderProblems(moved.join('\n'))).toEqual(['the refusal sits after the shutter call']);
   });
 });

@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "npx vitest run tools/ui-tests/capture-provenance.test.mjs": "pass",
+    "npx vitest run": "pass",
+    "python3 tools/sweep-selftests.py --quiet": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task: the code already has the order the new case pins, so the case is green at HEAD by design (no red owed). The reds were watched by hand in a throwaway copy built from git archive HEAD under the scratchpad, not in the shared tree and not through the helper. Mutation 1: page.screenshot moved above `if (decision.refuse)` in that copy: the new case failed (x the case P128-R14 asks for, locking the behaviour at HEAD, toBeLessThan on refusal vs shutter index) while the older 'shot() obeys the refusal...' case stayed green, which is the gap R14 names. Mutation 2: recordCapture moved above the shutter: failed with 'AssertionError: expected 1096 to be less than 1027'. Restored copy: passes.",
+    "at": "2026-10-17 16:4x local (scratch copy under the session scratchpad mut/)"
+  },
+  "outcome": {
+    "technical": "Edited only tools/ui-tests/capture-provenance.test.mjs. Printed HEAD before first edit: c9c816bd. Added helpers codeBody (shot() body with comment lines dropped, :377) and orderProblems (:382, reports a missing anchor as a problem rather than comparing -1, refusal-after-shutter, recordCapture-before-shutter) and two cases: 'the case P128-R14 asks for, locking the behaviour at HEAD' (:395; asserts indexOf('if (decision.refuse)') > -1, shutter search > -1, refusal index < shutter index, shutter index < recordCapture index, orderProblems == []) and 'reports a shutter call moved above the refusal' (:406; the detector's other direction: plants the moved statement in a copy of the real body and expects exactly 'the refusal sits after the shutter call'). Added two section markers (:40, :301) because the file crossed 400 lines and the sweep's tn0 navigability case went red (first sweep: 330/331 in test__deps.py, FAIL tn0 '410 lines but only 0 section marker(s)'). Runs: capture-provenance vitest 34 passed (34) exit 0; full npx vitest run: 56 files, 851 passed (851) at the first run, exit 0 and re-run exit 0 after markers; python3 tools/sweep-selftests.py --quiet: SWEEP_EXIT 0, '335/335 files ok, 153 migrated to tests/, 16646 cases'. Requirement clauses: (1) add indexOf(refusal) > -1 : :396 ; (2) refusal < shutter : :398 (uses SHUTTER regex over comment-stripped body, a superset of /\\.screenshot\\b/ that also catches the bracket form); (3) likewise recordCapture after the shutter: :399; (4) no browser: pure source index comparison; (5) decision.refuse-before-shutter mutation proven red then restored: done in scratch copy, shared tree's tools/capture-screenshots.mjs never touched (git status shows only the test file from me). Deviation: the resolution said 'in that case add'; I put the assertions in a new case carrying the tests.add title verbatim rather than the existing case, so the title matches the brief; the existing case is unchanged. No falsifier filed (regression mode). Not run: tools/verify.sh, capture-screenshots writes, shots/interactive/lint gates (brief's own-tests mode).",
+    "descriptive": "shot()'s statement order is now pinned: the refusal precedes the shutter and recordCapture follows it, proven red by moving each in a scratch copy."
+  },
+  "testsAdded": [
+    "the case P128-R14 asks for, locking the behaviour at HEAD",
+    "reports a shutter call moved above the refusal"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:0c5754ad33631298505edc1acd8b08a278e23e6e42509096510c48d740cb4b93\",\"dirtyDigest\":\"sha256:af36113617b6dc429e6f763c2ae0e9973f63f16d67a041198abacdbc997613fe\",\"dirtyPaths\":{\"tools/ui-tests/capture-provenance.test.mjs\":\"0e4f0c5bb6f63a7a\"},\"head\":\"c9c816bd\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/ui-tests/capture-provenance.test.mjs\"],\"scopeDigest\":\"sha256:ccfa1ea5b846107422df4edf320cd3c6c78ca43f8957ab48a1bd87031fabc2de\",\"v\":2}"
+}
