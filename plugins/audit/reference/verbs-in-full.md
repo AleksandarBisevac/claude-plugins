@@ -418,12 +418,16 @@ per task, per phase running in parallel.
 Three defaults, taken in order, and **the script prints which one it took** on the
 `gate:` line (and as `testGateBasis` under `--json`):
 
-1. **the task's own `tests.add` paths**, written into the path-scoped spelling a
-   sibling task in the phase already carries. First, because a task whose gate never
+1. **the task's own `tests.add` paths**, written into the path-scoped spelling the
+   project records: `meta.phaseGate.derived.spelling` when it carries a `{paths}`
+   placeholder (filled with the quoted paths, after any `meta.phaseGate.always`
+   entries), else the one a sibling task in the phase already carries — the same
+   order `derive-phase-gate` reads, through one resolver
+   (`_gate_derive.resolve_shape`). First, because a task whose gate never
    runs the case it just wrote has bought a green with nothing behind it.
-2. **the task's `files`**, in that same sibling spelling, when no case is named.
-3. **the phase's `testGate`** — the wide one — when no sibling carries a path-scoped
-   entry, or when this task names no file at all. The two reasons print differently
+2. **the task's `files`**, in that same spelling, when no case is named.
+3. **the phase's `testGate`** — the wide one — when neither a recorded spelling nor a
+   sibling carries a path-scoped entry, or when this task names no file at all. The two reasons print differently
    because they are repaired differently: the first wants a narrow `--gate` typed once
    (every later add in that phase then reads the spelling off it), the second wants
    `--files` or `--tests-add`.
@@ -481,13 +485,13 @@ never `failing`, which carries a CHECK's own title and no path — and only when
 tail of a step's own output when no runner it recognises wrote a summary, and a tail
 excerpt is not a list of failing tests. The suites are UNIONED with this task's own
 `--tests-add` paths — a fix task may still be asked to write a NEW case beside the failure
-it repairs — and pointed through the phase's path-scoped sibling spelling exactly as the
-three ordinary defaults are. `tests.gateBasis` is written `failing-from-run:<runId>`:
+it repairs — and pointed through the phase's path-scoped spelling (the recorded one, else
+a sibling's) exactly as the three ordinary defaults are. `tests.gateBasis` is written `failing-from-run:<runId>`:
 compare the word before the colon, and look the runId up rather than parsing further.
 
 **The gate is never empty just because `--failing-from` could not narrow anything.** A row
-whose failed steps named no suite (a tail basis) or a phase with no path-scoped sibling to
-narrow through falls all the way through to the ordinary `tests.add` → `files` →
+whose failed steps named no suite (a tail basis) or a phase with neither a recorded spelling
+nor a path-scoped sibling to narrow through falls all the way through to the ordinary `tests.add` → `files` →
 phase-wide chain, with the reason it fell through printed FIRST in the `gate:` line — the
 same three defaults a call with no `--failing-from` gets, never silence and never the
 empty gate as though `--failing-from` were a second spelling of `--gate-clear`.

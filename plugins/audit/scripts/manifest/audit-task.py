@@ -2549,12 +2549,14 @@ def _waiting_on(assembled, node):
 _gate_entry_paths = _phases.gate_entry_paths
 
 
-# THIN ALIASES, NOT COPIES: `is_shared_key`, `path_scoped_sibling` and
-# `repointed` moved to `_gate_derive.py` so a PHASE-level derivation and this
-# TASK-level one share one body apiece rather than two that could drift. See
-# that module for the (unchanged) docstrings.
+# THIN ALIASES, NOT COPIES: `is_shared_key` and `repointed` moved to
+# `_gate_derive.py` so a PHASE-level derivation and this TASK-level one share
+# one body apiece rather than two that could drift. See that module for the
+# (unchanged) docstrings. THE SHAPE ITSELF IS NOT ALIASED: it comes from
+# `_gate_derive.resolve_shape` (see `_task_gate_setup`), which tries the
+# recorded spelling before a sibling task's entry; this module holds no handle
+# on the sibling source, so it cannot read the shape in a different order.
 _is_shared_key = _gate_derive.is_shared_key
-_path_scoped_sibling = _gate_derive.path_scoped_sibling
 _repointed = _gate_derive.repointed
 
 
@@ -2605,11 +2607,30 @@ def _failing_from_lookup(project, phase, run_id):
     return row, None
 
 
-def _point(shape, build, paths, project, runner_aware):
-    """`(entries, suffix)` - the sibling's shape re-pointed at `paths`, and the
-    sentence to append to the gate's basis. A fix task's paths are sent to the
-    runner that takes each (`_gate_derive.repointed_by_runner`); every other task
-    keeps the plain re-point, so a plan with one runner reads as it always did."""
+def _spelled_in(owner):
+    """The phrase naming where the shape was read: `P1.1's spelling` for a
+    sibling task, and the recorded template itself for the spelling source."""
+    if owner == _gate_derive.SPELLING_SOURCE:
+        return "the spelling %s records" % (owner,)
+    return "%s's spelling" % (owner,)
+
+
+def _point(shape, build, paths, project, runner_aware, owner=None, meta=None):
+    """`(entries, suffix)` - the resolved shape pointed at `paths`, and the
+    sentence to append to the gate's basis. A recorded spelling is filled by
+    `_gate_derive.point_shape` and led by `meta.phaseGate.always`, as the
+    phase-level derivation does. A sibling's shape for a fix task sends each
+    path to the runner that takes it (`_gate_derive.repointed_by_runner`);
+    every other task keeps the plain re-point, so a plan with one runner reads
+    as it always did."""
+    if owner == _gate_derive.SPELLING_SOURCE:
+        always = _phases.phase_gate_default(
+            meta if isinstance(meta, dict) else {})["always"]
+        entries = list(always)
+        for entry in _gate_derive.point_shape(shape, owner, build, paths):
+            if entry not in entries:
+                entries.append(entry)
+        return entries, ""
     if not runner_aware:
         return _repointed(shape, build, paths), ""
     entries, notes = _gate_derive.repointed_by_runner(shape, build, paths,
@@ -2627,23 +2648,26 @@ def _ordinary_task_gate(shape, owner, wide, build, add_paths, files, mode,
     """
     if shape is None:
         return wide, ("the phase's testGate, wide -- no sibling task in %s "
-                      "declares a path-scoped gate entry to read this "
-                      "project's spelling off" % (phase.get("id"),)), \
+                      "declares a path-scoped gate entry and "
+                      "meta.phaseGate.derived.spelling records none, so there "
+                      "is no spelling of this project's to read"
+                      % (phase.get("id"),)), \
             "phase-no-spelling"
     if add_paths:
-        entries, more = _point(shape, build, add_paths, project, runner_aware)
+        entries, more = _point(shape, build, add_paths, project, runner_aware,
+                               owner, meta)
         return (entries,
-                "narrowed to this task's tests.add paths, in %s's spelling%s"
-                % (owner, more), "tests.add")
+                "narrowed to this task's tests.add paths, in %s%s"
+                % (_spelled_in(owner), more), "tests.add")
     if files:
         if mode == "gate-only":
             suite_files = [p for p in files if _phases.is_suite_path(p)]
             if suite_files:
                 entries, more = _point(shape, build, suite_files, project,
-                                       runner_aware)
+                                       runner_aware, owner, meta)
                 return (entries,
-                        "narrowed to this task's files, in %s's spelling%s"
-                        % (owner, more), "files")
+                        "narrowed to this task's files, in %s%s"
+                        % (_spelled_in(owner), more), "files")
             always = _phases.phase_gate_default(
                 meta if isinstance(meta, dict) else {})["always"]
             if always:
@@ -2651,16 +2675,26 @@ def _ordinary_task_gate(shape, owner, wide, build, add_paths, files, mode,
                         "meta.phaseGate.always -- this task's files name no "
                         "suite path to narrow %s's gate at" % (owner,),
                         "gate-only-no-suite")
+            if owner == _gate_derive.SPELLING_SOURCE:
+                # A TEMPLATE HAS NO PATH-LESS ENTRY TO CARRY THROUGH: its only
+                # entry is the `{paths}` command itself, which cannot run
+                # unfilled, so the wide gate is the answer, said as such.
+                return wide, ("the phase's testGate, wide -- this task's "
+                              "files name no suite path to fill %s's "
+                              "{paths} with, and the plan declares no "
+                              "meta.phaseGate.always" % (owner,)), \
+                    "phase-no-paths"
             passthrough = [e for e in shape
                           if _is_shared_key(e, build) or not _gate_entry_paths(e)]
             return (passthrough,
                     "%s's gate entries that name no path, carried through -- "
                     "this task's files name no suite path to narrow %s's gate "
                     "at" % (owner, owner), "gate-only-no-suite")
-        entries, more = _point(shape, build, files, project, runner_aware)
+        entries, more = _point(shape, build, files, project, runner_aware,
+                               owner, meta)
         return (entries,
-                "narrowed to this task's files, in %s's spelling%s" % (owner, more),
-                "files")
+                "narrowed to this task's files, in %s%s"
+                % (_spelled_in(owner), more), "files")
     return wide, ("the phase's testGate, wide -- %s is path-scoped but this "
                   "task names no file to point a gate at" % (owner,)), \
         "phase-no-paths"
@@ -2675,7 +2709,12 @@ def _task_gate_setup(phase, assembled):
     wide = [g for g in (phase.get("testGate") or []) if isinstance(g, str)]
     meta = assembled.get("meta") if isinstance(assembled, dict) else None
     build = (meta or {}).get("buildCommands") if isinstance(meta, dict) else None
-    shape, owner = _path_scoped_sibling(phase, build)
+    phase_gate = meta.get("phaseGate") if isinstance(meta, dict) else None
+    derived = phase_gate.get("derived") if isinstance(phase_gate, dict) else None
+    # THE ONE RESOLVER: the recorded spelling first, a sibling's entry second,
+    # the order `derive-phase-gate` reads. The "skipped" reason it returns for
+    # a spelling with no `{paths}` is not echoed by `add`.
+    shape, owner, _lines = _gate_derive.resolve_shape(phase, build, derived)
     return wide, meta, build, shape, owner
 
 
@@ -2842,11 +2881,12 @@ def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
                        else _root_spelled_suites(suites, project or "."))
         if pinned:
             union = _union_paths(pinned, add_paths)
-            entries, more = _point(shape, build, union, project, runner_aware)
+            entries, more = _point(shape, build, union, project, runner_aware,
+                                   owner, meta)
             return (entries,
                     "narrowed to the suite(s) run %s named as failing, "
-                    "union with this task's tests.add paths, in %s's "
-                    "spelling%s" % (args.failing_from, owner, more),
+                    "union with this task's tests.add paths, in %s%s"
+                    % (args.failing_from, _spelled_in(owner), more),
                     "failing-from-run:%s" % (args.failing_from,))
         if not suites:
             why = ("run %s's failed steps named no suite as failing (a tail "
@@ -2874,8 +2914,9 @@ def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
                         % (why, args.failing_from),
                         "failing-from-run:%s" % (args.failing_from,))
     else:
-        why = ("no sibling task in %s declares a path-scoped gate entry to "
-               "narrow --failing-from %s against"
+        why = ("no sibling task in %s declares a path-scoped gate entry and "
+               "meta.phaseGate.derived.spelling records none, to narrow "
+               "--failing-from %s against"
                % (phase.get("id"), args.failing_from))
     gate, basis, source = _ordinary_task_gate(
         shape, owner, wide, build, add_paths, files, mode, meta, phase, project,

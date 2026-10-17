@@ -13,6 +13,7 @@ manifest, a phase and a `facts` dict this suite builds BY HAND -- no
 subprocess, no git, no listing ever really run. `dg`-prefixed cases.
 """
 
+import ast
 import os
 import shlex
 import subprocess
@@ -20,7 +21,7 @@ import sys
 import tempfile
 
 import _harness                                   # sets sys.path for scripts/ + hooks/
-from _output import safe_stdio                     # noqa: E402
+from _output import safe_stdio, SCRIPTS_DIR, HOOKS_DIR  # noqa: E402
 import _gate_derive as M                           # noqa: E402
 
 
@@ -776,9 +777,91 @@ def _version_trust_cases(check):
           == {"exit": 0, "paths": ["x", "y"]})
 
 
+# --- one resolver for the shape ----------------------------------------------------
+# `resolve_shape` is the one place that decides where a path-scoped shape comes
+# from and in which order. `path_scoped_sibling` is one of its two sources, so a
+# caller outside this module reaching for it takes the sibling source on its own
+# and skips the recorded spelling that outranks it.
+SHAPE_SOURCES = ("path_scoped_sibling", "_path_scoped_sibling")
+
+
+def shape_source_uses(source):
+    """Line numbers in `source` where a shape source is named: a call or
+    attribute read, an import, a bare name, or a string that would be handed to
+    `getattr`. Read off the AST, so a comment or docstring that merely mentions
+    the name is not a use."""
+    lines = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Name) and node.id in SHAPE_SOURCES:
+            lines.append(node.lineno)
+        elif isinstance(node, ast.Attribute) and node.attr in SHAPE_SOURCES:
+            lines.append(node.lineno)
+        elif (isinstance(node, (ast.Import, ast.ImportFrom))
+              and any(a.name in SHAPE_SOURCES for a in node.names)):
+            # `alias` carries no line number before 3.10; its statement does.
+            lines.append(node.lineno)
+        elif (isinstance(node, ast.Constant) and isinstance(node.value, str)
+              and node.value in SHAPE_SOURCES):
+            lines.append(node.lineno)
+    return sorted(set(lines))
+
+
+def shape_source_users(roots, own):
+    """`(scanned, [(path, lines)])` -- every `.py` under `roots`, `own` (the
+    module that owns the resolver) excluded, and the ones that name a shape
+    source. `scanned` is returned so a walk that found nothing to read is not
+    mistaken for a clean tree."""
+    scanned, users = [], []
+    for root in roots:
+        for here, dirs, files in os.walk(root):
+            dirs[:] = sorted(d for d in dirs if d != "__pycache__")
+            for name in sorted(files):
+                if not name.endswith(".py") or name == own:
+                    continue
+                path = os.path.join(here, name)
+                with open(path, encoding="utf-8") as fh:
+                    found = shape_source_uses(fh.read())
+                scanned.append(path)
+                if found:
+                    users.append((path, found))
+    return scanned, users
+
+
+def _one_resolver_cases(check):
+    check("os1 a call to the sibling source from outside the resolver is "
+          "named, by its line",
+          shape_source_uses("import _gate_derive\n"
+                            "shape, owner = _gate_derive.path_scoped_sibling("
+                            "phase, build)\n") == [2]
+          and shape_source_uses("_path_scoped_sibling = 1\n"
+                                "_path_scoped_sibling(p, b)\n") == [1, 2]
+          and shape_source_uses("from _gate_derive import "
+                                "path_scoped_sibling\n") == [1]
+          and shape_source_uses("getattr(M, 'path_scoped_sibling')\n") == [1])
+    # ALLOW CASES, the direction that fails if the lint is widened until it
+    # fires on honest code: the resolver itself, and prose about the source.
+    check("os2 ALLOW CASE: asking `resolve_shape`, or writing the name in a "
+          "comment or a docstring, is not a use of the source",
+          shape_source_uses("x = _gate_derive.resolve_shape(p, b, d)\n") == []
+          and shape_source_uses("# path_scoped_sibling is read by "
+                                "resolve_shape\n") == []
+          and shape_source_uses('"""path_scoped_sibling in prose"""\n'
+                                "pass\n") == [])
+    scanned, users = shape_source_users([SCRIPTS_DIR, HOOKS_DIR],
+                                        "_gate_derive.py")
+    names = [os.path.basename(p) for p in scanned]
+    check("os3 no caller outside _gate_derive picks a shape source on its own: "
+          "every script and hook was read (the walk reached audit-task.py and "
+          "derive-phase-gate.py, and did not count _gate_derive.py), and none "
+          "names `path_scoped_sibling`: %r" % (users,),
+          "audit-task.py" in names and "derive-phase-gate.py" in names
+          and "_gate_derive.py" not in names and users == [])
+
+
 def _selftest():
     def body(check):
         _cases(check)
+        _one_resolver_cases(check)
         _version_trust_cases(check)
     return _harness.run(body)
 

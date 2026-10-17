@@ -125,11 +125,13 @@ def path_scoped_sibling(phase, build):
     return None, None
 
 
-# The second `shape` source the schema itself names (the schema's
-# meta.phaseGate.derived.spelling description):
 # `resolve_shape`'s `source` return is this literal string whenever the shape
-# came from the DECLARED template rather than a sibling's own gate entry, so
-# a caller can tell the two apart without inventing a second flag.
+# came from the DECLARED template (the schema's
+# meta.phaseGate.derived.spelling, the FIRST source tried) rather than from a
+# sibling's own gate entry, so a caller can tell the two apart without
+# inventing a second flag. Every caller that needs a shape asks
+# `resolve_shape`; none picks `path_scoped_sibling` on its own, which is
+# pinned by test__gate_derive.py's os3.
 SPELLING_SOURCE = "meta.phaseGate.derived.spelling"
 
 
@@ -164,6 +166,23 @@ def resolve_shape(phase, build, derived_cfg):
     if shape is not None:
         return shape, owner, lines
     return None, None, lines
+
+
+def point_shape(shape, source, build, paths):
+    """`shape` pointed at `paths`, whichever source `resolve_shape` took it from.
+
+    THE SPELLING IS FILLED, A SIBLING IS RE-POINTED: the schema's `{paths}`
+    placeholder is not a path-shaped token `repointed` would recognize
+    (`gate_entry_paths` only counts tokens that already look like a file), so
+    a template is substituted literally with the shell-quoted paths, and a
+    sibling's entries go through `repointed`. Asked by the phase-level
+    derivation and by `/audit:task add` alike, so the two cannot read one shape
+    two ways.
+    """
+    if source == SPELLING_SOURCE:
+        quoted = " ".join(shlex.quote(p) for p in paths)
+        return [shape[0].replace("{paths}", quoted)]
+    return repointed(shape, build, paths)
 
 
 def repointed(entries, build, paths):
@@ -715,21 +734,9 @@ def derive(manifest, phase, facts):
                 "shapeSource": None, "attribution": None}
 
     entries = list(always)
-    if shape_source == SPELLING_SOURCE:
-        # LITERAL SUBSTITUTION, never `repointed()`: the schema's own
-        # `{paths}` placeholder is not a path-shaped TOKEN `repointed()` would
-        # recognize (`_gate_entry_paths` only counts tokens that already look
-        # like a file), so the template is filled directly with the resolved,
-        # shell-quoted test paths -- the same mechanic
-        # `derive-phase-gate.py._gather_facts` uses for a listing command.
-        quoted = " ".join(shlex.quote(p) for p in test_paths)
-        spelled = shape[0].replace("{paths}", quoted)
-        if spelled not in entries:
-            entries.append(spelled)
-    else:
-        for entry in repointed(shape, build, test_paths):
-            if entry not in entries:
-                entries.append(entry)
+    for entry in point_shape(shape, shape_source, build, test_paths):
+        if entry not in entries:
+            entries.append(entry)
 
     smoke = gate.get("smoke")
     if isinstance(smoke, str) and smoke.strip():

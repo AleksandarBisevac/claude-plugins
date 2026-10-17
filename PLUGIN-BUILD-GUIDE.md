@@ -3610,7 +3610,11 @@ carries `shapeSource` — the sibling's task id, or the literal
 supplied the shape; a spelling-sourced shape is filled by literal `{paths}`
 substitution rather than through `repointed()` (its placeholder is not a
 path-shaped token that function would recognize), the resolved paths
-shell-quoted through `shlex.quote` exactly the way a listing command is.
+shell-quoted through `shlex.quote` exactly the way a listing command is. That
+substitution is `point_shape`, which `/audit:task add` asks too: its task gate
+reads the shape through `resolve_shape` as well, and no caller outside
+`_gate_derive.py` names `path_scoped_sibling` (the AST case `os3` in
+`test__gate_derive.py` walks every script and hook for it).
 
 **`derived-empty` has TWO triggers, and `derive()` is the only place either is
 computed.** The first: `meta.phaseGate.derived.listing.all` ran, exited 0 and

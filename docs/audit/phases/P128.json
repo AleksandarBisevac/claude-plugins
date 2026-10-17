@@ -2403,7 +2403,7 @@
     {
       "id": "P128.42-izt",
       "title": "A parked no-return decision of any role is dropped once that role return is filed for the current start",
-      "status": "in_progress",
+      "status": "done",
       "description": "P128.27 made pending_still_applies drop a parked no-executor-return decision once the executor return is filed (drive-phase.py around 3064-3079). The sibling no-reviewer-return decision (drive-phase.py around 1862-1863) has the same shape and was left standing: a reviewer return filed after the decision was parked still reads as missing. This is the verified cause of register fault F702 (2026-10-16, P128.12: the drive reported no-reviewer-return while the return was filed, then closed on it one run later). Fix the class, not the instance: one rule over every parked no-<role>-return decision, keyed by role, so a role added later is covered without a second edit; a case per role plus one asserting every no-*-return decision name the drive can emit is handled by that rule.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2453,14 +2453,21 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d7bf1b521da5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: pending_still_applies now drops ANY parked no-<role>-return decision through one rule. New parked_return_role(name) derives the role from the name (regex ^no-(.+)-return$, held to _fr.RETURN_ROLES) so a role added to RETURN_ROLES is covered with no second edit (drive-phase.py ~3148-3185); the drop test is role_return_filed(ctx, task, role) (the former already_filed body, generalised by role; already_filed(ctx, task) kept as the executor wrapper so submit's early look and its mutant hook are unchanged). The old 'decision != no-executor-return or already_filed is None' special case is gone. Phase-scoped no-phase-review-return has no task and is untouched (early return True; sign-off owns it). Tests in plugins/audit/tests/test_drive_phase.py, stage nr-block (_parked_return_cases, registered after wp-block): nr0 fixture parks; nr1 (the tests.add clause) single-task, reviewer decision pending then reviewer filed -> next closes the task (status done, commit set); nr2/nr3/nr3b wave: second member's decision parked behind the first's, kept while its return is missing (the twin against dropping blindly), dropped and the member closes once filed; nr4 every task role in RETURN_ROLES has its no-<role>-return name in the source and the rule names that role; nr5 enumerates every no-*-return string the drive source can emit (AST scan of drive-phase.py constants) and requires each to be a task role the rule handles or a PHASE_DECISIONS member, so a new role's name fails by name; nr6 ALLOW: shapes naming no RETURN_ROLES role read None. Description clauses: (1) same-shape reviewer sibling fixed - drive-phase.py parked_return_role/pending_still_applies; (2) F702 cause - covered by nr1/nr3b; (3) class not instance, one rule keyed by role - parked_return_role + role_return_filed; (4) a case per role - nr1/nr3b reviewer, existing wp1 executor; (5) one case asserting every emitted name is handled - nr5 (+nr4). Note: a wave's printed pending decision blocks re-checking of parked ones until it is answered (existing behaviour, left alone).",
+        "descriptive": "A reviewer return filed after a no-reviewer-return decision was parked no longer reads as missing; one role-keyed rule now covers every parked no-<role>-return decision."
       },
       "startedAt": "2026-10-17T08:06:38Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T08:38:50Z",
+      "verifiedBy": [
+        "nr1 a no-reviewer-return decision parked while the reviewer worked is dropped on the next run once the reviewer return is filed, and the task advances to its close",
+        "nr3 parked decision kept while return missing",
+        "nr3b parked wave decision dropped once filed",
+        "nr4 role names",
+        "nr5 every no-*-return name handled",
+        "nr6 ALLOW shapes"
+      ],
       "notes": [
         {
           "at": "2026-10-17T00:54:16Z",
@@ -2472,6 +2479,18 @@
         "runId": "2026-10-17T08:38:27Z.5a5eed",
         "status": "passed",
         "at": "2026-10-17T08:38:27Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "d7bf1b521da5",
+        "at": "2026-10-17T08:38:50Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-17T08:24:46Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage nr-block` in a throwaway tree at HEAD exited 1 with 3 of 6 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `nr-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - nr1 (house FAIL), nr3 (house FAIL), nr3b (house FAIL): SELFTEST FAILED: 2/6 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2608,7 +2627,9 @@
         "plugins/audit/scripts/governance/_gate_derive.py",
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test__gate_derive.py",
-        "plugins/audit/tests/test_audit_task.py"
+        "plugins/audit/tests/test_audit_task.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/verbs-in-full.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -2626,7 +2647,21 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "plugins/audit/tests/test_audit_task.py: /audit:task add over a plan whose meta.phaseGate.derived.spelling carries {paths} takes its task gate from that spelling, not a sibling task entry, because it reads the shape through _gate_derive.resolve_shape": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_audit_task.py",
+              "--selftest",
+              "--stage",
+              "at5-block"
+            ],
+            "file": "plugins/audit/scripts/manifest/audit-task.py",
+            "find": "shape, owner, _lines = _gate_derive.resolve_shape(phase, build, derived)",
+            "replace": "shape, owner = _gate_derive.path_scoped_sibling(phase, build)"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -2653,9 +2688,18 @@
         {
           "at": "2026-10-17T06:46:00Z",
           "text": "tdd by default (init.md's mode rule): no mode was named and the title leads with no refactor or config word, so it adds or changes observable behaviour"
+        },
+        {
+          "at": "2026-10-17T08:51:34Z",
+          "text": "files widened by PLUGIN-BUILD-GUIDE.md, plugins/audit/reference/verbs-in-full.md: widened by the integration answer"
         }
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T09:07:51Z.798514",
+        "status": "passed",
+        "at": "2026-10-17T09:07:51Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

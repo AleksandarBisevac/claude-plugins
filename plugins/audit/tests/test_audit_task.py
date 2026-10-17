@@ -7482,17 +7482,70 @@ def _close_cases(check):
               "run-test-gate.py",
               getattr(M, "_gate_entry_paths", None)
               is getattr(_phases, "gate_entry_paths", object()))
-        check("tg14 `_is_shared_key`/`_path_scoped_sibling`/`_repointed` are "
-              "ALIASES of `_gate_derive`'s own bodies, not copies re-pasted "
+        check("tg14 `_is_shared_key`/`_repointed` are ALIASES of "
+              "`_gate_derive`'s own bodies, not copies re-pasted "
               "here - `is`, not merely behaviour-equal, for tg13's exact "
               "reason: a phase-level derivation and this task-level one must "
-              "share one body or risk drifting the moment either changes",
+              "share one body or risk drifting the moment either changes -- "
+              "and `_path_scoped_sibling` is NOT among them any more: the "
+              "shape comes from `_gate_derive.resolve_shape`, so this module "
+              "holds no handle on the sibling source to pick it with",
               getattr(M, "_is_shared_key", None)
               is getattr(_gate_derive, "is_shared_key", object())
-              and getattr(M, "_path_scoped_sibling", None)
-              is getattr(_gate_derive, "path_scoped_sibling", object())
               and getattr(M, "_repointed", None)
-              is getattr(_gate_derive, "repointed", object()))
+              is getattr(_gate_derive, "repointed", object())
+              and not hasattr(M, "_path_scoped_sibling"))
+
+        # ---- (tg15) one resolver: a recorded spelling outranks a sibling -------
+        # THE FIXTURE GIVES THE TWO SOURCES DIFFERENT RUNNERS, so the gate says
+        # which one was read: a sibling spelled `npm test -- ...` re-pointed at a
+        # new path gives `npm test -- <path>`, the recorded spelling gives
+        # `runnerx --only <path>`, and no value the two share can pass for both.
+        # `lint` is the phase's declared `always` entry and rides in front, as it
+        # does in a phase-level derivation.
+        def spelled_manifest(spelling):
+            plan = gate_manifest()
+            plan["meta"]["phaseGate"] = {
+                "always": ["lint"],
+                "derived": {"spelling": spelling}}
+            return plan
+
+        sp_proj, sp_mp = mk("tg15-spelling",
+                            spelled_manifest("runnerx --only {paths}"))
+        codesp, txtsp = run(
+            ["add", "Sanitize the sort parameter", "--phase", "P1",
+             "--project-dir", sp_proj, "--tests-mode", "tdd",
+             "--tests-add", "src/search/sort.test.ts: rejects an unknown key"])
+        sp_gate = ((task_in(sp_mp, "P1.2") or {}).get("tests") or {}).get("gate")
+        check("tg15 /audit:task add over a plan whose meta.phaseGate.derived."
+              "spelling carries {paths} takes its task gate from that spelling, "
+              "not a sibling task entry, because it reads the shape through "
+              "_gate_derive.resolve_shape: exit %r gate %r basis %r"
+              % (codesp, sp_gate,
+                 [ln for ln in txtsp.split("\n") if ln.startswith("  gate:")]),
+              codesp == 0
+              and sp_gate == ["lint", "runnerx --only src/search/sort.test.ts"]
+              and "meta.phaseGate.derived.spelling" in txtsp
+              and "P1.1's spelling" not in txtsp
+              and ((task_in(sp_mp, "P1.2") or {}).get("tests") or {})
+              .get("gateBasis") == "tests.add")
+        # SECOND-DIRECTION CASE (tg15c): a spelling with no `{paths}` is ignored
+        # by `resolve_shape`, so the sibling is read and the task gate is the
+        # sibling's own spelling. It is the case that goes red if the add took
+        # any recorded spelling at all, which `tg15` alone would not notice.
+        sn_proj, sn_mp = mk("tg15-no-placeholder",
+                            spelled_manifest("runnerx --only"))
+        codesn, txtsn = run(
+            ["add", "Sanitize the sort parameter", "--phase", "P1",
+             "--project-dir", sn_proj, "--tests-mode", "tdd",
+             "--tests-add", "src/search/sort.test.ts: rejects an unknown key"])
+        sn_gate = ((task_in(sn_mp, "P1.2") or {}).get("tests") or {}).get("gate")
+        check("tg15c SECOND-DIRECTION CASE: a spelling that carries no {paths} "
+              "is skipped, and the sibling's spelling is read: exit %r gate %r"
+              % (codesn, sn_gate),
+              codesn == 0
+              and sn_gate == ["lint", "npm test -- src/search/sort.test.ts"]
+              and "in P1.1's spelling" in txtsn)
 
         # ---- (gb) the derivation's arm, recorded where a rule can read it -----
         # The basis above is a SENTENCE: printed once, then gone. So a narrow
