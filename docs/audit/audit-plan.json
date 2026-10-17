@@ -1463,7 +1463,8 @@
       "P129.8-izt",
       "P128.19-0h5",
       "P128.32-0h5",
-      "P128.44-izt"
+      "P128.44-izt",
+      "P128.45-izt"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -9006,7 +9007,8 @@
       "P123.49-64p",
       "P128.4-0h5",
       "P129.1-izt",
-      "P129.7-izt"
+      "P129.7-izt",
+      "P128.45-izt"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
