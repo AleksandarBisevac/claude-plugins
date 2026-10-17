@@ -36,9 +36,23 @@
         "file": "plugins/audit/scripts/_ui_theme.py:872",
         "issue": "The comment says the anchor's walk needs the same directory for `ui_surface_digests()`, 'in the anchor, for the screenshot rule'. That function is removed by this diff. The anchor now holds `ui_surface_sources()`, and the digest lives in `_surface_digest.py`. The executor could not edit it because the plan gate refused the file.",
         "resolution": "Change it to `ui_surface_sources()` and drop 'for the screenshot rule'. The plan gate currently lists P130.7, P130.8 and P130.9 as declaring this file, so make the edit under one of them."
+      },
+      {
+        "id": "P130-R3",
+        "severity": "low",
+        "file": "plugins/audit/schema/audit-plan.schema.json:1860-1880",
+        "issue": "The retired $defs/falsifier keeps its property descriptions in the present tense. `find` still says the drive 'reports [a missing find] as could-not-run', `command` says it is 'run from the copy's root', and `timeout` says 'Absent reads `drive-phase.py`'s FALSIFIER_TIMEOUT'. That constant is deleted by this diff (fp0b asserts it is gone), so the sentence names a symbol that no longer exists and describes behaviour nothing performs. The task asked for the field to be 'described as retired and read by nothing'. Only the parent and the def itself were reworded.",
+        "resolution": "Reword the five property descriptions in the past tense or reduce them to 'retired, read by nothing'. Delete the FALSIFIER_TIMEOUT reference."
+      },
+      {
+        "id": "P130-R4",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md:435",
+        "issue": "The diff regenerates this module-map line (drive-phase no longer imports _manifest_rules). PLUGIN-BUILD-GUIDE.md is in the stamp's dirtyPaths but not in the stamp's `scope`, and is not in the brief's diff command. It is an undeclared change to the task, so a `done --commit` could refuse over it as a path no in_progress task covers, and it escapes this diff's review.",
+        "resolution": "Run `audit-task.py scope P130.6 --files ...,PLUGIN-BUILD-GUIDE.md` before the close, or commit that file under the task."
       }
     ],
-    "outcome": "[findings: 2 - 0 high, 0 med, 2 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 4 - 0 high, 0 med, 4 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -482,7 +496,8 @@
         "plugins/audit/reference/phase-signoff.md",
         "plugins/audit/commands/task.md",
         "plugins/audit/README.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -525,7 +540,30 @@
       "startedAt": "2026-10-17T15:55:04Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T23:06:22Z.d631a7",
+        "status": "passed",
+        "at": "2026-10-17T23:06:22Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-17T22:51:02Z",
+          "text": "no falsifier declared for `plugins/audit/tests/test_drive_phase.py: a task whose tests carry falsifiers closes after a green gate without applying any mutation and without a falsifier decision`: the executor's return names no change it must fail against, so the drive cannot try it"
+        },
+        {
+          "at": "2026-10-17T22:51:04Z",
+          "text": "no falsifier declared for `plugins/audit/tests/test_drive_phase.py: an executor return that still carries a falsifiers field is filed and the field is not written to the task`: the executor's return names no change it must fail against, so the drive cannot try it"
+        },
+        {
+          "at": "2026-10-17T22:51:05Z",
+          "text": "no falsifier declared for `plugins/audit/tests/test__manifest_rules.py: a plan carrying tests.falsifiers validates with no finding and no rules.falsifier warning`: the executor's return names no change it must fail against, so the drive cannot try it"
+        },
+        {
+          "at": "2026-10-17T22:51:06Z",
+          "text": "no falsifier declared for `plugins/audit/tests/test_audit_task.py: scope --falsifiers is a usage error and writes nothing`: the executor's return names no change it must fail against, so the drive cannot try it"
+        }
+      ]
     },
     {
       "id": "P130.7",

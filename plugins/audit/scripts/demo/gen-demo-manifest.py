@@ -985,29 +985,28 @@ SCHEMA_EXEMPTIONS = {
         "panel, not /audit:status - so a mute carried here would be a key "
         "nothing downstream shows, the same reason meta.phaseGate above is "
         "exempt. REVISIT when a rendered surface shows a muted suite.",
-    # A planned test's 'must fail if' line is read by the step driver alone, at
-    # a task's close; the fixture's tasks are generated already closed, and no
-    # rendered surface reads the field. REVISIT when one shows a falsifier or
-    # the result the drive graded it with.
+    # A planned test's former 'must fail if' line is retired: the schema still
+    # accepts it so no plan that validated stops validating, and nothing reads
+    # it any more - not the drive, not a rendered surface. Removing the key is
+    # a 4.0.0 item beside meta.muted.
     "tests.falsifiers":
-        "a planned test's falsifier, keyed by its tests.add entry - applied by "
-        "drive-phase.py between a task's green gate and its close. The demo's "
-        "tasks are generated already closed, so the drive never reads one here, "
-        "and no rendered surface shows the field.",
+        "a planned test's former falsifier, keyed by its tests.add entry - "
+        "retired and read by nothing; the schema keeps accepting it so a plan "
+        "that carries one still validates, and no rendered surface shows it.",
     "falsifier.file":
-        "the file a falsifier's mutation edits - unread for tests.falsifiers' "
-        "own reason above, the object it sits in.",
+        "the file a retired falsifier's mutation named - unread for "
+        "tests.falsifiers' own reason above, the object it sits in.",
     "falsifier.find":
-        "the text a falsifier's mutation replaces - unread for "
+        "the text a retired falsifier's mutation replaced - unread for "
         "tests.falsifiers' own reason above.",
     "falsifier.replace":
-        "what a falsifier's `find` becomes in the mutant - unread for "
+        "what a retired falsifier's `find` became in the mutant - unread for "
         "tests.falsifiers' own reason above.",
     "falsifier.command":
-        "the planned test's argument vector the drive runs on the copy - "
-        "unread for tests.falsifiers' own reason above.",
+        "the argument vector a retired falsifier ran on the copy - unread for "
+        "tests.falsifiers' own reason above.",
     "falsifier.timeout":
-        "the seconds each falsifier run may take - unread for "
+        "the seconds a retired falsifier run might take - unread for "
         "tests.falsifiers' own reason above.",
     "phase.testGateBasis":
         "which derivation produced `testGateDerived` beside it - unreachable "

@@ -1071,9 +1071,9 @@ def _cases(record):
     _cases_falsifier(record)
 
 
-# --- tests.falsifiers: a planned test's 'must fail if' line -------------------
-FALSIFIER_CLAUSE = ("the plan schema and the rules accept a planned test's "
-                    "'must fail if' falsifier and refuse a malformed one")
+# --- tests.falsifiers: kept in the schema, read by nothing -------------------
+FALSIFIER_CLAUSE = ("a plan carrying tests.falsifiers validates with no finding "
+                    "and no rules.falsifier warning")
 _FV_ENTRY = "tests/test_total.py: the total rounds half up"
 
 
@@ -1092,67 +1092,52 @@ def _fv_good():
 
 
 def _cases_falsifier(record):
-    """A falsifier sits beside `tests.add`, keyed by the entry it falsifies, the
-    way `tests.addMap` is: the entries stay the strings every reader of them
-    already parses. Malformed is a WARNING with a rule code of its own, since a
-    plan that validated before the field existed keeps validating; the drive
-    is what refuses to close over one."""
+    """The field stays in the published schema so a plan that validated keeps
+    validating, but nothing reads it: the five faults the rules used to warn
+    with a code of their own (a key no tests.add entry is, an empty find, a path
+    out of the tree, an empty command, a replace equal to find) are now
+    ordinary data. The two the schema's own keywords say (a timeout under one
+    second, a missing replace) stay the schema's one line each - the case that
+    goes red if the retirement dropped the schema's half with the rules'."""
     schema = M.load_validation_schema()[0]
-    clean_f, clean_w = M.validate(_fv_plan({_FV_ENTRY: _fv_good()}), schema=schema)
-    noisy = [w for w in clean_w if "falsif" in w]
-    timed = dict(_fv_good(), timeout=90)
-    timed_f, timed_w = M.validate(_fv_plan({_FV_ENTRY: timed}), schema=schema)
-    bad = {
-        "unknown-test": ({"tests/test_other.py: not declared": _fv_good()},
-                         "rules.falsifier.unknown-test"),
-        "find-empty": ({_FV_ENTRY: dict(_fv_good(), find="")},
-                       "rules.falsifier.find-empty"),
-        "path": ({_FV_ENTRY: dict(_fv_good(), file="../outside.ts")},
-                 "rules.falsifier.path"),
-        "command": ({_FV_ENTRY: dict(_fv_good(), command=[])},
-                    "rules.falsifier.command"),
-        "no-op": ({_FV_ENTRY: dict(_fv_good(), replace="Math.round(x)")},
-                  "rules.falsifier.no-op"),
-        # The schema's own `minimum` says this one, so the rules do not say
-        # it a second time.
-        "timeout": ({_FV_ENTRY: dict(_fv_good(), timeout=0)},
-                    M.SCHEMA_CODE_PREFIX + "minimum"),
+    forms = {
+        "well-formed": _fv_good(),
+        "with-timeout": dict(_fv_good(), timeout=90),
+        "unknown-test": None,
+        "find-empty": dict(_fv_good(), find=""),
+        "path": dict(_fv_good(), file="../outside.ts"),
+        "command": dict(_fv_good(), command=[]),
+        "no-op": dict(_fv_good(), replace="Math.round(x)"),
     }
-    graded = {}
-    for name, (falsifiers, code) in sorted(bad.items()):
-        f, w = M.validate(_fv_plan(falsifiers), schema=schema)
-        said = [x for x in w if "falsif" in x]
-        graded[name] = (f, [_output.finding_code(x) for x in said], code)
-    missing = dict(_fv_good())
-    del missing["replace"]
-    miss_f, miss_w = M.validate(_fv_plan({_FV_ENTRY: missing}), schema=schema)
-    miss_said = [x for x in miss_w if "falsif" in x]
-    record("%s (fz1: a well-formed falsifier keyed by its tests.add entry, with "
-           "and without a timeout, validates with no finding and no warning; "
-           "each malformed one - a key no tests.add entry is, an empty find, a "
-           "path out of the tree, an empty command, a replace equal to find, a "
-           "timeout under one second - is ONE warning carrying its own rule "
-           "code and no finding, and one missing `replace` is the schema's one "
-           "warning)" % (FALSIFIER_CLAUSE,),
-           clean_f == [] and noisy == [] and timed_f == []
-           and [w for w in timed_w if "falsif" in w] == []
-           and all(f == [] and codes == [code]
-                   for f, codes, code in graded.values())
-           and miss_f == [] and len(miss_said) == 1
-           and "replace" in miss_said[0]
-           and (_output.finding_code(miss_said[0]) or "").startswith(
-               M.SCHEMA_CODE_PREFIX),
-           repr((clean_w, timed_w, graded, miss_said)))
-    task = _fv_plan({_FV_ENTRY: _fv_good(),
-                     "tests/test_other.py: not declared": _fv_good()}
-                    )["phases"][0]["tasks"][0]
-    read = M.task_falsifiers(task) if hasattr(M, "task_falsifiers") else None
-    record("fz2 the drive's reading of a task's falsifiers is the rules' own: "
-           "the declared one runnable with no problem, the undeclared one "
-           "carrying the problem the validator warns with: %r" % (read,),
-           read is not None
-           and [(e, bool(p)) for e, _fv, p in read]
-           == [("tests/test_other.py: not declared", True), (_FV_ENTRY, False)])
+    seen = {}
+    for name, form in sorted(forms.items()):
+        held = ({"tests/test_other.py: not declared": _fv_good()}
+                if form is None else {_FV_ENTRY: form})
+        f, w = M.validate(_fv_plan(held), schema=schema)
+        seen[name] = (f, [x for x in w if "falsif" in x])
+    schema_says = {}
+    for name, bad in (("timeout", dict(_fv_good(), timeout=0)),
+                      ("missing-replace", {k: v for k, v in _fv_good().items()
+                                           if k != "replace"})):
+        f, w = M.validate(_fv_plan({_FV_ENTRY: bad}), schema=schema)
+        schema_says[name] = (f, [_output.finding_code(x) for x in w
+                                 if "falsif" in x])
+    record("%s (fz1: each of %s - %d forms - validates with no finding and no "
+           "warning naming a falsifier; %r)"
+           % (FALSIFIER_CLAUSE, ", ".join(sorted(forms)), len(forms),
+              seen),
+           all(f == [] and said == [] for f, said in seen.values()),
+           repr(seen))
+    record("fz2 the two faults the published schema's own keywords refuse are "
+           "still its one warning each, none under a rules.falsifier code, and "
+           "no finding: %r" % (schema_says,),
+           all(f == [] and len(codes) == 1
+               and (codes[0] or "").startswith(M.SCHEMA_CODE_PREFIX)
+               for f, codes in schema_says.values()))
+    gone = [name for name in ("task_falsifiers", "falsifier_problems",
+                              "FALSIFIER_FIELDS") if hasattr(M, name)]
+    record("fz3 the rules module holds none of the falsifier readings (%r still "
+           "defined)" % (gone,), gone == [])
 
 
 def _cases_schema_input(record):

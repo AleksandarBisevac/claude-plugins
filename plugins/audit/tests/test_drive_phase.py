@@ -6675,8 +6675,8 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("bc-block", "_brief_crlf_cases"),
           ("ce-block", "_close_evidence_cases"),
           ("bs-block", "_brief_scope_cases"),
-          ("sc-block", "_scope_change_cases"), ("fv-block", "_falsifier_cases"),
-          ("fp-block", "_falsifier_producer_cases"),
+          ("sc-block", "_scope_change_cases"), ("fv-block", "_review_rules_cases"),
+          ("fp-block", "_retired_falsifier_cases"),
           ("gt-block", "_git_stdin_cases"),
           ("ci-block", "_ci_cadence_cases"),
           ("cr-block", "_carry_cases"),
@@ -6958,11 +6958,10 @@ def _git_stdin_cases(check):
           set(_trace_files()) <= set(before))
 
 
-def _falsifier_cases(check):
+def _review_rules_cases(check):
     """The reviewer-brief ordering rule, the tests.add-vs-filed-return gap
-    check, the contradicted-clause severity floor, and the falsifier-per-test
-    run - the reviewer-brief ordering, the gap check and the severity floor
-    this phase added, as pure functions over `drive-phase.py`."""
+    check and the contradicted-clause severity floor, as pure functions over
+    `drive-phase.py`."""
     M, why = _load("fv_mod")
     check("fv0 the driver loads: %r" % (why,), M is not None)
     if M is None:
@@ -7028,158 +7027,38 @@ def _falsifier_cases(check):
           % ((floored, untouched),),
           floored[0]["severity"] == "med" and untouched[0]["severity"] == "low")
 
-    root = _harness.fixture_root("falsifier-")
-    try:
-        src_dir = os.path.join(root, "src")
-        os.makedirs(src_dir)
-        with open(os.path.join(src_dir, "mine.py"), "w", encoding="utf-8") as fh:
-            fh.write("def enters(margin):\n    return margin == 0\n")
-        _preamble = ("import sys, os\n"
-                    "sys.path.insert(0, os.path.join(os.path.dirname("
-                    "os.path.abspath(__file__)), 'src'))\n"
-                    "import mine\n")
-        with open(os.path.join(root, "t_strict.py"), "w", encoding="utf-8") as fh:
-            # The plan's own test: asserts BOTH the positive and the negative
-            # case, so a mutant that blurs the boundary is caught.
-            fh.write(_preamble + "assert mine.enters(0) is True\n"
-                               "assert mine.enters(200) is False\n")
-        with open(os.path.join(root, "t_weak.py"), "w", encoding="utf-8") as fh:
-            # A test "renamed to near the viewport": asserts only the
-            # positive case, so widening the margin never fails it - this is
-            # a lazy-load test that cannot fail.
-            fh.write(_preamble + "assert mine.enters(0) is True\n")
-        mutation = {"file": "src/mine.py", "find": "margin == 0",
-                   "replace": "True"}
-        before = sorted(os.listdir(root))
-        survived_status, survived_why = M.run_falsifier(
-            [sys.executable, "t_weak.py"], root, mutation)
-        after = sorted(os.listdir(root))
-        killed_status, killed_why = M.run_falsifier(
-            [sys.executable, "t_strict.py"], root, mutation)
-        broken_status, broken_why = M.run_falsifier(
-            [sys.executable, "t_strict.py"], root,
-            {"file": "src/mine.py", "find": "def enters",
-             "replace": "def enters(:::"})
-        absent_status, absent_why = M.run_falsifier(
-            [sys.executable, "t_strict.py"], root,
-            {"file": "src/mine.py", "find": "no such text", "replace": "x"})
-        check("fv5 a mutant the test cannot fail against is `survived`; one "
-              "a real assertion catches is `killed`; a patch that will not "
-              "even parse, or whose `find` names no real mutant, is "
-              "`could-not-run` - never a kill either way; and the tree is "
-              "byte-identical before and after every run: %r"
-              % ((killed_status, survived_status, broken_status, absent_status,
-                 killed_why, survived_why, broken_why, absent_why),),
-              killed_status == "killed" and survived_status == "survived"
-              and broken_status == "could-not-run"
-              and absent_status == "could-not-run" and before == after)
-    finally:
-        _harness.remove_tree(root)
-    _falsifier_drive_cases(check, M)
 
-
-FALSIFIER_DRIVE_CLAUSE = ("a planned test that carries a 'must fail if' line has "
-                          "it applied by the drive in a throwaway tree after "
-                          "the executor files, and a test that still passes "
-                          "under the mutation stops the close")
+# The plan still validates with `tests.falsifiers` in it (the schema keeps the
+# field, read by nothing), so a fixture can plan one and the drive must go past
+# it as if the key were not there.
+RETIRED_CLOSE_CLAUSE = ("a task whose tests carry falsifiers closes after a green "
+                        "gate without applying any mutation and without a "
+                        "falsifier decision")
+RETIRED_RETURN_CLAUSE = ("an executor return that still carries a falsifiers "
+                         "field is filed and the field is not written to the "
+                         "task")
 _FV_ADD = "src/f1.txt: the file says the task changed it"
-# The planned test's own check, run from the copy's root: green while the file
-# still opens with what the executor wrote, red once the mutation rewrites it.
-_FV_STRICT = ("import sys; sys.exit(0 if open('src/f1.txt', encoding='utf-8')"
-              ".read().startswith('changed') else 1)")
+_FP_WEAK = {"file": "src/f1.txt", "find": "changed", "replace": "broken",
+            "command": [sys.executable, "-c", "pass"], "timeout": 60}
 
 
-def _falsifier_repo(prefix, command, find="changed"):
-    """A one-task drive whose task plans one test and carries its falsifier -
-    `None` for `command` plans the test with no falsifier at all."""
+def _planned_falsifier_repo(prefix, ran_marker):
+    """A one-task drive whose task plans one test and carries a falsifier whose
+    command writes `ran_marker` (an absolute path, outside the repo, so a copy
+    of the tree being thrown away cannot hide that it ran)."""
     root, mpath = _repo(prefix, task_ids=TASKS[:1], per_task="phase")
     with open(mpath, "r", encoding="utf-8") as fh:
         plan = json.load(fh)
     tests = plan["phases"][0]["tasks"][0]["tests"]
     tests["add"] = [_FV_ADD]
-    if command is not None:
-        tests["falsifiers"] = {_FV_ADD: {
-            "file": "src/f1.txt", "find": find, "replace": "broken",
-            "command": [sys.executable, "-c", command], "timeout": 60}}
+    tests["falsifiers"] = {_FV_ADD: {
+        "file": "src/f1.txt", "find": "changed", "replace": "broken",
+        "command": [sys.executable, "-c",
+                    "open(%r, 'w').write('ran')" % (ran_marker,)],
+        "timeout": 60}}
     with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(plan, fh, indent=2)
     _harness.git(root, "commit", "-qam", "plan the falsifier")
-    return root, mpath
-
-
-def _falsifier_drive_cases(check, M):
-    """The drive applies a task's declared falsifiers between the green gate
-    and the close: a mutant the test survives, and one that could not be run,
-    each stop the close as a decision; a killed one goes on to the close."""
-    outcomes = {}
-    for name, command, find in (("weak", "pass", "changed"),
-                                ("strict", _FV_STRICT, "changed"),
-                                ("absent", _FV_STRICT, "no such text"),
-                                ("none", None, "changed")):
-        root, mpath = _falsifier_repo("falsifier-%s" % (name,), command, find)
-        _next(M, root, mpath)
-        _file_executor(root, mpath, "P1.1")
-        _code, text = _next(M, root, mpath)
-        with open(os.path.join(root, "src", "f1.txt"), "r", encoding="utf-8") as fh:
-            left = fh.read()
-        outcomes[name] = (instruction(text)[1],
-                          tasks_of(mpath).get("P1.1", {}).get("status"),
-                          M.CLOSED in text, text, left, root, mpath)
-    weak, strict, absent, none = (outcomes[n] for n in
-                                  ("weak", "strict", "absent", "none"))
-    check("%s (fv6: a test that exits 0 under its declared mutation is the "
-          "`falsifier` decision naming `survived`, the task stays in progress "
-          "and nothing is closed, and the executor's own file is untouched by "
-          "the mutant; one the mutation turns red closes, its did-line naming "
-          "the kill; a mutation whose `find` is not in the file is the same "
-          "decision as `could-not-run`, never a pass; a task declaring no "
-          "falsifier closes with no falsifier line at all: %r)"
-          % (FALSIFIER_DRIVE_CLAUSE,
-             [(n, o[0], o[1], o[2], o[3][:300], o[4])
-              for n, o in sorted(outcomes.items())]),
-          weak[0] == "falsifier" and weak[1] == "in_progress" and not weak[2]
-          and "survived" in weak[3] and weak[4] == "changed by P1.1\n"
-          and strict[1] == "done" and strict[2]
-          and "falsifier" in strict[3] and "killed" in strict[3]
-          and absent[0] == "falsifier" and absent[1] == "in_progress"
-          and not absent[2] and "could-not-run" in absent[3]
-          and none[1] == "done" and none[2] and "falsifier" not in none[3])
-    _w0, _w1, _w2, _w3, _w4, root, mpath = weak
-    _code, held = _next(M, root, mpath)
-    _code, closed = _next(M, root, mpath, "--answer", "accept", "--reason",
-                          "the weak test is known and tracked")
-    check("fv7 the falsifier decision is held until answered, and `accept` "
-          "with a reason goes on to the close: %r" % ((held[:300], closed[:300]),),
-          instruction(held)[1] == "falsifier"
-          and tasks_of(mpath).get("P1.1", {}).get("status") == "done"
-          and "%s P1.1" % (M.CLOSED,) in closed)
-
-
-FALSIFIER_PRODUCED_CLAUSE = (
-    "a planned test's falsifier is produced in the normal flow - the "
-    "executor's filed return declares it and the plan records it - and a "
-    "survived or accepted falsifier leaves a durable record naming the mutated "
-    "file and the test")
-# The weak falsifier the executor declares: its command exits 0 whatever the
-# file holds, so the mutant survives. A literal no other line of a note holds.
-_FP_WEAK = {"file": "src/f1.txt", "find": "changed", "replace": "broken",
-            "command": [sys.executable, "-c", "pass"], "timeout": 60}
-_FP_REASON = "accepted-for-the-fixture: the weak test is tracked elsewhere"
-
-
-def _producer_repo(prefix, mode, add):
-    """A one-task drive whose task is graded `mode` and plans `add`, and whose
-    plan declares no falsifier: whatever the plan holds afterwards was produced
-    by the flow."""
-    root, mpath = _repo(prefix, task_ids=TASKS[:1], per_task="phase")
-    with open(mpath, "r", encoding="utf-8") as fh:
-        plan = json.load(fh)
-    tests = plan["phases"][0]["tasks"][0]["tests"]
-    tests.update({"mode": mode, "expectRedFirst": mode == "tdd",
-                  "add": list(add)})
-    with open(mpath, "w", encoding="utf-8") as fh:
-        json.dump(plan, fh, indent=2)
-    _harness.git(root, "commit", "-qam", "plan the task")
     return root, mpath
 
 
@@ -7189,92 +7068,74 @@ def _notes_of(mpath, task_id):
             if isinstance(n, dict)]
 
 
-def _falsifier_producer_cases(check):
-    """The executor's filed return is the falsifier's producer: the plan
-    records what it declares, the drive runs it, a survivor stops the close
-    with a note on the task, and an accept leaves a second note carrying the
-    reason. A task with no new test owes none and is told nothing."""
+def _retired_falsifier_cases(check):
+    """A planned `tests.falsifiers` is read by nothing: the close goes past it,
+    and a return that still declares one is filed and not recorded."""
     M, why = _load("fp_mod")
     check("fp0 the driver loads: %r" % (why,), M is not None)
     if M is None:
         return
-    clause = _FV_ADD.split(": ", 1)[1]
-    root, mpath = _producer_repo("producer-tdd", "tdd", [_FV_ADD])
-    _code, begun = _next(M, root, mpath)
-    briefs = {"tdd": _brief_of(root, begun, "P1.1")}
-    filed = _file_executor(root, mpath, "P1.1", {
-        "testsAdded": [clause], "falsifiers": {_FV_ADD: _FP_WEAK}})
-    _code, stopped = _next(M, root, mpath)
-    task = tasks_of(mpath).get("P1.1", {})
-    recorded = (task.get("tests") or {}).get("falsifiers")
-    held_notes = _notes_of(mpath, "P1.1")
-    _code, closed = _next(M, root, mpath, "--answer", "accept", "--reason",
-                          _FP_REASON)
-    after_notes = _notes_of(mpath, "P1.1")
-    accepted = [n for n in after_notes if _FP_REASON in n]
-    survived = [n for n in held_notes if "survived" in n]
-    check("%s (fp1: the executor's `falsifiers` field lands in the task's "
-          "tests.falsifiers, the drive runs it and the survivor is the "
-          "`falsifier` decision with the task still in progress, a note naming "
-          "the mutated file:line and the test entry is on the task before any "
-          "answer, and `accept` closes with a second note carrying the reason: "
-          "%r)" % (FALSIFIER_PRODUCED_CLAUSE,
-                   (filed, recorded, instruction(stopped)[1],
-                    task.get("status"), held_notes, after_notes,
-                    tasks_of(mpath).get("P1.1", {}).get("status"))),
-          filed[0] == 0
-          and recorded == {_FV_ADD: _FP_WEAK}
-          and instruction(stopped)[1] == "falsifier" and "survived" in stopped
-          and task.get("status") == "in_progress"
-          and len(survived) == 1 and "src/f1.txt:1" in survived[0]
-          and _FV_ADD in survived[0]
-          and len(accepted) == 1 and "src/f1.txt:1" in accepted[0]
-          and _FV_ADD in accepted[0]
-          and tasks_of(mpath).get("P1.1", {}).get("status") == "done"
-          and "%s P1.1" % (M.CLOSED,) in closed)
+    gone = [name for name in ("run_falsifier", "mutation_site", "note_falsifiers",
+                              "record_falsifiers", "falsify", "FALSIFIER_TIMEOUT",
+                              "returned_falsifier_problems")
+            if hasattr(M, name)]
+    check("fp0b the drive holds none of the falsifier stage's names (%r still "
+          "defined)" % (gone,), gone == [])
 
-    # The deny twin, for the over-fire mutation: a regression task that plans
-    # no new test owes no falsifier, so it closes with no falsifier line, no
-    # note and no tests.falsifiers - a gap line that fired on every task would
-    # turn this red.
-    for name, add, over in (("fp2", [], None),
-                            ("fp2b", [_FV_ADD], {"testsAdded": [clause]})):
-        root, mpath = _producer_repo("producer-%s" % (name,), "regression", add)
-        _code, begun = _next(M, root, mpath)
-        briefs[name] = _brief_of(root, begun, "P1.1")
-        plain = _file_executor(root, mpath, "P1.1", over)
-        _code, done = _next(M, root, mpath)
+    scratch = _harness.fixture_root("retired-falsifier-")
+    marker = os.path.join(scratch, "ran")
+    try:
+        root, mpath = _planned_falsifier_repo("retired-close", marker)
+        _next(M, root, mpath)
+        _file_executor(root, mpath, "P1.1")
+        _code, text = _next(M, root, mpath)
+        with open(os.path.join(root, "src", "f1.txt"), "r", encoding="utf-8") as fh:
+            left = fh.read()
         task = tasks_of(mpath).get("P1.1", {})
-        check("%s a regression task needs no falsifier (tests.add %r) - the "
-              "mode, not the empty list, is what exempts it: it closes, nothing "
-              "names a falsifier and nothing is recorded: %r"
-              % (name, add, (plain, done[:400], task.get("notes"),
-                             task.get("tests"))),
-              plain[0] == 0 and task.get("status") == "done"
-              and "falsifier" not in (plain[1] + done).lower()
-              and not task.get("notes")
-              and "falsifiers" not in (task.get("tests") or {}))
+        check("%s (fp1: with a falsifier planned, `next` closes the task, the "
+              "falsifier's command never ran - %s absent - the executor's file "
+              "is as the executor left it, no `falsifier` decision or word is "
+              "printed and the task holds no note: %r)"
+              % (RETIRED_CLOSE_CLAUSE, marker,
+                 (task.get("status"), os.path.exists(marker), left, text[:300],
+                  _notes_of(mpath, "P1.1"))),
+              task.get("status") == "done" and M.CLOSED in text
+              and not os.path.exists(marker) and left == "changed by P1.1\n"
+              and "falsifier" not in text.lower() and not _notes_of(mpath, "P1.1"))
+    finally:
+        _harness.remove_tree(scratch)
 
-    # A tdd task whose return declares none is a recorded gap, not a stop.
-    root, mpath = _producer_repo("producer-gap", "tdd", [_FV_ADD])
-    _next(M, root, mpath)
-    bare = _file_executor(root, mpath, "P1.1", {"testsAdded": [clause]})
-    _code, gap = _next(M, root, mpath)
-    task = tasks_of(mpath).get("P1.1", {})
-    gaps = [n for n in _notes_of(mpath, "P1.1") if "no falsifier" in n]
-    check("fp3 a tdd task whose return declares no falsifier for an added test "
-          "is named at submit and recorded as a note naming the entry, and the "
-          "close goes on: %r" % ((bare, gap[:400], task.get("notes")),),
-          bare[0] == 0 and "no falsifier" in bare[1]
-          and len(gaps) == 1 and _FV_ADD in gaps[0]
-          and task.get("status") == "done")
-    asks = dict((k, v.count("declare one in your return's `falsifiers`"))
-                for k, v in briefs.items())
-    check("fp4 the executor's brief asks a tdd task for its falsifiers, once, "
-          "and asks a regression task for none - with or without a planned "
-          "test: %r" % ((asks, dict((k, len(v)) for k, v in briefs.items())),),
-          asks == {"tdd": 1, "fp2": 0, "fp2b": 0}
-          and all(briefs.values()))
+    clause = _FV_ADD.split(": ", 1)[1]
+    for name, over in (("fp2", {"falsifiers": {_FV_ADD: _FP_WEAK}}),
+                       # An agent body older than this change may declare it
+                       # in a shape nothing reads any more; it is not refused.
+                       ("fp2b", {"falsifiers": "not an object"}),
+                       ("fp2c", {"falsifiers": {_FV_ADD: "not an object"}})):
+        root, mpath = _repo("retired-%s" % (name,), task_ids=TASKS[:1],
+                            per_task="phase")
+        with open(mpath, "r", encoding="utf-8") as fh:
+            plan = json.load(fh)
+        tests = plan["phases"][0]["tasks"][0]["tests"]
+        tests.update({"mode": "tdd", "expectRedFirst": True, "add": [_FV_ADD]})
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(plan, fh, indent=2)
+        _harness.git(root, "commit", "-qam", "plan the task")
+        _next(M, root, mpath)
+        filed = _file_executor(root, mpath, "P1.1",
+                               dict(over, testsAdded=[clause]))
+        _code, closed = _next(M, root, mpath)
+        task = tasks_of(mpath).get("P1.1", {})
+        check("%s (%s: the return carrying %r is filed (exit %r), the task's "
+              "tests gain no `falsifiers` key, it closes, and no word of a "
+              "falsifier is printed or noted: %r)"
+              % (RETIRED_RETURN_CLAUSE, name, sorted(over), filed[0],
+                 (filed[1][:300], closed[:200], task.get("tests"),
+                  task.get("notes"))),
+              filed[0] == 0 and "falsifiers" not in (task.get("tests") or {})
+              and task.get("status") == "done" and M.CLOSED in closed
+              and "falsifier" not in (filed[1] + closed).lower()
+              and not task.get("notes"))
+
 
 
 def unencoded_text_opens(source):

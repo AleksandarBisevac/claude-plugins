@@ -939,30 +939,29 @@ def _clause_marker_cases(check):
 
 
 def _falsifiers_cases(check):
-    """The return's optional `falsifiers`: a container that is not an object of
-    objects is named, an absent one is no problem, and the gaps are a tdd
-    task's planned tests that neither the plan nor the return covers."""
+    """A return that still carries `falsifiers` (an agent body older than the
+    retirement may) is judged on its other fields alone, whatever the field
+    holds, and the module reads it nowhere."""
     mutation = {"file": "a.py", "find": "x", "replace": "y", "command": ["t"]}
-    whole = M.return_problems("executor", _executor(falsifiers={"t.py: c": mutation}))
-    flat = M.return_problems("executor", _executor(falsifiers=["t.py: c"]))
-    inner = M.return_problems("executor", _executor(falsifiers={"t.py: c": "x"}))
-    check("fz1 a `falsifiers` object of objects files, a list or a non-object "
-          "value is named by the field, and an absent one is no problem: %r"
-          % ((whole, flat, inner),),
-          whole == [] and len(flat) == 1 and "`falsifiers`" in flat[0]
-          and len(inner) == 1 and "t.py: c" in inner[0]
+    held = {"object": {"t.py: c": mutation}, "list": ["t.py: c"],
+            "inner-string": {"t.py: c": "x"}, "scalar": 7}
+    said = dict((name, M.return_problems("executor", _executor(falsifiers=value)))
+                for name, value in sorted(held.items()))
+    check("fz1 a `falsifiers` field of any shape adds no problem to a return "
+          "that is otherwise whole: %r" % (said,),
+          all(problems == [] for problems in said.values())
           and M.return_problems("executor", _executor()) == [])
-    tdd = {"tests": {"mode": "tdd", "add": ["a: one", "b: two", "c: three"],
-                     "falsifiers": {"a: one": mutation}}}
-    reg = {"tests": {"mode": "regression", "add": ["a: one"]}}
-    check("fz2 a tdd task's gaps are the planned tests neither the plan nor the "
-          "return covers, in plan order; a regression task has none: %r"
-          % ((M.falsifier_gaps(tdd, {"b: two": mutation}),
-              M.falsifier_gaps(reg, {})),),
-          M.falsifier_gaps(tdd, {"b: two": mutation}) == ["c: three"]
-          and M.falsifier_gaps(reg, {}) == []
-          and M.return_falsifiers({"falsifiers": {"b": mutation, "c": 1}})
-          == {"b": mutation})
+    broken = _executor(falsifiers={"t.py: c": mutation})
+    del broken["stamp"]
+    check("fz2 the field does not hide the fault a return really has: one "
+          "missing stamp is still the one problem: %r"
+          % (M.return_problems("executor", broken),),
+          len(M.return_problems("executor", broken)) == 1
+          and "`stamp`" in M.return_problems("executor", broken)[0])
+    gone = [name for name in ("return_falsifiers", "falsifier_gaps",
+                              "RETURN_FALSIFIERS") if hasattr(M, name)]
+    check("fz3 the module holds none of the falsifier readings (%r still "
+          "defined)" % (gone,), gone == [])
 
 
 def _selftest():

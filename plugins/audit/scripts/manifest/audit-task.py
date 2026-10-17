@@ -66,7 +66,7 @@ Usage:
                 [--gate CMD ... | --gate-clear | --gate-set entry ...
                  | --gate-drop entry ...] [--description TEXT|-]
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
-                [--introduces KIND ...] [--falsifiers JSON]
+                [--introduces KIND ...]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py retarget <phaseId> [manifest]
                 [--gate CMD ... | --gate-clear | --gate-set entry ...
@@ -1502,12 +1502,7 @@ def _readiness_lines(waiting, tid):
 # THE OLD REFUSAL WAS NOT WRONG, IT WAS TOO WIDE, and the vocabulary below is what
 # narrows it to the changes its reason actually covers.
 #
-# `tests.falsifiers` is not graded backwards either, but it sits here rather
-# than beside the gate because `--falsifiers` only MERGES entries in: the key
-# set grows and never shrinks, which is the reading `_narrowings` applies to an
-# object's keys, and the executor files its falsifiers mid-run, on a started
-# task, so a refusal here would refuse the one call the flag exists for.
-_WIDENABLE = ("files", "tests.add", "tests.falsifiers")
+_WIDENABLE = ("files", "tests.add")
 
 # ...AND `tests.gate` IS NOT ONE OF THEM, BECAUSE IT IS NOT A SCOPE CLAIM.
 # Every field above is graded BACKWARDS against work already recorded, which is
@@ -3698,7 +3693,7 @@ def _fix_task_args(args, targets, project, fixes, records=()):
             "regression, not tdd: %s only ask%s for a test over behaviour the "
             "code already has, so the new test passes at HEAD and cannot be "
             "shown red first; prove it by mutation - break the line it covers, "
-            "watch it fail, restore - and declare that as its falsifier"
+            "watch it fail, restore"
             % (", ".join(fixes), "s" if len(fixes) == 1 else ""))
     elif args.tests_mode is None and scope["newTests"]:
         args.tests_mode = "tdd"
@@ -8881,31 +8876,6 @@ def cmd_phase_add(args, out):
                        create=True)
 
 
-def _falsifiers_arg(raw, declared):
-    """`(falsifiers, None)` - the `--falsifiers` JSON object, `{}` when the
-    flag is absent - or `(None, refusal)`. Each entry is held to
-    `_rules.falsifier_problems` against `declared` (the `tests.add` the call
-    ends with) before anything is written: a falsifier the drive would refuse
-    to run is never recorded as though it could be."""
-    if raw is None:
-        return {}, None
-    try:
-        held = json.loads(raw)
-    except ValueError as exc:
-        return None, ("[audit-task] --falsifiers is not JSON (%s) -- pass an "
-                      "object keyed by the tests.add entry, verbatim" % (exc,))
-    if not isinstance(held, dict) or not held:
-        return None, ("[audit-task] --falsifiers must be a non-empty object "
-                      "keyed by the tests.add entry, verbatim")
-    said = ["%r %s" % (entry, text) for entry in sorted(held)
-            for _code, text, _schema in _rules.falsifier_problems(
-                entry, held[entry], list(declared or []))]
-    if said:
-        return None, ("[audit-task] --falsifiers refused, nothing written: %s"
-                      % ("; ".join(said),))
-    return held, None
-
-
 def _locked_scope(args, project, config, mpath, tid, out):
     """Give an unscoped task its `files` (and optionally its tests), under lock.
 
@@ -9103,21 +9073,15 @@ def _locked_scope(args, project, config, mpath, tid, out):
     if refusal:
         out(refusal)
         return E_USAGE
-    falsifiers, refusal = _falsifiers_arg(
-        args.falsifiers, args.tests_add or (node.get("tests") or {}).get("add"))
-    if refusal:
-        out(refusal)
-        return E_USAGE
     if not files and args.tests_mode is None and not args.tests_add \
             and not args.gate and not args.gate_clear and not args.description \
             and args.gate_set is None and not args.gate_drop \
             and args.risk is None and args.blocked_by is None \
-            and args.depends_on is None and not args.introduces \
-            and not falsifiers:
+            and args.depends_on is None and not args.introduces:
         out("[audit-task] scope needs --files (and may take --tests-mode / "
             "--tests-add / --gate / --gate-clear / --gate-set / --gate-drop / "
             "--description / --risk / "
-            "--blocked-by / --depends-on / --introduces / --falsifiers) -- a "
+            "--blocked-by / --depends-on / --introduces) -- a "
             "scope call that changes nothing is a lock taken for no reason")
         return E_USAGE
 
@@ -9189,7 +9153,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
     gate_writes = bool(args.gate or args.gate_clear
                        or args.gate_set is not None or args.gate_drop)
     tests_writes = (args.tests_mode is not None or bool(args.tests_add)
-                    or gate_writes or bool(falsifiers))
+                    or gate_writes)
     tests = node.get("tests")
     tests = dict(tests) if isinstance(tests, dict) else None
     # An inline suite named as the task's only test file fills an ABSENT or a
@@ -9249,16 +9213,6 @@ def _locked_scope(args, project, config, mpath, tid, out):
             changes.append({"id": tid, "field": "files",
                             "from": before_union, "to": now_files})
             node["files"] = now_files
-    if falsifiers:
-        # MERGED, never replaced: an entry the call does not name keeps the
-        # falsifier it had, so the key set only grows (`_WIDENABLE`'s note).
-        was_fz = dict(prior_tests.get("falsifiers") or {})
-        now_fz = dict(was_fz)
-        now_fz.update(falsifiers)
-        if was_fz != now_fz:
-            changes.append({"id": tid, "field": "tests.falsifiers",
-                            "from": was_fz, "to": now_fz})
-        tests["falsifiers"] = now_fz
     companions, companion_notes = [], []
     if args.introduces:
         # AFTER `files` and `tests.add` have both landed on the node, so the
@@ -13709,8 +13663,7 @@ VERB_FLAGS = {
     # was computed at, which keys the file, and the tasks that brief showed.
     "file-return": ("role", "head", "shown"),
     "scope": ("files", "tests_mode", "tests_add", "gate", "gate_clear",
-              "gate_set", "gate_drop", "description", "risk", "blocked_by", "depends_on", "introduces",
-              "falsifiers"),
+              "gate_set", "gate_drop", "description", "risk", "blocked_by", "depends_on", "introduces"),
     "retarget": ("gate", "gate_clear", "gate_drop", "gate_set", "area",
                  "outcome", "description", "rename", "parent_branch"),
     # `seed` writes where nothing exists yet, so it has no target to describe,
@@ -13886,10 +13839,6 @@ def build_parser():
     # needs.
     p.add_argument("--gate-clear", dest="gate_clear",
                    action="store_true")
-    p.add_argument("--falsifiers", default=None, metavar="JSON",
-                   help="scope: merge {tests.add entry: {file, find, replace, "
-                        "command[, timeout]}} into tests.falsifiers - the "
-                        "change each planned test must fail against")
     # `retarget` only (`VERB_FLAGS["retarget"]`). `--gate-drop` names entries to
     # REMOVE one at a time (`append`, so it can repeat); `--gate-set` REPLACES
     # the whole gate, which is `--gate`'s own operation under a name that takes

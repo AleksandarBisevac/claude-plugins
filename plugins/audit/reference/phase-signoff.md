@@ -104,35 +104,11 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    string diff, that flagged most of the danuvia tasks on language alone). **A reviewer's `matches`
    answer whose note quotes none of the task's own `description`** is refused as unsupported before
    it can file - `unsupported_match_basis` in `_filed_returns.py` - so a renamed scope cannot read
-   back as matching on the strength of the executor's own restatement. **A planned test that
-   carries a 'must fail if' line has it applied by the drive.** The line is the task's
-   `tests.falsifiers` entry, keyed by the `tests.add` entry it falsifies and naming a
-   `{file, find, replace, command}` mutation (an optional `timeout` in seconds). **The executor
-   produces it**, because it is the one actor that knows the fix's shape when it files: on a `tdd`
-   task the executor brief asks for one per planned test the plan holds none for
-   (`audit-lookup.py`'s `falsifier_rule`), and the filed return carries it in its `falsifiers`
-   field, keyed the same way. `submit` refuses a malformed one before anything is filed
-   (`returned_falsifier_problems`). Once the gate is green, `record_falsifiers` writes what the
-   return declares into the task's `tests.falsifiers` through `audit-task.py scope --falsifiers`
-   - an entry the plan already holds keeps the plan's - and only then does `falsify` read the plan.
-   A `tdd` task's planned test that neither the plan nor the return carries one for is named at
-   `submit` and appended to the task as a note: a recorded gap and not a stop, because the return
-   is filed once and a stop at the close could be answered only by a whole new attempt. A
-   `regression` or `gate-only` task owes none (`_filed_returns.falsifier_gaps` reads the mode).
-   Then `drive-phase.py`'s `falsify` runs each declared falsifier through `run_falsifier`, once,
-   in a throwaway copy of the tree the gate measured (the files git lists, ignored ones left out),
-   never the tree itself: the command must exit 0 on the unmutated copy, then fail on the mutant.
-   A test that still passes under its mutation stops the close at the `falsifier` decision, before
-   any reviewer is spent on it - `retry`, `accept --reason`, or `block`. So does a falsifier that
-   could not be run - a malformed entry, a `find` the file does not hold, an unmutated copy that is
-   not green, a mutant that broke the build, a run past its timeout - as `could-not-run`, never as
-   a kill. **The record outlives the drive**: before the question is asked, each falsifier that
-   survived or could not run is a note on the task through `audit-task.py note`, naming the test
-   entry, the mutated `file:line` and the outcome (`note_falsifiers`, `mutation_site`), and an
-   `accept` appends a second note carrying the human's reason - the drive's own state, where the
-   decision waits, is dropped at finish. The validator names a malformed entry as a `rules.falsifier.*` warning
-   (`_manifest_rules.falsifier_problems`, the same reading the drive refuses on), a warning rather
-   than a finding because a plan that validated before the field existed keeps validating.
+   back as matching on the strength of the executor's own restatement. **A planned test's
+   `tests.falsifiers` entry is retired:** the schema still accepts it, so a plan that holds one
+   keeps validating with no warning, but nothing reads it - the drive applies no mutation, takes no
+   `falsifier` decision, and files a return that still carries a `falsifiers` field without
+   recording it.
 
    **Nothing refuses a hand edit of the shard** — the validator's shape warning is the only
    backstop, and a hand-written finding carries no journal row and no tally. Then, for each

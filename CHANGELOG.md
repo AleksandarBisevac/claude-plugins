@@ -6,6 +6,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ## [Unreleased]
 
+### Removed
+- **The falsifier, which 3.4.0 added.** The drive no longer applies a planned test's mutation:
+  there is no falsifier stage between the green gate and the close, no `falsifier` decision
+  (`retry`, `accept`, `block`) and no note recording a survivor. `audit-task.py scope` loses
+  `--falsifiers`, and an executor return that still carries a `falsifiers` field is filed with the
+  field read by nothing, so an agent body older than this change is not refused. The executor's
+  brief and the validator's `rules.falsifier.*` warnings go with it. `tests.falsifiers` stays in
+  the plan schema as a retired key read by nothing, so a plan that carries one keeps validating
+  with no warning; its removal from the schema is a 4.0.0 item beside `meta.muted`.
+
 ## [3.4.0] - 2026-10-16
 
 This release has two halves. The first makes a phase cheaper to drive: a task's gate runs its own

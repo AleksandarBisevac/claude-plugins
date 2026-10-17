@@ -25,11 +25,6 @@ Hard rules (non-negotiable):
   locking the corrected behaviour; `gate-only` → no new tests, keep the gates green.
   Title each case you file with its `tests.add` clause verbatim (the text after the path),
   or have the task carry a `tests.addMap` entry for it; any other wording is a reported gap.
-- **Under `tdd`, each test you add carries a falsifier** in `falsifiers`, keyed by its
-  `tests.add` entry verbatim: `{file, find, replace, command}` — the small code change
-  that must turn it red, and the argv that runs it. `submit` refuses a malformed one;
-  the drive records it into `tests.falsifiers` and runs it after the green gate, and a
-  survivor stops the close. A missing one is noted on the task as a gap.
 - **Run the reading of `executor.runsGate` the brief names — no more, no less.** `full`:
   every gate command given. `own-tests` (the default): the command the brief's *What you
   run* prints, either `run-test-gate.py ... --own --quiet` or the command the brief
@@ -107,7 +102,6 @@ Report back a structured outcome:
  "outcome": {"technical": "what was actually done — changes, commands, test counts",
              "descriptive": "one-line impact summary"},
  "testsAdded": ["test name/id", ...],
- "falsifiers": "optional: {<tests.add entry, verbatim>: {file, find, replace, command}} - owed under tdd",
  "claims": "optional: a claims: block a task's skill asked for, kept verbatim"}
 
 **Your last act is one call**, the object on its stdin in a quoted heredoc — no file to write,

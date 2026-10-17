@@ -605,28 +605,6 @@ TITLE_RULE = ("Title each case you file with its tests.add clause (the text afte
               "it; any other wording is reported as a gap.")
 
 
-# The falsifier's producer is the executor, the one actor that knows the fix's
-# shape when it files: asked here, on a tdd task, for each planned test the plan
-# does not already carry one for. `drive-phase.py` records the answer into
-# `tests.falsifiers` and runs it after the green gate.
-FALSIFIER_RULE = ("For each tests.add entry above that the plan carries no "
-                  "falsifier for, declare one in your return's `falsifiers`, "
-                  "keyed by the entry verbatim: {\"file\", \"find\", "
-                  "\"replace\", \"command\"} - the small code change that must "
-                  "turn that test red, and the argv that runs it from the "
-                  "project root. The drive records it into tests.falsifiers and "
-                  "runs it after the green gate; an entry left without one is "
-                  "noted on the task as a gap.")
-
-
-def falsifier_rule(tests):
-    """`[FALSIFIER_RULE]` when a tdd task plans a test the plan holds no
-    falsifier for, else nothing - a regression or gate-only task owes none."""
-    held = tests.get("falsifiers") if isinstance(tests.get("falsifiers"), dict) else {}
-    owed = [a for a in tests.get("add") or [] if a not in held]
-    return [FALSIFIER_RULE] if tests.get("mode") == "tdd" and owed else []
-
-
 def compose_executor_brief(manifest, phase, task, ctx, files, gate):
     """The executor's whole brief, as lines. `files` is `brief_lookup`'s payload
     and `gate` the `executor.runsGate` reading with its basis.
@@ -681,7 +659,7 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
                                           json.dumps(tests.get("expectRedFirst"))),
         "tests.add:"] + (["- %s" % (a,) for a in (tests.get("add") or [])]
                          or ["- none"])
-        + ([TITLE_RULE] if tests.get("add") else []) + falsifier_rule(tests)
+        + ([TITLE_RULE] if tests.get("add") else [])
         + ["gate, %s:" % (whose,)] + gate_lines(manifest, entries)
         + ([WIDEN_RULE] if tests.get("add") else []))
     reading = gate["reading"]

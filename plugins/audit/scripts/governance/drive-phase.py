@@ -237,16 +237,9 @@ import _runner_collects  # noqa: E402  (collects: whether a runner takes a test 
 import _gate_derive  # noqa: E402  (entry_runner: which runner a gate entry invokes)
 import _tree_stamp  # noqa: E402  (parse_stamp, declared_scope: the scope a filing was made under)
 import _scope_companions  # noqa: E402  (derive: the runner config a widen declares)
-import _manifest_rules as _rules  # noqa: E402  (task_falsifiers: a planned test's
-#                                               'must fail if' line, and its faults)
 
 E_OK, E_STOPPED, E_USAGE = 0, 1, 2
 PREFIX = "[drive-phase]"
-# Seconds each run of a falsifier may take - the unmutated copy, then the
-# mutant - when the falsifier names no `timeout` of its own. A run past it is
-# could-not-run, never a kill.
-FALSIFIER_TIMEOUT = 300
-
 # The bound every print that is not a stop stays inside. A stop prints a verb's
 # own words whole, so it is the one print that may run longer.
 INSTRUCTION_BYTES = 300
@@ -326,12 +319,6 @@ STEPS = {
                 "%(why)s",
         "rule": ("widen declares them and re-gates; discard drops them; block "
                  "keeps the tree. Never drop one silently.",)},
-    "decide-falsifier": {
-        "line": "decide falsifier %(task)s: a planned test under its declared "
-                "mutation: %(why)s",
-        "rule": ("survived: the test cannot fail its own mutant - retry spends an "
-                 "attempt; could-not-run is no kill - fix the falsifier, then "
-                 "retry; accept closes with --reason kept; block.",)},
     "decide-scope-gap": {
         "line": "decide scope-gap %(task)s: %(why)s",
         "rule": ("widen declares the runner config beside the task's files and "
@@ -469,9 +456,6 @@ DECISIONS = {
     # attempt spent), `close` goes on with the reason recorded.
     "scope-changed": (("retry", "close", "block"), ("close", "block")),
     "high-risk": (("confirm", "block"), ("block",)),
-    # A declared falsifier the planned test survived, or that could not be run
-    # (`falsify`): `accept` closes over it with the reason kept.
-    "falsifier": (("retry", "accept", "block"), ("accept", "block")),
     "no-change": (("no-change", "retry"), ("no-change",)),
     # A wave member's integration onto the phase tree: refused by name (a
     # conflict, a lockfile, a dirty phase tree), or owed a word on paths the
@@ -531,7 +515,6 @@ SIGNAL_VERBS = {
     "resume-executor": "dispatch",
     "decide-integration-refused": "judge", "decide-undeclared-change": "judge",
     "decide-scope-gap": "judge", "decide-gate-red": "judge",
-    "decide-falsifier": "judge",
     "decide-no-executor-return": "judge", "decide-scope-changed": "judge",
     "decide-no-reviewer-return": "judge", "decide-no-change": "judge",
     "decide-no-phase-review-return": "judge", "decide-runtime-boot": "judge",
@@ -1436,236 +1419,6 @@ tests_add_gaps = _fr.tests_add_gaps
 floor_contradicted_clause = _fr.floor_contradicted_clause
 
 
-def _copy_tree(tree, copied, paths):
-    """Copy `tree` into `copied`: every path in `paths` (relative, as git lists
-    them), or the whole tree but `.git` when `paths` is None. A listed path
-    that is gone from the tree, or is a directory (a submodule), is skipped."""
-    if paths is None:
-        shutil.copytree(tree, copied, symlinks=True,
-                        ignore=shutil.ignore_patterns(".git"))
-        return
-    os.makedirs(copied)
-    for rel in paths:
-        src = os.path.join(tree, *rel.split("/"))
-        if not os.path.lexists(src) or (os.path.isdir(src)
-                                        and not os.path.islink(src)):
-            continue
-        dst = os.path.join(copied, *rel.split("/"))
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
-        shutil.copy2(src, dst, follow_symlinks=False)
-
-
-def _run_in(cmd, where, timeout):
-    """`(code, output, None)` of `cmd` run in `where`, or `(None, "", why)`
-    when it could not run or did not finish inside `timeout` seconds."""
-    try:
-        # The test command's words are quoted, never parsed: a byte that is
-        # not UTF-8 is replaced rather than allowed to end the run.
-        done = subprocess.run(cmd, cwd=where, capture_output=True,
-                              stdin=subprocess.DEVNULL, text=True,
-                              encoding="utf-8", errors="replace", timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return None, "", "the command did not finish within %ds" % (timeout,)
-    except (OSError, subprocess.SubprocessError) as exc:
-        return None, "", "the command could not run: %s" % (exc,)
-    return done.returncode, done.stdout + done.stderr, None
-
-
-def run_falsifier(cmd, tree, mutation, timeout=FALSIFIER_TIMEOUT, paths=None):
-    """Grade a planned test against its mutant: run `cmd` (a list) in a COPY of
-    `tree` - `paths` only, when given - first as it stands, then with
-    `mutation` (`{"file", "find", "replace"}`) applied to the first match.
-
-    `"killed"` when the unmutated copy exits 0 and the mutant fails;
-    `"survived"` when the mutant still exits 0, the test unable to fail its
-    own mutant. `"could-not-run"`, never a kill, for every run that proves
-    nothing: the unmutated copy not green (a red under the mutant would then be
-    the copy's fault, not the test's), a `find` the file does not hold (no
-    mutant), a mutant that broke the build rather than failing an assertion,
-    or a run that could not start or outlived `timeout` seconds. One copy and
-    at most two runs. The caller's own tree is byte-identical before and
-    after."""
-    work = tempfile.mkdtemp(prefix="audit-falsifier-")
-    try:
-        copied = os.path.join(work, "tree")
-        try:
-            _copy_tree(tree, copied, paths)
-        except OSError as exc:
-            return "could-not-run", "the tree could not be copied: %s" % (exc,)
-        target = os.path.join(copied, *mutation["file"].split("/"))
-        try:
-            with open(target, "r", encoding="utf-8") as fh:
-                original = fh.read()
-        except (OSError, ValueError) as exc:
-            return "could-not-run", "could not read %s: %s" % (mutation["file"], exc)
-        if mutation["find"] not in original:
-            return "could-not-run", ("the mutation's `find` text is not in %s - "
-                                     "no mutant was applied" % (mutation["file"],))
-        code, said, why = _run_in(cmd, copied, timeout)
-        if why is not None:
-            return "could-not-run", "on the unmutated copy, %s" % (why,)
-        if code != 0:
-            return "could-not-run", ("the command exited %d on the unmutated "
-                                     "copy, so a red under the mutant would prove "
-                                     "nothing - %s"
-                                     % (code, _excerpt.reason_of(said) or "no output"))
-        with open(target, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write(original.replace(mutation["find"], mutation["replace"], 1))
-        code, said, why = _run_in(cmd, copied, timeout)
-        if why is not None:
-            return "could-not-run", "against the mutant, %s" % (why,)
-        if code == 0:
-            return "survived", "the command still exited 0 against the mutant"
-        if _BUILD_BROKEN.search(said):
-            return "could-not-run", ("the mutation broke the build rather than "
-                                     "failing the test - %s"
-                                     % (_excerpt_build_line(said),))
-        return "killed", "the command exited %d against the mutant" % (code,)
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
-
-
-def tree_paths(root):
-    """`(paths, None)` - the files git lists in `root`, tracked and untracked
-    but not ignored, so a copy carries the work and leaves out what the
-    project ignores (dependency directories, caches) - or `(None, why)`."""
-    try:
-        done = subprocess.run(
-            ["git", "-C", root, "ls-files", "-z", "--cached", "--others",
-             "--exclude-standard"], capture_output=True, stdin=subprocess.DEVNULL,
-            timeout=60)
-    except (OSError, subprocess.SubprocessError) as exc:
-        return None, "git could not list the tree: %s" % (exc,)
-    if done.returncode != 0:
-        return None, "git could not list the tree (exit %d): %s" % (
-            done.returncode, done.stderr.decode("utf-8", "replace").strip())
-    names = done.stdout.decode("utf-8", "replace").split("\0")
-    return sorted(set(n for n in names if n)), None
-
-
-def mutation_site(root, falsifier):
-    """`file:line` of the first match of the falsifier's `find` in `root`, the
-    line a survivor's record names; the bare file when the text is not there
-    or the file cannot be read, since then no line was mutated."""
-    rel = str(falsifier.get("file") or "")
-    find = falsifier.get("find")
-    try:
-        with open(os.path.join(root, *rel.split("/")), "r", encoding="utf-8",
-                  errors="replace") as fh:
-            text = fh.read()
-    except (OSError, ValueError):
-        return rel
-    at = text.find(find) if isinstance(find, str) and find else -1
-    return rel if at < 0 else "%s:%d" % (rel, text.count("\n", 0, at) + 1)
-
-
-def note_falsifiers(ctx, task, texts):
-    """Append each of `texts` to `task` as a note through the note verb; None,
-    or the stop when the verb refused one."""
-    for text in texts:
-        _out, stop = _verb_or_stop(ctx, "audit-task.py", _task_args(
-            ctx, "note", task["id"], "--text", text))
-        if stop is not None:
-            return stop
-    return None
-
-
-def record_falsifiers(ctx, state, task, executor):
-    """`(task, None)` with the executor's declared falsifiers recorded into the
-    task's `tests.falsifiers` through the scope verb, and the task read back -
-    or `(None, stop)`. An entry the plan already holds keeps the plan's. A tdd
-    task's added test that neither carries is a recorded gap, a note, rather
-    than a stop: the return is filed once, so a stop here could be answered
-    only by a whole new attempt, and the drive does not ask for a mutation the
-    executor did not write. Once per start."""
-    if _marked(state, "falsifiersRecorded", task):
-        return task, None
-    declared = _fr.return_falsifiers(executor)
-    planned = (task.get("tests") or {}).get("falsifiers")
-    planned = planned if isinstance(planned, dict) else {}
-    new = dict((k, v) for k, v in declared.items() if k not in planned)
-    if new:
-        _out, stop = _verb_or_stop(ctx, "audit-task.py", _task_args(
-            ctx, "scope", task["id"], "--falsifiers",
-            json.dumps(new, sort_keys=True)))
-        if stop is not None:
-            return None, stop
-        ctx["did"].append("falsifier(s) of %s recorded from its return: %s" % (
-            task["id"], ", ".join("`%s`" % (_clip(e, 40),) for e in sorted(new))))
-    gaps = _fr.falsifier_gaps(task, declared)
-    if gaps:
-        stop = note_falsifiers(ctx, task, [
-            "no falsifier declared for `%s`: the executor's return names no "
-            "change it must fail against, so the drive cannot try it" % (entry,)
-            for entry in gaps])
-        if stop is not None:
-            return None, stop
-        ctx["did"].append("%s: no falsifier for %d added test(s), recorded as "
-                          "a note" % (task["id"], len(gaps)))
-    if new:
-        manifest, _phase = load_phase(ctx)
-        task = _mio.tasks_by_id(manifest).get(task["id"]) or task
-    _mark(state, "falsifiersRecorded", task)
-    write_state(ctx, state)
-    return task, None
-
-
-def falsify(ctx, state, task, tree=None):
-    """Apply every falsifier `task` declares in `tests.falsifiers`, once each,
-    in a throwaway copy of the tree the gate measured; None when each one was
-    killed (or none is declared), else the `falsifier` decision naming every
-    one that survived or could not be run. Marked once its answer is known, so
-    a later `next` under the same start does not run them again."""
-    declared = _rules.task_falsifiers(task)
-    if not declared:
-        return None
-    root = tree or ctx["gitRoot"]
-    paths, why = tree_paths(root)
-    graded = []
-    for entry, falsifier, problems in declared:
-        if problems:
-            graded.append((entry, "could-not-run", "; ".join(problems)))
-        elif paths is None:
-            graded.append((entry, "could-not-run", why))
-        else:
-            graded.append((entry,) + run_falsifier(
-                list(falsifier["command"]), root, falsifier,
-                timeout=falsifier.get("timeout") or FALSIFIER_TIMEOUT,
-                paths=paths))
-    held = dict((entry, falsifier) for entry, falsifier, _p in declared)
-    open_ = [[entry, mutation_site(root, held[entry]), status, said]
-             for entry, status, said in graded if status != "killed"]
-    if open_:
-        # THE RECORD OUTLIVES THE DRIVE: the decision lives in the driver's
-        # state, which is dropped at finish, so each open falsifier is a note on
-        # the task before the question is asked - whatever the answer is.
-        stop = note_falsifiers(ctx, task, [
-            "falsifier %s for `%s`: mutation at %s (%s)" % (status, entry, site, said)
-            for entry, site, status, said in open_])
-        if stop is not None:
-            return stop
-        return decision(ctx, state, "falsifier", task, "; ".join(
-            "%s for `%s` at %s (%s)" % (status, _clip(entry, 60), site, said)
-            for entry, site, status, said in open_), extra={"open": open_})
-    _mark(state, "falsified", task)
-    write_state(ctx, state)
-    ctx["did"].append("falsifier %s killed by %s" % (
-        task["id"], ", ".join("`%s`" % (_clip(e, 40),) for e, _s, _w in graded)))
-    return None
-
-
-_BUILD_BROKEN = re.compile(
-    r"SyntaxError|IndentationError|ModuleNotFoundError|ImportError"
-    r"|collected 0 items|no tests ran", re.IGNORECASE)
-
-
-def _excerpt_build_line(text):
-    for line in text.splitlines():
-        if _BUILD_BROKEN.search(line):
-            return line.strip()
-    return "no matching line"
-
-
 # --- CI at a cadence --------------------------------------------------------------
 # A phase that runs for days used to meet CI only when it landed, so what it
 # broke on another platform surfaced after the work on top of it was done.
@@ -1944,17 +1697,6 @@ def advance(ctx, state, manifest, phase, task, tree=None):
             "; ".join(banners),) if banners else ""))
         ctx["did"].append(grade_stamp(ctx, executor.get("stamp"), tree)
                           if tree else grade_stamp(ctx, executor.get("stamp")))
-    # After the green gate, over the tree it measured, and before a reviewer
-    # is spent on a test that cannot fail its own mutant.
-    if _marked(state, "gated", task) and not _marked(state, "falsified", task):
-        # The executor's return is the falsifier's producer: what it declares
-        # lands in the plan first, so `falsify` reads the plan's one record.
-        task, stop = record_falsifiers(ctx, state, task, executor)
-        if stop is not None:
-            return stop
-        said = falsify(ctx, state, task, tree)
-        if said is not None:
-            return said
     if due and reviewer is None:
         return dispatch(ctx, state, phase, task, "reviewer")
     if task.get("risk") == "high" and not _marked(state, "confirmed", task):
@@ -3045,24 +2787,6 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
             return stop
         ctx["did"].append("blocked %s" % (task["id"],))
         return keep_record(ctx, phase)
-    if pending["decision"] == "falsifier" and answer == "accept":
-        # The accept is a note on the task as well as a mark: the mark goes
-        # with the driver's state at finish, and a test closed over its own
-        # surviving mutant must stay readable after it.
-        stop = note_falsifiers(ctx, task, [
-            "falsifier %s for `%s` accepted at the close: %s (mutation at %s; %s)"
-            % (status, entry, reason, site, said)
-            for entry, site, status, said in pending.get("open") or []]
-            or ["falsifier result accepted at the close: %s (%s)"
-                % (reason, pending.get("why") or "")])
-        if stop is not None:
-            return stop
-        _mark(state, "falsified", task, {"accepted": reason,
-                                         "why": pending.get("why") or ""})
-        write_state(ctx, state)
-        ctx["did"].append("%s: falsifier result accepted (%s)" % (
-            task["id"], _clip(reason, 80)))
-        return None
     if answer == "close":
         accept_scope(ctx, state, task, reason)
         ctx["did"].append("%s: scope change accepted (%s)" % (
@@ -4710,18 +4434,6 @@ def submit_target(manifest, target):
     return None, None
 
 
-def returned_falsifier_problems(task, body):
-    """Why the falsifiers an executor's return declares cannot be recorded for
-    `task`, as sentences - `_manifest_rules.falsifier_problems`, the reading
-    the scope verb and `falsify` refuse on, asked before anything is filed so
-    the executor can correct the return rather than leave it unrunnable."""
-    declared = (task.get("tests") or {}).get("add") or []
-    held = _fr.return_falsifiers(body)
-    return ["`falsifiers[%r]` %s" % (entry, text) for entry in sorted(held)
-            for _code, text, _schema in _rules.falsifier_problems(
-                entry, held[entry], list(declared))]
-
-
 def submitted_shape(role, body, fills, task=None):
     """The ways `body` falls short of `role`'s shape, judged with each field in
     `fills` set aside: those are `submit`'s to supply, not the agent's. `task`
@@ -4945,8 +4657,6 @@ def submit(ctx, manifest, args, cmd, text):
     fills = (["stamp"] + (["redFirst"] if cmd else [])) if executor else []
     problems = (submitted_shape(args.role, body, fills, task)
                if task is not None else [])
-    if executor and not problems:
-        problems = returned_falsifier_problems(task, body)
     if problems:
         return _stopped(ctx, "the %s return for %s does not have the shape its "
                         "role declares. Nothing filed:\n%s" % (
@@ -4987,11 +4697,6 @@ def submit(ctx, manifest, args, cmd, text):
             ctx["did"].append(
                 "tests.add names %d case(s) with no filed counterpart: %s"
                 % (len(gaps), "; ".join(gaps)))
-        unfalsified = _fr.falsifier_gaps(task, _fr.return_falsifiers(body))
-        if unfalsified:
-            ctx["did"].append(
-                "no falsifier declared for %d added test(s), recorded as a gap "
-                "at the close: %s" % (len(unfalsified), "; ".join(unfalsified)))
         text = json.dumps(body, indent=2) + "\n"
     head = args.head
     if args.slice is not None and (task is not None or args.role != "reviewer"):

@@ -18228,6 +18228,53 @@ def _record_listing_cases(check):
         _harness.remove_tree(tmp)
 
 
+RETIRED_FLAG_CLAUSE = ("scope --falsifiers is a usage error and writes "
+                       "nothing")
+_RF_ENTRY = "tests/t.py: x"
+_RF_JSON = ('{"tests/t.py: x": {"file": "src/a.ts", "find": "a", "replace": "b", '
+            '"command": ["true"]}}')
+
+
+def _retired_flag_cases(check):
+    """`scope --falsifiers` is no flag any more: the parser refuses it as it
+    refuses any word it does not know, and the plan is byte-identical after."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, _run_on_stdin, base_manifest, mk, _mk_empty, _task_in, _pin, _unpin,
+     _PD_SHA, _pd_fixture, _pd_repo, _git) = _at_kit(tmp)
+    try:
+        proj, mp = mk("rf-retired", base_manifest())
+        # The task plans the very test the JSON keys, so the one thing that
+        # could refuse the call before the retirement was its parser: with the
+        # flag still read, this call writes `tests.falsifiers`.
+        set_code, set_txt = run(["scope", "P2.3", "--tests-mode", "tdd",
+                                 "--tests-add", _RF_ENTRY,
+                                 "--project-dir", proj])
+        with open(mp, "rb") as fh:
+            before = fh.read()
+        code, txt = run(["scope", "P2.3", "--falsifiers", _RF_JSON,
+                         "--project-dir", proj])
+        with open(mp, "rb") as fh:
+            after = fh.read()
+        # The deny twin for the over-fire mutation: the same call with a flag
+        # the verb does read goes through, so the exit 2 above is the retired
+        # flag's and not a refusal the fixture would give any scope call.
+        ok_proj, ok_mp = mk("rf-control", base_manifest())
+        ok_code, ok_txt = run(["scope", "P2.3", "--risk", "low",
+                               "--project-dir", ok_proj])
+        check("%s (rf1: after the setup call exits %r, exit %r, the plan "
+              "byte-identical, and the control call with `--risk` exits %r: %r)"
+              % (RETIRED_FLAG_CLAUSE, set_code, code, ok_code,
+                 (set_txt[:120], txt[:200], ok_txt[:120])),
+              set_code == 0 and code == 2 and after == before and ok_code == 0
+              and b"falsifiers" not in after)
+        holders = sorted(verb for verb, flags in M.VERB_FLAGS.items()
+                         if "falsifiers" in flags)
+        check("rf2 no verb's flag table holds `falsifiers` (held by %r)"
+              % (holders,), holders == [])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("at3-block", "_flag_cases"), ("at4-block", "_start_cases"),
           ("at5-block", "_close_cases"), ("at6-block", "_group_cases"),
@@ -18247,7 +18294,8 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("fp-block", "_first_plan_cases"),
           ("bx-block", "_batch_fix_cases"),
           ("rl-block", "_record_listing_cases"),
-          ("xf-block", "_crossfile_cases"))
+          ("xf-block", "_crossfile_cases"),
+          ("rf-block", "_retired_flag_cases"))
 
 
 if __name__ == "__main__":

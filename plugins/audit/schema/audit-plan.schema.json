@@ -1824,7 +1824,7 @@
         },
         "falsifiers": {
           "type": "object",
-          "description": "A planned test's 'must fail if' line, made runnable: each key is one `add` entry, spelled verbatim (the way `addMap` is keyed), and its value names a mutation of the code that test must fail against. Optional and additive - a task with none is driven exactly as before. Produced by the executor: its filed return's `falsifiers` field, keyed the same way, is written here through `audit-task.py scope --falsifiers` (merged, an entry already held keeping its value) before the drive reads it; a tdd task's `add` entry with none is noted on the task as a gap. Beside `add` rather than inside it, because every reader of `add` parses its entries as `\"<path>: <what it asserts>\"` strings. After the executor files and the task's gate is green, `drive-phase.py` runs each one once in a throwaway copy of the tree (the task's own files as they stand, never the tree itself): the command must exit 0 on the unmutated copy, then fail once the mutation is applied. A test that still passes under its mutation, and a falsifier that could not be run, each stop the close at the `falsifier` decision, and each is appended to the task's `notes` naming the entry, the mutated file:line and the outcome; an accept appends the reason. The validator's `rules.falsifier.*` warnings (`_manifest_rules.falsifier_problems`) name a malformed one.",
+          "description": "RETIRED, and read by nothing: a plan that carries it keeps validating, with no finding and no warning, and the drive, the filing verb and the validator all go past it. It is a planned test's former 'must fail if' line - each key was one `add` entry, spelled verbatim, its value a mutation of the code that test had to fail against. The key stays accepted so no plan that validated stops validating; removing it is a 4.0.0 item beside `meta.muted`.",
           "additionalProperties": {
             "$ref": "#/$defs/falsifier"
           }
@@ -1851,7 +1851,7 @@
         "command"
       ],
       "additionalProperties": true,
-      "description": "One mutation a planned test must fail against: the first occurrence of `find` in `file` becomes `replace`, in a throwaway copy, and `command` runs there. Which values the shape cannot express - an empty `find`, a path out of the tree, an empty command, a `replace` equal to `find` - is `_manifest_rules.falsifier_problems`'s to say.",
+      "description": "Retired with its parent `tests.falsifiers` and read by nothing: the shape a mutation was once written in (`find` replaced by `replace` in `file`, `command` run there). Kept so a plan that carries one still validates.",
       "properties": {
         "file": {
           "type": "string",
