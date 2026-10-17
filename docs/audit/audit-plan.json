@@ -7379,7 +7379,8 @@
       "P125.122-0h5",
       "P125.125-0h5",
       "P125.126-0h5",
-      "P125.138-0h5"
+      "P125.138-0h5",
+      "P128.43-izt"
     ],
     "plugins/audit/scripts/status/_claude_home.py": [
       "P77.2",
@@ -8775,7 +8776,8 @@
       "P125.144-0h5",
       "P129.7-izt",
       "P129.8-izt",
-      "P128.41-izt"
+      "P128.41-izt",
+      "P128.42-izt"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -8886,7 +8888,8 @@
       "P125.144-0h5",
       "P129.7-izt",
       "P129.8-izt",
-      "P128.41-izt"
+      "P128.41-izt",
+      "P128.42-izt"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6",
