@@ -68,6 +68,12 @@
  * (PINNED_CONTEXT). Run --check in CI;
  * run the capture locally when a UI change lands.
  *
+ * One thing the pin cannot reach is a native `<input type=date>`, which paints the
+ * OS regional format. A capture that WRITES refuses a shot holding one on a host
+ * whose format is not en_US (PINNED_CONTEXT says what was tried); --check only notes
+ * which shots those are and what a writing run here would do. `--accept-host-date-format`
+ * writes them anyway and records that their date fields are host-shaped.
+ *
  * --repro writes nothing into the repo either. It captures twice into throwaway
  * directories on the machine it is running on, byte-compares the two, and prints the
  * result next to that machine. It is the re-derivable form of the reproducibility
@@ -125,6 +131,20 @@ const arg = (name, dflt) => {
 };
 const CHECK = argv.includes('--check');
 const REPRO = argv.includes('--repro');
+/**
+ * `--accept-host-date-format`: write a shot that holds a native date input on a host
+ * whose regional format is not en_US, instead of refusing it.
+ *
+ * It exists because the host it is for is real: the maintainer's own machine can be
+ * set to another region, nearly every report shot holds a date input, and a refusal
+ * with no way past it would leave a release re-capture impossible there. So the way
+ * past is explicit, loud, and written down — the entry in captured-at.json then reads
+ * `nativeDateInput: {regionalFormat, hostFormatAccepted: true}`, so the committed
+ * record says that picture's date fields are host-shaped. --repro passes it to its two
+ * captures, which land in directories it deletes. It changes nothing for a host the
+ * check passes on, and does not touch any other refusal.
+ */
+const ACCEPT_HOST_DATE_FORMAT = argv.includes('--accept-host-date-format');
 const OUT = path.resolve(REPO, arg('--out', 'docs/screenshots'));
 
 /**
@@ -6320,8 +6340,12 @@ function loadUiSourceDigests() {
  * committed bytes and therefore comparable on any host, unlike the pixels. Per
  * surface for the same reason the version is per file: a report-only change must
  * not ask for the panel's pictures back.
+ *
+ * A shot that holds a native date input also records the host regional format it was
+ * painted under (`nativeDateInput`), because that input paints the host's format and
+ * the digest above cannot say so; see PINNED_CONTEXT.
  */
-function recordCapture(name, file, surface) {
+function recordCapture(name, file, surface, extra) {
   const sidecar = path.join(OUT, CAPTURED_AT);
   let prior = null;
   try {
@@ -6344,6 +6368,9 @@ function recordCapture(name, file, surface) {
     version: version,
   };
   if (surface) entry.surface = surface;
+  // What a shot owes beyond the common fields, e.g. the host format a native date
+  // input in it was painted under. Left off an entry that owes nothing.
+  if (extra) Object.assign(entry, extra);
   // Omitted rather than defaulted when the digest is unavailable. A placeholder
   // would be a basis the rule could compare and clear, which is the one thing a
   // missing basis must never be able to do.
@@ -6515,14 +6542,33 @@ async function pageFixtureFacts(page) {
  * also launched with `--lang` set to the same locale, which keeps its own UI
  * language from following the host.
  *
- * WHAT THIS DOES NOT PIN, probed on macOS with the host's regional format overridden
- * to Serbia: the placeholder of a native `<input type=date>` (`dd. mm. yyyy.`). It is
- * painted by the browser from the OS regional format, and none of the context
- * `locale` (nine values tried), the element's `lang`, `--lang=en-US`, the process
- * environment or `CFFIXED_USER_HOME` moved it; only a non-English `--lang` did
- * (`de-DE` and `fr-FR` each changed it), which would not be a pin to en-US. So a
- * committed shot of those inputs is still host-shaped on such a host, and --check
- * cannot see it.
+ * WHAT THIS CANNOT PIN, probed on macOS with the host's regional format overridden
+ * to Serbia (`defaults read -g AppleLocale` is `en_US@rg=rszzzz`): the placeholder
+ * of a native `<input type=date>` (`dd. mm. yyyy.`), and the value it shows once it
+ * has one. Chromium paints it from `[NSLocale currentLocale]`, which carries the
+ * region override; `NSDateFormatter` over that locale answers `d. M. y.` where an
+ * explicit `en_US` answers `M/d/y`, and the page shows the first. None of these
+ * moved it: the context `locale` (nine values tried), the element's `lang`,
+ * `--lang=en-US`, `--lang=en`, `en_US`, `en-GB` and `en-US-u-rg-uszzzz`,
+ * `--accept-lang`, `LC_ALL`/`LANG`/`LANGUAGE`, `CFFIXED_USER_HOME` (with and
+ * without `__CFPREFERENCES_AVOID_DAEMON`), and `-AppleLocale en_US` on the browser's
+ * argv (a wrapper executable; Playwright's own `args` refuses a non-dash entry). Only
+ * a non-English `--lang` did (`de-DE` and `es-US`), and that is not a pin to
+ * en-US. The reading was made on one macOS host; the clean side (an en_US host paints
+ * `mm/dd/yyyy`) is inferred from the NSDateFormatter answer, not observed, because the
+ * host's own region was not changed to find out.
+ *
+ * SO IT IS READ, NOT PINNED. The placeholder is not in the DOM, so `pinProblem` cannot
+ * see it; `readRegionalFormat()` asks the host for what Chromium asks, and `shot()`
+ * refuses, in the writing path, a shot that contains a visible native date input on a
+ * host whose format differs (`dateInputProblem`). The fix on such a host is the host's:
+ * Region = United States in System Settings, or a host that already has it; failing
+ * that, `--accept-host-date-format` writes the shot and records the acceptance. A shot
+ * with no such input is unaffected, since every other host format is pinned above.
+ * Each written shot that does contain one records the format it was read under beside
+ * its entry in captured-at.json (`nativeDateInput.regionalFormat`), and `--repro`
+ * prints it with the machine. Only darwin is read: no other platform was probed, so
+ * there the record says `not read on <platform>` instead of passing.
  */
 export const PINNED_CONTEXT = Object.freeze({
   locale: 'en-US', timezoneId: 'UTC', numberSample: '1,234,567.5',
@@ -6563,6 +6609,125 @@ async function pageContextFacts(page) {
 }
 
 /**
+ * What the host's regional format makes a native date input paint — the input to
+ * regionalFormatProblem.
+ *
+ * Asks `NSLocale.currentLocale` through `osascript`, the object Chromium reads, for
+ * its identifier and for what `NSDateFormatter` makes of the `yMd` template under it
+ * AND under an explicit `en_US`. `defaults read -g AppleLocale` names the same value
+ * on the host it was probed on, but a key that is absent says nothing about the
+ * locale actually in force, and what decides the placeholder is the formatter's
+ * answer, so that is what is compared. Darwin only; elsewhere `{platform}` alone.
+ *
+ * A failed read is RETURNED as `error`, never thrown and never defaulted: "could not
+ * ask" must not become "clean".
+ * @returns {{platform: string, identifier?: string, template?: string,
+ *            reference?: string, error?: string}}
+ */
+function readRegionalFormat() {
+  if (process.platform !== 'darwin') return { platform: process.platform };
+  const script = 'ObjC.import("Foundation");'
+    + 'const t=(l)=>ObjC.unwrap($.NSDateFormatter.dateFormatFromTemplateOptionsLocale("yMd",0,l));'
+    + 'const c=$.NSLocale.currentLocale;'
+    + 'JSON.stringify({identifier:ObjC.unwrap(c.localeIdentifier),template:t(c),'
+    + 'reference:t($.NSLocale.localeWithLocaleIdentifier("en_US"))})';
+  const r = spawnSync('osascript', ['-l', 'JavaScript', '-e', script],
+                      { encoding: 'utf8', timeout: 15000 });
+  if (r.error || r.status !== 0) {
+    return { platform: 'darwin',
+             error: r.error ? r.error.message
+               : `osascript exited ${r.status}: ${String(r.stderr).trim().split('\n')[0]}` };
+  }
+  try {
+    const { identifier, template, reference } = JSON.parse(r.stdout);
+    if (![identifier, template, reference].every((v) => typeof v === 'string' && v)) {
+      return { platform: 'darwin', error: 'osascript answered without all three fields' };
+    }
+    return { platform: 'darwin', identifier, template, reference };
+  } catch (e) {
+    return { platform: 'darwin', error: `osascript answered something unreadable: ${e.message}` };
+  }
+}
+
+/**
+ * Why a native date input would paint the HOST's format on the host described by
+ * `facts`, or null. Pure: `facts` is what readRegionalFormat returned.
+ *
+ * Darwin is the only platform probed. A missing reading is a violation, like
+ * pinProblem's, and a platform nobody probed is not one: refusing it would block a
+ * host with no known fault, so it passes here and says so through
+ * regionalFormatBasis instead.
+ */
+export function regionalFormatProblem(facts) {
+  if (!facts) return 'the host regional format was not asked for';
+  if (facts.platform !== 'darwin') return null;
+  if (facts.error) {
+    return `the host regional format could not be read (${facts.error}), so what a `
+         + `native date input would paint is unknown`;
+  }
+  if (facts.template === facts.reference) return null;
+  return `this host's regional format is ${facts.identifier} (dates format as `
+       + `${JSON.stringify(facts.template)}, en_US as ${JSON.stringify(facts.reference)}), `
+       + `and a native date input paints its placeholder and value in the host's `
+       + `format — no browser option pins that`;
+}
+
+/**
+ * The reading as one string for a record to quote: the identifier when it was read,
+ * and otherwise the reason it was not. Pure.
+ */
+export function regionalFormatBasis(facts) {
+  if (!facts) return 'not asked';
+  if (facts.platform !== 'darwin') return `not read on ${facts.platform}`;
+  return facts.error ? `unreadable (${facts.error})` : facts.identifier;
+}
+
+/**
+ * Why the shot `name`, holding `count` visible native date inputs, cannot be written
+ * on the host described by `facts`, or null. Pure.
+ *
+ * Reads the operation, not the host alone: the host's format reaches a picture only
+ * through a date input that is in it, so a shot without one passes on any host.
+ */
+export function dateInputProblem(name, count, facts) {
+  if (!count) return null;
+  const why = regionalFormatProblem(facts);
+  if (!why) return null;
+  return `${name} holds ${count} native date input(s) and ${why}. Set Region to `
+       + `United States (System Settings > Language & Region) so the locale reads `
+       + `en_US, or capture on a host that already does — a picture painted under `
+       + `this host's format would be committed as if it were not`;
+}
+
+/**
+ * How many native date inputs are visible in what the shutter will capture — the
+ * viewport, or the whole page for a full-page shot. One inside a closed `<details>`
+ * is not counted: it is not in the picture, and `checkVisibility()` is what says so —
+ * its box is still measured (probed: a closed `<details>`' input reports the same
+ * 148x21 rect as an open one), so a rect test alone counts it. Overlap by another
+ * element is not subtracted, which errs toward refusing.
+ */
+async function visibleDateInputs(page, full) {
+  return page.evaluate((fullPage) => [...document.querySelectorAll('input[type=date]')]
+    .filter((el) => {
+      if (!el.checkVisibility({ checkVisibilityCSS: true })) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0
+        && (fullPage || (r.bottom > 0 && r.right > 0
+                         && r.top < innerHeight && r.left < innerWidth));
+    }).length, full);
+}
+
+/** Read once per run: the host does not change under a capture. */
+let REGIONAL_FORMAT = null;
+const regionalFormat = () => {
+  if (!REGIONAL_FORMAT) REGIONAL_FORMAT = readRegionalFormat();
+  return REGIONAL_FORMAT;
+};
+/** The shots a --check run saw a date input in, for the note it ends with. */
+const DATE_INPUT_SHOTS = [];
+
+/**
  * Proof that pinProblem can fail, from a context that is pinned to something
  * else on purpose. An unpinned context cannot serve as the control: on a host that
  * already runs en-US in UTC it is indistinguishable from a pinned one, and the
@@ -6575,6 +6740,48 @@ async function assertPinDetectorRejects(browser) {
     if (problem) note('context pin: a de-DE / Asia/Tokyo context is rejected, so the check can fail');
     else fail('context pin: a de-DE / Asia/Tokyo context passed pinProblem, so an '
             + 'unpinned context would pass it too');
+  } finally {
+    await ctx.close();
+  }
+}
+
+/**
+ * Proof that the date-input check can see and can refuse, run by --check on every
+ * host: a page with one input in view, one below the fold, one in a closed
+ * `<details>` and one `display:none` must count 1 for a viewport shot and 2 for a
+ * full-page one, and the verdict over a fabricated leaking host must refuse that
+ * shot while the same count over a clean host passes. Without the count half, a
+ * selector that matched nothing would let every shot through on every host; without
+ * the verdict half, so would a verdict that never fired.
+ */
+async function assertDateInputCheckWorks(browser) {
+  const ctx = await browser.newContext({ locale: PIN_LOCALE, timezoneId: PIN_TIMEZONE,
+                                         viewport: { width: 400, height: 300 } });
+  try {
+    const page = await ctx.newPage();
+    await page.setContent('<input type=date id=in-view>'
+      + '<input type=date id=gone style="display:none">'
+      + '<details><summary>more</summary><input type=date id=closed></details>'
+      + '<input type=date id=below style="position:absolute;top:2000px">');
+    const view = await visibleDateInputs(page, false);
+    const whole = await visibleDateInputs(page, true);
+    if (view !== 1 || whole !== 2) {
+      fail(`date inputs: a page with one input in view, one below the fold and two `
+         + `not painted counted ${view} in the viewport and ${whole} full-page, want `
+         + `1 and 2 — the check would let a shot through on a host that leaks`);
+      return;
+    }
+    const leaking = { platform: 'darwin', identifier: 'en_US@rg=rszzzz',
+                      template: 'd. M. y.', reference: 'M/d/y' };
+    const clean = { ...leaking, identifier: 'en_US', template: 'M/d/y' };
+    if (!dateInputProblem('probe', view, leaking) || dateInputProblem('probe', view, clean)
+        || dateInputProblem('probe', 0, leaking)) {
+      fail('date inputs: the verdict did not refuse a leaking host with an input in '
+         + 'view, or refused a clean host, or refused a shot with no input');
+      return;
+    }
+    note('date inputs: counted 1 in view and 2 full-page, refused a leaking host, '
+       + 'passed a clean one, so the check can fail');
   } finally {
     await ctx.close();
   }
@@ -6598,11 +6805,29 @@ async function shot(page, name, { full = false, dialog = false } = {}) {
        + `fixture — ${notFixture}`);
     return;
   }
-  if (CHECK) return;
+  // Asked of the page in BOTH modes, so --check exercises the count it would refuse
+  // on; only the writing path refuses, because --check writes nothing and the gate
+  // has to stay green on the maintainer's own host.
+  const dateInputs = await visibleDateInputs(page, full);
+  if (CHECK) {
+    if (dateInputs) DATE_INPUT_SHOTS.push(name);
+    return;
+  }
+  const leak = dateInputProblem(name, dateInputs, regionalFormat());
+  if (leak && !ACCEPT_HOST_DATE_FORMAT) {
+    fail(`${name}: refusing to write — ${leak}. Or pass --accept-host-date-format `
+       + 'to write it anyway; the sidecar then records that its date fields are '
+       + 'host-shaped');
+    return;
+  }
+  if (leak) note(`${name}: WRITING a picture whose date inputs are host-shaped, as asked`);
   mkdirSync(OUT, { recursive: true });
   const file = path.join(OUT, `${name}.png`);
   await page.screenshot({ path: file, fullPage: full });
-  recordCapture(name, file, currentLeg());
+  recordCapture(name, file, currentLeg(), dateInputs ? { nativeDateInput: {
+    regionalFormat: regionalFormatBasis(regionalFormat()),
+    ...(leak ? { hostFormatAccepted: true } : {}),
+  } } : null);
   note(`wrote ${path.relative(REPO, file)} (${statSync(file).size} B)`);
 }
 
@@ -6841,7 +7066,9 @@ function claimScratch() {
  * `--repro` prints, and a number without its scope is the defect this repo keeps
  * meeting. The browser build is read by launching one rather than by reading a
  * package version — the version that matters is the binary that rasterised the
- * text, and a lockfile entry is a claim about which binary was fetched.
+ * text, and a lockfile entry is a claim about which binary was fetched. The host
+ * regional format is read the same way, from the host, because it decides what a
+ * native date input in a panel PNG paints and nothing in the page can say.
  */
 async function machineFingerprint() {
   let browser = '(chromium could not be launched, so the build that would '
@@ -6854,12 +7081,15 @@ async function machineFingerprint() {
   } catch (e) {
     browser = `(chromium could not be launched: ${String(e.message).split('\n')[0]})`;
   }
+  const regional = readRegionalFormat();
   return {
     host: `${process.platform}/${process.arch}`,
     kernel: release(),
     node: process.version,
     browser,
     scratch: scratchPath(),
+    regional: regionalFormatBasis(regional),
+    regionalProblem: regionalFormatProblem(regional),
   };
 }
 
@@ -6907,7 +7137,7 @@ async function reproduce() {
   }
   const self = fileURLToPath(import.meta.url);
   const dirs = [];
-  const passthrough = ONLY === 'all' ? [] : ['--only', ONLY];
+  const passthrough = ['--accept-host-date-format'].concat(ONLY === 'all' ? [] : ['--only', ONLY]);
   try {
     for (let i = 0; i < 2; i += 1) {
       const dir = path.join(tmpdir(), `audit-repro-${process.pid}-${i}`);
@@ -6944,6 +7174,9 @@ async function reproduce() {
       '',
       `machine: ${fp.host}, kernel ${fp.kernel}, node ${fp.node}, ${fp.browser}`,
       `scratch tree this capture used, which the panel paints: ${fp.scratch}`,
+      `host regional format: ${fp.regional}${fp.regionalProblem
+        ? ` — ${fp.regionalProblem}; a plain capture here refuses the shots that hold one`
+        : ''}`,
     ].join('\n');
 
     if (!a.length && !b.length) {
@@ -7065,6 +7298,14 @@ async function main() {
 
   try {
     await assertPinDetectorRejects(browser);
+    await assertDateInputCheckWorks(browser);
+    if (!CHECK && !ACCEPT_HOST_DATE_FORMAT) {
+      const early = regionalFormatProblem(regionalFormat());
+      if (early) {
+        note(`WARNING: ${early}. Every shot below that holds a native date input will be `
+           + 'refused and the run will fail, unless --accept-host-date-format is passed.');
+      }
+    }
     // ---- report shots, from the committed example -------------------------------
     if (wanted('report')) {
       legsRun.push('report');
@@ -8519,6 +8760,17 @@ async function main() {
   if (unwired.length) {
     fail(`${unwired.length} assert stage(s) are declared and never called, so `
        + `whatever they check went ungraded: ${unwired.join(', ')}`);
+  }
+
+  if (CHECK && DATE_INPUT_SHOTS.length) {
+    // --check writes nothing, so it cannot refuse; it says what a writing run here
+    // would do, so the first the maintainer hears of it is not mid-release.
+    const would = regionalFormatProblem(regionalFormat());
+    note(`date inputs: ${DATE_INPUT_SHOTS.length} shot(s) hold a native date input `
+       + `(${DATE_INPUT_SHOTS.join(', ')}); host regional format `
+       + `${regionalFormatBasis(regionalFormat())} — ${would
+         ? 'a writing capture on this host would REFUSE them without --accept-host-date-format'
+         : 'a writing capture on this host would not refuse them'}`);
   }
 
   if (problems.length) {

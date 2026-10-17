@@ -23,7 +23,8 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { fixtureProblem, mergeCaptureRecord } from '../capture-screenshots.mjs';
+import { fixtureProblem, mergeCaptureRecord, regionalFormatProblem,
+         regionalFormatBasis, dateInputProblem } from '../capture-screenshots.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PY = process.env.PYTHON || 'python3';
@@ -165,5 +166,68 @@ describe('mergeCaptureRecord: one shot\'s record merged into the shared sidecar'
     expect(fresh).toEqual({ note: 'n', images: { 'a.png': { sha256: 'a' } } });
     mergeCaptureRecord(prior, 'new note', 'a.png', { sha256: 'a' });
     expect(prior).toEqual({ note: 'old', images: { 'b.png': { sha256: 'b' } }, gifs });
+  });
+});
+
+// A native <input type=date> paints its placeholder (and, once it has a value, the
+// value) from the OS regional format, and no browser option moves it: the capture
+// pins Intl, Date and the number format, which the page can be asked about, and
+// the placeholder is not in the DOM to be asked. So the host is read instead, and
+// a shot that contains such an input is refused on a host whose format differs.
+//
+// BOTH DIRECTIONS. A refusal that fires on every host blocks the maintainer on the
+// day of the release, and one that never fires is the silent over-claim it replaces.
+describe('regionalFormatProblem / dateInputProblem: a host format must not reach a date input', () => {
+  const mac = (over) => ({ platform: 'darwin', identifier: 'en_US', template: 'M/d/y',
+                           reference: 'M/d/y', ...over });
+  const serbia = mac({ identifier: 'en_US@rg=rszzzz', template: 'd. M. y.' });
+
+  it('accepts a darwin host whose date template is the en_US one', () => {
+    expect(regionalFormatProblem(mac())).toBe(null);
+  });
+
+  it('REFUSES a darwin host whose current locale formats dates differently, naming it', () => {
+    const problem = regionalFormatProblem(serbia);
+    expect(problem).toContain('en_US@rg=rszzzz');
+    expect(problem).toContain('date input');
+  });
+
+  // "I could not ask" must not print as "it is clean".
+  it('REFUSES a darwin host that could not be read rather than calling it clean', () => {
+    const problem = regionalFormatProblem({ platform: 'darwin', error: 'osascript exited 1' });
+    expect(problem).toContain('could not be read');
+    expect(problem).toContain('osascript exited 1');
+  });
+
+  it('REFUSES when nobody asked at all', () => {
+    expect(regionalFormatProblem(null)).toContain('not asked');
+  });
+
+  // Not probed off darwin, and said so by regionalFormatBasis rather than refused:
+  // refusing a platform nobody measured would block a host with no known fault.
+  it('does not refuse a platform it has not probed, and says it was not read', () => {
+    const linux = { platform: 'linux' };
+    expect(regionalFormatProblem(linux)).toBe(null);
+    expect(regionalFormatBasis(linux)).toBe('not read on linux');
+  });
+
+  it('quotes the identifier it read, and the reason when it could not', () => {
+    expect(regionalFormatBasis(serbia)).toBe('en_US@rg=rszzzz');
+    expect(regionalFormatBasis({ platform: 'darwin', error: 'x' })).toBe('unreadable (x)');
+  });
+
+  it('refuses a shot with a date input on a leaking host, naming the shot', () => {
+    const problem = dateInputProblem('filters', 1, serbia);
+    expect(problem).toContain('filters');
+    expect(problem).toContain('en_US@rg=rszzzz');
+  });
+
+  // The allow twin: the host's format is irrelevant to a picture with no such input.
+  it('lets a shot with no visible date input through on the same leaking host', () => {
+    expect(dateInputProblem('overview', 0, serbia)).toBe(null);
+  });
+
+  it('lets a shot with a date input through on a host whose format is clean', () => {
+    expect(dateInputProblem('filters', 3, mac())).toBe(null);
   });
 });

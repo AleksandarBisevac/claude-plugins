@@ -82,8 +82,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py:3137-3147",
         "issue": "The comment above _CHANGE_CLAUSE (and the executor's outcome, 'unknown verbs fall to tdd, the old default') says a verb missing from the list leaves a task at tdd. The code does the opposite: _only_asks_for_test is true when _CHANGE_CLAUSE does NOT match, so an unlisted change verb makes the resolution look test-only and mints regression with no red-first. Probed with the two regexes extracted from the file: 'Add a test for the label, then relocate the prop' -> test-only (regression); 'Add a test for the label and rework the parser' -> test-only; 'Add a test for X; the label should be capitalized' -> test-only; whereas the listed verb 'then fix the prop' -> tdd. A fix task that does require a code change therefore silently loses its red-first discipline whenever its verb is outside the closed list, which is the failure direction the comment promises cannot happen. No test covers an unlisted verb, so the false claim is unguarded.",
-        "resolution": "Pick the safe direction on purpose and make the code match: invert the test so regression needs positive evidence, e.g. treat the resolution as test-only only when, after the leading test ask, the rest is a single clause with no further separator-introduced clause (no ', ', '; ', '. ', ' and ', ' then ' continuation beyond the test noun phrase), instead of enumerating change verbs. If the enumeration is kept, correct the comment and outcome to say an unlisted verb yields regression, and add an ALLOW case with an unlisted verb ('then relocate the prop') stating the chosen behaviour.",
-        "fixTask": "P128.48-izt"
+        "resolution": "fixed in P128.48-izt (92d2ffa87dec): Pick the safe direction on purpose and make the code match: invert the test so regression needs positive evidence, e.g. treat the resolution as test-only only when, after the leading test ask, the rest is a single clause with no further separator-introduced clause (no ', ', '; ', '. ', ' and ', ' then ' continuation beyond the test noun phrase), instead of enumerating change verbs. If the enumeration is kept, correct the comment and outcome to say an unlisted verb yields regression, and add an ALLOW case with an unlisted verb ('then relocate the prop') stating the chosen behaviour.",
+        "fixTask": "P128.48-izt",
+        "commit": "92d2ffa87dec",
+        "status": "fixed"
       },
       {
         "id": "P128-R9",
@@ -92,9 +94,30 @@
         "issue": "help_state() is the function that serves the bare GET /api/help and still documents it as 'what every field means, and how the four concepts work'. After this diff its return value (_help.payload()) carries no field text at all; fields are answered by help_field() for ?path=. The diff reworded payload()'s docstring, README, CONTRIBUTING, PLUGIN-BUILD-GUIDE and panel.md for exactly this, but left the docstring of the function across the boundary saying the opposite.",
         "resolution": "Reword help_state()'s summary line to say it serves the topics, the guide's card and the lever map, and that a field is answered by help_field() (GET /api/help?path=&doc=).",
         "fixTask": "P128.52-izt"
+      },
+      {
+        "id": "P128-R10",
+        "severity": "med",
+        "file": "tools/capture-screenshots.mjs:6808-6830",
+        "issue": "The deliverable of this task is the writing-path wiring in shot(): the `leak && !ACCEPT_HOST_DATE_FORMAT` refusal, the 'WRITING ... as asked' note, and the `nativeDateInput {regionalFormat, hostFormatAccepted}` entry passed to recordCapture. No test that any gate or vitest run selects reaches it. The nine vitest cases cover only the pure helpers (regionalFormatProblem, regionalFormatBasis, dateInputProblem), and the gate's `shots` command is `--check`, which returns before the refusal. The executor's three mutations were all on those pure functions. Deleting the refusal or the hostFormatAccepted record would leave every recorded gate and the vitest file green. The evidence for the wiring is a manual run (fake osascript, scratch --out) that is not repeatable from the tree.",
+        "resolution": "Extract the decision in shot() into one pure exported function, e.g. shotDateInputDecision(name, count, facts, accept) returning {refuse, note, extra}, and unit-test it in both directions: leaking host without accept refuses, with accept returns extra.hostFormatAccepted === true, a clean host and a shot with no input return an extra without hostFormatAccepted or no extra. Alternatively add a vitest case that spawns the tool with a fake osascript on PATH."
+      },
+      {
+        "id": "P128-R11",
+        "severity": "low",
+        "file": "tools/capture-screenshots.mjs:6827-6830 (reader missing: plugins/audit/scripts/_refs.py screenshot_capture_drift)",
+        "issue": "The escape is recorded (`hostFormatAccepted: true`) but nothing reads the record. screenshot_capture_drift grades version, source digest and hash, and does not look at nativeDateInput. A shot written under --accept-host-date-format therefore passes every committed-artifact check and `--check`, and a reader of the sidecar is the only way to learn it is host-shaped. The record says so honestly, but it is a basis with no claim attached. Capture time is loud (note and warning); the committed state is not.",
+        "resolution": "File a follow-up task: have screenshot_capture_drift, or the release-set check, report any image whose entry has hostFormatAccepted true, so a release cannot ship host-shaped pictures unnoticed. That is a separate file from this task's scope, so it should be a tracked task rather than an inline edit."
+      },
+      {
+        "id": "P128-R12",
+        "severity": "low",
+        "file": "tools/ui-tests/capture-provenance.test.mjs (outside task `files` and `tests.add`)",
+        "issue": "The task is tdd with expectRedFirst true and added exported pure functions, so the test file is owed. It was not declared in `files` or `tests.add`. That is why the helper refused the red-first and the filed return carries testsAdded [] while its outcome claims nine cases in that file. The cases are real and pass on one run: 22 passed in the file. The omission leaves the plan's record of what the task changed incomplete and makes the red-first unprovable by construction.",
+        "resolution": "Declare tools/ui-tests/capture-provenance.test.mjs in `files` and `tests.add` for this task (with a --introduces red-first, since the symbols are new) before it closes."
       }
     ],
-    "outcome": "[findings: 9 - 0 high, 2 med, 7 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 12 - 0 high, 3 med, 9 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2732,7 +2755,8 @@
       "status": "in_progress",
       "description": "contradicts task clause: the description's fault is 'the report's date inputs render the host placeholder (dd. mm. 2026.) in committed shots', and the task title says committed images 'carry no host format'. The diff pins Intl/Date/navigator.language/number format, but not the native <input type=date> placeholder, which is the one symptom the clause names. I reproduced the limit read-only (in-memory element screenshots, nothing written): on this host (AppleLocale en_US@rg=rszzzz) a bare date input hashes identically under context locale en-US and de-DE with --lang=en-US, and differs only under --lang=de-DE. So the limit is real and the executor's disclosure is accurate. But the disclosure lives only in a code comment: the non-check capture that writes the PNGs prints nothing, and shot()'s pinProblem cannot see the placeholder (it is not in the DOM). A maintainer regenerating shots on such a host commits host-shaped 'filters' / date-input pixels with every check green and a 'pinned' label that now over-claims.\n\nResolution asked: Make the residual visible at the moment it matters instead of only in a comment. Options, structurally preferred first: (a) in the writing path of shot() (not --check), on darwin read the OS regional format (`defaults read -g AppleLocale`, region suffix `@rg=` other than US) and refuse, or at least print a loud note naming the shots that contain a native date input; (b) add the same reading to machineFingerprint() so --repro and the provenance line quote it. Node's own Intl.DateTimeFormat().resolvedOptions().locale is NOT usable for this: it reports en-US on the overridden host. Alternatively file the date-placeholder half as its own open task/fault so it is tracked rather than documented-away.",
       "files": [
-        "tools/capture-screenshots.mjs"
+        "tools/capture-screenshots.mjs",
+        "tools/ui-tests/capture-provenance.test.mjs"
       ],
       "tests": {
         "mode": "tdd",
@@ -2777,6 +2801,10 @@
         {
           "at": "2026-10-17T09:08:26Z",
           "text": "no tests.add clause for P128-R4: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        },
+        {
+          "at": "2026-10-17T10:21:19Z",
+          "text": "files widened by tools/ui-tests/capture-provenance.test.mjs: widened by the integration answer"
         }
       ],
       "fixes": [
@@ -2784,9 +2812,9 @@
       ],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-17T09:51:48Z.d69fda",
+        "runId": "2026-10-17T10:34:09Z.bba503",
         "status": "passed",
-        "at": "2026-10-17T09:51:48Z"
+        "at": "2026-10-17T10:34:09Z"
       }
     },
     {
@@ -2849,7 +2877,7 @@
     {
       "id": "P128.48-izt",
       "title": "fix P128-R8: The comment above _CHANGE_CLAUSE (and the executor's outcome, 'u...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The comment above _CHANGE_CLAUSE (and the executor's outcome, 'unknown verbs fall to tdd, the old default') says a verb missing from the list leaves a task at tdd. The code does the opposite: _only_asks_for_test is true when _CHANGE_CLAUSE does NOT match, so an unlisted change verb makes the resolution look test-only and mints regression with no red-first. Probed with the two regexes extracted from the file: 'Add a test for the label, then relocate the prop' -> test-only (regression); 'Add a test for the label and rework the parser' -> test-only; 'Add a test for X; the label should be capitalized' -> test-only; whereas the listed verb 'then fix the prop' -> tdd. A fix task that does require a code change therefore silently loses its red-first discipline whenever its verb is outside the closed list, which is the failure direction the comment promises cannot happen. No test covers an unlisted verb, so the false claim is unguarded.\n\nResolution asked: Pick the safe direction on purpose and make the code match: invert the test so regression needs positive evidence, e.g. treat the resolution as test-only only when, after the leading test ask, the rest is a single clause with no further separator-introduced clause (no ', ', '; ', '. ', ' and ', ' then ' continuation beyond the test noun phrase), instead of enumerating change verbs. If the enumeration is kept, correct the comment and outcome to say an unlisted verb yields regression, and add an ALLOW case with an unlisted verb ('then relocate the prop') stating the chosen behaviour.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -2894,14 +2922,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "92d2ffa87dec",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: _CHANGE_CLAUSE (closed list of change verbs, true when absent => unlisted verb minted regression) replaced by _CLAUSE_JOIN (comma/semicolon, sentence stop, spaced dash, opening paren, conjunctions/subordinators, modals); _only_asks_for_test (audit-task.py:3203) is true only when the text opens with the test ask and, after dropping a closing stop, holds no join. Comment above _CLAUSE_JOIN (audit-task.py:3179-3194) rewritten to say what the code does and names the limit (a second ask with no join at all is not seen). test_audit_task.py cz-block: end-to-end findings R6-R9 plus a direct 15-row table over M._only_asks_for_test, titled with the tests.add clause verbatim; ALLOW cases: 'Add a test that pins the label.' stays regression, 'Add a test for the parser' and the backticked form stay test-only. Mutations: rstrip removed -> 45/47 (allow case + table red); join check removed -> 44/47 (original ALLOW arm + both new cases red); restored -> 47/47. Full python3 tools/sweep-selftests.py --quiet: exit 0, 335/335 files ok, 16632 cases.",
+        "descriptive": "A fix finding whose resolution asks for a test and then any change in an unlisted verb now stays tdd with red-first, instead of silently minting regression."
       },
       "startedAt": "2026-10-17T09:08:38Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T10:04:54Z",
+      "verifiedBy": [
+        "Pick the safe direction on purpose and make the code match: invert the test so regression needs positive evidence, e.g (a change asked for in a verb no list holds - relocate, rework, a bare 'should' - stays tdd and red-first)",
+        "Pick the safe direction on purpose and make the code match: invert the test so regression needs positive evidence, e.g (ALLOW: a lone test ask ending in a full stop is still regression)",
+        "Pick the safe direction on purpose and make the code match: invert the test so regression needs positive evidence, e.g (the resolution table, each row read by _only_asks_for_test)"
+      ],
       "notes": [
         {
           "at": "2026-10-17T09:08:28Z",
@@ -2920,6 +2952,18 @@
         "runId": "2026-10-17T10:04:39Z.acc197",
         "status": "passed",
         "at": "2026-10-17T10:04:39Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "92d2ffa87dec",
+        "at": "2026-10-17T10:04:54Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-17T09:24:52Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage cz-block` in a throwaway tree at HEAD exited 1 with 2 of 47 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - Pick the safe direction on purpose and make the code match: invert the test so regression needs positive evidence, e.g (a change asked for in a verb no list holds - relocate, rework, a bare 'should' - stays tdd and red-first: [('regression', False), ('regression', False), ('regression', False)]) (house FAIL) and 1 more: SELFTEST FAILED: 45/47 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2978,7 +3022,12 @@
       "fixes": [
         "P128-R1"
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T10:19:26Z.a35ea2",
+        "status": "failed",
+        "at": "2026-10-17T10:19:26Z"
+      }
     },
     {
       "id": "P128.50-izt",
