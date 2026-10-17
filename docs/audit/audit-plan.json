@@ -817,7 +817,7 @@
     {
       "id": "P128",
       "title": "Consolidated solution: orchestration by scripts, a smaller plugin, a simpler CI",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P128.json"
     },
     {
