@@ -1926,7 +1926,7 @@
     {
       "id": "P128.35-0h5",
       "title": "A phase review brief past a reader's budget is sliced, dispatched per slice and aggregated by the drive",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F696. P125's phase review briefs were 2.5 MB and 2.3 MB; both reviews were possible only by hand-slicing (scratchpad/review2/split.py) and aggregating the slice returns.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1972,19 +1972,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d3eb7c123e8e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "REQUIREMENT CLAUSES (description: 'Register F696. P125's phase review briefs were 2.5 MB and 2.3 MB; both reviews were possible only by hand-slicing and aggregating the slice returns') -> (1) a phase brief past a reader budget is sliced at task boundaries: audit-lookup.py PHASE_BRIEF_BUDGET (400000 bytes), pack_slices, slice_lines, sliced_phase_brief; write_brief writes phase.md as an index of `slice N/T: <path>` lines plus phase.slice<N>.md files, and the shown-set record gains a `slices` list (with_slices_text). Each slice carries the header (title, request, question, head), its own whole task sections, its own `owed:` lines and its own filing command with `--shown` for its tasks and `--slice N/T` (phase_closing_lines); the phase-wide sections ride in slice 1. A single task section over the budget is a slice alone (nothing smaller to cut at; stated in the comment above PHASE_BRIEF_BUDGET); a brief that fits, or has under two tasks, or no head, or unreadable owed set, stays one file. (2) one reviewer is dispatched per slice: drive-phase.py dispatch_phase_review reads the index's slice lines, clears stale slice returns, and dispatch_said (list form) prints one `dispatch ... <phase> slice N/T ... brief=` line per slice with SLICE_RULE and one prompt per slice (dispatch_prompt part=, `brief ... --slice N`; audit-lookup brief --read --slice N; drive-phase brief --slice). (3) returns aggregate into the one filed return: drive-phase.py submit --slice N/T -> take_slice holds the slice return (refused, nothing written, when its --shown is not the slice's recorded set, its tasks entries are not exactly its owed ids, its shape is wrong, or the slice is already held) and when the last arrives aggregate_slice_returns (findings and preExisting renumbered, tasks joined, verdict findings if any, worst intent with joined notes) is filed through the same audit-task.py file-return door with the whole recorded --shown. Test: plugins/audit/tests/test_drive_phase.py _slice_cases (stage sl-block): 8 cases, titled with the tests.add clause (SLICE_CLAUSE) plus a parenthesised detail: under-budget twin (one dispatch, no slice), slice count/budget/header, task sections and owed lines partition the phase, per-slice filing command, refusal of a slice missing an owed entry, no return filed until the last slice then ONE return with distinct finding ids, second filing refused, next prints the triage. Evidence: red before the fix = AttributeError no PHASE_BRIEF_BUDGET (sl-block raised, 2/5 cases); after: `python3 plugins/audit/tests/test_drive_phase.py --selftest --stage sl-block` ALL PASS 8/8 exit 0; full `python3 tools/sweep-selftests.py --quiet` in the worktree: 335/335 files ok, 16596 cases, exit 0; ruff check plugins/audit tools: All checks passed; vermin: min 3.7. Mutation: with the finding renumbering removed in a scratch copy, sl-block went 7/8 (1 FAIL). NOT DONE / left: (a) per-entry shape of a slice's `tasks` entries is judged only when the last slice aggregates (the filing verb's phase_return_problems), not per slice; (b) no docs updated (PLUGIN-BUILD-GUIDE.md, agents/audit-reviewer.md do not mention --slice; the slice brief itself prints the command) because those are outside this task's files; (c) the budget is a constant, not a config key. Gate notes: the plan gate refused two python-heredoc source writes to drive-phase.py ('outside the running task files ... free file already spent'); I redid those edits with the Edit tool, which the gate allowed.",
+        "descriptive": "A phase review brief over 400000 bytes is now written as per-task-boundary slices, each reviewed by its own dispatched reviewer, and the drive files their returns as the one phase return."
       },
       "startedAt": "2026-10-17T04:20:23Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T05:14:47Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py: a phase brief past the reader budget is written as task-boundary slices with the header and owed lines each, one reviewer is dispatched per slice, and their returns aggregate into the one filed return"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-17T05:13:53Z.12546b",
         "status": "passed",
         "at": "2026-10-17T05:13:53Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "d3eb7c123e8e",
+        "at": "2026-10-17T05:14:47Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-17T04:50:23Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage sl-block` in a throwaway tree at HEAD exited 1 on \"AttributeError: module 'lookup_sliced' has no attribute 'PHASE_BRIEF_BUDGET'\" (read as python), and the task introduces 'PHASE_BRIEF_BUDGET': absent from HEAD's plugins/audit/scripts/governance/drive-phase.py, plugins/audit/scripts/status/audit-lookup.py and present in the working tree's plugins/audit/scripts/status/audit-lookup.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2012,7 +2026,21 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "plugins/audit/tests/test_audit_task.py: a finding on a script loaded through _loader, on a ui part, or on a document mints a fix task naming the suite or check that covers it, or gate-only with the reason": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_audit_task.py",
+              "--selftest",
+              "--stage",
+              "cz-block"
+            ],
+            "file": "plugins/audit/scripts/manifest/audit-task.py",
+            "find": "if rel not in reached and base in _loaded_by_constant(text):",
+            "replace": "if False and base in _loaded_by_constant(text):"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [],
@@ -2029,7 +2057,12 @@
       "startedAt": "2026-10-17T04:20:25Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T06:09:04Z.057b08",
+        "status": "passed",
+        "at": "2026-10-17T06:09:04Z"
+      }
     },
     {
       "id": "P128.38",
@@ -2240,7 +2273,12 @@
       "startedAt": "2026-10-17T04:20:28Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T05:44:31Z.ee9c88",
+        "status": "failed",
+        "at": "2026-10-17T05:44:31Z"
+      }
     },
     {
       "id": "P128.41-izt",

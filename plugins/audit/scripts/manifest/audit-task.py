@@ -333,6 +333,7 @@ already taken went with them, because it is advice to whoever adds the next case
 Stdlib only, Python 3.8 compatible.
 """
 import argparse
+import ast
 import json
 import os
 import pathlib
@@ -3397,10 +3398,86 @@ def _unit_runner_paths(phase, assembled, project, declared):
 
 def _named_for(suite, source):
     """Whether `suite` is named for `source` - `test_x.py` or `x_test.py` for
-    `x.py`, a hyphen read as the underscore an importable name needs. Only ever
-    asked to choose AMONG the suites the import graph already reached."""
-    stem = source.rsplit("/", 1)[-1].rsplit(".", 1)[0].replace("-", "_")
-    return suite.rsplit("/", 1)[-1] in ("test_%s.py" % stem, "%s_test.py" % stem)
+    `x.py`, a hyphen read as the underscore an importable name needs, and
+    `x.test.<ext>` or `x.spec.<ext>` for any `x.<ext>` (a ui part's suite). Only
+    ever asked to choose AMONG the suites already reached."""
+    stem = source.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+    base = suite.rsplit("/", 1)[-1]
+    importable = stem.replace("-", "_")
+    return (base in ("test_%s.py" % importable, "%s_test.py" % importable)
+            or base.startswith((stem + ".test.", stem + ".spec.")))
+
+
+# A document is read by prose lints and by the checks that name it, not by a
+# case written first: its fix task has no red to show. `.txt` is left out: a
+# requirements list or a build file is a source there, not prose.
+_DOCUMENT_EXTENSIONS = (".md", ".rst", ".yml", ".yaml")
+# What may name a document as a check that reads it: code and scripts, not data.
+_CHECK_EXTENSIONS = (".py", ".mjs", ".js", ".cjs", ".ts", ".sh")
+
+
+def _is_document(path):
+    return path.lower().endswith(_DOCUMENT_EXTENSIONS)
+
+
+def _read_text(project, rel):
+    """The file's text, or None when it cannot be read - a file that vanished
+    between `git ls-files` and the read is no evidence either way."""
+    try:
+        with open(os.path.join(project, *rel.split("/")), encoding="utf-8",
+                  errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def _loaded_by_constant(text):
+    """The `*.py` basenames a suite hands to a loader call through a module-level
+    string constant (`DRIVER = "drive-phase.py"` ... `load_script(DRIVER, ...)`),
+    which `_affected_tests._refs` does not see: it reads a literal argument only.
+    The callee test is that module's own (`_is_loader`), so a constant that only
+    reaches a path join names nothing loaded."""
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return set()
+    constants = {}
+    for node in tree.body:
+        if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+                and node.value.value.endswith(".py")):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    constants[target.id] = node.value.value
+    loaded = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and _affected._is_loader(node.func):
+            for arg in list(node.args) + [k.value for k in node.keywords]:
+                if isinstance(arg, ast.Name) and arg.id in constants:
+                    loaded.add(constants[arg.id].replace("\\", "/")
+                               .rsplit("/", 1)[-1])
+    return loaded
+
+
+def _names_file(text, base):
+    """Whether `text` holds `base` as a whole quoted string, or the last segment
+    of one (`"ui/panel/x.js"`) - a mention in a comment is not a reference."""
+    return re.search(r"""["'/]%s["']""" % re.escape(base), text) is not None
+
+
+def _checks_naming(project, document):
+    """The tracked code and script files that name `document` by its file name
+    as a quoted string, sorted - the checks that read it, as far as a name can say
+    so; the document itself is never its own check."""
+    base = document.rsplit("/", 1)[-1]
+    found = []
+    for rel in sorted(_tracked_files(project)):
+        if rel == document or not rel.lower().endswith(_CHECK_EXTENSIONS):
+            continue
+        text = _read_text(project, rel)
+        if text is not None and _names_file(text, base):
+            found.append(rel)
+    return found
 
 
 def _suites_for(project, sources):
@@ -3410,26 +3487,31 @@ def _suites_for(project, sources):
     THE MAPPING IS THE AFFECTED-TEST ARM'S, asked rather than re-written: a `.py`
     source goes through `_affected_tests._python_arm` with only the TEST files as
     graph nodes, so a suite is reached when it imports or loads the source
-    itself, never through a helper in between. Several reaching it is answered by
-    the one named for it, else not answered. Any other source is tested by the
-    test `_colocated_test` places beside it, when that file already exists. What
-    neither reaches is returned unmapped with the reason - a suite is never
-    guessed from a name alone."""
+    itself, never through a helper in between; a suite that hands the file name
+    to a loader through a module constant counts as loading it
+    (`_loaded_by_constant`). Several reaching it is answered by the one named for
+    it, else not answered. Any other source is tested by the test
+    `_colocated_test` places beside it when that file already exists, else by the
+    one test file that names it as a quoted string (a ui part a suite reads),
+    else by the one of several named for it (`x.test.mjs` for `x.js`). A DOCUMENT
+    is mapped by the test beside it alone: a README is named by half the suites,
+    and a name is a mention there, not a test. What nothing reaches is returned
+    unmapped with the reason - a suite is never guessed from a name alone."""
     suites, unmapped = {}, []
-    tests = None
+    texts = None
     for source in sources:
+        if texts is None:
+            read = dict((rel, _read_text(project, rel))
+                        for rel in _tracked_files(project) if _fr.is_test_path(rel))
+            texts = dict((rel, t) for rel, t in read.items() if t is not None)
         if source.endswith(".py"):
-            if tests is None:
-                tests = {}
-                for rel in _tracked_files(project):
-                    if rel.endswith(".py") and _fr.is_test_path(rel):
-                        try:
-                            with open(os.path.join(project, *rel.split("/")),
-                                      encoding="utf-8", errors="replace") as fh:
-                                tests[rel] = fh.read()
-                        except OSError:
-                            continue
-            reached = _affected._python_arm([source], tests)
+            tests = dict((rel, t) for rel, t in texts.items() if rel.endswith(".py"))
+            reached = dict(_affected._python_arm([source], tests))
+            base = source.rsplit("/", 1)[-1]
+            for rel, text in sorted(tests.items()):
+                if rel not in reached and base in _loaded_by_constant(text):
+                    reached[rel] = ("python: it hands %s to a loader through a "
+                                    "module constant" % (base,))
             named = [s for s in sorted(reached) if _named_for(s, source)]
             pick = (sorted(reached) if len(reached) == 1 else named
                     if len(named) == 1 else [])
@@ -3445,9 +3527,23 @@ def _suites_for(project, sources):
         beside = _colocated_test(project, source)
         if beside and os.path.isfile(os.path.join(project, *beside.split("/"))):
             suites[source] = (beside, "the test beside it")
+            continue
+        if _is_document(source):
+            unmapped.append((source, "a document: a name in a test is a mention, "
+                             "not a test of it"))
+            continue
+        base = source.rsplit("/", 1)[-1]
+        naming = sorted(rel for rel, t in texts.items() if _names_file(t, base))
+        named = [s for s in naming if _named_for(s, source)]
+        pick = naming if len(naming) == 1 else named if len(named) == 1 else []
+        if pick:
+            suites[source] = (pick[0], "the test file that names %s" % (base,))
+        elif naming:
+            unmapped.append((source, "%d test files name it and none is named for "
+                             "it (%s)" % (len(naming), _output.some_of(naming))))
         else:
-            unmapped.append((source, "no test sits beside it and the import graph "
-                             "reads only Python"))
+            unmapped.append((source, "no test sits beside it and no test file "
+                             "names it"))
     return suites, unmapped
 
 
@@ -3521,7 +3617,15 @@ def _fix_task_args(args, targets, project, fixes, records=()):
                                                               suites[s][1])
                  for s in sources if s in suites)
     notes.extend("no suite: %s - %s; name the one that tests it with `scope "
-                 "--files`, none was guessed" % (s, why) for s, why in unmapped)
+                 "--files`, none was guessed" % (s, why)
+                 for s, why in unmapped if not _is_document(s))
+    documents = [s for s, _why in unmapped if _is_document(s)]
+    for document in documents:
+        checks = _checks_naming(project, document)
+        notes.append("no suite: %s - a document, so no test of it is inferred; %s"
+                     % (document, "the files that name it, the checks that read it, "
+                        "are %s" % _output.some_of(checks) if checks else
+                        "nothing names it as a file name in any test, tool or script"))
     if scope["droppedRecords"]:
         notes.append("scope: dropped %s, named by the finding(s) %s but a "
                      "record this commit already carries beside the task's own "
@@ -3549,6 +3653,13 @@ def _fix_task_args(args, targets, project, fixes, records=()):
         args.tests_mode = "tdd"
         notes.append("tdd, not gate-only: %s is a test the finding(s) ask for "
                      "that does not exist yet" % ", ".join(scope["newTests"]))
+    elif args.tests_mode is None and sources and len(documents) == len(sources):
+        args.tests_mode = "gate-only"
+        notes.append(
+            "gate-only, not tdd: every file %s names is a document (%s) with no "
+            "test of its own, so there is no case to write first and no red to "
+            "show; the gate the task carries is its check"
+            % (", ".join(fixes), ", ".join(documents)))
     elif args.tests_mode is None:
         args.tests_mode, note = _paths_discipline(scope["paths"], ", ".join(fixes))
         if note:

@@ -16938,6 +16938,117 @@ def _introduces_cases(check):
               % (clause, (disc("P1.6"),)), disc("P1.6") == ("tdd", True)
               and "mutation" not in tnotes("P1.6"))
 
+        # ---- a script the suite loads, a ui part, a document -------------------
+        # Three kinds of finding came back from a fix task with no suite: a
+        # script a test hands to the loader through a module constant, a ui part
+        # (no import graph reaches JavaScript), and a document. Each allow twin
+        # is the reading that would pass the case by firing too widely.
+        clause37 = ("a finding on a script loaded through _loader, on a ui part, "
+                    "or on a document mints a fix task naming the suite or check "
+                    "that covers it, or gate-only with the reason")
+
+        def tnotes_of(done, tid):
+            return " ".join(n.get("text", "") for n in done[tid].get("notes") or [])
+
+        def clauses_of(done, tid):
+            return [c.split(":", 1)[0] for c in done[tid]["tests"]["add"]]
+
+        proj, mpath = project("fx-loaded", [
+            finding("P1-R1", "scripts/gov/drive-it.py"),
+            finding("P1-R2", "scripts/gov/lone-it.py")])
+        write(proj, "scripts/gov/drive-it.py", "x = 1\n")
+        write(proj, "scripts/gov/lone-it.py", "x = 1\n")
+        write(proj, "tests/test_drive_it.py",
+              "import _loader\nDRIVER = \"drive-it.py\"\n\n\ndef _load(name):\n"
+              "    return _loader.load_script(DRIVER, name)\n")
+        write(proj, "tests/test_other.py",
+              "import _loader\nM = _loader.load_script(\"drive-it.py\", \"m\")\n")
+        write(proj, "tests/test_paths.py",      # the constant reaches a path join
+              "import os\nLONE = \"lone-it.py\"\n\n\ndef where(d):\n"
+              "    return os.path.join(d, LONE)\n")
+        verb(proj, "add", "Fix 1", "--phase", "P1", "--fixes", "P1-R1")
+        verb(proj, "add", "Fix 2", "--phase", "P1", "--fixes", "P1-R2")
+        got = tasks(mpath)
+        check("%s (a script a suite loads through a module constant, beside a "
+              "second suite that loads it by literal: the one named for it, "
+              "scoped and named in tests.add: %r)"
+              % (clause37, (clauses_of(got, "P1.2"), got["P1.2"]["files"])),
+              clauses_of(got, "P1.2") == ["tests/test_drive_it.py"]
+              and "tests/test_drive_it.py" in got["P1.2"]["files"]
+              and "tests/test_other.py" not in got["P1.2"]["files"])
+        check("%s (ALLOW: a constant naming the script that only reaches a path "
+              "join is no loader, so no suite is mapped and none is guessed: %r)"
+              % (clause37, (clauses_of(got, "P1.3"), got["P1.3"]["files"],
+                            tnotes_of(got, "P1.3")[-200:])),
+              clauses_of(got, "P1.3") == []
+              and "tests/test_paths.py" not in got["P1.3"]["files"]
+              and "no suite: scripts/gov/lone-it.py" in tnotes_of(got, "P1.3"))
+
+        proj, mpath = project("fx-ui", [
+            finding("P1-R1", "ui/panel/help-view.js"),
+            finding("P1-R2", "ui/panel/core-view.js"),
+            finding("P1-R3", "ui/panel/note-view.js")])
+        for rel in ("ui/panel/help-view.js", "ui/panel/core-view.js",
+                    "ui/panel/note-view.js"):
+            write(proj, rel, "const x = 1;\n")
+        write(proj, "tests/test_help.py",
+              "import os\nPART = os.path.join(\"ui\", \"panel\", \"help-view.js\")\n")
+        write(proj, "tests/test_panel_a.py", "PARTS = [\"core-view.js\"]\n")
+        write(proj, "tests/test_panel_b.py", "PARTS = [\"core-view.js\"]\n")
+        write(proj, "tools/ui-tests/note-view.test.mjs",
+              "const part = 'note-view.js';\n")
+        write(proj, "tests/test_panel_c.py", "PARTS = [\"note-view.js\"]\n")
+        for n in (1, 2, 3):
+            verb(proj, "add", "Fix %d" % n, "--phase", "P1", "--fixes", "P1-R%d" % n)
+        got = tasks(mpath)
+        check("%s (a ui part one test file names: that file is scoped and named "
+              "in tests.add: %r)"
+              % (clause37, (clauses_of(got, "P1.2"), got["P1.2"]["files"])),
+              clauses_of(got, "P1.2") == ["tests/test_help.py"]
+              and "tests/test_help.py" in got["P1.2"]["files"])
+        check("%s (ALLOW: a ui part two test files name and neither is named for "
+              "it is not guessed - no tests.add clause, both listed: %r)"
+              % (clause37, (clauses_of(got, "P1.3"), tnotes_of(got, "P1.3")[-300:])),
+              clauses_of(got, "P1.3") == []
+              and "no suite: ui/panel/core-view.js" in tnotes_of(got, "P1.3")
+              and "tests/test_panel_a.py" in tnotes_of(got, "P1.3")
+              and "tests/test_panel_b.py" in tnotes_of(got, "P1.3"))
+        check("%s (a ui part named by two tests, one of them the `<stem>.test.` "
+              "suite: that one wins: %r)"
+              % (clause37, (clauses_of(got, "P1.4"),)),
+              clauses_of(got, "P1.4") == ["tools/ui-tests/note-view.test.mjs"])
+
+        proj, mpath = project("fx-doc", [
+            finding("P1-R1", ".github/workflows/ci.yml"),
+            finding("P1-R2", "docs/GUIDE.md"),
+            finding("P1-R3", "docs/GUIDE.md, src/a.ts")])
+        write(proj, ".github/workflows/ci.yml", "name: ci\n")
+        write(proj, "docs/GUIDE.md", "# guide\n")
+        write(proj, "src/a.ts", "export const a = 1;\n")
+        write(proj, "tools/gate-parity.py", "WORKFLOW = \"ci.yml\"\n")
+        for n in (1, 2, 3):
+            verb(proj, "add", "Fix %d" % n, "--phase", "P1", "--fixes", "P1-R%d" % n)
+        got = tasks(mpath)
+
+        def mode_of(tid):
+            return (got[tid]["tests"]["mode"], got[tid]["tests"]["expectRedFirst"],
+                    got[tid]["tests"]["add"])
+        check("%s (a workflow no suite tests is gate-only with the reason, and "
+              "the check that names it is named: %r)"
+              % (clause37, (mode_of("P1.2"), tnotes_of(got, "P1.2")[-300:])),
+              mode_of("P1.2") == ("gate-only", False, [])
+              and "gate-only, not tdd" in tnotes_of(got, "P1.2")
+              and "tools/gate-parity.py" in tnotes_of(got, "P1.2"))
+        check("%s (a document nothing names is gate-only too, and says that "
+              "nothing names it: %r)"
+              % (clause37, (mode_of("P1.3"), tnotes_of(got, "P1.3")[-300:])),
+              mode_of("P1.3")[:2] == ("gate-only", False)
+              and "nothing names it" in tnotes_of(got, "P1.3"))
+        check("%s (ALLOW: a document beside a source file does not make the "
+              "task gate-only - the source still owes a case: %r)"
+              % (clause37, (mode_of("P1.4"),)),
+              mode_of("P1.4")[:2] == ("tdd", True))
+
         # ---- a fix task is never scoped to nothing by accident ----------------
         proj, mpath = project("fx-nopath", [
             finding("P1-R1", "(no path here)"),
