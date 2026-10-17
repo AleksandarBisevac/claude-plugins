@@ -10,9 +10,10 @@ sweeps that used to exist.
     tools/sweep-selftests.py --costs-from-log LOG --platform win32 --record-costs .github/sweep-costs.json
                                                  # ...or read them off a saved CI log
     tools/sweep-selftests.py --jobs 1            # serial, for a bisect
-    tools/sweep-selftests.py --encoding cp1252   # the "can it print" pass: stdio codec AND, where faithful, a non-UTF-8 locale
+    tools/sweep-selftests.py --encoding cp1252   # the sweep again on a legacy code page: stdio codec AND, where faithful, a non-UTF-8 locale
     tools/sweep-selftests.py --quiet             # failures and totals; no per-file lines
     tools/sweep-selftests.py --spaced            # TMPDIR and interpreter under a spaced symlink
+    tools/sweep-selftests.py --encoding cp1252 --spaced   # both conditions in one execution
     tools/sweep-selftests.py --selftest          # this file's own cases
 
 WHY THIS EXISTS. The sweep was written twice - once in `tools/verify.sh` and once
@@ -896,24 +897,28 @@ def cases_in(output):
     return int(found[-1][0])
 
 
-def grade(rel_path, code, output, covered, encoding_pass=False, debris=()):
+def grade(rel_path, code, output, covered, debris=()):
     """The verdict for one run, as a pure function of what the run produced.
+
+    ONE GRADE FOR EVERY LEG. A forced codec or a spaced path changes what a child
+    runs under, never the rules its run is read by, so this takes no word about
+    the leg. The codec leg used to drop the contract and the migrated-file rule,
+    on the reasoning that it asked only whether a file could print; but a suite
+    that catches its own `UnicodeEncodeError` and exits 0 without its contract IS
+    that failure, and a grade without the contract called it green. Every file is
+    run on every leg - a migrated one included - so the stricter grade narrows
+    nothing the codec leg reached.
 
     The rules, and the strictest reading of each of the two old copies:
 
       * a run that WROTE OUTSIDE ITS OWN FIXTURES - into the directory it was
         launched from, or into the home directory it was handed - is red whatever
-        else it did, the encoding pass included. A suite that leaks a fixture leaks
-        it in every pass, and there is no mode in which writing there is fine. It is
+        else it did. A suite that leaks a fixture leaks it on every leg, and there
+        is no mode in which writing there is fine. It is
         read after the exit code because a suite that also went red has a traceback
         printed in full and a developer fixes that first; the leak is still waiting
         on the next run and this line still names it, and names WHICH of the two
         directories it landed in.
-      * `encoding_pass` - a codec was forced, and the only claim is that the file
-        can PRINT what it prints on a stream that cannot spell every character.
-        Nothing is skipped and no contract is required, exactly as CI's second step
-        had it: a migrated file's one-line pointer has to survive a legacy code page
-        as much as a suite does.
       * a MIGRATED file (in `covered`) must exit 0 and must NOT print the contract.
         `selftest_coverage()` classifies by STRING LITERAL, so a file that assembles
         the line (`"0/0 cases " + "passed"`) reads as migrated while still printing
@@ -940,8 +945,6 @@ def grade(rel_path, code, output, covered, encoding_pass=False, debris=()):
     if debris:
         return row(False, "wrote outside the fixtures it makes for itself: %s"
                           % ("; ".join(debris),))
-    if encoding_pass:
-        return row(True, None)
     claimed = cases_in(output)
     if rel_path in covered:
         if claimed is not None:
@@ -1314,7 +1317,7 @@ def sweep(paths, covered, jobs=None, repo=None, encoding=None,
             for fut in futures.as_completed(pending):
                 ran = fut.result()
                 graded = grade(ran["path"], ran["code"], ran["output"], covered,
-                               encoding_pass=bool(encoding), debris=ran["debris"])
+                               debris=ran["debris"])
                 rows.append(dict(graded, seconds=ran.get("seconds"),
                                  grant=ran.get("grant"),
                                  timeout=ran.get("timeout")))
@@ -1353,10 +1356,18 @@ def _render_tail(rows, bad, skipped, total_cases, out):
 
 
 def _leg_label(encoding, spaced):
-    """The heading a leg prints under, so two legs' logs are told apart."""
+    """The heading a leg prints under, so two legs' logs are told apart.
+
+    A leg run under BOTH conditions names both: the codec's heading alone would
+    file a spaced, cp1252 run under the codec leg, and a red row there would be
+    read as a codec fault when the path may be what broke it. Each single
+    condition keeps the heading it always had."""
+    parts = []
     if encoding:
-        return "encoding pass (%s)" % (encoding,)
-    return "spaced sweep" if spaced else "sweep"
+        parts.append("encoding pass (%s)" % (encoding,))
+    if spaced:
+        parts.append("spaced sweep")
+    return ", ".join(parts) or "sweep"
 
 
 def render(rows, jobs, encoding=None, stream=None, spaced=False):
@@ -1716,12 +1727,9 @@ def _cases(check):
           "says what happened: %r" % (g,),
           (not g["ok"]) and g["why"] == "exited 1")
 
-    g = grade(migrated, 0, "ALL PASS: 3/3 cases passed\n", covered,
-              encoding_pass=True)
-    check("g5 the encoding pass asserts ONLY that the file could print - the "
-          "same file that is red at g3 is green here, which is what makes "
-          "the two passes two different questions: %r" % (g,),
-          g["ok"] and g["cases"] == 0)
+    # The cases that pin one grade for every leg are further down, with real
+    # children: the codec is forced in `run_one`, so they have to go through
+    # `sweep`.
 
     g = grade(live, None, "did not finish within 300s", covered)
     check("g6 a timeout is a NAMED failure, not a wait - neither old copy had "
@@ -1847,12 +1855,12 @@ def _cases(check):
           (not g["ok"]) and "probe-fixture-a1b2" in g["why"]
           and "wrote outside the fixtures" in g["why"])
 
-    g = grade(migrated, 0, "moved\n", covered, encoding_pass=True,
+    g = grade(migrated, 0, "moved\n", covered,
               debris=["working directory: DELETED left-by-the-runner, which was "
                       "there before it ran"])
-    check("h1 ...and the ENCODING pass is graded by the same rule, which is the "
-          "one mode that skips every other check - a suite does not stop "
-          "leaking because the codec changed: %r" % (g,),
+    check("h1 ...and a MIGRATED file is graded by the same rule, the row whose "
+          "only other demand is a clean exit - a file does not stop leaking "
+          "because its cases moved: %r" % (g,),
           (not g["ok"]) and "DELETED" in g["why"])
 
     # -- the home directory, which is the second watched one ------------
@@ -2497,6 +2505,132 @@ def _cases(check):
               and all(len(r) > 40 for r in SPACED_EXEMPT.values()))
     finally:
         remove_tree(sp_work)
+
+    # -- one grade for every leg, read through real children -------------------
+    # A fixture repository of its own: `sweep` joins `repo` with each path, and
+    # these paths name files that exist only here. Every child reports the codec
+    # its stdout really has and the TMPDIR it was handed, so a case can tell a
+    # condition that reached the child from one that was only asked for.
+    en_work = tempfile.mkdtemp(prefix="sweep-codec-")
+    try:
+        def _en(rel, body):
+            """One child under the fixture repository, by repo-relative path."""
+            path = os.path.join(en_work, *rel.split("/"))
+            if not os.path.isdir(os.path.dirname(path)):
+                os.makedirs(os.path.dirname(path))
+            io.open(path, "w", encoding="utf-8").write(body)
+            return rel
+
+        _says = ("import os, sys\n"
+                 "sys.stdout.write('ENC=' + str(sys.stdout.encoding) + '\\n')\n"
+                 "sys.stdout.write('TMP=' + os.environ.get('TMPDIR', '') + '\\n')\n")
+        en_live = _en("tests/test_en_live",
+                      _says + "sys.stdout.write('fixture: 3/3 cases passed\\n')\n")
+        en_mute = _en("tests/test_en_mute",
+                      _says + "sys.stdout.write('ran, and said nothing\\n')\n")
+        # THE CODEC FAILURE A CONTRACT-FREE GRADE CANNOT SEE: the suite meets a
+        # character the page lacks, swallows the error and exits 0.
+        en_glyph = _en("tests/test_en_glyph",
+                       _says + "try:\n"
+                       "    sys.stdout.write('\\u2713\\n')\n"
+                       "except UnicodeEncodeError:\n"
+                       "    sys.exit(0)\n"
+                       "sys.stdout.write('fixture: 1/1 cases passed\\n')\n")
+        en_moved = _en("scripts/_en_moved",
+                       _says + "sys.stdout.write('fixture: 2/2 cases passed\\n')\n")
+        # A migrated file that behaves: prints a pointer and no contract.
+        en_pointer = _en("scripts/_en_pointer",
+                         _says + "sys.stdout.write('cases moved to tests/\\n')\n")
+        en_paths = [en_live, en_mute, en_glyph, en_moved, en_pointer]
+        en_cov = set([en_moved, en_pointer])
+
+        def _en_rows(spaced):
+            """{path: row} for the fixtures, swept under cp1252 (and `spaced`)."""
+            return dict((r["path"], r) for r in sweep(
+                en_paths, en_cov, jobs=2, repo=en_work, timeout=60,
+                encoding="cp1252", spaced=spaced))
+
+        def _en_tmp(row):
+            """The TMPDIR the child reported, or the empty string."""
+            for line in (row.get("output") or "").splitlines():
+                if line.startswith("TMP="):
+                    return line[len("TMP="):]
+            return ""
+
+        en_rows = _en_rows(False)
+        en_l, en_m, en_g, en_v = [en_rows.get(p) or {} for p in en_paths[:4]]
+        check("a cp1252 leg reds a contract-free suite and a migrated file that "
+              "prints the contract, and counts a live suite's cases, exactly as "
+              "the plain leg does: the codec really reached the child (%r), the "
+              "live suite's cases are COUNTED rather than zeroed (%r), a suite "
+              "that exits 0 without its contract is red (%r), so is one that "
+              "swallowed its own UnicodeEncodeError and exited 0 - the codec "
+              "failure a grade without the contract called green (%r) - and a "
+              "file listed as MIGRATED that still prints the contract is red "
+              "(%r)"
+              % ("ENC=cp1252" in (en_l.get("output") or ""), en_l.get("cases"),
+                 en_m.get("why"), en_g.get("why"), en_v.get("why")),
+              "ENC=cp1252" in (en_l.get("output") or "")
+              and en_l.get("ok") is True and en_l.get("cases") == 3
+              and en_m.get("ok") is False
+              and "no --selftest" in (en_m.get("why") or "")
+              and en_g.get("ok") is False
+              and "no --selftest" in (en_g.get("why") or "")
+              and en_v.get("ok") is False
+              and "still prints" in (en_v.get("why") or ""))
+
+        # THE SUMMARY SAYS WHAT WAS GRADED. The codec leg is rendered off the
+        # rows it really produced, so the line it prints is the count it took:
+        # the live suite's own cases, and the one migrated file that behaves (the
+        # other, which prints the contract, is red and counts as neither). The
+        # plain leg's line is rendered off rows whose answer is known
+        # independently.
+        en_sum = io.StringIO()
+        render_quiet([en_rows[p] for p in sorted(en_rows)], 2,
+                     encoding="cp1252", stream=en_sum)
+        en_sum_line = [ln for ln in en_sum.getvalue().splitlines()
+                       if "files ok" in ln]
+        en_plain = io.StringIO()
+        render_quiet([grade(live, 0, "ALL PASS: 7/7 cases passed\n", covered),
+                      grade(migrated, 0, "moved\n", covered)], 2,
+                     stream=en_plain)
+        en_plain_line = [ln for ln in en_plain.getvalue().splitlines()
+                         if "files ok" in ln]
+        check("the codec leg's summary line carries the case and migrated-file "
+              "counts it took, and the plain leg's summary is unchanged: the "
+              "codec leg's reads %r and the plain leg's %r"
+              % (en_sum_line, en_plain_line),
+              en_sum_line == ["2/5 files ok, 1 migrated to tests/, %d cases"
+                              % (3,)]
+              and en_plain_line == ["2/2 files ok, 1 migrated to tests/, "
+                                    "%d cases" % (7,)])
+
+        en_both = _en_rows(True)
+        en_bl, en_bm, en_bg = [en_both.get(p) or {} for p in en_paths[:3]]
+        en_btmp = _en_tmp(en_bl)
+        en_bhead = io.StringIO()
+        render([en_both[p] for p in sorted(en_both)], 2, encoding="cp1252",
+               stream=en_bhead, spaced=True)
+        en_bhead = en_bhead.getvalue().splitlines()[0]
+        check("a combined --encoding cp1252 --spaced child sees both conditions "
+              "and the leg heading names both: the child reports the forced "
+              "codec AND a TMPDIR holding a space reached through the link "
+              "(%r), its cases are counted (%r), the two contract-free suites "
+              "are red there too (%r, %r), each single condition keeps the "
+              "heading it always had, and the combined run's own heading "
+              "reads %r"
+              % (en_btmp, en_bl.get("cases"), en_bm.get("why"),
+                 en_bg.get("why"), en_bhead),
+              "ENC=cp1252" in (en_bl.get("output") or "")
+              and " " in en_btmp and (os.sep + "via" + os.sep) in en_btmp
+              and en_bl.get("ok") is True and en_bl.get("cases") == 3
+              and en_bm.get("ok") is False and en_bg.get("ok") is False
+              and _leg_label(None, False) == "sweep"
+              and _leg_label("cp1252", False) == "encoding pass (cp1252)"
+              and _leg_label(None, True) == "spaced sweep"
+              and en_bhead.startswith("encoding pass (cp1252), spaced sweep: "))
+    finally:
+        remove_tree(en_work)
 
     # --- --shard I/N: a deterministic, cost-balanced split of the file list ---
     sh_full = sweep_files()

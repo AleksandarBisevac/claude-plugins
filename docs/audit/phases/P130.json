@@ -53,7 +53,39 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "tools/sweep-selftests.py: a combined --encoding cp1252 --spaced child sees both conditions and the leg heading names both": {
+            "command": [
+              "python3",
+              "tools/sweep-selftests.py",
+              "--selftest"
+            ],
+            "file": "tools/sweep-selftests.py",
+            "find": "        parts.append(\"spaced sweep\")",
+            "replace": "        pass"
+          },
+          "tools/sweep-selftests.py: a cp1252 leg reds a contract-free suite and a migrated file that prints the contract, and counts a live suite's cases, exactly as the plain leg does": {
+            "command": [
+              "python3",
+              "tools/sweep-selftests.py",
+              "--selftest"
+            ],
+            "file": "tools/sweep-selftests.py",
+            "find": "                               debris=ran[\"debris\"])\n",
+            "replace": "                               debris=ran[\"debris\"])\n                if encoding and ran[\"code\"] == 0 and not ran[\"debris\"]:\n                    graded = dict(graded, ok=True, why=None, cases=0, skipped=False)\n"
+          },
+          "tools/sweep-selftests.py: the codec leg's summary line carries the case and migrated-file counts it took, and the plain leg's summary is unchanged": {
+            "command": [
+              "python3",
+              "tools/sweep-selftests.py",
+              "--selftest"
+            ],
+            "file": "tools/sweep-selftests.py",
+            "find": "(len(rows) - len(bad), len(rows), len(skipped), total_cases))",
+            "replace": "(len(rows) - len(bad), len(rows), 0, total_cases))"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -74,7 +106,12 @@
       "startedAt": "2026-10-17T15:54:48Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T16:48:27Z.34783f",
+        "status": "passed",
+        "at": "2026-10-17T16:48:27Z"
+      }
     },
     {
       "id": "P130.2",

@@ -1,0 +1,55 @@
+{
+  "gates": {
+    "selftests": "pass",
+    "lint": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-17T16:33:00Z",
+    "basis": "`python3 tools/sweep-selftests.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 106 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, the task's run with its inline suite tools/sweep-selftests.py laid over as HEAD's copy plus its 4 test hunk(s), 10 other hunk(s) held at HEAD), each passing with the working tree's implementation - a cp1252 leg reds a contract-free suite and a migrated file that prints the contract, and counts a live suite's cases, exactly as the plain leg does: the codec really reached the child (True), the live suite's cases are COUNTED rather than zeroed (0), a suite that exits 0 without its contract is red (None), so is one that swallowed its own UnicodeEncodeError and exited 0 - the codec failure a grade without the contract called green (None) - and a file listed as MIGRATED that still prints the contract is red (None) (house FAIL) and 2 more: SELFTEST FAILED: 103/106 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/sweep-selftests.py: grade() loses encoding_pass (def now grade(rel_path, code, output, covered, debris=()); sweep() no longer passes it); docstring explains one grade for every leg; _leg_label joins both conditions ('encoding pass (cp1252), spaced sweep'), single conditions unchanged; module usage docstring redone by hand (cp1252 line reworded, combined invocation line added). Old g5 and the encoding_pass use in h1 removed (h1 re-worded to the migrated row). Three new cases run real children through sweep() in a scratch repository (fixtures without a .py extension so the basename lints do not read them as references): live suite counted with codec reaching child; contract-free suite red; suite swallowing its own UnicodeEncodeError and exiting 0 red; migrated file printing the contract red; migrated pointer file green and counted; summary line of the codec leg rendered off those real rows ('2/5 files ok, 1 migrated to tests/, 3 cases') vs plain-leg line unchanged; combined cp1252+spaced child sees ENC=cp1252 and a spaced, linked TMPDIR; headings pinned for all four label combos. .github/workflows/ci.yml: comment under the cp1252 step rewritten (no matrix literal touched). Evidence: `python3 tools/sweep-selftests.py --selftest` exit 0, 106/106, twice (second after a 20 s gap, exit 0 again); full `python3 tools/sweep-selftests.py --quiet` exit 0 (335/335 files, 16648 cases); real `--encoding cp1252 --quiet` exit 0 (335/335, 153 migrated, 16648 cases - identical counts to the plain leg, so the stricter grade narrows nothing); `--encoding cp1252 --spaced` on one real suite exit 0 with heading 'encoding pass (cp1252), spaced sweep: 1 files'. ruff and vermin on the file exit 0. `grep -n encoding_pass tools/sweep-selftests.py` finds nothing (exit 1). An earlier full sweep went red in test__output (prose-number lint: three 'N cases' literals) and test__refs (basename lints on the fixtures); both were mine and fixed (counts built with %d, fixtures extension-less), then both re-ran green. Mutation probe: korak0/C-work/probe/mutations.py cannot be run as-is on this tree - it matches cases by id (g5/g5b/cb0/lb0) while the task requires the tests.add clause as the case title, and its anchors are pre-571becfd; I wrote an equivalent probe (scratchpad, matches by title prefix, asserts each anchor occurs once) with nine rows: R1 old codec grade, R2 codec not reaching the child, R3 combined leg drops spaced, R4 old heading, R5 over-fire (no case count read), R6 summary without migrated count, R7 summary without case count, R8 migrated-prints-contract rule removed, R9 contract-required rule removed - all KILLED, none NOT APPLIED, file restored byte for byte. Requirement answers: (1) tools/sweep-selftests.py:~899 grade signature and ~943 removal; sweep() call ~1318; (2) _leg_label ~1360; (3) summary: falls out of the single grade (cases/skipped now taken on the codec leg), pinned by the summary case at ~2599; (4) g5 deleted (~1729 comment replaces it), new real-child cases at ~2500-2640; (5) .github/workflows/ci.yml:271-276 rewritten. Not run: korak0 probe verbatim (reason above); browser gates and verify.sh (orchestrator forbade).",
+    "descriptive": "Every sweep leg - the cp1252 one, the spaced one and both together - is now graded by the plain rules, and the codec leg's summary counts the cases and migrated files it really took."
+  },
+  "testsAdded": [
+    "a cp1252 leg reds a contract-free suite and a migrated file that prints the contract, and counts a live suite's cases, exactly as the plain leg does",
+    "the codec leg's summary line carries the case and migrated-file counts it took, and the plain leg's summary is unchanged",
+    "a combined --encoding cp1252 --spaced child sees both conditions and the leg heading names both"
+  ],
+  "falsifiers": {
+    "tools/sweep-selftests.py: a cp1252 leg reds a contract-free suite and a migrated file that prints the contract, and counts a live suite's cases, exactly as the plain leg does": {
+      "file": "tools/sweep-selftests.py",
+      "find": "                               debris=ran[\"debris\"])\n",
+      "replace": "                               debris=ran[\"debris\"])\n                if encoding and ran[\"code\"] == 0 and not ran[\"debris\"]:\n                    graded = dict(graded, ok=True, why=None, cases=0, skipped=False)\n",
+      "command": [
+        "python3",
+        "tools/sweep-selftests.py",
+        "--selftest"
+      ]
+    },
+    "tools/sweep-selftests.py: the codec leg's summary line carries the case and migrated-file counts it took, and the plain leg's summary is unchanged": {
+      "file": "tools/sweep-selftests.py",
+      "find": "(len(rows) - len(bad), len(rows), len(skipped), total_cases))",
+      "replace": "(len(rows) - len(bad), len(rows), 0, total_cases))",
+      "command": [
+        "python3",
+        "tools/sweep-selftests.py",
+        "--selftest"
+      ]
+    },
+    "tools/sweep-selftests.py: a combined --encoding cp1252 --spaced child sees both conditions and the leg heading names both": {
+      "file": "tools/sweep-selftests.py",
+      "find": "        parts.append(\"spaced sweep\")",
+      "replace": "        pass",
+      "command": [
+        "python3",
+        "tools/sweep-selftests.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n1 grade() takes no leg word (tools/sweep-selftests.py grade def, sweep() call); _leg_label joins conditions; the ci.yml comment (271-276) says only that the runner runs real children under the codec and pins it - that selftest case exists at the three new check() calls near the end of _cases\n2 R1-R9 probe rows: each mutation -> selftest exit 1 with the named case red, KILLED x9, file restored byte for byte; over-fire direction R5 (no case count read) turns the live-suite case red; before the fix the three new cases were FAIL (104/107)\n3 grep -n encoding_pass tools/sweep-selftests.py: 0 hits; other users of the weak-grade idea: the ci.yml comment (rewritten), the module usage line 'can it print' (reworded), h1 (rewritten); no other file names encoding_pass\n4 n/a - no rule to an agent\n5 selftest run twice with a 20 s gap on the same tree: 106/106 exit 0 both times; the full sweep ran three times (one red from my own lint hits, then fixed, then two green) - measured on a quiet-ish tree while another executor ran\n6 n/a - no guard reading a command\n7 count literals in the new cases are built with %d / not written in prose; the numbers in this report each carry the command that printed them above",
+  "stamp": "audit-stamp: {\"content\":\"sha256:bca391dc5f693c3579e64a2a900619ffd84650d89198644c4953d9241b94f77e\",\"dirtyDigest\":\"sha256:8d0b6920c75926db44fae446d2a22e4ede07827fd167bd871d2bf5b70ec0c36f\",\"dirtyPaths\":{\".github/workflows/ci.yml\":\"f71bb5dc0a52a3ed\",\"tools/sweep-selftests.py\":\"0b0ad50e96f53db9\"},\"head\":\"31d78436\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".github/workflows/ci.yml\",\"tools/sweep-selftests.py\"],\"scopeDigest\":\"sha256:1255d82156c9a79912e616d8537f5e066c0a4ff4765a221f24bda6b56953e14c\",\"v\":2}"
+}
