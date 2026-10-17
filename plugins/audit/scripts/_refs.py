@@ -105,6 +105,7 @@ import json
 import os
 import posixpath
 import re
+import subprocess
 import sys
 import tokenize
 
@@ -3361,15 +3362,65 @@ def artifact_version_drift(repo_root=None):
 SHOT_DIR_REL = "docs/screenshots"
 _CAPTURED_AT = SHOT_DIR_REL + "/captured-at.json"
 
-# The directory `_output.ui_surface_digests()` is handed. Spelled repo-relative
-# because this rule is given a ROOT - a fixture, in every case but the live one -
-# and the anchor's own copy is absolute and always the real tree.
-_UI_SCRIPTS_REL = PLUGIN_REL + "/scripts"
-_UI_DIR_REL = _UI_SCRIPTS_REL + "/ui"
+# Where a finding about the UI sources is filed. Spelled repo-relative because the
+# rule is given a ROOT - a fixture, in every case but the live one.
+_UI_DIR_REL = PLUGIN_REL + "/scripts/ui"
+
+# The command that answers "what UI is a picture of". The digest is taken over the
+# assembled report and panel pages, which sit in layers above this one, so this
+# module may not import them and asks over a process boundary instead - the same
+# question `tools/capture-screenshots.mjs` asks the same way.
+_SURFACE_DIGEST_SCRIPT = "_surface_digest.py"
+_SURFACE_DIGEST_TIMEOUT = 120
+
+
+def _ui_digests_by_command(script=None):
+    """`{"digests": ..., "unassigned": [...], "error": None|str}` from `_surface_digest.py`.
+
+    `script` is the file to run and is the module's own unless a caller names another:
+    the contract between this rule and the command is the thing under test, and it is
+    tested with children that fail in each way a real one could.
+
+    Always about the plugin tree THIS module was loaded from, never about the root
+    the rule was handed: the pages are code, and a fixture root holds no code to
+    assemble. A caller judging a fixture hands its own answer in as `ui`.
+
+    A command that cannot be run, times out, exits without printing JSON, or prints
+    something that is not the shape is an `error`, with what it wrote to stderr - so
+    the rule reports "no digest" by name rather than comparing every picture against
+    nothing. An exit status of 1 is not that: the command exits 1 for an `error` of
+    its own and still prints it, so stdout is read before the status is trusted.
+    """
+    if script is None:
+        script = os.path.join(_output.SCRIPTS_DIR, _SURFACE_DIGEST_SCRIPT)
+    none = {"digests": {}, "unassigned": []}
+    try:
+        done = subprocess.run([sys.executable, script, "--json"],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              timeout=_SURFACE_DIGEST_TIMEOUT)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return dict(none, error="%s could not be run, so no digest can stand for "
+                                "what the pictures are of: %s"
+                                % (os.path.basename(script), exc))
+    out = done.stdout.decode("utf-8", "replace")
+    err = done.stderr.decode("utf-8", "replace").strip()
+    try:
+        answer = json.loads(out)
+    except ValueError:
+        answer = None
+    shaped = (isinstance(answer, dict) and isinstance(answer.get("digests"), dict)
+              and isinstance(answer.get("unassigned"), list)
+              and "error" in answer)
+    if not shaped:
+        return dict(none, error="%s exited %d without the answer it prints, so no "
+                                "digest can stand for what the pictures are of: %s"
+                                % (os.path.basename(script), done.returncode,
+                                   err or out.strip() or "no output"))
+    return answer
 
 
 def _ui_source_findings(rel, entry, digests):
-    """[(rel, line, problem), ...] - what one image's recorded UI sources say now.
+    """[(rel, line, problem), ...] - what one image's recorded UI digest says now.
 
     A MISSING DIGEST IS A FINDING, NOT SILENCE. Absence is not agreement: an entry
     with no digest makes the same claim every picture makes and nothing can settle
@@ -3393,8 +3444,8 @@ def _ui_source_findings(rel, entry, digests):
                          "assembles (%s), so the digest beside it stands for "
                          "nothing" % (surface, ", ".join(sorted(digests))))]
     if digests[surface] != digest:
-        return [(rel, 0, "was captured from %s sources digesting %s and they now "
-                         "digest %s - the recorded version still agrees, so this "
+        return [(rel, 0, "was captured from a %s page digesting %s and it now "
+                         "digests %s - the recorded version still agrees, so this "
                          "is the UI moving under a picture nobody re-shot; re-run "
                          "`node tools/capture-screenshots.mjs`"
                          % (surface, digest[:12], digests[surface][:12]))]
@@ -3436,7 +3487,7 @@ def _host_format_findings(rel, entry):
                      % (native.get("regionalFormat"),))]
 
 
-def screenshot_capture_drift(repo_root=None):
+def screenshot_capture_drift(repo_root=None, ui=None):
     """[(rel, line, problem), ...] - a committed screenshot that no longer shows this build.
 
     THE SAME QUESTION AS `artifact_version_drift()` ASKED OF A PICTURE, which is why
@@ -3459,11 +3510,15 @@ def screenshot_capture_drift(repo_root=None):
     re-capture, the recorded version was still current, and this rule was green
     over pictures of a panel that had since moved. "Does this picture still show
     the current UI" needs a basis of its own, so each entry also carries the digest
-    of the SOURCES its surface is assembled from, and `_ui_source_findings()`
+    of the PAGE its surface sends the browser, and `_ui_source_findings()`
     compares that. PER SURFACE, which is what makes it a rule rather than a
     nuisance: a report-only change reddens the report's pictures and leaves the
-    panel's alone, and `_output.ui_surface_digests()` is the one home for which
-    files each of those is.
+    panel's alone, and `_surface_digest.py` is the one home for what each of those
+    pages is. It is taken over the assembled text, so an edit that leaves the page
+    as it was - a comment in `_ui_theme.py` - owes no picture back. This module is
+    below the pages and cannot import them, so the digest is asked of that file as
+    a command; `ui` hands in an answer of the same shape instead (a fixture root
+    holds no code to assemble, so a caller judging one supplies its own).
 
     Answers. The first four STOP the rule rather than adding to a list, because each
     of them leaves the comparison with no basis at all and every image would then be
@@ -3477,8 +3532,9 @@ def screenshot_capture_drift(repo_root=None):
     - not one image in the directory: reported. A candidate set that narrowed to
       nothing must not be spelled the same way as a set that all agrees, and that is
       the shape a moved output directory takes;
-    - UI sources that cannot be walked: reported, for the same reason - there is
-      then nothing for any recorded digest to be compared against;
+    - a UI digest that cannot be had (the command fails, or the sources cannot be
+      walked): reported, for the same reason - there is then nothing for any
+      recorded digest to be compared against;
     - otherwise a list: one per `ui/` part belonging to no surface, because a part
       no picture's digest covers is a part whose change could never turn one red;
       one per image whose recorded version is not the current one, naming BOTH; one
@@ -3531,8 +3587,8 @@ def screenshot_capture_drift(repo_root=None):
                  "is missing or unreadable, so %d committed image(s) claim a build "
                  "with nothing to settle the claim - re-run "
                  "`node tools/capture-screenshots.mjs`" % (len(names),))]
-    ui = _output.ui_surface_digests(
-        os.path.join(root, *_UI_SCRIPTS_REL.split("/")))
+    if ui is None:
+        ui = _ui_digests_by_command()
     if ui["error"]:
         # No fallback: without a digest to compare against, every image below
         # would clear for want of a comparison rather than because it agrees.

@@ -6261,12 +6261,12 @@ const CAPTURED_AT = 'captured-at.json';
 const currentLeg = () => legsRun[legsRun.length - 1];
 
 /**
- * The digest of the SOURCES each surface is assembled from — ASKED FOR, not computed.
+ * The digest of the PAGE each surface sends — ASKED FOR, not computed.
  *
- * `_output.ui_surface_digests()` is the one home for which files a surface's pictures
- * are of, and this asks it over a pipe. A walk here would be the second
- * implementation of "which files", which is the defect that single home exists to remove:
- * right on the day it was written, and free to drift from the assembler's afterwards.
+ * `_surface_digest.py` is the one home for what a surface's pictures are of, and this
+ * runs it over a pipe. A digest computed here would be the second implementation of
+ * "what the page is", which is the defect that single home exists to remove: right on
+ * the day it was written, and free to drift from the assembler's afterwards.
  *
  * ONCE PER RUN, not per shot. The sources cannot move while a capture is in flight,
  * and a digest that changed between two shots would leave one sidecar describing two
@@ -6274,8 +6274,9 @@ const currentLeg = () => legsRun[legsRun.length - 1];
  * get the digest should say so having written nothing.
  *
  * Reached through the resolver rather than by joining a directory name, for the reason
- * the assembled-page read further up gives — `_output.py` IS the anchor, so putting
- * its own directory on sys.path is all it needs.
+ * the assembled-page read further up gives. The command exits 1 when its answer is an
+ * `error` and still prints it, so the output of a failed run is read before the failure
+ * is reported — an `error` with its reason is worth more than a bare exit status.
  *
  * FAILURE IS RETURNED, not thrown, and it is loud twice over: this run fails by name,
  * and the images it writes carry no digest, which `_refs.screenshot_capture_drift()`
@@ -6284,25 +6285,29 @@ const currentLeg = () => legsRun[legsRun.length - 1];
 let UI_DIGESTS = null;
 
 function loadUiSourceDigests() {
-  const dir = path.dirname(resolveScript('_output.py'));
   let parsed;
   try {
-    parsed = JSON.parse(py(['-c', 'import json, sys; '
-                                + 'sys.path.insert(0, sys.argv[1]); import _output; '
-                                + 'sys.stdout.write(json.dumps('
-                                + '_output.ui_surface_digests()))', dir]));
+    const script = resolveScript('_surface_digest.py');
+    let out;
+    try {
+      out = py([script, '--json']);
+    } catch (err) {
+      if (typeof err.stdout !== 'string' || !err.stdout.trim()) throw err;
+      out = err.stdout;
+    }
+    parsed = JSON.parse(out);
   } catch (err) {
-    return `_output.ui_surface_digests() could not be read, so no picture this run `
+    return `_surface_digest.py could not be read, so no picture this run `
          + `writes can say which UI it is of: ${err.message}`;
   }
-  if (parsed.error) return `the UI sources cannot be digested: ${parsed.error}`;
+  if (parsed.error) return `the UI cannot be digested: ${parsed.error}`;
   if (parsed.unassigned?.length) {
     return `scripts/ui/ holds part(s) belonging to no surface `
          + `(${parsed.unassigned.join(', ')}), so no picture would ever be red `
          + `about a change to them`;
   }
   UI_DIGESTS = parsed.digests;
-  note(`ui sources: ${Object.entries(UI_DIGESTS)
+  note(`ui pages: ${Object.entries(UI_DIGESTS)
     .map(([s, d]) => `${s} ${d.slice(0, 12)}`).join(', ')}`);
   return null;
 }
@@ -6338,8 +6343,8 @@ function loadUiSourceDigests() {
  * picture was taken at; it cannot say whether the UI has moved since, and it did —
  * commits landed under `scripts/ui/` after a re-capture and the rule stayed green
  * over pictures of a panel that no longer existed. So each entry also carries the
- * surface it belongs to and the digest of that surface's SOURCES, which are
- * committed bytes and therefore comparable on any host, unlike the pixels. Per
+ * surface it belongs to and the digest of the PAGE that surface sends, which is
+ * built from committed bytes and therefore comparable on any host, unlike the pixels. Per
  * surface for the same reason the version is per file: a report-only change must
  * not ask for the panel's pictures back.
  *
@@ -6358,8 +6363,8 @@ function recordCapture(name, file, surface, extra) {
   const note = 'Written by tools/capture-screenshots.mjs. Each entry is the plugin '
     + 'version that was in the picture when that file was written, the hash of the '
     + 'bytes it was written as, the surface it is a picture of, and the digest of '
-    + 'that surface\'s UI sources at the moment of the shutter '
-    + '(_output.ui_surface_digests). _refs.screenshot_capture_drift() compares all '
+    + 'the page that surface sends at the moment of the shutter '
+    + '(_surface_digest.py). _refs.screenshot_capture_drift() compares all '
     + 'of them; an entry missing the digest is a finding, not silence.';
   if (!surface) {
     fail(`${name}: no capture leg was running when the shutter opened, so which `

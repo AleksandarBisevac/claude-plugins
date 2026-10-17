@@ -179,6 +179,7 @@ claude-plugins/                           # this repo (personal, public)
         _ui_theme.py                      # shared visual tokens (colour/spacing/type/labels) for report + panel
         _deps.py                          # the module layer table, checked against the real import graph every run
         _refs.py                          # what one file claims about another: script paths stat'd, and the document link graph
+        _surface_digest.py                # which UI a committed screenshot is a picture of: one digest per surface, over the page it receives
         usage/                            # the usage domain: the ledger, the arithmetic over it, the CLI
           _usage_core.py                  # usage arithmetic: the price table, the hour bucket, the roll-ups, the row readers
           _usage_spend.py                 # spend through time: series, window compare, cache profile
@@ -407,6 +408,7 @@ L7:
   _report_md -> _output, _report_html, _usage_markdown
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
   _scoped_commit -> _excerpt, _invariants, _journal_io, _manifest_io, _manifest_phases, _manifest_vocab, _output, _task_outputs
+  _surface_digest -> _output, _panel_page, _report_ui
 
 L8:
   _live_copy -> _branch, _excerpt, _invariants, _locks, _manifest_io, _output, _scoped_commit, _status_facts, _worktrees
@@ -1379,27 +1381,33 @@ the imports it exists to enable is decoration. `_output.py` is exempt by name, f
 reasons: it *is* the marker, and it holds `PATH_PREAMBLE` as a string, so a text count over its own source
 would read as compliant.
 
-**`ui_surface_digests()` answers which files a surface's pictures are OF**, and it lives at
+**`ui_surface_sources()` answers which files a surface is assembled from**, and it lives at
 the anchor for the same reason the kept-files walk does: two readers at two layers, and a copy in
-either would be the second implementation of "which files" this design exists to remove.
-`_refs.screenshot_capture_drift()` holds the rule; `tools/capture-screenshots.mjs`
-asks over a pipe and records the answer beside each image rather than computing its own. Membership
+either would be the second implementation of "which files" this design exists to remove. Membership
 is **derived from the filing convention** by `ui_surfaces_of()` — `panel/`, `panel-css/`, `report/`
 and `report-css/` name their surface, `panel.html` names it in its stem, `shared/` ships in every
 one — so a part added under an existing directory is covered the day it lands, and a directory the
-convention cannot place is **reported** rather than dropped, because a part no digest covers is a
-part whose change no picture could ever be red about. The digest is over raw bytes with each member
-framed as `name length` (git's own framing, so two parts cannot trade contents unnoticed) and it
-includes `_ui_theme.py`, which is outside `ui/`: `TOKEN_CSS` heads the report's stylesheet and is
-substituted into the panel's, so a palette edit moves every picture. `_panel_ui.py` and
-`_report_ui.py` are deliberately out — they carry part order and the tag wrappers, both already
-pinned by name in their assembly suites, and admitting them would oblige `_report_html.py`, then
-every module that emits markup, then the fixture manifests, at which point every commit reddens
-every picture. The **renderer is the stated limit** of this rule, not an oversight. Three shapes
-return an error with the digests left empty rather than a value over what remains: a tree that
-cannot be walked, a tree with no part in it, and a surface holding nothing but `shared/` — all
-three are how a renamed directory presents, and a digest over the remainder would be stable,
-comparable and about a tree that is not there.
+convention cannot place is **reported** rather than dropped, because a part no page assembles is a
+part whose change no picture could ever be red about. Three shapes return an error with the
+sources left empty rather than a value over what remains: a tree that cannot be walked, a tree with
+no part in it, and a surface holding nothing but `shared/` — all three are how a renamed directory
+presents, and an answer over the remainder would be stable, comparable and about a tree that is not
+there.
+
+**`_surface_digest.py` answers which UI a picture is OF**, and it digests the page rather than the
+files. The digest used to be a hash over the raw bytes of every source plus all of `_ui_theme.py`,
+so a docstring edit there owed a recapture of every committed picture. It is now taken over what
+the page receives: the report as `_report_ui.CSS`, a NUL, then `_report_ui.SCRIPT`, the panel as
+`_panel_page.UI_HTML`. A source moves a digest exactly as far as it changes that text — a token
+value does, a comment does not. The plugin's version, which the panel bakes into its page, is
+replaced by a fixed token first (the sidecar's own `version` field and its rule already cover a
+bump), and the suite holds the text identical across interpreter runs with different hash seeds, so
+an unsorted set cannot leak into it. The module sits above both pages in `_deps.LAYERS` and so
+cannot be imported by the rule that compares it: `_refs.screenshot_capture_drift()` asks it as a
+command (`--json`) or is handed an answer, and `tools/capture-screenshots.mjs` asks the same
+command over a pipe and records the answer beside each image rather than computing its own. The
+renderer is still the stated limit: a plan-dependent part of the report is filled in at render
+time and is not what the pictures are of. Cases: `tests/test__surface_digest.py`.
 
 **`prose_number_claims()` is where this repo's most frequent defect goes to die.** A number
 written into prose rots, because nothing compares it to the thing it describes — this recurred
@@ -1735,10 +1743,10 @@ refusal or the bytes moved, not by this rule.
 the difference was
 live: commits landed under `scripts/ui/` after the last re-capture, the recorded version was
 still current, and this rule was green over pictures of a panel that had since moved. Pixels
-cannot close it, but the UI's **sources** are committed bytes, so a digest
-over them is host-independent by construction where the rendered page, which paints the project
+cannot close it, but the page a surface sends is built from committed bytes, so a digest
+over that text is host-independent by construction where the rendered page, which paints the project
 path, is not. Each entry therefore also carries the **surface** it is a picture of and the digest
-of that surface's sources, from `_output.ui_surface_digests()` described above, and
+of the page that surface sends, from `_surface_digest.py` described above, and
 `_ui_source_findings()` compares it. **Per surface**, which is what makes it a rule rather than a
 nuisance: a report-only change reddens the report's pictures and asks for none of the panel's
 back. The surface comes off the **entry**, written by the leg that opened the shutter — never
@@ -1804,6 +1812,20 @@ see whether the printed rule says what the row says - that is the reviewer's, as
 rule. The `fa` cases in `tests/test__refs.py` hold each refusal beside the allow case.
 
 `--selftest`.
+
+### `plugins/audit/scripts/_surface_digest.py`
+The digest a committed screenshot's sidecar entry is compared against, taken over what the page
+receives and over nothing else: `surface_texts()` returns the report's `CSS + "\0" + SCRIPT` and
+the panel's `UI_HTML`, `without_version()` swaps the quoted plugin version for a fixed token, and
+`surface_digests()` hashes each and returns `digests`, `unassigned` and `error` — the shape the
+anchor's old byte-hash digest had, with `unassigned` and the walk's own errors still coming from
+`ui_surface_sources()`. It exists apart from the anchor because it imports `_report_ui` and
+`_panel_page`, and a lower layer may not import a higher one; it exists apart from `_refs` for the
+same reason in the other direction, which is why `_refs.screenshot_capture_drift()` runs this file
+with `--json` (exit status 1, still printing, when the answer is an `error`). A prose edit to
+`_ui_theme.py` leaves both digests alone and a token value edit moves them; both halves, the
+version normalisation and the stability across interpreter runs are cases in the suite.
+Cases: `tests/test__surface_digest.py`; `--selftest` names where they went.
 
 ### `plugins/audit/scripts/usage/_usage_core.py`
 The arithmetic the whole metering stack stands on, and nothing else: the `DEFAULT_PRICING`

@@ -49,6 +49,7 @@ import _evidence_io as _ev                         # noqa: E402  (follower_line)
 # WITHOUT re-recording, so the two sides of the comparison come from two different
 # states of the tree.
 import _output                                     # noqa: E402
+import _surface_digest                             # noqa: E402  (the digest sc2 and sc14 read live)
 
 
 # --- fixture paths: built, never spelled --------------------------------------
@@ -989,7 +990,7 @@ def _cases(check):
           "asking _panel_ui.py for the assembled page, three more when the "
           "report leg grew a PINNED fixture of its own (two set-priority.py writes and "
           "the render that reads them), and the newest when the run started asking "
-          "_output.py which UI sources each surface's pictures are of. The number is "
+          "_surface_digest.py for the digest of each surface's page. The number is "
           "exact on purpose - a floor would go on passing while a site was deleted, "
           "which is the only thing this case is for (got %d)"
           % (_mjs.count("resolveScript('"),),
@@ -2121,7 +2122,7 @@ def _cases(check):
     with open(os.path.join(M.REPO_ROOT, M._CAPTURED_AT.replace("/", os.sep)),
               "r", encoding="utf-8") as fh:
         _sc_rec = json.load(fh)["images"]
-    _sc_live_ui = _output.ui_surface_digests()
+    _sc_live_ui = _surface_digest.surface_digests()
     check("sc2 ...and it cleared a real set rather than an empty one - sc1 returns "
           "[] over a directory it never reached too, and telling those two apart is "
           "the whole point of the rule: every committed .png has an entry, every "
@@ -2144,28 +2145,24 @@ def _cases(check):
         _write(tmp, M._PLUGIN_JSON_REL, json.dumps({"version": _pv}) + "\n")
         _write(tmp, _sc_a, "PIXELS-ONE\n")
         _write(tmp, _sc_b, "PIXELS-TWO\n")
-        # The UI the fixture's pictures are OF. Both surfaces need a part of their
-        # own or the walk reports a surface that is gone, so this is the smallest
-        # tree the rule can actually clear - and `one.png` is a panel picture while
-        # `two.png` is a report one, which is what makes the separation cases below
-        # able to say anything.
+        # The UI the fixture's pictures are OF. The rule is handed the answer the
+        # `_surface_digest.py` command would give, since a fixture root holds no code
+        # to assemble: `one.png` is a panel picture and `two.png` a report one, which
+        # is what makes the separation cases below able to say anything. The digests
+        # are placeholders that differ from each other and from any real one, so a
+        # rule that compared against the live tree instead of the answer it was
+        # handed would be red in sc3.
         _sc_ui_dir = M._UI_DIR_REL
-        _sc_panel_src = _sc_ui_dir + "/panel/core.js"
-        _sc_report_src = _sc_ui_dir + "/report/filters.js"
-        _sc_shared_src = _sc_ui_dir + "/shared/dates.js"
-        _sc_token = M._UI_SCRIPTS_REL + "/_ui_theme.py"
-        _write(tmp, _sc_ui_dir + "/panel.html", "<!doctype html>\n")
-        _write(tmp, _sc_panel_src, "const el = 1;\n")
-        _write(tmp, _sc_ui_dir + "/panel-css/app-shell.css", ".shell{}\n")
-        _write(tmp, _sc_report_src, "const chips = 1;\n")
-        _write(tmp, _sc_ui_dir + "/report-css/shell.css", ".rshell{}\n")
-        _write(tmp, _sc_shared_src, "const DAY = 1;\n")
-        _write(tmp, _sc_token, "TOKEN_CSS = ':root{--bg:#fff}'\n")
+        _sc_ui = {"digests": {"panel": "a" * 64, "report": "b" * 64},
+                  "unassigned": [], "error": None}
+
+        def _sc_drift():
+            """The rule over this fixture, handed this fixture's UI answer."""
+            return M.screenshot_capture_drift(tmp, ui=_sc_ui)
 
         def _sc_ui_now():
             """The digests a capture running against this fixture would record."""
-            return _output.ui_surface_digests(
-                os.path.join(tmp, *M._UI_SCRIPTS_REL.split("/")))["digests"]
+            return dict(_sc_ui["digests"])
 
         def _sc_entries(surfaces=None, digests=None):
             """The sidecar a clean capture of this fixture would leave behind."""
@@ -2187,11 +2184,11 @@ def _cases(check):
         check("sc3 a fixture whose sidecar agrees with the BYTES, the VERSION and "
               "the SOURCE DIGEST of the surface each picture is of is green, so "
               "every case below fails for the reason it names: %r"
-              % (M.screenshot_capture_drift(tmp),),
-              M.screenshot_capture_drift(tmp) == [])
+              % (_sc_drift(),),
+              _sc_drift() == [])
 
         os.remove(os.path.join(tmp, M._CAPTURED_AT.replace("/", os.sep)))
-        _sc_none = M.screenshot_capture_drift(tmp)
+        _sc_none = _sc_drift()
         check("sc4 no sidecar is a FINDING, not silence - the pictures still make a "
               "claim and nothing can settle it, which is the state this rule exists "
               "to end: %r" % (_sc_none,),
@@ -2204,7 +2201,7 @@ def _cases(check):
         _sc_stale["one.png"] = {"sha256": _sc_ok["one.png"]["sha256"],
                                 "version": "0.0.1"}
         _sc_sidecar(tmp, _sc_stale)
-        _sc_old = M.screenshot_capture_drift(tmp)
+        _sc_old = _sc_drift()
         check("sc5 a recorded version that is not the current one is named WITH the "
               "pair - 'stale' without both halves is not something a reader can act "
               "on: %r" % (_sc_old,),
@@ -2215,7 +2212,7 @@ def _cases(check):
         # right and the bytes are not, which is a re-capture that never finished.
         _sc_sidecar(tmp, _sc_ok)
         _write(tmp, _sc_a, "PIXELS-ONE-BUT-DIFFERENT\n")
-        _sc_moved = M.screenshot_capture_drift(tmp)
+        _sc_moved = _sc_drift()
         check("sc6 bytes that changed since the record was written are reported as "
               "CHANGED, not as a version mismatch - the recorded version is then "
               "about different pixels, and saying 'stale build' would send the "
@@ -2225,7 +2222,7 @@ def _cases(check):
 
         _write(tmp, _sc_a, "PIXELS-ONE\n")
         _sc_sidecar(tmp, {"one.png": _sc_ok["one.png"]})
-        _sc_extra = M.screenshot_capture_drift(tmp)
+        _sc_extra = _sc_drift()
         check("sc7 an image the sidecar does not mention is named - adding a "
               "screenshot without re-capturing leaves it claiming a build nothing "
               "wrote down: %r" % (_sc_extra,),
@@ -2235,7 +2232,7 @@ def _cases(check):
         _sc_ghost = dict(_sc_ok)
         _sc_ghost["gone.png"] = {"sha256": "0" * 64, "version": _pv}
         _sc_sidecar(tmp, _sc_ghost)
-        _sc_orphan = M.screenshot_capture_drift(tmp)
+        _sc_orphan = _sc_drift()
         check("sc8 an entry whose picture is gone is named too - a record about "
               "nothing is how a deleted shot keeps being vouched for: %r"
               % (_sc_orphan,),
@@ -2245,7 +2242,7 @@ def _cases(check):
         _sc_sidecar(tmp, _sc_ok)
         os.remove(os.path.join(tmp, _sc_a.replace("/", os.sep)))
         os.remove(os.path.join(tmp, _sc_b.replace("/", os.sep)))
-        _sc_empty = M.screenshot_capture_drift(tmp)
+        _sc_empty = _sc_drift()
         check("sc9 a directory with no .png at all is a FINDING - a candidate set "
               "that narrowed to nothing must not be spelled the same way as a set "
               "that all agrees, which is the shape a moved output directory takes: "
@@ -2255,7 +2252,7 @@ def _cases(check):
 
         _write(tmp, _sc_a, "PIXELS-ONE\n")
         _write(tmp, M._PLUGIN_JSON_REL, json.dumps({"name": "x"}) + "\n")
-        _sc_nover = M.screenshot_capture_drift(tmp)
+        _sc_nover = _sc_drift()
         check("sc10 a plugin.json with no readable version is reported instead of "
               "failing every image for the wrong reason - the comparison has no "
               "basis, and a guessed one would be worse than none: %r" % (_sc_nover,),
@@ -2279,51 +2276,70 @@ def _cases(check):
         # THE SEPARATION, BOTH DIRECTIONS IN TWO CASES. A digest that fired on
         # everything would ask for every picture back on every commit and would be
         # switched off, so the negative half of each is the load-bearing half.
-        _write(tmp, _sc_panel_src, "const el = 2;\n")
-        _sc_pan = M.screenshot_capture_drift(tmp)
-        _write(tmp, _sc_panel_src, "const el = 1;\n")
-        check("sc11 a changed PANEL source reddens the panel picture and NOT the "
+        _sc_ui["digests"]["panel"] = "c" * 64
+        _sc_pan = _sc_drift()
+        _sc_ui["digests"]["panel"] = "a" * 64
+        check("sc11 a changed PANEL page reddens the panel picture and NOT the "
               "report one, naming the surface and both digests - the version still "
-              "agrees throughout, so only the UI-source digest catches this: %r" % (_sc_pan,),
+              "agrees throughout, so only the UI digest catches this: %r" % (_sc_pan,),
               len(_sc_pan) == 1 and _sc_pan[0][0] == _sc_a
-              and "panel sources" in _sc_pan[0][2]
+              and "panel page" in _sc_pan[0][2]
               and "nobody re-shot" in _sc_pan[0][2]
               and _sc_named(_sc_pan, _sc_b) == [])
 
-        _write(tmp, _sc_report_src, "const chips = 2;\n")
-        _sc_rep = M.screenshot_capture_drift(tmp)
-        _write(tmp, _sc_report_src, "const chips = 1;\n")
-        check("sc12 ...and a changed REPORT source reddens the report picture and "
+        _sc_ui["digests"]["report"] = "d" * 64
+        _sc_rep = _sc_drift()
+        _sc_ui["digests"]["report"] = "b" * 64
+        check("sc12 ...and a changed REPORT page reddens the report picture and "
               "NOT the panel one. Both directions, because one of them alone is "
               "also what a rule that reddens everything prints: %r" % (_sc_rep,),
               len(_sc_rep) == 1 and _sc_rep[0][0] == _sc_b
-              and "report sources" in _sc_rep[0][2]
+              and "report page" in _sc_rep[0][2]
               and _sc_named(_sc_rep, _sc_a) == [])
 
-        _write(tmp, _sc_shared_src, "const DAY = 2;\n")
-        _sc_both = M.screenshot_capture_drift(tmp)
-        _write(tmp, _sc_shared_src, "const DAY = 1;\n")
-        check("sc13 a changed `shared/` part reddens BOTH, because both assemblies "
-              "ship it - the one place where firing on everything is the right "
-              "answer, and the case that fails if `shared/` is quietly filed under "
-              "one surface: %r" % (_sc_both,),
+        _sc_ui["digests"].update(panel="e" * 64, report="f" * 64)
+        _sc_both = _sc_drift()
+        _sc_ui["digests"].update(panel="a" * 64, report="b" * 64)
+        check("sc13 both digests moving (what a `shared/` part or the token layer does) "
+              "reddens BOTH pictures - the one place where firing on everything is the "
+              "right answer, and the case that fails if the rule stops at the first "
+              "surface it finds stale: %r" % (_sc_both,),
               len(_sc_both) == 2 and len(_sc_named(_sc_both, _sc_a)) == 1
               and len(_sc_named(_sc_both, _sc_b)) == 1)
 
-        _write(tmp, _sc_token, "TOKEN_CSS = ':root{--bg:#000}'\n")
-        _sc_tok = M.screenshot_capture_drift(tmp)
-        _write(tmp, _sc_token, "TOKEN_CSS = ':root{--bg:#fff}'\n")
-        check("sc14 a changed TOKEN LAYER reddens both, though it is a `.py` "
-              "outside `ui/` - a palette edit moves every pixel and a walk over "
-              "`ui/` alone would sleep through the change most likely to matter: "
-              "%r" % (_sc_tok,),
-              len(_sc_tok) == 2 and len(_sc_named(_sc_tok, _sc_a)) == 1
-              and len(_sc_named(_sc_tok, _sc_b)) == 1)
+        # THE REQUIRED CASE, and it is the only one in this block that asks the REAL
+        # command: no `ui` is handed in, so the rule runs `_surface_digest.py` as a
+        # child, and the sidecar is written from the digests THIS process computes. Two
+        # computations from two places - a rule that compared the sidecar against
+        # itself, or a command that disagreed with the module, is red here.
+        _sc_real = _surface_digest.surface_digests()["digests"]
+        _sc_live = _sc_entries(digests=_sc_real)
+        _sc_sidecar(tmp, _sc_live)
+        _sc_agrees = M.screenshot_capture_drift(tmp)
+        _sc_flipped = _sc_entries(digests=_sc_real)
+        _sc_was = _sc_flipped["one.png"]["uiDigest"]
+        _sc_flipped["one.png"]["uiDigest"] = (
+            ("0" if _sc_was[0] != "0" else "1") + _sc_was[1:])
+        _sc_sidecar(tmp, _sc_flipped)
+        _sc_stale_ui = M.screenshot_capture_drift(tmp)
+        check("sc14 a sidecar entry whose digest differs from the assembled-surface "
+              "digest is reported stale by screenshot_capture_drift, naming the "
+              "surface - one hex digit of the panel's recorded digest changed, so "
+              "exactly one finding, about the panel picture, naming the panel and "
+              "both digests, while the report picture and the unaltered sidecar "
+              "(which the real command must agree with) are quiet: %r %r"
+              % (_sc_agrees, _sc_stale_ui),
+              _sc_agrees == []
+              and len(_sc_stale_ui) == 1 and _sc_stale_ui[0][0] == _sc_a
+              and "panel page" in _sc_stale_ui[0][2]
+              and _sc_flipped["one.png"]["uiDigest"][:12] in _sc_stale_ui[0][2]
+              and _sc_real["panel"][:12] in _sc_stale_ui[0][2]
+              and "report" not in _sc_stale_ui[0][2])
 
         _sc_nodig = _sc_entries()
         del _sc_nodig["one.png"]["uiDigest"]
         _sc_sidecar(tmp, _sc_nodig)
-        _sc_missing = M.screenshot_capture_drift(tmp)
+        _sc_missing = _sc_drift()
         check("sc15 an entry with NO source digest is a finding, not silence - "
               "absence is not agreement, and this is why the rule is red until a "
               "capture has written one rather than defaulting into a pass: %r"
@@ -2334,7 +2350,7 @@ def _cases(check):
         _sc_wrongface = _sc_entries()
         _sc_wrongface["one.png"]["surface"] = "nowhere"
         _sc_sidecar(tmp, _sc_wrongface)
-        _sc_face = M.screenshot_capture_drift(tmp)
+        _sc_face = _sc_drift()
         check("sc16 an entry naming a surface this tree does not assemble is "
               "reported rather than compared - a digest with nothing to compare it "
               "to must not be spelled the same way as one that matches: %r"
@@ -2344,10 +2360,9 @@ def _cases(check):
               and "stands for nothing" in _sc_face[0][2])
 
         _sc_sidecar(tmp, _sc_entries())
-        _write(tmp, _sc_ui_dir + "/widgets/thing.js", "const w = 1;\n")
-        _sc_unplaced = M.screenshot_capture_drift(tmp)
-        os.remove(os.path.join(tmp, (_sc_ui_dir + "/widgets/thing.js")
-                                    .replace("/", os.sep)))
+        _sc_ui["unassigned"] = ["widgets/thing.js"]
+        _sc_unplaced = _sc_drift()
+        _sc_ui["unassigned"] = []
         check("sc17 a `ui/` part under a directory no surface claims is named - it "
               "is covered by no picture's digest, so changing it could never turn "
               "one red, which is the silence this rule exists to end: %r"
@@ -2360,9 +2375,9 @@ def _cases(check):
         # a rule that never fires. It is the only one that fails if the comparison
         # becomes unconditional - a rule permanently red once any source has ever
         # moved is a rule people delete.
-        _write(tmp, _sc_panel_src, "const el = 3;\n")
+        _sc_ui["digests"]["panel"] = "9" * 64
         _sc_sidecar(tmp, _sc_entries())
-        _sc_recaptured = M.screenshot_capture_drift(tmp)
+        _sc_recaptured = _sc_drift()
         check("sc18 a source that changed and was then RE-RECORDED, exactly as a "
               "re-capture records it, reports nothing again: %r"
               % (_sc_recaptured,), _sc_recaptured == [])
@@ -2375,7 +2390,7 @@ def _cases(check):
             "regionalFormat": "en_US@rg=rszzzz", "hostFormatAccepted": True}
         _sc_host["two.png"]["nativeDateInput"] = {"regionalFormat": "en_US"}
         _sc_sidecar(tmp, _sc_host)
-        _sc_hostf = M.screenshot_capture_drift(tmp)
+        _sc_hostf = _sc_drift()
         check("sc21 File a follow-up task: have screenshot_capture_drift, or the "
               "release-set check, report any image whose entry has "
               "hostFormatAccepted true, so a release cannot ... ship host-shaped "
@@ -2396,10 +2411,10 @@ def _cases(check):
         _sc_clean["two.png"]["nativeDateInput"] = {
             "regionalFormat": "en_US", "hostFormatAccepted": False}
         _sc_sidecar(tmp, _sc_clean)
-        _sc_cleanf = M.screenshot_capture_drift(tmp)
+        _sc_cleanf = _sc_drift()
         _sc_clean["two.png"]["nativeDateInput"] = "not an object"
         _sc_sidecar(tmp, _sc_clean)
-        _sc_oddf = M.screenshot_capture_drift(tmp)
+        _sc_oddf = _sc_drift()
         check("sc22 an entry that recorded a format without the escape, one that "
               "says false, and one whose record is not an object are all quiet: "
               "%r %r" % (_sc_cleanf, _sc_oddf),
@@ -2412,7 +2427,7 @@ def _cases(check):
         _sc_both_bad["one.png"]["nativeDateInput"] = {
             "regionalFormat": "en_US@rg=rszzzz", "hostFormatAccepted": True}
         _sc_sidecar(tmp, _sc_both_bad)
-        _sc_bothf = M.screenshot_capture_drift(tmp)
+        _sc_bothf = _sc_drift()
         check("sc23 a stale picture that was also written under the escape gets BOTH "
               "findings, each about the same image: %r" % (_sc_bothf,),
               len(_sc_bothf) == 2
@@ -2421,14 +2436,64 @@ def _cases(check):
               and sum("hostFormatAccepted" in f[2] for f in _sc_bothf) == 1)
         _sc_sidecar(tmp, _sc_entries())
 
-        shutil.rmtree(os.path.join(tmp, *(_sc_ui_dir.split("/"))))
-        _sc_nosrc = M.screenshot_capture_drift(tmp)
+        _sc_ui.update(digests={}, error="cannot be walked, so which files the "
+                      "pictures are of is unknown rather than unchanged: x")
+        _sc_nosrc = _sc_drift()
         check("sc19 UI sources that cannot be walked are ONE finding and the rule "
               "stops - every image would otherwise be reported for want of a "
               "comparison rather than because it disagrees, which is a red run "
               "pointing at the wrong repair: %r" % (_sc_nosrc,),
               len(_sc_nosrc) == 1 and _sc_nosrc[0][0] == _sc_ui_dir
               and "unknown rather than unchanged" in _sc_nosrc[0][2])
+
+        # --- sc24-sc27: the command the default path runs, and how it can fail ----
+        # `_ui_digests_by_command` takes the script as an argument so these four are
+        # about the CONTRACT between the rule and whatever it runs, with no need to
+        # break the real module. Each child is a few lines written into the fixture.
+        def _sc_child(name, body):
+            path = os.path.join(tmp, name)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(body)
+            return path
+
+        _sc_good = _sc_child("good.py", "import sys\nsys.stdout.write('{\"digests\": "
+                             "{\"panel\": \"p\"}, \"unassigned\": [], \"error\": "
+                             "null}')\n")
+        _sc_erred = _sc_child("erred.py", "import sys\nsys.stdout.write('{\"digests\": "
+                              "{}, \"unassigned\": [], \"error\": \"no walk\"}')\n"
+                              "sys.exit(1)\n")
+        _sc_crash = _sc_child("crash.py", "import sys\nsys.stderr.write('boom')\n"
+                              "sys.exit(3)\n")
+        _sc_shape = _sc_child("shape.py", "import sys\nsys.stdout.write('{\"x\": 1}')\n")
+        _sc_r_good = M._ui_digests_by_command(_sc_good)
+        _sc_r_erred = M._ui_digests_by_command(_sc_erred)
+        _sc_r_crash = M._ui_digests_by_command(_sc_crash)
+        _sc_r_shape = M._ui_digests_by_command(_sc_shape)
+        _sc_r_gone = M._ui_digests_by_command(os.path.join(tmp, "absent.py"))
+        check("sc24 a command that prints an answer is believed, whatever its exit "
+              "status: exit 0 hands the digests back, and exit 1 with an `error` of its "
+              "own hands THAT error back rather than a generic one - the output of a "
+              "command that fails by design is the answer: %r %r"
+              % (_sc_r_good, _sc_r_erred),
+              _sc_r_good == {"digests": {"panel": "p"}, "unassigned": [], "error": None}
+              and _sc_r_erred["error"] == "no walk" and _sc_r_erred["digests"] == {})
+        check("sc25 a command that dies, prints the wrong shape, or does not exist is "
+              "an ERROR carrying its exit status and what it wrote to stderr, with no "
+              "digests - never an empty answer the comparison below would read as "
+              "'nothing is stale': %r %r %r"
+              % (_sc_r_crash, _sc_r_shape, _sc_r_gone),
+              all(r["digests"] == {} and r["error"] for r in
+                  (_sc_r_crash, _sc_r_shape, _sc_r_gone))
+              and "exited 3" in _sc_r_crash["error"] and "boom" in _sc_r_crash["error"]
+              and "exited 0" in _sc_r_shape["error"])
+        _sc_ui.update(digests=_sc_r_crash["digests"], error=_sc_r_crash["error"])
+        _sc_cmd_fail = _sc_drift()
+        check("sc26 ...and that error reaches the rule's verdict as the ONE finding "
+              "against the `ui/` directory, so a broken digest command is a red run "
+              "naming the command rather than every picture being cleared for want of "
+              "a comparison: %r" % (_sc_cmd_fail,),
+              len(_sc_cmd_fail) == 1 and _sc_cmd_fail[0][0] == _sc_ui_dir
+              and "exited 3" in _sc_cmd_fail[0][2])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

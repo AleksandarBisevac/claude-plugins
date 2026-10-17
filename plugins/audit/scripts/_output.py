@@ -57,7 +57,6 @@ import ast
 import contextlib
 import errno
 import functools
-import hashlib
 import io
 import json
 import os
@@ -760,22 +759,13 @@ def kept_files(root, patterns, exts, drop=None):
 
 
 # --- which files a surface's pictures are OF ------------------------------------
-# ONE walk for the question "does this committed screenshot still show the current
-# UI", which is NOT the question the version stamp beside it answers. Commits
-# landed under `scripts/ui/` after the last re-capture and the recorded version was
-# still current, so `_refs.screenshot_capture_drift()` was green over stale pixels.
-#
-# Pixels cannot close that. A PNG is comparable only on the host
-# that wrote it - font rasterisation has no environment variable - and
-# `tools/capture-screenshots.mjs` declines three repairs by name in its own header.
-# The SOURCES can: they are committed bytes, so a digest over them is
-# host-independent by construction, where the rendered page (which paints the
-# project path) is not.
-#
-# IT LIVES HERE, AT THE ANCHOR, for the same reason the kept-files walk above does:
-# two readers at two layers. `_refs`, above the anchor, holds the rule, and the capture asks
-# for the same answer over a pipe. A copy in either would be the second
-# implementation of "which files" that this shared walk exists to remove.
+# ONE walk for the question "which parts of `scripts/ui/` does a surface assemble
+# into its page", asked by whoever must report a part no surface claims. It is not
+# the digest: whether a committed screenshot still shows the current UI is answered
+# by `_surface_digest.py`, taken over the assembled page, because the page is what
+# the picture is of and a hash over source bytes also moved when a comment did.
+# That digest has to import the assembled pages, which sit above this layer, so it
+# cannot live here; the walk can, and the digest asks it which parts are unplaced.
 #
 # DERIVED, NEVER DECLARED. Membership comes off a part's own name, so a directory
 # added under `ui/` is covered the day it lands - and a name that answers nobody is
@@ -795,27 +785,6 @@ UI_DOC_EXT = (".md", ".txt")
 # `shared/` ships in EVERY surface: `_report_ui._SCRIPT_PARTS` and
 # `_panel_ui._JS_PARTS` both list its parts, ahead of every surface part.
 _UI_SHARED = "shared"
-
-# The token layer is a `.py` and it ships in BOTH pages - `TOKEN_CSS` heads the
-# report's stylesheet and is substituted into the panel's, and neither sheet is even
-# valid without it. So a colour or a spacing step moving there moves every picture,
-# which is exactly what this must not sleep through.
-#
-# THE WHOLE FILE, not a list of its page-bearing constants. Such a list is a second
-# home: it would need a row the day somebody adds the next constant, and the day it
-# does not get one is the day this goes quiet. The cost is stated rather than
-# hidden - an edit to a CSS lint in that file also asks for a re-capture. Measured
-# before accepting it: of the commits that have touched the file, essentially every
-# one was visual (tokens, palettes, contrast, the CSS part cuts), so the breadth is
-# theoretical here rather than paid.
-#
-# `_panel_ui.py` and `_report_ui.py` are deliberately OUT. They hold part order and
-# the `<style>`/`<script>` wrappers - no visual value - and both are already pinned
-# by name in their assembly suites. Letting them in would oblige `_report_html.py`,
-# then every module that emits markup, then the fixture manifests, and the rule
-# would degenerate into "any commit reddens every picture". So the boundary is the
-# assembled ASSETS, and the renderer is the stated limit rather than an oversight.
-_UI_TOKEN_LAYER = "_ui_theme.py"
 
 
 def ui_surfaces_of(rel):
@@ -895,54 +864,6 @@ def ui_surface_sources(scripts_dir=None):
                          "nothing" % (", ".join(orphaned),)}
     return {"root": root, "sources": sources, "unassigned": unassigned,
             "error": None}
-
-
-def ui_surface_digests(scripts_dir=None):
-    """`{"digests": {surface: hex}, "unassigned": [...], "error": None|str}`.
-
-    The digest a committed screenshot's sidecar entry is compared against. Every
-    member goes in as `name length\\n` and then its raw bytes - git's own framing,
-    so no pair of names and contents can be reshuffled into the same stream - and
-    the members are sorted, because a digest whose value depended on walk order
-    would move between filesystems without a byte changing.
-
-    BYTES, not decoded text: a digest is not a place to be lenient about encoding,
-    and `read_asset`'s newline argument exists precisely because a CRLF checkout
-    hands back different content than the file holds.
-
-    A member that cannot be read empties `digests` and sets `error`. A digest over
-    a PARTIAL set is a wrong answer wearing the shape of a right one - stable,
-    comparable, and about a different tree than the one on disk.
-    """
-    found = ui_surface_sources(scripts_dir)
-    if found["error"]:
-        return {"digests": {}, "unassigned": found["unassigned"],
-                "error": found["error"]}
-    # The walk's own root and the walk's own token-layer sibling, never re-derived
-    # here: `root` comes back from it for exactly this reason.
-    ui_root = found["root"]
-    token = os.path.join(os.path.dirname(ui_root), _UI_TOKEN_LAYER)
-    members = dict(
-        (surface,
-         sorted([(rel, os.path.join(ui_root, rel.replace("/", os.sep)))
-                 for rel in found["sources"][surface]]
-                + [(_UI_TOKEN_LAYER, token)]))
-        for surface in UI_SURFACES)
-    digests = {}
-    for surface in UI_SURFACES:
-        sha = hashlib.sha256()
-        for name, path in members[surface]:
-            try:
-                with open(path, "rb") as fh:
-                    data = fh.read()
-            except OSError as exc:
-                return {"digests": {}, "unassigned": found["unassigned"],
-                        "error": "%s cannot be read, so no digest can stand for "
-                                 "what the pictures are of: %s" % (name, exc)}
-            sha.update(("%s %d\n" % (name, len(data))).encode("utf-8"))
-            sha.update(data)
-        digests[surface] = sha.hexdigest()
-    return {"digests": digests, "unassigned": found["unassigned"], "error": None}
 
 
 # --- the path bootstrap -------------------------------------------------------

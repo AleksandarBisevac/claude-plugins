@@ -22,7 +22,23 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P130-R1",
+        "severity": "low",
+        "file": ".gitattributes:26-32",
+        "issue": "The comment still says `ui_surface_digests()` hashes `_ui_theme.py` 'as a member of BOTH surfaces, reading raw bytes', and that a CRLF checkout therefore moved every digest. The diff deletes `ui_surface_digests()` and `_UI_TOKEN_LAYER`. The digest is now taken over the imported page text, so the file is no longer read as raw bytes (Python normalises source newlines on import). The comment names a function that no longer exists and gives a reason that no longer holds. The executor could not edit it because the plan gate refused the file.",
+        "resolution": "Rewrite the comment to say what the `_ui_theme.py text eol=lf` pin is still for, or drop the pin and the comment together if nothing else reads the file's bytes. Do it in a task that declares .gitattributes."
+      },
+      {
+        "id": "P130-R2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/_ui_theme.py:872",
+        "issue": "The comment says the anchor's walk needs the same directory for `ui_surface_digests()`, 'in the anchor, for the screenshot rule'. That function is removed by this diff. The anchor now holds `ui_surface_sources()`, and the digest lives in `_surface_digest.py`. The executor could not edit it because the plan gate refused the file.",
+        "resolution": "Change it to `ui_surface_sources()` and drop 'for the screenshot rule'. The plan gate currently lists P130.7, P130.8 and P130.9 as declaring this file, so make the edit under one of them."
+      }
+    ],
+    "outcome": "[findings: 2 - 0 high, 0 med, 2 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -221,7 +237,29 @@
           "selftests",
           "shots"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test__refs.py: a sidecar entry whose digest differs from the assembled-surface digest is reported stale by screenshot_capture_drift, naming the surface": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__refs.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/_refs.py",
+            "find": "    if digests[surface] != digest:",
+            "replace": "    if False:"
+          },
+          "plugins/audit/tests/test__surface_digest.py: a prose-only edit of _ui_theme.py leaves both surface digests unchanged, a token value edit changes them, and two interpreter runs give the same digest": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__surface_digest.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/_surface_digest.py",
+            "find": "\"panel\": _panel_page.UI_HTML}",
+            "replace": "\"panel\": _panel_page.UI_HTML + open(os.path.join(_output.SCRIPTS_DIR, \"_ui_theme.py\"), \"rb\").read().decode(\"utf-8\")}"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -245,9 +283,9 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-17T17:59:06Z.1b0972",
-        "status": "failed",
-        "at": "2026-10-17T17:59:06Z"
+        "runId": "2026-10-17T18:56:50Z.fe9e53",
+        "status": "passed",
+        "at": "2026-10-17T18:56:50Z"
       }
     },
     {

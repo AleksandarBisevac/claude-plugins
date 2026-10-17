@@ -636,6 +636,13 @@ LAYERS = (
     # matches it: a stale ARGUMENT is worse than no argument, because the next
     # reader spends their time working out why it is wrong.
     ("_panel_state", "_report_md", "_report_usage",
+     # `_surface_digest` is what UI a committed screenshot is a picture OF: one
+     # digest per surface over the page it receives. It reaches `_report_ui` and
+     # `_panel_page` for the assembled text, so it sits above both - which is why
+     # it is not in `_output`, where the walk of the parts it asks for stays.
+     # `_refs` holds the rule that compares it and sits far below, so it asks
+     # this file as a command instead of importing it.
+     "_surface_digest",
      # `_scoped_commit` is everything two commit-a-narrow-allow-list commands
      # share: the stderr-keeping git runner, the working-tree read that decides
      # before staging, the index read that refuses after it, and the one answer
