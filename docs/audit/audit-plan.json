@@ -3502,7 +3502,8 @@
       "P123.65-64p",
       "P126.11-13q",
       "P125.38-0h5",
-      "P128.33-0h5"
+      "P128.33-0h5",
+      "P128.51-izt"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4",
@@ -4177,7 +4178,8 @@
       "P125.142-0h5",
       "P125.144-0h5",
       "P129.7-izt",
-      "P128.45-izt"
+      "P128.45-izt",
+      "P128.48-izt"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -4335,7 +4337,8 @@
       "P123.20",
       "P123.33",
       "P123.65-64p",
-      "P123.62-64p"
+      "P123.62-64p",
+      "P128.52-izt"
     ],
     "plugins/audit/scripts/panel/_panel_ui.py": [
       "P11.1",
@@ -5409,7 +5412,8 @@
       "P123.24",
       "P126.11-13q",
       "P125.38-0h5",
-      "P128.33-0h5"
+      "P128.33-0h5",
+      "P128.51-izt"
     ],
     "plugins/audit/tests/test__manifest_crossrefs.py": [
       "P22.5",
@@ -5655,7 +5659,8 @@
       "P115.4-4yc",
       "P123.20",
       "P123.62-64p",
-      "P125.136-0h5"
+      "P125.136-0h5",
+      "P128.52-izt"
     ],
     "plugins/audit/tests/test__panel_write.py": [
       "P18.7",
@@ -6162,7 +6167,8 @@
       "P125.142-0h5",
       "P125.144-0h5",
       "P129.7-izt",
-      "P128.45-izt"
+      "P128.45-izt",
+      "P128.48-izt"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -6901,7 +6907,9 @@
       "P125.43-0h5",
       "P125.56-0h5",
       "P125.61-0h5",
-      "P128.25-0h5"
+      "P128.25-0h5",
+      "P128.46-izt",
+      "P128.47-izt"
     ],
     "tools/check-committed-pii.py": [
       "P51.4",
@@ -7037,7 +7045,8 @@
       "P125.53-0h5",
       "P125.68-0h5",
       "P125.125-0h5",
-      "P128.12-0h5"
+      "P128.12-0h5",
+      "P128.50-izt"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -7198,7 +7207,8 @@
       "P128.7-0h5",
       "P128.12-0h5",
       "P125.47-0h5",
-      "P125.56-0h5"
+      "P125.56-0h5",
+      "P128.49-izt"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
@@ -8408,7 +8418,8 @@
     "tools/ui-tests/capture-provenance.test.mjs": [
       "P103.8",
       "P112.1-uce",
-      "P125.56-0h5"
+      "P125.56-0h5",
+      "P128.46-izt"
     ],
     ".github/ISSUE_TEMPLATE/bug_report.md": [
       "P103.11"
