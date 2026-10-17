@@ -23,7 +23,8 @@
       "report": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report",
       "lint": "ruff check plugins/audit tools && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests",
       "shots": "node tools/capture-screenshots.mjs --check",
-      "interactive": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html"
+      "interactive": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html",
+      "vitest": "npx vitest run"
     },
     "evidenceSince": {
       "at": "2026-09-08T21:36:02Z",
@@ -829,7 +830,7 @@
     {
       "id": "P130",
       "title": "One executable description of CI, and a plugin that ships only what it runs",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P130.json"
     }
   ],
