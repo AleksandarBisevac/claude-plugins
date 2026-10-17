@@ -3523,6 +3523,8 @@ case "$STUB_MODE" in
   fail) exit 1 ;;
   same) cp examples/acme-store/.claude/usage/a.jsonl "$4/a.jsonl" ;;
   differ) printf 'other\\n' >"$4/a.jsonl" ;;
+  term) printf 'partial\\n' >"$4/a.jsonl"; kill -TERM $PPID ;;
+  int) printf 'partial\\n' >"$4/a.jsonl"; kill -INT $PPID ;;
 esac
 exit 0
 """
@@ -3573,7 +3575,17 @@ def _verify_cleanup_cases(check):
           all(f is not None for f in funcs))
     if not all(f is not None for f in funcs):
         return
-    run_ledger = "".join(funcs) + "ledger_reproducible\nprintf 'status=%s\\n' $?\n"
+    # The functions run under the script's own scratch-directory preamble (its
+    # WORKDIR and traps, cut out of the shipped file), because the regenerated
+    # directory is made under that workdir and only its exit trap can remove it on a
+    # signal. The second printf reports what the workdir still holds at the moment
+    # the function has returned, so an explicit early release is seen as well as the
+    # trap's final one.
+    head = source.split("WORKDIR=$(mktemp", 1)[1].split("\n\n", 1)[0]
+    trapped = "WORKDIR=$(mktemp" + head + "\n"
+    run_ledger = (trapped + "".join(funcs) + "ledger_reproducible\n"
+                  "ledger_rc=$?\nprintf 'status=%s\\n' $ledger_rc\n"
+                  "printf 'workdir_left=[%s]\\n' \"$(ls -A \"$WORKDIR\")\"\n")
 
     root = tempfile.mkdtemp(prefix="verify-sh-selftest-")
     try:
@@ -3592,19 +3604,34 @@ def _verify_cleanup_cases(check):
               "reported reproducible (status 0) and the scratch directory is gone "
               "afterwards, under %s: out=%r left=%r"
               % (_VERIFY_CLAUSE, ran, out, left),
-              "status=0" in out and left == [])
+              "status=0" in out and "workdir_left=[]" in out and left == [])
 
         _, out, left = run_in_scratch_shell(shell, root, run_ledger, mode="differ")
         check("vsh3 %s - a regenerated ledger that differs is refused (status 1), "
               "named, and the scratch directory is gone afterwards, under %s: "
               "out=%r left=%r" % (_VERIFY_CLAUSE, ran, out, left),
-              "status=1" in out and "no longer matches" in out and left == [])
+              "status=1" in out and "no longer matches" in out
+              and "workdir_left=[]" in out and left == [])
 
         _, out, left = run_in_scratch_shell(shell, root, run_ledger, mode="fail")
         check("vsh4 %s - a generator that fails is refused (status 1) and the "
               "scratch directory is gone afterwards, under %s: out=%r left=%r"
               % (_VERIFY_CLAUSE, ran, out, left),
-              "status=1" in out and left == [])
+              "status=1" in out and "workdir_left=[]" in out and left == [])
+
+        # A signal that arrives WHILE the generator runs ends the run through the
+        # script's exit trap; the regenerated directory must go with it. This is the
+        # case that is red when that directory is made under the system temp
+        # directory instead of the workdir, which only the explicit removal after
+        # the comparison would then reach.
+        for sig, want in (("TERM", 143), ("INT", 130)):
+            code, out, left = run_in_scratch_shell(
+                shell, root, run_ledger, mode=sig.lower())
+            check("vsh9 %s - a %s arriving while the generator runs ends the run "
+                  "with status %d, never reports a ledger verdict, and leaves no "
+                  "regenerated directory behind, under %s: code=%r out=%r left=%r"
+                  % (_VERIFY_CLAUSE, sig, want, ran, code, out, left),
+                  code == want and "status=" not in out and left == [])
 
         # The control. If the shell in use ran a RETURN trap, the cases above
         # could not have seen the defect and their green would say nothing.
@@ -3621,8 +3648,6 @@ def _verify_cleanup_cases(check):
 
         # The signal half: TERM and INT must END the run with the directory
         # removed, not remove it and let the script carry on.
-        head = source.split("WORKDIR=$(mktemp", 1)[1].split("\n\n", 1)[0]
-        trapped = "WORKDIR=$(mktemp" + head + "\n"
         for sig, want in (("TERM", 143), ("INT", 130)):
             code, out, left = run_in_scratch_shell(
                 shell, root,

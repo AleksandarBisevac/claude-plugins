@@ -430,12 +430,14 @@ run "committed ledgers record a verdict the runner can make, and every commit a 
 # different check: the throwaway-tree runs are elsewhere in ci.yml, and this one
 # compares a file this repository ships. That row is gone with this line.
 #
-# THE REGENERATED DIRECTORY IS REMOVED BY THE CALLER, NOT BY A TRAP. This used to be
-# `trap '...' RETURN`, a bash extension: dash and every other POSIX sh treat it as a
-# signal name they do not have and never run it, so the directory stayed under
-# `$TMPDIR` on each run. The comparison is its own function so that EVERY return
-# path - the generator failing, a ledger differing, all of them matching - comes back
-# to the one line that removes the directory.
+# THE REGENERATED DIRECTORY LIVES UNDER $WORKDIR, SO THE EXIT TRAP COVERS IT. This
+# used to be `trap '...' RETURN`, a bash extension: dash and every other POSIX sh
+# treat it as a signal name they do not have and never run it, so the directory
+# stayed under `$TMPDIR` on each run. Removing it by an explicit line after the
+# comparison fixed the return paths but not a signal arriving while the generator
+# runs, which leaves through the exit trap above and that removes only $WORKDIR. A
+# directory inside $WORKDIR goes with it on a return, a signal and a plain exit
+# alike; the explicit removal below is only the early release.
 ledger_compare() {
   python3 plugins/audit/scripts/demo/gen-demo-usage.py \
     examples/acme-store/audit-plan.json --out-dir "$1" >/dev/null || return 1
@@ -451,7 +453,7 @@ ledger_compare() {
   return 0
 }
 ledger_reproducible() {
-  regen=$(mktemp -d "${TMPDIR:-/tmp}/verify-ledger-XXXXXX") || return 1
+  regen=$(mktemp -d "$WORKDIR/ledger-XXXXXX") || return 1
   ledger_compare "$regen"
   ledger_status=$?
   rm -rf "$regen"

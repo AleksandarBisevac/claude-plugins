@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'Create the directory under the already-trapped workdir: regen=$(mktemp -d \"$WORKDIR/ledger-XXXXXX\")... the explicit rm can stay as the early release. Adjust vsh2-vsh4 so their scratch TMPDIR check looks at the workdir.' The diff does exactly that at tools/verify.sh:456 (mktemp under $WORKDIR), keeps rm -rf \"$regen\" at :459, and rewrites the comment at :433-440 to say the dir lives under the trapped workdir (consistent with the EXIT/INT/TERM traps at :112-114 and with run() executing functions in the main shell, :142). The executor's outcome matches the diff, including its statement that tools/gate-parity.py was edited. That edit was owed: vsh2-vsh4 live in tools/gate-parity.py (_verify_cleanup_cases), so the clause 'Adjust vsh2-vsh4' cannot be met without touching it; it is a gap in the task's declared files, not scope creep. The added vsh9 (TERM->143, INT->130, no verdict printed, TMPDIR empty) and the workdir_left=[] assertions are within the spirit of the clause. I ran 'python3 tools/gate-parity.py --selftest' once in the task tree, foreground: ALL PASS: 143/143, exit 0, including vsh2-vsh9 under dash.",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "Executor's redFirst is could-not-prove with the helper's refusal verbatim: 'task P128.49-izt declares no test file, so a throwaway at HEAD would prove nothing about this task's test'. tests.add is none, so no test the task added was seen red through the helper. The executor's claims block reports mutating the fix (dir back under TMPDIR -> vsh9 TERM/INT red 141/143; explicit rm removed -> vsh2/3/4 red) but that is prose with no recorded command, so I do not upgrade it to proved.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Gate commands read: selftests (tools/sweep-selftests.py) selects tools/gate-parity.py --selftest among its files; I read the vsh2-vsh9 block (tools/gate-parity.py ~3575-3650) and ran it once (143/143 pass). With the behaviour deleted (regen made under TMPDIR), vsh9 asserts left==[] on the scratch TMPDIR after TERM/INT and vsh2-vsh4 assert workdir_left=[]; vsh9 would fail on the leak. vsh5 deliberately keeps the old-spelling control that leaves a directory, which is its purpose. Other gate entries (validate, plugin-validate, status gate, report, lint, shots, interactive) do not select anything exercising the ledger directory."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

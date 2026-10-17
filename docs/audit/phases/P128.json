@@ -51,8 +51,10 @@
         "severity": "med",
         "file": "tools/capture-screenshots.mjs:6516-6527,6583-6609",
         "issue": "contradicts task clause: the description's fault is 'the report's date inputs render the host placeholder (dd. mm. 2026.) in committed shots', and the task title says committed images 'carry no host format'. The diff pins Intl/Date/navigator.language/number format, but not the native <input type=date> placeholder, which is the one symptom the clause names. I reproduced the limit read-only (in-memory element screenshots, nothing written): on this host (AppleLocale en_US@rg=rszzzz) a bare date input hashes identically under context locale en-US and de-DE with --lang=en-US, and differs only under --lang=de-DE. So the limit is real and the executor's disclosure is accurate. But the disclosure lives only in a code comment: the non-check capture that writes the PNGs prints nothing, and shot()'s pinProblem cannot see the placeholder (it is not in the DOM). A maintainer regenerating shots on such a host commits host-shaped 'filters' / date-input pixels with every check green and a 'pinned' label that now over-claims.",
-        "resolution": "Make the residual visible at the moment it matters instead of only in a comment. Options, structurally preferred first: (a) in the writing path of shot() (not --check), on darwin read the OS regional format (`defaults read -g AppleLocale`, region suffix `@rg=` other than US) and refuse, or at least print a loud note naming the shots that contain a native date input; (b) add the same reading to machineFingerprint() so --repro and the provenance line quote it. Node's own Intl.DateTimeFormat().resolvedOptions().locale is NOT usable for this: it reports en-US on the overridden host. Alternatively file the date-placeholder half as its own open task/fault so it is tracked rather than documented-away.",
-        "fixTask": "P128.46-izt"
+        "resolution": "fixed in P128.46-izt (6dbd68d39bf2): Make the residual visible at the moment it matters instead of only in a comment. Options, structurally preferred first: (a) in the writing path of shot() (not --check), on darwin read the OS regional format (`defaults read -g AppleLocale`, region suffix `@rg=` other than US) and refuse, or at least print a loud note naming the shots that contain a native date input; (b) add the same reading to machineFingerprint() so --repro and the provenance line quote it. Node's own Intl.DateTimeFormat().resolvedOptions().locale is NOT usable for this: it reports en-US on the overridden host. Alternatively file the date-placeholder half as its own open task/fault so it is tracked rather than documented-away.",
+        "fixTask": "P128.46-izt",
+        "commit": "6dbd68d39bf2",
+        "status": "fixed"
       },
       {
         "id": "P128-R5",
@@ -117,7 +119,7 @@
         "resolution": "Declare tools/ui-tests/capture-provenance.test.mjs in `files` and `tests.add` for this task (with a --introduces red-first, since the symbols are new) before it closes."
       }
     ],
-    "outcome": "[findings: 12 - 0 high, 3 med, 9 low; 1 with a recorded fix commit]"
+    "outcome": "[findings: 12 - 0 high, 3 med, 9 low; 2 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2752,7 +2754,7 @@
     {
       "id": "P128.46-izt",
       "title": "fix P128-R4: contradicts task clause: the description's fault is 'the report'...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause: the description's fault is 'the report's date inputs render the host placeholder (dd. mm. 2026.) in committed shots', and the task title says committed images 'carry no host format'. The diff pins Intl/Date/navigator.language/number format, but not the native <input type=date> placeholder, which is the one symptom the clause names. I reproduced the limit read-only (in-memory element screenshots, nothing written): on this host (AppleLocale en_US@rg=rszzzz) a bare date input hashes identically under context locale en-US and de-DE with --lang=en-US, and differs only under --lang=de-DE. So the limit is real and the executor's disclosure is accurate. But the disclosure lives only in a code comment: the non-check capture that writes the PNGs prints nothing, and shot()'s pinProblem cannot see the placeholder (it is not in the DOM). A maintainer regenerating shots on such a host commits host-shaped 'filters' / date-input pixels with every check green and a 'pinned' label that now over-claims.\n\nResolution asked: Make the residual visible at the moment it matters instead of only in a comment. Options, structurally preferred first: (a) in the writing path of shot() (not --check), on darwin read the OS regional format (`defaults read -g AppleLocale`, region suffix `@rg=` other than US) and refuse, or at least print a loud note naming the shots that contain a native date input; (b) add the same reading to machineFingerprint() so --repro and the provenance line quote it. Node's own Intl.DateTimeFormat().resolvedOptions().locale is NOT usable for this: it reports en-US on the overridden host. Alternatively file the date-placeholder half as its own open task/fault so it is tracked rather than documented-away.",
       "files": [
         "tools/capture-screenshots.mjs",
@@ -2781,13 +2783,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6dbd68d39bf2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/capture-screenshots.mjs plus nine cases in tools/ui-tests/capture-provenance.test.mjs. PROBE (host en_US@rg=rszzzz, 2026-10-17): a bare date input renders 'dd. mm. yyyy.' under --lang=en-US; none of these moved it: --lang=en/en_US/en-GB/en-US-u-rg-uszzzz/--accept-lang, LC_ALL/LANG/LANGUAGE, CFFIXED_USER_HOME with and without __CFPREFERENCES_AVOID_DAEMON, '-AppleLocale en_US[@rg=uszzzz]' on the browser argv via a wrapper executable, element lang; only non-English --lang changed it (de-DE, es-US). Cause shown with osascript: NSDateFormatter yMd over NSLocale.currentLocale = 'd. M. y.', over explicit en_US = 'M/d/y'. So the placeholder cannot be pinned and is READ instead. Added: readRegionalFormat() (osascript/NSLocale, darwin only, failure returned as error), pure exported regionalFormatProblem/regionalFormatBasis/dateInputProblem, visibleDateInputs() (uses checkVisibility(): a rect test alone counted a closed <details> input, caught by my in-run proof), assertDateInputCheckWorks() run by --check on every host, shot() refusal in the writing path for a shot holding a visible native date input on a differing/unreadable host, --accept-host-date-format as the explicit recorded way past (also what --repro passes), sidecar entry nativeDateInput {regionalFormat[, hostFormatAccepted]}, machineFingerprint()/--repro line 'host regional format', a --check note naming the 8 report shots affected. Evidence: refusal run (--only report --out scratch, exit 1, 8 refused, nothing written); accept run exit 0, sidecar records en_US@rg=rszzzz + hostFormatAccepted; fake-osascript clean host: exit 0, no refusal, sidecar 'en_US'; fake osascript exit 1: exit 1 'could not be read'; mutations M1 (count ignored) 1 red, M2 (compare inverted) 4 red, M3 (error as clean) 1 red, all restored byte-identical; node tools/capture-screenshots.mjs --check exit 0 on the second run (first run exit 1 on 'gate card: an event appended ... never reached the Overview table within 6.5s', unrelated to this change, not reproduced); --repro --only report exit 0 and prints the regional line; npx vitest run: 56 files, 839 passed; python3 tools/sweep-selftests.py --quiet exit 0 (335/335 files). Not run: tools/verify.sh (forbidden), the committed screenshots were NOT regenerated and captured-at.json NOT touched (existing entries lack nativeDateInput until the next capture).",
+        "descriptive": "A capture that would write PNGs with host-shaped date inputs now refuses (or, with --accept-host-date-format, writes and records the acceptance), and --check and --repro print the host regional format, instead of the limit living only in a comment."
       },
       "startedAt": "2026-10-17T09:08:35Z",
-      "completedAt": null,
+      "completedAt": "2026-10-17T10:34:11Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -2815,6 +2817,18 @@
         "runId": "2026-10-17T10:34:09Z.bba503",
         "status": "passed",
         "at": "2026-10-17T10:34:09Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6dbd68d39bf2",
+        "at": "2026-10-17T10:34:11Z",
+        "return": "docs/audit/evidence/returns/P128.46-izt/20261017T090835Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "could-not-prove",
+        "at": "2026-10-17T09:39:07Z",
+        "basis": "P128.46-izt declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P128.46-izt declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2972,7 +2986,8 @@
       "status": "in_progress",
       "description": "The regenerated ledger directory is still not removed on a signal. ledger_reproducible makes $regen under $TMPDIR and removes it by an explicit rm -rf after ledger_compare returns; an INT or TERM arriving while the generator runs now exits through the new 'exit 130/143' traps, which remove only $WORKDIR, so verify-ledger-* is left behind on that path. The task asks for cleanup 'on every return path', which is met, but the signal path the executor added in the same change leaves the very leak the title names.\n\nResolution asked: Create the directory under the already-trapped workdir: regen=$(mktemp -d \"$WORKDIR/ledger-XXXXXX\"). The EXIT trap then covers return, signal and plain exit, and the explicit rm can stay as the early release. Adjust vsh2-vsh4 so their scratch TMPDIR check looks at the workdir.",
       "files": [
-        "tools/verify.sh"
+        "tools/verify.sh",
+        "tools/gate-parity.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -3017,6 +3032,10 @@
         {
           "at": "2026-10-17T09:08:28Z",
           "text": "no tests.add clause for P128-R1: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        },
+        {
+          "at": "2026-10-17T10:49:32Z",
+          "text": "files widened by tools/gate-parity.py: widened by the integration answer"
         }
       ],
       "fixes": [
@@ -3024,9 +3043,9 @@
       ],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-17T10:19:26Z.a35ea2",
-        "status": "failed",
-        "at": "2026-10-17T10:19:26Z"
+        "runId": "2026-10-17T11:05:16Z.a06391",
+        "status": "passed",
+        "at": "2026-10-17T11:05:16Z"
       }
     },
     {
