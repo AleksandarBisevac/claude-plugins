@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'No action needed unless those contexts ever begin to photograph; if they do, they pass through shot() and are covered. Optionally note this in the PINNED_CONTEXT comment.' The diff changes only the PINNED_CONTEXT doc comment (tools/capture-screenshots.mjs ~6538-6552): the overclaiming sentence now reads 'fails the run ... IF a picture is taken from it', and a new paragraph 'THE ASSERTION LIVES IN shot(), NOT IN newContext' names the responsive-ladder, phase-order and usage share-link contexts as unasserted-because-unphotographed. The resolution asked for no mechanism (explicitly 'no action needed', note optional), so a comment-only change is the asked-for scope; the unenforced 'photograph only through shot()' rule is stated as prose and the comment itself says a bare page.screenshot would bypass it, which is honest rather than an overclaim. Claim check by reading the tree: the only page.screenshot( call is at line 6835 inside shot() (6799); the shareCtx (4396), ladderCtx (7590) and prioCtx (7665) pages have no shot()/screenshot call in their bodies (only shot(mob,...) at 7581 exists in that range). The executor's outcome describes the diff accurately, including that the description's line numbers 7340/7415 had moved.",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "Executor's redFirst is could-not-prove, quoting the helper: 'ERROR: task P128.47-izt declares no test file, so a throwaway at HEAD would prove nothing about this task's test'. The basis holds: tests.add is none and the change is a comment, so there is no test of this task to see red.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate runs whole projects (python3 tools/sweep-selftests.py, ruff/vermin, npx-level and capture --check commands), so no narrower selection is bounded; and the changed lines are a comment, with no behaviour a test could be asked to detect the deletion of."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

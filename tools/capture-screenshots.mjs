@@ -6538,9 +6538,18 @@ async function pageFixtureFacts(page) {
  * strings are painted into a committed PNG. The pair is spread into every
  * `newContext` call below (as PIN_LOCALE / PIN_TIMEZONE), and `shot()` asks each page
  * what it actually runs under before the shutter, so a context added later without
- * them fails the run on any host that is not already en-US in UTC. The browser is
- * also launched with `--lang` set to the same locale, which keeps its own UI
- * language from following the host.
+ * them fails the run on any host that is not already en-US in UTC — IF a picture is
+ * taken from it. The browser is also launched with `--lang` set to the same locale,
+ * which keeps its own UI language from following the host.
+ *
+ * THE ASSERTION LIVES IN `shot()`, NOT IN `newContext`. A context whose pages never
+ * reach `shot()` is pinned by the option bag alone and nothing asks it: the report's
+ * responsive-ladder context, the phase-order context and the usage share-link
+ * context all drive checks without a shutter. That is harmless while they write no
+ * image, since a host-shaped string they paint is read by a check and not committed.
+ * If one of them ever begins to photograph, it must do so through `shot()`, which
+ * then covers it; a picture taken any other way (a bare `page.screenshot`) would
+ * bypass the assertion.
  *
  * WHAT THIS CANNOT PIN, probed on macOS with the host's regional format overridden
  * to Serbia (`defaults read -g AppleLocale` is `en_US@rg=rszzzz`): the placeholder

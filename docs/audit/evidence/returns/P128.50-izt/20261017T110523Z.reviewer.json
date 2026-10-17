@@ -1,0 +1,17 @@
+{
+ "findings": [
+  {"id": 1, "severity": "med", "file": "tools/gate-parity.py:3647-3658",
+   "issue": "The new else branch treats any control result of zero leftover directories as a legitimate skip, including when the shell is dash. Before the diff the dash branch was check(..., len(left) == 1), so a dash that no longer left its directory behind (a dash build that honours a RETURN trap, or a changed _RETURN_TRAP_FUNC that stopped reproducing the defect) turned the suite RED. Now skip(..., absent=len(left)==0) is True in that case, so the suite is green with 'vsh5 SKIPPED HERE - under dash ... install dash to run the control'. That is the vacuous-control state the control exists to catch, and the text tells the reader to install a shell that is already running. The skip's absent evidence is read off the control's own result rather than off the platform, which is what skip()'s docstring says it must not do.",
+   "resolution": "Make the skip conditional on the shell not being dash, for example: if len(left)==1 -> real control; elif dash is None -> skip(..., len(left)==0); else check('vsh5 ... under dash the RETURN-trap spelling left %d directories, so vsh2-vsh4 and vsh9 cannot see the defect', False). That keeps the labelled skip for the no-dash machine and keeps the old red for dash."}
+ ],
+ "preExisting": [],
+ "intent": {"answer": "matches",
+  "note": "Clause 'if the suite has a skip vocabulary, use it so a reader of a clean run sees the control did not run': the diff calls _harness.skip(check, 'vsh5', ...) (label 'vsh5 SKIPPED HERE - ...') in place of check('vsh5 SKIPPED HERE ...', dash is None). Clause 'Likewise vsh2-vsh4 then run under whatever sh is': the skip text names vsh2-vsh4 and vsh9 as unable to see the defect, and the control now runs under the shell the cases ran under rather than under dash by name. The executor's outcome describes this diff accurately. I ran python3 tools/gate-parity.py --selftest once in the task tree: 143/143, vsh5 real control under dash. The one deviation from the old behaviour is finding 1: the dash-present, zero-leftover case was a failure and is now a green skip. skip() still records a passing check, labelled SKIPPED HERE, which is the vocabulary the task asked for.",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "Executor filed could-not-prove with the helper refusal verbatim: 'task P128.50-izt declares no test file, so a throwaway at HEAD would prove nothing about this task's test'. tests.add is none, so the basis holds. The executor's mutation drivers (dash hidden, control forced to two directories) are in the scratchpad, not in the tree, and were not re-run by me.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate runs the whole project (python3 tools/sweep-selftests.py), so the question does not narrow to a bounded set of selected tests."},
+ "verdict": "findings",
+ "tasks": []
+}

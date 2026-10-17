@@ -78,8 +78,10 @@
         "severity": "low",
         "file": "plugins/audit/tests/test__locks.py:556-565 (pz3) against plugins/audit/scripts/governance/_locks.py:1270-1276",
         "issue": "pz3, the over-fire direction of the new retry in acquire, cannot go red: if the `continue` fired on every dead verdict (the mutation pz3 exists to catch), acquire would re-judge the same standing claim forever, because the `continue` skips the `time.monotonic() >= deadline` check and there is no sleep. A regression would hang the suite until the sweep's per-file timeout instead of failing the case. The executor says the same ('would hang rather than fail; not separately mutated'). The 'second direction' case is therefore unproven in the way the repo's no-silent-pass rule asks.",
-        "resolution": "Bound the retry so a mutation fails by assertion: count retries (a small cap, e.g. re-ask at most a few times, then fall through to the refusal), or make the continue honour the deadline. pz3 then goes red with code != E_STALE instead of hanging. Run the unconditional-continue mutation once to confirm.",
-        "fixTask": "P128.51-izt"
+        "resolution": "fixed in P128.51-izt (8933998e3ef5): Bound the retry so a mutation fails by assertion: count retries (a small cap, e.g. re-ask at most a few times, then fall through to the refusal), or make the continue honour the deadline. pz3 then goes red with code != E_STALE instead of hanging. Run the unconditional-continue mutation once to confirm.",
+        "fixTask": "P128.51-izt",
+        "commit": "8933998e3ef5",
+        "status": "fixed"
       },
       {
         "id": "P128-R8",
@@ -121,7 +123,7 @@
         "resolution": "Declare tools/ui-tests/capture-provenance.test.mjs in `files` and `tests.add` for this task (with a --introduces red-first, since the symbols are new) before it closes."
       }
     ],
-    "outcome": "[findings: 12 - 0 high, 3 med, 9 low; 3 with a recorded fix commit]"
+    "outcome": "[findings: 12 - 0 high, 3 med, 9 low; 4 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -3134,7 +3136,7 @@
     {
       "id": "P128.51-izt",
       "title": "fix P128-R7: pz3, the over-fire direction of the new retry in acquire, cannot...",
-      "status": "in_progress",
+      "status": "done",
       "description": "pz3, the over-fire direction of the new retry in acquire, cannot go red: if the `continue` fired on every dead verdict (the mutation pz3 exists to catch), acquire would re-judge the same standing claim forever, because the `continue` skips the `time.monotonic() >= deadline` check and there is no sleep. A regression would hang the suite until the sweep's per-file timeout instead of failing the case. The executor says the same ('would hang rather than fail; not separately mutated'). The 'second direction' case is therefore unproven in the way the repo's no-silent-pass rule asks.\n\nResolution asked: Bound the retry so a mutation fails by assertion: count retries (a small cap, e.g. re-ask at most a few times, then fall through to the refusal), or make the continue honour the deadline. pz3 then goes red with code != E_STALE instead of hanging. Run the unconditional-continue mutation once to confirm.",
       "files": [
         "plugins/audit/tests/test__locks.py",
@@ -3177,14 +3179,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8933998e3ef5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/governance/_locks.py: new REVISIT_LIMIT = 3 (next to POLL_SECONDS); acquire counts `revisits` and the stamp-changed continue now fires only while revisits <= REVISIT_LIMIT, then falls through to the existing refusal (E_STALE). Requirement clauses: (1) bound the retry, count retries with a small cap: _locks.py REVISIT_LIMIT and the `revisits` counter in acquire. (2) pz3 goes red by assertion instead of hanging: test__locks.py pz3 now wraps judge with a counter and also asserts the claim was judged exactly once (the cap alone makes the over-fire end in the same E_STALE, so the answer cannot tell it from the real thing; the count can). (3) New case titled with the tests.add clause verbatim: a judge that replaces the claim on every ask (stops after 50 asks so a missing cap shows as a number, not a hang) must end E_STALE after more than 1 and at most 10 asks. (4) Run the unconditional-continue mutation once: ran via a script with mutation-landed asserts, __pycache__ purged between mutate and restore, 100s subprocess timeout, file restored (restored True). Mutation A (continue on every dead verdict, cap kept): exit 1, pz3 FAIL 137/138, no hang. Mutation B (cap removed, stamp test kept): exit 1, new case FAIL (judged 51 times), no hang. Honest limit: a mutation that deletes the cap AND the stamp test together is the original unbounded form and would still loop; the counter sits in the same block it guards. Full sweep exit 0, ruff and vermin clean.",
+        "descriptive": "The retry in acquire is capped, so a regression that re-judges every dead claim now fails pz3 and the new case by assertion rather than hanging the suite."
       },
       "startedAt": "2026-10-17T11:05:25Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T12:13:56Z",
+      "verifiedBy": [
+        "Bound the retry so a mutation fails by assertion: count retries (a small cap, e.g"
+      ],
       "notes": [
         {
           "at": "2026-10-17T09:08:32Z",
@@ -3207,6 +3211,18 @@
         "runId": "2026-10-17T12:13:44Z.a1fa71",
         "status": "passed",
         "at": "2026-10-17T12:13:44Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "8933998e3ef5",
+        "at": "2026-10-17T12:13:56Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-17T11:24:58Z",
+        "basis": "`python3 plugins/audit/tests/test__locks.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 138 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - Bound the retry so a mutation fails by assertion: count retries (a small cap, e.g (code 4, judged 51 time(s), said ['[audit-lock] index looks abandoned -- s-C', '             doing: n3', '             basis: pid 87340 is gone on this host', '             Confirm with the human, then rerun with --takeover.']) (house FAIL): SELFTEST FAILED: 137/138 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
