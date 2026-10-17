@@ -1,0 +1,36 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py --quiet": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- ...": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-17T14:20:48Z",
+    "basis": "`python3 plugins/audit/tests/test__refs.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 354 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sc21 (house FAIL), sc23 (house FAIL): SELFTEST FAILED: 352/354 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "HEAD ea7e63b8 before first edit. plugins/audit/scripts/_refs.py: new _host_format_findings(rel, entry) (_refs.py ~3404) returns one finding when entry.nativeDateInput is an object whose hostFormatAccepted is literally True; called from screenshot_capture_drift for every entry whose bytes were readable, independent of the version/hash/uiDigest elif chain so a stale AND host-shaped picture gets both findings; the screenshot_capture_drift docstring lists it. DECISION fail not warn: the rule has no warning tier (its findings are what verify.sh follower 4 and CI fail on), a warning nobody must read restores the silence the fault names, and the only way to carry the record is a deliberate capture-time override; repair is one re-capture on a host the check passes on - reasoning is in _host_format_findings docstring. plugins/audit/tests/test__refs.py: sc21 (title carries the tests.add clause verbatim: accepted entry -> exactly one finding on that image naming hostFormatAccepted and host-shaped, sibling entry with only regionalFormat unnamed), sc22 (allow direction: format-only entry, hostFormatAccepted false, and non-object nativeDateInput all give []), sc23 (stale + accepted gives two findings, one each). tools/capture-screenshots.mjs: header comment on --accept-host-date-format now says screenshot_capture_drift reports the record (node --check ok). Mutations in a scratch copy of the tree: over-fire (key presence instead of is True) -> sc22 red 353/354; never-fires (condition replaced by True) -> sc21 and sc23 red 352/354. Full `python3 tools/sweep-selftests.py --quiet` run in foreground: exit 0, 335/335 files ok, 16646 cases. ruff exit 0, vermin exit 0. Did not run capture-screenshots/check-report-interactive/verify.sh per addendum. Committed sidecar holds no hostFormatAccepted entry (grep -c = 0), so the live sc1 stays green.\n\nclaims:\n1 _refs.py _host_format_findings returns the finding only when nativeDateInput.hostFormatAccepted is True; called inside the per-image loop of screenshot_capture_drift; docstrings say 'finding, not a warning' because the function returns the list verify.sh follower 4 fails on (tools/verify.sh:739)\n2 never-fires mutation -> sc21, sc23 red (352/354); over-fire mutation (key presence) -> sc22 allow case red (353/354); both done in a scratch rsync copy, shared tree untouched; sc22 is the allow case and comments say which mutation it is for\n3 grep for hostFormatAccepted in plugins tools: writers are capture-screenshots.mjs shotWriteDecision (only place that writes it), reader now _refs.py; tools/prove-gates.py rows for screenshot_capture_drift left, because they mutate other branches and prove-gates is outside this task's files; the release-set check (verify.sh follower 4) already runs screenshot_capture_drift so no second reader was needed\n4 n/a - no rule addressed to an agent\n5 n/a - no property measured; mutation results are deterministic selftest tallies\n6 n/a - no guard reading a command; the decision reads a parsed JSON field\n7 n/a - no number written into prose",
+    "descriptive": "A committed screenshot written under --accept-host-date-format now fails screenshot_capture_drift (and so the release follower) instead of passing silently."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__refs.py: sc21 File a follow-up task: have screenshot_capture_drift, or the release-set check, report any image whose entry has hostFormatAccepted true, so a release cannot ...",
+    "plugins/audit/tests/test__refs.py: sc22 allow direction",
+    "plugins/audit/tests/test__refs.py: sc23 stale and host-shaped both reported"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test__refs.py: File a follow-up task: have screenshot_capture_drift, or the release-set check, report any image whose entry has hostFormatAccepted true, so a release cannot ...": {
+      "file": "plugins/audit/scripts/_refs.py",
+      "find": "native.get(\"hostFormatAccepted\") is not True",
+      "replace": "True",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__refs.py",
+        "--selftest"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:2d9cb1595382f0860e9d6d6da5dce29c789795c0a80c64bf52e3b7379e689276\",\"dirtyDigest\":\"sha256:f55e45a48baff638dd4fcecd2f31fef7c201e01af6aed052bb9d8e0431f03e6c\",\"dirtyPaths\":{\"plugins/audit/scripts/_refs.py\":\"a919999d076ece76\",\"plugins/audit/tests/test__refs.py\":\"5a26def039d9c94e\",\"tools/capture-screenshots.mjs\":\"c093f71b6561fe32\"},\"head\":\"ea7e63b8\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/_refs.py\",\"plugins/audit/tests/test__refs.py\",\"tools/capture-screenshots.mjs\"],\"scopeDigest\":\"sha256:502617427b0a004f2e02c98f72020b363648a5e988bf6d4c6763f44fc2b7f4fa\",\"v\":2}"
+}

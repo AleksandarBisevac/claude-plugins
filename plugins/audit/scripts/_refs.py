@@ -3401,6 +3401,41 @@ def _ui_source_findings(rel, entry, digests):
     return []
 
 
+def _host_format_findings(rel, entry):
+    """[(rel, line, problem), ...] - whether one image was written under the escape.
+
+    `tools/capture-screenshots.mjs` refuses a shot whose native date inputs paint the
+    host's regional format, unless it is run with `--accept-host-date-format`, and
+    then records `nativeDateInput.hostFormatAccepted: true` beside the picture. The
+    record is a basis; this is the claim made from it, so that a committed picture
+    whose date fields are host-shaped is not something only a reader of the sidecar
+    can learn.
+
+    A FINDING, NOT A WARNING. This rule has no warning tier - what it returns is
+    what `verify.sh` and CI fail on - and a warning nobody is made to read would
+    restore the silence this exists to end. The picture is also not merely
+    imperfect: its date fields show a format the product does not paint on the
+    reference host, and the only way an entry carries the record is a deliberate
+    override at capture time, which was already loud. Keeping the committed state
+    loud too costs one re-capture on a host the check passes on, and it is the
+    escape's own contract - the capture's note says the picture is written
+    "as asked", not that it is fit to ship.
+
+    ONLY A LITERAL `true` COUNTS. The tool never writes `false` (it leaves the key
+    out), so an entry saying `false`, one with a `nativeDateInput` that is not an
+    object, and one with none at all are all entries no escape wrote.
+    """
+    native = entry.get("nativeDateInput")
+    if not isinstance(native, dict) or native.get("hostFormatAccepted") is not True:
+        return []
+    return [(rel, 0, "was written under --accept-host-date-format "
+                     "(hostFormatAccepted: true, regional format %r), so its date "
+                     "fields are host-shaped rather than en_US - re-run "
+                     "`node tools/capture-screenshots.mjs` on a host the check "
+                     "passes on and commit the result"
+                     % (native.get("regionalFormat"),))]
+
+
 def screenshot_capture_drift(repo_root=None):
     """[(rel, line, problem), ...] - a committed screenshot that no longer shows this build.
 
@@ -3451,6 +3486,9 @@ def screenshot_capture_drift(repo_root=None):
       whose bytes have changed since it was written; and one per image whose
       recorded source digest is absent, names a surface this tree does not
       assemble, or no longer matches.
+    - and one per image whose entry records `nativeDateInput.hostFormatAccepted:
+      true`, in addition to any of the above (`_host_format_findings()` says why
+      that is a finding and not a warning).
 
     WHAT THE HASH IS FOR. Without it the sidecar could be edited into agreement
     while the pictures stayed stale, and this rule would pass on a file someone
@@ -3532,6 +3570,10 @@ def screenshot_capture_drift(repo_root=None):
             # image is what a reader can act on. A stale version already says
             # "re-capture"; saying it twice about one picture is noise.
             out.extend(_ui_source_findings(rel, entry, ui["digests"]))
+        # Its own question, asked of every entry whose bytes could be read: the repair
+        # differs from a stale build's (another host), so it may not be swallowed by
+        # the chain above.
+        out.extend(_host_format_findings(rel, entry))
     for name in sorted(images):
         if name not in names:
             out.append((_CAPTURED_AT, 0,

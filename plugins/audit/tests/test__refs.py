@@ -2367,6 +2367,60 @@ def _cases(check):
               "re-capture records it, reports nothing again: %r"
               % (_sc_recaptured,), _sc_recaptured == [])
 
+        # --- sc21-sc23: a picture written under --accept-host-date-format ----
+        # Everything else about these fixtures agrees (bytes, version, digest), so a
+        # finding here can only be the date-format record.
+        _sc_host = _sc_entries()
+        _sc_host["one.png"]["nativeDateInput"] = {
+            "regionalFormat": "en_US@rg=rszzzz", "hostFormatAccepted": True}
+        _sc_host["two.png"]["nativeDateInput"] = {"regionalFormat": "en_US"}
+        _sc_sidecar(tmp, _sc_host)
+        _sc_hostf = M.screenshot_capture_drift(tmp)
+        check("sc21 File a follow-up task: have screenshot_capture_drift, or the "
+              "release-set check, report any image whose entry has "
+              "hostFormatAccepted true, so a release cannot ... ship host-shaped "
+              "pictures unnoticed - exactly one finding, about that image, naming "
+              "the field, while the entry beside it that recorded only its format "
+              "is not named: %r" % (_sc_hostf,),
+              len(_sc_hostf) == 1 and _sc_hostf[0][0] == _sc_a
+              and "hostFormatAccepted" in _sc_hostf[0][2]
+              and "host-shaped" in _sc_hostf[0][2]
+              and _sc_named(_sc_hostf, _sc_b) == [])
+
+        # THE SECOND-DIRECTION CASE: it passes on a rule that never fires, and is the
+        # only one that fails if the finding becomes unconditional - on every entry
+        # with a nativeDateInput record, or on one that says `false`, or on one whose
+        # shape is not an object. Each of those is an entry no escape wrote.
+        _sc_clean = _sc_entries()
+        _sc_clean["one.png"]["nativeDateInput"] = {"regionalFormat": "en_US"}
+        _sc_clean["two.png"]["nativeDateInput"] = {
+            "regionalFormat": "en_US", "hostFormatAccepted": False}
+        _sc_sidecar(tmp, _sc_clean)
+        _sc_cleanf = M.screenshot_capture_drift(tmp)
+        _sc_clean["two.png"]["nativeDateInput"] = "not an object"
+        _sc_sidecar(tmp, _sc_clean)
+        _sc_oddf = M.screenshot_capture_drift(tmp)
+        check("sc22 an entry that recorded a format without the escape, one that "
+              "says false, and one whose record is not an object are all quiet: "
+              "%r %r" % (_sc_cleanf, _sc_oddf),
+              _sc_cleanf == [] and _sc_oddf == [])
+
+        # The record is a second question, not a variant of the first: a picture that
+        # is ALSO stale owes both repairs, so neither finding may swallow the other.
+        _sc_both_bad = _sc_entries()
+        _sc_both_bad["one.png"]["version"] = "0.0.1"
+        _sc_both_bad["one.png"]["nativeDateInput"] = {
+            "regionalFormat": "en_US@rg=rszzzz", "hostFormatAccepted": True}
+        _sc_sidecar(tmp, _sc_both_bad)
+        _sc_bothf = M.screenshot_capture_drift(tmp)
+        check("sc23 a stale picture that was also written under the escape gets BOTH "
+              "findings, each about the same image: %r" % (_sc_bothf,),
+              len(_sc_bothf) == 2
+              and len(_sc_named(_sc_bothf, _sc_a)) == 2
+              and sum("0.0.1" in f[2] for f in _sc_bothf) == 1
+              and sum("hostFormatAccepted" in f[2] for f in _sc_bothf) == 1)
+        _sc_sidecar(tmp, _sc_entries())
+
         shutil.rmtree(os.path.join(tmp, *(_sc_ui_dir.split("/"))))
         _sc_nosrc = M.screenshot_capture_drift(tmp)
         check("sc19 UI sources that cannot be walked are ONE finding and the rule "

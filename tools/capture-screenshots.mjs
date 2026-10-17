@@ -140,8 +140,10 @@ const REPRO = argv.includes('--repro');
  * with no way past it would leave a release re-capture impossible there. So the way
  * past is explicit, loud, and written down — the entry in captured-at.json then reads
  * `nativeDateInput: {regionalFormat, hostFormatAccepted: true}`, so the committed
- * record says that picture's date fields are host-shaped. --repro passes it to its two
- * captures, which land in directories it deletes. It changes nothing for a host the
+ * record says that picture's date fields are host-shaped. `_refs.screenshot_capture_drift()`
+ * reports every committed picture whose entry carries it, so the escape lets a
+ * capture happen on such a host but not a release ship its result. --repro passes it
+ * to its two captures, which land in directories it deletes. It changes nothing for a host the
  * check passes on, and does not touch any other refusal.
  */
 const ACCEPT_HOST_DATE_FORMAT = argv.includes('--accept-host-date-format');
