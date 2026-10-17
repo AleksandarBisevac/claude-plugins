@@ -103,7 +103,7 @@
     {
       "id": "P128.2-0h5",
       "title": "A long phase dispatches CI on its branch at a configured cadence, not only at landing",
-      "status": "in_progress",
+      "status": "done",
       "description": "P123 ran about 2.5 days and about 90 tasks with no CI run between its start and its landing, so nine windows-latest regressions it introduced surfaced only at the 3.3.0 cut (run 38299118105) and cost a fix phase (P126). The drive already pushes ci/ branches; give it a cadence: `ci.cadence` in config (every N task closes and/or every H hours of phase time, absent = landing only), on which it pushes the phase tip to ci/<phase> and dispatches the workflow without waiting, and reads the result at the next close; a red files a bug through ci-red-files-bug. Doctor reports the setting. Source: testbed monitor, 2026-10-12.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -158,14 +158,16 @@
       ],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4bedb70009c0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: new section 'CI at a cadence' (ci_run seam, ci_due, ci_settle, ci_dispatch, ci_after_close, ci_before_signoff); close_task calls ci_after_close after the done verb, sign_off calls ci_before_signoff. At a due close it pushes +<sha>:refs/heads/ci/<phase lower> and runs `gh workflow run <workflow> --ref ci/<phase>` without waiting; the next close (and sign-off) does one `gh run list` read for that sha; failure/timed_out/startup_failure files a high bug via audit-task.py bug-add naming branch, sha, run id and URL; a run still going/not listed/unreadable is said and nothing is piled on; a failed push/dispatch is said and retried at the next close; no ci.cadence = zero CI calls. _config_rules.py: root key ci (KNOWN_CI, KNOWN_CI_CADENCE), ci_cadence_setting() refusing closes<1, hours<=0, empty cadence, blank workflow; _check_ci in validate_config; OFF_ROOT['hooks DEFAULTS']['ci'] with reason. schema/audit-config.schema.json publishes ci (cadence.closes, cadence.hours, workflow). _panel_settings.py: a 'ci' Settings group with leaf controls ci.cadence.closes, ci.cadence.hours, ci.workflow and FIELD_HELP; test__panel_settings.py: container map + group tuple + case ps4. _doctor_setup.py: check_ci_cadence row 'ci cadence' reached from check_config, reading the config FILE (not the hooks merge), reporting effective triggers, workflow and source path OK, the absence said as landing-only (naming 'no config file' when there is none), the driver's own refusal as a finding, and nothing for an unreadable config; test__doctor_setup.py cases ci1-ci7. New reference/config.md. plugins/audit/README.md carries the ci.cadence and ci.workflow rows: README is NOT in the task's files and the brief names no follower rule for it; it is kept because test__config_rules cv1 reads the README's Configuration table as one of the surfaces that must publish every KNOWN_ROOT key, and it reported 'README: does not publish ci' before the rows were added - reverting it turns cv1 red, and the rows cannot move to reference/config.md because cv1 does not read that file. The plan gate allowed the edit (docs path). test_drive_phase.py: stage ci-block, 12 cases titled with the tests.add clause, ci_run faked so no remote or gh is touched. Evidence: ci-block 12/12; full `python3 tools/sweep-selftests.py --quiet` exit 0 (335/335 files ok, 16552 cases); ruff and vermin clean. PREMISE CORRECTIONS: (1) the drive did NOT already push ci/ branches - only tools/release.py does, for release tags - so there was no existing landing dispatch and 'absent, it dispatches only at landing' is asserted as zero CI calls at any close; no landing dispatch was added. (2) 'ci-red-files-bug' does not exist (P128.1-0h5, which would have read failing jobs and cases, is cancelled), so a red files a plain high bug naming the run and URL without per-job/case detail.",
+        "descriptive": "A phase can ask CI about itself every N closes or H hours, non-blocking, with a red filed as a bug; schema, Settings panel group and doctor row publish and report it."
       },
       "startedAt": "2026-10-16T22:50:08Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-16T23:24:42Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py: with ci.cadence every 3 closes the drive dispatches CI on the third close and not before, never waits on it, and reads its verdict at the next close; absent, it dispatches only at landing"
+      ],
       "movedFrom": {
         "id": "P125.25",
         "phase": "P125",
@@ -182,7 +184,19 @@
           "at": "2026-10-16T23:13:20Z",
           "text": "files widened by plugins/audit/README.md, plugins/audit/tests/test__doctor_setup.py: widened by the integration answer"
         }
-      ]
+      ],
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "4bedb70009c0",
+        "at": "2026-10-16T23:24:42Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-16T23:00:08Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage ci-block` in a throwaway tree at HEAD exited 1 on \"AttributeError: module 'ci_cadence_mod' has no attribute 'ci_run'\" (read as python), and the task introduces 'ci_run': absent from HEAD's plugins/audit/scripts/governance/drive-phase.py, plugins/audit/scripts/config/_config_rules.py, plugins/audit/reference/config.md, plugins/audit/schema/audit-config.schema.json, plugins/audit/scripts/panel/_panel_settings.py, plugins/audit/scripts/status/_doctor_setup.py and present in the working tree's plugins/audit/scripts/governance/drive-phase.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
     },
     {
       "id": "P128.3-0h5",
@@ -1134,7 +1148,7 @@
     {
       "id": "P128.22-0h5",
       "title": "A filed task's work travels in a ref, so a pause that moves machines keeps it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F661. A filed-but-uncommitted task's work lived only in its wave tree, so the machine move lost it while the plan said rerun; the handover's unblock line was also a no-op. Carry a filed task's diff in a ref (or have pause push each tree and refuse to report paused until it has), and make the handover's unblock line follow blocked_remedy.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1156,28 +1170,48 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "plugins/audit/tests/test_drive_phase.py: a pause with a filed wave member, its tree deleted and the drive resumed on a fresh clone, finds the member's work": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_drive_phase.py",
+              "--selftest",
+              "--stage",
+              "cr-block"
+            ],
+            "file": "plugins/audit/scripts/governance/drive-phase.py",
+            "find": "            restore_carry(ctx, task, tree)\n",
+            "replace": "            pass\n"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [],
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-16T23:24:44Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T00:03:19Z.113758",
+        "status": "passed",
+        "at": "2026-10-17T00:03:19Z"
+      }
     },
     {
       "id": "P128.23-0h5",
       "title": "A batch add has a dry run that its own refusal names correctly",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F662. add --from-file --dry-run says to put --dry-run in the file; the file with dryRun is refused as an unread key.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1206,16 +1240,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-16T23:24:46Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P128.24-0h5",
@@ -1263,7 +1298,7 @@
     {
       "id": "P128.25-0h5",
       "title": "Screenshot capture pins its browser locale and timezone, so committed images carry no host format",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F680. capture-screenshots.mjs sets no locale/timezone; the report's date inputs render the host placeholder (dd. mm. 2026.) in committed shots since v3.3.0.",
       "files": [
         "tools/capture-screenshots.mjs"
@@ -1291,16 +1326,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-16T23:24:48Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P128.27-0h5",

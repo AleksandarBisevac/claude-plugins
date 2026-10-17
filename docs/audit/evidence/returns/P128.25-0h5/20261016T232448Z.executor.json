@@ -1,0 +1,36 @@
+{
+  "gates": {
+    "node tools/capture-screenshots.mjs --check": "pass",
+    "python3 tools/sweep-selftests.py --quiet": "pass",
+    "npx vitest run": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-16T23:47:05Z",
+    "basis": "`node tools/capture-screenshots.mjs --check` in a throwaway tree at HEAD: inline suite tools/capture-screenshots.mjs (its test file is its implementation file): it is not Python, and an inline suite's test hunks are read from Python definitions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/capture-screenshots.mjs only. Added exported PINNED_CONTEXT {locale en-US, timezoneId UTC, numberSample '1,234,567.5'} and pure exported pinProblem(facts); pageContextFacts reads Intl locale, navigator.language, Intl timezone and (1234567.5).toLocaleString() from the live page; shot() calls pinProblem before the --check return (so every shutter asks, in --check too); assertPinDetectorRejects(browser) runs first in main()'s try and opens a deliberate de-DE/Asia/Tokyo context, failing the run if pinProblem does not reject it (the control is not an unpinned context, since on an en-US/UTC host that is indistinguishable). All 9 browser.newContext sites for captures now carry locale: PIN_LOCALE, timezoneId: PIN_TIMEZONE; chromium.launch also gets --lang=en-US. Header comment of --check updated. Probes (Playwright, this macOS host, AppleLocale en_US@rg=rszzzz, tz Europe/Belgrade): context locale/timezoneId reach Intl, navigator.language, Date and toLocaleString. BUT the native <input type=date> placeholder ('dd. mm. yyyy.') did NOT move under: context locale (en-US,en,en-GB,en-CA,en-AU,fr-FR,ja-JP,de-DE,sr-RS all identical), element lang, --lang=en-US/en-GB/en, env LANG/LC_ALL/LANGUAGE, CFFIXED_USER_HOME with a planted .GlobalPreferences; only --lang=de-DE / fr-FR changed it. Playwright also refuses '-AppleLocale en_US' launch args ('Arguments can not specify page to be opened'). Gates: --check exit 0 (green run emitted the control note); full sweep 335/335 files ok exit 0; npx vitest run 56 files / 830 tests passed. Falsifier verified by hand in a throwaway copy tools/.fals-tmp.mjs (removed): replacing the control context's de-DE/Asia/Tokyo with en-US/UTC under --check --only report exited 1 with 'context pin: a de-DE / Asia/Tokyo context passed pinProblem'. Requirement clauses: (a) set locale/timezone: done at the 9 newContext sites (grep -n 'locale: PIN_LOCALE' tools/capture-screenshots.mjs); asserted before shutter: done in shot(); unpinned fails the check: done (red above). (b) 'report's date inputs render the host placeholder in committed shots': NOT fixed, because no lever was found for the native control on macOS with a regional-format override; documented in PINNED_CONTEXT's doc comment, so committed shots of those inputs remain host-shaped on such a host. No PNGs were regenerated (capture is the orchestrator's browser step).",
+    "descriptive": "Capture contexts now run en-US/UTC and every shutter asserts it, with a negative control; the native date-input placeholder remains host-shaped on macOS regional overrides, documented not fixed."
+  },
+  "testsAdded": [
+    "tools/capture-screenshots.mjs: the capture context runs with a pinned locale and timezone, asserted before the first shutter, and an unpinned context fails the check"
+  ],
+  "falsifiers": {
+    "tools/capture-screenshots.mjs: the capture context runs with a pinned locale and timezone, asserted before the first shutter, and an unpinned context fails the check": {
+      "file": "tools/capture-screenshots.mjs",
+      "find": "browser.newContext({ locale: 'de-DE', timezoneId: 'Asia/Tokyo' })",
+      "replace": "browser.newContext({ locale: 'en-US', timezoneId: 'UTC' })",
+      "command": [
+        "node",
+        "tools/capture-screenshots.mjs",
+        "--check",
+        "--only",
+        "report"
+      ]
+    }
+  },
+  "claims": "claims:\n1 tools/capture-screenshots.mjs: PINNED_CONTEXT doc comment states only what the code does (pair on the 9 newContext calls, shot() asks each page, --lang launch arg) and what probes found not pinned (native date placeholder)\n2 control context de-DE/Asia/Tokyo replaced by en-US/UTC -> --check --only report exit 1 'passed pinProblem'; unpinned code -> --check exit 1 with 25 problems; both on throwaway copy or pre-pin state, tree untouched. No over-fire mutation run: the allow case is the green --check exit 0\n3 grep -n 'newContext({' : 10 code hits plus 1 comment - 9 capture contexts pinned, 1 deliberate control left de-DE/Tokyo by design; contexts in tools/ui-checks and check-report-interactive.mjs not touched (outside files scope)\n4 n/a - no rule to an agent\n5 --check run green once after the change (about 5 min wall); red once before; measured once, not repeated with a gap\n6 n/a - no guard reading commands\n7 n/a - no number written into prose beyond probe counts quoted with their command",
+  "stamp": "audit-stamp: {\"content\":\"sha256:031bb7783c334f540e180ba39fc7550c464a174f462b023e1df8d064c5265e03\",\"dirtyDigest\":\"sha256:5befb176cc368a47bafe4a6899b83470721f76e9a78e259b42e48726c9badb3a\",\"dirtyPaths\":{\"tools/capture-screenshots.mjs\":\"d52c20dee4aee44c\"},\"head\":\"4bedb700\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/capture-screenshots.mjs\"],\"scopeDigest\":\"sha256:31797d63e1234b12204d8f4d7534ca650322aa57587508f4fe02e028ab91124f\",\"v\":2}"
+}

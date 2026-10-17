@@ -90,6 +90,16 @@ when it holds nothing the phase tree lacks; when every member is terminal or
 blocked the wave ends and the next is selected. An absent width, or 1, never
 reaches any of this: the drive is the serial one, row for row.
 
+WHERE A FILED MEMBER'S WORK LIVES BETWEEN FILING AND CLOSE: in its tree, and also
+in `refs/audit/carry/<taskId>`, a commit on the tree's HEAD that `submit` writes
+(in a scratch index, so the tree is untouched) and pushes to `origin` when the
+repository has one. A hand-off that moves machines carries the records and not
+the trees, so the next `next` with no wave recorded reopens one over the
+in-progress tasks whose return is filed and whose carry exists here or on
+`origin`, and a tree cut for a filed member starts from its carry. A `submit`
+that could not push says so on its did-line: the work is then in this
+repository's ref alone. A task's carry is taken down when it is terminal.
+
 WHAT THE DRIVER KEEPS: one file per phase under `stateDir/drive/`, holding what no
 verb records - which brief it handed to an agent for which start, whether it
 took the phase lock or was handed it, the findings it already filed, and the
@@ -2447,6 +2457,175 @@ def tree_work(tree):
     return done.stdout, ""
 
 
+# --- a filed member's work, carried in a ref -----------------------------------
+# A wave member's bytes live in its tree until the drive integrates them. A hand
+# off that moves machines takes the records and not the tree, so the plan reads
+# "filed" while the work is gone. The filing therefore leaves the work in a ref
+# of the repository (objects are shared with the trees) and pushes it to the
+# remote, and the next tree cut for a member whose return is filed starts from it.
+CARRY_NS = "refs/audit/carry/"
+CARRY_REMOTE = "origin"
+CARRY_IDENT = {"GIT_AUTHOR_NAME": "audit-carry", "GIT_COMMITTER_NAME": "audit-carry",
+               "GIT_AUTHOR_EMAIL": "audit-carry@localhost",
+               "GIT_COMMITTER_EMAIL": "audit-carry@localhost"}
+
+
+def carry_ref(task_id):
+    """The ref holding a task's carried work."""
+    safe = re.sub(r"[^A-Za-z0-9._-]", "-", str(task_id)).strip(".-") or "task"
+    return CARRY_NS + safe
+
+
+def carry_git(where, argv, env=None, stdin=None):
+    """`(code, stdout_bytes, stderr_text)` of one git call in `where`; code 127
+    and the exception's name when git could not be started."""
+    try:
+        done = subprocess.run(["git", "-C", where] + list(argv), input=stdin,
+                              env=env, capture_output=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return 127, b"", exc.__class__.__name__
+    return done.returncode, done.stdout, _clip(
+        done.stderr.decode("utf-8", "replace").strip(), 120)
+
+
+def carry_commit(tree, records, task_id):
+    """`(sha, why)` - a commit on HEAD of `tree` holding everything the tree
+    changed, untracked files included and the record paths left out (those are
+    the phase tree's own, put there by the refresh). Built in a scratch index, so
+    the tree's index, HEAD and files are untouched; `sha` is None beside the
+    reason git could not say."""
+    scratch = tempfile.mkdtemp(prefix="audit-carry-")
+    try:
+        env = dict(os.environ, GIT_INDEX_FILE=os.path.join(scratch, "index"),
+                   **CARRY_IDENT)
+        for argv in (["read-tree", "HEAD"], ["add", "-A"]):
+            code, _out, err = carry_git(tree, argv, env)
+            if code != 0:
+                return None, err or "git %s exited %d" % (argv[0], code)
+        code, out, err = carry_git(tree, ["diff", "--cached", "--name-only", "-z",
+                                          "HEAD"], env)
+        if code != 0:
+            return None, err or "git diff exited %d" % (code,)
+        names = [n.decode("utf-8", "replace") for n in out.split(b"\0") if n]
+        records_in = [n for n in names if _invariants.is_record_path(n, records)]
+        for at in range(0, len(records_in), 100):
+            code, _out, err = carry_git(tree, ["reset", "-q", "HEAD", "--"]
+                                        + records_in[at:at + 100], env)
+            if code != 0:
+                return None, err or "git reset exited %d" % (code,)
+        code, out, err = carry_git(tree, ["write-tree"], env)
+        if code != 0:
+            return None, err or "git write-tree exited %d" % (code,)
+        code, head, err = carry_git(tree, ["rev-parse", "HEAD"], env)
+        if code != 0:
+            return None, err or "git named no HEAD"
+        code, out2, err = carry_git(tree, [
+            "commit-tree", out.decode("utf-8").strip(), "-p",
+            head.decode("utf-8").strip(), "-m", "work of %s" % (task_id,)], env)
+        if code != 0:
+            return None, err or "git commit-tree exited %d" % (code,)
+        return out2.decode("utf-8").strip(), ""
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def carry_remote(ctx):
+    """The remote the carry travels by, or None when the repository has none."""
+    code, out, _err = carry_git(ctx["gitRoot"], ["remote"])
+    names = out.decode("utf-8", "replace").split() if code == 0 else []
+    return CARRY_REMOTE if CARRY_REMOTE in names else None
+
+
+def carry_work(ctx, task, tree, records):
+    """Leave a filed member's work in `refs/audit/carry/<id>` and push it. What
+    could not be done is said on the did-line, never raised and never silent:
+    the filing stands, but the work then lives in the tree alone."""
+    sha, why = carry_commit(tree, records, task["id"])
+    if sha is None:
+        ctx["did"].append("work of %s not carried: %s" % (task["id"], why))
+        return
+    ref = carry_ref(task["id"])
+    code, _out, err = carry_git(ctx["gitRoot"], ["update-ref", ref, sha])
+    if code != 0:
+        ctx["did"].append("work of %s not carried: update-ref %s" % (task["id"], err))
+        return
+    remote = carry_remote(ctx)
+    if remote is None:
+        ctx["did"].append("work of %s carried in %s, local only: the repository "
+                          "has no %s" % (task["id"], ref, CARRY_REMOTE))
+        return
+    code, _out, err = carry_git(ctx["gitRoot"], ["push", "-q", remote,
+                                                 "+%s:%s" % (ref, ref)])
+    ctx["did"].append("work of %s carried in %s%s" % (
+        task["id"], ref, (" and pushed to %s" % (remote,)) if code == 0 else
+        ", local only: the push to %s failed (%s)" % (remote, err)))
+
+
+def carried_commit(ctx, task_id):
+    """The commit `refs/audit/carry/<id>` names here, fetched from the remote
+    when this repository does not hold it; None when neither has it."""
+    ref = carry_ref(task_id)
+    for fetch in (False, True):
+        if fetch:
+            remote = carry_remote(ctx)
+            if remote is None or carry_git(ctx["gitRoot"], [
+                    "fetch", "-q", remote, "+%s:%s" % (ref, ref)])[0] != 0:
+                return None
+        code, out, _err = carry_git(ctx["gitRoot"], [
+            "rev-parse", "--verify", "--quiet", ref + "^{commit}"])
+        if code == 0 and out.strip():
+            return out.decode("utf-8").strip()
+    return None
+
+
+def restore_carry(ctx, task, tree):
+    """Put the work a filed member left in its carry ref into `tree`, a tree cut
+    fresh for it. Only for a member whose return is filed for its current start,
+    and only into a tree that holds nothing yet, so a carry from an earlier
+    attempt, or a tree adopted with its work, is never laid over. Said on the
+    did-line either way; the gate that follows is what measures the result."""
+    if not already_filed(ctx, task):
+        return
+    sha = carried_commit(ctx, task["id"])
+    if sha is None:
+        ctx["did"].append("%s is filed and its tree is new, and no %s exists here "
+                          "or on %s: the work cannot be recovered" % (
+                              task["id"], carry_ref(task["id"]), CARRY_REMOTE))
+        return
+    code, out, err = carry_git(tree, ["status", "--porcelain", "--untracked-files=all"])
+    if code != 0 or out.strip():
+        ctx["did"].append("tree of %s already holds changes, so its carry is not "
+                          "applied%s" % (task["id"], (": " + err) if err else ""))
+        return
+    code, patch, err = carry_git(tree, ["diff", "--binary", sha + "^", sha])
+    if code != 0:
+        ctx["did"].append("carry of %s unreadable: %s" % (task["id"], err))
+        return
+    if patch:
+        code, _out, err = carry_git(tree, ["apply", "--binary", "--whitespace=nowarn"],
+                                    stdin=patch)
+        if code != 0:
+            ctx["did"].append("carry of %s does not apply to its tree: %s"
+                              % (task["id"], err))
+            return
+    ctx["did"].append("work of %s restored from %s" % (task["id"], carry_ref(task["id"])))
+
+
+def drop_carry(ctx, task_id):
+    """Take a closed task's carry down, here and on the remote. Nothing is run
+    for a task that left none."""
+    ref = carry_ref(task_id)
+    if carry_git(ctx["gitRoot"], ["rev-parse", "--verify", "--quiet", ref])[0] != 0:
+        return
+    carry_git(ctx["gitRoot"], ["update-ref", "-d", ref])
+    remote = carry_remote(ctx)
+    if remote is not None:
+        code, _out, err = carry_git(ctx["gitRoot"], ["push", "-q", remote, ":" + ref])
+        if code != 0:
+            ctx["did"].append("carry of %s dropped here, not on %s (%s)" % (
+                task_id, remote, err))
+
+
 def recut_tree(ctx, state, task):
     """Recut a member's tree at the phase HEAD with its work in it, and measure
     its gate again over the new tree. None, or the stop. The work is read before
@@ -2544,6 +2723,7 @@ def step_member(ctx, state, task_id):
         task = _mio.tasks_by_id(manifest).get(task_id) or {}
         status = task.get("status")
         if status in _mio.TERMINAL:
+            drop_carry(ctx, task_id)
             stop = retire_member(ctx, state, task)
             return ("stop", stop) if stop is not None else ("idle", None)
         if status == "blocked":
@@ -2564,6 +2744,7 @@ def step_member(ctx, state, task_id):
             tree, stop = add_tree(ctx, state, task)
             if stop is not None:
                 return "stop", stop
+            restore_carry(ctx, task, tree)
         said = advance(ctx, state, manifest, phase, task, tree=tree)
         if said is None:
             continue
@@ -2604,12 +2785,31 @@ def walk_wave(ctx, state):
     return None
 
 
+def carried_members(ctx, phase):
+    """The ids of the in-progress tasks that were wave members whose state this
+    machine lacks: each one's executor return is filed for its current start and
+    its work waits in a carry ref. Asked only where no wave is recorded and the
+    width allows one - a carry is left only by a wave member, so a drive that
+    never ran a wave asks nothing of the remote."""
+    return sorted((t["id"] for t in _tasks(phase)
+                   if t.get("status") == "in_progress" and already_filed(ctx, t)
+                   and carried_commit(ctx, t["id"])), key=_id_key)
+
+
 def wave_step(ctx, state, manifest, phase, width, basis):
     """The wave's step: walk the one open, else open one when no task is in
     progress and `_wave.select` picks two or more ready tasks. NO_WAVE when
     neither applies, so the serial step runs."""
     if not state.get("wave"):
-        if width < 2 or any(t.get("status") == "in_progress" for t in _tasks(phase)):
+        if width < 2:
+            return NO_WAVE
+        carried = carried_members(ctx, phase)
+        if carried:
+            ctx["did"].append("wave resumed over %s: no wave is recorded here, and "
+                              "their filed work waits in carry refs" % (
+                                  ", ".join(carried),))
+            return open_wave(ctx, state, carried, width, basis)
+        if any(t.get("status") == "in_progress" for t in _tasks(phase)):
             return NO_WAVE
         ready = set(_status_facts.ready_tasks(manifest))
         picked = _wave.select(sorted((t for t in _tasks(phase) if t["id"] in ready),
@@ -4398,11 +4598,10 @@ def take_stamp(ctx, task, tree=None):
     return line, None
 
 
-def submit_tree(ctx, phase, task):
-    """`(tree, None)` - the worktree the driver's open wave gave `task`, or None
-    when the task runs in the phase tree - or `(None, stop)` when the wave names
-    a tree that is gone. Read from the driver's state, never from the agent's
-    working directory: an agent's shell does not stay where it was put."""
+def wave_state(ctx, phase):
+    """The driver's recorded wave for `phase`, `{}` when it has none or its state
+    does not read. Read from the state file, never from the agent's working
+    directory."""
     hc = _loader.load_hooks_config(modname="audit__config")
     state_dir = str(hc.state_dir(pathlib.Path(ctx["project"]), ctx["config"] or {}))
     path = _fr.drive_state_path(state_dir, phase["id"])
@@ -4410,9 +4609,18 @@ def submit_tree(ctx, phase, task):
         with open(path, "r", encoding="utf-8") as fh:
             state = json.load(fh)
     except (OSError, ValueError):
-        return None, None
-    tree = (((state if isinstance(state, dict) else {}).get("wave") or {})
-            .get("trees") or {}).get(task["id"])
+        return {}
+    wave = state.get("wave") if isinstance(state, dict) else None
+    return wave if isinstance(wave, dict) else {}
+
+
+def submit_tree(ctx, phase, task):
+    """`(tree, None)` - the worktree the driver's open wave gave `task`, or None
+    when the task runs in the phase tree - or `(None, stop)` when the wave names
+    a tree that is gone. Read from the driver's state, never from the agent's
+    working directory: an agent's shell does not stay where it was put."""
+    wave = wave_state(ctx, phase)
+    tree = (wave.get("trees") or {}).get(task["id"])
     if not tree:
         return None, None
     if not os.path.isdir(tree):
@@ -4550,6 +4758,8 @@ def submit(ctx, manifest, args, cmd, text):
         if path:
             _journal_filed_return(ctx, task, args.role, path,
                                   (body.get("redFirst") or {}).get("status"))
+        if tree:
+            carry_work(ctx, task, tree, wave_state(ctx, phase).get("records"))
     ctx["did"].insert(0, "%s %s return filed%s" % (
         args.id, args.role, (" at %s" % (written.group(1).strip(),))
         if written else ""))

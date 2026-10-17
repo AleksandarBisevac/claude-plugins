@@ -6286,6 +6286,111 @@ def _house_suite(cases):
     return "\n".join(body) + "\n"
 
 
+CARRY_CLAUSE = ("plugins/audit/tests/test_drive_phase.py: a pause with a filed "
+                "wave member, its tree deleted and the drive resumed on a fresh "
+                "clone, finds the member's work")
+
+
+def _carry_refs(repo):
+    """The task ids a repository holds a carry ref for."""
+    out = _git_out(repo, "for-each-ref", "--format=%(refname)",
+                   "refs/audit/carry/")
+    return sorted(line.rsplit("/", 1)[-1] for line in out.splitlines()
+                  if line.strip())
+
+
+def _carry_pause(root, bare):
+    """The hand-off a human makes before a machine move: the records committed
+    and pushed, the working trees of the wave deleted. -> the trees deleted."""
+    for argv in (["add", "-A", "--", "docs/audit"],
+                 ["commit", "-qm", "pause: the records of a filed wave"],
+                 ["push", "-q", "origin", "HEAD:refs/heads/main"]):
+        _harness.git(root, *argv)
+    gone = []
+    for task_id in TASKS[:2]:
+        tree = _tree_of(root, task_id)
+        if tree and os.path.isdir(tree):
+            shutil.rmtree(tree)
+            gone.append(tree)
+    _harness.git(root, "worktree", "prune")
+    return gone
+
+
+def _carry_cases(check):
+    def clause(detail):
+        return "%s (%s)" % (CARRY_CLAUSE, detail)
+
+    M, why = _load("drive_phase_carry")
+    if M is None:
+        check(clause("the driver loads"), False, why)
+        return
+    root, mpath = _wave_repo("carry", 2)
+    bare = os.path.realpath(_harness.fixture_root("drive-origin-"))
+    _harness.git(bare, "init", "-q", "--bare")
+    _harness.git(root, "remote", "add", "origin", bare)
+    _harness.git(root, "push", "-q", "origin", "HEAD:refs/heads/main")
+    _code, first = _next_wave(M, root, mpath)
+    sent = _dispatched(first)
+    filed = [_file_wave_executor(root, mpath, t)[0] for t in sent]
+    check(clause("both wave members filed, and the origin holds a carry ref for "
+                 "each: %r %r" % (filed, _carry_refs(bare))),
+          sent == ["P1.1", "P1.2"] and filed == [0, 0]
+          and _carry_refs(bare) == ["P1.1", "P1.2"])
+    held = dict((t, _git_out(root, "diff", "--name-only", "refs/audit/carry/%s^"
+                             % (t,), "refs/audit/carry/%s" % (t,)).split())
+                for t in sent)
+    check(clause("each carry holds the member's own file and nothing else: %r"
+                 % (held,)),
+          held == {"P1.1": ["src/f1.txt"], "P1.2": ["src/f2.txt"]})
+    gone = _carry_pause(root, bare)
+    check(clause("the pause deleted both trees: %r" % (gone,)), len(gone) == 2)
+
+    fresh_parent = os.path.realpath(_harness.fixture_root("drive-fresh-"))
+    fresh = os.path.join(fresh_parent, "clone")
+    _harness.git(None, "clone", "-q", bare, fresh)
+    with open(os.path.join(fresh, ".git", "config"), "a", encoding="utf-8",
+              newline="\n") as fh:
+        fh.write(_FIXTURE_IDENTITY)
+    fmpath = os.path.join(fresh, "docs", "audit", "audit-plan.json")
+    check(clause("the fresh clone holds no carry ref of its own before the "
+                 "drive runs: %r" % (_carry_refs(fresh),)),
+          _carry_refs(fresh) == [])
+    said = []
+    for _ in range(4):
+        _c, text = _next_wave(M, fresh, fmpath)
+        said.append(text)
+        done = tasks_of(fmpath)
+        if all(done[t].get("status") == "done" for t in sent):
+            break
+    done = tasks_of(fmpath)
+    rows = dict((t, [r.get("status") for r in _rows_of(fresh, fmpath, t)])
+                for t in sent)
+    with open(os.path.join(fresh, "src", "f1.txt"), encoding="utf-8") as fh:
+        f1 = fh.read()
+    with open(os.path.join(fresh, "src", "f2.txt"), encoding="utf-8") as fh:
+        f2 = fh.read()
+    check(clause("the drive resumed on the clone gates each member over its own "
+                 "work and closes it against a commit holding that work: %r %r %r"
+                 % ([(t, done[t].get("status"), done[t].get("commit"))
+                     for t in sent], rows, said[-1][:300])),
+          all(done[t].get("status") == "done" and done[t].get("commit")
+              for t in sent)
+          and f1 == "changed by P1.1\n" and f2 == "changed by P1.2\n"
+          and all("passed" in rows[t] for t in sent))
+    check(clause("a member that closed leaves no carry behind, on the clone or on "
+                 "the origin: %r %r" % (_carry_refs(fresh), _carry_refs(bare))),
+          _carry_refs(fresh) == [] and _carry_refs(bare) == [])
+
+    # No origin: the filing stands, the carry is local, and the print says so.
+    solo, solo_path = _wave_repo("carrysolo", 2)
+    _code, sent_first = _next_wave(M, solo, solo_path)
+    code, text = _file_wave_executor(solo, solo_path, _dispatched(sent_first)[0])
+    check(clause("with no origin the carry stays in a local ref and the filing "
+                 "says it is local only: %r %r" % (text, _carry_refs(solo))),
+          code == 0 and "local only: the repository has no origin" in text
+          and _carry_refs(solo) == ["P1.1"])
+
+
 STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("dr-block", "_refusal_cases"),
           ("dd-block", "_decide_cases"), ("ct-block", "_continue_cases"),
@@ -6342,6 +6447,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("fp-block", "_falsifier_producer_cases"),
           ("gt-block", "_git_stdin_cases"),
           ("ci-block", "_ci_cadence_cases"),
+          ("cr-block", "_carry_cases"),
           ("sb-block", "_stage_cases"))
 
 
