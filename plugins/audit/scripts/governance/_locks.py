@@ -129,6 +129,11 @@ STALE_MINUTES = 60          # only consulted when liveness is unknowable
 # Zero is the old behaviour, and is what a caller passes to read a refusal at once.
 WAIT_SECONDS = 5.0
 POLL_SECONDS = 0.05
+# How many times one acquire asks again after the claim it judged dead turned out
+# not to be the one on disk. A claim that vanished settles in one more ask; a name
+# whose claim is replaced on every ask is not a vanished holder, and the retry
+# skips the deadline check and the sleep, so without a count it never ends.
+REVISIT_LIMIT = 3
 # The exit codes `acquire`/`release` answer with. They live here rather than in
 # `audit-lock.py` because they are the CONTRACT of those two functions, and
 # `audit-task.py` branches on them - a caller that must read a code cannot be
@@ -1198,6 +1203,7 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
 
     path = os.path.join(ld, name + ".lock")
     deadline = time.monotonic() + (WAIT_SECONDS if wait is None else float(wait))
+    revisits = 0
     while True:
         # STAMPED EACH TIME ROUND, so the claim dates from when it landed rather
         # than from when the first attempt was refused. The age rule reads this
@@ -1267,13 +1273,18 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
             # reads it dead.
         stamp = _claim_stamp(path)
         live, basis = judge(current, path)
-        if not live and not takeover and (stamp is None
-                                          or _claim_stamp(path) != stamp):
-            # THE CLAIM JUDGED DEAD IS NOT THE ONE ON DISK NOW. A holder that
-            # releases and exits between the read and the verdict reads gone, and
-            # a refusal over a claim that no longer stands sends a human to
-            # confirm an abandonment nobody left. Ask the name again instead.
-            continue
+        if not live and not takeover:
+            revisits += 1
+            if revisits <= REVISIT_LIMIT and (stamp is None
+                                              or _claim_stamp(path) != stamp):
+                # THE CLAIM JUDGED DEAD IS NOT THE ONE ON DISK NOW. A holder that
+                # releases and exits between the read and the verdict reads gone,
+                # and a refusal over a claim that no longer stands sends a human
+                # to confirm an abandonment nobody left. Ask the name again
+                # instead -- a bounded number of times, because this skips the
+                # deadline and the sleep: past the bound the refusal below is
+                # printed over whatever is on disk then.
+                continue
         if takeover or not live or time.monotonic() >= deadline:
             break
         time.sleep(POLL_SECONDS)

@@ -1,0 +1,34 @@
+{
+  "gates": {
+    "sweep-selftests (python3 tools/sweep-selftests.py --quiet, foreground, exit 0; 335/335 files ok, 16635 cases)": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8-": "pass",
+    "python3 plugins/audit/tests/test__locks.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-17T11:24:58Z",
+    "basis": "`python3 plugins/audit/tests/test__locks.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 138 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - Bound the retry so a mutation fails by assertion: count retries (a small cap, e.g (code 4, judged 51 time(s), said ['[audit-lock] index looks abandoned -- s-C', '             doing: n3', '             basis: pid 87340 is gone on this host', '             Confirm with the human, then rerun with --takeover.']) (house FAIL): SELFTEST FAILED: 137/138 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "plugins/audit/scripts/governance/_locks.py: new REVISIT_LIMIT = 3 (next to POLL_SECONDS); acquire counts `revisits` and the stamp-changed continue now fires only while revisits <= REVISIT_LIMIT, then falls through to the existing refusal (E_STALE). Requirement clauses: (1) bound the retry, count retries with a small cap: _locks.py REVISIT_LIMIT and the `revisits` counter in acquire. (2) pz3 goes red by assertion instead of hanging: test__locks.py pz3 now wraps judge with a counter and also asserts the claim was judged exactly once (the cap alone makes the over-fire end in the same E_STALE, so the answer cannot tell it from the real thing; the count can). (3) New case titled with the tests.add clause verbatim: a judge that replaces the claim on every ask (stops after 50 asks so a missing cap shows as a number, not a hang) must end E_STALE after more than 1 and at most 10 asks. (4) Run the unconditional-continue mutation once: ran via a script with mutation-landed asserts, __pycache__ purged between mutate and restore, 100s subprocess timeout, file restored (restored True). Mutation A (continue on every dead verdict, cap kept): exit 1, pz3 FAIL 137/138, no hang. Mutation B (cap removed, stamp test kept): exit 1, new case FAIL (judged 51 times), no hang. Honest limit: a mutation that deletes the cap AND the stamp test together is the original unbounded form and would still loop; the counter sits in the same block it guards. Full sweep exit 0, ruff and vermin clean.",
+    "descriptive": "The retry in acquire is capped, so a regression that re-judges every dead claim now fails pz3 and the new case by assertion rather than hanging the suite."
+  },
+  "testsAdded": [
+    "Bound the retry so a mutation fails by assertion: count retries (a small cap, e.g"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test__locks.py: Bound the retry so a mutation fails by assertion: count retries (a small cap, e.g": {
+      "file": "plugins/audit/scripts/governance/_locks.py",
+      "find": "if revisits <= REVISIT_LIMIT and (stamp is None",
+      "replace": "if (stamp is None",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__locks.py",
+        "--selftest"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:d4b19f4608d6b8b8b7c616488ca63e1a1f6422aeb0e79df8f79c070a099341e8\",\"dirtyDigest\":\"sha256:9107deea6618171bcf47f63fcc1af294cdeb1db1616a08c531a9a222c699f21b\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_locks.py\":\"88f5ed3f6ce5f46b\",\"plugins/audit/tests/test__locks.py\":\"52624e7ce9326b1c\"},\"head\":\"1d97cd45\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_locks.py\",\"plugins/audit/tests/test__locks.py\"],\"scopeDigest\":\"sha256:b5f9e2197cf0f26273c40fbfdd02802d1c0a891644ca776548877e51ba83d9a5\",\"v\":2}"
+}

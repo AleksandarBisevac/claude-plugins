@@ -557,14 +557,51 @@ def _cases(check):
                       out=lambda _l: None)
             M.acquire(_rproj, "index", note="n3", session="s-C", pid=_gone.pid,
                       out=lambda _l: None)
+            # COUNTED, NOT ONLY ANSWERED. A retry that fired on every dead verdict
+            # is capped, so it ends in the same refusal; the answer alone cannot
+            # tell it from the real thing, the number of times the claim was
+            # judged can.
+            _judged = []
+
+            def _counting_judge(info, path, host=None):
+                _judged.append(path)
+                return _real_judge(info, path, host)
+            M.judge = _counting_judge
             _code = M.acquire(_rproj, "index", note="n4", session="s-D",
                               pid=os.getpid(), wait=0, out=_lines.append)
+            M.judge = _real_judge
             check("pz3 SECOND DIRECTION: a claim that is still standing when its "
                   "holder is judged gone is still refused as abandoned - the "
                   "retry is for a claim that vanished, not for every dead "
                   "verdict",
-                  _code == M.E_STALE and any("looks abandoned" in x for x in _lines),
-                  "code %r, said %r" % (_code, _lines))
+                  _code == M.E_STALE and any("looks abandoned" in x for x in _lines)
+                  and len(_judged) == 1,
+                  "code %r, judged %d time(s), said %r" % (_code, len(_judged),
+                                                          _lines))
+
+            # A claim REPLACED on every ask never settles, so the retry has to end
+            # by count. The judge stops replacing it after 50 asks only so that a
+            # missing cap shows as a number instead of as a hang.
+            _swaps = []
+
+            def _replacing_judge(info, path, host=None):
+                _swaps.append(path)
+                if len(_swaps) <= 50:
+                    _tmp = path + ".swap"
+                    with open(_tmp, "w") as _fh:
+                        _fh.write(json.dumps(dict(info, n=len(_swaps))))
+                    os.replace(_tmp, path)
+                return False, "pid %s is gone on this host" % (info.get("pid"),)
+            M.judge = _replacing_judge
+            _lines = []
+            _code = M.acquire(_rproj, "index", note="n5", session="s-E",
+                              pid=os.getpid(), wait=0, out=_lines.append)
+            M.judge = _real_judge
+            check("Bound the retry so a mutation fails by assertion: count retries "
+                  "(a small cap, e.g",
+                  _code == M.E_STALE and 1 < len(_swaps) <= 10,
+                  "code %r, judged %d time(s), said %r" % (_code, len(_swaps),
+                                                          _lines))
         finally:
             M.judge = _real_judge
             shutil.rmtree(_rproj, ignore_errors=True)

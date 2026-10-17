@@ -28,8 +28,10 @@
         "severity": "low",
         "file": "tools/verify.sh:453-459",
         "issue": "The regenerated ledger directory is still not removed on a signal. ledger_reproducible makes $regen under $TMPDIR and removes it by an explicit rm -rf after ledger_compare returns; an INT or TERM arriving while the generator runs now exits through the new 'exit 130/143' traps, which remove only $WORKDIR, so verify-ledger-* is left behind on that path. The task asks for cleanup 'on every return path', which is met, but the signal path the executor added in the same change leaves the very leak the title names.",
-        "resolution": "Create the directory under the already-trapped workdir: regen=$(mktemp -d \"$WORKDIR/ledger-XXXXXX\"). The EXIT trap then covers return, signal and plain exit, and the explicit rm can stay as the early release. Adjust vsh2-vsh4 so their scratch TMPDIR check looks at the workdir.",
-        "fixTask": "P128.49-izt"
+        "resolution": "fixed in P128.49-izt (1d97cd45a7dc): Create the directory under the already-trapped workdir: regen=$(mktemp -d \"$WORKDIR/ledger-XXXXXX\"). The EXIT trap then covers return, signal and plain exit, and the explicit rm can stay as the early release. Adjust vsh2-vsh4 so their scratch TMPDIR check looks at the workdir.",
+        "fixTask": "P128.49-izt",
+        "commit": "1d97cd45a7dc",
+        "status": "fixed"
       },
       {
         "id": "P128-R2",
@@ -119,7 +121,7 @@
         "resolution": "Declare tools/ui-tests/capture-provenance.test.mjs in `files` and `tests.add` for this task (with a --introduces red-first, since the symbols are new) before it closes."
       }
     ],
-    "outcome": "[findings: 12 - 0 high, 3 med, 9 low; 2 with a recorded fix commit]"
+    "outcome": "[findings: 12 - 0 high, 3 med, 9 low; 3 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2834,7 +2836,7 @@
     {
       "id": "P128.47-izt",
       "title": "fix P128-R5: The pinned-context assertion runs inside shot(), so a leg that n...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The pinned-context assertion runs inside shot(), so a leg that never reaches shot() (e.g. the ladderCtx / prioCtx pages at 7340 and 7415, which drive checks without a shutter) is pinned by option only and unasserted. Today harmless, since they produce no image.\n\nResolution asked: No action needed unless those contexts ever begin to photograph; if they do, they pass through shot() and are covered. Optionally note this in the PINNED_CONTEXT comment.",
       "files": [
         "tools/capture-screenshots.mjs"
@@ -2860,14 +2862,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-17T11:05:20Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2886,7 +2888,13 @@
       ],
       "fixes": [
         "P128-R5"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T11:47:33Z.1e7cbb",
+        "status": "passed",
+        "at": "2026-10-17T11:47:33Z"
+      }
     },
     {
       "id": "P128.48-izt",
@@ -2983,10 +2991,89 @@
     {
       "id": "P128.49-izt",
       "title": "fix P128-R1: The regenerated ledger directory is still not removed on a signa...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The regenerated ledger directory is still not removed on a signal. ledger_reproducible makes $regen under $TMPDIR and removes it by an explicit rm -rf after ledger_compare returns; an INT or TERM arriving while the generator runs now exits through the new 'exit 130/143' traps, which remove only $WORKDIR, so verify-ledger-* is left behind on that path. The task asks for cleanup 'on every return path', which is met, but the signal path the executor added in the same change leaves the very leak the title names.\n\nResolution asked: Create the directory under the already-trapped workdir: regen=$(mktemp -d \"$WORKDIR/ledger-XXXXXX\"). The EXIT trap then covers return, signal and plain exit, and the explicit rm can stay as the early release. Adjust vsh2-vsh4 so their scratch TMPDIR check looks at the workdir.",
       "files": [
         "tools/verify.sh",
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "1d97cd45a7dc",
+      "outcome": {
+        "technical": "HEAD 25e81fd2 before first edit. tools/verify.sh: ledger_reproducible now does regen=$(mktemp -d \"$WORKDIR/ledger-XXXXXX\") (verify.sh:456); explicit rm -rf \"$regen\" kept as early release (verify.sh:459); comment block above ledger_compare (verify.sh:433-440) rewritten to say the dir lives under the trapped workdir. tools/gate-parity.py (not in the task files; the Edit was not refused by the plan gate): _GENERATOR_STUB gains term/int modes that signal the parent shell mid-generator; run_ledger now runs under the script's own WORKDIR+trap preamble cut from the shipped file and prints workdir_left=[...] after the function returns; vsh2-vsh4 additionally assert workdir_left=[] and the scratch TMPDIR empty; new vsh9 (TERM->143, INT->130, no 'status=' verdict printed, TMPDIR empty). The 'trapped' preamble computation was hoisted so vsh6 reuses it. Requirement clauses: (1) create dir under trapped workdir - verify.sh:456; (2) explicit rm stays as early release - verify.sh:459, and vsh2-4 'workdir_left=[]' proves it (mutation above); (3) adjust vsh2-vsh4 to look at the workdir - gate-parity.py vsh2-vsh4 now check workdir_left=[] plus TMPDIR; (4) TERM-during-generator case that goes red if the dir leaks - vsh9, shown red twice. Full python3 tools/sweep-selftests.py --quiet: 335/335 files ok, 16631 cases, exit 0 (the tool auto-backgrounded it after 600s; vsh6 INT passed in it).",
+        "descriptive": "A TERM or INT during the ledger regeneration step in verify.sh no longer leaves a verify-ledger directory behind; the directory is now inside the workdir the exit trap removes."
+      },
+      "startedAt": "2026-10-17T09:08:41Z",
+      "completedAt": "2026-10-17T11:05:18Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-17T09:08:28Z",
+          "text": "scope: tools/verify.sh, every path the finding(s) P128-R1 name"
+        },
+        {
+          "at": "2026-10-17T09:08:28Z",
+          "text": "no suite: tools/verify.sh - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-17T09:08:28Z",
+          "text": "no tests.add clause for P128-R1: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        },
+        {
+          "at": "2026-10-17T10:49:32Z",
+          "text": "files widened by tools/gate-parity.py: widened by the integration answer"
+        }
+      ],
+      "fixes": [
+        "P128-R1"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T11:05:16Z.a06391",
+        "status": "passed",
+        "at": "2026-10-17T11:05:16Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1d97cd45a7dc",
+        "at": "2026-10-17T11:05:18Z",
+        "return": "docs/audit/evidence/returns/P128.49-izt/20261017T090841Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "could-not-prove",
+        "at": "2026-10-17T09:24:21Z",
+        "basis": "P128.49-izt declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P128.49-izt declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P128.50-izt",
+      "title": "fix P128-R2: The vsh5 control passes vacuously when no dash is on PATH: the c...",
+      "status": "in_progress",
+      "description": "The vsh5 control passes vacuously when no dash is on PATH: the check is check('vsh5 SKIPPED HERE ...', dash is None), which is True exactly in that branch. It is labelled, but it prints PASS. Likewise vsh2-vsh4 then run under whatever 'sh' is, which may be bash in POSIX mode where a RETURN trap would work, so those cases could not see the defect on that machine.\n\nResolution asked: Acceptable as labelled for a machine without dash; if the suite has a skip vocabulary, use it so a reader of a clean run sees the control did not run. Otherwise leave as is.",
+      "files": [
         "tools/gate-parity.py"
       ],
       "tests": {
@@ -3017,74 +3104,7 @@
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-17T09:08:41Z",
-      "completedAt": null,
-      "verifiedBy": [],
-      "notes": [
-        {
-          "at": "2026-10-17T09:08:28Z",
-          "text": "scope: tools/verify.sh, every path the finding(s) P128-R1 name"
-        },
-        {
-          "at": "2026-10-17T09:08:28Z",
-          "text": "no suite: tools/verify.sh - no test sits beside it and the import graph reads only Python; name the one that tests it with `scope --files`, none was guessed"
-        },
-        {
-          "at": "2026-10-17T09:08:28Z",
-          "text": "no tests.add clause for P128-R1: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
-        },
-        {
-          "at": "2026-10-17T10:49:32Z",
-          "text": "files widened by tools/gate-parity.py: widened by the integration answer"
-        }
-      ],
-      "fixes": [
-        "P128-R1"
-      ],
-      "reviewPerTask": "signals",
-      "testEvidence": {
-        "runId": "2026-10-17T11:05:16Z.a06391",
-        "status": "passed",
-        "at": "2026-10-17T11:05:16Z"
-      }
-    },
-    {
-      "id": "P128.50-izt",
-      "title": "fix P128-R2: The vsh5 control passes vacuously when no dash is on PATH: the c...",
-      "status": "pending",
-      "description": "The vsh5 control passes vacuously when no dash is on PATH: the check is check('vsh5 SKIPPED HERE ...', dash is None), which is True exactly in that branch. It is labelled, but it prints PASS. Likewise vsh2-vsh4 then run under whatever 'sh' is, which may be bash in POSIX mode where a RETURN trap would work, so those cases could not see the defect on that machine.\n\nResolution asked: Acceptable as labelled for a machine without dash; if the suite has a skip vocabulary, use it so a reader of a clean run sees the control did not run. Otherwise leave as is.",
-      "files": [
-        "tools/gate-parity.py"
-      ],
-      "tests": {
-        "mode": "tdd",
-        "add": [],
-        "expectRedFirst": true,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "phase-no-spelling"
-      },
-      "model": "sonnet",
-      "skills": [],
-      "risk": "low",
-      "blockedBy": [],
-      "dependsOn": [],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
+      "startedAt": "2026-10-17T11:05:23Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -3103,12 +3123,18 @@
       ],
       "fixes": [
         "P128-R2"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T12:01:49Z.f6de04",
+        "status": "passed",
+        "at": "2026-10-17T12:01:49Z"
+      }
     },
     {
       "id": "P128.51-izt",
       "title": "fix P128-R7: pz3, the over-fire direction of the new retry in acquire, cannot...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "pz3, the over-fire direction of the new retry in acquire, cannot go red: if the `continue` fired on every dead verdict (the mutation pz3 exists to catch), acquire would re-judge the same standing claim forever, because the `continue` skips the `time.monotonic() >= deadline` check and there is no sleep. A regression would hang the suite until the sweep's per-file timeout instead of failing the case. The executor says the same ('would hang rather than fail; not separately mutated'). The 'second direction' case is therefore unproven in the way the repo's no-silent-pass rule asks.\n\nResolution asked: Bound the retry so a mutation fails by assertion: count retries (a small cap, e.g. re-ask at most a few times, then fall through to the refusal), or make the continue honour the deadline. pz3 then goes red with code != E_STALE instead of hanging. Run the unconditional-continue mutation once to confirm.",
       "files": [
         "plugins/audit/tests/test__locks.py",
@@ -3130,21 +3156,33 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "phase-no-spelling",
+        "falsifiers": {
+          "plugins/audit/tests/test__locks.py: Bound the retry so a mutation fails by assertion: count retries (a small cap, e.g": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__locks.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/governance/_locks.py",
+            "find": "if revisits <= REVISIT_LIMIT and (stamp is None",
+            "replace": "if (stamp is None"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [],
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-17T11:05:25Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -3163,7 +3201,13 @@
       ],
       "fixes": [
         "P128-R7"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T12:13:44Z.a1fa71",
+        "status": "passed",
+        "at": "2026-10-17T12:13:44Z"
+      }
     },
     {
       "id": "P128.52-izt",

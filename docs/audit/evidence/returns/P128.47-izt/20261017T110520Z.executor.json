@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "node --check tools/capture-screenshots.mjs": "pass",
+    "node tools/capture-screenshots.mjs --check": "pass",
+    "npx vitest run": "pass",
+    "python3 tools/sweep-selftests.py --quiet": "pass"
+  },
+  "redFirst": {
+    "status": "could-not-prove",
+    "at": "2026-10-17T11:31:37Z",
+    "basis": "P128.47-izt declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P128.47-izt declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Edited only the PINNED_CONTEXT doc comment in tools/capture-screenshots.mjs (base 1d97cd45). The old sentence said shot() asks each page, 'so a context added later without them fails the run' - an overclaim, since the assertion lives in shot() and a context never photographed is never asked. Rewritten to 'IF a picture is taken from it', and a paragraph 'THE ASSERTION LIVES IN shot(), NOT IN newContext' added naming the three non-photographing contexts (responsive-ladder, phase-order, usage share-link), why that is harmless, and that a picture taken by any route other than shot() would bypass it. No code, no test file added or changed. Verified: the only .screenshot( call in the file is inside shot() (grep: one comment hit, one code hit); no shot(ladder|prio|share) call exists (grep: no match). Gates: node --check exit 0; capture-screenshots.mjs --check exit 0 ('OK (exit 0): capture preconditions hold - report + panel'); npx vitest run exit 0 (56 files, 839 tests); python3 tools/sweep-selftests.py --quiet exit 0 ('335/335 files ok'). Requirement clauses: (1) 'no action needed unless contexts begin to photograph; then they pass through shot()' - stated in the comment, tools/capture-screenshots.mjs lines ~6540-6552; (2) 'optionally note in the PINNED_CONTEXT comment' - done, same lines. The description's line numbers (7340/7415) had moved; the contexts are ladderCtx and prioCtx in the report leg, found by name.",
+    "descriptive": "The pinned-context comment no longer overclaims: it says the locale/timezone assertion only covers pages that are photographed through shot()."
+  },
+  "testsAdded": [],
+  "claims": "claims:\n1 tools/capture-screenshots.mjs ~6540-6552: sentence now says the assertion runs in shot() only; the only .screenshot( call is in shot() (grep, one code hit)\n2 n/a - comment-only change, no check touched\n3 grep 'newContext' in file: contexts at the share link, ladder and prio pages never reach shot() (no shot(ladder|prio|share) match); all three named in the comment, left unasserted on purpose because they produce no image\n4 the rule 'photograph only through shot()' is prose in the comment and says so: only the single .screenshot( site enforces it; no hook does\n5 n/a - no property measured or recorded\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:f3ad665d86c0c4fac45d9e22b2cf09408e12f5531b682807285e010491b36568\",\"dirtyDigest\":\"sha256:5befb176cc368a47bafe4a6899b83470721f76e9a78e259b42e48726c9badb3a\",\"dirtyPaths\":{\"tools/capture-screenshots.mjs\":\"b3ef55def4fd2a67\"},\"head\":\"1d97cd45\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/capture-screenshots.mjs\"],\"scopeDigest\":\"sha256:261267cd7b744bf51b3d304f3916565efd421e408b20f6643ae107673ff8bd30\",\"v\":2}"
+}
