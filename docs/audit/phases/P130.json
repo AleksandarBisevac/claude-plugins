@@ -1,7 +1,7 @@
 {
   "id": "P130",
   "title": "One executable description of CI, and a plugin that ships only what it runs",
-  "status": "pending",
+  "status": "in_progress",
   "description": "F1 of CONSOLIDATED-PLAN.md (quality-gates-internal, reports/2026-10-14-cost-code-ci-analysis, section 2.2; owner approval 2026-10-14 in DECISIONS.md, V1-V9). It touches the plugin's behaviour toward a user in two places only: `--selftest` on shipped entry points and `render-report --bench` go away (neither is promised by COMPATIBILITY.md), plus the falsifier, which the owner retired (2026-10-16, P128.17's cancellation). The CI half touches tools/ and .github/ only. Invariants established: I11 (plugins/audit/ holds only what the installed copy runs), I12 (B9 recorded at F1.5's landing SHA), I13 (a screenshot is stale exactly when what the page receives changed), I14-I17 (one executable gate description, a matrix derived from conditions, intermittents sought on purpose on the release tier, a verified SHA not re-run). ORDER: every task that edits plugins/audit/tests/ lands before F1.4 moves that directory to tests/, so F1.6, F1.6-falsifier and F1.7 run at their 571becfd paths and before the move, not after it as the plan had them; F1.5 follows F1.4. Stop criteria (plan section 5): F1.2 stops if a stress-only or stress-misses difference repeats in two attempts or the median wall exceeds 8m59s over at least five runs; F1.4-F1.5 stop if the prove-gates name set changes unexplained, a lint checks fewer references without a named reason, tests/ reaches the installed cache, the product imports from tools/, or the whole repo changes by 0.5k lines or more for a move; F1 ends only with B9 recorded and the repo smaller, not merely rearranged. Every figure was re-measured at 571becfd; the companion F1-NOTES.md carries each one, old beside new, with its command.",
   "desiredOutcome": "Every CI job is setup plus one `tools/verify.sh --only <slices>` call and a SHA already green on every job is not run again on main; every sweep leg is graded by the plain rules; the installed plugin carries no tests/, no lint modules, no demo generator and no bench, and its bytes are at most 10,416,128; B9 is recorded with the SHA it was measured at; a prose edit in _ui_theme.py no longer owes a screenshot recapture; and the retired lints and the falsifier are gone with their cases and prove-gates rows.",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "31d78436ea407515262ddb0082261052df08d8e1",
+  "branch": "audit/p130-one-executable-description-of",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,7 +29,7 @@
     {
       "id": "P130.1",
       "title": "Every sweep leg is graded by the plain rules, and the codec leg's summary counts what it graded",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Plan F1.1, invariant I15; absorbs P128.20 (register F677). (1) `grade()` in tools/sweep-selftests.py (def at :899 on 571becfd) loses its `encoding_pass` argument: a leg run under `--encoding`, alone or with `--spaced`, requires the `N/M cases passed` contract, counts cases, and reds a migrated file that prints the contract, exactly as the plain leg does. (2) A leg's heading names both conditions when both apply (`encoding pass (cp1252), spaced sweep`); each single condition keeps the heading it has today. (3) The codec leg's summary counts cases and migrated files the way the plain leg's does, so it never prints a count it did not take (P128.20's fault). (4) The grade-level case `g5` (:1721) goes; new cases run real children through `sweep()` in a scratch repository and assert: the codec reached the child; a live suite's cases are counted; a contract-free suite is red; a suite that swallows its own UnicodeEncodeError and exits 0 is red; a migrated file printing the contract is red; a combined-leg child sees cp1252 and a spaced, linked TMPDIR; the headings are pinned. (5) The ci.yml comment under the cp1252 step that describes the weak grade (ci.yml:271-276) is rewritten; no matrix literal changes. Starting point: korak0/C-work/sweep-grade.patch (or studies/C-poc/sweep-grade-v2.patch); at 571becfd its first hunk, the module docstring, no longer applies and the remaining hunks apply with offsets, so the docstring hunk is redone by hand. Acceptance: `python3 tools/sweep-selftests.py --selftest; echo $?` gives 0, run twice with a gap; `python3 korak0/C-work/probe/mutations.py <patched export>` reports every row killed and none NOT APPLIED (the plan cited studies/C-poc/probe/mutations.py, which holds the F1.2 checker rows instead); `grep -n encoding_pass tools/sweep-selftests.py` finds nothing.",
       "files": [
         "tools/sweep-selftests.py",
@@ -64,16 +64,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-17T15:54:48Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.2",
@@ -142,7 +143,7 @@
     {
       "id": "P130.3",
       "title": "A screenshot is stale exactly when what the page receives changed, not when _ui_theme.py's prose did",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Plan F1.3, invariant I13. Today `_output.ui_surface_digests()` (:900) hashes the raw bytes of every source a surface is assembled from plus `_ui_theme.py`, so a docstring edit there owes a recapture of all 25 committed PNGs. (1) Each surface's digest is taken over what the page receives: the report as `_report_ui.CSS + \"\\0\" + _report_ui.SCRIPT`, the panel as `_panel_page.UI_HTML`. (2) The plugin version is replaced by a fixed token before hashing, and every frozenset that reaches the assembled text is sorted first (`THEME_SINGLE`'s repr changes between interpreter runs). (3) PREMISE CORRECTION: the plan put this in _output.py, but _deps.LAYERS puts _output at layer 0, _report_ui at 4 and _panel_page at 6, and a lower layer may not import a higher one; the digest therefore lives in a new module above both (plugins/audit/scripts/_surface_digest.py, new, with its LAYERS entry, PLUGIN-BUILD-GUIDE tree line and section, PATH_PREAMBLE, `safe_stdio()` first and a suite in plugins/audit/tests/), and `ui_surface_sources()` stays where it is. (4) Its callers are repointed: tools/capture-screenshots.mjs (asks for the digest through python -c, about :6293) and `_refs.screenshot_capture_drift()` (:3439). (5) docs/screenshots/captured-at.json is rewritten once, because the meaning of its digest changes; that recapture is the orchestrator's (the capture lock is machine-wide), never an agent's. Acceptance: `python3 studies/K-poc/shot-digest.py studies/K-poc/shot/{base,prose,token}` gives the same digest for the prose edit and a different one for the token edit; `node tools/capture-screenshots.mjs --check` exits 0. NEW PATHS (absent at 571becfd, created by this task): plugins/audit/scripts/_surface_digest.py, plugins/audit/tests/test__surface_digest.py.",
       "files": [
         "plugins/audit/scripts/_surface_digest.py",
@@ -179,16 +180,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-17T15:54:51Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.4",
@@ -339,7 +341,7 @@
     {
       "id": "P130.6",
       "title": "The falsifier is retired: the drive no longer records, runs or decides on a planned test's mutation",
-      "status": "blocked",
+      "status": "in_progress",
       "description": "Owner decision 2026-10-16 (P128.17 cancelled: the falsifier leaves the shipped tree under F1.6). PREMISE CORRECTION: P128.17 described `run_falsifier` as having no caller, but by 571becfd the feature is wired end to end (it shipped in 3.4.0's Added section): the executor declares falsifiers in its return, `record_falsifiers` writes them with `audit-task.py scope --falsifiers`, `run_falsifier` (drive-phase.py:1474) applies each in a throwaway tree after a green gate, and the `falsifier` decision stops the close. Retiring it is a removal from a live path. (1) drive-phase.py loses `run_falsifier`, `mutation_site`, `note_falsifiers`, `record_falsifiers`, the falsifier stage of the close, `FALSIFIER_TIMEOUT`, the `decide-falsifier` line and the `falsifier` decision with its answer handling, and `returned_falsifier_problems`. (2) An executor return that still carries a `falsifiers` field is filed and the field is not read (an agent body older than this change must not be refused); `_filed_returns.return_falsifiers` and `falsifier_gaps` go. (3) `audit-task.py scope` loses `--falsifiers`, and both argument-hint surfaces (commands/task.md, README.md) lose it. (4) _manifest_rules.py loses `task_falsifiers` and `falsifier_problems` and their `rules.falsifier.*` warnings. (5) The schema keeps `tests.falsifiers` and `$defs/falsifier` accepted, described as retired and read by nothing, so no plan that validated stops validating or starts warning; its removal is a 4.0.0 item beside `meta.muted` (an owner choice, see openChoices). (6) audit-lookup.py's brief text, agents/audit-executor.md, reference/execute-task.md and reference/phase-signoff.md stop describing it; the executor body shrinks (8,756 of its 9,000-byte ceiling at 571becfd, `python3 tools/measure-context.py --tree plugins/audit`), which the quality study's byte-neutral rule for agent bodies counts as headroom. (7) gen-demo-manifest.py's schema-coverage rows for the field say it is retired. (8) CHANGELOG.md records the removal under Removed. Acceptance: `git grep -n -i falsifier HEAD -- plugins/audit/scripts plugins/audit/agents plugins/audit/commands plugins/audit/reference` finds only the retirement notes; the full sweep is green.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -390,17 +392,17 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-17T15:55:04Z",
       "completedAt": null,
       "verifiedBy": [],
-      "blockedReason": "Superseded: the task gate that caused the scope-gap was malformed; it is rewritten to run the suites through tools/sweep-selftests.py, so this decision no longer applies."
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.7",
@@ -810,5 +812,12 @@
     "Where the assembled-surface screenshot digest lives (F1.3): _output is layer 0 and may not import _report_ui (layer 4) or _panel_page (layer 6), so the draft names a new module above both; computing it in tools/ is the alternative",
     "F1.2 deletes the Windows cp1252 cells only if F0's acceptance holds (sl4, hr2 and rv13 absent from at least five Windows runs after P125.38 and P128.14); otherwise F1.2 lands without that deletion",
     "F1.2's wall-clock acceptance is a median of at most 8m59s over at least five runs (the top of the CI study's modelled range); the 8m00s target T4 is F3's criterion"
-  ]
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "d55605e4-ee14-4690-adce-d240ad64810b",
+    "branch": "audit/p130-one-executable-description-of",
+    "at": "2026-10-17T15:54:48Z"
+  },
+  "startedAt": "2026-10-17T15:54:48Z"
 }
