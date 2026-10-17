@@ -3320,6 +3320,118 @@ def _reshape_cases(check):
               and (task_in(wdd_mp, "P2.3") or {}).get("files")
               == ["src/documented.ts", "src/refused.ts"])
 
+        # ---- (uj) one value of several real paths, space-joined ---------------
+        # `--files` splits on commas, so a caller who joined 31 real paths with
+        # spaces handed the verb ONE entry, and it was written as a single file
+        # that exists nowhere. On an attempted task the only way back is to drop
+        # that entry, and dropping is refused as a narrowing. The fixtures use
+        # real files on disk, so what separates the two shapes is whether the
+        # entry itself exists, not whether its pieces do.
+        uj_before_files = ["src/b.ts src/c.ts"]
+        ujm = base_manifest()
+        ujm["phases"][1]["tasks"][1].update({
+            "status": "in_progress", "attempts": 1, "maxAttempts": 3,
+            "description": "attempted with an unsplit entry", "risk": "low",
+            "model": "sonnet", "skills": [], "blockedBy": [], "dependsOn": [],
+            "files": list(uj_before_files),
+            "tests": {"mode": "gate-only", "expectRedFirst": False,
+                      "add": [], "gate": ["test"]}})
+        ujm["fileIndex"]["src/b.ts src/c.ts"] = ["P2.3"]
+        uj_proj, uj_mp = mk("uj-unsplit", ujm, git=True)
+        os.makedirs(os.path.join(uj_proj, "src"), exist_ok=True)
+        for _ujf in ("b.ts", "c.ts", "real.ts", "kept.ts"):
+            with open(os.path.join(uj_proj, "src", _ujf), "w") as _fh:
+                _fh.write("x\n")
+        ujp_proj, ujp_mp = mk("uj-pending", base_manifest())
+        os.makedirs(os.path.join(ujp_proj, "src"), exist_ok=True)
+        for _ujf in ("b.ts", "c.ts"):
+            with open(os.path.join(ujp_proj, "src", _ujf), "w") as _fh:
+                _fh.write("x\n")
+        for _ujf in ("one.ts", "two.ts", "one.ts two.ts"):
+            with open(os.path.join(ujp_proj, _ujf), "w") as _fh:
+                _fh.write("x\n")
+        with open(ujp_mp, "rb") as _fh:
+            _uj_p_before = _fh.read()
+        ujp_code, ujp_txt = run(["scope", "P2.3", "--files", "src/b.ts src/c.ts",
+                                 "--project-dir", ujp_proj])
+        with open(ujp_mp, "rb") as _fh:
+            _uj_p_after = _fh.read()
+        ujd_code, ujd_txt = run(["scope", "P2.3", "--files",
+                                 "src/b.ts,src/c.ts", "--project-dir", uj_proj])
+        _ujd_task = task_in(uj_mp, "P2.3") or {}
+        _ujd_idx = (_mio.load_manifest(uj_mp).get("fileIndex") or {})
+        # SECOND DIRECTION, for the drop: a path that EXISTS is still graded
+        # work, so dropping it from an attempted task stays refused. The project
+        # is a repository with NO commit touching it, so only the disk can say
+        # the path is real.
+        ujk = base_manifest()
+        ujk["phases"][1]["tasks"][1].update({
+            "status": "in_progress", "attempts": 1, "maxAttempts": 3,
+            "description": "attempted with a real second file", "risk": "low",
+            "model": "sonnet", "skills": [], "blockedBy": [], "dependsOn": [],
+            "files": ["src/kept.ts", "src/real.ts"],
+            "tests": {"mode": "gate-only", "expectRedFirst": False,
+                      "add": [], "gate": ["test"]}})
+        ujk["fileIndex"]["src/kept.ts"] = ["P2.3"]
+        ujk["fileIndex"]["src/real.ts"] = ["P2.3"]
+        ujk_proj, ujk_mp = mk("uj-real-drop", ujk, git=True)
+        os.makedirs(os.path.join(ujk_proj, "src"), exist_ok=True)
+        for _ujf in ("kept.ts", "real.ts"):
+            with open(os.path.join(ujk_proj, "src", _ujf), "w") as _fh:
+                _fh.write("x\n")
+        ujk_code, ujk_txt = run(["scope", "P2.3", "--files", "src/kept.ts",
+                                 "--project-dir", ujk_proj])
+        # SECOND DIRECTION, for "never existed": a path that is off the disk
+        # now but was COMMITTED once may have been graded, so dropping it stays
+        # refused. Without the history read, absence from the disk alone would
+        # pass this too.
+        ujh = base_manifest()
+        ujh["phases"][1]["tasks"][1].update({
+            "status": "in_progress", "attempts": 1, "maxAttempts": 3,
+            "description": "attempted with a path since deleted", "risk": "low",
+            "model": "sonnet", "skills": [], "blockedBy": [], "dependsOn": [],
+            "files": ["src/kept.ts", "src/deleted.ts"],
+            "tests": {"mode": "gate-only", "expectRedFirst": False,
+                      "add": [], "gate": ["test"]}})
+        ujh["fileIndex"]["src/kept.ts"] = ["P2.3"]
+        ujh["fileIndex"]["src/deleted.ts"] = ["P2.3"]
+        ujh_proj, ujh_mp = mk("uj-deleted-drop", ujh, git=True)
+        os.makedirs(os.path.join(ujh_proj, "src"), exist_ok=True)
+        for _ujf in ("kept.ts", "deleted.ts"):
+            with open(os.path.join(ujh_proj, "src", _ujf), "w") as _fh:
+                _fh.write("x\n")
+        git(ujh_proj, "add", "src/kept.ts", "src/deleted.ts")
+        git(ujh_proj, "commit", "-q", "-m", "work")
+        os.remove(os.path.join(ujh_proj, "src", "deleted.ts"))
+        ujh_code, ujh_txt = run(["scope", "P2.3", "--files", "src/kept.ts",
+                                 "--project-dir", ujh_proj])
+        # SECOND DIRECTION, for the refusal: a real file named "one.ts two.ts"
+        # exists as written although "one.ts" and "two.ts" exist beside it, so
+        # the whole-entry stat finds it and nothing is refused.
+        ujs_code, ujs_txt = run(["scope", "P2.3", "--files", "one.ts two.ts",
+                                 "--project-dir", ujp_proj])
+        check("a declared path that does not exist but whose whitespace-split "
+              "parts all do is refused naming the parts, and an attempted task "
+              "may drop a path that never existed",
+              ujp_code == 2 and "src/b.ts" in ujp_txt and "src/c.ts" in ujp_txt
+              and _uj_p_after == _uj_p_before
+              and ujd_code == 0
+              and _ujd_task.get("files") == ["src/b.ts", "src/c.ts"]
+              and "src/b.ts src/c.ts" not in _ujd_idx
+              and _ujd_idx.get("src/b.ts") == ["P2.3"]
+              and ujk_code == 2 and "`files` would drop src/real.ts" in ujk_txt
+              and (task_in(ujk_mp, "P2.3") or {}).get("files")
+              == ["src/kept.ts", "src/real.ts"]
+              and ujh_code == 2 and "`files` would drop src/deleted.ts" in ujh_txt
+              and ujs_code == 0
+              and (task_in(ujp_mp, "P2.3") or {}).get("files")
+              == ["one.ts two.ts"],
+              "pending unsplit=%r %r; attempted drop=%r %r; real drop=%r %r; "
+              "deleted drop=%r %r; spaced real=%r %r"
+              % (ujp_code, ujp_txt[:160], ujd_code, ujd_txt[:160],
+                 ujk_code, ujk_txt[:160], ujh_code, ujh_txt[:160],
+                 ujs_code, ujs_txt[:160]))
+
         # ---- (st) `done` settles the RECORD, not the INDEX ---------------------
         # The product prescribed a remedy and refused it in the same breath. At
         # sign-off `_invariants.manifest_revalidated` prints, as its own repair,

@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause 1, 'scope accepted one space-joined value of 31 real paths as a single file': _files_refusal now calls _unsplit_parts (audit-task.py:558-580, wired at ~628-634), which stats the whole entry first and refuses only when the entry is absent and every whitespace-separated part exists, naming the parts and saying to join with commas. Both add and scope reach it through the same function. Clause 2, 'the attempted task could never drop it': _narrowings gains project/git_root and skips a dropped files entry for which _never_existed is true (not on disk and 'git log --all -n1 -- :(literal)path' empty; git unable to answer gives False, so the refusal stays). The one production caller in _locked_scope passes project and the config gitRoot. Directions that must stay refused are kept: an existing file, and a committed-then-deleted file. The executor's outcome describes this diff accurately. I ran the at2-block stage once: 195/195 pass, exit 0.",
+  "missing": [],
+  "redFirst": "proved",
+  "redFirstBasis": "The executor ran 'python3 plugins/audit/tests/test_audit_task.py --selftest --stage at2-block' in a throwaway tree at HEAD. It exited 1 with 194/195 passing, and the task's own case failed an assertion (pending unsplit=0, attempted drop=2). That is a command, a non-zero exit, a test collected and the task's own case failing on assertion, which is the 'proved' basis. The falsifier (_never_existed returning False) is also named.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate holds 'selftests' = python3 tools/sweep-selftests.py, which runs the whole project, plus validate, plugin-validate, gate, report, lint, shots and interactive. No entry selects a bounded set of tests, so the question is not asked."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

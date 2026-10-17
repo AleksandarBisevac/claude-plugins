@@ -1465,7 +1465,7 @@
     {
       "id": "P128.27-0h5",
       "title": "A parked no-return decision is dropped once the return it is about is filed",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F683. pending_still_applies keeps a parked no-executor-return decision while the task is in_progress with the same start, even after its return is filed; the drive then stops on a false line (P125.108, P125.110).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1510,19 +1510,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1ee08a38dfdb",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py pending_still_applies now takes ctx first (drive-phase.py:3064) and, for a no-executor-return decision whose task is still in_progress under the same start, applies only while already_filed(ctx, task) is None (drive-phase.py:3078-3079). All 4 call sites updated: step_member (2733), walk_wave (2778), drive_locked (4364), explain (5040), so the wave's parked decisions, the single pending and the explain verb read the same rule. Test: new block _wave_parked_return_cases (stage wp-block) in test_drive_phase.py; wp0 pins the fixture (P1.1 reviewer dispatched while P1.2's no-executor-return waits parked, so a vacuous pass is impossible); wp1 files P1.2's executor late, runs next, asserts parked entry gone, pending is not no-executor-return, P1.2 has one passed gate row, and the print does not name no-executor-return. Red on current code seen first: wp1 FAIL (parked kept, rows []); green after fix: 2/2. Sweep: 335/335 files ok, 16571 cases, background exit code 0. ruff clean; vermin min 3.7. Requirement clauses: (1) keeps-parked-while-in_progress-same-start fixed at drive-phase.py:3078-3079; (2) the drive no longer stops on the false line: wp1 third-next print has no no-executor-return, test_drive_phase.py wp1. Left, not fixed (out of scope): the sibling decision no-reviewer-return (drive-phase.py:1862-1863) has the same shape - a reviewer return filed late leaves a parked one standing; worth a register entry.",
+        "descriptive": "A parked no-executor-return decision is dropped once the member's return is filed, so the member advances instead of the drive stopping on a false line."
       },
       "startedAt": "2026-10-17T00:35:59Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T01:55:11Z",
+      "verifiedBy": [
+        "wp1 a no-executor-return decision parked while other dispatches were due is dropped on the next run once the member's return is filed, and the member advances"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-17T01:55:00Z.65d8b2",
         "status": "passed",
         "at": "2026-10-17T01:55:00Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "1ee08a38dfdb",
+        "at": "2026-10-17T01:55:11Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-17T00:53:51Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage wp-block` in a throwaway tree at HEAD exited 1 with 1 of 2 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests on HEAD's code failing only the unknown-stage check for `wp-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - wp1 (house FAIL): SELFTEST FAILED: 1/2 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1654,7 +1668,12 @@
       "startedAt": "2026-10-17T00:36:01Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T02:06:38Z.93e828",
+        "status": "failed",
+        "at": "2026-10-17T02:06:38Z"
+      }
     },
     {
       "id": "P128.34-0h5",

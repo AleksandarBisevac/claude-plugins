@@ -555,6 +555,51 @@ def _path_problems(values):
     return bad
 
 
+def _unsplit_parts(value, project):
+    """The parts of `value` when it is several existing paths joined by
+    whitespace, else None.
+
+    READS THE DISK, NOT THE SPELLING: a path that exists as written (a file
+    whose name holds a space) is a path whatever it looks like, so the entry
+    itself is stat-ed first and only an entry that names nothing is split. Every
+    part has to exist too -- one that does not leaves the entry as likely to be
+    a name the task is about to create as a mis-joined list, and `scope` already
+    says so as a note rather than refusing.
+    """
+    if not isinstance(value, str):
+        return None
+    stripped = _vocab._strip_line_suffix(value)
+    if os.path.exists(os.path.join(project, stripped)):
+        return None
+    parts = stripped.split()
+    if len(parts) < 2:
+        return None
+    if all(os.path.exists(os.path.join(project, part)) for part in parts):
+        return parts
+    return None
+
+
+def _never_existed(entry, project, git_root):
+    """True when `entry` is not on disk and no commit in any ref ever touched it.
+
+    A PATH THAT NEVER EXISTED CANNOT HAVE BEEN GRADED: the narrowing guard
+    exists because a recorded commit is judged against the CURRENT `files`, and
+    a commit can only stage a path that was once there. Absence from the disk
+    alone is not that -- a deleted file was staged by the commit that deleted
+    it -- so history is asked too, and when it cannot be asked (not a
+    repository, no git) the answer is False, which keeps the refusal.
+    """
+    if not isinstance(entry, str):
+        return False
+    stripped = _vocab._strip_line_suffix(entry)
+    full = os.path.join(project, stripped)
+    if os.path.exists(full):
+        return False
+    code, sha = _git_answer(git_root, "log", "--all", "-n1", "--format=%H",
+                            "--", ":(literal)" + _output.posix_rel(full, git_root))
+    return code == 0 and not sha
+
+
 def _files_refusal(values, project=None):
     """The refusal for a `--files` entry that cannot be a path, or None.
 
@@ -580,6 +625,13 @@ def _files_refusal(values, project=None):
             if target is not None:
                 bad.append("%r: moved to %s -- scope the new path instead"
                            % (value, target))
+                continue
+            parts = _unsplit_parts(value, project)
+            if parts:
+                bad.append("%r: no such path, but each of its whitespace-"
+                           "separated parts (%s) is one -- the flag splits on "
+                           "commas, so join them with commas"
+                           % (value, ", ".join(parts)))
     if not bad:
         return None
     return ("[audit-task] --files takes the REPLACEMENT list of "
@@ -1544,7 +1596,7 @@ def _attempt_phrase(task):
     return "during attempt %s, while the task is %s" % (attempt, status)
 
 
-def _narrowings(changes):
+def _narrowings(changes, project=None, git_root=None):
     """The rows in `changes` that are NOT a widening, each as a printable clause.
 
     APPEND-ONLY IS THE EXACT OPERATION THAT CANNOT RE-JUDGE A PAST COMMIT, and
@@ -1581,7 +1633,9 @@ def _narrowings(changes):
             # widening: the shared `covers` rule decides, not a second spelling.
             dropped = [item for item in was if item not in now
                        and not (row["field"] == "files"
-                                and any(_touts.covers(n, item) for n in now))]
+                                and any(_touts.covers(n, item) for n in now))
+                       and not (row["field"] == "files" and project
+                                and _never_existed(item, project, git_root))]
             if dropped:
                 out.append("`%s` would drop %s"
                            % (row["field"], ", ".join(str(d) for d in dropped)))
@@ -9095,7 +9149,13 @@ def _locked_scope(args, project, config, mpath, tid, out):
     # `_write_add` are below), so returning here leaves an in-memory `assembled`
     # that is discarded with the frame and a manifest nobody touched.
     if started:
-        blockers = _narrowings(changes)
+        # PROJECT AND GIT ROOT HAND THE GUARD ITS BASIS for one exception: a
+        # dropped `files` entry that is on no disk and in no commit was never
+        # graded, so dropping it moves no judgement already made.
+        blockers = _narrowings(
+            changes, project,
+            os.path.abspath(os.path.join(project,
+                                         (config or {}).get("gitRoot") or ".")))
         if blockers:
             out(_rescope_refusal(tid, node, blockers))
             return E_USAGE
