@@ -6486,6 +6486,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("gt-block", "_git_stdin_cases"),
           ("ci-block", "_ci_cadence_cases"),
           ("cr-block", "_carry_cases"),
+          ("sl-block", "_slice_cases"),
           ("sb-block", "_stage_cases"))
 
 
@@ -7456,6 +7457,180 @@ def _fixture_git_case(check, preferred):
           "git call, a checked call of anything else and the helper are not: %r"
           % (bare_git_calls(twin),),
           bare_git_calls(twin) == [1, 2])
+
+
+# --- a phase brief past the reader's budget ------------------------------------
+SLICE_CLAUSE = ("plugins/audit/tests/test_drive_phase.py: a phase brief past the "
+                "reader budget is written as task-boundary slices with the header "
+                "and owed lines each, one reviewer is dispatched per slice, and "
+                "their returns aggregate into the one filed return")
+_SLICE_DISPATCH = re.compile(r"^dispatch \S+ (\S+)(?: slice (\d+)/(\d+))? "
+                             r"model=\S+ brief=(\S+)", re.M)
+_SLICE_SECTION = re.compile(r"^## (P1\.\d+) ", re.M)
+_SLICE_OWED = re.compile(r"^owed: (\S+)$", re.M)
+_SLICE_FLAG = re.compile(r" --slice (\d+)/(\d+)")
+
+
+def _inflate(root, mpath, size):
+    """Give every task a description of about `size` bytes and commit the
+    plan, so a phase brief that embeds each task's claim outgrows the reader's
+    budget. The filler is many short lines, as prose is, not one long one."""
+    with open(mpath, "r", encoding="utf-8") as fh:
+        plan = json.load(fh)
+    for task in plan["phases"][0]["tasks"]:
+        filler = "".join("filler line %05d of the %s record\n" % (n, task["id"])
+                         for n in range(size // 40))
+        task["description"] = task["description"] + "\n" + filler
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh, indent=2)
+    for argv in (["add", "-A"], ["commit", "-qm", "long descriptions"]):
+        _harness.git(root, *argv)
+
+
+def _read_text(root, rel):
+    with open(os.path.join(root, *rel.split("/")), "r", encoding="utf-8",
+              newline="") as fh:
+        return fh.read()
+
+
+def _slice_entries(tasks, ids):
+    return [{"id": tid, "commit": tasks[tid].get("commit"), "answer": "matches",
+             "note": "as asked", "missing": [], "redFirst": "not-attempted",
+             "redFirstBasis": "gate-only: no test is owed",
+             "inheritedTests": "not-asked",
+             "inheritedTestsBasis": "the gate is `true` and selects no test file"}
+            for tid in ids]
+
+
+def _file_slice(root, mpath, brief_text, entries_for=None, finding=True):
+    """Play one slice reviewer: answer the tasks its brief owes and run the
+    filing command it prints, `--slice` and `--shown` included. Returns
+    `(code, text)`."""
+    head = _HEAD_LINE.search(brief_text).group(1)
+    shown = re.search(r" --shown (\S+)", brief_text)
+    mark = _SLICE_FLAG.search(brief_text)
+    owed = _SLICE_OWED.findall(brief_text)
+    tasks = tasks_of(mpath)
+    n = mark.group(1) if mark else "0"
+    body = {"findings": ([{"id": 1, "severity": "low", "file": "src/f1.txt:1",
+                           "issue": "slice %s finding" % (n,),
+                           "resolution": "none"}] if finding else []),
+            "intent": {"answer": "matches", "note": "slice %s as asked" % (n,)},
+            "verdict": "findings" if finding else "clean",
+            "tasks": _slice_entries(tasks, owed if entries_for is None
+                                    else entries_for)}
+    argv = ["submit", PHASE, "--role", "reviewer", mpath, "--project-dir", root,
+            "--head", head]
+    if mark:
+        argv += ["--slice", "%s/%s" % (mark.group(1), mark.group(2))]
+    if shown:
+        argv += ["--shown", shown.group(1)]
+    return _verb(root, DRIVER, argv, stdin=json.dumps(body))
+
+
+def _slice_cases(check):
+    """A phase whose brief outgrows the reader's budget: sliced at task
+    boundaries, one reviewer per slice, one return filed once all are in."""
+    def clause(detail):
+        return "%s (%s)" % (SLICE_CLAUSE, detail)
+
+    M, why = _load("drive_phase_sliced")
+    if M is None:
+        check(clause("the driver loads: %s" % (why,)), False)
+        return
+    lookup = _loader.load_script("audit-lookup.py", "lookup_sliced", cache=False)
+    budget = lookup.PHASE_BRIEF_BUDGET
+
+    # UNDER THE BUDGET, nothing is sliced: the over-fire twin, which goes red
+    # for a driver that slices every phase.
+    root, mpath = _repo("unsliced", per_task="phase")
+    run = drive(M, root, mpath, phase_review=False)
+    text = run["prints"][-1][1]
+    lines = _SLICE_DISPATCH.findall(text)
+    whole = _read_text(root, lines[0][3]) if lines else ""
+    check(clause("a brief inside the budget is one dispatch, written whole, with "
+                 "no slice named: %r" % ((lines, _SLICE_FLAG.findall(whole)),)),
+          len(lines) == 1 and lines[0][1] == "" and _SLICE_FLAG.search(whole) is None
+          and len(whole.encode("utf-8")) <= budget)
+
+    root, mpath = _repo("sliced", per_task="phase")
+    _inflate(root, mpath, budget * 6 // 10)
+    run = drive(M, root, mpath, phase_review=False, cap=60)
+    text = run["prints"][-1][1]
+    sent = _SLICE_DISPATCH.findall(text)
+    count = len(sent)
+    briefs = [_read_text(root, brief) for _p, _k, _n, brief in sent]
+    sizes = [len(b.encode("utf-8")) for b in briefs]
+    sections = [_SLICE_SECTION.findall(b) for b in briefs]
+    owed = [_SLICE_OWED.findall(b) for b in briefs]
+    heads = set(_HEAD_LINE.search(b).group(1) for b in briefs if _HEAD_LINE.search(b))
+    check(clause("one dispatch per slice, numbered 1 to N in one print, each brief "
+                 "inside the budget and each holding the header (the question "
+                 "and the head): %r" % ((count, [(k, n) for _p, k, n, _b in sent],
+                                          sizes, heads),)),
+          count >= 2
+          and [(k, n) for _p, k, n, _b in sent]
+          == [(str(i), str(count)) for i in range(1, count + 1)]
+          and all(size <= budget for size in sizes) and len(heads) == 1
+          and all("## The question" in b for b in briefs))
+    flat = [tid for group in sections for tid in group]
+    check(clause("every task section is in exactly one slice, a slice names the "
+                 "tasks it owes, and the owed lines of all slices are the tasks "
+                 "of the phase once each: %r" % ((sections, owed),)),
+          sorted(flat) == sorted(TASKS) and sorted(sum(owed, [])) == sorted(TASKS)
+          and all(sorted(a) == sorted(b) for a, b in zip(sections, owed)))
+    check(clause("each slice prints its own filing command, keyed on its number: "
+                 "%r" % ([_SLICE_FLAG.search(b).groups() if _SLICE_FLAG.search(b)
+                          else None for b in briefs],)),
+          count >= 2 and all(_SLICE_FLAG.search(b) and _SLICE_FLAG.search(b).groups()
+                             == (str(i), str(count))
+                             for i, b in enumerate(briefs, 1)))
+    if count < 2:
+        return
+
+    # A slice that leaves its owed task out is refused and stores nothing.
+    code, said = _file_slice(root, mpath, briefs[0], entries_for=[])
+    project, config = _evio.project_config_for(mpath, root)
+    evidence = _evio.evidence_dir(project, config)
+    check(clause("a slice return missing an entry its slice owes is refused, "
+                 "naming the task: %r" % ((code, said[:300]),)),
+          code != 0 and owed[0][0] in said
+          and _fr.phase_returns(evidence, PHASE) == [])
+    # ...then the slices file, in turn, and only the last one files the review.
+    filed = []
+    for brief in briefs[:-1]:
+        _file_slice(root, mpath, brief)
+        filed.append(len(_fr.phase_returns(evidence, PHASE)))
+    code, said = _file_slice(root, mpath, briefs[-1])
+    returns = _fr.phase_returns(evidence, PHASE)
+    body = returns[0][1] if len(returns) == 1 else {}
+    answered = sorted(e.get("id") for e in (body.get("tasks") or []))
+    ids = [f.get("id") for f in body.get("findings") or []]
+    issues = sorted(f.get("issue") for f in body.get("findings") or [])
+    check(clause("no return is filed while a slice is missing; the last slice "
+                 "files ONE phase return answering every task once, with each "
+                 "slice's finding kept under its own id and the verdict "
+                 "`findings`: %r" % ((filed, code, len(returns), answered, ids,
+                                      issues, body.get("verdict")),)),
+          code == 0 and filed == [0] * len(filed) and len(returns) == 1
+          and answered == sorted(TASKS) and len(set(ids)) == count == len(ids)
+          and issues == sorted("slice %d finding" % (i,) for i in range(1, count + 1))
+          and body.get("verdict") == "findings"
+          and sorted(e.get("id") for e in body.get("shown") or [])
+          == sorted(TASKS))
+    # A slice filed twice is refused and the filed review stays as it was.
+    code, said = _file_slice(root, mpath, briefs[0])
+    check(clause("a second filing of a slice is refused: %r" % ((code, said[:200]),)),
+          code != 0 and len(_fr.phase_returns(evidence, PHASE)) == 1)
+    with _Env(root):
+        said = []
+        again = M.main(["next", PHASE, mpath, "--project-dir", root],
+                       out=said.append)
+    check(clause("the next `next` reads the aggregated return and prints the "
+                 "triage over its findings: %r" % ("\n".join(said)[:200],)),
+          again == 0 and instruction("\n".join(said)) == TRIAGE
+          and "slice 1 finding" in "\n".join(said) + json.dumps(
+              _phase_of(mpath).get("review")))
 
 
 def _stage_cases(check):

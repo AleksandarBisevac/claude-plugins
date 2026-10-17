@@ -594,6 +594,17 @@ TRUNCATED = " [truncated]"
 # once it is recorded.
 SIGNED_OFF = ("passed", "skipped")
 _BRIEF_HEAD = re.compile(r"^head: ([0-9a-f]{7,40})\s*$", re.M)
+# The index a phase brief past the reader budget is written as, one line per
+# slice: `slice <n>/<total>: <path>`, the line `audit-lookup.py` writes.
+_BRIEF_SLICE = re.compile(r"^slice (\d+)/(\d+): (.+?)\s*$", re.M)
+_SLICE_SPEC = re.compile(r"^(\d+)/(\d+)$")
+# The rule under the dispatch of a sliced phase review: every slice goes out in
+# one message, and the return of the last one files the review.
+SLICE_RULE = ("dispatch the slices together in one message; each files its own "
+              "slice, the last files the review; then next")
+# The finding and preExisting lists of a sliced review are numbered afresh, and
+# the intent of the slice that answered worst stands for the phase.
+INTENT_WORST_FIRST = ("diverges", "cannot-tell", "matches")
 _RUN_ID = re.compile(r"evidence: recorded (\S+)")
 # close-phase's lines for a landing whose `mergedAt` stamp it did not commit:
 # skipped, opening with the path the stamp sits in, or a commit that failed.
@@ -934,17 +945,35 @@ def answer_command(ctx, options, needs):
         " --reason (%s)" % ("/".join(needs),) if needs else "")
 
 
-def dispatch_prompt(ctx, role, node_id):
-    """The prompt an agent is dispatched with: `DISPATCH_PROMPT`, then the id."""
+def dispatch_prompt(ctx, role, node_id, part=None):
+    """The prompt an agent is dispatched with: `DISPATCH_PROMPT`, then the id -
+    and, for one slice of a phase brief cut at the reader budget, its number."""
     return DISPATCH_PROMPT % {"script": _loader.script_path("drive-phase.py"),
                               "manifest": os.path.abspath(ctx["manifest"]),
                               "project": os.path.abspath(ctx["project"]),
-                              "role": role} + node_id
+                              "role": role} + node_id + (
+        "" if part is None else " --slice %d" % (part,))
 
 
 def dispatch_said(ctx, role, node_id, agent, model, brief):
     """The dispatch of `role` for `node_id` - a task's executor or reviewer, or
-    the phase reviewer for `phase` - with the brief it was written."""
+    the phase reviewer for `phase` - with the brief it was written. For the
+    phase reviewer `brief` may be the list of a sliced brief's paths: one
+    reviewer is dispatched for each, in one print."""
+    if role == "phase" and isinstance(brief, list):
+        step = "dispatch-phase-review"
+        total = len(brief)
+        lines = [step_text(step, agent=agent, phase="%s slice %d/%d" % (
+            node_id, n, total), model=model, brief=path)[0]
+            for n, path in enumerate(brief, 1)]
+        lines += [ADVANCE_LINE % {"phase": ctx["phase"]}, SLICE_RULE]
+        basis = ("%s model=%s, %d slices; once the last files: --answer "
+                 "sign-off --reason <the summary>" % (agent, model, total))
+        return instruction("dispatch", lines, signal_of(
+            step, node_id, basis, "Agent per slice: brief --role phase %s "
+            "--slice <n>" % (node_id,), prompts=[
+                dispatch_prompt(ctx, role, node_id, n)
+                for n in range(1, total + 1)]))
     if role == "phase":
         step = "dispatch-phase-review"
         lines = step_text(step, agent=agent, phase=node_id, model=model,
@@ -3297,18 +3326,162 @@ def dispatch_phase_review(ctx, state, phase):
     try:
         with open(os.path.join(ctx["project"], brief), "r",
                   encoding="utf-8") as fh:
-            head = _BRIEF_HEAD.search(fh.read())
+            text = fh.read()
     except OSError:
-        head = None
+        text = ""
+    head = _BRIEF_HEAD.search(text)
     if not head:
         return relay_refusal(ctx, "audit-lookup.py", 0,
                              "%s\n(the driver found no brief naming a head in "
                              "this)" % (out,))
     state["phaseReview"] = {"head": head.group(1)}
     write_state(ctx, state)
-    return dispatch_said(ctx, "phase", phase["id"], REVIEWER_AGENT,
-                         (phase.get("review") or {}).get("model") or "unset",
-                         project_relative(ctx, brief))
+    model = (phase.get("review") or {}).get("model") or "unset"
+    cut = _BRIEF_SLICE.findall(text)
+    if not cut:
+        return dispatch_said(ctx, "phase", phase["id"], REVIEWER_AGENT, model,
+                             project_relative(ctx, brief))
+    # A brief past the reader budget: a slice return left by an earlier dispatch
+    # at this head is dropped, so this round is the one the last slice completes.
+    for held in slice_return_paths(ctx, phase["id"], head.group(1)):
+        os.remove(held)
+    return dispatch_said(ctx, "phase", phase["id"], REVIEWER_AGENT, model,
+                         [project_relative(ctx, path.strip())
+                          for _n, _total, path in cut])
+
+
+# --- a phase review cut into slices ---------------------------------------------
+def state_root(ctx):
+    """The state directory the briefs and the driver's state sit under: the one
+    `next` resolved, or - for `submit`, which resolves no phase first - the
+    hooks' own reading of it for this project."""
+    if "stateDir" not in ctx:
+        hc = _loader.load_hooks_config(modname="audit__config")
+        ctx["stateDir"] = str(hc.state_dir(pathlib.Path(ctx["project"]),
+                                           ctx["config"] or {}))
+    return ctx["stateDir"]
+
+
+def slice_return_paths(ctx, phase_id, head, number=None):
+    """The slice returns held for the phase brief at `head`, in slice order -
+    or, with `number`, the one path that slice's return is held at."""
+    base = _fr.shown_brief_path(state_root(ctx), phase_id, head)[:-len(".json")]
+    if number is not None:
+        return "%s.slice%d.return.json" % (base, number)
+    folder, name = os.path.split(base)
+    try:
+        names = sorted(n for n in os.listdir(folder)
+                       if n.startswith(name + ".slice") and n.endswith(".return.json"))
+    except OSError:
+        return []
+    return [os.path.join(folder, n) for n in names]
+
+
+def slices_record(ctx, phase_id, head):
+    """`(slices, None)` - the `slices` list the phase brief at `head` recorded
+    beside its shown set - or `(None, why)` when it was not written as slices."""
+    path = _fr.shown_brief_path(state_root(ctx), phase_id, head)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            body = json.load(fh)
+    except (OSError, ValueError) as exc:
+        return None, "the record of the brief at head %s cannot be read (%s)" % (
+            head[:12], exc)
+    slices = body.get("slices") if isinstance(body, dict) else None
+    if not isinstance(slices, list) or not slices:
+        return None, ("the phase brief at head %s was not written as slices, so "
+                      "`--slice` has nothing to file against" % (head[:12],))
+    return slices, None
+
+
+def aggregate_slice_returns(bodies):
+    """The one phase return the slice returns `bodies` make, in slice order:
+    their findings and pre-existing findings numbered afresh (every slice
+    numbers from one), their `tasks` entries joined, the verdict `findings` when
+    any slice found something, and the intent of the slice that answered worst
+    - its notes and missing inputs joined - standing for the phase."""
+    def joined(key):
+        items = [item for body in bodies for item in body.get(key) or []]
+        return [dict(item, id=n) for n, item in enumerate(items, 1)]
+
+    def rank(intent):
+        word = intent.get("answer")
+        return (INTENT_WORST_FIRST.index(word) if word in INTENT_WORST_FIRST
+                else len(INTENT_WORST_FIRST))
+
+    intents = [body.get("intent") or {} for body in bodies]
+    intent = dict(min(intents, key=rank))
+    intent["note"] = " | ".join("slice %d: %s" % (n, one.get("note") or "")
+                                for n, one in enumerate(intents, 1))
+    if any("missing" in one for one in intents):
+        intent["missing"] = sorted(set(m for one in intents
+                                       for m in one.get("missing") or []))
+    findings = joined("findings")
+    out = {"findings": findings, "intent": intent,
+           "verdict": "findings" if findings or any(
+               body.get("verdict") == "findings" for body in bodies) else "clean",
+           "tasks": [entry for body in bodies for entry in body.get("tasks") or []]}
+    if any("preExisting" in body for body in bodies):
+        out["preExisting"] = joined("preExisting")
+    return out
+
+
+def take_slice(ctx, phase, args, body):
+    """`(aggregated, None)` once this slice's return is the last of its brief's,
+    `(None, None)` while others are outstanding, or `(None, stop)` when the
+    return is refused - nothing held then. A slice return is held to what its
+    slice recorded: the `--shown` set it was briefed with and an entry for each
+    task it is owed, no other."""
+    spec = _SLICE_SPEC.match(args.slice or "")
+    head = whole_head(ctx, args.head)
+    if not spec or not head:
+        return None, _stopped(ctx, "`--slice` is `<n>/<total>` and goes with the "
+                              "`--head` the slice's brief prints. Nothing filed.")
+    number, total = int(spec.group(1)), int(spec.group(2))
+    record, why = slices_record(ctx, phase["id"], head)
+    if record is None:
+        return None, _stopped(ctx, "%s. Nothing filed." % (why,))
+    if total != len(record) or not 1 <= number <= total:
+        return None, _stopped(ctx, "slice %s names no slice of the %d that brief "
+                              "was written as. Nothing filed." % (args.slice, len(record)))
+    mine = record[number - 1]
+    held = slice_return_paths(ctx, phase["id"], head, number)
+    if os.path.exists(held):
+        return None, _stopped(ctx, "slice %d/%d of the review at head %s is "
+                              "already filed and stays as filed. Nothing filed."
+                              % (number, total, head[:12]))
+    given, bad = (_fr.parse_shown(args.shown) if args.shown is not None
+                  else (None, None))
+    recorded = [(e.get("id"), e.get("commit")) for e in mine.get("shown") or []]
+    refusal = bad or _fr.shown_brief_refusal(
+        recorded, given, _fr.shown_brief_path(state_root(ctx), phase["id"], head),
+        head)
+    problems = [refusal] if refusal else []
+    entries = [e for e in body.get("tasks") or [] if isinstance(e, dict)]
+    answered = sorted(str(e.get("id")) for e in entries)
+    if answered != sorted(mine.get("owed") or []):
+        problems.append("the `tasks` entries answer %s and slice %d/%d is owed "
+                        "%s" % (", ".join(answered) or "no task", number, total,
+                                ", ".join(mine.get("owed") or []) or "no task"))
+    problems += submitted_shape("reviewer", body, [])
+    if problems:
+        return None, _stopped(ctx, "the slice return does not file. Nothing "
+                              "filed:\n%s" % ("\n".join("  " + p for p in problems)))
+    os.makedirs(os.path.dirname(held), exist_ok=True)
+    with open(held, "w", encoding="utf-8", newline="") as fh:
+        json.dump(body, fh, indent=2)
+        fh.write("\n")
+    ctx["did"].append("slice %d/%d of the phase review held" % (number, total))
+    bodies = []
+    for n in range(1, total + 1):
+        try:
+            with open(slice_return_paths(ctx, phase["id"], head, n), "r",
+                      encoding="utf-8") as fh:
+                bodies.append(json.load(fh))
+        except (OSError, ValueError):
+            return None, None
+    ctx["did"].append("all %d slices in, one phase return aggregated" % (total,))
+    return aggregate_slice_returns(bodies), None
 
 
 def filed_at_head(ctx, state, phase):
@@ -4771,6 +4944,19 @@ def submit(ctx, manifest, args, cmd, text):
                 "at the close: %s" % (len(unfalsified), "; ".join(unfalsified)))
         text = json.dumps(body, indent=2) + "\n"
     head = args.head
+    if args.slice is not None and (task is not None or args.role != "reviewer"):
+        return _stopped(ctx, "`--slice` files one slice of a phase review: give a "
+                        "phase id and `--role reviewer`. Nothing filed.")
+    if args.slice is not None:
+        whole, stop = take_slice(ctx, phase, args, body)
+        if stop is not None:
+            return stop
+        if whole is None:
+            return E_OK, instruction("filed", [])
+        body, text = whole, json.dumps(whole, indent=2) + "\n"
+        pairs, _why = _fr.read_shown_brief(state_root(ctx), phase["id"],
+                                           whole_head(ctx, args.head))
+        args.shown = _fr.shown_argument_of(pairs) if pairs else None
     if task is None and args.role == "reviewer":
         head = whole_head(ctx, head)
         if isinstance(body, dict) and isinstance(body.get("tasks"), list):
@@ -5089,7 +5275,9 @@ def run_brief(args, out):
         return E_USAGE
     code, said, err = run_verb(ctx, "audit-lookup.py", [
         ctx["manifest"], "brief", args.id, "--role", args.role, "--read",
-        "--project", ctx["project"]], record=True)
+        "--project", ctx["project"]] + (
+            [] if args.slice is None else ["--slice", str(args.slice)]),
+        record=True)
     if code != 0:
         out("drive-phase.py: no brief to print - %s" % ((err or said).strip(),))
         return E_USAGE
@@ -5144,6 +5332,9 @@ def build_parser():
     brf.add_argument("--manifest", dest="manifest_named", default=None,
                      metavar="PATH", help="the manifest, named where the id "
                      "must come last - the dispatch prompt's spelling")
+    brf.add_argument("--slice", type=int, default=None, metavar="N",
+                     help="with `--role phase`: the slice of a brief cut at the "
+                          "reader budget that this reviewer holds")
     brf.add_argument("--project-dir", dest="project_dir", default=None)
     brf.add_argument("--verbose", action="store_true")
     sbm = sub.add_parser("submit", help="file an agent's return, read on stdin: "
@@ -5157,6 +5348,10 @@ def build_parser():
     sbm.add_argument("--shown", default=None, metavar="ID@SHA,...",
                      help="the tasks a phase review's brief showed, as its "
                           "filing command names them; recorded by the verb")
+    sbm.add_argument("--slice", default=None, metavar="N/TOTAL",
+                     help="a phase review's slice, as its brief prints it: the "
+                          "return is held until every slice has filed, then "
+                          "they file as the one phase return")
     sbm.add_argument("--project-dir", dest="project_dir", default=None)
     sbm.add_argument("--case", action="append", default=[],
                      help="passed to the red-first helper; needs a test command")

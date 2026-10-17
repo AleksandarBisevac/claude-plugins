@@ -1312,14 +1312,16 @@ def _recorded_run_line(evidence, rows, rows_why):
     return "%s; %s" % (line, "; ".join(banners)) if banners else line
 
 
-def compose_phase_brief(manifest, phase, ctx):
-    """`(lines, head, shown)` - the sign-off reviewer's whole brief, as lines:
-    the request as saved and the choices it left open, the fixed question,
-    every task with a diff on its own record, and under `review.perTask:
-    phase` the tasks owed their three answers, the head this brief was computed
-    at and the filing command keyed on it. `head` is None when git did not
-    answer; `shown` is the `(id, commit)` set its sections show, None when the
-    brief stops before computing it."""
+def phase_brief_parts(manifest, phase, ctx):
+    """The sign-off reviewer's brief in the pieces a slice is cut from: the
+    `header` (the request as saved, the choices it left open, the fixed
+    question, the re-review scope), one `units` entry `(task, lines)` for every
+    task with a diff on its own record, the `wide` sections that belong to the
+    phase and not to a task, and what the closing sections are made of - `owed`
+    (the task ids owed their three answers under `review.perTask: phase`),
+    `shown` (the tasks the units show), the head this brief was computed at and
+    `owed_why` where which tasks are owed could not be read. `head` is None
+    when git did not answer."""
     pid = str(phase.get("id"))
     head, head_why = _head(ctx)
     live, answered, seen, owed_why = _review_owed(ctx, phase)
@@ -1400,6 +1402,7 @@ def compose_phase_brief(manifest, phase, ctx):
             "round; only a `med` or `high` one owes a fix."]
     if scope:
         lines += _section("Re-review scope", scope)
+    header, units = lines, []
     for task in shown:
         tid = str(task.get("id"))
         entries, whose = _task_gate(manifest, phase, task)
@@ -1417,7 +1420,7 @@ def compose_phase_brief(manifest, phase, ctx):
         # per-task body a re-review reads (`answer_lines` in
         # `test_audit_lookup.py`) is split at the next `## ` header, so text
         # placed after that nested pair would read as outside this task.
-        lines += _section("%s %s" % (tid, task.get("title") or ""), [
+        units.append((task, _section("%s %s" % (tid, task.get("title") or ""), [
             "commit: %s" % (task.get("commit"),),
             "files:"] + ["- %s" % (f,) for f in task.get("files") or []]
             + _tests_add_review_lines(
@@ -1429,27 +1432,34 @@ def compose_phase_brief(manifest, phase, ctx):
             + [_owed_line(task, phase, live, answered)] + computed
             + [""] + _fr.claim_section(
                 task, text if text is not None else
-                "none filed for its current start").split("\n"))
-    lines += _section("Phase diff scope", _phase_scope_lines(ctx, phase, head))
-    lines += _section("Existing test files the phase modifies",
-                      existing_test_lines(ctx, phase, head))
+                "none filed for its current start").split("\n"))))
+    wide = _section("Phase diff scope", _phase_scope_lines(ctx, phase, head))
+    wide += _section("Existing test files the phase modifies",
+                     existing_test_lines(ctx, phase, head))
     if skipped:
-        lines += _section("Tasks with no diff", [
+        wide += _section("Tasks with no diff", [
             "Closed with no commit (a no-change close) or cancelled, so there "
             "is no diff to review: %s" % (", ".join(skipped),)])
     owed = [str(t.get("id")) for t in shown
             if _fr.owed_answer(t, phase, live, answered)]
-    if owed_why:
-        lines += _section("Review answers owed per task", [
-            "Which tasks are owed their answers could not be read: %s. Sign-off "
-            "and its filing refuse until it can." % (owed_why,)])
-        return lines, head, None
+    return {"pid": pid, "head": head, "head_why": head_why, "header": header,
+            "units": units, "wide": wide, "owed": owed, "owed_why": owed_why,
+            "shown": shown}
+
+
+def phase_closing_lines(ctx, parts, shown, owed, slice_of=None):
+    """The brief's last sections for the `shown` tasks and the `owed` ids among
+    them: which are owed their answers, and the filing command keyed on this
+    head, this shown set and - for a slice `(n, total)` - this slice."""
+    pid, head, head_why = parts["pid"], parts["head"], parts["head_why"]
     # The set this brief shows rides on its filing command, so the verb can
     # record what the round reviewed - fix tasks included, which no `tasks`
     # entry ever names - and the next round's brief leaves it out.
-    file_cmd = submit_command(ctx, pid, "reviewer", " --head %s%s" % (
+    file_cmd = submit_command(ctx, pid, "reviewer", " --head %s%s%s" % (
         head or "<head>",
-        " --shown %s" % (shlex.quote(shown_argument(shown)),) if shown else ""))
+        " --shown %s" % (shlex.quote(shown_argument(shown)),) if shown else "",
+        " --slice %d/%d" % slice_of if slice_of else ""))
+    lines = []
     if not owed:
         # FILED EVEN WHEN NOTHING IS OWED: the step driver reads the phase
         # review's findings from the filed return, so a return handed back
@@ -1463,7 +1473,7 @@ def compose_phase_brief(manifest, phase, ctx):
             file_cmd if head else
             "The head could not be read (%s), so there is no head to file "
             "under: run this brief again where git answers." % (head_why,)])
-        return lines, head, shown_pairs(shown)
+        return lines
     lines += _section("Review answers owed per task", [
         "review.perTask reads `phase`, so no reviewer answered these tasks one "
         "by one: you do, by the rules `mode: task` applies to one task. Each "
@@ -1478,7 +1488,148 @@ def compose_phase_brief(manifest, phase, ctx):
         file_cmd if head else
         "The head could not be read (%s), so there is no head to file under: "
         "run this brief again where git answers." % (head_why,)])
-    return lines, head, shown_pairs(shown)
+    return lines
+
+
+def compose_phase_brief(manifest, phase, ctx):
+    """`(lines, head, shown)` - the sign-off reviewer's whole brief, as lines:
+    the header, every task with a diff on its own record, and under
+    `review.perTask: phase` the tasks owed their three answers, the head this
+    brief was computed at and the filing command keyed on it. `head` is None
+    when git did not answer; `shown` is the `(id, commit)` set its sections
+    show, None when the brief stops before computing it."""
+    return whole_phase_brief(ctx, phase_brief_parts(manifest, phase, ctx))
+
+
+def whole_phase_brief(ctx, parts):
+    """`compose_phase_brief`'s answer for `phase_brief_parts`' pieces."""
+    lines = list(parts["header"])
+    for _task, unit in parts["units"]:
+        lines += unit
+    lines += parts["wide"]
+    if parts["owed_why"]:
+        lines += _section("Review answers owed per task", [
+            "Which tasks are owed their answers could not be read: %s. Sign-off "
+            "and its filing refuse until it can." % (parts["owed_why"],)])
+        return lines, parts["head"], None
+    lines += phase_closing_lines(ctx, parts, parts["shown"], parts["owed"])
+    return lines, parts["head"], shown_pairs(parts["shown"])
+
+
+# --- a phase brief past the reader's budget ------------------------------------
+# A reader takes a brief whole, so a phase of many tasks with large diffs wrote
+# one nobody could take: two phase reviews were 2.5 and 2.3 megabytes and were
+# possible only by cutting the brief by hand and adding the returns up by hand.
+# A brief over the budget is cut instead at TASK boundaries - a task's section is
+# the unit a reviewer answers, so a cut inside one would split a claim from its
+# diff. Each slice holds the header, whole tasks and its own owed lines and
+# filing command; `drive-phase.py` dispatches one reviewer per slice and files
+# their returns as the one return. A single task whose section alone passes the
+# budget is a slice of its own: there is nothing smaller to cut at.
+PHASE_BRIEF_BUDGET = 400000
+SLICE_ROOM = 2000     # bytes a slice's banner and index line may add to its estimate
+SLICE_LINE = "slice %d/%d: %s"
+
+
+def _bytes_of(lines):
+    return sum(len(line.encode("utf-8")) + 1 for line in lines)
+
+
+def pack_slices(ctx, parts, budget):
+    """The `units` of `parts` grouped into slices, as lists of `(task, lines)`:
+    each group is filled in plan order until the next task would take its
+    estimated size past `budget`, the phase-wide sections counted in the first
+    group. A group always holds at least one task."""
+    owed = set(parts["owed"])
+
+    def closing(group):
+        tasks = [task for task, _unit in group]
+        ids = [str(t.get("id")) for t in tasks if str(t.get("id")) in owed]
+        return _bytes_of(phase_closing_lines(ctx, parts, tasks, ids, (99, 99)))
+
+    fixed = _bytes_of(parts["header"]) + SLICE_ROOM
+    groups, used = [[]], fixed + _bytes_of(parts["wide"])
+    for pair in parts["units"]:
+        grown = groups[-1] + [pair]
+        cost = used + _bytes_of(pair[1]) + closing(grown)
+        if groups[-1] and cost > budget:
+            groups.append([pair])
+            used = fixed + _bytes_of(pair[1])
+        else:
+            groups[-1] = grown
+            used += _bytes_of(pair[1])
+    return groups
+
+
+def slice_lines(ctx, parts, group, number, total, budget, first):
+    """One slice of the brief: the header under a title naming the slice, a
+    banner saying what the reader holds, its task sections, the phase-wide
+    sections where `first`, and the owed lines and filing command of its own
+    tasks."""
+    tasks = [task for task, _unit in group]
+    ids = [str(t.get("id")) for t in tasks]
+    owed = [tid for tid in parts["owed"] if tid in ids]
+    head_lines = list(parts["header"])
+    head_lines[0] = "# Brief for %s (reviewer, mode: phase, slice %d/%d)" % (
+        parts["pid"], number, total)
+    banner = [
+        "This is slice %d of %d of one phase brief that outgrew the reader "
+        "budget (%d bytes) and was cut at task boundaries. It holds whole: %s."
+        % (number, total, budget, ", ".join(ids)),
+        "Another reviewer holds each other slice. Answer the tasks owed below "
+        "and file the return your slice prints under `## Your return`: the drive "
+        "files the one phase return once every slice has filed."]
+    lines = head_lines[:2] + banner + head_lines[2:]
+    for _task, unit in group:
+        lines += unit
+    if first:
+        lines += parts["wide"]
+    lines += phase_closing_lines(ctx, parts, tasks, owed, (number, total))
+    return lines, owed
+
+
+def sliced_phase_brief(ctx, parts, whole_size, node_id, budget=PHASE_BRIEF_BUDGET):
+    """`None` while the brief stays one file, else `{"index": text, "slices":
+    [{"n", "path", "text", "tasks", "owed", "shown"}, ...]}` - the index file's
+    text and each slice's file, the ids it holds, the ids it is owed and the
+    `(id, commit)` pairs it shows. A brief stays whole when it fits `budget`,
+    when git named no head to key a slice's filing on, when which tasks are owed
+    could not be read, and when the tasks do not make more than one group."""
+    if (whole_size <= budget or not parts["head"] or parts["owed_why"]
+            or len(parts["units"]) < 2):
+        return None
+    groups = pack_slices(ctx, parts, budget)
+    if len(groups) < 2:
+        return None
+    total = len(groups)
+    slices = []
+    for number, group in enumerate(groups, 1):
+        lines, owed = slice_lines(ctx, parts, group, number, total, budget,
+                                  number == 1)
+        tasks = [task for task, _unit in group]
+        slices.append({"n": number, "text": "\n".join(lines) + "\n",
+                       "path": brief_file(ctx, node_id, "phase", None, number),
+                       "tasks": [str(t.get("id")) for t in tasks],
+                       "owed": owed, "shown": shown_pairs(tasks)})
+    head = parts["header"]
+    index = [head[0] + " - sliced", ""] + head[2:4] + [
+        "The brief outgrew the reader budget (%d bytes) and is written as %d "
+        "slices, one per reviewer; no reviewer reads this file." % (budget, total)]
+    for one in slices:
+        index += [SLICE_LINE % (one["n"], total, one["path"]),
+                  "  tasks: %s" % (", ".join(one["tasks"]),)]
+    return {"index": "\n".join(index) + "\n", "slices": slices}
+
+
+def with_slices_text(record_text, slices):
+    """The shown-set record `_fr.shown_brief_text` wrote, with a `slices` list
+    added - each slice's number, the tasks it holds and is owed, and the pairs
+    it shows - for the filing verb to hold a slice's return to."""
+    body = json.loads(record_text)
+    body["slices"] = [{"n": one["n"], "tasks": one["tasks"], "owed": one["owed"],
+                       "shown": _fr.shown_record(one["shown"])}
+                      for one in slices]
+    return json.dumps(body, indent=2) + "\n"
 
 
 def brief_target(manifest, node_id, role):
@@ -1496,10 +1647,12 @@ def brief_target(manifest, node_id, role):
     return None
 
 
-def brief_file(ctx, node_id, role, started_at=None):
+def brief_file(ctx, node_id, role, started_at=None, part=None):
     """Where a brief is written: under `stateDir`, keyed by the start a task
-    brief belongs to, so a retry's brief never reads as the first one's."""
-    name = ("phase.md" if role == "phase" else
+    brief belongs to, so a retry's brief never reads as the first one's. `part`
+    is the number of a slice of a phase brief that outgrew the reader budget."""
+    name = ("phase.md" if role == "phase" and part is None else
+            "phase.slice%d.md" % (part or 0) if role == "phase" else
             "%s.%s.md" % (_fr.return_start_key(started_at), role))
     return os.path.join(ctx["state"], BRIEFS_DIRNAME, node_id, name)
 
@@ -1512,7 +1665,7 @@ def write_brief(manifest, manifest_path, project_arg, node_id, role):
                            % ("phase" if role == "phase" else "task", node_id))
     phase, task = target
     ctx = _brief_context(manifest_path, project_arg)
-    record = None
+    record, extra = None, []
     if role == "phase":
         held = phase_brief_refusal(phase)
         if held:
@@ -1521,10 +1674,18 @@ def write_brief(manifest, manifest_path, project_arg, node_id, role):
                 "review binds each task's answers to its commit, and those would "
                 "have no diff. Close them first. No brief written."
                 % (node_id, ", ".join(held)))
-        lines, head, shown = compose_phase_brief(manifest, phase, ctx)
+        parts = phase_brief_parts(manifest, phase, ctx)
+        lines, head, shown = whole_phase_brief(ctx, parts)
         record = (None if head is None or shown is None else
                   (_fr.shown_brief_path(ctx["state"], node_id, head),
                    _fr.shown_brief_text(head, shown)))
+        cut = sliced_phase_brief(ctx, parts, _bytes_of(lines), node_id)
+        if cut is not None:
+            # The index is what `written:` names, so the drive finds the head
+            # and the slices there; the whole brief is not written at all.
+            lines = cut["index"].rstrip("\n").split("\n")
+            record = (record[0], with_slices_text(record[1], cut["slices"]))
+            extra = [(one["path"], one["text"]) for one in cut["slices"]]
     elif not task.get("startedAt"):
         return E_REFUSED, ("REFUSED: %s records no start (`startedAt`), and a "
                            "brief belongs to one start - /audit:task start %s "
@@ -1545,7 +1706,7 @@ def write_brief(manifest, manifest_path, project_arg, node_id, role):
         _found, files = brief_lookup(manifest, node_id)
         lines = compose_executor_brief(manifest, phase, task, ctx, files, gate)
     path = brief_file(ctx, node_id, role, (task or {}).get("startedAt"))
-    writes = [(path, "\n".join(lines) + "\n")]
+    writes = [(path, "\n".join(lines) + "\n")] + extra
     if record is not None:
         writes.append(record)
     for where, text in writes:
@@ -1576,18 +1737,21 @@ def write_exact(stream, text):
     raw.flush()
 
 
-def read_brief(manifest, manifest_path, project_arg, node_id, role):
+def read_brief(manifest, manifest_path, project_arg, node_id, role, part=None):
     """`(code, text)` - the brief `write_brief` wrote for `node_id`'s current
     start, read back unchanged, or why there is none. It composes nothing, so
-    an agent reads the brief the drive dispatched it with."""
+    an agent reads the brief the drive dispatched it with - for a phase brief
+    cut into slices, the slice `part` numbers."""
     if role is None:
         return E_USAGE, "--read reads one role's brief: give --role"
+    if part is not None and role != "phase":
+        return E_USAGE, "--slice reads a slice of a phase brief: give --role phase"
     target = brief_target(manifest, node_id, role)
     if target is None:
         return E_NOMATCH, ("no %s %r in this manifest"
                            % ("phase" if role == "phase" else "task", node_id))
     ctx = _brief_context(manifest_path, project_arg)
-    path = brief_file(ctx, node_id, role, (target[1] or {}).get("startedAt"))
+    path = brief_file(ctx, node_id, role, (target[1] or {}).get("startedAt"), part)
     try:
         with open(path, "r", encoding="utf-8", newline="") as fh:
             return E_OK, fh.read()
@@ -1816,6 +1980,10 @@ def build_parser():
         "--read", dest="read", action="store_true",
         help="with --role: print the brief already written for the current "
              "start, byte for byte, and write nothing")
+    brief_p.add_argument(
+        "--slice", dest="slice", type=int, default=None, metavar="N",
+        help="with --read --role phase: print slice N of a phase brief that "
+             "outgrew the reader budget and was written as slices")
     run_p = sub.add_parser(
         "run", parents=[common],
         help="the evidence ledger row a background gate is read from")
@@ -1864,7 +2032,7 @@ def main(argv):
         node_id = args.id
     elif args.question == "brief" and args.read:
         code, said = read_brief(manifest, args.manifest, args.project, args.id,
-                                args.role)
+                                args.role, args.slice)
         if code == E_OK:
             write_exact(sys.stdout, said)
         else:
