@@ -136,11 +136,13 @@
         "severity": "med",
         "file": "tools/gate-parity.py:3647-3658",
         "issue": "The new else branch treats any control result of zero leftover directories as a legitimate skip, including when the shell is dash. Before the diff the dash branch was check(..., len(left) == 1), so a dash that no longer left its directory behind (a dash build that honours a RETURN trap, or a changed _RETURN_TRAP_FUNC that stopped reproducing the defect) turned the suite RED. Now skip(..., absent=len(left)==0) is True in that case, so the suite is green with 'vsh5 SKIPPED HERE - under dash ... install dash to run the control'. That is the vacuous-control state the control exists to catch, and the text tells the reader to install a shell that is already running. The skip's absent evidence is read off the control's own result rather than off the platform, which is what skip()'s docstring says it must not do.",
-        "resolution": "Make the skip conditional on the shell not being dash, for example: if len(left)==1 -> real control; elif dash is None -> skip(..., len(left)==0); else check('vsh5 ... under dash the RETURN-trap spelling left %d directories, so vsh2-vsh4 and vsh9 cannot see the defect', False). That keeps the labelled skip for the no-dash machine and keeps the old red for dash.",
-        "fixTask": "P128.54-izt"
+        "resolution": "fixed in P128.54-izt (4176618c8f33): Make the skip conditional on the shell not being dash, for example: if len(left)==1 -> real control; elif dash is None -> skip(..., len(left)==0); else check('vsh5 ... under dash the RETURN-trap spelling left %d directories, so vsh2-vsh4 and vsh9 cannot see the defect', False). That keeps the labelled skip for the no-dash machine and keeps the old red for dash.",
+        "fixTask": "P128.54-izt",
+        "commit": "4176618c8f33",
+        "status": "fixed"
       }
     ],
-    "outcome": "[findings: 13 - 0 high, 4 med, 9 low; 7 with a recorded fix commit]"
+    "outcome": "[findings: 13 - 0 high, 4 med, 9 low; 8 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -3428,7 +3430,7 @@
     {
       "id": "P128.54-izt",
       "title": "fix P128-R13: The new else branch treats any control result of zero leftover ...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The new else branch treats any control result of zero leftover directories as a legitimate skip, including when the shell is dash. Before the diff the dash branch was check(..., len(left) == 1), so a dash that no longer left its directory behind (a dash build that honours a RETURN trap, or a changed _RETURN_TRAP_FUNC that stopped reproducing the defect) turned the suite RED. Now skip(..., absent=len(left)==0) is True in that case, so the suite is green with 'vsh5 SKIPPED HERE - under dash ... install dash to run the control'. That is the vacuous-control state the control exists to catch, and the text tells the reader to install a shell that is already running. The skip's absent evidence is read off the control's own result rather than off the platform, which is what skip()'s docstring says it must not do.\n\nResolution asked: Make the skip conditional on the shell not being dash, for example: if len(left)==1 -> real control; elif dash is None -> skip(..., len(left)==0); else check('vsh5 ... under dash the RETURN-trap spelling left %d directories, so vsh2-vsh4 and vsh9 cannot see the defect', False). That keeps the labelled skip for the no-dash machine and keeps the old red for dash.",
       "files": [
         "tools/gate-parity.py"
@@ -3456,14 +3458,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4176618c8f33",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/gate-parity.py: vsh5 skip is now conditional on what the shell IS. New helpers return_trap_honoured(shell) (probes the shell directly with a one-line function-scoped RETURN trap; dash prints 'bad trap', sh/bash print 'honoured') and return_trap_verdict(dash_present, left_count, honoured) -> control|skip|fail (helper defs just above _verify_cleanup_cases; call site in the 'The control' block). Skip only when no dash on PATH AND the fallback shell honours the trap when probed AND zero directories were left; dash on PATH with 0 left, or any other count, is check(vsh5 ..., False) naming the count, dash presence and probe result. The skip text no longer tells a dash user to install dash. New cases: vsh10 (all 12 combinations of dash/count/honoured against an independent expected table), vsh11 (two stub shells, one printing the word, one silent, so the probe separates both directions on any machine), vsh12 (real dash must be probed not-honoured; labelled skip via house skip() if no dash is installed, not a silent branch). Mutations, each restored (diff against backup clean): old behaviour (skip whenever left==0) -> vsh10 FAIL 145/146; skip branch returns fail -> vsh10 FAIL 145/146; probe always True -> vsh11 and vsh12 FAIL 144/146; dash that stops leaving its directory (_RETURN_TRAP_FUNC mktemp replaced) -> vsh5 FAIL 145/146 with 'left 0 directories (dash on PATH: True, probed: False)'. Unmutated: gate-parity selftest 146/146, full sweep exit 0 (335/335 files, 16639 cases). Requirement clauses: (1) skip conditional on non-dash: gate-parity.py return_trap_verdict + vsh5 block; (2) dash with len(left)==1 keeps real control; (3) dash with other counts keeps the red, as check(..., False); (4) no-dash machine keeps a labelled skip via _harness.skip. Deviation from the suggested spelling: the skip's absent evidence is the direct probe plus no-dash, with len(left)==0 only as the consistency condition, because the reviewer asked that it be read off the shell and not the control result. Not run: browser gates and verify.sh (forbidden by the orchestrator addendum). The no-dash path was not exercised end-to-end on this machine (dash is at /bin/dash); it is covered by vsh10/vsh11 on the verdict and probe functions.",
+        "descriptive": "The vsh5 RETURN-trap control can no longer go vacuously green under dash: only a dash-less machine whose shell provably honours the trap may skip, and a dash that stops reproducing the defect turns the suite red again."
       },
       "startedAt": "2026-10-17T12:44:00Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T13:53:48Z",
+      "verifiedBy": [
+        "vsh10",
+        "vsh11",
+        "vsh12"
+      ],
       "notes": [
         {
           "at": "2026-10-17T12:43:51Z",
@@ -3486,6 +3492,18 @@
         "runId": "2026-10-17T13:39:05Z.231fd8",
         "status": "passed",
         "at": "2026-10-17T13:39:05Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "4176618c8f33",
+        "at": "2026-10-17T13:53:48Z",
+        "return": "docs/audit/evidence/returns/P128.54-izt/20261017T124400Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "could-not-prove",
+        "at": "2026-10-17T13:08:42Z",
+        "basis": "P128.54-izt declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P128.54-izt declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+        "source": "red-first-helper"
       }
     },
     {

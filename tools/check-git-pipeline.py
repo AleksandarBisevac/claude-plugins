@@ -2465,6 +2465,106 @@ def _cases(check):
               "permissionDecisionReason": "because"}})) == ("deny", "because"))
 
     _interpreter_cases(check)
+    _shim_cases(check)
+
+
+def _shim_cases(check):
+    """The fake interpreters k13-k15 stand on, asked about apart from the checks
+    that use them: a shim that does not behave on the platform it was written for
+    turns those cases red for a reason that names the shim nowhere."""
+    nt_fail = _shim_spec("python3", 7, True)
+    nt_pass = _passthrough_spec("python", "C:\\Py 3\\python.exe", True)
+    check("k18 the nt shims are batch files a PATHEXT lookup finds and `cmd` runs - "
+          "a `.cmd` name, CRLF line ends on every line, the exit code asked for "
+          "(7, not a fixed 1) and a forwarder that quotes its target (a path with a "
+          "space) and passes `%%*` on: %r %r" % (nt_fail, nt_pass),
+          nt_fail == ("python3.cmd", "@exit /b 7\r\n")
+          and nt_pass == ("python.cmd", '@"C:\\Py 3\\python.exe" %*\r\n')
+          and all(b.count("\n") == b.count("\r\n") for _, b in (nt_fail, nt_pass)))
+
+    posix_fail = _shim_spec("python3", 7, False)
+    posix_pass = _passthrough_spec("python", "/opt/py 3/python", False)
+    check("k19 ...and the posix shims are untouched by the nt branch - no extension "
+          "(PATH lookup there is by exact name), a shebang, LF only, `exec` with "
+          "the arguments forwarded: %r %r" % (posix_fail, posix_pass),
+          posix_fail == ("python3", "#!/bin/sh\nexit 7\n")
+          and posix_pass == ("python", '#!/bin/sh\nexec "/opt/py 3/python" "$@"\n'))
+
+    root = tempfile.mkdtemp(prefix="audit-git-shim-selftest-")
+    try:
+        names = ("python3", "py")
+        d = _shim_dir(root, 7, names)
+        want = dict(_shim_spec(n, 7, os.name == "nt") for n in names)
+        got = {}
+        for entry in sorted(os.listdir(d)):
+            with io.open(os.path.join(d, entry), "rb") as fh:
+                got[entry] = fh.read().decode("utf-8")
+        check("k20 `_shim_dir` writes one file per name and each is byte for byte "
+              "what the spec says for THIS platform - read back in binary, so a "
+              "newline translated on the way to disk shows: %r" % (sorted(got),),
+              got == want and len(got) == len(names))
+    finally:
+        from _suite import remove_tree   # tools/_suite.py says why here
+        remove_tree(root)
+
+    _cmd_shim_run_cases(check)
+
+
+def _cmd_shim_run_cases(check):
+    """k21-k24: the assumptions about Windows that no other platform can check.
+
+    Each is a separate case because they fail separately and the remedy differs:
+    k21 is the PATHEXT lookup, k22 is `subprocess` running a batch file from a
+    list argv with no shell, k23 and k24 are the argument tail and the exit code
+    getting through `cmd`. Values go in the LABEL because a passing case prints no
+    detail.
+    """
+    from _harness import skip
+    if os.name != "nt":
+        skip(check, "k21-k24",
+             "running `.cmd` shims needs `cmd.exe` and a Windows PATHEXT lookup; "
+             "k18-k20 cover what can be asked here", True)
+        return
+    root = tempfile.mkdtemp(prefix="audit-git-cmd-selftest-")
+    env = dict(os.environ)
+    try:
+        fail_dir = _shim_dir(root, 3, ("python3",))
+        found = shutil.which("python3", path=fail_dir)
+        check("k21 `shutil.which` finds the `.cmd` shim by its bare name on a PATH "
+              "holding only that directory, with PATHEXT=%r: found=%r"
+              % (os.environ.get("PATHEXT"), found),
+              bool(found) and found.lower().endswith(".cmd")
+              and os.path.dirname(found).lower() == fail_dir.lower())
+
+        zero_dir = _shim_dir(root, 0, ("python3",))
+        zero = shutil.which("python3", path=zero_dir)
+        code3, out3 = run([found], root, env) if found else (None, "")
+        code0, out0 = run([zero], root, env) if zero else (None, "")
+        check("k22 a found `.cmd` runs from a list argv with no shell and its exit "
+              "code comes back as written - 3 for the shim built to exit 3, 0 for "
+              "the one built to exit 0: codes=%r,%r output=%r,%r"
+              % (code3, code0, out3.strip()[:60], out0.strip()[:60]),
+              code3 == 3 and code0 == 0)
+
+        pass_dir = tempfile.mkdtemp(prefix="shims-", dir=root)
+        _write_shim(pass_dir, _passthrough_spec("python", sys.executable, True))
+        via = shutil.which("python", path=pass_dir)
+        codea, outa = run([via, "-c", "import sys; sys.stdout.write('ran')"],
+                          root, env) if via else (None, "")
+        check("k23 the forwarder passes a quoted argument holding a space, a "
+              "semicolon and parentheses through `%%*` intact - the probe "
+              "`interpreter_problem` sends: found=%r code=%r output=%r"
+              % (via, codea, outa.strip()[:60]),
+              codea == 0 and outa.strip() == "ran")
+
+        codeb, outb = run([via, "-c", "import sys; sys.exit(5)"],
+                          root, env) if via else (None, "")
+        check("k24 ...and the exit code of what the forwarder ran is the exit code "
+              "of the forwarder (5, not 0): code=%r output=%r"
+              % (codeb, outb.strip()[:60]), codeb == 5)
+    finally:
+        from _suite import remove_tree   # tools/_suite.py says why here
+        remove_tree(root)
 
 
 def _shim_dir(root, exit_code, names=LAUNCHER_INTERPRETERS):
@@ -2477,14 +2577,46 @@ def _shim_dir(root, exit_code, names=LAUNCHER_INTERPRETERS):
     """
     d = tempfile.mkdtemp(prefix="shims-", dir=root)
     for name in names:
-        if os.name == "nt":
-            path, body = os.path.join(d, name + ".cmd"), "@exit /b %d\r\n" % exit_code
-        else:
-            path, body = os.path.join(d, name), "#!/bin/sh\nexit %d\n" % exit_code
-        with io.open(path, "w", encoding="utf-8", newline="") as fh:
-            fh.write(body)
-        os.chmod(path, 0o755)
+        _write_shim(d, _shim_spec(name, exit_code, os.name == "nt"))
     return d
+
+
+# WHAT WINDOWS DOES WITH THESE, from the documentation rather than from memory.
+# `shutil.which` consults PATHEXT (falling back to a default list that carries `.CMD`)
+# to find a command given without its extension, and reads it from the PROCESS
+# environment, not from the `path` it is handed. `subprocess` needs no `shell=True`
+# to run a batch file, which the OS launches in a system shell; the arguments are
+# then parsed by that shell's rules, so a forwarder's `%*` sees the quoting
+# `list2cmdline` produced. `k21`-`k24` ask the real machine each of those; the
+# specs below are pure so `k18`-`k20` can pin the bytes everywhere.
+def _shim_spec(name, exit_code, nt):
+    """`(filename, body)` for a fake `name` that exits `exit_code`.
+
+    `nt` is a parameter, not read from `os.name`, so the Windows spelling is a value
+    a case on any platform can compare. The batch file ends its lines CRLF, the
+    form Windows tools write, and `k18` counts every line end.
+    """
+    if nt:
+        return name + ".cmd", "@exit /b %d\r\n" % exit_code
+    return name, "#!/bin/sh\nexit %d\n" % exit_code
+
+
+def _passthrough_spec(name, target, nt):
+    """`(filename, body)` for a `name` that runs `target` with every argument it was
+    given and exits with its status - the working interpreter of `k15` and `k23`."""
+    if nt:
+        return name + ".cmd", '@"%s" %%*\r\n' % target
+    return name, '#!/bin/sh\nexec "%s" "$@"\n' % target
+
+
+def _write_shim(directory, spec):
+    """Write `spec` into `directory` byte for byte (`newline=""`: no translation) and
+    make it executable; returns its path."""
+    path = os.path.join(directory, spec[0])
+    with io.open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(spec[1])
+    os.chmod(path, 0o755)
+    return path
 
 
 def _path_with(first, env):
@@ -2519,15 +2651,8 @@ def _interpreter_cases(check):
         # and a working `python` (a pass-through to the real interpreter) after it.
         # The launcher falls through a broken candidate to the next name, so must this.
         working = tempfile.mkdtemp(prefix="shims-", dir=root)
-        if os.name == "nt":
-            wpath, wbody = (os.path.join(working, "python.cmd"),
-                            '@"%s" %%*\r\n' % sys.executable)
-        else:
-            wpath, wbody = (os.path.join(working, "python"),
-                            '#!/bin/sh\nexec "%s" "$@"\n' % sys.executable)
-        with io.open(wpath, "w", encoding="utf-8", newline="") as fh:
-            fh.write(wbody)
-        os.chmod(wpath, 0o755)
+        _write_shim(working, _passthrough_spec("python", sys.executable,
+                                               os.name == "nt"))
         env_mixed = dict(base, PATH=os.pathsep.join(
             [_shim_dir(root, 1, ("python3",)), working, base.get("PATH", "")]))
         problem = interpreter_problem(env_mixed, root)
