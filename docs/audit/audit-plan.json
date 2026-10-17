@@ -4175,7 +4175,8 @@
       "P125.139-0h5",
       "P125.142-0h5",
       "P125.144-0h5",
-      "P129.7-izt"
+      "P129.7-izt",
+      "P128.45-izt"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -6159,7 +6160,8 @@
       "P125.139-0h5",
       "P125.142-0h5",
       "P125.144-0h5",
-      "P129.7-izt"
+      "P129.7-izt",
+      "P128.45-izt"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -7207,7 +7209,8 @@
       "P123.15",
       "P123.48-64p",
       "P128.16-0h5",
-      "P125.49-0h5"
+      "P125.49-0h5",
+      "P128.45-izt"
     ],
     "plugins/audit/tests/test__gate_derive.py": [
       "P79.2",
@@ -7216,7 +7219,8 @@
       "P124.11",
       "P123.15",
       "P128.16-0h5",
-      "P125.49-0h5"
+      "P125.49-0h5",
+      "P128.45-izt"
     ],
     "plugins/audit/scripts/governance/derive-phase-gate.py": [
       "P79.3",
