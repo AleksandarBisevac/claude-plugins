@@ -1,0 +1,39 @@
+{
+  "gates": {
+    "own-tests: python3 plugins/audit/tests/test_stamp_verification.py --selftest --stage sr-playwright-none-found": "pass",
+    "full test_stamp_verification.py --selftest": "pass",
+    "ruff check (two touched files)": "pass",
+    "vermin -t=3.8- governance+tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-17T23:12:37Z",
+    "basis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest --stage sr-playwright-none-found` in a throwaway tree at HEAD exited 1 with 2 of 3 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests on HEAD's code failing only the unknown-stage check for `sr-playwright-none-found`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - pn1 (house FAIL): SELFTEST FAILED: 1/3 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "stamp-verification.py: added _PW_NO_TESTS (playwright 1.56.0 'Error: No tests found.' as a line under line/list reporters, or as the message of the JSON reporter's errors entry) and made _js_none_found accept it beside jest's/vitest's sentence; still requires exit 1, a spec left absent, and no tally counting a case or failure. Real output captured from playwright 1.56.0 in the scratchpad (exit 1, suites [], errors[0].message). test_stamp_verification.py: new stage sr-playwright-none-found (_playwright_none_found_cases) with pn1 (end to end red_verdict proves), pn2 (baseline_problem None for both reporters with absent spec), pn3 (deny twin: no absent file, failing old spec, sentence beside a counted failure all stay not green). Full file selftest 295/295 pass.",
+    "descriptive": "A new Playwright spec's red-first proof now comes back proved instead of could-not-prove."
+  },
+  "testsAdded": [
+    "pn1 a new Playwright spec whose HEAD run prints real Playwright no-tests-found output is read as red and proves once the spec passes on the work",
+    "pn2",
+    "pn3"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_stamp_verification.py: a new Playwright spec whose HEAD run prints real Playwright no-tests-found output is read as red and proves once the spec passes on the work": {
+      "file": "plugins/audit/scripts/governance/stamp-verification.py",
+      "find": "    if not (_JS_NO_TESTS.search(text) or _PW_NO_TESTS.search(text)):",
+      "replace": "    if not _JS_NO_TESTS.search(text):",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "--selftest",
+        "--stage",
+        "sr-playwright-none-found"
+      ]
+    }
+  },
+  "claims": "claims: the regex shape is measured against playwright 1.56.0 real output (exit 1, JSON errors[0].message, line reporter 'Error: No tests found.'); measured once on one machine and version; no number is written into prose.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:53dc64999ee0b34a5ba1873c35db4eba7099091fc258cdfc1fc2c13125d5450c\",\"dirtyDigest\":\"sha256:78d8b94c5176b8b484a07c83764e4c9a9f88869de9c95ff4579791404f5b7eb8\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/stamp-verification.py\":\"4cb2388d796d6ec3\",\"plugins/audit/tests/test_stamp_verification.py\":\"51fb63860eea2f1e\"},\"head\":\"678ca8f5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:bb617196a98f8a88d0978b50b86d1ef83a670c7c50a9968835648315d5bd53a8\",\"v\":2}"
+}

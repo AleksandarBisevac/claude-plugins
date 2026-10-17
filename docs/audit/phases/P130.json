@@ -162,7 +162,7 @@
     {
       "id": "P130.2",
       "title": "CI runs one executable description of the gate set: every job is setup plus verify.sh --only, and a verified SHA is not run again",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Plan F1.2, invariants I14-I17; the high-risk task of the phase. BEFORE LANDING, the probe of the CI study (C section 5.4): the new shape five times and the old shape three times on one SHA, at least 20 minutes apart and never overlapping, pushed to ci/study-c2 and ci/study-c2-skip. The owner pre-approved those two pushes (V5); the orchestrator still lists them before pushing, and the push and dispatch are the orchestrator's, never the executor's. Starting point: studies/C-poc/probe.patch; at 571becfd every file of it applies except its tools/sweep-selftests.py docstring hunk, which F1.1 supersedes. Precondition: F0's acceptance (sl4, hr2, rv13 absent from at least five Windows runs after P125.38 and P128.14); without it clause (4)'s deletion of the Windows cp1252 cells is dropped and the task lands without it. (1) tools/verify.sh gains named slices with `--only <slice,...>`, `--shard I/N`, `--list` (printed from the same `run` calls the script executes) and `--loud`, one line naming the interpreter, and a `RESAMPLE` table for the release tier. It keeps P128.12's cleanup as it landed: the EXIT trap plus `exit 130`/`exit 143` on INT/TERM, and gate-parity's vsh1-vsh8 cases that run those functions under dash survive wherever the parity code they sit in moves. (2) .github/workflows/ci.yml becomes jobs that are each setup plus one verify.sh call; `concurrency` cancels in progress outside main; a `tier` workflow input defaults to the per-run tier, because the drive's CI cadence (P128.2, `ci_dispatch`) and tools/release.py (:407) dispatch with `gh workflow run ci.yml --ref <ref>` and pass no input; release.py passes `-f tier=release`. (3) New tools/ci-verified.py: a push to main of a SHA whose run on this workflow file has every job `success` (not `skipped`) runs only the `verified` job and skips the rest; another commit's run, another workflow's run, the asking run itself, an unreadable job list and could-not-ask each refuse. (4) Deleted: ci.yml's inline shell (1,202 lines at 571becfd, 1,253 when the plan was measured), the three Windows cp1252 cells, the separate ubuntu cp1252 and spaced legs (six cells become three stress cells, cp1252 plus spaced), the docs/index.html leg, the inline `FRESH render` and `Usage section` steps (ci.yml:571, :593), the os.kill measurement step (:134) and the re-run of a verified SHA; in tools/gate-parity.py, `report_target_drift` (:1903) with its shell lexer, `sweep_leg_drift` (:2090), `step_guard_drift` (:3190), `step_exemption_breadth_drift` (:3065), `STEP_GUARD_EXEMPT` (:3038), the `shm*` cases that replace matrix literals, and the document sides of `compare` (:2846). (5) What parity keeps: every slice ci.yml names exists in `verify.sh --list`, every per-run slice has a job, and the shards cover 1..N (`shard_matrix_drift` rewritten, kept by V3). (6) Followers: tools/prove-gates.py rows for the removed checks; tools/check-rendered-artifacts.py `COPY_PROVEN` (:128); tools/affected.py report targets (`REPORT_GATE`, :89-91); plugins/audit/scripts/_refs.py `SWEEP_DOCS` (:2690) and its cases; CONTRIBUTING.md and PLUGIN-BUILD-GUIDE.md point at `verify.sh --list` instead of listing commands; CHANGELOG.md. (7) The CLAUDE.md Tests command list is replaced by a pointer to `verify.sh --list`: the task drafts that text in its outcome and the owner applies it. (8) Plan K6 (a red release resample is a bug in the plan) has no automatic path in F1, since P128.1 was cancelled into F2.8: until then a red resample is filed by hand with /audit:bug. Acceptance (C K1-K6, K1 relaxed to a median of at most 8m59s over at least five runs): `python3 studies/C-poc/read-c2.py --old ... --new ...; echo $?` gives 0, the exit code read at once and never through a pipe; `gh api repos/AleksandarBisevac/claude-plugins/actions/runs/<SKIP>/jobs` shows `verified=success` and every other job `skipped`; `sh tools/verify.sh --list` prints the slices; `sh tools/verify.sh --only lint` under dash leaves no `verify-*` in TMPDIR. The job count goes from 20 (the matrix is unchanged since edbbb86e) to 14, 15 on a push to main. NEW PATHS (absent at 571becfd, created by this task): tools/ci-verified.py.",
       "files": [
         "tools/verify.sh",
@@ -214,16 +214,17 @@
       "dependsOn": [
         "P130.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-17T23:08:31Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.3",
@@ -322,7 +323,7 @@
     {
       "id": "P130.4",
       "title": "Dead definitions go and duplicated guard payloads, commit messages and timestamp helpers have one home per side",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Plan F1.6 (S3), invariant I12 as repayment; lands before F1.4 because it edits plugins/audit/tests/. PREMISE CORRECTION at 571becfd (and already at edbbb86e): of the plan's five unreachable definitions, `_config.out_of_scope_record` is called at commit-task-work.py:581 through `_hooks_config()`, and `_status_facts.phase_task_status` at _panel_state.py:554 through the status-facts module `_cores()` returns, so both stay; `guard-history-rewrite.shell_words` waits for S5. (1) Delete `journal-writes.swept_entries` (:977) and `journal-writes.classify` (:212), which have no call site, and the docstring sentences that describe them as live. (2) `_deny_payload` and `_ask_payload` in guard-edits.py (:151, :162), guard-secrets-read.py (:1073, :1084) and require-plan.py (:303, :314) become one pair in hooks/_config.py; every payload stays byte-identical. (3) `commit_message` in commit-audit-state.py (:282), commit-manifest-index.py (:362) and commit-task-work.py (:678) becomes one implementation in a module all three may import under _deps.LAYERS; the task-work variant's extra arguments (manifest, claims) stay, and every message is byte-identical. (4) The eleven now-as-ISO helpers have one home per side, because a hook may not import scripts/: hooks/_config.py for guard-bash-writes `_now` and require-plan `_now_iso`, and one scripts module for the other nine; a helper whose output format differs keeps that format under a name that says it. Acceptance: `git grep -n '<name>'` finds only the definition site for each consolidated name; the full sweep is green; ruff and vermin are clean.",
       "files": [
         "plugins/audit/hooks/journal-writes.py",
@@ -352,7 +353,8 @@
         "plugins/audit/tests/test_guard_bash_writes.py",
         "plugins/audit/tests/test_commit_audit_state.py",
         "plugins/audit/tests/test_commit_manifest_index.py",
-        "plugins/audit/tests/test_commit_task_work.py"
+        "plugins/audit/tests/test_commit_task_work.py",
+        "vitest.config.mjs"
       ],
       "tests": {
         "mode": "regression",
@@ -382,14 +384,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-17T23:08:34Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -397,7 +399,8 @@
           "at": "2026-10-17T20:58:57Z",
           "text": "Rewritten per plans/2026-10-17-redesign-implementation section 4: drop the commit_message triple (S2.5 deletes commit-manifest-index.py and commit-audit-state.py, two of its three copies). The dead definitions, the duplicated guard payloads and the ISO helpers stay in scope."
         }
-      ]
+      ],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.5",
@@ -1046,7 +1049,7 @@
     {
       "id": "P130.11-ywo",
       "title": "Fix BUG-25-izt: red-first reads Playwright no-tests-found as red",
-      "status": "pending",
+      "status": "in_progress",
       "description": "",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -1068,21 +1071,35 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test_stamp_verification.py: a new Playwright spec whose HEAD run prints real Playwright no-tests-found output is read as red and proves once the spec passes on the work": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_stamp_verification.py",
+              "--selftest",
+              "--stage",
+              "sr-playwright-none-found"
+            ],
+            "file": "plugins/audit/scripts/governance/stamp-verification.py",
+            "find": "    if not (_JS_NO_TESTS.search(text) or _PW_NO_TESTS.search(text)):",
+            "replace": "    if not _JS_NO_TESTS.search(text):"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [],
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-17T23:08:36Z",
       "completedAt": null,
       "verifiedBy": [],
       "bugId": "BUG-25-izt",
@@ -1091,7 +1108,13 @@
           "at": "2026-10-17T20:58:44Z",
           "text": "Repro and expected (BUG-25-izt): at HEAD a new Playwright spec prints Playwright own no-tests-found result, which the red-first helper must read as the red baseline and then record proved once the spec passes. The fixture must be real Playwright output captured from an installed Playwright (1.64.1 is installed in the study scratch), not a hand-built string. Load skills writing-python, no-silent-pass, verifying-external-behavior."
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-17T23:25:03Z.41e49b",
+        "status": "passed",
+        "at": "2026-10-17T23:25:03Z"
+      }
     },
     {
       "id": "P130.12-ywo",

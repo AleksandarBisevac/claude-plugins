@@ -1373,16 +1373,24 @@ NARROW = ("the command is already red (or unreadable) at HEAD - narrow it to the
 # printing, exit 1, for a command naming only a file that is not there.
 _JS_NO_TESTS = re.compile(r"^[ \t]*No test(?:s| files) found, exiting with code \d+",
                           re.M)
+# And what playwright 1.56.0 prints for a command naming a spec that is not
+# there, measured on 2026-10-17 in a scratch directory outside this repository:
+# exit 1 and `Error: No tests found.` on a line of its own under the line and
+# list reporters, the same sentence as the `message` of the one entry in
+# `errors` of the JSON reporter's document (`suites` empty, nothing counted).
+_PW_NO_TESTS = re.compile(r'(?:^[ \t]*|"message":\s*")Error: No tests found\.', re.M)
 
 
 def _js_none_found(head, tally):
-    """Whether HEAD's run is jest's or vitest's no-test-file answer: exit 1, the
+    """Whether HEAD's run is jest's, vitest's or playwright's no-test-file
+    answer (`_JS_NO_TESTS`, `_PW_NO_TESTS`): exit 1, the
     runner's own sentence, no tally counting a case or a failure - and only for
     a run that left a new test file absent, which is what makes "nothing
     matched" the expected answer rather than a misnamed path."""
     if head["code"] != 1 or not head.get("absent"):
         return False
-    if not _JS_NO_TESTS.search(_runner_output.plain_text(head["text"])):
+    text = _runner_output.plain_text(head["text"])
+    if not (_JS_NO_TESTS.search(text) or _PW_NO_TESTS.search(text)):
         return False
     return tally is None or (tally["runner"] is not None and not tally["collected"]
                              and not tally["failed"])

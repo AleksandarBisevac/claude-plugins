@@ -4929,6 +4929,78 @@ def _playwright_credit_cases(check):
           before == M.V_RED and mutated != M.V_RED and not own)
 
 
+# What playwright 1.56.0 prints, captured, for `playwright test <path>` where
+# the path names a spec that does not exist yet: exit 1, and under
+# `--reporter=json` a document with no suites, nothing counted and the sentence
+# in `errors`.
+_PW_NONE_SENTENCE = ("Error: No tests found.\nMake sure that arguments are "
+                     "regular expressions matching test files.\nYou may need "
+                     "to escape symbols like \"$\" or \"*\" and quote the "
+                     "arguments.")
+
+
+def _pw_none_found_json(unexpected=0):
+    return json.dumps({
+        "config": {"version": "1.56.0"}, "suites": [],
+        "errors": [{"message": _PW_NONE_SENTENCE, "stack": _PW_NONE_SENTENCE}],
+        "stats": {"startTime": "2026-10-17T23:09:21.774Z", "duration": 5.1,
+                  "expected": 0, "skipped": 0, "unexpected": unexpected,
+                  "flaky": 0}}, indent=2)
+
+
+def _playwright_none_found_cases(check):
+    """A spec the task adds does not exist at HEAD, so playwright's HEAD run
+    answers with its own `No tests found.` and exit 1 - the runner's counterpart
+    of jest's and vitest's sentence. That is the red state of a new spec, not a
+    baseline that was already broken."""
+    new = "tests/example.spec.ts"
+    cmd = ["npx", "playwright", "test", "--reporter=json", new]
+    json_head = {"code": 1, "text": _pw_none_found_json(), "problem": None,
+                 "absent": [new]}
+    line_head = dict(json_head, text=_PW_NONE_SENTENCE + "\n")
+    got = dict((how, M.baseline_problem(head, cmd))
+               for how, head in (("json reporter", json_head),
+                                 ("line reporter", line_head)))
+    no_absent = M.baseline_problem(dict(json_head, absent=[]), cmd)
+    broken = M.baseline_problem(
+        dict(json_head, text=_pw_json(file_rel="tests/old.spec.ts")), cmd)
+    mixed = json.loads(_pw_json(file_rel="tests/old.spec.ts"))
+    mixed["errors"] = json.loads(_pw_none_found_json())["errors"]
+    counted = M.baseline_problem(dict(json_head, text=json.dumps(mixed)), cmd)
+
+    run = {"cmd": cmd, "code": 1, "text": _pw_json(), "problem": None,
+           "head": json_head, "second": None,
+           "fix": {"code": 0, "text": json.dumps(
+               {"suites": [], "stats": _pw_stats(expected=1)}), "problem": None}}
+    root = _harness.fixture_root("stamp-pw-none-found-")
+    try:
+        os.makedirs(os.path.join(root, "tests"))
+        _write(os.path.join(root, new), _PW_SPEC_NEW)
+        ctx = {"root": root, "implementation": ["src/add.ts"], "tests": [new],
+               "cases": [], "symbols": [], "dropped": [], "new": [new],
+               "head_files": ["src/add.ts"], "head_defs": {}, "head_modules": {},
+               "path": None, "head_js": M.js_test_definitions({})}
+        code, _v, block, _n = M.red_verdict(run, ctx)
+    finally:
+        _harness.remove_tree(root)
+    basis = (block or {}).get("basis", "")
+    check("pn1 a new Playwright spec whose HEAD run prints real Playwright "
+          "no-tests-found output is read as red and proves once the spec "
+          "passes on the work: exit=%r %r" % (code, basis[-220:]),
+          code == M.E_PROVED and "adds numbers" in basis)
+    check("pn2 playwright's no-tests-found sentence, under either reporter, is "
+          "a green baseline when the spec is absent at HEAD: %r" % (got,),
+          all(v is None for v in got.values()) and len(got) == 2)
+    check("pn3 THE DENY TWIN for pn2: the sentence with no file left absent is "
+          "a misnamed path, not a baseline (%r); a HEAD run counting a failure "
+          "is not green (%r); and neither is a document that carries the "
+          "sentence beside a counted failure (%r)"
+          % (no_absent, broken, counted),
+          no_absent is not None and broken is not None
+          and "not green" in broken
+          and counted is not None and "not green" in counted)
+
+
 _VITEST_JSON_SPEC_NEW = "\n".join([
     "import { describe, it, expect } from 'vitest';",
     "describe('math', () => {",
@@ -5429,6 +5501,7 @@ STAGES = (
     ("sm-missing-module", "_missing_module_cases"),
     ("sm-export-missing", "_export_missing_cases"),
     ("sr-playwright", "_playwright_credit_cases"),
+    ("sr-playwright-none-found", "_playwright_none_found_cases"),
     ("sr-vitest-json", "_vitest_json_credit_cases"),
     ("sr-could-not-start", "_could_not_start_cases"),
     ("sh-house-abort", "_house_abort_cases"),
