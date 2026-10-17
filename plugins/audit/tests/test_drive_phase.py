@@ -4180,6 +4180,111 @@ def _wave_parked_return_cases(check):
           and "no-executor-return" not in third and rows == ["passed"])
 
 
+def _drive_source_decisions():
+    """Every `no-<role>-return` name the driver's source can emit: the
+    DECISIONS table's keys and any string constant of that shape in its AST, so
+    a decision raised from a call site the table forgot is still named."""
+    import ast
+    with open(os.path.join(_output.SCRIPTS_DIR, "governance", DRIVER),
+              encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    shape = re.compile(r"^no-.+-return$")
+    return sorted(set(n.value for n in ast.walk(tree)
+                      if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                      and shape.match(n.value)))
+
+
+def _parked_return_cases(check):
+    """One rule over every parked no-<role>-return decision: it is dropped once
+    that role's return is filed for the start it was raised for."""
+    M, why = _load("drive_phase_parked_return")
+    if M is None:
+        check("nr1 the driver loads", False, why)
+        return
+    root, mpath = _repo("parked-reviewer", task_ids=TASKS[:1], per_task="always")
+    _next(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    _code, sent = _next(M, root, mpath)
+    _code, asked = _next(M, root, mpath)
+    held = (_drive_state(root).get("pending") or {})
+    check("nr0 the fixture parks where it means to: the reviewer is dispatched, "
+          "no return comes, and the next run parks the no-reviewer-return "
+          "decision: %r %r" % ((instruction(sent), instruction(asked)), held),
+          instruction(sent) == ("dispatch", "reviewer", "P1.1")
+          and instruction(asked)[1] == "no-reviewer-return"
+          and held.get("decision") == "no-reviewer-return")
+    late = _file_reviewer(root, mpath, "P1.1")
+    code, third = _next(M, root, mpath)
+    pending = _drive_state(root).get("pending") or {}
+    task = tasks_of(mpath).get("P1.1", {})
+    check("nr1 a no-reviewer-return decision parked while the reviewer worked "
+          "is dropped on the next run once the reviewer return is filed, and "
+          "the task advances to its close: %r %r %r %r"
+          % (late, third, pending, task.get("status")),
+          late[0] == 0 and code == 0
+          and pending.get("decision") != "no-reviewer-return"
+          and "no-reviewer-return" not in third
+          and task.get("status") == "done" and task.get("commit"))
+
+    # The same decision parked in a wave, behind a sibling's printed one.
+    wroot, wmpath = _wave_repo("parkedwave", 2, per_task="always")
+    _code, first = _next_wave(M, wroot, wmpath)
+    for t in _dispatched(first):
+        _file_wave_executor(wroot, wmpath, t)
+    _next_wave(M, wroot, wmpath)
+    _next_wave(M, wroot, wmpath)
+    wstate = _drive_state(wroot)
+    parked = ((wstate.get("wave") or {}).get("parked") or {}).get("P1.2") or {}
+    check("nr2 the fixture parks the second member's no-reviewer-return decision "
+          "behind the first's: %r %r" % (wstate.get("pending"), parked),
+          (wstate.get("pending") or {}).get("task") == "P1.1"
+          and parked.get("decision") == "no-reviewer-return")
+    # The first member's return comes; the second's has not. Its parked decision
+    # still holds (the twin that fails a rule dropping parked decisions blindly)
+    # and is what the drive prints once the first member has closed.
+    _file_reviewer(wroot, wmpath, "P1.1")
+    _code, held_text = _next_wave(M, wroot, wmpath)
+    check("nr3 a parked no-reviewer-return decision whose reviewer return is "
+          "still missing is kept and printed once the sibling has closed: %r"
+          % (held_text,),
+          "decide no-reviewer-return P1.2:" in held_text
+          and tasks_of(wmpath)["P1.1"].get("status") == "done")
+    wlate = _file_reviewer(wroot, wmpath, "P1.2")
+    _code, after = _next_wave(M, wroot, wmpath)
+    wstate = _drive_state(wroot)
+    check("nr3b a no-reviewer-return decision parked in a wave is dropped on the "
+          "next run once that member's reviewer return is filed, and the member "
+          "closes: %r %r %r"
+          % (wlate, after, wstate.get("pending")),
+          wlate[0] == 0 and "no-reviewer-return" not in after
+          and (wstate.get("pending") or {}).get("decision") != "no-reviewer-return"
+          and tasks_of(wmpath)["P1.2"].get("status") == "done")
+
+    # The rule is keyed by role: every role the drive files a return for, and
+    # every no-<role>-return name its source can emit.
+    names = _drive_source_decisions()
+    roles = sorted(_fr.RETURN_ROLES)
+    check("nr4 the source emits a no-<role>-return decision for each task role "
+          "and the rule names exactly that role for it: %r %r"
+          % (names, roles),
+          all(M.parked_return_role("no-%s-return" % (r,)) == r for r in roles)
+          and all("no-%s-return" % (r,) in names for r in roles))
+    unhandled = [n for n in names
+                 if M.parked_return_role(n) is None and n not in M.PHASE_DECISIONS]
+    check("nr5 every no-*-return decision name the drive can emit is a task role "
+          "the parked-return rule drops once filed, or a sign-off decision of "
+          "no task - a new role's decision name fails here by name: %r"
+          % (unhandled,), names and not unhandled)
+    check("nr6 ALLOW: a decision of the same shape that names no role of "
+          "RETURN_ROLES is not read as a role's: %r"
+          % ([M.parked_return_role(n) for n in ("no-phase-review-return",
+                                                "no-banana-return", "no-return",
+                                                "gate-red", None)],),
+          [M.parked_return_role(n) for n in ("no-phase-review-return",
+                                             "no-banana-return", "no-return",
+                                             "gate-red", None)] == [None] * 5)
+
+
 # A member's record check, run as a gate entry in the member's tree: every
 # record file the phase tree has committed is, in this tree, the phase tree's
 # committed bytes, and no record file the phase tree no longer has is left over.
@@ -6547,6 +6652,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("cn-block", "_chain_next_cases"),
           ("wv-block", "_wave_cases"), ("wr-block", "_wave_red_sibling_cases"),
           ("wp-block", "_wave_parked_return_cases"),
+          ("nr-block", "_parked_return_cases"),
           ("wq-block", "_wave_record_cases"),
           ("wqm-block", "_wave_record_mutant_cases"),
           ("wq4-block", "_wave_sibling_record_cases"),

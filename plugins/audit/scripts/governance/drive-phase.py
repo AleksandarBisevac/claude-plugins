@@ -3145,13 +3145,27 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
     return None
 
 
+# A decision parked because a role's return was missing: `no-<role>-return`.
+_NO_RETURN = re.compile(r"^no-(.+)-return$")
+
+
+def parked_return_role(decision_name):
+    """The role whose filed return a `no-<role>-return` decision is waiting on,
+    else None. The role comes off the name and is held to `_fr.RETURN_ROLES`,
+    so a role added there is covered by `pending_still_applies` with no second
+    edit; a name of that shape naming no task role (the phase review's, which
+    belongs to no task) reads None and is the sign-off's."""
+    hit = _NO_RETURN.match(decision_name or "")
+    return hit.group(1) if hit and hit.group(1) in _fr.RETURN_ROLES else None
+
+
 def pending_still_applies(ctx, manifest, pending):
     """A decision about a task that was since closed, cancelled or re-started by
-    hand is about a state that no longer exists - and so is a no-executor-return
-    decision once that return is filed for the start it was raised for: the task
-    is in progress under the same start, so the status and the start alone keep
-    it, and a parked one would stop the drive on a line about a return that is
-    there."""
+    hand is about a state that no longer exists - and so is a no-<role>-return
+    decision once that role's return is filed for the start it was raised for:
+    the task is in progress under the same start, so the status and the start
+    alone keep it, and a parked one would stop the drive on a line about a
+    return that is there."""
     if not pending.get("task"):
         return True
     task = _mio.tasks_by_id(manifest).get(pending["task"]) or {}
@@ -3162,8 +3176,8 @@ def pending_still_applies(ctx, manifest, pending):
     if not (task.get("status") == "in_progress"
             and start_key(task) == pending.get("start")):
         return False
-    return (pending["decision"] != "no-executor-return"
-            or already_filed(ctx, task) is None)
+    role = parked_return_role(pending["decision"])
+    return role is None or role_return_filed(ctx, task, role) is None
 
 
 # --- the drive ---------------------------------------------------------------------
@@ -4721,14 +4735,20 @@ def submitted_shape(role, body, fills, task=None):
 
 
 def already_filed(ctx, task):
-    """The project-relative path of `task`'s executor return for its current
+    """`role_return_filed` for the executor: the one the filing verb and the
+    submit's early look ask about."""
+    return role_return_filed(ctx, task, "executor")
+
+
+def role_return_filed(ctx, task, role):
+    """The project-relative path of `task`'s `role` return for its current
     start when one is filed - on disk, or when a `task.return.filed` journal
     row already names it, EVEN WITH THE FILE DELETED (an executor once
     filed a placeholder, deleted it, and filed again, and nothing recorded
     either filing) - else None. The filing verb refuses a second
     filing on its own; asking first is what keeps a refusal from costing a
     red run and a stamp."""
-    path = _fr.return_path(ctx["evidence"], task, "executor")
+    path = _fr.return_path(ctx["evidence"], task, role)
     if not path:
         return None
     if os.path.exists(path):

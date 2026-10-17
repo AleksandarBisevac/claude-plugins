@@ -1,0 +1,42 @@
+{
+  "gates": {
+    "own-tests: python3 plugins/audit/tests/test_audit_task.py --selftest --stage at5-block": "pass",
+    "python3 plugins/audit/tests/test__gate_derive.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py --quiet": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- plugins/audit/scripts hooks tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-17T08:25:50Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage at5-block` in a throwaway tree at HEAD exited 1 with 2 of 88 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tg14 (house FAIL), tg15 (house FAIL): SELFTEST FAILED: 86/88 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Requirement clauses. (1) _task_gate_setup obtains its shape from resolve_shape, one resolver and one order: audit-task.py _task_gate_setup now calls _gate_derive.resolve_shape(phase, build, meta.phaseGate.derived) (about line 2740); the _path_scoped_sibling alias is deleted (about line 2557). _point (about line 2618) fills a spelling via new _gate_derive.point_shape, led by meta.phaseGate.always; _spelled_in words the basis; derive() in _gate_derive.py now calls the same point_shape instead of its inline substitution. (2) Stale comment states what the code does: _gate_derive.py lines 128-134 no longer call the spelling the second source; it says the spelling is the FIRST source tried and that no caller outside picks path_scoped_sibling. (3) A case asserts no caller outside _gate_derive picks a shape source: test__gate_derive.py os1 (the AST detector reports a call, attribute, import, bare name and getattr string), os2 (allow case: resolve_shape, a comment, a docstring are not uses), os3 (walks every .py under SCRIPTS_DIR and HOOKS_DIR except _gate_derive.py, requires the walk to have reached audit-task.py and derive-phase-gate.py, asserts no use). (4) tests.add case: test_audit_task.py tg15 (titled with the tests.add clause verbatim after the id) plus tg15c second-direction case (spelling without {paths} is skipped, sibling read); tg14 updated to assert the alias is gone. (5) verbs-in-full.md wording DID change because behaviour changed: plugins/audit/reference/verbs-in-full.md the three-defaults list and the --failing-from paragraphs now name the recorded spelling first; PLUGIN-BUILD-GUIDE.md gets one sentence on point_shape and os3. README.md: no wording describes this, not changed. Behaviour change for /audit:task add users: in a plan whose meta.phaseGate.derived.spelling carries {paths}, the task gate is now [meta.phaseGate.always..., spelling filled with the task's quoted tests.add or files paths] and the printed basis reads 'in the spelling meta.phaseGate.derived.spelling records'; before it was the sibling's entry re-pointed. A spelling with no {paths}, or no spelling, behaves exactly as before. The no-sibling-and-no-spelling basis sentence now names both sources. Edge decisions: a gate-only task with no suite files in a spelling-sourced plan with no meta.phaseGate.always gets the phase's wide testGate (source phase-no-paths) because a template has no path-less entry to carry through; the fix-task companion arm (_unit_runner_paths) sees a spelling shape with no path-shaped tokens, so a spelling-sourced plan yields no runner-config companions (before, a sibling supplied them); a spelling-skipped reason that resolve_shape returns is not echoed by add (not done: _task_gate_setup keeps its five-value return that other callers unpack; noted in a comment). Not run: tools/verify.sh and browser gates (forbidden by the orchestrator). Evidence: full `python3 tools/sweep-selftests.py --quiet` run in the foreground from the task tree, exit 0, 335/335 files ok, 16621 cases; ruff exit 0; vermin exit 0. Mutation proofs in a scratch copy: replacing the resolve_shape call with path_scoped_sibling made tg15 and os3 red and left tg15c green; removing the string-value match in the detector made os2 (allow) and os3 red. The plan gate refused one python heredoc write to audit-task.py ('outside the running task files ... free file already spent on _gate_derive.py'); I did not retry it that way and used the Edit tool, which the gate allowed.",
+    "descriptive": "/audit:task add now reads the project's recorded path-scoped spelling first, like derive-phase-gate, through one resolver, and a lint keeps every other script off the sibling source."
+  },
+  "testsAdded": [
+    "tg15 /audit:task add over a plan whose meta.phaseGate.derived.spelling carries {paths} takes its task gate from that spelling, not a sibling task entry, because it reads the shape through _gate_derive.resolve_shape",
+    "tg15c SECOND-DIRECTION CASE: a spelling that carries no {paths} is skipped, and the sibling's spelling is read",
+    "os1 a call to the sibling source from outside the resolver is named, by its line",
+    "os2 ALLOW CASE: asking resolve_shape, or writing the name in a comment or a docstring, is not a use of the source",
+    "os3 no caller outside _gate_derive picks a shape source on its own"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_audit_task.py: /audit:task add over a plan whose meta.phaseGate.derived.spelling carries {paths} takes its task gate from that spelling, not a sibling task entry, because it reads the shape through _gate_derive.resolve_shape": {
+      "file": "plugins/audit/scripts/manifest/audit-task.py",
+      "find": "shape, owner, _lines = _gate_derive.resolve_shape(phase, build, derived)",
+      "replace": "shape, owner = _gate_derive.path_scoped_sibling(phase, build)",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_task.py",
+        "--selftest",
+        "--stage",
+        "at5-block"
+      ]
+    }
+  },
+  "claims": "claims:\n1 audit-task.py _task_gate_setup calls _gate_derive.resolve_shape (the one resolver); _gate_derive.py lines 128-134 now say the spelling is the FIRST source tried; _point and _gate_derive.point_shape do the filling the comment's callers rely on\n2 resolve_shape call replaced by path_scoped_sibling in a scratch copy -> tg15 and os3 red, tg15c green; detector string-value match widened to every string -> os2 (allow) and os3 red; scratch copy only, __pycache__ purged between runs\n3 grep path_scoped_sibling over scripts+hooks: hits only audit-task.py 2557 (alias, deleted) and 2678 (call, now resolve_shape); remaining hits are _gate_derive.py itself, comments/docstrings (derive-phase-gate.py:64, _deps.py:507, audit-task.py:419 import comment) which the AST detector does not read; the class (any caller picking a source) is held by os3\n4 n/a - no rule addressed to an agent; the structural rule is enforced by test__gate_derive.py os3 in the sweep\n5 n/a - no property measured or recorded\n6 n/a - no guard over commands; os3 reads the AST of source files\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:c234864da20fac4afeda695bee3137aeef202cc5aa6dee7c136525aaf404e453\",\"dirtyDigest\":\"sha256:5abb7fe055d7485d6205d8ad0d142b2cf501cfd4f20b014ce8c30cba2ee02997\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"ca2d00956d9d9b22\",\"plugins/audit/reference/verbs-in-full.md\":\"206a809114db54e6\",\"plugins/audit/scripts/governance/_gate_derive.py\":\"88de6679a07de670\",\"plugins/audit/scripts/manifest/audit-task.py\":\"db7831cd1835e903\",\"plugins/audit/tests/test__gate_derive.py\":\"4d1514813cc05aea\",\"plugins/audit/tests/test_audit_task.py\":\"64193225eb810c58\"},\"head\":\"5c11de61\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_gate_derive.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test__gate_derive.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:8ee99008dd59f91cc5cb011a7cdccc0fa5b7167317c9d8fea6e0cda6b2f355a0\",\"v\":2}"
+}
