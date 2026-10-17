@@ -1901,7 +1901,8 @@
       "P125.41-0h5",
       "P125.75-0h5",
       "P125.142-0h5",
-      "P128.2-0h5"
+      "P128.2-0h5",
+      "P128.41-izt"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -2897,7 +2898,8 @@
       "P125.132-0h5",
       "P129.7-izt",
       "P129.8-izt",
-      "P128.2-0h5"
+      "P128.2-0h5",
+      "P128.41-izt"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -3152,7 +3154,8 @@
       "P129.2-izt",
       "P128.2-0h5",
       "P129.7-izt",
-      "P129.8-izt"
+      "P129.8-izt",
+      "P128.41-izt"
     ],
     "plugins/audit/scripts/config/_help.py": [
       "P10.2",
@@ -4308,7 +4311,8 @@
       "P125.2",
       "P125.6",
       "P125.95-0h5",
-      "P128.2-0h5"
+      "P128.2-0h5",
+      "P128.41-izt"
     ],
     "plugins/audit/scripts/panel/_panel_state.py": [
       "P12.3",
@@ -8593,7 +8597,8 @@
       "P125.6",
       "P125.95-0h5",
       "P125.132-0h5",
-      "P128.2-0h5"
+      "P128.2-0h5",
+      "P128.41-izt"
     ],
     "tools/demo-gate.tape": [
       "P112.1-uce",
@@ -8769,7 +8774,8 @@
       "P125.142-0h5",
       "P125.144-0h5",
       "P129.7-izt",
-      "P129.8-izt"
+      "P129.8-izt",
+      "P128.41-izt"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -8879,7 +8885,8 @@
       "P125.142-0h5",
       "P125.144-0h5",
       "P129.7-izt",
-      "P129.8-izt"
+      "P129.8-izt",
+      "P128.41-izt"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6",
