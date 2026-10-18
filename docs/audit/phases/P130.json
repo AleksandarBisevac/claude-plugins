@@ -954,7 +954,9 @@
         "P130.18-ywo",
         "P130.19-ywo",
         "P130.20-ywo",
-        "P130.21-ywo"
+        "P130.21-ywo",
+        "P130.22-ywo",
+        "P130.23-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -1671,6 +1673,118 @@
       "blockedBy": [],
       "dependsOn": [
         "P130.6"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.22-ywo",
+      "title": "The CI description says what main-run concurrency does, and the slice check and the CI verifier read every shape of the field they judge",
+      "status": "pending",
+      "description": "Fault F730 (the P130.2 review, filed at docs/audit/evidence/returns/P130.2/20261017T230831Z.reviewer.json). Five defects in or beside P130.2's work. (1) .github/workflows/ci.yml:39-44 says a run on main 'is the record of what landed and is never cancelled'; `cancel-in-progress: false` protects only a RUNNING run, and GitHub still replaces a PENDING run when a newer one queues in the group `ci-refs/heads/main`. CHANGELOG.md:27 ('everywhere but `main`') carries the same implication. Fix: reword both to say a running main run is never cancelled and a queued one can be replaced - or key the concurrency group on the SHA on main so main runs never share a group, which makes the sentence true as written; the return names which was taken. (2) tools/gate-parity.py:1579: `slice_drift` classifies a job as release-tier only when its `if:` matches `_RELEASE_TIER_IF` and every other job as per-run, so a job with `if: ${{ false }}` or a push-only condition still counts as running its slices on every run, and `slice_drift` and `shard_matrix_drift` (:1609-1642) return []. Fix: a job `if:` counts as per-run only when it reduces to the verified-run guard the workflow puts on its jobs, optionally with the release-tier term; any other condition is a `problems` row naming the job and saying its condition cannot be proved to run on every run. A job that runs no `tools/verify.sh --only` call, such as the push-only `verified` guard job (ci.yml:97-99), carries no slice and stays outside this judgement. (3) tools/ci-verified.py:128-141: `decide()` matches a listed run on head_sha, path, status and jobs, never on its `event`, and `ask_github` (:153-170) does not keep it; a pull_request run's head_sha is the PR head while its checkout is the merge commit, so a PR run can vouch for a main SHA reached by fast-forward. Fix: accept only `workflow_dispatch` and `push` runs, append a `why` line naming the refused run's event, and fetch the jobs only of runs that can be accepted; the docstring's 'exactly this commit' then holds for every run it accepts. (4) Stale mentions: tools/check-git-pipeline.py:11,29,38,226 and plugins/audit/tests/test_gen_demo_manifest.py:729,800 say ci.yml carries the launcher steps and the scale-demo step; P130.2 moved them into tools/verify.sh's e2e and manifests slices. Fix: name the verify.sh slice that runs each (read it off `sh tools/verify.sh --list`, never retype it from memory). (5) Pre-existing: .claude/skills/reproducing-ci-locally/SKILL.md:20-23 derives the local commands from `sed -n '/jobs:/,$p' .github/workflows/ci.yml`, which for this repo yields only `sh tools/verify.sh --only ...` calls; add a pointer to `sh tools/verify.sh --list` as the way to see the gate in this repo. Acceptance: (1) the ci.yml comment and the CHANGELOG line state only what the concurrency block does, for a running and for a queued main run; (2) gate-parity's new sv cases with `if: ${{ false }}` and with a push-only condition on a per-run job each report that job, and sv0 (the allow case) stays green; (3) ci-verified's new cv case with a green pull_request run on the asking SHA, same workflow path, all jobs success, refuses and its `why` names the event, and cv1 (a green workflow_dispatch run) still verifies; (4) `grep -n 'ci.yml' tools/check-git-pipeline.py plugins/audit/tests/test_gen_demo_manifest.py` finds no sentence claiming ci.yml runs a step verify.sh now runs; (5) the skill names `sh tools/verify.sh --list`; (6) each new case is red with its fix reverted (the return shows the red run).",
+      "files": [
+        ".github/workflows/ci.yml",
+        "CHANGELOG.md",
+        "tools/gate-parity.py",
+        "tools/ci-verified.py",
+        "tools/check-git-pipeline.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        ".claude/skills/reproducing-ci-locally/SKILL.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ci-verified.py: (inline --selftest, `_cases`) a green pull_request run on the asking SHA and workflow path, every job success, refuses and names its event in why; a green workflow_dispatch run and a green push run on the same SHA still verify",
+          "tools/gate-parity.py: (inline --selftest, the sv cases) a per-run job carrying `if: ${{ false }}` and one carrying a push-only condition are each reported by slice_drift naming the job, while the verified-run guard alone and with the release-tier term report nothing"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.23-ywo",
+      "title": "The validator warns on a directory in a task's files, and the plan-gate refusal does not name a not-started task as a file's owner",
+      "status": "pending",
+      "description": "Fault F729. An entry in a task's `files` covers itself and everything under `entry/` (`covering_key`, plugins/audit/hooks/_config.py:3376). `declaring_tasks` (_config.py:3477) reads every task whatever its status through the same `covering_key`, and it feeds two refusal texts in plugins/audit/hooks/require-plan.py: the bound-tree sentence 'it is declared by %s, a different task' (:897-903) and `_declaration_note` (:514). The verdict reads only the bound task's own files and outputs (:893-896), so a pending task's directory entry decides nothing - but the text names that pending task as the owner of every new file under the directory, sending the executor to a task that cannot be started and is not the cause, and hiding the real cue (widen its own task's scope). Seen on P130.4, refused creating a file under plugins/audit/scripts while P130.9 (pending) listed the directory. Fix (a): the consumers of `declaring_tasks` in require-plan.py do not name a task that has not started as the owner when the entry covering the file is a directory entry; they either drop it from the 'declared by' list or say 'covered by the directory entry <entry> of <taskId> (pending)', so the sentence states what the verdict used. If `declaring_tasks` needs to return the covering entry and the task's status for that, add the fields there, keeping its docstring's 'for a message, never for a verdict' true. A task that names the file itself, or an in_progress task, is still named as today. Fix (b): validate-manifest.py warns, never errors, on a task `files` entry that names an existing directory under the project (or ends in `/`), naming the task and the entry and saying scope should list paths: `validate()` in plugins/audit/scripts/manifest/_manifest_rules.py reads no file, so the pure predicate lives there taking the directory test as an argument, and validate-manifest.py, which holds the manifest path, resolves the project directory and supplies it - the way it already adds the index-only and stale-stub warnings. A warning, because COMPATIBILITY.md promises validation stays additive; the exit code of a plan with only this warning is unchanged. Acceptance: (1) a pending task with a directory entry, a new file under it, and a bound in_progress task refused for it: the refusal text does not say the file is declared by the pending task; (2) the same with the pending task naming the file itself, and with the other task in_progress: the text names it as today; (3) validate-manifest on a plan whose task lists an existing directory warns naming the task and the entry and exits as it did before; a plan with only file entries draws no such warning; (4) `_manifest_rules`' predicate given no directory test reads no file; (5) each new case is red with its fix reverted (the return shows the red run).",
+      "files": [
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "plugins/audit/scripts/manifest/validate-manifest.py",
+        "plugins/audit/tests/test_require_plan.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/tests/test__manifest_rules.py",
+        "plugins/audit/tests/test_validate_manifest.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_require_plan.py: a bound in_progress task refused a new file under a directory entry of a pending task gets a refusal that does not name the pending task as the file's owner; a pending task naming the file itself, and an in_progress task covering it, are still named",
+          "plugins/audit/tests/test__manifest_rules.py: the directory-entry predicate reports a task files entry the supplied directory test calls a directory, or one ending in /, naming the task and the entry, reports nothing for file entries, and reads no file when given no directory test",
+          "plugins/audit/tests/test_validate_manifest.py: a plan whose task lists an existing project directory in files draws a warning naming the task and the entry, and the exit code is the one the same plan without the entry gets"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.4"
       ],
       "attempts": 0,
       "maxAttempts": 3,
