@@ -462,7 +462,7 @@
     {
       "id": "P130.4",
       "title": "Dead definitions go and duplicated guard payloads, commit messages and timestamp helpers have one home per side",
-      "status": "in_progress",
+      "status": "done",
       "description": "Plan F1.6 (S3), invariant I12 as repayment; lands before F1.4 because it edits plugins/audit/tests/. PREMISE CORRECTION at 571becfd (and already at edbbb86e): of the plan's five unreachable definitions, `_config.out_of_scope_record` is called at commit-task-work.py:581 through `_hooks_config()`, and `_status_facts.phase_task_status` at _panel_state.py:554 through the status-facts module `_cores()` returns, so both stay; `guard-history-rewrite.shell_words` waits for S5. (1) Delete `journal-writes.swept_entries` (:977) and `journal-writes.classify` (:212), which have no call site, and the docstring sentences that describe them as live. (2) `_deny_payload` and `_ask_payload` in guard-edits.py (:151, :162), guard-secrets-read.py (:1073, :1084) and require-plan.py (:303, :314) become one pair in hooks/_config.py; every payload stays byte-identical. (3) `commit_message` in commit-audit-state.py (:282), commit-manifest-index.py (:362) and commit-task-work.py (:678) becomes one implementation in a module all three may import under _deps.LAYERS; the task-work variant's extra arguments (manifest, claims) stay, and every message is byte-identical. (4) The eleven now-as-ISO helpers have one home per side, because a hook may not import scripts/: hooks/_config.py for guard-bash-writes `_now` and require-plan `_now_iso`, and one scripts module for the other nine; a helper whose output format differs keeps that format under a name that says it. Acceptance: `git grep -n '<name>'` finds only the definition site for each consolidated name; the full sweep is green; ruff and vermin are clean.",
       "files": [
         "plugins/audit/hooks/journal-writes.py",
@@ -532,14 +532,20 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0395e92aff86",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Attempt 2 finishes (3) and the scripts half of (4); (1), (2) and the hooks half of (4) are attempt 1's and stay. (3) _scoped_commit gains commit_message(header, coauthor, claims=None) - the one assembler of the paragraph order header / claims / co-author, a blank or non-string value adding none - and coauthor_of(manifest), the one derivation of meta.commit.coauthor. The three scripts' commit_message definitions are gone: commit-audit-state and commit-manifest-index keep their long header rationale on subject_header(phase_id, subject) (fitted_header over their own literals; bytes unchanged), commit-task-work keeps its extra arguments as message_parts(task_id, subject, manifest) -> (header, coauthor) with claims passed to the shared composer; its header stays unbounded as before. The two _coauthor copies are deleted (the config-mirror lint ck2/ck16 went red on commit.coauthor read three ways once the task variant used as-typed, which is how the third derivation was found). (4) New lowest-layer module scripts/_utc_stamp.py (utc_stamp(epoch=None), gmtime idiom, `is None` test so epoch 0 is a moment) with tests/test__utc_stamp.py (4 cases), a _deps.LAYERS entry beside _machine_paths/_excerpt/_usage_core, a PLUGIN-BUILD-GUIDE.md tree line, section and regenerated module-map fence (python3 plugins/audit/scripts/_deps.py --render), and both test__output.py listings. The nine helpers are gone: audit-task._utc_now (+_NOW_FMT), close-phase._utc_now, derive-phase-gate._now_iso, _evidence_io._now, manage-worktrees._now, ado-connect.iso_now, _proposals.iso_now, resolve-ado-parent.iso_now, repair-commits.iso_now (which had no caller at all); call sites use _utc_stamp.utc_stamp(); now-unused datetime/time imports removed. test_full_gate.py re-pointed from _ev_io._now(). Tests: test_commit_task_work.py's 571becfd case now runs the shared composer over each script's header builder; added ctw25a (paragraph order and blanks) and ctw25b (coauthor_of shapes); test_commit_audit_state/test_commit_manifest_index call subject_header. Sweep: python3 tools/sweep-selftests.py ran in the background and reports 338/339 files ok; the one file, tools/gate-parity.py, failed only on its two vsh INT cases (a background job ignores SIGINT), and `python3 tools/gate-parity.py --selftest` in the foreground gives 146/146 and `python3 tools/gate-parity.py` exits clean - so the recorded sweep is not a clean green and the orchestrator's own run is the verdict. Gate notes: a python heredoc write to _scoped_commit.py was allowed (its one free file), the same on other source files was refused, and Edit worked on every in-scope file; PLUGIN-BUILD-GUIDE.md was written through a heredoc and allowed. guard-bash-writes._now is time.time() (a test clock, monkeypatched by the cases), not an ISO helper, and is left, as in attempt 1.",
+        "descriptive": "Dead definitions gone; deny/ask payloads, commit-message assembly, the co-author derivation and the ISO UTC stamp each have one home per side, with every message and stamp byte-identical."
       },
       "startedAt": "2026-10-18T06:36:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-18T07:18:00Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__config.py: the shared deny and ask payloads are byte-identical to what guard-edits, guard-secrets-read and require-plan printed at 571becfd",
+        "plugins/audit/tests/test_commit_task_work.py: the shared commit_message gives the 571becfd message for a task commit, an audit-state commit and an index commit",
+        "plugins/audit/tests/test_commit_task_work.py: ctw25a the shared composer puts the claims between the header and the co-author trailer, and a blank claims or co-author adds none",
+        "plugins/audit/tests/test_commit_task_work.py: ctw25b the one derivation of meta.commit.coauthor returns a string with something in it and None for every other shape",
+        "plugins/audit/tests/test__utc_stamp.py: us1-us4"
+      ],
       "notes": [
         {
           "at": "2026-10-17T20:58:57Z",
@@ -555,6 +561,17 @@
         "runId": "2026-10-18T07:17:57Z.289430",
         "status": "passed",
         "at": "2026-10-18T07:17:57Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "0395e92aff86",
+        "at": "2026-10-18T07:18:00Z",
+        "return": "docs/audit/evidence/returns/P130.4/20261018T063658Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "mode regression, expectRedFirst false: no red owed. Reds I did watch, in a scratch COPY of plugins/ under the scratchpad (never the shared tree), each restored: claims/co-author paragraph order swapped in _scoped_commit.commit_message -> test_commit_task_work 123/125, the 571becfd case and ctw25a red; utc_stamp using `epoch or time.time()` -> test__utc_stamp 3/4 (us2 red); utc_stamp using localtime under TZ=Asia/Tokyo -> 1/4 (us1, us2, us4 red); coauthor_of returning the raw value -> ctw25b red (124/125). Earlier attempt's payload mutations (ask_payload returning deny, hookEventName, prefix) stand as recorded.",
+        "at": "2026-10-18, after the implementation, scratch copy under the session scratchpad"
       }
     },
     {
@@ -741,7 +758,7 @@
     {
       "id": "P130.7",
       "title": "The lints with no measured catch are retired with their cases and prove-gates rows",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Plan F1.7 (D2), widened by V3; lands before F1.4 because it edits plugins/audit/tests/, so it deletes in place and the move carries less. (1) Retire, each with its cases and its prove-gates rows (all 28 defined at 571becfd, `def` lines 1,239 at edbbb86e and 1,252 now): rule_drift; panel_route_violations, shared_concern_violations, tool_navigability_violations, tracker_dependency_violations, uncalled_helper_claims, layer_mention_drift; agent_doc_drift, schema_inline_drift, schema_subset_drift, source_drift; redundant_constants, phase_id_doc_drift; absolute_reach_violations, command_reach_violations, discovery_projection_drift, doc_link_drift, handbook_drift, render_target_drift, signoff_fix_route_drift, sweep_doc_drift; cr_violations, declared_asset_drift; exemption_reason_drift, scratch_isolation, sweep_roots_drift, revisit_trigger_drift (in demo/gen-demo-manifest.py, which the plan's file list missed), removal_helper_drift. (2) V3, approved: also retire isolation_drift (tools/gate-parity.py:1015) and ui_navigability_violations (_deps.py:4818). (3) exemption_reason_drift goes only if the parity check F1.2 left holds no exemption table with reasons; otherwise it stays and the outcome says so. (4) Kept: house_style_violations, fail_mode_drift, tests_import_violations, prose_number_claims, register_citation_violations, doc_prose_numbers, shard_matrix_drift (as F1.2 rewrote it) and affected_dispatch (until F3.2). The three lints added since the plan was measured (plain_read_violations, split_literal_violations, text_encoding_violations) are not in the D2 replay and stay. (5) The prose lints scan files git tracks, not an agent's untracked scratch files; where git cannot answer (an archive export) they fall back to the .gitignore derivation and say so. (6) A rule a retired lint held becomes author-enforced, and the documents that cite the lint say that: CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md, the three skill files, ui/shared/README.md. CLAUDE.md's isolation paragraph and its marker sentences are the owner's to change: the task drafts the replacement text in its outcome. Acceptance: the difference of `python3 tools/prove-gates.py --list | awk '{print $2}' | sort -u` before and after is exactly the retired names plus the four F1.2 removed; `python3 tools/prove-gates.py` once, both directions, green for the rest; the full sweep is green.",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -774,7 +791,8 @@
         ".claude/skills/writing-python/SKILL.md",
         "CONTRIBUTING.md",
         "PLUGIN-BUILD-GUIDE.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "vitest.config.mjs"
       ],
       "tests": {
         "mode": "regression",
@@ -807,16 +825,17 @@
       "dependsOn": [
         "P130.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-18T21:25:38Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.8",
@@ -1058,7 +1077,9 @@
         "P130.20-ywo",
         "P130.21-ywo",
         "P130.22-ywo",
-        "P130.23-ywo"
+        "P130.23-ywo",
+        "P130.24-ywo",
+        "P130.25-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -1153,7 +1174,7 @@
     {
       "id": "P130.10-ywo",
       "title": "One function answers what a task's gate is, so a green verdict that carries derived affected steps can be committed",
-      "status": "pending",
+      "status": "in_progress",
       "description": "run-test-gate.py records a task's verdict under every step it ran: the declared entries plus the derived `affected/related` and `affected/python` steps it adds when the task gate is narrower than the phase gate (STEP_PREFIX in _affected_tests.py). gate_mismatch in _verdict_binding.py compares the recorded step names with the declared entries and refuses, and a fresh recorded run adds the same steps again, so such a task can never be committed without --override-verdict. Make one function the answer to 'which steps of a recorded row are the declared gate' and have both the recorder and the committer's comparison call it: the derived steps are measured, never declared. The function lives in the lowest module both callers may import (_evidence_io, which _verdict_binding already imports; layer_violations() decides). A widened or narrowed declared gate, a changed gateDigest and a changed gateSource still refuse. Acceptance: (1) a plan with meta.phaseGate.derived whose task gate is narrower than the phase gate records a green row carrying affected steps, and commit-task-work commits it with no override; (2) a row whose declared steps differ from the task's entries is still refused with the existing sentence; (3) a row whose declared entries match but whose gateDigest differs is still refused; (4) the derived-step prefix is spelled in one module only (a grep for the literal finds one definition); (5) _deps layer_violations() reports nothing.",
       "files": [
         "plugins/audit/scripts/governance/_verdict_binding.py",
@@ -1192,16 +1213,17 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-18T21:25:40Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.11-ywo",
@@ -1292,7 +1314,7 @@
     {
       "id": "P130.12-ywo",
       "title": "Fix BUG-24-izt: /audit:usage compares like with like against the CLI cumulative cost",
-      "status": "pending",
+      "status": "in_progress",
       "description": "",
       "files": [
         "plugins/audit/scripts/usage/audit-usage.py",
@@ -1322,14 +1344,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-18T21:25:43Z",
       "completedAt": null,
       "verifiedBy": [],
       "bugId": "BUG-24-izt",
@@ -1338,7 +1360,8 @@
           "at": "2026-10-17T20:58:46Z",
           "text": "Repro and expected (BUG-24-izt): /audit:usage --by attr --since <a day after a long session started> compares a filtered ledger window against the CLI cumulative session cost (session fb1bddcc: Opus CLI 463.63 vs plugin 126.75, unfiltered ledger 366.23). Compare whole-session unfiltered rows, or withhold the line under a filter with the reason printed, and label the CLI figure as including requests no transcript entry records (compaction, away summaries, titles, auto-mode classifier). Load writing-python, no-silent-pass, before-you-claim."
         }
-      ]
+      ],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.13-ywo",
@@ -1887,6 +1910,109 @@
       "blockedBy": [],
       "dependsOn": [
         "P130.4"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.24-ywo",
+      "title": "The task-start scope preflight asks a runner only about the paths it can collect, and a Python suite counts as collected by the sweep",
+      "status": "pending",
+      "description": "Fault F731. scope_gap (plugins/audit/scripts/governance/drive-phase.py:1073-1115) keeps, from a task's gate entries, only those whose entry_runner is in _gate_derive.UNIT_RUNNERS, then declares a scope-gap when none of those runners collects a tests.add path. The Python suites here are collected by tools/sweep-selftests.py behind the `selftests` entry, whose entry_runner is None, so it is never asked; with `vitest` also in the gate, every Python test path draws NOT_COLLECTED from vitest and a scope-gap decision whose only remedies are widen (adds vitest.config.mjs, which the task never edits) or block. Seen on P130.4 (test__config.py) and P130.7 (test__deps.py). Fix: read how _gate_derive already splits paths by language (_runners_for, _gate_derive.py:312) and have scope_gap ask a runner only about paths that runner can take, treating plugins/audit/tests/*.py (and the project's own Python suite location) as collected by the sweep when the gate holds `selftests`; the alternative of counting any collecting runner is acceptable only if it reuses that same split, and the return names which was taken. A path no runner of the gate can take at all must still be reported rather than silently passed. Acceptance: (1) a Python tests.add path under a gate holding `selftests` and `vitest` draws no scope-gap decision and no could-not-tell line; (2) a .mjs/.js tests.add path vitest does not collect still draws the scope-gap decision with its widen remedy; (3) a Python path under a gate holding neither the sweep nor pytest is still reported; (4) each new case is red with the fix reverted (the return shows the red run).",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/scripts/governance/_runner_collects.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test__runner_collects.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: scope_gap on a task whose tests.add is a plugins/audit/tests/test_*.py path and whose gate holds selftests and vitest returns no decision; a .mjs path vitest does not collect still returns the scope-gap decision naming vitest.config.mjs; a Python path under a gate with neither the sweep nor pytest is still reported",
+          "plugins/audit/tests/test__runner_collects.py: the language split the preflight uses sends a .py path to the sweep or pytest and a .js/.mjs/.ts path to vitest or jest, and names no runner for a path none of the gate's runners can take"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.14-ywo"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.25-ywo",
+      "title": "The ctw29 case label has its space back, and detect-plan-skip stamps the bypass file through _config.local_stamp()",
+      "status": "pending",
+      "description": "Fault F732 (the P130.4 review, filed at docs/audit/evidence/returns/P130.4/20261018T063658Z.reviewer.json). Two lows, both verified at HEAD 6220678a. (a) plugins/audit/tests/test_commit_task_work.py:785 reads check(\"ctw29SECOND-DIRECTION CASE: ...; restore the space after ctw29 so the label matches its siblings. (b) plugins/audit/hooks/detect-plan-skip.py:158 builds time.strftime(\"%Y-%m-%dT%H:%M:%S%z\", time.localtime()) inline; replace it with _config.local_stamp() (plugins/audit/hooks/_config.py:4194), which owns that spelling and which require-plan.py already calls, and keep the docstring at :122 true. Acceptance: (1) the ctw29 label has the space and no other line of that file changes; (2) detect-plan-skip's bypass file `ts` is exactly what _config.local_stamp() returns, shown by a case that patches local_stamp and reads the file; (3) the new case is red with the inline strftime restored (the return shows the red run); (4) grep -n 'strftime' plugins/audit/hooks/detect-plan-skip.py finds no stamp of the local-offset spelling.",
+      "files": [
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/hooks/detect-plan-skip.py",
+        "plugins/audit/tests/test_detect_plan_skip.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_detect_plan_skip.py: arming the plan-first bypass writes a `ts` equal to the value _config.local_stamp() returns (local_stamp patched to a sentinel), red with the inline strftime restored"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.10-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
