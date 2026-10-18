@@ -1332,7 +1332,7 @@ def slot_key(data):
 def slot_owner_of(data):
     """Who is taking a slot, and when: the record `take_trivial_slot` stores."""
     return {"agent": agent_of(data),
-            "at": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime())}
+            "at": local_stamp()}
 
 
 def slot_owner(state, key):
@@ -4189,6 +4189,45 @@ def utc_stamp():
     a helper that pulled in `datetime` here would be paid for on calls that never
     stamp anything."""
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def local_stamp():
+    """The wall-clock stamp for a record a person reads on this machine: local
+    time with its UTC offset, e.g. `2026-08-17T11:41:03+0200`.
+
+    NOT `utc_stamp`'s spelling, and kept under its own name for that reason: the
+    offset is what makes local digits honest, where `utc_stamp` makes them honest
+    by being UTC. Its two readers -- the plan-first bypass file's `ts` and the
+    free-file slot's `at` -- are compared as written, so a caller that wants the
+    other spelling must ask for the other function and not edit this format."""
+    return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime())
+
+
+# --- PreToolUse decisions -----------------------------------------------------
+def _decision_payload(decision, reason):
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": decision,
+            "permissionDecisionReason": reason,
+        }
+    }
+
+
+def deny_payload(reason):
+    """The PreToolUse deny payload, printed to stdout with exit 0. `reason` is
+    the whole sentence the model reads, signed by the caller: each hook puts its
+    own name in front, and the name is the only thing that differs."""
+    return _decision_payload("deny", reason)
+
+
+def ask_payload(reason):
+    """The PreToolUse ask payload -- hands the decision to the human's own
+    prompt. Deliberately NOT deny: guard-edits' strict mode must never refuse the
+    orchestrator its own bookkeeping, and the plan gate's `planGate: "ask"` tier
+    is a prompt by definition. The dialog itself cannot be driven by a selftest,
+    so the payload SHAPE is the pinned contract."""
+    return _decision_payload("ask", reason)
 
 
 # --- atomic local writes ------------------------------------------------------

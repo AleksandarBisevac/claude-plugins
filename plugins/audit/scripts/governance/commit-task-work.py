@@ -675,23 +675,16 @@ def override_row(project, task_id, phase_id, nonce, verdict, reason,
 
 
 # --- the commit ---------------------------------------------------------------
-def commit_message(task_id, subject, manifest, claims=None):
-    """The message paragraphs: a conventional subject, the executor's filed
-    `claims` when it carried one, and the co-author trailer.
+def message_parts(task_id, subject, manifest):
+    """`(header, coauthor)` of a task commit: the conventional subject, and the
+    trailer the manifest names or None.
 
-    THE CLAIMS ARE A PARAGRAPH OF THEIR OWN, byte-identical, after the subject
-    and before the trailers. The plugin commits through its own `git commit`
-    subprocess, so a repository hook that asks a Bash command for a `claims:`
-    block never sees this commit; the block the executor filed is what reaches
-    the message instead. A return without one gives the message it always did -
-    the plugin has no ground to require a block a project may not ask for.
-    `_scoped_commit.with_row_trailer` keeps the row trailer in a paragraph of
-    trailers, its own when there is no co-author line, so the claims paragraph
-    never becomes the one git reads trailers from.
-
-    A LIST RATHER THAN ONE STRING, because that is how it reaches git: one `-m`
-    per paragraph, so the trailer is a trailer and not a second sentence of the
-    subject line.
+    The paragraphs are `_scoped_commit.commit_message`'s, with the executor's
+    filed `claims` between them: a repository hook that asks a Bash command for a
+    `claims:` block never sees a commit the plugin makes through its own `git
+    commit` subprocess, so the block the executor filed is what reaches the
+    message instead. A return without one gives the message it always did - the
+    plugin has no ground to require a block a project may not ask for.
 
     THE TYPE IS THE MANIFEST'S AND THE SCOPE IS THE TASK ID, which is the shape
     `orchestrator.md` step 4c already prescribes and the shape `/audit:doctor`
@@ -705,14 +698,9 @@ def commit_message(task_id, subject, manifest, claims=None):
     ctype = block.get("type")
     ctype = ctype if isinstance(ctype, str) and ctype.strip() \
         else DEFAULT_COMMIT_TYPE
-    paragraphs = ["%s(%s): %s - %s" % (ctype.strip(), task_id, SUBJECT_LEAD,
-                                       subject or DEFAULT_SUBJECT)]
-    if isinstance(claims, str) and claims.strip():
-        paragraphs.append(claims)
-    coauthor = block.get("coauthor")
-    if isinstance(coauthor, str) and coauthor.strip():
-        paragraphs.append(coauthor)
-    return paragraphs
+    header = "%s(%s): %s - %s" % (ctype.strip(), task_id, SUBJECT_LEAD,
+                                  subject or DEFAULT_SUBJECT)
+    return header, _scoped_commit.coauthor_of(manifest)
 
 
 def filing_rows(project, config=None):
@@ -969,7 +957,8 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
 
     done = _scoped_commit.commit_with_rows(
         git_root, allowed, targets["kinds"],
-        commit_message(task_id, subject, manifest, claims=claims),
+        _scoped_commit.commit_message(
+            *message_parts(task_id, subject, manifest), claims=claims),
         lambda paths: foreign_refusal(paths, targets), rows,
         lambda nonce, why: _scoped_commit.withdraw(
             project, config, nonce, "commit-task-work",

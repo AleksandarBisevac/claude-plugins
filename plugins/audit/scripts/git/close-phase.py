@@ -109,7 +109,6 @@ Exit codes:
      cannot tell them apart will retry the wrong one
 """
 import argparse
-import datetime
 import json
 import os
 import pathlib
@@ -141,6 +140,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _utc_stamp  # noqa: E402  (utc_stamp: the one spelling of this moment)
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _branch                                                       # noqa: E402
 import _evidence_io  # noqa: E402  (where the ledger lives, and its one strict decode)
@@ -1019,14 +1019,6 @@ class RefusedWriteStands(Exception):
     `Exception` as "could not be written", which is the one thing this is not."""
 
 
-def _utc_now():
-    """This moment in the plan's one UTC spelling. `datetime.utcnow()` is
-    deprecated from 3.12 and warns onto stderr of every run; the aware spelling
-    works unchanged on the 3.8 floor, which `datetime.UTC` (3.11+) would not."""
-    return (datetime.datetime.now(datetime.timezone.utc)
-            .strftime("%Y-%m-%dT%H:%M:%SZ"))
-
-
 def merge_commit(git_root, branch, parent, run=None):
     """{"sha", "basis"} - the oldest commit on `parent`'s first-parent chain that
     contains `branch`'s tip: the commit on that chain that brought the tip in -
@@ -1240,7 +1232,7 @@ def _stamp_locked(manifest_path, phase_id, when, merged_head):
         body = _mio.read_json(path)
     except Exception as exc:
         return "", "%s could not be read: %s" % (path, exc), False
-    stamp = when or _utc_now()
+    stamp = when or _utc_stamp.utc_stamp()
     # A RECORDED MERGE IS KEPT: the field names the moment the parent came to hold
     # the branch, and a re-run finding it already there records nothing new.
     found = _phases_in(body, phase_id)
@@ -1370,7 +1362,7 @@ def backfill_merged_head(manifest_path, phase_id, parent, project, ask_head,
         return {"mergedHeadWhy": head["basis"]}
     if dry_run:
         return {"mergedHeadWould": head["sha"]}
-    at = _utc_now() if after_the_fact else None
+    at = _utc_stamp.utc_stamp() if after_the_fact else None
     path, written, why, notes = record_merged_head(
         manifest_path, phase_id, head["sha"], merged_head_at=at, project=project)
     told = _told(notes, why)

@@ -364,6 +364,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _utc_stamp  # noqa: E402  (utc_stamp: the one spelling of this moment)
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _manifest_vocab as _vocab  # noqa: E402  (_strip_line_suffix: one reading of a
@@ -3023,7 +3024,7 @@ def _build_task(task_id, title, args, phase, assembled, failing_row=None,
         # too, rather than re-derived (and risking a second answer) by a
         # caller that only has the finished task to look at.
         task.setdefault("notes", []).append(
-            {"at": _utc_now(), "text": kind_note})
+            {"at": _utc_stamp.utc_stamp(), "text": kind_note})
     return task, unnamed, gate_basis
 
 
@@ -3913,7 +3914,7 @@ def _locked_add(args, project, config, mpath, title, out):
                                             gate_basis, fixes, records)
         fix_notes = fix_notes + ([bare_runner] if bare_runner else [])
     for text in fix_notes + ([_companion_basis(companions)] if companions else []):
-        task.setdefault("notes", []).append({"at": _utc_now(), "text": text})
+        task.setdefault("notes", []).append({"at": _utc_stamp.utc_stamp(), "text": text})
     if args.bug:
         # RECIPROCAL, in this one write: the validator refuses a task naming a
         # bug whose taskId does not name the task back.
@@ -3921,7 +3922,7 @@ def _locked_add(args, project, config, mpath, title, out):
         bug["status"] = "in_progress"
         bug["taskId"] = task_id
     if bug_note:
-        task.setdefault("notes", []).append({"at": _utc_now(), "text": bug_note})
+        task.setdefault("notes", []).append({"at": _utc_stamp.utc_stamp(), "text": bug_note})
     if fixes:
         # ONE WRITE, BOTH HALVES: the task's `fixes` and each finding's
         # `fixTask`, which is what lets the task close `not-asked` under
@@ -4142,12 +4143,6 @@ def _dry_run_report(args, out, vm, assembled, task, phase_id, gate_basis, missin
 # WHY (the reason lived in somebody's memory), WHEN (no stamp), and THAT IT
 # HAPPENED AT ALL (no journal row). The verb writes all three through the same
 # lock / write / validate-from-disk / roll-back path `add` uses.
-_NOW_FMT = "%Y-%m-%dT%H:%M:%SZ"
-
-
-def _utc_now():
-    import time
-    return time.strftime(_NOW_FMT, time.gmtime())
 
 
 def _find_target(assembled, tid):
@@ -4216,7 +4211,7 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
             % (tid, status))
         return E_USAGE
 
-    now = _utc_now()
+    now = _utc_stamp.utc_stamp()
     # `{"id": ..., "was": <the status it held>}` per cascaded task, not a bare
     # id. The journal row spells the cascade as `changes`, whose entries are
     # id/field/from/to, and `was` is the `from` -- read BEFORE `_cancel_task`
@@ -5324,7 +5319,7 @@ def _locked_start(args, project, config, mpath, tid, out):
     # The session id is the BOUNDED one: it lands in a committed shard and on a
     # journal row, and the comparison with a held claim has to read the value a
     # start writes, or a session's own sanitised claim would read as another's.
-    now = _utc_now()
+    now = _utc_stamp.utc_stamp()
     session = _journal_io.env_session_id()
     claim = _claim_plan(_mio.is_sharded(raw_index), phase.get("claim"), session,
                         entry.get("branch") or _id_shape.current_branch(git_root),
@@ -6724,7 +6719,7 @@ def _locked_done(args, project, config, mpath, tid, out):
             "%s. Nothing written." % (_vb.OVERRIDE_FLAG, refused))
         return E_USAGE
 
-    now = _utc_now()
+    now = _utc_stamp.utc_stamp()
     verified = None if args.verified_by is None else _split_csv(args.verified_by)
     descriptive, technical, red_first = args.descriptive, args.technical, None
     if from_values is not None:
@@ -7468,7 +7463,7 @@ def _locked_note(args, project, config, mpath, tid, text, out):
             % (tid, type(notes).__name__))
         return E_USAGE
     phase_id = phase.get("id")
-    entry = {"at": _utc_now(), "text": text}
+    entry = {"at": _utc_stamp.utc_stamp(), "text": text}
     node["notes"] = list(notes or []) + [entry]
     wrote = _write_plan(project, mpath, raw_index, assembled, vm, [phase_id],
                         "the note", out)
@@ -7603,7 +7598,7 @@ def _locked_move(args, project, config, mpath, tid, target_id, out):
     # `previous`, so every id this task ever held stays taken for the allocator
     # and joinable for the evidence readers.
     prior = moved.get("movedFrom")
-    moved["movedFrom"] = {"id": tid, "phase": from_phase, "at": _utc_now()}
+    moved["movedFrom"] = {"id": tid, "phase": from_phase, "at": _utc_stamp.utc_stamp()}
     if isinstance(prior, dict):
         moved["movedFrom"]["previous"] = prior
     for ph in (renamed.get("phases") or []):
@@ -8627,7 +8622,7 @@ def _batch_build_tasks(doc, ids, keys, phase, first, assembled, project, mpath):
                                                 fixes, records)
             notes = notes + ([bare_runner] if bare_runner else [])
         for text in notes + ([basis] if basis else []):
-            task.setdefault("notes", []).append({"at": _utc_now(), "text": text})
+            task.setdefault("notes", []).append({"at": _utc_stamp.utc_stamp(), "text": text})
         if fixes:
             task["fixes"] = fixes
             for entry in targets:
@@ -8688,7 +8683,7 @@ def _park_phase(args, project, config, mpath, raw_index, assembled, phase, side,
     its id stays RESERVED (every allocator counts parked ids), so materializing it
     is a move rather than a rebuild. The proposal lives where proposals live - the
     single file, or the sharded INDEX - and nothing else is touched."""
-    now = _proposals.iso_now()
+    now = _utc_stamp.utc_stamp()
     prop_id = _id_shape.next_prop_id(assembled, side["suffix"])
     # ON A SIDE BRANCH THE RESERVED PHASE ID IS A PLACEHOLDER. Two phase branches
     # parking one each would otherwise both reserve the next plain `P<n>`, and the
@@ -10370,7 +10365,7 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
         out("[audit-task] " + refusal)
         return E_USAGE
     carried, refusal, read = _carry_answers(project, mpath, config, phase,
-                                            _utc_now())
+                                            _utc_stamp.utc_stamp())
     if refusal:
         out("[audit-task] " + refusal)
         return E_USAGE
@@ -11748,7 +11743,7 @@ def _locked_group(args, project, config, mpath, ids, summary, out):
         return E_USAGE
     # EVERY MEMBER IS ASKED, before any is written: a group signs off whole or
     # not at all, so one member owed its answers refuses them all.
-    now = _utc_now()
+    now = _utc_stamp.utc_stamp()
     asked = [(phase, _carry_answers(project, mpath, config, phase, now,
                                     group=True)) for phase in plan["members"]]
     held = [answer[1] for _phase, answer in asked if answer[1]]
@@ -12268,7 +12263,7 @@ def _locked_couple(args, project, config, mpath, out):
     if idx is None:
         entry = {"test": test, "sources": sources,
                  "basis": {"runId": run_id, "head": head, "phases": phases},
-                 "learnedAt": _utc_now()}
+                 "learnedAt": _utc_stamp.utc_stamp()}
         coupling.append(entry)
         summary = "%s coupled to %s (basis %s)" % (
             test, ", ".join(sources), run_id)
@@ -12639,7 +12634,7 @@ def _locked_bug_add(args, project, config, mpath, out):
         out("[audit-task] --files names the suspected repository-relative "
             "files, and %s" % ("; ".join(bad),))
         return E_USAGE
-    now = _utc_now()
+    now = _utc_stamp.utc_stamp()
     ado, refusal = _imported_link(args.ado, "--ado", "origin", "lastSyncedAt",
                                   now)
     if refusal is None:
@@ -13436,7 +13431,7 @@ def _seed_meta(project):
         "branchPrefix": "audit",
         "gitRoot": ".",
         "buildCommands": {},
-        "createdISO": _utc_now(),
+        "createdISO": _utc_stamp.utc_stamp(),
     }
 
 

@@ -1,0 +1,22 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/tests/test_commit_task_work.py:785",
+   "issue": "The diff rewrites the label of an unrelated existing case from `ctw29 SECOND-DIRECTION CASE` to `ctw29SECOND-DIRECTION CASE` (space deleted), a stray edit outside the task's scope that changes the case id other tooling and logs key on.",
+   "resolution": "Restore the space so the label reads `ctw29 SECOND-DIRECTION CASE` as at 678ca8f5."},
+  {"id": 2, "severity": "low", "file": "plugins/audit/hooks/detect-plan-skip.py:158",
+   "issue": "The hooks side was given `_config.local_stamp()` as its one home for the offset-bearing local stamp, but detect-plan-skip.py:158 still spells the identical `time.strftime(\"%Y-%m-%dT%H:%M:%S%z\", time.localtime())` inline, so the hooks half of (4) is not one-per-side. The executor's claim 3 lists only scripts-side stragglers as left on purpose and does not name this one.",
+   "resolution": "Call `_config.local_stamp()` there (a hook may import hooks/_config), or list it with the other deliberate leftovers as a follow-up task."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "diverges",
+  "note": "Clauses (1) swept_entries and classify deleted with their docstrings repointed to _swept_rows/_classify_placed; (2) one deny_payload/ask_payload pair in hooks/_config.py, three hooks now sign the reason themselves, bytes pinned in test__config.py; (3) one _scoped_commit.commit_message(header, coauthor, claims=None) plus coauthor_of, the three per-script definitions gone, task-work keeps manifest/claims as message_parts; (4) nine scripts-side helpers replaced by new _utc_stamp.utc_stamp (layer entry, guide section, module-map line), require-plan _now_iso replaced by _config.local_stamp. These match, and I found no behaviour change in the diff (formats and paragraph order are unchanged). The divergence is one named item: the clause says hooks/_config.py takes 'guard-bash-writes `_now`', and the diff leaves guard-bash-writes.py:1031 untouched. The executor's reason is checkable: that `_now` returns time.time() (an epoch clock the cases monkeypatch), not an ISO stamp, so the description's premise was the wrong half, not the code. Claim vs diff: the filed outcome describes the diff accurately, including that guard-bash-writes._now was left and that the recorded sweep carries one environmental gate-parity INT failure (the recorded task gate run is passed). Acceptance grep for the consolidated names finds only the definition site in the tree I read; the sole remaining hits are historical rows under docs/audit.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor filed not-attempted: 'mode regression, expectRedFirst false: no red owed', and its scratch-copy mutations (paragraph order swap, `epoch or time.time()`, localtime under TZ=Asia/Tokyo, coauthor_of returning raw) are reported with the failing counts. The basis holds for the mode; I did not re-run them.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate's selftests entry is `python3 tools/sweep-selftests.py`, which runs the whole project (every hooks, scripts, tests and tools file), so the bound is not narrower than the repo and the question cannot be asked of a bounded set. The other entries (validate, plugin-validate, gate, report, lint, shots, interactive) are not test selections."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

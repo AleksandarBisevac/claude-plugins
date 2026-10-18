@@ -328,7 +328,7 @@ def _cases(check):
         # that header is sentence-case again - and the phase id and scope are
         # asserted alongside, because deleting the id is the other way to stop
         # offending the case rules.
-        composed = [M.commit_message(PHASE, text, None)[0] for text in
+        composed = [M.subject_header(PHASE, text) for text in
                     ("landed the index after a task add",
                      "Landed the index after a task add")]
         check("cmi7c ...and no `--subject` can put a capital, or the id, back in "
@@ -355,7 +355,7 @@ def _cases(check):
         # fixed opening does not cover. The bound lives with the composer and the
         # transcription of commitlint's own rule stays here, so the two are
         # compared rather than one being read off the other.
-        spent = M.commit_message(PHASE, "y" * (HEADER_MAX_LENGTH * 2), None)[0]
+        spent = M.subject_header(PHASE, "y" * (HEADER_MAX_LENGTH * 2))
         check("cmi7e ...and a `--subject` longer than the whole budget is CUT "
               "rather than carried past it: the header still fits, still opens "
               "with this command's own words, still names the phase, and still "

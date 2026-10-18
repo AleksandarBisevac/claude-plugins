@@ -70,6 +70,7 @@ _output.install_path()
 
 import _ado_connect as _conn  # noqa: E402  (every decision this door reports)
 import _excerpt  # noqa: E402  (a tool's output that is not JSON is quoted both ends)
+import _utc_stamp  # noqa: E402  (utc_stamp: the one spelling of this moment)
 
 USAGE = ("usage: ado-connect.py <manifest> [--transport auto|mcp|az] "
          "[--probe <file.json|->] [--json]\n")
@@ -79,20 +80,6 @@ USAGE = ("usage: ado-connect.py <manifest> [--transport auto|mcp|az] "
 # nothing here opens it. Read because it is the only observation that binds a
 # credential to ONE organization, which is the question rung 2 asks.
 STORED_ORGS_FILE = os.path.join("~", ".azure", "azuredevops", "organization_list")
-
-
-def iso_now():
-    """Wall clock, isolated so nothing above reaches for one.
-
-    `now(timezone.utc)` rather than `utcnow()`: that spelling is deprecated and
-    warns on every call, while `datetime.UTC` needs 3.11 and this tree holds a
-    3.8 floor. Same body as `_proposals.iso_now()` and deliberately not shared:
-    that module is a library and this is the door, so importing it to reach two lines
-    would be an upward edge the layer lint refuses.
-    """
-    import datetime
-    return datetime.datetime.now(datetime.timezone.utc).strftime(
-        "%Y-%m-%dT%H:%M:%SZ")
 
 
 # --- observations: the only part that touches this machine ----------------------
@@ -463,7 +450,7 @@ def main(argv):
     organization, project = _target(ado, argv)
     facts = observe(transport_hint)
     answer = report(manifest, facts, envelope, organization, project,
-                    iso_now())
+                    _utc_stamp.utc_stamp())
 
     if "--json" in argv:
         print(json.dumps(answer["data"], indent=2, sort_keys=True))

@@ -59,7 +59,6 @@ This module carries no `--selftest` of its own; its cases live in
 import json
 import os
 import sys
-import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -85,6 +84,7 @@ _output.install_path()
 
 import _ado_parent as _parent  # noqa: E402  (the rules this command is a door onto)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
+import _utc_stamp  # noqa: E402  (utc_stamp: the one spelling of this moment)
 
 USAGE = ("usage: resolve-ado-parent.py <manifest> "
          "[--all | --phase <id> | --task <id>] [--json]\n"
@@ -189,20 +189,6 @@ def levels_of(ado):
 
 
 # --- the ladder itself: building the cache the rest of this file reads ----------
-def iso_now():
-    """Wall clock, isolated so nothing above reaches for one.
-
-    `time.gmtime()` rather than `datetime`, the same spelling
-    `repair-commits.py` uses in this directory: it needs no inline import and no
-    note about which `utcnow` is deprecated, and the format is the one every
-    stamped moment in this manifest already carries. Not borrowed from
-    `_proposals.iso_now()` either - that module owns parked proposals, and an
-    import edge into it to reach two lines would say this door depends on
-    proposals when it does not.
-    """
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-
 def read_backlog_payload(path):
     """(payload, error) — the `backlogconfiguration` response, off a file or
     stdin.
@@ -350,7 +336,7 @@ def main(argv):
         payload, error = read_backlog_payload(opts["hierarchyFrom"])
         block = None
         if error is None:
-            block, error = hierarchy_block(payload, ado, iso_now())
+            block, error = hierarchy_block(payload, ado, _utc_stamp.utc_stamp())
         if error:
             sys.stderr.write("ERROR: %s\n" % (error,))
             return 2

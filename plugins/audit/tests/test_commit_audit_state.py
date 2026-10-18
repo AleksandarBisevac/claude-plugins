@@ -403,7 +403,7 @@ def _cases(check):
         # fixed word ahead of it, `P1 - preserved by hand ...` is sentence-case
         # again. The capitalised one is the other direction, where the caller's own
         # text could not have offended and the word must still not have been lost.
-        composed = [M.commit_message(PHASE, text, None)[0] for text in
+        composed = [M.subject_header(PHASE, text) for text in
                     ("preserved by hand after a red gate",
                      "Preserved by hand after a red gate")]
         check("cas8e ...and no `--subject` can put a capital, or the id, back in "
@@ -432,7 +432,7 @@ def _cases(check):
         # has staged the files. Both writers compose through one bound now, and
         # each asserts it on its own opening, because the openings differ and
         # only the composed line says whether a caller has room left.
-        spent = M.commit_message(PHASE, "y" * (HEADER_MAX_LENGTH * 2), None)[0]
+        spent = M.subject_header(PHASE, "y" * (HEADER_MAX_LENGTH * 2))
         check("cas8g ...and a `--subject` longer than the whole budget is CUT "
               "rather than carried past it: the header fits, opens with this "
               "command's own words, names the phase, offends no case rule, and "

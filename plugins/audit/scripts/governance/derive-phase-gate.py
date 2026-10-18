@@ -118,6 +118,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _utc_stamp  # noqa: E402  (utc_stamp: the one spelling of this moment)
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _evidence_io                  # noqa: E402  (read_rows, subject_key -- the
 #                                       newest red phase-scope row; and
@@ -288,10 +289,6 @@ def _gather_facts(manifest, phase, project, out):
     facts["exempt"] = dict((p, hooks_config.matches_exempt(p, globs))
                           for p in _touched_paths(phase))
     return facts, lines
-
-
-def _now_iso():
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def _smoke_line(result):
@@ -608,7 +605,7 @@ def _locked_run(args, project, config, mpath, phase_id, out):
     facts, fact_lines = _gather_facts(assembled, phase, project, out)
     result = _gate_derive.derive(assembled, phase, facts)
     result["lines"] = list(result.get("lines") or []) + fact_lines
-    at = _now_iso()
+    at = _utc_stamp.utc_stamp()
 
     human_lines = _render_lines(phase_id, meta, result, facts)
     brief_line = (_brief_line(phase_id, meta, result, facts, at)

@@ -24,6 +24,7 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402  (script_path: resolve by basename)
 import _evidence_io as _ev_io                      # noqa: E402  (read_rows, evidence_dir)
+import _utc_stamp                                  # noqa: E402  (utc_stamp: a row's ts)
 
 M = _loader.load_script("full-gate.py", "full_gate")
 
@@ -230,7 +231,7 @@ def _fake_runner(root, run_id, code, steps, misses=None, printed=None,
     def seam(cmd, out):
         if os.path.basename(cmd[1]) != "run-test-gate.py":
             return real(cmd, out)
-        row = {"v": 1, "runId": run_id, "ts": _ev_io._now(), "scope": "full",
+        row = {"v": 1, "runId": run_id, "ts": _utc_stamp.utc_stamp(), "scope": "full",
                "status": status,
                "testedState": {"head": _git_head(root)}, "steps": steps}
         if misses is not None:
@@ -719,7 +720,7 @@ def _imported_row(root, run_id, status="failed", scope="full", misses=None,
         {"name": "ok", "exit": 1,
          "failingSuites": ["tests/test_cart.py", "tests/test_old.py"],
          "failingSuitesBasis": _NAMED_BASIS}]
-    row = {"v": 1, "runId": run_id, "ts": _ev_io._now(), "scope": scope,
+    row = {"v": 1, "runId": run_id, "ts": _utc_stamp.utc_stamp(), "scope": scope,
            "status": status, "testedState": {"head": _git_head(root)},
            "steps": steps,
            "selectionMiss": misses if misses is not None else [

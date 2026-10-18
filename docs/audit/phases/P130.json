@@ -78,9 +78,23 @@
         "file": "tools/check-git-pipeline.py:11",
         "issue": "Untouched files still say ci.yml carries the launcher steps and the scale-demo step (tools/check-git-pipeline.py:11,29,38,226; plugins/audit/tests/test_gen_demo_manifest.py:729,800). This diff moved those steps into verify.sh's e2e and manifests slices.",
         "resolution": "Change 'ci.yml' to tools/verify.sh's e2e slice / the manifests slice at those lines."
+      },
+      {
+        "id": "P130-R9",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_commit_task_work.py:785",
+        "issue": "The diff rewrites the label of an unrelated existing case from `ctw29 SECOND-DIRECTION CASE` to `ctw29SECOND-DIRECTION CASE` (space deleted), a stray edit outside the task's scope that changes the case id other tooling and logs key on.",
+        "resolution": "Restore the space so the label reads `ctw29 SECOND-DIRECTION CASE` as at 678ca8f5."
+      },
+      {
+        "id": "P130-R10",
+        "severity": "low",
+        "file": "plugins/audit/hooks/detect-plan-skip.py:158",
+        "issue": "The hooks side was given `_config.local_stamp()` as its one home for the offset-bearing local stamp, but detect-plan-skip.py:158 still spells the identical `time.strftime(\"%Y-%m-%dT%H:%M:%S%z\", time.localtime())` inline, so the hooks half of (4) is not one-per-side. The executor's claim 3 lists only scripts-side stragglers as left on purpose and does not name this one.",
+        "resolution": "Call `_config.local_stamp()` there (a hook may import hooks/_config), or list it with the other deliberate leftovers as a follow-up task."
       }
     ],
-    "outcome": "[findings: 8 - 0 high, 0 med, 8 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 10 - 0 high, 0 med, 10 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -190,7 +204,7 @@
     {
       "id": "P130.2",
       "title": "CI runs one executable description of the gate set: every job is setup plus verify.sh --only, and a verified SHA is not run again",
-      "status": "in_progress",
+      "status": "done",
       "description": "Plan F1.2, invariants I14-I17; the high-risk task of the phase. BEFORE LANDING, the probe of the CI study (C section 5.4): the new shape five times and the old shape three times on one SHA, at least 20 minutes apart and never overlapping, pushed to ci/study-c2 and ci/study-c2-skip. The owner pre-approved those two pushes (V5); the orchestrator still lists them before pushing, and the push and dispatch are the orchestrator's, never the executor's. Starting point: studies/C-poc/probe.patch; at 571becfd every file of it applies except its tools/sweep-selftests.py docstring hunk, which F1.1 supersedes. Precondition: F0's acceptance (sl4, hr2, rv13 absent from at least five Windows runs after P125.38 and P128.14); without it clause (4)'s deletion of the Windows cp1252 cells is dropped and the task lands without it. (1) tools/verify.sh gains named slices with `--only <slice,...>`, `--shard I/N`, `--list` (printed from the same `run` calls the script executes) and `--loud`, one line naming the interpreter, and a `RESAMPLE` table for the release tier. It keeps P128.12's cleanup as it landed: the EXIT trap plus `exit 130`/`exit 143` on INT/TERM, and gate-parity's vsh1-vsh8 cases that run those functions under dash survive wherever the parity code they sit in moves. (2) .github/workflows/ci.yml becomes jobs that are each setup plus one verify.sh call; `concurrency` cancels in progress outside main; a `tier` workflow input defaults to the per-run tier, because the drive's CI cadence (P128.2, `ci_dispatch`) and tools/release.py (:407) dispatch with `gh workflow run ci.yml --ref <ref>` and pass no input; release.py passes `-f tier=release`. (3) New tools/ci-verified.py: a push to main of a SHA whose run on this workflow file has every job `success` (not `skipped`) runs only the `verified` job and skips the rest; another commit's run, another workflow's run, the asking run itself, an unreadable job list and could-not-ask each refuse. (4) Deleted: ci.yml's inline shell (1,202 lines at 571becfd, 1,253 when the plan was measured), the three Windows cp1252 cells, the separate ubuntu cp1252 and spaced legs (six cells become three stress cells, cp1252 plus spaced), the docs/index.html leg, the inline `FRESH render` and `Usage section` steps (ci.yml:571, :593), the os.kill measurement step (:134) and the re-run of a verified SHA; in tools/gate-parity.py, `report_target_drift` (:1903) with its shell lexer, `sweep_leg_drift` (:2090), `step_guard_drift` (:3190), `step_exemption_breadth_drift` (:3065), `STEP_GUARD_EXEMPT` (:3038), the `shm*` cases that replace matrix literals, and the document sides of `compare` (:2846). (5) What parity keeps: every slice ci.yml names exists in `verify.sh --list`, every per-run slice has a job, and the shards cover 1..N (`shard_matrix_drift` rewritten, kept by V3). (6) Followers: tools/prove-gates.py rows for the removed checks; tools/check-rendered-artifacts.py `COPY_PROVEN` (:128); tools/affected.py report targets (`REPORT_GATE`, :89-91); plugins/audit/scripts/_refs.py `SWEEP_DOCS` (:2690) and its cases; CONTRIBUTING.md and PLUGIN-BUILD-GUIDE.md point at `verify.sh --list` instead of listing commands; CHANGELOG.md. (7) The CLAUDE.md Tests command list is replaced by a pointer to `verify.sh --list`: the task drafts that text in its outcome and the owner applies it. (8) Plan K6 (a red release resample is a bug in the plan) has no automatic path in F1, since P128.1 was cancelled into F2.8: until then a red resample is filed by hand with /audit:bug. Acceptance (C K1-K6, K1 relaxed to a median of at most 8m59s over at least five runs): `python3 studies/C-poc/read-c2.py --old ... --new ...; echo $?` gives 0, the exit code read at once and never through a pipe; `gh api repos/AleksandarBisevac/claude-plugins/actions/runs/<SKIP>/jobs` shows `verified=success` and every other job `skipped`; `sh tools/verify.sh --list` prints the slices; `sh tools/verify.sh --only lint` under dash leaves no `verify-*` in TMPDIR. The job count goes from 20 (the matrix is unchanged since edbbb86e) to 14, 15 on a push to main. NEW PATHS (absent at 571becfd, created by this task): tools/ci-verified.py.",
       "files": [
         "tools/verify.sh",
@@ -286,19 +300,69 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7eb5349b2e25",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "PRECONDITION F0 NOT MET, so clause (4)'s deletion of the Windows cp1252 cells is DROPPED: P128.14 (b9119227, 2026-10-16T23:25+02:00) is in no remote branch (git branch -r --contains b9119227: empty) and the newest ci.yml run (38939728821, 2026-10-16T17:26Z) predates it, so zero Windows runs exist after both P125.38 and P128.14. Windows keeps three cp1252 cells, as slice selftests-cp1252. Job count is therefore 17 per run, 18 on a push to main (verified), +1 resample on the release tier - not the plan's 14/15. FILES. tools/verify.sh rewritten from studies/C-poc verify-next.sh: slices selftests, selftests-stress, selftests-cp1252, runner, e2e, lint, js, manifests, plugin, report, panel (per-run) and release, resample (release); --only (unknown slice, empty list, combination with --release/--affected/--list each exit 2), --shard I/N (sweep slices only, needs --only), --list (printed by run() itself under LIST=1), --loud (default under CI=true), interpreter line (python3 probe, python fallback as a function, path + version), RESAMPLE table; P128.12 cleanup kept byte-compatible (WORKDIR block + EXIT trap + exit 130/143, ledger_compare/ledger_reproducible) so gate-parity vsh1-vsh12 pass unchanged; e2e moved in from ci.yml (launcher runs/loud, check-plan-gate-e2e.py, capability, TDD nudge, check-git-pipeline.py); manifests adds sharded layout, doctor x3, status gate+render, scale demo, docs/index.html cmp; report drops docs/index.html. .github/workflows/ci.yml 1202 -> 316 lines: jobs verified, selftests (matrix os x leg [plain, stress, cp1252] x shard [1,2,3], excludes windows/stress and ubuntu/cp1252, include rows map leg -> slice; cells keep the name 'selftests (<os>, <leg> <shard>)' that read-study-c.py's CELL_NAME parses), e2e (windows), lint (ubuntu: lint,runner,e2e), manifests (manifests,js,plugin), browser-panel, browser-report, resample (inputs.tier == 'release'); each job is setup + one 'sh tools/verify.sh --only ...'; concurrency cancels in progress outside main; tier input default per-run, options per-run/release; permissions actions: read. New 'longest' lines for the new jobs are labelled ESTIMATES built from step times of runs 38902667892/38929591548 (gh api, read 2026-10-18); the selftests line is kept as history and the header says run 38929591548's windows cp1252 1 cell took 14m43s, which is over half of its 26-minute bound - a pre-existing drift (job_bound_evidence only compares with the written figure; re-measuring needs SWEEP_DEADLINE/tt5 moved too) the orchestrator should file. tools/ci-verified.py (new): decide() pure over runs/jobs, ask_github() through a gh api seam (runs listing ?head_sha&status=completed, jobs ?filter=latest), --exempt-job (may be skipped, never red), exit 0 on any verdict, writes verified=<id>|empty to GITHUB_OUTPUT; live read-only probe 2026-10-18: --sha a6cbb514 --run-id 38939728821 -> 'VERIFIED ... by run 38937779587' (the API's path field is '.github/workflows/ci.yml', confirmed). tools/release.py: dispatch_ci(ctx, ref, tier=None); the release step passes tier='release'; release.py ci passes none. tools/gate-parity.py 5497 -> 3769 lines: removed SIDES/ABSENT_BY_DESIGN/gates_in/compare/read_sides/read floor/render_list (the comparison has no sides left once the documents point at --list and ci.yml names only slices), report_target_drift + shell lexer, sweep_leg_drift + NOT_LEG_FLAGS, the old shard_matrix_drift/_matrix_references, exemption_reason_drift, step_guard_drift/step_exemption_breadth_drift/STEP_GUARD_EXEMPT, and their cases (p0-p3, c1, c2, m0, g0, g1, e0-e2, r0-r3, rt*, sl*, shm*, x0-x5, l0, er1-er3, sg0-sg7); added verify_list() (asks the real 'sh tools/verify.sh --list'), parse_verify_list, job_slices, slice_drift, shard_matrix_drift (rewritten: groups cells by everything but the shard keys, so an exclude dropping one part on one runner is found), render_slices (--list), _matrix_cells now reads include as GitHub does (joins every combination it overwrites nothing in; otherwise its own cell), parity/render rewritten; AUDITED_EXEMPTIONS loses its three dead rows; ea2/ea5 moved to SCRATCH_EXEMPT. tools/prove-gates.py: rows for the five retired lints removed; shard_matrix_drift red (shard [1,2]) and allow (if want - have -> True) rewritten; slice_drift red x2 (ci.yml leg list, an unlisted slice) and allow x2 added; the ABSENT_BY_DESIGN sentence rewritten as an admitted unenforced fact. tools/check-rendered-artifacts.py: COPY_PROVEN -> (tools/verify.sh,); release_lines reads 'slice_release() {' ... '}'; ra29 pins that ci.yml carries no call; fixtures follow. tools/affected.py: REPORT_DOCS drops docs/index.html; new WORKFLOW branch selects PARITY plus the selftests of the tools that read ci.yml by path (gate-parity, sweep-selftests, check-rendered-artifacts, release); a0 asserts it. plugins/audit/scripts/_refs.py: ci.yml leaves SWEEP_DOCS (it teaches no sweep now); test__refs.py s2-s13 add a workflow fixture to the list for their run and restore it in finally; c2's load-bearing surface ci.yml -> tools. CONTRIBUTING.md Tests section: commands replaced by verify.sh usage + --list pointer, slice-by-slice reasons in prose (isolation/roots passages kept verbatim, still read by isolation_drift and sweep_roots_drift; one fence keeps the sweep runner, so CONTRIBUTING stays a valid SWEEP_DOCS entry); stale 'CI's two find sweeps' and ABSENT_BY_DESIGN sentences fixed. PLUGIN-BUILD-GUIDE.md section 4 and its tree line point at verify.sh --list. CHANGELOG.md Unreleased: Changed/Added/Removed. tools/sweep-selftests.py needed no change (tt5 still reads the selftests job's bound). TESTS: gate-parity 99/99, ci-verified 17/17, release 42/42; whole-tree sweep 338/338 files, 16629 cases, exit 0 (5m18s) before the final edits, then the ten touched/tree-scanning suites 10/10 files, 1323 cases, and sweep --selftest 106/106; --encoding cp1252 --spaced over the seven touched suites 7/7 files. dash tools/verify.sh --only lint: exit 0, TMPDIR left [] (twice, last at 2026-10-18T00:45Z); dash tools/verify.sh --only runner,e2e,manifests,js,plugin: exit 0, 27/27 steps, TMPDIR left only node-compile-cache (Node's own cache, not a verify-* directory). MUTATION PROBE (throwaway copy of the tree, scratchpad probe_mutations.py, anchor asserted to occur once, file restored after each row): 19 rows, all KILLED - shard red (sv7), slice red x3 (sv7, sv7, sv11), shard/slice allow x3 (sv0), the four filed falsifiers and nine more ci-verified/release rows (cv2-cv8, rt1, rt2). prove-gates itself could not run them here: redfirst.sh refuses a dirty tree ('REFUSED (DIRTY): .github/workflows/ci.yml is not what HEAD has'). NOT RUN: report and panel slices (browser gates kept out of agents: machine-wide capture lock), the full stress and cp1252 sweeps. THE PROBE PUSHES ARE THE ORCHESTRATOR'S (ci/study-c2, ci/study-c2-skip, owner pre-approved V5, list them first): the new ci.yml fires on push to main/PR/dispatch only, so the new shape is reached by 'gh workflow run ci.yml --ref ci/study-c2' (ci.yml exists on main, the ref's file is used); the old shape on the same SHA needs the old workflow committed beside it under another name with a push trigger on ci/study-c2*, and the skip test needs a push-triggered run, since the verified job runs on push only - both are probe-commit edits, not landing edits. read-c2.py compares old windows cp1252 with new windows plain and expects no new windows cp1252 leg; with F0 unmet the new shape keeps one. EXPLORATION beyond the brief, and why: I read quality-gates-internal (C-poc tree, C-ci-study.md, CONSOLIDATED-PLAN, F1-NOTES) for the starting point and the F0 criterion, and gh run list/api (read-only) to measure F0 and the job times. PLAN GATE: one Bash call was refused - 'A source-file write from a heredoc fed to an interpreter's stdin (python3 - <<EOF ...) ... bypasses the plan-first gate: surgery.py (in the linked worktree ...)' - it was editing my own scratch helper, not a project file; I then edited that scratch file with the Edit tool, which the gate allowed, and wrote later helpers with Write. STALE COMMENTS OUTSIDE MY FILES (not edited): tools/check-git-pipeline.py:29/38/226 and plugins/audit/tests/test_gen_demo_manifest.py:729/800 still say ci.yml carries the launcher steps / the scale-demo step (both are verify.sh slices now). CLAUDE.md (owner applies; draft follows) - replace the Tests command list and its fence with: '**`tools/verify.sh` is the gate set, and the only place it is written down.** Its gates are grouped into named slices and CI runs slices of it and nothing else - every job in `.github/workflows/ci.yml` is setup plus one `tools/verify.sh --only <slices>` call - so ask it rather than a list here: ```bash / sh tools/verify.sh --list   # every slice, its tier, and the steps it runs / sh tools/verify.sh   # every per-run slice: what CI runs on every run / sh tools/verify.sh --only lint,js   # the named slices; --fast while iterating, --release before a bump / python3 tools/sweep-selftests.py PATH...   # one suite or a few; a whole sweep walks hooks, scripts, tests, tools/ AND .claude/hooks/, each in a scratch dir / ``` `CONTRIBUTING.md`'s *Tests* section says why each slice holds what it holds, and `tools/gate-parity.py` holds the workflow to `--list`: every slice a job names is listed, every per-run slice has a job outside the release tier, every sharded slice runs all its parts.' Keep the sweep runner line in that fence (CLAUDE.md is in _refs.SWEEP_DOCS, and sweep_glob_drift requires the runner in its runnable region) and keep the phrase 'tools/ AND .claude/hooks/' (sweep_roots_drift and the prove-gates sr0 row read it); the isolation paragraphs stay as they are. Then delete the two paragraphs that begin '**`gate-parity.py` is why that cannot come back.**' and '**This list was the last side added**' (they describe the four-side comparison this task removed), and drop the Releasing section's no change.",
+        "descriptive": "CI is now setup plus one tools/verify.sh --only call per job, verify.sh's --list is the one gate-set description gate-parity holds the workflow to, and a push of an already-verified SHA runs only tools/ci-verified.py; the Windows cp1252 cells stay because F0's evidence does not exist yet."
       },
       "startedAt": "2026-10-17T23:08:31Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-18T06:36:49Z",
+      "verifiedBy": [
+        "sv0 a slice ci.yml names that verify.sh --list does not print is red, a per-run slice no job runs is red, and shards that do not cover 1..N are red",
+        "sv1 a slice ci.yml names that verify.sh --list does not print is red, a per-run slice no job runs is red, and shards that do not cover 1..N are red",
+        "sv2 a slice ci.yml names that verify.sh --list does not print is red, a per-run slice no job runs is red, and shards that do not cover 1..N are red",
+        "sv3 a slice ci.yml names that verify.sh --list does not print is red, a per-run slice no job runs is red, and shards that do not cover 1..N are red",
+        "sv4 a slice ci.yml names that verify.sh --list does not print is red, a per-run slice no job runs is red, and shards that do not cover 1..N are red",
+        "sv5 a slice ci.yml names that verify.sh --list does not print is red, a per-run slice no job runs is red, and shards that do not cover 1..N are red",
+        "sv6 a slice ci.yml names that verify.sh --list does not print is red, a per-run slice no job runs is red, and shards that do not cover 1..N are red",
+        "sv7 a slice ci.yml names that verify.sh --list does not print is red, a per-run slice no job runs is red, and shards that do not cover 1..N are red",
+        "sv8 a slice ci.yml names that verify.sh --list does not print is red, a per-run slice no job runs is red, and shards that do not cover 1..N are red",
+        "sv9 a slice ci.yml names that verify.sh --list does not print is red, a per-run slice no job runs is red, and shards that do not cover 1..N are red",
+        "sv10 a slice ci.yml names that verify.sh --list does not print is red, a per-run slice no job runs is red, and shards that do not cover 1..N are red",
+        "sv11 a slice ci.yml names that verify.sh --list does not print is red, a per-run slice no job runs is red, and shards that do not cover 1..N are red",
+        "svr1 verify.sh --only lint under dash leaves no verify-* directory in TMPDIR, and --list prints exactly the slices the run calls execute",
+        "svr2 verify.sh --only lint under dash leaves no verify-* directory in TMPDIR, and --list prints exactly the slices the run calls execute",
+        "svr3 verify.sh --only lint under dash leaves no verify-* directory in TMPDIR, and --list prints exactly the slices the run calls execute",
+        "svr4 verify.sh --only lint under dash leaves no verify-* directory in TMPDIR, and --list prints exactly the slices the run calls execute",
+        "svr5 verify.sh --only lint under dash leaves no verify-* directory in TMPDIR, and --list prints exactly the slices the run calls execute",
+        "cv1 a run whose jobs are all success verifies the SHA; a skipped job, another commit's run, another workflow file's run, the asking run, an unreadable job list and could-not-ask each refuse",
+        "cv2 a run whose jobs are all success verifies the SHA; a skipped job, another commit's run, another workflow file's run, the asking run, an unreadable job list and could-not-ask each refuse",
+        "cv3 a run whose jobs are all success verifies the SHA; a skipped job, another commit's run, another workflow file's run, the asking run, an unreadable job list and could-not-ask each refuse",
+        "cv4 a run whose jobs are all success verifies the SHA; a skipped job, another commit's run, another workflow file's run, the asking run, an unreadable job list and could-not-ask each refuse",
+        "cv5 a run whose jobs are all success verifies the SHA; a skipped job, another commit's run, another workflow file's run, the asking run, an unreadable job list and could-not-ask each refuse",
+        "cv6 a run whose jobs are all success verifies the SHA; a skipped job, another commit's run, another workflow file's run, the asking run, an unreadable job list and could-not-ask each refuse",
+        "cv7 a run whose jobs are all success verifies the SHA; a skipped job, another commit's run, another workflow file's run, the asking run, an unreadable job list and could-not-ask each refuse",
+        "cv8 a run whose jobs are all success verifies the SHA; a skipped job, another commit's run, another workflow file's run, the asking run, an unreadable job list and could-not-ask each refuse",
+        "cv9 a run whose jobs are all success verifies the SHA; a skipped job, another commit's run, another workflow file's run, the asking run, an unreadable job list and could-not-ask each refuse",
+        "cv10 a run whose jobs are all success verifies the SHA; a skipped job, another commit's run, another workflow file's run, the asking run, an unreadable job list and could-not-ask each refuse",
+        "cv11 a run whose jobs are all success verifies the SHA; a skipped job, another commit's run, another workflow file's run, the asking run, an unreadable job list and could-not-ask each refuse",
+        "cv12 a run whose jobs are all success verifies the SHA; a skipped job, another commit's run, another workflow file's run, the asking run, an unreadable job list and could-not-ask each refuse",
+        "cv13 a run whose jobs are all success verifies the SHA; a skipped job, another commit's run, another workflow file's run, the asking run, an unreadable job list and could-not-ask each refuse",
+        "cv14 a run whose jobs are all success verifies the SHA; a skipped job, another commit's run, another workflow file's run, the asking run, an unreadable job list and could-not-ask each refuse",
+        "cv15 a run whose jobs are all success verifies the SHA; a skipped job, another commit's run, another workflow file's run, the asking run, an unreadable job list and could-not-ask each refuse",
+        "cv16",
+        "cv17",
+        "rt1 the release dispatch passes -f tier=release, and a dispatch with no input runs the per-run tier",
+        "rt2 the release dispatch passes -f tier=release, and a dispatch with no input runs the per-run tier",
+        "rt3 the release dispatch passes -f tier=release, and a dispatch with no input runs the per-run tier"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-18T00:58:36Z.a8a987",
         "status": "passed",
         "at": "2026-10-18T00:58:36Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7eb5349b2e25",
+        "at": "2026-10-18T06:36:49Z",
+        "return": "docs/audit/evidence/returns/P130.2/20261017T230831Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-18T00:46:30Z",
+        "basis": "`python3 tools/gate-parity.py --selftest` in a throwaway tree at HEAD: inline suite tools/ci-verified.py (its test file is its implementation file): it is new at HEAD, so there is no HEAD copy to hold its implementation at; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -435,7 +499,8 @@
         "plugins/audit/scripts/governance/_scoped_commit.py",
         "plugins/audit/tests/test__output.py",
         "plugins/audit/tests/test__deps.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test_full_gate.py"
       ],
       "tests": {
         "mode": "regression",
@@ -465,23 +530,32 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-17T23:08:34Z",
+      "startedAt": "2026-10-18T06:36:58Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
         {
           "at": "2026-10-17T20:58:57Z",
           "text": "Rewritten per plans/2026-10-17-redesign-implementation section 4: drop the commit_message triple (S2.5 deletes commit-manifest-index.py and commit-audit-state.py, two of its three copies). The dead definitions, the duplicated guard payloads and the ISO helpers stay in scope."
+        },
+        {
+          "at": "2026-10-18T07:07:08Z",
+          "text": "files widened by plugins/audit/tests/test_full_gate.py: widened by the integration answer"
         }
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-18T07:17:57Z.289430",
+        "status": "passed",
+        "at": "2026-10-18T07:17:57Z"
+      }
     },
     {
       "id": "P130.5",

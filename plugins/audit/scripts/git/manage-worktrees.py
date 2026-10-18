@@ -73,7 +73,6 @@ Exit codes:
      good about
 """
 import argparse
-import datetime
 import io
 import json
 import os
@@ -104,6 +103,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _utc_stamp  # noqa: E402  (utc_stamp: the one spelling of this moment)
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _branch                                                       # noqa: E402
 import _manifest_io as _mio                                          # noqa: E402
@@ -440,10 +440,6 @@ def _write_record(tree_path, record, run=None):
     return path, ""
 
 
-def _now():
-    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def write_provenance(tree_path, phase_id, branch, run=None):
     """Record that this plugin created this worktree. Returns the file, or "" + why.
 
@@ -454,7 +450,7 @@ def write_provenance(tree_path, phase_id, branch, run=None):
     """
     return _write_record(tree_path, {"createdBy": _wt.PROVENANCE_MARK,
                                      "phaseId": str(phase_id),
-                                     "branch": str(branch), "at": _now()}, run=run)
+                                     "branch": str(branch), "at": _utc_stamp.utc_stamp()}, run=run)
 
 
 # --- task trees ------------------------------------------------------------------
@@ -646,7 +642,7 @@ def do_task_add(git_root, manifest, task_id, base, project=None, path=None, run=
         return E_FAIL, {"error": (err or out or "").strip(), "argv": argv}
     record = {"createdBy": _wt.PROVENANCE_MARK, "phaseId": phase_id,
               "taskId": str(task_id), "base": sha,
-              "phaseTree": os.path.abspath(git_root), "at": _now(),
+              "phaseTree": os.path.abspath(git_root), "at": _utc_stamp.utc_stamp(),
               "setup": SETUP_PENDING}
     marker, why = _write_record(target, record, run=run)
     answer = {"path": target, "task": str(task_id), "phaseId": phase_id,

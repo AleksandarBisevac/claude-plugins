@@ -1070,33 +1070,8 @@ def _signed(msg):
     return msg if msg.startswith(PLAN_GATE_TAG) else "[guard-secrets-read] " + msg
 
 
-def _deny_payload(msg):
-    """Canonical PreToolUse deny payload (printed to stdout with exit 0)."""
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": _signed(msg),
-        }
-    }
-
-
-def _ask_payload(msg):
-    """Canonical PreToolUse ask payload — planGate:"ask" parity with
-    require-plan (v0.34 B1). Only the PLAN-gate write arms can return ask -
-    the shell forms and the interpreter ones, through the one function that
-    reads a tier; the secret rules are never graded and never ask."""
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "ask",
-            "permissionDecisionReason": _signed(msg),
-        }
-    }
-
-
 def block(msg):
-    print(json.dumps(_deny_payload(msg)))
+    print(json.dumps(_config.deny_payload(_signed(msg))))
     sys.exit(0)
 
 
@@ -3286,7 +3261,11 @@ def main():
     if verdict == "block":
         block(msg)
     if verdict == "ask":
-        print(json.dumps(_ask_payload(msg)))
+        # planGate:"ask" parity with require-plan. Only the PLAN-gate write arms
+        # can return ask - the shell forms and the interpreter ones, through the
+        # one function that reads a tier; the secret rules are never graded and
+        # never ask.
+        print(json.dumps(_config.ask_payload(_signed(msg))))
         sys.exit(0)
     sys.exit(0)
 

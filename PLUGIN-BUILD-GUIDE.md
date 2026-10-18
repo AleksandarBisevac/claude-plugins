@@ -172,6 +172,7 @@ claude-plugins/                           # this repo (personal, public)
           derive-phase-gate.py            # observes a phase's version answer, its two importer listings, changed/red-suite paths and the plan gate's exempt verdict, hands them to _gate_derive.derive, and records phase.testGateDerived (+ testGate in enforce mode) under the index lock
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
         _excerpt.py                       # how a failing tool's output is quoted in a sentence - head, tail, the failure lines of the middle and a count of what was dropped, so no site chooses an end
+        _utc_stamp.py                     # the one spelling of "this moment" (ISO-8601 UTC) every writer of a stamped time shares - reaches nothing but _output, so the evidence layer, the proposals library and the doors all stamp through it
         _machine_paths.py                 # what counts as machine identity in a string and how to take it out - the detector, the redaction and the whole-structure scrub the plan, the journal and the evidence ledger all save through
         _fmt.py                           # the one token/cost formatter, shared by usage + report + status
         _cli_fmt.py                       # the one place CLI color lives: --color resolution + paint roles
@@ -310,6 +311,7 @@ L2:
   _excerpt -> _output
   _machine_paths -> _output
   _usage_core -> _loader, _output
+  _utc_stamp -> _output
 
 L3:
   _ado_connect -> _excerpt, _output
@@ -347,7 +349,7 @@ L4:
   _ado_drift -> _manifest_io, _manifest_vocab, _output, _usage_core
   _config_rules -> _loader, _output, _policy
   _doctor_report -> _loader, _output
-  _evidence_io -> _journal_io, _locks, _machine_paths, _manifest_io, _manifest_vocab, _output, _usage_core, _worktrees
+  _evidence_io -> _journal_io, _locks, _machine_paths, _manifest_io, _manifest_vocab, _output, _usage_core, _utc_stamp, _worktrees
   _gate_feed -> _journal_io, _loader, _output, _usage_core
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
   _id_shape -> _branch, _manifest_io, _manifest_vocab, _output
@@ -397,7 +399,7 @@ L6:
   _panel_runstate -> _doctor_report, _evidence_io, _journal_io, _locks, _output, _panel_paths
   _panel_usage -> _areas, _evidence_io, _manifest_io, _manifest_vocab, _output, _panel_paths
   _panel_viewer -> _loader, _output, _panel_discovery, _panel_paths
-  _proposals -> _fmt, _id_refs, _id_shape, _journal_io, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output
+  _proposals -> _fmt, _id_refs, _id_shape, _journal_io, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _utc_stamp
   _usage_detail -> _output, _ui_theme, _usage_economics, _usage_viz
   _usage_load -> _loader, _output, _report_html
   _usage_markdown -> _output, _ui_theme, _usage_economics, _usage_viz
@@ -416,22 +418,22 @@ L8:
   _report_page -> _fmt, _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage, _status_facts
 
 L9:
-  ado-connect -> _ado_connect, _excerpt, _output
+  ado-connect -> _ado_connect, _excerpt, _output, _utc_stamp
   audit-doctor -> _claude_home, _cli_fmt, _doctor_ado, _doctor_completions, _doctor_hygiene, _doctor_policy, _doctor_report, _doctor_setup, _doctor_trail, _output, _panel_runstate
   audit-journal -> _claude_home, _evidence_io, _journal_io, _output
   audit-lock -> _claude_home, _locks, _output
   audit-logs -> _claude_home, _gate_feed, _output
   audit-lookup -> _areas, _claude_home, _config_rules, _evidence_io, _excerpt, _filed_returns, _gate_feed, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output
   audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _filed_returns, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _affected_tests, _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _refs, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
+  audit-task -> _affected_tests, _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _refs, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
-  close-phase -> _branch, _claude_home, _config_rules, _evidence_io, _excerpt, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _scoped_commit, _tree_stamp, _verdict_binding, _worktrees
+  close-phase -> _branch, _claude_home, _config_rules, _evidence_io, _excerpt, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _scoped_commit, _tree_stamp, _utc_stamp, _verdict_binding, _worktrees
   commit-audit-state -> _claude_home, _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
   commit-manifest-index -> _claude_home, _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
   commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
-  derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
+  derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _utc_stamp
   drive-phase -> _areas, _claude_home, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _output, _runner_collects, _scope_companions, _status_facts, _tree_stamp, _verdict_binding, _wave
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
@@ -440,7 +442,7 @@ L9:
   gen-demo-usage -> _claude_home, _demo_cast, _loader, _output
   import-evidence -> _claude_home, _evidence_io, _journal_io, _loader, _manifest_io, _output, _panel_write
   integrate-task -> _claude_home, _evidence_io, _invariants, _journal_io, _manifest_io, _output, _task_outputs, _wave, _worktrees
-  manage-worktrees -> _branch, _claude_home, _manifest_io, _output, _worktrees
+  manage-worktrees -> _branch, _claude_home, _manifest_io, _output, _utc_stamp, _worktrees
   materialize-proposal -> _claude_home, _manifest_io, _output, _proposals, _warning_groups
   merge-manifest -> _claude_home, _id_refs, _id_shape, _locks, _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output
   migrate-json-encoding -> _claude_home, _manifest_io, _manifest_rules, _output, _panel_write
@@ -453,7 +455,7 @@ L9:
   render-report -> _areas, _evidence_io, _evidence_view, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output, _panel_write
   repair-tests-add -> _journal_io, _locks, _manifest_io, _manifest_rules, _output, _panel_write
-  resolve-ado-parent -> _ado_parent, _manifest_io, _output
+  resolve-ado-parent -> _ado_parent, _manifest_io, _output, _utc_stamp
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
   run-test-gate -> _affected_tests, _claude_home, _evidence_io, _fmt, _gate_derive, _invariants, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _task_outputs, _tree_stamp, _worktrees
@@ -816,7 +818,7 @@ All tunables under config `tddReminder`. `--selftest`.
 PostToolUse (Edit|Write|MultiEdit|NotebookEdit, **Bash and `mcp__.*`**) recorder: every write
 to the manifest (index or phase shard) or to `.claude/audit.config.json` appends one row to the
 audit trail via `scripts/governance/audit-journal.py`. Bash and MCP share the **sweep lane**
-(`swept_entries`), which needs no rule about which operations write: it compares each recorded
+(`_swept_rows`), which needs no rule about which operations write: it compares each recorded
 path's digest against the slot the Pre pass seeded, so a read moves nothing and says nothing
 while a write gets the row an `Edit` gets. NO stdout at all — a recorder that talks turns
 every manifest edit into transcript — and every failure is silent, because a journal that
@@ -1479,6 +1481,18 @@ long reason is clipped. `_output.bare_output_cut_violations()` fails a head-only
 bound from a subprocess's output; its `BARE_CUT_PENDING` rows are debts, reported once the file no
 longer holds such a cut. `tools/verify.sh`'s `show_failure` applies the same rule to a screen.
 Cases in `plugins/audit/tests/test__excerpt.py`.
+
+### `plugins/audit/scripts/_utc_stamp.py`
+The one spelling of "this moment" - `%Y-%m-%dT%H:%M:%SZ` in UTC - that the plan, a shard, an
+evidence row and a worktree record are stamped with. Writers across `scripts/` each carried their own
+two-line helper for it, in two idioms, and each docstring explained why it could not borrow a
+sibling's: they sat on different layers. `utc_stamp(epoch=None)` is the `time.gmtime()` idiom
+(not `datetime.utcnow()`, deprecated from 3.12, and not `datetime.UTC`, which is 3.11+); it takes an
+explicit epoch so a case pins the spelling to a known instant, and tests `is None`, so epoch zero is
+a moment rather than "now". **It shares `_machine_paths`' layer** because it reaches nothing but
+`_output`. The hooks cannot import it - a hook may not import `scripts/` - so their stamp is
+`hooks/_config.py`'s `local_stamp`, local time with its offset, a different spelling under a name
+that says so. Cases in `plugins/audit/tests/test__utc_stamp.py`.
 
 ### `plugins/audit/scripts/_machine_paths.py`
 What counts as machine identity in a string, and how the plugin's own text is scrubbed of it

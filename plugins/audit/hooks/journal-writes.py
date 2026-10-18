@@ -20,8 +20,8 @@ Nothing else is recorded: the journal is the audit trail of the plan and the
 rules, not a log of the repository.
 
 WHICH TOOL WROTE IT IS NO LONGER THE QUESTION. The derived rows below used
-to exist only for a write that arrived through an edit tool, because `classify()`
-reads `file_path` and a Bash payload has none. A session that wrote the manifest
+to exist only for a write that arrived through an edit tool, because
+`_classify_placed()` reads `file_path` and a Bash payload has none. A session that wrote the manifest
 through `python3 -c` -- a harness mode that prefers Bash, a script, a different
 orchestrator -- left a chain that verified perfectly over a history missing the
 very events the trail exists to record, which is the worst of the four
@@ -209,17 +209,11 @@ def _author(root, cfg):
 
 
 # --- decision -----------------------------------------------------------------
-def classify(data, *, cfg, root):
-    """What kind of target this write hits. Returns (action, rel, tool, ti);
-    `action` is None with the reason in `rel`'s place when it is nobody's
-    business. Shared by the Pre and Post passes so the two can never disagree
-    about what counts as the manifest. `_classify_placed` is the same answer
-    with the tree that holds the target beside it."""
-    return _classify_placed(data, cfg, root)[:4]
-
-
 def _classify_placed(data, cfg, root):
-    """`classify`, plus the tree whose plan the target belongs to.
+    """What kind of target this write hits, plus the tree whose plan it belongs to.
+    Shared by the Pre and Post passes so the two can never disagree about what
+    counts as the manifest. `action` is None with the reason in `rel`'s place
+    when it is nobody's business.
 
     -> (action, rel, tool, ti, tree root)
 
@@ -781,7 +775,7 @@ def unsandboxed_entries(data, *, cfg=None, root=None):
     THE FLAG IS STILL READ BEFORE ANYTHING ELSE IN HERE, and the reason it used to
     give is no longer the reason. It said that resolving the repo root and loading
     the config on every Bash call would charge every command in the session for a
-    rare event -- true then, and that fix spent exactly that: `swept_entries` resolves
+    rare event -- true then, and that fix spent exactly that: `_swept_rows` resolves
     both before this function is reached, because deciding whether the manifest
     moved needs the config that says where the manifest IS. What survives is the
     narrower guarantee: a sandboxed call still builds no row and reads no command
@@ -936,7 +930,7 @@ def _manifest_rows(entry, rel, old_obj, new_obj, recorded=None):
 def _config_rows(entry, old_obj, new_obj):
     """(primary, chained) for a write to the config. Never chains -- the config's
     news is the flip itself, folded into the one row, and there is no derived row
-    to lose. Shaped like `_manifest_rows` so `post_entries` and `swept_entries`
+    to lose. Shaped like `_manifest_rows` so `post_entries` and `_swept_rows`
     read one way for both targets."""
     row = dict(entry)
     flip = (_journal_flip(old_obj, new_obj)
@@ -974,42 +968,6 @@ def _swept_targets(root, cfg):
     return out
 
 
-def swept_entries(data, *, cfg=None, root=None):
-    """The PostToolUse pass for a sweep-lane call -- Bash or an MCP tool: the
-    unsandboxed row, plus whatever the paths this hook records did while it ran.
-
-    THE QUESTION IS ASKED OF THE FILE, NOT OF THE PAYLOAD. `classify()` reads
-    `file_path` and returns None for anything that is not an edit tool, which was
-    the whole root: a session writing the manifest through `python3 -c` produced a
-    chain that verified over a history with no `task.complete` in it. Here each
-    recorded path's digest is compared against its slot, so the tool that made the
-    write stops being part of the answer.
-
-    THAT IS ALSO THE WHOLE OF THE MCP WIDENING, and why this lane needs no rule
-    about which MCP operations write. An `mcp__filesystem__write_file` of the
-    manifest moved the digest and gets the row an `Edit` gets; an
-    `mcp__filesystem__read_text_file` of the same path moved nothing and gets
-    silence. Neither verdict reads the server's name, the operation's spelling or
-    an argument key, because neither is asked.
-
-    NO SLOT IS NOT A CHANGE. A path with no slot has no baseline, so the pass seeds
-    one and claims nothing -- a row asserting a move it cannot see would be a claim
-    with no basis, and the first call of every session would file one. The
-    seeding is what makes the session's NEXT write diffable whatever writes it.
-
-    A MOVE WITH NO PARSEABLE PRE-IMAGE IS THE OTHER HALF, and there the write is
-    known: the row carries `DERIVATION_MISSED` instead of the diff, which is the
-    point of the exercise -- silence became a stated gap.
-
-    The user's switch still wins, with the same exception the edit lane has: when
-    the CONFIG itself moved, `journal.enabled` is judged against the pre-image, so
-    a shell that flips the switch off is journalled by its own last row.
-
-    The entries alone; `_swept_rows` is the same pass with the tree each row
-    belongs to."""
-    return [entry for _root, entry in _swept_rows(data, cfg=cfg, root=root)]
-
-
 def _sweep_roots(data, cfg, project):
     """The trees whose recorded paths a sweep-lane call could have moved: the
     project, and the tree the command stood in when that is a linked worktree
@@ -1035,7 +993,36 @@ def _sweep_roots(data, cfg, project):
 
 
 def _swept_rows(data, *, cfg=None, root=None):
-    """`swept_entries`' pass, each row with the tree whose journal it belongs to.
+    """The PostToolUse pass for a sweep-lane call -- Bash or an MCP tool: the
+    unsandboxed row, plus whatever the paths this hook records did while it ran,
+    each row with the tree whose journal it belongs to.
+
+    THE QUESTION IS ASKED OF THE FILE, NOT OF THE PAYLOAD. `_classify_placed()`
+    reads `file_path` and returns None for anything that is not an edit tool,
+    which was the whole root: a session writing the manifest through `python3 -c`
+    produced a chain that verified over a history with no `task.complete` in it.
+    Here each recorded path's digest is compared against its slot, so the tool
+    that made the write stops being part of the answer.
+
+    THAT IS ALSO THE WHOLE OF THE MCP WIDENING, and why this lane needs no rule
+    about which MCP operations write. An `mcp__filesystem__write_file` of the
+    manifest moved the digest and gets the row an `Edit` gets; an
+    `mcp__filesystem__read_text_file` of the same path moved nothing and gets
+    silence. Neither verdict reads the server's name, the operation's spelling or
+    an argument key, because neither is asked.
+
+    NO SLOT IS NOT A CHANGE. A path with no slot has no baseline, so the pass seeds
+    one and claims nothing -- a row asserting a move it cannot see would be a claim
+    with no basis, and the first call of every session would file one. The
+    seeding is what makes the session's NEXT write diffable whatever writes it.
+
+    A MOVE WITH NO PARSEABLE PRE-IMAGE IS THE OTHER HALF, and there the write is
+    known: the row carries `DERIVATION_MISSED` instead of the diff, which is the
+    point of the exercise -- silence became a stated gap.
+
+    The user's switch still wins, with the same exception the edit lane has: when
+    the CONFIG itself moved, `journal.enabled` is judged against the pre-image, so
+    a shell that flips the switch off is journalled by its own last row.
 
     -> [(tree root, entry), ...]"""
     home = _config.tree_for(data, _config.PROJECT_ONLY, cfg, project=root)
@@ -1175,9 +1162,9 @@ def post_entries(data, *, cfg=None, root=None):
     row (semantic when the pre-image allows, generic otherwise) followed by any
     completion-event rows. Empty list = nothing to record. Never raises.
 
-    Bash and any MCP tool are handed to `swept_entries`, which asks the FILE what
+    Bash and any MCP tool are handed to `_swept_rows`, which asks the FILE what
     moved because neither payload can be made to name what it wrote; everything
-    else goes through `classify()` as before. The outer `except` is the fail-open
+    else goes through `_classify_placed()` as before. The outer `except` is the fail-open
     net for BOTH lanes -- it runs at PostToolUse, so anything that escapes here
     breaks the write it was recording.
 

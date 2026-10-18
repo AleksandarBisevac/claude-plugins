@@ -148,37 +148,16 @@ def _self_edit_target(path, root):
         return False
 
 
-def _deny_payload(msg):
-    """Canonical PreToolUse deny payload (printed to stdout with exit 0)."""
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": "[guard-edits] " + msg,
-        }
-    }
-
-
-def _ask_payload(msg):
-    """Canonical PreToolUse ask payload — the strict-mode channel. NEVER deny:
-    the orchestrator completes tasks through these same tools, and a deny here
-    would refuse the pipeline its own bookkeeping."""
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "ask",
-            "permissionDecisionReason": "[guard-edits] " + msg,
-        }
-    }
-
-
 def block(msg):
-    print(json.dumps(_deny_payload(msg)))
+    print(json.dumps(_config.deny_payload("[guard-edits] " + msg)))
     sys.exit(0)
 
 
 def ask(msg):
-    print(json.dumps(_ask_payload(msg)))
+    """The strict-mode channel. NEVER deny: the orchestrator completes tasks
+    through these same tools, and a deny here would refuse the pipeline its own
+    bookkeeping."""
+    print(json.dumps(_config.ask_payload("[guard-edits] " + msg)))
     sys.exit(0)
 
 

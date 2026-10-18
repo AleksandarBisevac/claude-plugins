@@ -154,12 +154,14 @@ def _cases(check):
             use_cfg=_config._deep_merge(cfg, {"journal": {"dir": "trail"}}))
 
     # deny payload is canonical PreToolUse JSON
-    blob = json.loads(json.dumps(M._deny_payload("why")))
+    # The hook's own name in front of the reason is pinned byte for byte by
+    # test__config.py's shared-payload case; this one holds the shape.
+    blob = json.loads(json.dumps(_config.deny_payload("why")))
     hso = blob.get("hookSpecificOutput") or {}
     check("d1 deny payload is canonical PreToolUse JSON",
           hso.get("hookEventName") == "PreToolUse"
           and hso.get("permissionDecision") == "deny"
-          and str(hso.get("permissionDecisionReason", "")).startswith("[guard-edits]"))
+          and hso.get("permissionDecisionReason") == "why")
 
     # --- st: opt-in strict manifest state (journal.strictManifestState) -------
     # "ask", never deny: the orchestrator completes tasks through these SAME
@@ -235,13 +237,12 @@ def _cases(check):
         check("st7 strict NEVER denies - the verdict is ask, and the "
               "orchestrator keeps its own bookkeeping (got %s)" % (_v,),
               _v == "ask")
-        blob = json.loads(json.dumps(M._ask_payload("why")))
+        blob = json.loads(json.dumps(_config.ask_payload("why")))
         hso = blob.get("hookSpecificOutput") or {}
         check("st8 the ask payload is canonical PreToolUse JSON",
               hso.get("hookEventName") == "PreToolUse"
               and hso.get("permissionDecision") == "ask"
-              and str(hso.get("permissionDecisionReason", ""))
-              .startswith("[guard-edits]"))
+              and hso.get("permissionDecisionReason") == "why")
     finally:
         if _prev_pd is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)

@@ -158,7 +158,7 @@ DEFAULT_SUBJECT = "the record of a run, without the work it ran on"
 # THE WORD IS THIS COMMAND'S AND NOT THE CALLER'S, which is what makes that
 # unconditional: it sits ahead of `--subject`, so no subject anybody passes can put
 # a capital, or a phase id, back into first position. It is also NOT read from
-# `meta.commit` -- see `commit_message()` for why the manifest is the wrong place
+# `meta.commit` -- see `subject_header()` for why the manifest is the wrong place
 # to ask.
 #
 # `phase` RATHER THAN A NEW WORD, because the orchestrator's own subjects already
@@ -279,12 +279,10 @@ _under_any = _scoped_commit.under_any
 
 
 # --- the commit ---------------------------------------------------------------
-def commit_message(phase_id, subject, coauthor):
-    """The message paragraphs: a conventional subject, and the co-author trailer.
+def subject_header(phase_id, subject):
+    """The header line of the commit: a conventional subject, bounded.
 
-    A LIST RATHER THAN ONE STRING, because that is how it reaches git: one `-m`
-    per paragraph, so the trailer is a trailer and not a second sentence of the
-    subject line.
+    The paragraphs after it are `_scoped_commit.commit_message`'s.
 
     `SUBJECT_LEAD` COMES FIRST AND NOTHING MAY BE PUT AHEAD OF IT - that position
     is the whole of the fixed-lowercase-subject repair above, and the constant
@@ -310,22 +308,13 @@ def commit_message(phase_id, subject, coauthor):
     refuses it does so AFTER the files are staged - and the length is the one of
     those rules whose remaining budget a caller, not this command, spends.
     """
-    lines = [_scoped_commit.fitted_header(
+    return _scoped_commit.fitted_header(
         "%s(%s): %s %s - " % (COMMIT_TYPE, COMMIT_SCOPE, SUBJECT_LEAD, phase_id),
-        subject or DEFAULT_SUBJECT)]
-    if coauthor:
-        lines.append(str(coauthor))
-    return lines
+        subject or DEFAULT_SUBJECT)
 
 
 def _phase_id(phase):
     return str((phase or {}).get("id"))
-
-
-def _coauthor(manifest):
-    block = ((manifest or {}).get("meta") or {}).get("commit")
-    value = block.get("coauthor") if isinstance(block, dict) else None
-    return value if isinstance(value, str) and value.strip() else None
 
 
 def record_row(project, phase_id, nonce, config=None):
@@ -476,7 +465,8 @@ def commit_state(manifest, phase, manifest_path, project, git_root, subject=None
     # that refusal is reported like any other.
     done = _scoped_commit.commit_with_rows(
         git_root, allowed, targets["kinds"],
-        commit_message(phase_id, subject, _coauthor(manifest)),
+        _scoped_commit.commit_message(subject_header(phase_id, subject),
+                                      _scoped_commit.coauthor_of(manifest)),
         _foreign_after_staging,
         lambda nonce: ([record_row(project, phase_id, nonce, config=config)],
                        ""),

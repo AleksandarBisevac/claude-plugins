@@ -359,18 +359,16 @@ def rows_dropped(git_root, manifest_path, index_doc, shards=None):
 
 
 # --- the commit ---------------------------------------------------------------
-def commit_message(phase_id, subject, coauthor):
-    """The message paragraphs: a conventional subject, and the co-author trailer.
+def subject_header(phase_id, subject):
+    """The header line of the commit: a conventional subject, bounded.
 
-    A LIST RATHER THAN ONE STRING, because that is how it reaches git: one `-m`
-    per paragraph, so the trailer is a trailer and not a second sentence of the
-    subject line.
+    The paragraphs after it are `_scoped_commit.commit_message`'s.
 
     `SUBJECT_LEAD` COMES FIRST AND NOTHING MAY BE PUT AHEAD OF IT - that position
     is the whole of `commit-audit-state.py`'s fixed-lowercase-subject repair, and
     the constant says why. The shape is
     unconditional and is deliberately not read from `meta.commit`, for the reason
-    `commit-audit-state.commit_message` states at length: that block holds a
+    `commit-audit-state.subject_header` states at length: that block holds a
     default type and a trailer and records nothing about which commitlint rules a
     repository configures.
 
@@ -381,22 +379,13 @@ def commit_message(phase_id, subject, coauthor):
     the bound is applied where the two meet rather than left as a hope about how
     long a `--subject` will be.
     """
-    paragraphs = [_scoped_commit.fitted_header(
+    return _scoped_commit.fitted_header(
         "%s(%s): %s %s - " % (COMMIT_TYPE, COMMIT_SCOPE, SUBJECT_LEAD, phase_id),
-        subject or DEFAULT_SUBJECT)]
-    if coauthor:
-        paragraphs.append(str(coauthor))
-    return paragraphs
+        subject or DEFAULT_SUBJECT)
 
 
 def _phase_id(phase):
     return str((phase or {}).get("id"))
-
-
-def _coauthor(manifest):
-    block = ((manifest or {}).get("meta") or {}).get("commit")
-    value = block.get("coauthor") if isinstance(block, dict) else None
-    return value if isinstance(value, str) and value.strip() else None
 
 
 def record_row(project, phase_id, nonce, index_abs, config=None):
@@ -575,7 +564,8 @@ def commit_index(manifest, phase, manifest_path, project, git_root, subject=None
     phase_id = _phase_id(phase)
     done = _scoped_commit.commit_with_rows(
         git_root, allowed, targets["kinds"],
-        commit_message(phase_id, subject, _coauthor(manifest)),
+        _scoped_commit.commit_message(subject_header(phase_id, subject),
+                                      _scoped_commit.coauthor_of(manifest)),
         _foreign_after_staging,
         lambda nonce: ([record_row(project, phase_id, nonce, targets["indexAbs"],
                                    config=config)], ""),

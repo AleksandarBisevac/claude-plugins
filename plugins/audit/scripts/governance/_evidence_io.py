@@ -84,6 +84,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _utc_stamp  # noqa: E402  (utc_stamp: the one spelling of this moment)
 import _journal_io  # noqa: E402  (config loading, the writer id, the month)
 import _locks  # noqa: E402  (whose phase lock, and is it live)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; the atomic write)
@@ -548,10 +549,6 @@ _C_ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13,
               '"': 34, "\\": 92}
 
 
-def _now():
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-
 def _unquote(text):
     """A C-quoted porcelain path as the name on disk; anything else unchanged.
 
@@ -808,7 +805,7 @@ def row_for(project, result, scope, ids, identity, published=None):
     row = {
         "v": ROW_VERSION,
         "runId": str(identity.get("runId") or ""),
-        "ts": str(identity.get("ts") or _now()),
+        "ts": str(identity.get("ts") or _utc_stamp.utc_stamp()),
         "scope": str(scope or ""),
         "status": result.get("status"),
         "durationMs": result.get("durationMs"),
@@ -1387,7 +1384,7 @@ def append_row(project, row, session_id=None, config=None, writer=None):
     # session driving two linked worktrees is two writers - their branches would
     # otherwise each append the same basename and meet as a conflict on merge.
     path = _journal_io.file_for(
-        directory, row.get("ts") or _now(), actor, fallback=fallback,
+        directory, row.get("ts") or _utc_stamp.utc_stamp(), actor, fallback=fallback,
         worktree=_journal_io.worktree_key(project, config))
     lock = _journal_io._acquire(path, record="the evidence ledger")
     try:
@@ -3624,8 +3621,8 @@ def earliest_recorded(rows):
     """The earliest `ts` any recorded run carries, or None when none carries one.
 
     BY MOMENT, `oldest_first`'s order - `latest_by_subject`'s rule at the other
-    end of the same list. A row's `ts` is not always `_now`'s spelling (a caller
-    may hand one in, an imported shard carries another writer's), and as text an
+    end of the same list. A row's `ts` is not always `_utc_stamp`'s spelling (a
+    caller may hand one in, an imported shard carries another writer's), and as text an
     offset or a fractional second sorts by how it is written. A `ts` that will
     not parse is the answer only when no row's does, and then the least as text,
     which is all such a stamp can be ordered by.
@@ -4066,7 +4063,7 @@ def new_run_id():
     why `at` is a field of its own rather than something a consumer slices out of
     here.
     """
-    return "%s.%s" % (_now(), binascii.hexlify(os.urandom(3)).decode("ascii"))
+    return "%s.%s" % (_utc_stamp.utc_stamp(), binascii.hexlify(os.urandom(3)).decode("ascii"))
 
 
 if __name__ == "__main__":

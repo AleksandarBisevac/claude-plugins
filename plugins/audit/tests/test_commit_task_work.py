@@ -691,32 +691,98 @@ def _records_cases(check, repos):
 
     # --- the message, asked directly ----------------------------------------
     manifest, phase, task = _phase_and_task(fx)
+
+    def task_message(task_id, subject, manifest, claims=None):
+        return _scoped_commit.commit_message(
+            *M.message_parts(task_id, subject, manifest), claims=claims)
+
     check("ctw26 the conventional TYPE comes from `meta.commit.type` - a "
           "task commit carries implementation, so a project's own convention "
           "is the right one for it, unlike its two siblings whose types are "
           "fixed literals so `git log` can tell those classes apart",
-          M.commit_message(TASK, "s", {"meta": {"commit": {"type": "fix"}}})[0]
+          task_message(TASK, "s", {"meta": {"commit": {"type": "fix"}}})[0]
           .startswith("fix(%s): " % (TASK,)),
-          repr(M.commit_message(TASK, "s",
+          repr(task_message(TASK, "s",
                                 {"meta": {"commit": {"type": "fix"}}})))
     check("ctw27 ...and the fallback is not `feat`: a default that claimed a "
           "feature on work nobody described would be a wrong word written by "
           "a default",
           M.DEFAULT_COMMIT_TYPE != "feat"
-          and M.commit_message(TASK, "s", {})[0]
+          and task_message(TASK, "s", {})[0]
           .startswith("%s(%s): " % (M.DEFAULT_COMMIT_TYPE, TASK)),
-          repr(M.commit_message(TASK, "s", {})))
+          repr(task_message(TASK, "s", {})))
     check("ctw28 the coauthor is its OWN paragraph rather than a second "
           "sentence of the subject line - a list is how it reaches git, one "
           "`-m` each, so the trailer is a trailer",
-          M.commit_message(TASK, "s",
-                           {"meta": {"commit": {"coauthor": "Co: x"}}})
+          task_message(TASK, "s",
+                       {"meta": {"commit": {"coauthor": "Co: x"}}})
           == ["chore(%s): %s - s" % (TASK, M.SUBJECT_LEAD), "Co: x"],
-          repr(M.commit_message(TASK, "s",
+          repr(task_message(TASK, "s",
                                 {"meta": {"commit": {"coauthor": "Co: x"}}})))
 
+    # --- the three commands' messages, as they were before they shared one ---
+    # THE EXPECTED LISTS ARE LITERALS read off the code at 571becfd, not built
+    # from the constants the commands own: a case that composed its expectation
+    # from `SUBJECT_LEAD` would pass for a command that changed the lead. The
+    # long subject separates a bounded header from an unbounded one -- the
+    # audit-state and index commands cut it to fit, a task commit never has.
+    _cas = _loader.load_script("commit-audit-state.py", "cas_for_ctw")
+    _long = "y" * 200
+    _claims = "claims:\n1 x"
+    _seen = [
+        _scoped_commit.commit_message(_cas.subject_header("P9", "why"), "Co: x"),
+        _scoped_commit.commit_message(_cas.subject_header("P9", None), None),
+        _scoped_commit.commit_message(_cas.subject_header("P9", _long), "Co: x"),
+        _scoped_commit.commit_message(CMI.subject_header("P9", "why"), "Co: x"),
+        _scoped_commit.commit_message(CMI.subject_header("P9", None), None),
+        task_message("P9.1", "why", {"meta": {"commit": {
+            "type": "fix", "coauthor": "Co: x"}}}, claims=_claims),
+        task_message("P9.1", None, {}),
+        task_message("P9.1", _long, {}),
+    ]
+    _want = [
+        ["chore(audit-state): phase P9 - why", "Co: x"],
+        ["chore(audit-state): phase P9 - the record of a run, without the "
+         "work it ran on"],
+        ["chore(audit-state): phase P9 - " + "y" * 57 + " [truncated]", "Co: x"],
+        ["chore(audit-index): phase P9 - why", "Co: x"],
+        ["chore(audit-index): phase P9 - the shared index and the row naming "
+         "it, no phase's work"],
+        ["fix(P9.1): audit - why", _claims, "Co: x"],
+        ["chore(P9.1): audit - the task's own files, and the record beside "
+         "them"],
+        ["chore(P9.1): audit - " + _long],
+    ]
+    check("the shared commit_message gives the 571becfd message for a task "
+          "commit, an audit-state commit and an index commit",
+          _seen == _want,
+          repr([(got, want) for got, want in zip(_seen, _want) if got != want]))
+
+    # THE ORDER AND THE BLANKS, which the literal lists above cannot separate
+    # from a composer that appends in another order: claims sit BETWEEN the
+    # header and the trailer, and a blank value adds no paragraph at all.
+    check("ctw25a the shared composer puts the claims between the header and "
+          "the co-author trailer, and a blank claims or co-author adds none",
+          _scoped_commit.commit_message("h", "Co: x", "claims:\n1 y")
+          == ["h", "claims:\n1 y", "Co: x"]
+          and _scoped_commit.commit_message("h", "  ", "") == ["h"]
+          and _scoped_commit.commit_message("h", None) == ["h"],
+          repr(_scoped_commit.commit_message("h", "Co: x", "claims:\n1 y")))
+
+    check("ctw25b the one derivation of `meta.commit.coauthor` returns a string "
+          "with something in it and None for every other shape - blank, absent, "
+          "a number, a list, and a `commit` block that is not a mapping",
+          _scoped_commit.coauthor_of({"meta": {"commit": {"coauthor": "Co: x"}}})
+          == "Co: x"
+          and all(_scoped_commit.coauthor_of(m) is None for m in (
+              None, {}, {"meta": {"commit": {"coauthor": "  "}}},
+              {"meta": {"commit": {"coauthor": 7}}},
+              {"meta": {"commit": {"coauthor": ["Co: x"]}}},
+              {"meta": {"commit": "Co: x"}},
+              {"meta": {"commit": {}}})))
+
     # --- the refusal builder, both directions -------------------------------
-    check("ctw29 SECOND-DIRECTION CASE: with nothing foreign there is NO "
+    check("ctw29SECOND-DIRECTION CASE: with nothing foreign there is NO "
           "refusal, so the caller's branch reads as a question rather than "
           "as a string test - a builder that always returned a sentence "
           "would refuse every run and pass every refusal case above",

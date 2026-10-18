@@ -843,6 +843,46 @@ def fitted_header(fixed, subject, limit=HEADER_MAX_CHARS):
     return "%s%s%s" % (fixed, subject[:room], SUBJECT_TRUNCATED)
 
 
+def coauthor_of(manifest):
+    """`meta.commit.coauthor` when it is a string with something in it, else None.
+
+    THE ONE DERIVATION of that key for the three commands, so a trailer one of
+    them writes is a trailer the others write too: a value that is blank, or not
+    a string, is the same "none" to all of them.
+    """
+    block = ((manifest or {}).get("meta") or {}).get("commit")
+    value = block.get("coauthor") if isinstance(block, dict) else None
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def commit_message(header, coauthor, claims=None):
+    """The message paragraphs of a scoped commit: `header`, then the executor's
+    `claims` when there are any, then the co-author trailer when there is one.
+
+    A LIST RATHER THAN ONE STRING, because that is how it reaches git: one `-m`
+    per paragraph, so the trailer is a trailer and not a second sentence of the
+    subject line. The claims are a paragraph of their own, byte-identical, between
+    the header and the trailers; `with_row_trailer` keeps the row trailer in a
+    paragraph of trailers, so the claims paragraph never becomes the one git
+    reads trailers from.
+
+    THE HEADER IS THE CALLER'S, whole. What goes into it - the type, the scope,
+    the lowercase lead, the id, and whether the subject is bounded by
+    `fitted_header` - differs between the three commands on purpose, because each
+    one's header is how a log tells its commit from the others; the order of the
+    paragraphs after it is the one fact they share, and it lives here once.
+
+    A claims or co-author value that is not a string with something in it adds no
+    paragraph: an absent value and a blank one both read as "none filed".
+    """
+    paragraphs = [header]
+    if isinstance(claims, str) and claims.strip():
+        paragraphs.append(claims)
+    if isinstance(coauthor, str) and coauthor.strip():
+        paragraphs.append(coauthor)
+    return paragraphs
+
+
 # --- what this attempt changed ------------------------------------------------
 # A task commit carries exactly its attempt: nothing that was in the tree before
 # the attempt began, and nothing made during it left out in silence. The only

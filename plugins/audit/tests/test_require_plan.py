@@ -438,7 +438,7 @@ def _cases(check):
     # (e) armed bypass: Pre observes without consuming; Post consumes + logs
     sess_e = "selftest-session-e"
     bp = sd / ("plan-bypass-%s.json" % sess_e)
-    bp.write_text(json.dumps({"ts": M._now_iso(), "reason": "selftest"}),
+    bp.write_text(json.dumps({"ts": _config.local_stamp(), "reason": "selftest"}),
                   encoding="utf-8")
     p_bypass = payload("Write", "src/foo/bypassed.ts", content=big, sid=sess_e)
     _expect("e1 armed bypass (Pre) allows", "allow", p_bypass)
@@ -453,13 +453,14 @@ def _cases(check):
     check("f1 bypass logged to provided logs_dir", wrote)
 
     # (j) deny payload is canonical PreToolUse JSON
-    blob = json.loads(json.dumps(M._deny_payload("why")))
+    # The hook's own name in front of the reason is pinned byte for byte by
+    # test__config.py's shared-payload case; this one holds the shape.
+    blob = json.loads(json.dumps(_config.deny_payload("why")))
     hso = blob.get("hookSpecificOutput") or {}
     check("j1 deny payload is canonical PreToolUse JSON",
           hso.get("hookEventName") == "PreToolUse"
           and hso.get("permissionDecision") == "deny"
-          and str(hso.get("permissionDecisionReason", ""))
-          .startswith("[require-plan]"))
+          and hso.get("permissionDecisionReason") == "why")
 
     # (k) evidence grading. Same out-of-policy edit at each tier; only the amount
     #     the gate knows changes. cfg_graded drops the enforce override the rest of
@@ -726,13 +727,12 @@ def _cases(check):
 
     # The ask payload's SHAPE is the pinned contract - the dialog itself cannot
     # be driven by a selftest (mirror of j1 and k15).
-    ap = json.loads(json.dumps(M._ask_payload("why")))
+    ap = json.loads(json.dumps(_config.ask_payload("why")))
     hso = ap.get("hookSpecificOutput") or {}
     check("g9 the ask payload is a canonical PreToolUse 'ask' decision",
           hso.get("hookEventName") == "PreToolUse"
           and hso.get("permissionDecision") == "ask"
-          and str(hso.get("permissionDecisionReason", "")).startswith(
-              "[require-plan]"))
+          and hso.get("permissionDecisionReason") == "why")
 
     # main() routing: Pre prints the ask payload; Post prints nothing (silence
     # is the approval record - the gate event feed carries the trace).
@@ -774,7 +774,10 @@ def _cases(check):
         blob = {}
     check("g10 main() on Pre prints the ask payload and exits 0",
           code in (0, None) and (blob.get("hookSpecificOutput") or {})
-          .get("permissionDecision") == "ask")
+          .get("permissionDecision") == "ask"
+          and str((blob.get("hookSpecificOutput") or {})
+                  .get("permissionDecisionReason", ""))
+          .startswith("[require-plan]"))
     code, spoke = drive_main("PostToolUse")
     check("g11 main() on Post prints NOTHING for ask - the edit happening "
           "IS the approval", code in (0, None) and spoke == "")
@@ -886,13 +889,13 @@ def _cases(check):
     sess_h = "selftest-h-ttl"
     bp_h = sd / ("plan-bypass-%s.json" % sess_h)
     p_ttl = payload("Write", "src/ttl/big.ts", content=big, sid=sess_h)
-    bp_h.write_text(json.dumps({"ts": M._now_iso(), "reason": "fresh",
+    bp_h.write_text(json.dumps({"ts": _config.local_stamp(), "reason": "fresh",
                                 "armedAtEpoch": int(time.time())}),
                     encoding="utf-8")
     v, _m = M.decide(p_ttl, cfg=cfg, state_dir=sd, logs_dir=ld)
     hok("h6 a fresh armed bypass still allows on Pre", v == "allow")
     stale_epoch = int(time.time()) - _config.BYPASS_TTL_SECONDS - 120
-    bp_h.write_text(json.dumps({"ts": M._now_iso(), "reason": "stale",
+    bp_h.write_text(json.dumps({"ts": _config.local_stamp(), "reason": "stale",
                                 "armedAtEpoch": stale_epoch}),
                     encoding="utf-8")
     v, _m = M.decide(p_ttl, cfg=cfg, state_dir=sd, logs_dir=ld)
@@ -906,7 +909,7 @@ def _cases(check):
     hok("h8 the Post pass deletes the expired slot and logs 'expired unused'",
         v == "block" and not bp_h.exists()
         and "expired unused" in log_txt, repr((v, bp_h.exists())))
-    bp_h.write_text(json.dumps({"ts": M._now_iso(), "reason": "legacy"}),
+    bp_h.write_text(json.dumps({"ts": _config.local_stamp(), "reason": "legacy"}),
                     encoding="utf-8")
     v, _m = M.decide(p_ttl, cfg=cfg, state_dir=sd, logs_dir=ld)
     hok("h9 a legacy slot without armedAtEpoch is honoured WITHOUT a TTL "
@@ -1424,7 +1427,7 @@ def _cases(check):
     ild = tmp / "ev-bypass"
     sess_i = "selftest-i7"
     bp_i = sd / ("plan-bypass-%s.json" % sess_i)
-    bp_i.write_text(json.dumps({"ts": M._now_iso(), "reason": "x",
+    bp_i.write_text(json.dumps({"ts": _config.local_stamp(), "reason": "x",
                                 "armedAtEpoch": int(time.time())}),
                     encoding="utf-8")
     p_i = payload("Write", "src/ev/i7.ts", content=big, sid=sess_i)
@@ -1432,7 +1435,7 @@ def _cases(check):
     rows = feed(ild)
     hok("i7 a consumed bypass is bypass.consumed",
         [r.get("event") for r in rows] == ["bypass.consumed"], repr(rows))
-    bp_i.write_text(json.dumps({"ts": M._now_iso(), "reason": "x",
+    bp_i.write_text(json.dumps({"ts": _config.local_stamp(), "reason": "x",
                                 "armedAtEpoch": stale_epoch}), encoding="utf-8")
     M.decide(p_i, cfg=cfg, state_dir=sd, logs_dir=ild, event="PostToolUse")
     rows = feed(ild)
@@ -2167,13 +2170,13 @@ def _cases(check):
     u_byp_sid = "selftest-u-bypass"
     u_byp_slot = usd / ("plan-bypass-%s.json" % u_byp_sid)
     u_byp = payload("Write", "src/pub/bypassed.ts", content=big, sid=u_byp_sid)
-    u_byp_slot.write_text(json.dumps({"ts": M._now_iso(),
+    u_byp_slot.write_text(json.dumps({"ts": _config.local_stamp(),
                                       "armedAtEpoch": int(time.time())}),
                           encoding="utf-8")
     M.decide(u_byp, cfg=cfg_graded, state_dir=usd, logs_dir=uld,
              event="PostToolUse")
     u_byp_slot.write_text(
-        json.dumps({"ts": M._now_iso(),
+        json.dumps({"ts": _config.local_stamp(),
                     "armedAtEpoch": (int(time.time())
                                      - _config.BYPASS_TTL_SECONDS - 120)}),
         encoding="utf-8")

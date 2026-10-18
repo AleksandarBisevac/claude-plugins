@@ -72,6 +72,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _fmt  # noqa: E402  (plural(): `1 task` / `2 tasks`, one implementation)
+import _utc_stamp  # noqa: E402  (utc_stamp: the one spelling of this moment)
 import _locks  # noqa: E402  (the index lock, already the one implementation)
 import _manifest_io as _mio  # noqa: E402  (layout-aware read and write)
 import _journal_io  # noqa: E402  (the append a redacting save's row goes through)
@@ -704,18 +705,6 @@ def _revalidate(manifest):
     return _manifest_rules.bound_validator().validate(manifest)
 
 
-def iso_now():
-    """Wall clock, isolated so nothing above reaches for one.
-
-    `now(timezone.utc)` rather than `utcnow()`: that spelling is deprecated and
-    warns on every call, while `datetime.UTC` needs 3.11 and this tree holds a 3.8
-    floor.
-    """
-    import datetime
-    return datetime.datetime.now(datetime.timezone.utc).strftime(
-        "%Y-%m-%dT%H:%M:%SZ")
-
-
 def run(mpath, verb, pids, policy=None, reason=None, now=None, locked=False):
     """Do it, under the lock, and refuse rather than write something invalid.
 
@@ -733,7 +722,7 @@ def run(mpath, verb, pids, policy=None, reason=None, now=None, locked=False):
     panel, whose per-call claim no other call re-enters, this one included - so
     no claim is taken here and none is given back.
     """
-    now = now or iso_now()
+    now = now or _utc_stamp.utc_stamp()
     if verb == "plan":
         manifest, refusal = _load(mpath)
         if refusal:

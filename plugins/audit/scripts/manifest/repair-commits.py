@@ -30,7 +30,6 @@ found in report mode, or a refused apply - 2 usage/read error.
 import json
 import os
 import sys
-import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -62,10 +61,6 @@ import _journal_io  # noqa: E402  (the trail this repair has to leave behind)
 import _panel_write  # noqa: E402  (save_in_layout: the scrubbing, journaling plan save)
 
 LOCK_NAME = "index"
-
-
-def iso_now():
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def project_of(mpath):

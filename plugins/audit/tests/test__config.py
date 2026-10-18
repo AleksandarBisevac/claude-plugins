@@ -2777,8 +2777,89 @@ def _cases(check):
           and hq_two[2] == [_rm] and hq_live[2] == ["$(%s)" % _rm])
 
 
+def _payload_bytes(reason_prefix, decision, reason):
+    """What a hook printed for a decision, spelled out as the literal bytes
+    `json.dumps` produced for the three hooks before they shared one pair."""
+    return ('{"hookSpecificOutput": {"hookEventName": "PreToolUse", '
+            '"permissionDecision": "%s", "permissionDecisionReason": '
+            '"%s%s"}}\n' % (decision, reason_prefix, reason))
+
+
+def _printed_by(fn, stdin_text=""):
+    """`(stdout, exit code)` of one call into a hook that prints and exits."""
+    import io
+    saved = (sys.stdin, sys.stdout)
+    sys.stdin, sys.stdout = io.StringIO(stdin_text), io.StringIO()
+    code = None
+    try:
+        try:
+            fn()
+        except SystemExit as exc:
+            code = exc.code
+        return sys.stdout.getvalue(), code
+    finally:
+        sys.stdin, sys.stdout = saved
+
+
+def _shared_payload_cases(check):
+    import _loader
+    hooks = dict((name, _loader.load(os.path.join(_harness.HOOKS_DIR, name + ".py"),
+                                     modname=name.replace("-", "_") + "_payload"))
+                 for name in ("guard-edits", "guard-secrets-read", "require-plan"))
+    edits, secrets, plan = (hooks["guard-edits"], hooks["guard-secrets-read"],
+                            hooks["require-plan"])
+
+    def ask_through_main(mod, decide_signature):
+        saved = mod.decide
+        mod.decide = decide_signature
+        try:
+            return _printed_by(mod.main, "{}")
+        finally:
+            mod.decide = saved
+
+    got = [
+        ("guard-edits deny", _printed_by(lambda: edits.block("why")),
+         _payload_bytes("[guard-edits] ", "deny", "why")),
+        ("guard-edits ask", _printed_by(lambda: edits.ask("why")),
+         _payload_bytes("[guard-edits] ", "ask", "why")),
+        ("guard-secrets-read deny", _printed_by(lambda: secrets.block("why")),
+         _payload_bytes("[guard-secrets-read] ", "deny", "why")),
+        ("guard-secrets-read deny, already signed by the plan gate",
+         _printed_by(lambda: secrets.block(secrets.PLAN_GATE_TAG + "why")),
+         _payload_bytes("[plan gate] ", "deny", "why")),
+        ("guard-secrets-read ask",
+         ask_through_main(secrets, lambda data: ("ask", "why")),
+         _payload_bytes("[guard-secrets-read] ", "ask", "why")),
+        ("require-plan deny", _printed_by(lambda: plan.block("why")),
+         _payload_bytes("[require-plan] ", "deny", "why")),
+        ("require-plan ask",
+         ask_through_main(plan, lambda data, event=None: ("ask", "why")),
+         _payload_bytes("[require-plan] ", "ask", "why")),
+    ]
+    wrong = [(label, out) for label, (out, code), want in got
+             if out != want or code != 0]
+    check("the shared deny and ask payloads are byte-identical to what guard-edits, "
+          "guard-secrets-read and require-plan printed at 571becfd: %r"
+          % (wrong,), not wrong and len(got) == 7)
+
+    # The pair itself, apart from any hook: the reason is passed through as given
+    # (the caller signs it) and the two decisions differ in that word alone.
+    deny, ask = M.deny_payload("r"), M.ask_payload("r")
+    check("deny_payload and ask_payload differ only in permissionDecision: %r"
+          % ((deny, ask),),
+          deny["hookSpecificOutput"].pop("permissionDecision") == "deny"
+          and ask["hookSpecificOutput"].pop("permissionDecision") == "ask"
+          and deny == ask
+          and deny["hookSpecificOutput"]["permissionDecisionReason"] == "r")
+
+
+def _all_cases(check):
+    _cases(check)
+    _shared_payload_cases(check)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    return _harness.run(_all_cases)
 
 
 if __name__ == "__main__":

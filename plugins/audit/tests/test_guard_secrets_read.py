@@ -991,10 +991,10 @@ def _handed_spelling_cases(check, root, outside, journal, shell, same_as_bare,
     sid = sid_of("pgn1", "plan-gate-name")
     _spend_slot(root, cfg, sid)
     got = shell(sid, "echo y %s src/named.py" % _gt, use_cfg=deny_cfg)
-    said = M._deny_payload(got[1])["hookSpecificOutput"][
+    said = _config.deny_payload(M._signed(got[1]))["hookSpecificOutput"][
         "permissionDecisionReason"] if got[0] == "block" else ""
     secret = shell(sid_of("pgn1", "secret"), "cat .env", use_cfg=deny_cfg)
-    said_secret = M._deny_payload(secret[1])["hookSpecificOutput"][
+    said_secret = _config.deny_payload(M._signed(secret[1]))["hookSpecificOutput"][
         "permissionDecisionReason"] if secret[0] == "block" else ""
     check("pgn1 a shell write the plan gate refuses is worded as the plan gate's, "
           "and a secret read as the secrets guard's: %r"
@@ -3533,7 +3533,7 @@ def _cases(check):
 
     # The ask payload's SHAPE is the pinned contract (the dialog cannot be
     # driven by a selftest) - mirror of require-plan's g9 and of j1 below.
-    _ap = json.loads(json.dumps(M._ask_payload("why")))
+    _ap = json.loads(json.dumps(_config.ask_payload(M._signed("why"))))
     _hso = _ap.get("hookSpecificOutput") or {}
     check("s19 the ask payload is a canonical PreToolUse 'ask' decision",
           _hso.get("hookEventName") == "PreToolUse"
@@ -4178,7 +4178,7 @@ def _cases(check):
     _expect("u2 empty input allowed", "allow", {"cwd": str(tmp)})
 
     # --- deny payload is canonical PreToolUse JSON ---
-    blob = json.loads(json.dumps(M._deny_payload("why")))
+    blob = json.loads(json.dumps(_config.deny_payload(M._signed("why"))))
     hso = blob.get("hookSpecificOutput") or {}
     check("j1 deny payload is canonical PreToolUse JSON",
           hso.get("hookEventName") == "PreToolUse"

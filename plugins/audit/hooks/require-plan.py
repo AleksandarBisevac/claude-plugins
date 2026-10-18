@@ -210,10 +210,6 @@ def _append_log(logs, line):
         pass
 
 
-def _now_iso():
-    return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime())
-
-
 # A REFUSAL ABOUT JURISDICTION RATHER THAN THE PLAN - the first of two such
 # refusals in this file, and this one fires earlier than either: every OTHER
 # block here says the plan does not cover a file; this one says the gate
@@ -300,31 +296,6 @@ _BOUND_ELSEWHERE = (
     "not in the phase tree.")
 
 
-def _deny_payload(msg):
-    """Canonical PreToolUse deny payload (printed to stdout with exit 0)."""
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": "[require-plan] " + msg,
-        }
-    }
-
-
-def _ask_payload(msg):
-    """Canonical PreToolUse ask payload — the planGate:"ask" channel (the same
-    shape guard-edits' strict mode uses). Deliberately NOT deny: ask hands the
-    decision to the human's own prompt, once per edit. The dialog itself cannot
-    be driven by a selftest, so the payload SHAPE is the pinned contract."""
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "ask",
-            "permissionDecisionReason": "[require-plan] " + msg,
-        }
-    }
-
-
 def _warn_payload(msg):
     """Non-blocking advisory, delivered on the PostToolUse pass.
 
@@ -342,7 +313,7 @@ def _warn_payload(msg):
 
 
 def block(msg):
-    print(json.dumps(_deny_payload(msg)))
+    print(json.dumps(_config.deny_payload("[require-plan] " + msg)))
     sys.exit(0)
 
 
@@ -982,7 +953,7 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
                         ld,
                         "%s session=%s bypass expired unused (armed more than "
                         "%d minutes ago)"
-                        % (_now_iso(), session_id,
+                        % (_config.local_stamp(), session_id,
                            _config.BYPASS_TTL_SECONDS // 60),
                     )
                     _config.append_gate_event(ld, {
@@ -1000,7 +971,7 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
                 _append_log(
                     ld,
                     "%s session=%s consumed by successful edit of %s"
-                    % (_now_iso(), session_id, rel),
+                    % (_config.local_stamp(), session_id, rel),
                 )
                 _config.append_gate_event(ld, {
                     "event": "bypass.consumed", "file": rel, "mode": "allow",
@@ -1283,7 +1254,9 @@ def main():
     if verdict == "block":
         block(msg)
     if verdict == "ask":
-        print(json.dumps(_ask_payload(msg)))
+        # The planGate:"ask" channel, the same shape guard-edits' strict mode
+        # uses: ask hands the decision to the human's own prompt, once per edit.
+        print(json.dumps(_config.ask_payload("[require-plan] " + msg)))
         sys.exit(0)
     # observe and warn never gate on Pre. Printing nothing keeps the user's normal
     # permission prompt intact.
