@@ -1493,7 +1493,8 @@
       "P130.7",
       "P130.8",
       "P130.9",
-      "P130.6"
+      "P130.6",
+      "P130.4"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3646,7 +3647,8 @@
       "P123.58-64p",
       "P125.34-0h5",
       "P125.118-0h5",
-      "P130.8"
+      "P130.8",
+      "P130.4"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -5338,7 +5340,8 @@
       "P125.99-0h5",
       "P125.107-0h5",
       "P125.108-0h5",
-      "P130.7"
+      "P130.7",
+      "P130.4"
     ],
     "plugins/audit/tests/test__deps.py: a field added to one copy of the explorer return contract and not the other is a finding": [
       "P32.5"
@@ -5819,7 +5822,8 @@
       "P125.38-0h5",
       "P125.68-0h5",
       "P130.3",
-      "P130.7"
+      "P130.7",
+      "P130.4"
     ],
     "plugins/audit/tests/test__panel_composition.py": [
       "P18.7",
@@ -9897,6 +9901,12 @@
     ],
     "vitest.config.mjs": [
       "P130.4"
+    ],
+    "plugins/audit/scripts/_utc_stamp.py": [
+      "P130.4"
+    ],
+    "plugins/audit/tests/test__utc_stamp.py": [
+      "P130.4"
     ]
   },
   "bugs": [
@@ -10438,7 +10448,7 @@
     {
       "id": "BUG-25-izt",
       "title": "The red-first helper never proves a new Playwright spec, because a \"no tests found\" baseline is not read as red",
-      "status": "in_progress",
+      "status": "fixed",
       "severity": "med",
       "reportedAt": "2026-10-16T22:22:54Z",
       "reportedBy": null,
@@ -10450,7 +10460,7 @@
         "plugins/audit/scripts/governance/stamp-verification.py"
       ],
       "taskId": "P130.11-ywo",
-      "fixedIn": null,
+      "fixedIn": "05c10b1a3d54",
       "notes": null
     }
   ],
