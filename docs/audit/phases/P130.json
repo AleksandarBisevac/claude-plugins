@@ -199,7 +199,49 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "tools/ci-verified.py: a run whose jobs are all success verifies the SHA; a skipped job, another commit's run, another workflow file's run, the asking run, an unreadable job list and could-not-ask each refuse": {
+            "command": [
+              "python3",
+              "tools/ci-verified.py",
+              "--selftest"
+            ],
+            "file": "tools/ci-verified.py",
+            "find": "           for j in counted if j.get(\"conclusion\") != \"success\"]",
+            "replace": "           for j in counted if j.get(\"conclusion\") not in (\"success\", \"skipped\")]"
+          },
+          "tools/gate-parity.py: a slice ci.yml names that verify.sh --list does not print is red, a per-run slice no job runs is red, and shards that do not cover 1..N are red": {
+            "command": [
+              "python3",
+              "tools/gate-parity.py",
+              "--selftest"
+            ],
+            "file": "tools/gate-parity.py",
+            "find": "        if name not in listed:",
+            "replace": "        if False:"
+          },
+          "tools/gate-parity.py: verify.sh --only lint under dash leaves no verify-* directory in TMPDIR, and --list prints exactly the slices the run calls execute": {
+            "command": [
+              "python3",
+              "tools/gate-parity.py",
+              "--selftest"
+            ],
+            "file": "tools/verify.sh",
+            "find": "trap 'rm -rf \"$WORKDIR\"' EXIT",
+            "replace": "trap ':' EXIT"
+          },
+          "tools/release.py: the release dispatch passes -f tier=release, and a dispatch with no input runs the per-run tier": {
+            "command": [
+              "python3",
+              "tools/release.py",
+              "--selftest"
+            ],
+            "file": "tools/release.py",
+            "find": "    ok, detail = dispatch_ci(ctx, branch, tier=\"release\")",
+            "replace": "    ok, detail = dispatch_ci(ctx, branch)"
+          }
+        }
       },
       "model": "opus",
       "skills": [
@@ -224,7 +266,12 @@
       "startedAt": "2026-10-17T23:08:31Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-18T00:58:36Z.a8a987",
+        "status": "passed",
+        "at": "2026-10-18T00:58:36Z"
+      }
     },
     {
       "id": "P130.3",
@@ -354,7 +401,13 @@
         "plugins/audit/tests/test_commit_audit_state.py",
         "plugins/audit/tests/test_commit_manifest_index.py",
         "plugins/audit/tests/test_commit_task_work.py",
-        "vitest.config.mjs"
+        "vitest.config.mjs",
+        "plugins/audit/scripts/_utc_stamp.py",
+        "plugins/audit/tests/test__utc_stamp.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/tests/test__deps.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "regression",
@@ -1049,7 +1102,7 @@
     {
       "id": "P130.11-ywo",
       "title": "Fix BUG-25-izt: red-first reads Playwright no-tests-found as red",
-      "status": "in_progress",
+      "status": "done",
       "description": "",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -1094,14 +1147,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "05c10b1a3d54",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py: added _PW_NO_TESTS (playwright 1.56.0 'Error: No tests found.' as a line under line/list reporters, or as the message of the JSON reporter's errors entry) and made _js_none_found accept it beside jest's/vitest's sentence; still requires exit 1, a spec left absent, and no tally counting a case or failure. Real output captured from playwright 1.56.0 in the scratchpad (exit 1, suites [], errors[0].message). test_stamp_verification.py: new stage sr-playwright-none-found (_playwright_none_found_cases) with pn1 (end to end red_verdict proves), pn2 (baseline_problem None for both reporters with absent spec), pn3 (deny twin: no absent file, failing old spec, sentence beside a counted failure all stay not green). Full file selftest 295/295 pass.",
+        "descriptive": "A new Playwright spec's red-first proof now comes back proved instead of could-not-prove."
       },
       "startedAt": "2026-10-17T23:08:36Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-17T23:25:07Z",
+      "verifiedBy": [
+        "pn1 a new Playwright spec whose HEAD run prints real Playwright no-tests-found output is read as red and proves once the spec passes on the work",
+        "pn2",
+        "pn3"
+      ],
       "bugId": "BUG-25-izt",
       "notes": [
         {
@@ -1114,6 +1171,18 @@
         "runId": "2026-10-17T23:25:03Z.41e49b",
         "status": "passed",
         "at": "2026-10-17T23:25:03Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "05c10b1a3d54",
+        "at": "2026-10-17T23:25:07Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-17T23:12:37Z",
+        "basis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest --stage sr-playwright-none-found` in a throwaway tree at HEAD exited 1 with 2 of 3 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests on HEAD's code failing only the unknown-stage check for `sr-playwright-none-found`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - pn1 (house FAIL): SELFTEST FAILED: 1/3 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
