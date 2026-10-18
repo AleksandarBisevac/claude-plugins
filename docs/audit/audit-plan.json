@@ -5761,7 +5761,8 @@
       "P129.1-izt",
       "P129.2-izt",
       "P129.7-izt",
-      "P129.8-izt"
+      "P129.8-izt",
+      "P130.7"
     ],
     "plugins/audit/tests/test__merge_install.py": [
       "P60.5",
@@ -5874,7 +5875,8 @@
       "P115.5-4yc",
       "P124.13-k2x",
       "P123.30",
-      "P123.32"
+      "P123.32",
+      "P130.7"
     ],
     "plugins/audit/tests/test__panel_policy.py": [
       "P59.10",
@@ -6739,7 +6741,8 @@
       "P125.136-0h5",
       "P129.10-izt",
       "P129.11-izt",
-      "P130.4"
+      "P130.4",
+      "P130.7"
     ],
     "plugins/audit/tests/test_harvest_worktree.py": [
       "P43.3"
@@ -9935,6 +9938,9 @@
     ],
     ".claude/skills/reproducing-ci-locally/SKILL.md": [
       "P130.22-ywo"
+    ],
+    "tools/ui-tests/phase-order.test.mjs": [
+      "P130.7"
     ]
   },
   "bugs": [
@@ -10457,7 +10463,7 @@
     {
       "id": "BUG-24-izt",
       "title": "/audit:usage compares a filtered ledger window against the CLI cumulative session cost",
-      "status": "in_progress",
+      "status": "fixed",
       "severity": "med",
       "reportedAt": "2026-10-16T21:15:18Z",
       "reportedBy": null,
@@ -10470,7 +10476,7 @@
         "plugins/audit/scripts/usage/usage_ledger.py"
       ],
       "taskId": "P130.12-ywo",
-      "fixedIn": null,
+      "fixedIn": "de94f5b53fb9",
       "notes": null
     },
     {
