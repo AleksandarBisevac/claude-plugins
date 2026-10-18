@@ -388,6 +388,31 @@ def cli_cost_lines(rows, cli_cost, pricing, md=False):
     return lines
 
 
+# The flags that cut a view down to part of what the ledger holds. The CLI's
+# cost-state is a session's CUMULATIVE figure, so beside any of these the two
+# sides of the comparison would measure different things.
+NARROWING_FLAGS = (("since", "--since"), ("until", "--until"),
+                   ("phase", "--phase"), ("task", "--task"),
+                   ("model", "--model"), ("author", "--author"),
+                   ("area", "--area"), ("attr", "--attr"))
+
+
+def narrowing_flags(args):
+    """The flags of `NARROWING_FLAGS` this run was given, spelled as typed -
+    `[]` for a view of every row the ledger holds."""
+    return [flag for dest, flag in NARROWING_FLAGS if getattr(args, dest, None)]
+
+
+def cli_cost_withheld_line(flags, md=False):
+    """The line that stands where the CLI-vs-plugin comparison would, naming the
+    flags that withheld it and why."""
+    return ("- " if md else "  ") + (
+        "withheld under %s: the CLI's figure is each session's cumulative "
+        "cost and this view holds only part of the ledger's rows, so the two "
+        "would not measure the same thing - run without a filter to compare"
+        % ", ".join(flags))
+
+
 def collect_cli_cost(sessions, ledger_dir, transcripts):
     """`{sessionId: cost_state or None}` for every session in `sessions` -
     the CLI's own per-session cost reading, each tagged with `source`.
@@ -416,7 +441,7 @@ def collect_cli_cost(sessions, ledger_dir, transcripts):
 
 
 def render(rows, args, manifest, window, show_cost, pt=None, pricing=None,
-          cli_cost=None):
+          cli_cost=None, cli_withheld=None):
     """The dashboard. `pricing` is `project_pricing`'s answer, `{table, basis,
     asOf, source}`: its table prices the routing advice and the rest is the
     rate basis printed beside the costs. None resolves it from the manifest
@@ -424,7 +449,10 @@ def render(rows, args, manifest, window, show_cost, pt=None, pricing=None,
     `ul.priced_at_read`'s copies, priced at that same table. `cli_cost` is
     `{sessionId: cost_state}` - the CLI's own per-session read, as
     `collect_cli_cost` gathers it (the meter's recorded figure, else the
-    transcript's); absent by default; see `cli_cost_lines`."""
+    transcript's); absent by default; see `cli_cost_lines`. `cli_withheld` is
+    the list of flags that narrowed this view (`narrowing_flags`): when it is
+    non-empty the comparison is replaced by the line saying why it is not
+    there, because a CLI figure is a whole session's and these rows are not."""
     if pricing is None:
         pricing = ul.resolve_pricing(manifest, None)
     phase_titles, task_titles = titles_of(manifest)
@@ -478,12 +506,21 @@ def render(rows, args, manifest, window, show_cost, pt=None, pricing=None,
         out.append(("- " if md else "          ") + "costs priced at %s"
                    % rate_basis_phrase(pricing))
     if show_cost and rows and cli_cost:
-        cc_lines = cli_cost_lines(rows, cli_cost, pricing, md=md)
+        # Under a narrowing filter the readings are not compared at all; the
+        # line saying so appears only when there was a reading to withhold.
+        if cli_withheld:
+            cc_lines = ([cli_cost_withheld_line(cli_withheld, md=md)]
+                        if any(cli_cost.values()) else [])
+        else:
+            cc_lines = cli_cost_lines(rows, cli_cost, pricing, md=md)
         if cc_lines:
             out.append("")
             out.append(("**CLI vs plugin cost**" if md
                        else pt.paint("  CLI vs plugin cost", "header")))
             out.extend(cc_lines)
+            if not cli_withheld:
+                out.append(("- " if md else "  ") + "note: "
+                           + ul.CLI_COST_UNRECORDED)
     if not rows:
         out.append("")
         out.append(pt.paint("  No usage recorded for this window.", "warn"))
@@ -1206,7 +1243,7 @@ def main(argv):
 
     print(render(rows, args, manifest, window, show_cost,
                  pt=_cli_fmt.painter(args.color), pricing=resolved,
-                 cli_cost=cli_cost))
+                 cli_cost=cli_cost, cli_withheld=narrowing_flags(args)))
     return 0
 
 

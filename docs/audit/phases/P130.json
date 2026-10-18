@@ -835,7 +835,12 @@
       "startedAt": "2026-10-18T21:25:38Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-18T23:03:00Z.718fcb",
+        "status": "passed",
+        "at": "2026-10-18T23:03:00Z"
+      }
     },
     {
       "id": "P130.8",
@@ -1183,7 +1188,8 @@
         "plugins/audit/scripts/governance/run-test-gate.py",
         "plugins/audit/tests/test__verdict_binding.py",
         "plugins/audit/tests/test_commit_task_work.py",
-        "plugins/audit/tests/test_run_test_gate.py"
+        "plugins/audit/tests/test_run_test_gate.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1337,7 +1343,19 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test_audit_usage.py: under --since the CLI-vs-plugin line is withheld with its reason printed, and without a filter it compares whole-session ledger rows against the CLI figure, labelling the CLI side as including requests no transcript entry records": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_audit_usage.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/usage/audit-usage.py",
+            "find": "cli_withheld=narrowing_flags(args)))",
+            "replace": "cli_withheld=None))"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [],
@@ -1361,7 +1379,12 @@
           "text": "Repro and expected (BUG-24-izt): /audit:usage --by attr --since <a day after a long session started> compares a filtered ledger window against the CLI cumulative session cost (session fb1bddcc: Opus CLI 463.63 vs plugin 126.75, unfiltered ledger 366.23). Compare whole-session unfiltered rows, or withhold the line under a filter with the reason printed, and label the CLI figure as including requests no transcript entry records (compaction, away summaries, titles, auto-mode classifier). Load writing-python, no-silent-pass, before-you-claim."
         }
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-18T23:13:49Z.d965f1",
+        "status": "passed",
+        "at": "2026-10-18T23:13:49Z"
+      }
     },
     {
       "id": "P130.13-ywo",

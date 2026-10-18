@@ -1,0 +1,34 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_audit_usage.py --selftest": "pass",
+    "ruff check (usage scripts + test file)": "pass",
+    "vermin -t=3.8- (usage scripts + test file)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-18T21:29:41Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_usage.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 182 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - under --since the CLI-vs-plugin line is withheld with its reason printed, and without a filter it compares whole-session ledger rows against the CLI figure, labelling the CLI side as including requests no transcript entry records (whole=40.0 sliced=15.0 (house FAIL): SELFTEST FAILED: 181/182 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-usage.py: render() takes cli_withheld (flags from narrowing_flags(args): --since/--until/--phase/--task/--model/--author/--area/--attr). When non-empty, the CLI vs plugin cost section prints one 'withheld under <flags>: ...' line (only if a CLI reading exists) instead of per-model figures; when empty, whole-session rows are compared as before and a note line carrying usage_ledger.CLI_COST_UNRECORDED (compaction, away summaries, titles, auto-mode classifier) is appended. usage_ledger.py: new constant CLI_COST_UNRECORDED. Test: one case in test_audit_usage.py (_cli_cost_like_with_like_cases), titled with the tests.add clause, drives main() on a two-day single-session ledger with a CLI cursor figure: unfiltered shows CLI $50.00 vs the whole-session plugin figure plus the note; --since and --by attr --since show 'withheld' with no CLI figure. Selftest all pass; ruff and vermin clean. Scope choice: withheld under every narrowing filter, since a phase/task filter has the same unlike-with-like problem. Report/panel surfaces untouched (outside files). Note: a python heredoc write to usage_ledger.py was refused by the plan gate; redone with the Edit tool, which was allowed.",
+    "descriptive": "/audit:usage no longer sets a filtered ledger window against the CLI's cumulative session cost; it withholds the line with a reason, and labels the unfiltered comparison's CLI side as including unrecorded requests."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_audit_usage.py: under --since the CLI-vs-plugin line is withheld with its reason printed, and without a filter it compares whole-session ledger rows against the CLI figure, labelling the CLI side as including requests no transcript entry records"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_audit_usage.py: under --since the CLI-vs-plugin line is withheld with its reason printed, and without a filter it compares whole-session ledger rows against the CLI figure, labelling the CLI side as including requests no transcript entry records": {
+      "file": "plugins/audit/scripts/usage/audit-usage.py",
+      "find": "cli_withheld=narrowing_flags(args)))",
+      "replace": "cli_withheld=None))",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_usage.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims: (1) the withheld line fires for any narrowing flag - evidence: case drives --since and --by attr --since, red before, green after. (2) falsifier turns the case red - evidence: applied by hand, 181/182, restored, all pass. (3) no number written into prose.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:d8f23459890cc8fb7fdadf021623288ab83046636adf094e2b0c091e1457afb6\",\"dirtyDigest\":\"sha256:8e08b0e588e8fe6735903ccd5b3c21fa3a2bb6d773986fb265095c3c93df7135\",\"dirtyPaths\":{\"plugins/audit/scripts/usage/audit-usage.py\":\"609c6ea965dee1be\",\"plugins/audit/scripts/usage/usage_ledger.py\":\"e236496c98715794\",\"plugins/audit/tests/test_audit_usage.py\":\"9c880bd86cda559d\"},\"head\":\"6220678a\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/usage/audit-usage.py\",\"plugins/audit/scripts/usage/usage_ledger.py\",\"plugins/audit/tests/test_audit_usage.py\"],\"scopeDigest\":\"sha256:c360bed0dc5d427cc8f14a216afc9ded5dc07d8abffbab30f25a4fb433c1da01\",\"v\":2}"
+}

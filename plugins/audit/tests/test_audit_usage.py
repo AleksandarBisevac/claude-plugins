@@ -1723,6 +1723,7 @@ def _bw_spanning_cases(check, root):
           and _bw_month_out(ledger, _BW_SID, _BW_MONTH) == _BW_ENTRIES)
 
     _config_only_pricing_cases(check)
+    _cli_cost_like_with_like_cases(check)
     _read_time_pricing_cases(check)
 
 
@@ -1945,6 +1946,90 @@ def _config_only_pricing_cases(check):
               "config's rate (%r), not the shipped one: code=%r got=%r err=%r"
               % (want, code_b, got, err_b[-300:]),
               code_b == 0 and got == [want])
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+# --- the CLI figure is compared with whole sessions only (cl) -------------------
+def _cli_cost_like_with_like_cases(check):
+    """The CLI's cost-state is a session's CUMULATIVE figure; a ledger window is a
+    slice of it. The dashboard may print them side by side only when the ledger
+    side is the whole session, and says what the CLI side counts that a
+    transcript never records.
+
+    The fixture is one session spread over two days, so `--since` between them
+    keeps one of its two rows: the slice (3.0) and the whole (8.0) differ, and
+    the CLI's cumulative figure (50.0) differs from both."""
+    import shutil
+    import tempfile
+    root = tempfile.mkdtemp(prefix="audit-usage-cli-like-")
+    try:
+        proj = os.path.join(root, "proj")
+        ledger = os.path.join(proj, ".claude", "usage")
+        for d in (".git", os.path.join(".claude", "usage"),
+                  os.path.join("docs", "audit")):
+            os.makedirs(os.path.join(proj, d))
+        manifest = {"meta": {"version": 2, "repo": "x"},
+                    "phases": [{"id": "P1", "title": "P", "status": "pending",
+                                "tasks": [{"id": "T1", "title": "t",
+                                           "status": "done"}]}]}
+        with open(os.path.join(proj, "docs", "audit", "audit-plan.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump(manifest, fh)
+        with open(os.path.join(ledger, "2026-09.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            for day, out_tok in (("2026-09-01T10", 1000000),
+                                 ("2026-09-03T10", 600000)):
+                fh.write(json.dumps({
+                    "ts": day, "sessionId": "s-long", "model": "claude-opus-5",
+                    "taskId": "T1", "phaseId": "P1", "attr": "task", "msgs": 1,
+                    "in": 0, "out": out_tok, "cacheW5m": 0, "cacheW1h": 0,
+                    "cacheR": 0}) + "\n")
+        _ul.save_cursor(ledger, "s-long", {"cliCost": {
+            "totalCostUSD": 50.0, "perModel": {"claude-opus-5": 50.0},
+            "hasUnknownModelCost": False}})
+
+        def _run(extra):
+            return _cp_run_main(["--project-dir", proj, "--color", "never"]
+                                + extra)
+
+        _code_j, out_j, _err_j = _cp_run_main(["--json", "--project-dir", proj])
+        _code_s, out_s, _err_s = _cp_run_main(
+            ["--json", "--project-dir", proj, "--since", "2026-09-02"])
+        try:
+            whole = json.loads(out_j)["totals"]["costUSD"]
+            sliced = json.loads(out_s)["totals"]["costUSD"]
+        except (ValueError, KeyError):
+            whole = sliced = None
+        code_u, text_u, err_u = _run([])
+        code_f, text_f, err_f = _run(["--since", "2026-09-02"])
+        code_a, text_a, err_a = _run(["--by", "attr", "--since", "2026-09-02"])
+        note = _ul.CLI_COST_UNRECORDED if hasattr(
+            _ul, "CLI_COST_UNRECORDED") else "<no constant>"
+        withheld = [ln for ln in text_f.splitlines() if "withheld" in ln]
+        check("under --since the CLI-vs-plugin line is withheld with its reason "
+              "printed, and without a filter it compares whole-session ledger "
+              "rows against the CLI figure, labelling the CLI side as including "
+              "requests no transcript entry records",
+              (whole is not None and sliced is not None and whole != sliced
+               and code_u == 0 and code_f == 0 and code_a == 0)
+              # unfiltered: the whole session's plugin figure beside the CLI's
+              and "CLI vs plugin cost" in text_u
+              and ("CLI %s" % M.fmt_cost(50.0)) in text_u
+              and ("plugin %s" % M.fmt_cost(whole)) in text_u
+              and note in text_u
+              # filtered: no figure from either side of the comparison, and the
+              # reason names the flag that narrowed the view
+              and len(withheld) == 1 and "--since" in withheld[0]
+              and ("CLI %s" % M.fmt_cost(50.0)) not in text_f
+              and ("plugin %s" % M.fmt_cost(sliced)) not in text_f
+              and "session s-long" not in text_f
+              # the repro's own shape: a grouped table under --since
+              and "withheld" in text_a
+              and ("CLI %s" % M.fmt_cost(50.0)) not in text_a,
+              "whole=%r sliced=%r\nunfiltered:\n%s\n--since:\n%s\n--by attr:"
+              "\n%s\nerr=%r" % (whole, sliced, text_u[:900], text_f[:900],
+                                 text_a[:900], (err_u + err_f + err_a)[-300:]))
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

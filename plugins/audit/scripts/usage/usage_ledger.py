@@ -1012,6 +1012,13 @@ CLI_BASIS_METER = "the CLI's estimate, recorded at meter time"
 CLI_BASIS_TRANSCRIPT = "the CLI's estimate, read from the transcript"
 CLI_BASIS_UNTAGGED = "the CLI's estimate"
 
+# What the CLI's cumulative figure counts that no transcript entry records, so a
+# gap between the two sides is not read as the plugin missing rows it could have
+# seen. Said once here for the same reason the basis words are.
+CLI_COST_UNRECORDED = ("the CLI's figure includes requests no transcript entry "
+                       "records (compaction, away summaries, titles, the "
+                       "auto-mode classifier)")
+
 
 def cli_basis(source):
     """The label for a CLI figure whose reading came from `source` - `meter`

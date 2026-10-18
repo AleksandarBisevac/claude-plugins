@@ -1,0 +1,46 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test__verdict_binding.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_commit_task_work.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-18T21:39:56Z",
+    "basis": "`python3 plugins/audit/tests/test__verdict_binding.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 40 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - vb34 (house FAIL): SELFTEST FAILED: 39/40 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added _evidence_io.DERIVED_STEP_PREFIX (the only definition of the literal under plugins/audit/scripts; `grep -rn affected/ plugins/audit/scripts plugins/audit/hooks` -> one hit, _evidence_io.py:408), is_derived_step() and declared_steps(names, dropped): the declared gate is the names before the first derived step; a non-derived name after a derived one splits nothing (refuses); a row's stepsDropped counts as declared only when no derived step was kept (fail-closed when the split is unrecorded). _verdict_binding.gate_mismatch now compares declared_steps() of the row (sentence lists the declared part). run-test-gate.py derives declared_commands (the gateDigest input) from _ev.declared_steps over its own command list after the affected steps join, and names the phase-gate widening step with _ev.DERIVED_STEP_PREFIX; _affected_tests.entries_for uses _evidence_io.DERIVED_STEP_PREFIX (STEP_PREFIX removed; no other user found by grep). New import edge _affected_tests -> _evidence_io: layer_violations() reports no new entry - it reports one pre-existing violation, ('panel/_panel_state.py', 'runtime-loads render-report (layer 9) from layer 7'), identical on a git-archive export of HEAD 6220678a, in a file outside this task. The edge made test__deps g1 red (module-map fence stale), so PLUGIN-BUILD-GUIDE.md line 390 was updated to match `_deps.py --render` (diff was exactly that line) - this file is OUTSIDE the task's declared files; the plan gate allowed the Edit. Tests: vb34 in test__verdict_binding.py (same-steps+derived -> None; declared part differs, widened, narrowed, gateDigest moved, gateSource moved, interleaved -> refused with the existing sentences; prefix pinned to the module constant); ctw86 in a new staged block ag-block of test_commit_task_work.py (fixture: meta.phaseGate.derived.spelling 'true {paths}', phase testGate [test, wide], task gate [test], tests/test_a.py importing src/a.py -> real run-test-gate --record writes steps ['test', 'affected/python: tests/test_a.py'], commit-task-work exits 0 with no override). Red on base: vb34 FAIL (39/40), ctw86 FAIL (0/1) with the REFUSED 'measured under the gate [test, affected/python: tests/test_a.py]' sentence. Green after: test__verdict_binding 40/40 exit 0; test_commit_task_work full 126/126 exit 0; test_run_test_gate 548/548 exit 0; test__affected_tests 22/22; test__evidence_io 308/308; test__deps 331/331 (after the guide line); ruff exit 0 and vermin exit 0 on the six touched .py files. Falsifier (declared_steps returning names unsplit) proven in a scratch copy: vb34 red 39/40 exit 1, ctw86 red 0/1 exit 1. Plan-gate refusal, verbatim, on a python3 heredoc edit of run-test-gate.py (a file in this task's files): '[plan gate] A source-file write from a heredoc fed to an interpreter's stdin (python3 - <<EOF ...), which is the same capability as python -c and is graded as one bypasses the plan-first gate: plugins/audit/scripts/governance/run-test-gate.py (in the linked worktree ...) ... This path is outside the running task's `files` ... This writer's one free file was already spent on plugins/audit/scripts/governance/_affected_tests.py' - the earlier heredoc edit of _affected_tests.py was graded as the free file; the same run-test-gate.py change was then made with the Edit tool, which the gate allowed (it had already allowed an Edit of that file). The gate's 'outside the running task's files' reading in the linked worktree contradicts the brief's file list; worth a look. A first draft reused id ctw80 (already used at line 1541); the suite's duplicate-id check caught it and the case is ctw86.",
+    "descriptive": "A task whose gate is narrower than its phase's now commits on its own green verdict: the affected steps the recorder adds are measured, not declared, and one function in _evidence_io says so for both recorder and committer."
+  },
+  "testsAdded": [
+    "test__verdict_binding.py vb34 a recorded row whose steps are the declared entries followed by affected/related and affected/python steps has no gate mismatch, while a row whose declared part differs, or whose gateDigest differs, still has one",
+    "test_commit_task_work.py ctw86 on a fixture plan with a derived phase gate, a green recorded run of a narrower task gate commits without --override-verdict"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test__verdict_binding.py: a recorded row whose steps are the declared entries followed by affected/related and affected/python steps has no gate mismatch, while a row whose declared part differs, or whose gateDigest differs, still has one": {
+      "file": "plugins/audit/scripts/governance/_evidence_io.py",
+      "find": "    return names[:cut], dropped if cut == len(names) else 0\n",
+      "replace": "    return names, dropped\n",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__verdict_binding.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test_commit_task_work.py: on a fixture plan with a derived phase gate, a green recorded run of a narrower task gate commits without --override-verdict": {
+      "file": "plugins/audit/scripts/governance/_evidence_io.py",
+      "find": "    return names[:cut], dropped if cut == len(names) else 0\n",
+      "replace": "    return names, dropped\n",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "--selftest",
+        "--stage",
+        "ag-block"
+      ]
+    }
+  },
+  "claims": "claims:\n1 _evidence_io.py declared_steps() is the split its docstring describes; _verdict_binding.gate_mismatch calls it on the row; run-test-gate.py derives declared_commands (gateDigest input) from it; the 'prefix is reserved' comment checked by hand: entry 'affected/x' -> recorder digest None, committer len mismatch -> refused\n2 declared_steps returning names unsplit -> vb34 red 39/40, ctw86 red 0/1 (scratch copy, pycache purged); both red on base before the fix too; second direction held inside vb34 (declared part, widened, narrowed, digest, source, interleaved all still refuse)\n3 grep -rn 'affected/' plugins/audit/scripts plugins/audit/hooks: one hit (_evidence_io.py:408); grep STEP_PREFIX: two users (run-test-gate.py:2466, _affected_tests.py:361), both moved to the one constant; grep gate_mismatch: two callers in _verdict_binding.py, both through the fixed function\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded\n6 n/a - no guard reading command text; the comparison reads recorded step names against declared entries\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:12528cbfe5f690043d594387a56e0cd05138355811ed2992923494b50d787760\",\"dirtyDigest\":\"sha256:0f9a19df41edb74ff915317eefead8c26a4edf2876d6c54b96e7d947837c20dd\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"b5fc9af8ed1cbd26\",\"plugins/audit/scripts/governance/_affected_tests.py\":\"4283bc41b8f816a6\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"6da212ae4aae4f84\",\"plugins/audit/scripts/governance/_verdict_binding.py\":\"1a74c9541422d175\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"f86f92538a5a00d0\",\"plugins/audit/tests/test__verdict_binding.py\":\"d04f2b7b4383ea13\",\"plugins/audit/tests/test_commit_task_work.py\":\"5a81bbd43036db94\"},\"head\":\"6220678a\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_affected_tests.py\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/_verdict_binding.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/tests/test__verdict_binding.py\",\"plugins/audit/tests/test_commit_task_work.py\",\"plugins/audit/tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:9d1dc8bba7f972485e4368b6ca4b616f193473a190921ce89d1b36f644aefcfc\",\"v\":2}"
+}
