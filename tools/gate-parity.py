@@ -1,64 +1,31 @@
 #!/usr/bin/env python3
 """
-Every description of the gate set must name the same gates.
+The workflow runs slices of the one runner, and every slice it names is real.
 
     tools/gate-parity.py            # the check
-    tools/gate-parity.py --list     # what each side invokes, side by side
+    tools/gate-parity.py --list     # each slice verify.sh lists, its tier, and the jobs running it
     tools/gate-parity.py --selftest # this file's own cases
 
-WHY. The gate set is described in more than one place by hand, and by the time
-anyone measured it the copies had drifted IN BOTH DIRECTIONS at once:
+WHY. The gate set used to be described four times by hand - `tools/verify.sh`,
+`.github/workflows/ci.yml` and two documents - and the copies drifted IN BOTH
+DIRECTIONS at once: the sweep existed twice with different strictness, vitest ran
+only in CI, vermin covered a different directory list on each side. This file held
+the copies together by reading each one's commands, the report checker's documents
+and the sweep's legs, and every CI change cost four edits plus that reader's
+fixtures.
 
-  * the selftest sweep existed twice with different strictness, so a file that
-    exited 0 having asserted nothing was green locally and red in CI;
-  * `npx vitest run` - 28 files, 305 tests - ran only in CI, so a change under
-    `scripts/ui/` could reach a push with none of its suites having run;
-  * `vermin` covered three directories locally and two in CI, so a 3.9+ construct
-    in a test file passed CI and failed locally.
+ONE EXECUTABLE DESCRIPTION NOW. Every CI job is setup plus one
+`tools/verify.sh --only <slices>` call, and the runner alone says what a slice
+runs - so the copies are gone rather than compared. What is left to hold is what
+the workflow says ABOUT the slices, and `slice_drift()` and `shard_matrix_drift()`
+hold it against `verify.sh --list`, asked of the real runner:
 
-Copies of one list are how that happens, and fixing each instance by hand is how it
-happens again. This makes the parity a CHECK: a gate named by one side and not by
-another fails the build, naming both.
+  * every slice a job names is one the list prints;
+  * every per-run slice is run by a job outside the release tier;
+  * a sharded slice's matrix runs every part 1..N on every runner it runs on.
 
-IT COMPARES FOUR SIDES, and every document among them was added because nothing had
-ever compared it. `verify.sh` and `ci.yml` were compared for a while and
-`CONTRIBUTING.md` was not - while saying of itself "the individual commands stay
-documented below, because they are the definition and the script is only a caller".
-A document that claims to be the definition owes every gate; it carried seven of
-thirteen when it was finally read.
-
-`CLAUDE.md` was that shape one file over, and it said so of ITSELF: its list carried
-the comment "this list, verify.sh and ci.yml, compared" while being the one side
-nothing here read. It named the sweep, this check, vitest, ruff and vermin; of the
-rest of the local set it named the two browser gates in prose only, and the hook
-import budget, the artifact comparison and the demo gate not anywhere in the
-document. The manifest and plugin-structure half it leaves out ON PURPOSE and says
-so - that split is rows in the table below now instead of one sentence covering an
-unmeasured remainder, and the remainder is exactly where it had rotted.
-
-WHAT IT COMPARES, AND WHY THAT GRAIN. The set of REPO SCRIPTS and NAMED EXTERNAL
-GATES each side invokes - not the full command lines. Arguments legitimately differ
-(CI renders into a throwaway `/tmp` tree; `verify.sh` checks the committed
-artifacts) and comparing them would produce noise that trains a reader to ignore
-this. What may never differ is WHICH checks exist.
-
-ONE TOOL IS COMPARED BY ARGUMENT TOO, because for it the argument IS the check: the
-report checker is one gate per document it is handed, and a runner that handed it
-fewer documents named the same tool while running fewer legs. That is how CI came
-to check a fresh render of this repo's own plan that no local run had opened.
-`report_target_drift()` compares the two runners' document sets, read off both
-files with the scratch root folded away.
-
-THE SWEEP IS COMPARED BY ARGUMENT FOR THE SAME REASON, because its flags are its
-legs: CI ran it a second time under a forced legacy codec and the local runner did
-not, so a suite that died only under that codec was green at every local run.
-`sweep_leg_drift()` compares the sets of legs each runner runs, with the flags
-that change how a leg runs rather than what it checks declared apart.
-
-EXEMPTIONS ARE DECLARED, WITH A REASON, AND ARE THEMSELVES CHECKED. An entry in
-either table below that names a gate neither side invokes any more is reported too -
-otherwise the tables become a place where dead exemptions accumulate and the check
-quietly stops covering what it claims.
+The documents point at `verify.sh --list` instead of listing commands, so there is
+no document side left to compare.
 
 IT ALSO HOLDS THE RULES THAT ARE NOT PARITY QUESTIONS, because it is already the
 thing that reads a runner - and a hand-maintained description of a machine-readable
@@ -70,10 +37,11 @@ here was a second reader of the same files:
     would share. `scratch_isolation()` has what went wrong when the paths were
     fixed, and why the scope is the directory rather than the runner alone.
   * every check the `--affected` selector NAMES must be one the runner can
-    DISPATCH. `affected_dispatch()` asks that of the real pair, and it is the
-    disagreement `parity()` cannot see: both files named the same gates while
-    disagreeing about which of them run, so a step the runner had no arm for was
-    dropped in silence and the summary went on calling the change covered.
+    DISPATCH. `affected_dispatch()` asks that of the real pair, and it is a
+    disagreement the slice rule cannot see: the two files once named the same
+    gates while disagreeing about which of them run, so a step the runner had no
+    arm for was dropped in silence and the summary went on calling the change
+    covered.
   * every family of environment variables the sweep points away from the machine,
     and every name it filters out of a child's environment or sets there, must be
     named by every document describing that isolation, and the sweep must
@@ -87,10 +55,13 @@ here was a second reader of the same files:
     and every wired hook-and-event pair must have a row. `failmode_table_drift()`
     says why that document's drift is a security claim rather than a stale
     paragraph, and why the second direction is what makes the first worth having.
+  * every CI job carries a time bound, two to three times the longest run its
+    `longest` line records (`untimed_jobs()`, `job_bound_evidence()`).
+  * every reason-carrying exemption table names who audits it
+    (`exemption_audit_drift()`).
 """
 import ast
 import fnmatch
-import glob
 import io
 import json
 import os
@@ -111,173 +82,12 @@ import _output  # noqa: E402
 
 _output.install_path()
 
-import _refs  # noqa: E402  (it owns "the runnable region of a document")
-
 VERIFY_REL = os.path.join("tools", "verify.sh")
 CI_REL = os.path.join(".github", "workflows", "ci.yml")
 DOC_REL = "CONTRIBUTING.md"
 CLAUDE_REL = "CLAUDE.md"
 
-# (label, path). The label is what a finding names and what a table row exempts, so
-# it is short on purpose - a reader should not have to know the path to read the
-# reason.
-SIDES = (("verify.sh", VERIFY_REL), ("ci.yml", CI_REL),
-         ("CONTRIBUTING.md", DOC_REL), ("CLAUDE.md", CLAUDE_REL))
-
-# A repo script invoked as a command. Anchored on the two directories that hold
-# them, so a bare basename in prose is not mistaken for an invocation.
-_SCRIPT_RE = re.compile(
-    r"(?:tools|plugins/audit/(?:scripts|hooks))/[A-Za-z0-9_./-]+\.(?:py|mjs|sh)")
-
-# Gates that are not a file in this repo. Each is a fixed label rather than a
-# command, because their spellings legitimately differ (`npx --yes ajv-cli` here,
-# a pinned install there) while the gate is the same gate.
-_EXTERNAL = (
-    ("npx vitest", re.compile(r"\bvitest run\b")),
-    ("ruff", re.compile(r"\bruff check\b")),
-    ("vermin", re.compile(r"\bvermin -t=")),
-    ("ajv-cli", re.compile(r"\bajv-cli validate\b")),
-    ("claude plugin validate", re.compile(r"\bclaude plugin validate\b")),
-)
-
-# FOUR SIDES, and one table that can express all of them. `CI_ONLY` and `LOCAL_ONLY`
-# were two tables for two sides, and adding CONTRIBUTING.md as a third would have
-# needed a third - with a gate absent from two sides needing an entry in each. One
-# row per gate, listing the sides it is legitimately absent FROM, and a reason a
-# reader can disagree with. The fourth side then cost this table ROWS and not a
-# shape, which is the argument for the shape.
-#
-# Both documents are here because each claims to be the definition. CONTRIBUTING.md
-# says of itself: "The individual commands stay documented below, because they are
-# the definition and the script is only a caller." CLAUDE.md's list says "which
-# remain the definition". A document that claims that owes every gate it does not
-# hand to another document IN WRITING - and the writing is what the rows below are.
-
-# THE SIDES A ROW USUALLY NAMES, named once. A CI-only smoke test is absent from
-# every description of the LOCAL set for one reason, and spelling the labels into
-# each such row is how one of them gets forgotten the next time a side is added -
-# which is most of how CLAUDE.md came to be uncompared in the first place.
-DOC_SIDES = ("CONTRIBUTING.md", "CLAUDE.md")
-LOCAL_SIDES = ("verify.sh",) + DOC_SIDES
-
-ABSENT_BY_DESIGN = (
-    # DOC_SIDES, not LOCAL_SIDES: `verify.sh` runs the rendered-plan legs CI runs,
-    # and some of them start from this generator's tree, so it invokes this for real.
-    ("plugins/audit/scripts/demo/gen-demo-manifest.py", DOC_SIDES,
-     "builds the throwaway demo tree the derived report legs start from; "
-     "verify.sh runs those legs, and the documents hand them to it rather than "
-     "listing a generator nobody types by hand"),
-    # `gen-demo-usage.py` WAS EXEMPT HERE, on the reason "same throwaway demo tree",
-    # and that sentence described a different check. Two of its three runs in
-    # ci.yml do build a throwaway tree; the third regenerates the COMMITTED example
-    # ledger and diffs it against what the repository ships. Nothing local asked, so
-    # a phase added to the example desynchronised the two and the failure surfaced
-    # only after a release commit had been built, tagged and pushed.
-    #
-    # `verify.sh` runs that third one now, so there is no absence left to excuse —
-    # which is why this is a deletion rather than a better sentence. The GENERAL
-    # defect the entry names is still open: nothing compares an exemption's REASON
-    # against what the other side actually does, so a row can stay green while its
-    # sentence stops being true.
-    # DOC_SIDES for the same reason: the rendered-plan legs render with it.
-    ("plugins/audit/scripts/report/render-report.py", DOC_SIDES,
-     "renders throwaway reports for the report checker, which verify.sh's "
-     "rendered-plan legs do exactly as CI does, and the documents hand those "
-     "legs to verify.sh; where a CI step compares committed artifacts, the "
-     "local equivalent is "
-     "check-rendered-artifacts.py, which is stronger because it compares bytes"),
-    ("plugins/audit/scripts/status/audit-doctor.py", LOCAL_SIDES,
-     "an end-to-end CLI smoke test over a fixture project"),
-    # DOC_SIDES, not LOCAL_SIDES: `verify.sh --release` now invokes this for real,
-    # asking `--fail-on open-bugs` before a version goes out, so declaring it
-    # absent from that side became a row that excused nothing. What stays absent
-    # is the DOCUMENTS' account of the per-commit set, and for the original
-    # reason - CI exercises --gate's exit codes across a fixture manifest per
-    # case, which is a matrix rather than a gate a person runs.
-    ("plugins/audit/scripts/status/audit-status.py", DOC_SIDES,
-     "exercises --gate's exit codes, which need a fixture manifest per case; the "
-     "release preflight in verify.sh invokes it for the open-bug question and is "
-     "therefore no longer exempt"),
-    ("plugins/audit/hooks/py-launch.sh", LOCAL_SIDES,
-     "the launcher is driven directly with fixture projects and with PATH unset, to "
-     "prove the WIRING rather than decide(): the interpreter fallback, the stdin "
-     "contract and the emitted JSON. Neither unsetting PATH nor feeding three "
-     "fixture manifests is a thing to do to a developer's shell. The hooks it drives "
-     "are ARGUMENTS to it, not paths, so this one entry covers all of them"),
-    ("tools/affected.py", ("ci.yml",) + DOC_SIDES,
-     "a SELECTOR, not a gate: it narrows a local run and CI never narrows. Its own "
-     "cases DO run on every side - inside the sweep, which covers tools/ - so what "
-     "is exempt is the narrowing, not the checking of it"),
-    ("tools/verify.sh", ("verify.sh", "ci.yml", "CLAUDE.md"),
-     "the caller. CONTRIBUTING.md names it as the one command to run; it does not "
-     "invoke itself, and CI runs the gates rather than the wrapper. CLAUDE.md names "
-     "it in the prose ABOVE its list, and the list is by construction the commands "
-     "it calls"),
-
-    # THE SPLIT BETWEEN THE TWO DOCUMENTS, per gate instead of per sentence.
-    # CLAUDE.md's Tests section says CONTRIBUTING.md "has the manifest and
-    # plugin-structure checks that complete the pre-PR set", and CLAUDE.md's own
-    # preamble says it "deliberately restates no procedure, because two copies of a
-    # procedure is one copy and one lie". That sentence is a real division of labour
-    # and these rows are it, said gate by gate - because as one sentence it also
-    # covered an unmeasured remainder, and the remainder had rotted: the hook import
-    # budget, the artifact comparison and the demo gate were in neither half.
-    ("plugins/audit/scripts/manifest/validate-manifest.py", ("CLAUDE.md",),
-     "a manifest check, and CLAUDE.md hands the manifest half to CONTRIBUTING.md, "
-     "whose list carries both invocations with the reasoning. CLAUDE.md's hard rules "
-     "do name this script - as the thing every mutating command must call, which is "
-     "the rule and not the gate"),
-    ("ajv-cli", ("CLAUDE.md",),
-     "the manifest's JSON Schema: same half, handed to the same document"),
-    ("claude plugin validate", ("CLAUDE.md",),
-     "the plugin and marketplace structure: same half, same document"),
-
-    # NAMED BY CLAUDE.md ALONE, AND NEITHER IS A GATE. Both print and exit 0, so
-    # there is nothing for a runner to fail on. They need rows because a side that
-    # names them makes them reportable - which is the whole difference the fourth
-    # side made to this table.
-    ("tools/count-ui-pins.py", ("verify.sh", "ci.yml", "CONTRIBUTING.md"),
-     "a REPORT, not a gate - its own usage says `Exit codes: 0 always`. It prints "
-     "the change budget for an edit under scripts/ui/, which is a thing to read "
-     "before starting and not a thing to fail. Its own cases run in the sweep, "
-     "which covers tools/"),
-    # THE ONLY GATE HERE THAT LEAVES THE MACHINE, and the row says which side it is
-    # absent from and why rather than leaving the absence to be read as an oversight.
-    ("tools/check-release-published.py", ("ci.yml",),
-     "it asks GitHub's API whether the newest published tag has a Release and "
-     "whether Latest names it, and what that answers changes once per release. A "
-     "workflow calling the API on every push would spend the repository's rate "
-     "limit re-deriving a fact that cannot have moved, and would go red for a "
-     "network it does not control on changes that have nothing to do with "
-     "releasing. It belongs to the release set: verify.sh runs it under --release "
-     "alone, and both documents name it in their Releasing sections. This row goes "
-     "stale the day a workflow that runs at release time - a tag-triggered one - "
-     "adopts it, which is the shape that would make it a CI gate honestly"),
-
-    ("tools/check-example-pins.py", ("ci.yml",),
-     "it asks the repository's tags whether the tag an example pins holds every "
-     "plugin script the example calls, and a CI checkout does not promise to carry "
-     "tags - a run there would refuse for a clone it does not control. It belongs "
-     "to the release set: verify.sh runs it under --release alone, as the example "
-     "follower of a version bump, and both documents name it in their Releasing "
-     "sections. This row goes stale the day the CI checkout fetches tags"),
-
-    ("tools/check-plan-gate-e2e.py", ("CLAUDE.md",),
-     "the plan gate's tiers through the launcher: ci.yml's e2e step, verify.sh and "
-     "CONTRIBUTING.md name it, and its cases run in the sweep, which covers tools/. "
-     "CLAUDE.md's list does not name the other launcher-driven checks "
-     "either, and this row goes stale the day that list names this one"),
-
-    ("tools/prove-gates.py", ("verify.sh", "ci.yml", "CONTRIBUTING.md"),
-     "minutes rather than seconds, and it MUTATES the tree while it runs, so it is "
-     "not a per-commit gate. This was once the argument for no row at all: a gate no "
-     "side named could never be reported missing, so the row would have asserted "
-     "nothing. That premise died with the fourth side - CLAUDE.md carries the "
-     "command, so this row now goes stale the day one of the other three adopts it"),
-)
-
-
-# --- reading each side's gate set --------------------------------------------
+# --- reading a runner's commands ---------------------------------------------
 def _shell_command_lines(text):
     """Every line of a shell script that could be a command.
 
@@ -290,68 +100,6 @@ def _shell_command_lines(text):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        out.append(line.split(" #")[0].strip())
-    return out
-
-
-def _yaml_run_lines(text):
-    """Only what a workflow actually RUNS: `run:` values and their block scalars.
-
-    NOT every non-comment line, which is what this did first - and a step whose
-    `name:` mentioned a tool registered as an invocation of it, so renaming a step
-    changed the gate set. A workflow is mostly keys; the commands live in exactly
-    one of them.
-
-    An inline `run: cmd` contributes its remainder; a block form (`run: |`)
-    contributes every following line indented deeper than the `run:` key itself,
-    which is what ends the block in YAML.
-    """
-    out = []
-    depth = None
-    for line in text.splitlines():
-        stripped = line.strip()
-        indent = len(line) - len(line.lstrip())
-        if depth is not None:
-            if stripped and indent <= depth:
-                depth = None
-            elif not stripped or not stripped.startswith("#"):
-                out.append(line.split(" #")[0].strip())
-                continue
-        if stripped.startswith("#"):
-            continue
-        match = re.match(r"(\s*)run:\s*(.*)$", line)
-        if match:
-            depth = len(match.group(1))
-            rest = match.group(2).strip()
-            if rest and rest not in ("|", ">", "|-", ">-", "|+", ">+"):
-                out.append(rest)
-    return out
-
-
-def _markdown_fence_lines(rel, text):
-    """The fenced blocks of a Markdown document - what it tells a reader to RUN.
-
-    `_refs._runnable_text` already owns this question for the sweep-shape rule, and
-    a second definition of "the runnable region of a document" is how two rules come
-    to disagree about what a document says. Borrowed, not rewritten.
-
-    `rel` is a parameter and not `DOC_REL` because it was `DOC_REL`: hard-coding the
-    one Markdown side made a second one unaddable, which is a small reason a document
-    claiming to be the definition went uncompared for as long as it did. Only the
-    extension is read from it.
-    """
-    runnable, problem = _refs._runnable_text(rel, text)
-    if problem is not None or runnable is None:
-        return []
-    out = []
-    for line in runnable.split("\n"):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        # Cut the TRAILING comment too, exactly as `_shell_command_lines` does. It did
-        # not, so a fenced command annotated `# see tools/foo.mjs` named a gate on this
-        # side while the identical annotation in verify.sh did not - and a list a
-        # reader is meant to annotate is precisely what this side is.
         out.append(line.split(" #")[0].strip())
     return out
 
@@ -569,8 +317,8 @@ def reasonless_scratch_exemptions():
 
 
 # --- does the runner run what the selector names? -----------------------------
-# THE OTHER DISAGREEMENT BETWEEN TWO FILES THAT DESCRIBE ONE GATE SET, and the one
-# `parity()` above cannot see: `--affected` narrows a local run to what the working
+# A DISAGREEMENT BETWEEN TWO FILES ABOUT ONE GATE SET that the slice rule cannot
+# see, because it never runs the selector: `--affected` narrows a local run to what the working
 # tree needs, and `affected.py` chooses the checks while `verify.sh` dispatches
 # them. The dispatcher matched three command prefixes; the selector emits a fourth
 # for any change under `commands/`, `skills/` or `agents/`, so that step matched no
@@ -591,7 +339,7 @@ AFFECTED_PROBES = (
     # python nor node. Without this probe the check below is green over a command
     # set that never contained the failing shape.
     "plugins/audit/commands/status.md",
-    # A report part: the JavaScript suites, the three report gates, the artifacts.
+    # A report part: the JavaScript suites, the report gates, the artifacts.
     "plugins/audit/scripts/ui/report/areas.js",
     # A panel part: the browser gate that runs a real server.
     "plugins/audit/scripts/ui/panel/boot.js",
@@ -714,7 +462,7 @@ def affected_dispatch(repo=None):
 # can only ever report a stray, never a deletion.
 SWEEP_REL = os.path.join("tools", "sweep-selftests.py")
 
-# (label, path). The label is what a finding names, as in SIDES above.
+# (label, path). The label is what a finding names.
 ISOLATION_SIDES = (("CLAUDE.md", CLAUDE_REL),
                    ("CONTRIBUTING.md", DOC_REL),
                    ("tests/_harness.py",
@@ -1222,8 +970,8 @@ def sweep_roots_drift(repo=None):
 # a wired pair NO row describes: without it, DELETING a row makes the table agree
 # with itself, and a description that shrinks quietly is the failure this repo keeps
 # finding. A row describing a pair nothing wires any more is reported too, for the
-# reason `compare()` reports a dead exemption - an account of a state that has
-# passed stays green for ever.
+# reason a dead exemption is - an account of a state that has passed stays green
+# for ever.
 #
 # AND THE EVENT DECIDES WHETHER A LOUD FALLBACK IS EVEN POSSIBLE. The launcher's
 # prompt is a `permissionDecision`, and the JSON it prints names the one event that
@@ -1439,9 +1187,9 @@ def failmode_findings(rows, wired, contract):
     """[(subject, note)] for every disagreement between a table and a wiring.
 
     Pure over the PARSED pair, so a case can hand it a table and a wiring that
-    differ in exactly one place - the reason `compare()` above takes gate sets
-    rather than a repo path. Building two real trees to move one cell would be a
-    case about the readers wearing a case about the rule.
+    differ in exactly one place rather than a repo path. Building two real trees
+    to move one cell would be a case about the readers wearing a case about the
+    rule.
     """
     loud = contract["loud"]
     decision = contract["decision_event"]
@@ -1557,614 +1305,152 @@ def failmode_table_drift(repo=None):
                             wired=reg["wired"], contract=contract)
 
 
-# --- which documents each runner hands the report checker ----------------------
-# `compare()` asks WHICH tools a side calls, and that grain is deliberate: arguments
-# legitimately differ. It is also exactly the grain at which a missing leg hides.
-# `verify.sh` called the report checker for as long as CI did, on the committed
-# reports alone, while CI also rendered this repo's own plan and checked THAT - so
-# both sides named the checker, parity was perfect, and CI went red on a shape of
-# report no local run had ever opened.
+# --- the slices ci.yml runs, against the slices verify.sh lists ----------------
+# ONE EXECUTABLE DESCRIPTION. ci.yml used to carry the gate set as inline shell, and
+# this file held hand-maintained copies of it together - the runner, the workflow and
+# two documents - by reading each one's commands, the report checker's documents and
+# the sweep's legs. Every CI job is now setup plus one `verify.sh --only` call, so the
+# workflow names SLICES and the runner alone says what a slice runs. What is left to
+# hold is what the workflow says about the slices:
 #
-# So this asks the argument question for the one tool where the argument IS the
-# leg: the set of documents each runner hands the checker must be the same set.
-# Compared after the normalisations below and nothing else, each read off the
-# files themselves rather than listed here:
+#   * every slice a job names is one `verify.sh --list` prints - a misspelt or
+#     retired name is otherwise refused by the runner on the day the job runs;
+#   * every per-run slice is run by some job outside the release tier, so no gate
+#     the runner defines is one an ordinary CI run never reaches;
+#   * a sharded slice's matrix runs every part 1..N, on every runner it runs on.
 #
-#   * a shell variable is expanded from the assignment or `for` loop the file
-#     itself carries, nearest one above the call - so `"$f"` over a list and a
-#     committed path written out are the same document;
-#   * a SCRATCH ROOT is replaced by one placeholder. CI's is the literal `/tmp/`;
-#     a runner's is whichever variable it assigns from `$(mktemp ...)`. Everything
-#     under the root - the directory names, the file names - is compared as
-#     written, which is what makes a leg's name its key.
-#
-# A target that cannot be resolved is a named PROBLEM and not a match or a miss:
-# an unexpanded `$x` compared with anything would say something false either way.
-#
-# A CALL IS FOUND BY READING THE LINE AS SHELL, not by matching one literal on it.
-# The line is split into its commands on the list and pipe operators, a subshell's
-# parentheses and a brace group's braces; redirections and their targets are
-# dropped; a command's leading keywords (`if`, `do`, `!` ...) are stripped; and a
-# word naming the tool - after expansion and with a leading `./` removed - is a
-# call when the word before it, past any interpreter options, is the interpreter
-# or a variable standing for one. A regex over the line read the first call alone,
-# missed `./` and a path or interpreter held in a variable, and took an
-# env-prefixed command for an assignment - each of which read as agreement,
-# because the plain call on another line kept the "no call" guard quiet.
-#
-# EVERY MENTION IS ACCOUNTED FOR. A word naming the tool that is not a call this
-# reader can shape is a problem naming the line. WHAT IT CANNOT SEE, said rather
-# than implied: a call inside a quoted string handed to another shell
-# (`sh -c "..."`) is one word with spaces in it, and is read as text - the
-# `--affected` dispatcher's `case` patterns are that shape and are text.
-REPORT_CHECKER = "tools/check-report-interactive.mjs"
-TARGET_SIDES = ("verify.sh", "ci.yml")
-SCRATCH = "<scratch>"
-
-_ASSIGN_RE = re.compile(r"^(?:local\s+|export\s+)?([A-Za-z_]\w*)=(.*)$")
-_MKTEMP_RE = re.compile(r"^\$\(\s*mktemp\b")
-_FOR_RE = re.compile(r"^for\s+([A-Za-z_]\w*)\s+in\s+(.*?)\s*;\s*do\b")
-# EXACTLY TWO angle brackets. A here-string (`<<<`) contains the same pair and
-# feeds one word to its command; read as a heredoc, that word became a terminator
-# no line ever matched, and everything after it vanished without a finding.
-_HEREDOC_RE = re.compile(r"(?<!<)<<(?!<)-?\s*['\"]?([A-Za-z_]\w*)['\"]?")
-_VAR_RE = re.compile(r"\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))")
-# The characters shlex groups into operator tokens. A token made only of them is
-# a list, pipe or grouping operator - or, holding an angle bracket, a redirection.
-_OPERATOR_CHARS = "();<>|&"
-# A file-descriptor number glued to a redirection (`2>&1`). shlex splits it off as
-# a word of its own, which would put a `2` into a leg.
-_FD_RE = re.compile(r"(^|[\s;&|(])\d+(?=[<>])")
-_ENV_WORD_RE = re.compile(r"^[A-Za-z_]\w*=")
-# Words that open a command without being it - a keyword, a negation, or a
-# builtin that runs the rest of the line as the command.
-_LEADING_WORDS = ("if", "then", "else", "elif", "do", "while", "until", "!",
-                  "time", "exec", "command", "env")
-_PYTHON_RE = re.compile(r"^(?:.*/)?python[0-9.]*(?:\.exe)?$")
-# Interpreter options that take the next word as their value (`-X utf8`).
-_INTERPRETER_VALUED = ("-X", "-W")
+# `--list` is ASKED of the real runner rather than parsed out of its text, because
+# the list is what a run executes - `run` prints instead of running under it - and
+# a second reading of the file would be a second description of it.
+VERIFY_LIST_TIMEOUT = 60
+_SLICE_LINE = re.compile(r"^  ([a-z0-9][a-z0-9-]*) \((per-run|release)\)$")
+_STEP_LINE = re.compile(r"^    (\S.*)$")
+_RELEASE_TIER_IF = re.compile(r"inputs\.tier\s*==\s*'release'")
+_EXPR = re.compile(r"\$\{\{\s*(.*?)\s*\}\}")
+_MATRIX_WORD = re.compile(r"\$\{\{matrix\.([A-Za-z0-9_-]+)\}\}")
+_VERIFY_CALL = re.compile(r"(?:^|[\s;&|(])(?:\./)?tools/verify\.sh(?=\s|$)(.*)$",
+                          re.M)
+_CALL_END = re.compile(r"\s(?:;|&&|\|\||\||#|>|<)")
 
 
-def _logical_lines(lines):
-    """Command lines with `\\` continuations joined and heredoc bodies dropped.
+def _output_tail(text, lines=6):
+    return "\n".join(text.strip().splitlines()[-lines:])
 
-    Joined because CI writes a `for` over several documents across several lines,
-    and one line of it names none of them. Heredocs dropped because their body
-    is another language's text - a Python `for phase in plan:` inside one is not a
-    shell loop, and read as one it would bind a variable the shell never sees.
-    """
-    out = []
-    pending = ""
-    ending = None
-    for line in lines:
-        if ending is not None:
-            if line.strip() == ending:
-                ending = None
+
+def parse_verify_list(text):
+    """{"order", "tiers", "steps"} read off `verify.sh --list`, or None when the
+    text holds no slice: a list that printed nothing must not read as a runner
+    with no slices to hold a workflow to."""
+    order, tiers, steps = [], {}, {}
+    current = None
+    for line in text.splitlines():
+        got = _SLICE_LINE.match(line)
+        if got:
+            current = got.group(1)
+            order.append(current)
+            tiers[current] = got.group(2)
+            steps[current] = []
             continue
-        if line.endswith("\\"):
-            pending += line[:-1].rstrip() + " "
-            continue
-        full = (pending + line).strip()
-        pending = ""
-        match = _HEREDOC_RE.search(full)
-        if match:
-            ending = match.group(1)
-        out.append(full)
-    if pending.strip():
-        out.append(pending.strip())
-    return out
-
-
-def _strip_leading(words):
-    """`words` past the keywords that open a command without being it."""
-    i = 0
-    while i < len(words) and words[i] in _LEADING_WORDS:
-        i += 1
-    return words[i:]
-
-
-def _shell_commands(line):
-    """[[word, ...]] - one list per command on a logical line - or None.
-
-    PUNCTUATION IS ITS OWN TOKEN. `shlex.split` keeps a trailing `;` on the word
-    before it, so `if node <checker> /tmp/x.html; then` named a document called
-    `x.html;` and disagreed with the same call written bare. Every operator token
-    ends the command it follows, a subshell's `)` included; a redirection drops
-    itself and its target. None when the line does not tokenise at all, which is
-    not the same answer as a line holding no command.
-    """
-    lexer = shlex.shlex(_FD_RE.sub(r"\1", line), posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
-    try:
-        tokens = list(lexer)
-    except ValueError:
+        step = _STEP_LINE.match(line)
+        if step and current is not None:
+            steps[current].append(step.group(1))
+    if not order:
         return None
-    commands = []
-    current = []
-    skip = False
-    for token in tokens:
-        if skip:
-            skip = False
-            continue
-        if token and all(c in _OPERATOR_CHARS for c in token):
-            if "<" in token or ">" in token:
-                skip = True
-                continue
-            commands.append(current)
-            current = []
-            continue
-        if token in ("{", "}"):
-            commands.append(current)
-            current = []
-            continue
-        current.append(token)
-    commands.append(current)
-    return [c for c in (_strip_leading(c) for c in commands) if c]
+    return {"order": order, "tiers": tiers, "steps": steps}
 
 
-def _is_python(word):
-    return bool(_PYTHON_RE.match(word)) or word.startswith("$")
-
-
-def _is_node(word):
-    return word == "node" or word.startswith("$")
-
-
-def _interpreter_options(words):
-    """True when `words` are all interpreter options, `-X utf8` counted as one."""
-    i = 0
-    while i < len(words):
-        if not words[i].startswith("-"):
-            return False
-        i += 2 if words[i] in _INTERPRETER_VALUED else 1
-    return i == len(words)
-
-
-def _loop_choices(words, bound):
-    """Every expansion of `words`: a bare loop variable stands for each loop word.
-
-    A list of word lists - one per combination - so a leg or a target written
-    over a loop is compared as each value the loop gives it, as written out.
-    """
-    choices = [[]]
-    for word in words:
-        bare = _VAR_RE.fullmatch(word)
-        name = bare and (bare.group(1) or bare.group(2))
-        if name and name in bound["loops"] and bound["loops"][name]:
-            alts = bound["loops"][name]
-        else:
-            alts = [_expand(word, bound["assigns"], bound["scratch"])]
-        choices = [done + [alt] for done in choices for alt in alts]
-    return choices
-
-
-def _strip_dot(word):
-    while word.startswith("./"):
-        word = word[2:]
-    return word
-
-
-def tool_calls(lines, tool, is_interpreter):
-    """{"calls": [(env, options, args)], "unresolved": [line]} for one runner.
-
-    Every command on every logical line is read; a call is shaped as the env
-    prefix it runs under, the interpreter options before the tool and the words
-    after it, each expanded through the file's own variables. A word naming the
-    tool that is not a call this reader can shape - no interpreter before it, or a
-    path it cannot expand - is unresolved, never skipped.
-    """
-    name = os.path.basename(tool)
-    calls = []
-    unresolved = []
-    for line, bound, commands in _shell_scan(lines):
-        if commands is None:
-            if name in line:
-                unresolved.append(line)
-            continue
-        for words in commands:
-            for expanded in _loop_choices(words, bound):
-                mentions = [i for i, w in enumerate(expanded)
-                            if name in w and not re.search(r"\s", w)]
-                if not mentions:
-                    continue
-                at = mentions[0]
-                if _strip_dot(expanded[at]) != tool:
-                    unresolved.append(line)
-                    continue
-                starts = [k for k in range(at - 1, -1, -1)
-                          if is_interpreter(expanded[k])
-                          and _interpreter_options(expanded[k + 1:at])]
-                if not starts:
-                    unresolved.append(line)
-                    continue
-                k = starts[0]
-                env = []
-                for word in expanded[:k]:
-                    if not _ENV_WORD_RE.match(word):
-                        break
-                    env.append(word)
-                calls.append((tuple(env), tuple(expanded[k + 1:at]),
-                              list(expanded[at + 1:])))
-    return {"calls": calls, "unresolved": unresolved}
-
-
-def _shell_scan(lines):
-    """Yield `(line, bindings, commands)` for every logical line not a bare assignment.
-
-    `bindings` is {"assigns", "scratch", "loops"} as the file has built it by that
-    line - the variables it assigned one word, the ones it assigned a `mktemp`
-    directory, and the word lists its `for` loops bind. One reader of a runner's
-    variables, so two questions asked of the same file cannot disagree about what
-    `$x` means in it. The dict is the scan's own state and is advanced between
-    yields; a consumer reads it and never writes it. `commands` is
-    `_shell_commands(line)`.
-
-    `NAME=val cmd ...` IS A COMMAND, not an assignment: when words follow the
-    value, the line runs `cmd` with `NAME` in its environment, and it is yielded
-    like any other line. Read as an assignment, it bound nothing and swallowed the
-    call.
-    """
-    bindings = {"assigns": {}, "scratch": set(), "loops": {}}
-    for line in _logical_lines(lines):
-        assign = _ASSIGN_RE.match(line)
-        if assign:
-            name, value = assign.group(1), assign.group(2).strip()
-            if _MKTEMP_RE.match(value):
-                bindings["scratch"].add(name)
-                continue
-            try:
-                parts = shlex.split(value)
-            except ValueError:
-                parts = []
-            if len(parts) == 1:
-                bindings["assigns"][name] = parts[0]
-                continue
-            if len(parts) < 2 or value.startswith("$("):
-                continue
-        loop = _FOR_RE.match(line)
-        if loop:
-            try:
-                words = shlex.split(loop.group(2))
-            except ValueError:
-                words = []
-            expanded = []
-            for word in words:
-                expanded.extend(_expand(word, bindings["assigns"],
-                                        bindings["scratch"]).split())
-            bindings["loops"][loop.group(1)] = expanded
-        yield line, bindings, _shell_commands(line)
-
-
-def _expand(word, assigns, scratch_vars, depth=0):
-    """`word` with every variable the file assigns substituted, the scratch root
-    folded to one placeholder. A variable the file never assigns is left as
-    written, which the caller reports rather than compares."""
-    def sub(match):
-        name = match.group(1) or match.group(2)
-        if name in scratch_vars:
-            return SCRATCH
-        if name in assigns and depth < 8:
-            return _expand(assigns[name], assigns, scratch_vars, depth + 1)
-        return match.group(0)
-    text = _VAR_RE.sub(sub, word)
-    if text.startswith("/tmp/"):
-        text = SCRATCH + text[len("/tmp"):]
-    return text
-
-
-def report_targets(lines):
-    """{"targets": set, "unresolved": [raw], "calls": int} for one runner's lines.
-
-    `calls` is returned beside the set so a reader that found NO call - a renamed
-    checker, a reader that stopped matching - is told apart from a runner that
-    genuinely checks nothing.
-    """
-    found = tool_calls(lines, REPORT_CHECKER, _is_node)
-    targets = set()
-    unresolved = list(found["unresolved"])
-    for _env, _options, args in found["calls"]:
-        target = next((w for w in args if not w.startswith("-")), None)
-        if target is None:
-            unresolved.append(" ".join([REPORT_CHECKER] + args))
-        elif "$" in target:
-            unresolved.append(target)
-        else:
-            targets.add(target)
-    return {"targets": targets, "unresolved": unresolved,
-            "calls": len(found["calls"])}
-
-
-def _side_lines(path):
-    text = io.open(path, encoding="utf-8").read()
-    if path.endswith((".yml", ".yaml")):
-        return _yaml_run_lines(text)
-    return _shell_command_lines(text)
-
-
-def _read_runners(repo):
-    """({label: command lines} for the two runners, problem or None).
-
-    Shared by every argument question below, so the runners are located and read
-    one way and an unreadable one is a problem in each rather than an empty side.
-    """
+def verify_list(repo=None):
+    """(parsed `--list`, problem) for the runner itself; exactly one is None."""
     root = repo or REPO
-    read = {}
-    for label, rel in SIDES:
-        if label not in TARGET_SIDES:
-            continue
-        try:
-            read[label] = _side_lines(os.path.join(root, rel))
-        except (IOError, OSError, UnicodeDecodeError) as exc:
-            return {}, "%s could not be read, so no argument of it can be " \
-                       "compared: %s" % (rel, exc)
-    return read, None
-
-
-def report_target_drift(repo=None, read=None):
-    """{"findings": [(target, side, note)], "problem": str or None}.
-
-    `read` maps a side label to its command lines, so a case can hand over two
-    runners that differ in one document without building a tree. `problem` is not
-    None when the question could not be asked: an unreadable side, a side with no
-    call to the checker, or a target this reader could not resolve - each of which
-    would otherwise come back as an empty finding list, the shape of agreement.
-    """
-    if read is None:
-        read, problem = _read_runners(repo)
-        if problem is not None:
-            return {"findings": [], "problem": problem}
-    got = {}
-    for label in TARGET_SIDES:
-        answer = report_targets(read.get(label, []))
-        if not answer["calls"]:
-            return {"findings": [], "problem": "no call to %s was found in %s, so "
-                    "an empty comparison here would read as agreement"
-                    % (REPORT_CHECKER, label)}
-        if answer["unresolved"]:
-            return {"findings": [], "problem": "%s hands %s a target this reader "
-                    "cannot resolve (%s) - teach the file an assignment it can "
-                    "read, or this reader the form" % (label, REPORT_CHECKER,
-                                                       answer["unresolved"][0])}
-        got[label] = answer["targets"]
-    findings = []
-    for label in TARGET_SIDES:
-        others = set()
-        for other in TARGET_SIDES:
-            if other != label:
-                others |= got[other]
-        for target in sorted(others - got[label]):
-            findings.append((target, label,
-                             "the other runner hands this document to %s and this "
-                             "one does not, so a green here never opened it"
-                             % (REPORT_CHECKER,)))
-    return {"findings": findings, "problem": None}
-
-
-def report_target_verdict(repo=None):
-    """`report_target_drift()` as findings, with a question nobody could ask AS one."""
-    got = report_target_drift(repo)
-    if got["problem"] is not None:
-        return [(REPORT_CHECKER, "-", got["problem"])]
-    return got["findings"]
-
-
-# --- which legs of the sweep each runner runs -----------------------------------
-# The same blind spot as the report checker's, one tool over. CI runs the selftest
-# sweep a second time with a forced legacy codec, because a pipe on Windows is not
-# UTF-8 and a suite that prints a character the codec cannot spell dies there. The
-# local runner ran the sweep once, with no codec, so both sides named the sweep,
-# parity was perfect, and a fixture that failed only under the codec went red on
-# CI having been green at every local run.
-#
-# A LEG IS AN INVOCATION'S FLAGS, compared as a set, together with the env prefix
-# and the interpreter options it runs under (`leg_name()` says why), found by the
-# same shell reader the report targets are. Two normalisations and nothing else:
-# `--name=value` and `--name value` are one flag, and a value is expanded through
-# the runner's own variables - a loop variable into one leg per loop word. Every
-# flag the sweep reads defines a leg UNLESS `NOT_LEG_FLAGS` below says why it does
-# not - so a flag added to the sweep tomorrow is compared by default, and leaving it
-# out takes a sentence somebody can disagree with. The other default, a list of
-# flags that DO make a leg, would let a new leg-defining flag pass unread.
-#
-# Which flags take a value is read off the sweep itself, from its own
-# `_flag_value(argv, "--name", ...)` calls, rather than restated here: a copy of
-# that list is how `--encoding cp1252` would come to be read as a bare flag and a
-# stray positional.
-SWEEP = "tools/sweep-selftests.py"
-
-# The sweep's flags that change HOW a leg runs or reads and never WHICH suites run
-# under which rules. Each row is checked to still name a flag the sweep reads, so
-# a row cannot outlive the flag it excuses.
-NOT_LEG_FLAGS = {
-    "--jobs": "how many suites run at once is a property of the machine and not of "
-              "what is checked: the sweep defaults it to the cores it finds, and a "
-              "side that pins it runs the same suites under the same rules",
-    "--quiet": "drops the per-file inventory from the output and keeps the failures "
-               "and the totals, so it changes what a reader sees and never which "
-               "suites run or how each one is graded",
-    "--shard": "runs one part of a leg's file list on one CI job; the parts' union "
-               "is the full list (the sweep's own sh0 case), and that ci.yml runs "
-               "every part is `shard_matrix_drift()` here, so a sharded side runs "
-               "the same leg as one that runs it whole",
-    "--record-costs": "writes the per-file timings the run measured to a file; it "
-                      "changes what is kept after the run and never which suites "
-                      "run or how each one is graded",
-}
-
-_FLAG_RE = re.compile(r"^--[a-z][a-z0-9-]*$")
-
-
-def sweep_flag_shape(source):
-    """{"valued": set, "known": set, "problem": str or None} for the sweep's source.
-
-    `valued` is every flag read through `_flag_value`, which takes the next word
-    as its value; `known` is every flag the entry point mentions at all. Read from
-    `main` and the module-level `if` blocks, so a flag named only in a case
-    fixture is not one the sweep reads.
-    """
+    path = os.path.join(root, VERIFY_REL)
+    if not os.path.isfile(path):
+        return None, "%s is not there, so its slices cannot be listed" % (
+            VERIFY_REL,)
+    shell = shutil.which("sh")
+    if shell is None:
+        return None, "no `sh` on PATH, so `%s --list` cannot be asked" % (
+            VERIFY_REL,)
     try:
-        tree = ast.parse(source)
-    except SyntaxError as exc:
-        return {"valued": set(), "known": set(),
-                "problem": "%s does not parse (%s), so which of its flags take a "
-                           "value cannot be read" % (SWEEP, exc)}
-    scopes = [n for n in tree.body
-              if (isinstance(n, ast.FunctionDef) and n.name == "main")
-              or isinstance(n, ast.If)]
-    valued = set()
-    known = set()
-    for scope in scopes:
-        for node in ast.walk(scope):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str) \
-                    and _FLAG_RE.match(node.value):
-                known.add(node.value)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
-                    and node.func.id == "_flag_value" and len(node.args) > 1 \
-                    and isinstance(node.args[1], ast.Constant) \
-                    and isinstance(node.args[1].value, str):
-                valued.add(node.args[1].value)
-    if not valued:
-        return {"valued": set(), "known": known,
-                "problem": "%s carries no `_flag_value(argv, \"--name\", ...)` "
-                           "call in `main`, so which flags take a value cannot be "
-                           "read and `--name value` would split into two words"
-                           % (SWEEP,)}
-    return {"valued": valued, "known": known, "problem": None}
+        done = subprocess.run([shell, path, "--list"], cwd=root,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                              timeout=VERIFY_LIST_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, "`%s --list` could not be run: %s" % (VERIFY_REL, exc)
+    text = done.stdout.decode("utf-8", "replace")
+    if done.returncode != 0:
+        return None, "`%s --list` exited %d: %s" % (VERIFY_REL, done.returncode,
+                                                   _output_tail(text, 3))
+    parsed = parse_verify_list(text)
+    if parsed is None:
+        return None, "`%s --list` printed no slice" % (VERIFY_REL,)
+    return parsed, None
 
 
-def _leg_of(words, valued, not_legs):
-    """The leg a call's expanded words run: a sorted tuple of its leg flags."""
-    tokens = []
-    i = 0
-    while i < len(words):
-        word = words[i]
-        value = None
-        if word.startswith("--") and "=" in word:
-            word, value = word.split("=", 1)
-        elif word in valued and i + 1 < len(words):
-            value = words[i + 1]
-            i += 1
-        i += 1
-        if word in not_legs:
+def _workflow_jobs(text):
+    """[(job id, [the job's lines])] under the top-level `jobs:`, read by
+    indentation the way `untimed_jobs` reads it; [] when there is no such block."""
+    lines = text.splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        if re.match(r"jobs:\s*(#.*)?$", line):
+            start = i + 1
+            break
+    if start is None:
+        return []
+    jobs = []
+    depth = None
+    for line in lines[start:]:
+        if line.strip() and not line.startswith((" ", "\t", "#")):
+            break
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
             continue
-        tokens.append(word if value is None else "%s %s" % (word, value))
-    return tuple(sorted(tokens))
+        indent = len(line) - len(line.lstrip(" "))
+        if depth is None:
+            depth = indent
+        if indent == depth:
+            jobs.append((stripped.split(":", 1)[0].strip(), []))
+        elif jobs and indent > depth:
+            jobs[-1][1].append(line)
+    return jobs
 
 
-def sweep_legs(lines, valued, not_legs=None):
-    """{"legs": set, "unresolved": [raw], "calls": int} for one runner's lines.
-
-    `calls` rides beside the set for `report_targets`' reason: a reader that found
-    no call must not look like a runner that runs no leg.
-    """
-    not_legs = NOT_LEG_FLAGS if not_legs is None else not_legs
-    found = tool_calls(lines, SWEEP, _is_python)
-    legs = set()
-    unresolved = list(found["unresolved"])
-    for env, options, args in found["calls"]:
-        # THE LEG FIRST, THEN THE QUESTION WHETHER IT RESOLVED: a flag that is not
-        # a leg is dropped with its value, so a CI matrix expression in `--shard`
-        # does not make the leg unreadable - its value cannot change the leg.
-        leg = _leg_of(args, valued, not_legs)
-        if any("$" in w for w in list(env) + list(options) + list(leg)):
-            unresolved.append(" ".join(list(env) + list(options) + args + [SWEEP]))
+def _job_keys(lines):
+    """{key: value} for a job's own keys - the first depth under its id."""
+    keys = {}
+    depth = None
+    for line in lines:
+        got = _key_line(line)
+        if got is None:
             continue
-        legs.add((tuple(sorted(env)), options, leg))
-    return {"legs": legs, "unresolved": unresolved,
-            "calls": len(found["calls"])}
+        indent, key, value = got
+        if depth is None:
+            depth = indent
+        if indent == depth:
+            keys[key] = value
+    return keys
 
 
-def leg_name(leg):
-    """How a leg is printed: the call it stands for, or that it carries no flag.
-
-    A leg is `(env prefix, interpreter options, sweep flags)`, and every part of it
-    is compared: `PYTHONIOENCODING=cp1252` and `-X utf8` change the codec a suite
-    prints through as surely as `--encoding` does. The interpreter's own name is
-    not compared - `python` in CI and `python3` locally are one leg.
-    """
-    env, options, flags = leg
-    words = list(env) + list(options) + [SWEEP] + list(flags)
-    return " ".join(words) if len(words) > 1 else "%s (no leg flag)" % (SWEEP,)
-
-
-def sweep_leg_drift(repo=None, read=None, source=None, not_legs=None):
-    """{"findings": [(leg, side, note)], "stale": [(flag, note)], "problem"}.
-
-    `read` and `source` stand in for the runners and the sweep, so a case can hand
-    over a pair that differs by one leg without building a tree. `problem` is not
-    None when the question could not be asked - an unreadable file, a side with no
-    call to the sweep, a flag value this reader cannot expand - each of which would
-    otherwise come back as an empty finding list, the shape of agreement.
-    """
-    not_legs = NOT_LEG_FLAGS if not_legs is None else not_legs
-    if source is None:
-        try:
-            source = io.open(os.path.join(repo or REPO, SWEEP),
-                             encoding="utf-8").read()
-        except (IOError, OSError, UnicodeDecodeError) as exc:
-            return {"findings": [], "stale": [], "problem": "%s could not be read, "
-                    "so which of its flags take a value is unknown: %s"
-                    % (SWEEP, exc)}
-    shape = sweep_flag_shape(source)
-    if shape["problem"] is not None:
-        return {"findings": [], "stale": [], "problem": shape["problem"]}
-    if read is None:
-        read, problem = _read_runners(repo)
-        if problem is not None:
-            return {"findings": [], "stale": [], "problem": problem}
-    got = {}
-    for label in TARGET_SIDES:
-        answer = sweep_legs(read.get(label, []), shape["valued"], not_legs)
-        if not answer["calls"]:
-            return {"findings": [], "stale": [], "problem": "no call to %s was "
-                    "found in %s, so an empty comparison here would read as "
-                    "agreement" % (SWEEP, label)}
-        if answer["unresolved"]:
-            return {"findings": [], "stale": [], "problem": "%s calls %s with a "
-                    "flag this reader cannot resolve (%s) - teach the file an "
-                    "assignment it can read, or this reader the form"
-                    % (label, SWEEP, answer["unresolved"][0])}
-        got[label] = answer["legs"]
-    findings = []
-    for label in TARGET_SIDES:
-        others = set()
-        for other in TARGET_SIDES:
-            if other != label:
-                others |= got[other]
-        for leg in sorted(others - got[label]):
-            findings.append((leg_name(leg), label,
-                             "the other runner runs the sweep this way and this "
-                             "one does not, so a green here never ran that leg"))
-    stale = [(flag, "is excused from defining a leg, and %s no longer reads a "
-                    "flag by that name - the row outlived its flag" % (SWEEP,))
-             for flag in sorted(not_legs) if flag not in shape["known"]]
-    return {"findings": findings, "stale": stale, "problem": None}
-
-
-_SHARD_MATRIX_RE = re.compile(r"^\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}/([0-9]+)$")
-
-
-_MATRIX_REF_RE = re.compile(
-    r"matrix\.(leg|os|shard)\s*(?:==|!=)\s*'([^']*)'")
-
-
-def _matrix_cells(text):
-    """{"cells": [dict], "problem": str or None} for the workflow's one `matrix:`.
+def _matrix_cells(lines):
+    """{"cells": [dict], "problem": str or None} for one job's `matrix:`.
 
     Axes (`key: [a, b]`) are crossed, `exclude` entries remove the cells they
-    match, `include` entries are added as cells. Only the shapes this repo writes
-    are read; anything else is a `problem`, never an empty cell list, because no
-    cells would read as "nothing is wrong".
+    match, `include` entries are added as cells. A job with no matrix is ONE cell
+    with no keys. Only the shapes this repo writes are read; anything else is a
+    `problem`, never an empty cell list, because no cells would read as "nothing
+    is wrong".
     """
-    lines = [re.sub(r"\s+#.*$", "", ln.rstrip()) for ln in text.splitlines()
-             if ln.strip() and not ln.strip().startswith("#")]
-    heads = [i for i, ln in enumerate(lines) if ln.strip() == "matrix:"]
+    body = [re.sub(r"\s+#.*$", "", ln.rstrip()) for ln in lines
+            if ln.strip() and not ln.strip().startswith("#")]
+    heads = [i for i, ln in enumerate(body) if ln.strip() == "matrix:"]
+    if not heads:
+        return {"cells": [{}], "problem": None}
     if len(heads) != 1:
-        return {"cells": [], "problem": "the workflow has %d `matrix:` blocks, so "
+        return {"cells": [], "problem": "the job has %d `matrix:` blocks, so "
                 "which cells run cannot be read" % len(heads)}
-    base = len(lines[heads[0]]) - len(lines[heads[0]].lstrip())
+    base = len(body[heads[0]]) - len(body[heads[0]].lstrip())
     block = []
-    for ln in lines[heads[0] + 1:]:
+    for ln in body[heads[0] + 1:]:
         if len(ln) - len(ln.lstrip()) <= base:
             break
         block.append(ln)
@@ -2174,290 +1460,260 @@ def _matrix_cells(text):
     axes, groups, current = {}, {"include": [], "exclude": []}, None
     for ln in block:
         indent = len(ln) - len(ln.lstrip())
-        body = ln.strip()
+        text = ln.strip()
         if indent == top:
-            key, _sep, rest = body.partition(":")
+            key, _sep, rest = text.partition(":")
             rest = rest.strip()
             current = None
             if key in groups and not rest:
                 current = key
             elif rest.startswith("[") and rest.endswith("]"):
-                axes[key] = [v.strip() for v in rest[1:-1].split(",") if v.strip()]
+                axes[key] = [v.strip().strip("'\"") for v in rest[1:-1].split(",")
+                             if v.strip()]
             else:
                 return {"cells": [], "problem": "matrix key `%s` is in a form "
                         "this reader cannot resolve" % key}
         elif current is not None:
-            if body.startswith("- "):
+            if text.startswith("- "):
                 groups[current].append({})
-                body = body[2:]
-            key, _sep, val = body.partition(":")
+                text = text[2:]
+            key, _sep, val = text.partition(":")
             if not groups[current]:
                 return {"cells": [], "problem": "an `%s` entry is not a list item"
                         % current}
-            groups[current][-1][key.strip()] = val.strip()
-    names = sorted(axes)
+            groups[current][-1][key.strip()] = val.strip().strip("'\"")
     cells = [{}]
-    for name in names:
+    for name in sorted(axes):
         cells = [dict(c, **{name: v}) for c in cells for v in axes[name]]
     cells = [c for c in cells
              if not any(all(c.get(k) == v for k, v in ex.items())
                         for ex in groups["exclude"])]
-    return {"cells": cells + groups["include"], "problem": None}
+    # `include` AS GITHUB READS IT: an entry is added to every combination it can join
+    # without overwriting a value the matrix lists (a value an earlier entry added may
+    # be overwritten), and becomes a combination of its own only when it joins none.
+    extra = []
+    for entry in groups["include"]:
+        joined = [c for c in cells
+                  if all(c.get(k) == v for k, v in entry.items() if k in axes)]
+        for cell in joined:
+            cell.update(entry)
+        if not joined:
+            extra.append(dict(entry))
+    return {"cells": cells + extra, "problem": None}
 
 
-def _matrix_references(text):
-    """[(spec, why)] for a matrix cell an `if:` asks about that no cell produces.
+def _job_runs(lines):
+    """Every `run:` a job's steps carry, one string each: a `|` block's lines
+    joined as the shell reads them, a `>` block's folded with spaces."""
+    out = []
+    i = 0
+    while i < len(lines):
+        got = re.match(r"^(\s*)(?:-\s+)?run:\s*(.*)$", lines[i])
+        if not got:
+            i += 1
+            continue
+        indent = len(got.group(1))
+        rest = got.group(2).strip()
+        i += 1
+        if rest and rest[0] not in "|>":
+            out.append(rest)
+            continue
+        body = []
+        while i < len(lines) and (not lines[i].strip()
+                                  or len(lines[i]) - len(lines[i].lstrip())
+                                  > indent):
+            body.append(lines[i].strip())
+            i += 1
+        out.append(("\n" if rest.startswith("|") else " ")
+                   .join(b for b in body if b))
+    return out
 
-    A step runs only if the matrix produces its leg AND its `if:` spells that leg
-    the same, so a leg dropped from `leg:`, an `if:` typed `'cp1251'` or with a
-    trailing space, and a deleted `include` cell each leave every step in the file
-    while the leg never runs. Every `matrix.leg|os|shard == '<x>'` must name a
-    value some cell holds, and every leg some cell holds must be named by a step.
+
+def _collapse(text):
+    """`${{ x }}` spelled without its spaces, so one expression is one word."""
+    return _EXPR.sub(lambda m: "${{%s}}" % (m.group(1).replace(" ", ""),), text)
+
+
+def _verify_args(run):
+    """[[word, ...]] for each `tools/verify.sh` call in one `run:` value."""
+    calls = []
+    for match in _VERIFY_CALL.finditer(_collapse(run)):
+        rest = match.group(1)
+        cut = _CALL_END.search(rest)
+        calls.append((rest[:cut.start()] if cut else rest).split())
+    return calls
+
+
+def _flag(words, name):
+    """The value `words` gives `name` (`--x V` or `--x=V`), or None."""
+    for i, word in enumerate(words):
+        if word == name and i + 1 < len(words):
+            return words[i + 1]
+        if word.startswith(name + "="):
+            return word.split("=", 1)[1]
+    return None
+
+
+def _resolve(word, cell):
+    """`word` with each `${{matrix.K}}` replaced by the cell's value; a key the
+    cell lacks is left in place, so the caller can see it was not resolved."""
+    return _MATRIX_WORD.sub(lambda m: cell.get(m.group(1), m.group(0)), word)
+
+
+def job_slices(text):
+    """{"jobs": [...], "problems": [...], "problem": str or None} for a workflow.
+
+    One entry per job: its id, its tier (`release` when its `if:` asks for
+    `inputs.tier == 'release'`, else `per-run`), and one run per verify.sh call
+    per matrix cell - the slices it names (None for a call with no `--only`,
+    which runs every per-run slice), its `--shard` and the matrix keys that
+    produced it. A value a cell cannot resolve is a `problems` row naming the
+    job, never a silently dropped run.
     """
-    refs = []
-    for ln in text.splitlines():
-        body = ln.strip()
-        if body.startswith("- "):
-            body = body[2:]
-        if body.startswith("if:"):
-            refs += _MATRIX_REF_RE.findall(body)
-    if not refs and "matrix:" not in text:
-        return []
-    got = _matrix_cells(text)
+    jobs = _workflow_jobs(text)
+    if not jobs:
+        return {"jobs": [], "problems": [],
+                "problem": "no top-level `jobs:` block, so no job could be read"}
+    out, problems = [], []
+    for job, lines in jobs:
+        tier = ("release" if _RELEASE_TIER_IF.search(_job_keys(lines).get("if", ""))
+                else "per-run")
+        calls = [args for run in _job_runs(lines) for args in _verify_args(run)]
+        entry = {"job": job, "tier": tier, "runs": []}
+        out.append(entry)
+        if not calls:
+            continue
+        matrix = _matrix_cells(lines)
+        if matrix["problem"] is not None:
+            problems.append((job, matrix["problem"]))
+            continue
+        for words in calls:
+            only, shard = _flag(words, "--only"), _flag(words, "--shard")
+            for cell in matrix["cells"]:
+                values = [_resolve(w, cell) for w in (only, shard) if w is not None]
+                if any("${{" in v for v in values):
+                    problems.append((job, "a verify.sh argument the matrix cell "
+                                     "%r cannot resolve: %r" % (cell, values)))
+                    continue
+                entry["runs"].append({
+                    "cell": cell,
+                    "slices": (None if only is None
+                               else [s for s in _resolve(only, cell).split(",")
+                                     if s]),
+                    "shard": None if shard is None else _resolve(shard, cell),
+                    "shard_keys": (set(_MATRIX_WORD.findall(shard))
+                                   if shard is not None else set())})
+    return {"jobs": out, "problems": problems, "problem": None}
+
+
+def slice_drift(text, listed):
+    """[(slice, why)] for a slice the workflow and the runner disagree about.
+
+    `listed` is `{slice: tier}` as `verify.sh --list` prints it, or None when
+    the list could not be read - which is one finding rather than a check of
+    the workflow against nothing.
+    """
+    if listed is None:
+        return [("verify.sh --list", "could not be read, so which slices exist "
+                 "is unknown and no job can be held to them")]
+    got = job_slices(text)
     if got["problem"] is not None:
-        return [("matrix", got["problem"])] if refs else []
-    produced = {}
-    for cell in got["cells"]:
-        for key, val in cell.items():
-            produced.setdefault(key, set()).add(val)
+        return [("ci.yml", got["problem"])]
+    per_run = sorted(name for name, tier in listed.items() if tier == "per-run")
+    named = {}
+    for job in got["jobs"]:
+        for run in job["runs"]:
+            for name in (per_run if run["slices"] is None else run["slices"]):
+                named.setdefault(name, set()).add((job["job"], job["tier"]))
     findings = []
-    for key, val in sorted(set(refs)):
-        if val not in produced.get(key, set()):
-            findings.append(("matrix.%s == %r" % (key, val),
-                             "an `if:` asks for a %s the matrix never produces "
-                             "(it produces %s), so that step never runs"
-                             % (key, sorted(produced.get(key, set())))))
-    named = set(val for key, val in refs if key == "leg")
-    for leg in sorted(produced.get("leg", set()) - named):
-        findings.append(("leg %s" % leg, "the matrix produces this leg and no "
-                         "step's `if:` names it, so its cells run nothing"))
-    return findings
+    for name in sorted(named):
+        if name not in listed:
+            findings.append((name, "job(s) %s run it and `verify.sh --list` does "
+                             "not print it, so the runner refuses it the day the "
+                             "job runs" % (", ".join(sorted(j for j, _t
+                                                            in named[name])),)))
+    for name in per_run:
+        tiers = set(t for _j, t in named.get(name, ()))
+        if "per-run" in tiers:
+            continue
+        findings.append((name, "a per-run slice no job outside the release tier "
+                         "runs, so an ordinary CI run never runs it%s"
+                         % (" (only the release tier does)" if tiers else "")))
+    return findings + [("%s (job)" % (job,), why) for job, why in got["problems"]]
 
 
 def shard_matrix_drift(text):
-    """[(shard spec, why)] for a `--shard` in the workflow whose parts are not all run.
+    """[(subject, why)] for a sharded slice whose parts are not all run.
 
-    `--shard` may differ between the sides only because a sharded leg still runs
-    every file - which holds only if CI runs EVERY part. A spec is either
-    `${{ matrix.<key> }}/N`, whose key must be listed in the workflow as exactly
-    `[1, ..., N]`, or a literal `I/N`, and the literals sharing an N must cover 1..N.
-    A spec in any other form is a finding: what it runs cannot be read here.
+    A sweep slice may be split into `--shard I/N` cells only because the cells
+    together still run every file - which holds only if, for each slice on each
+    runner, the cells cover exactly 1..N. Cells are grouped by everything but
+    the keys the shard is read from, so an `exclude` that drops one part on one
+    runner is found even though every list still carries every value.
     """
-    found = tool_calls(_yaml_run_lines(text), SWEEP, _is_python)
-    specs = []
-    for _env, _options, args in found["calls"]:
-        for i, word in enumerate(args):
-            if word == "--shard" and i + 1 < len(args):
-                specs.append(args[i + 1])
-            elif word.startswith("--shard="):
-                specs.append(word.split("=", 1)[1])
-    findings = []
-    literal = {}
-    for spec in sorted(set(specs)):
-        got = _SHARD_MATRIX_RE.match(spec)
-        if got:
-            key, count = got.group(1), int(got.group(2))
-            lists = re.findall(r"^\s*%s:\s*\[([^\]]*)\]" % re.escape(key), text,
-                               re.M)
-            want = [str(n) for n in range(1, count + 1)]
-            if len(lists) != 1:
-                findings.append((spec, "the workflow lists `%s:` %d times, so "
-                                       "which parts run cannot be read"
-                                 % (key, len(lists))))
-            elif [v.strip() for v in lists[0].split(",")] != want:
-                findings.append((spec, "the matrix runs parts [%s] of %d, so a "
-                                       "part is never run (or one that is not "
-                                       "there is asked for)"
-                                 % (lists[0].strip(), count)))
-            continue
-        lit = re.match(r"^([0-9]+)/([0-9]+)$", spec)
-        if lit:
-            literal.setdefault(int(lit.group(2)), set()).add(int(lit.group(1)))
-            continue
-        findings.append((spec, "a `--shard` value in a form this reader cannot "
-                               "resolve, so whether every part runs is unknown"))
-    for count, seen in sorted(literal.items()):
-        if seen != set(range(1, count + 1)):
-            findings.append(("%s/%d" % (sorted(seen), count),
-                             "the workflow runs only these parts of %d" % count))
-    return findings + _matrix_references(text)
-
-
-def sweep_leg_verdict(repo=None):
-    """`sweep_leg_drift()` as findings, with a question nobody could ask AS one."""
-    got = sweep_leg_drift(repo)
+    got = job_slices(text)
     if got["problem"] is not None:
-        return [(SWEEP, "-", got["problem"])]
-    try:
-        with io.open(os.path.join(repo or REPO, CI_REL), encoding="utf-8") as fh:
-            shards = [(spec, "ci.yml / --shard", why)
-                      for spec, why in shard_matrix_drift(fh.read())]
-    except (IOError, OSError, UnicodeDecodeError) as exc:
-        shards = [(SWEEP, "-", "ci.yml could not be read, so whether every "
-                               "shard runs is unknown: %s" % (exc,))]
-    return got["findings"] + shards + [(flag, "NOT_LEG_FLAGS", why)
-                                       for flag, why in got["stale"]]
-
-
-def gates_in(path):
-    """The set of gate labels a file invokes, or None if it cannot be read.
-
-    None rather than an empty set: "this file is not there" and "this file runs no
-    gates" are different answers, and a check that spells them the same way reports
-    a missing workflow as perfect parity.
-    """
-    try:
-        text = io.open(path, encoding="utf-8").read()
-    except OSError:
-        return None
-    found = set()
-    if path.endswith((".yml", ".yaml")):
-        lines = _yaml_run_lines(text)
-    elif path.endswith(".md"):
-        lines = _markdown_fence_lines(path, text)
-    else:
-        lines = _shell_command_lines(text)
-    body = "\n".join(lines)
-    for match in _SCRIPT_RE.finditer(body):
-        found.add(match.group(0))
-    for label, pattern in _EXTERNAL:
-        if pattern.search(body):
-            found.add(label)
-    return found
-
-
-_CI_STEP_RE = re.compile(r"^\s*- name:", re.M)
-_REASON_GATE_RE = re.compile(r"[A-Za-z0-9_./-]+\.(?:py|sh|mjs)")
-_COMPARES = ("diff ", "diff\t", "cmp ", "cmp\t")
-
-
-def _ci_steps(text):
-    """The workflow's steps as whole blocks of text, split on `- name:`.
-
-    Whole blocks and not lines, because the question below is about what a STEP
-    does: a step once invoked the exempted script on one line and compared a
-    committed file three lines later, and a line-at-a-time reader sees neither
-    half as evidence about the other.
-    """
-    marks = [m.start() for m in _CI_STEP_RE.finditer(text)]
-    return [text[a:b] for a, b in zip(marks, marks[1:] + [len(text)])]
-
-
-def _committed_tokens(step, repo):
-    """Paths in this step that the repository actually carries, globs expanded.
-
-    Globbed because a committed set is often named as one - a step once iterated
-    `examples/acme-store/.claude/usage/*.jsonl`, which no `os.path.exists` will
-    ever answer True for.
-    """
-    out = []
-    for token in re.findall(r"[A-Za-z0-9_./*-]+", step):
-        if "/" not in token or token.startswith("/tmp") or token.startswith("/dev"):
-            continue
-        # A token of nothing but separators globs to the repository root, which is
-        # committed in the least useful possible sense. It reached the report as
-        # evidence once, which is why it is refused here rather than tolerated.
-        if not os.path.basename(token.rstrip("/")):
-            continue
-        if glob.glob(os.path.join(repo, token)):
-            out.append(token)
-    return out
-
-
-def exemption_reason_drift(repo=None, table=None):
-    """[(gate, problem)] for a row whose REASON stopped being true of the other side.
-
-    THE HOLE, AND THE SHAPE IT ACTUALLY TOOK. `compare()` verifies that
-    an exempted gate is genuinely absent from the sides its row names, and that the
-    row still corresponds to something real. It never asks whether the SENTENCE is
-    true of what the other side does - so `gen-demo-usage.py` sat behind "same
-    throwaway demo tree" while one of its three CI steps regenerated a COMMITTED
-    ledger and diffed it against what the repository ships. The row was green, the
-    reason described a different check, and the failure surfaced only after a
-    release commit had been built, tagged and pushed.
-
-    THE RULE, and it is narrow on purpose. When a CI step both invokes an exempted
-    script AND compares a file this repository commits, that step is asserting
-    something about shipped bytes rather than smoking a throwaway tree - so the row
-    excusing its absence locally must NAME the local gate that makes the equivalent
-    claim, and that gate must actually be named by a local side. A reason that names
-    none is a reason that excuses nothing.
-
-    WHY IT DOES NOT SIMPLY FORBID COMMITTED PATHS: measured over this table, five of
-    the exempted scripts name a committed path in CI and four of them only READ one
-    - `render-report.py docs/audit/audit-plan.json --out-dir /tmp/...` renders a
-    committed manifest into a throwaway directory, which is exactly what its reason
-    says. A lint on the path alone fires on all four, and a lint that fires on
-    correct rows is one people delete. The COMPARISON is the discriminator.
-
-    Returns rows rather than raising, like every other check here, so the report can
-    carry several at once.
-    """
-    repo = repo or REPO
-    rows = table if table is not None else ABSENT_BY_DESIGN
-    try:
-        ci = io.open(os.path.join(repo, CI_REL), encoding="utf-8").read()
-    except OSError as exc:
-        return [(CI_REL, "unreadable, so no reason can be checked against it: %s"
-                 % (exc,))]
-    local = set()
-    for label, rel in SIDES:
-        if label == "ci.yml":
-            continue
-        found = gates_in(os.path.join(repo, rel))
-        local |= (found or set())
-    steps = _ci_steps(ci)
-    out = []
-    for gate, sides, reason in rows:
-        if "ci.yml" in sides or not gate.endswith((".py", ".sh")):
-            continue                       # exempt from CI itself, or not a script
-        for step in steps:
-            if gate not in step:
+        return [("ci.yml", got["problem"])]
+    findings = []
+    for job in got["jobs"]:
+        groups = {}
+        for run in job["runs"]:
+            if run["shard"] is None:
                 continue
-            if not any(word in step for word in _COMPARES):
+            rest = tuple(sorted((k, v) for k, v in run["cell"].items()
+                                if k not in run["shard_keys"]))
+            subject = "%s (%s)" % (job["job"], ", ".join(
+                ["%s=%s" % kv for kv in rest]
+                + ["--only %s" % (",".join(run["slices"] or ["<per-run>"]),)]))
+            spec = re.match(r"^([0-9]+)/([0-9]+)$", run["shard"])
+            if spec is None:
+                findings.append((subject, "a `--shard` of %r, a form this reader "
+                                 "cannot resolve, so whether every part runs is "
+                                 "unknown" % (run["shard"],)))
                 continue
-            carried = _committed_tokens(step, repo)
-            if not carried:
+            groups.setdefault(subject, set()).add((int(spec.group(1)),
+                                                   int(spec.group(2))))
+        for subject, parts in sorted(groups.items()):
+            totals = sorted(set(n for _i, n in parts))
+            if len(totals) != 1:
+                findings.append((subject, "its cells split it into different "
+                                 "totals %r, so no one part list covers it"
+                                 % (totals,)))
                 continue
-            # Matched by BASENAME. A reason writes `check-rendered-artifacts.py`
-            # the way a person says it, and the side names `tools/check-…`; an
-            # equality on the full string calls a correct row drift, which this
-            # did on its first run.
-            #
-            # NOT THE SIDES THEMSELVES. `verify.sh` is a side, and a reason that
-            # says "verify.sh's legs do exactly as CI does" names the umbrella
-            # that runs every local check, not the one making this claim - it
-            # satisfied the rule for a reason that named no comparing gate at
-            # all, which is the state `er1` strikes the real name back into.
-            umbrellas = set(os.path.basename(rel) for _label, rel in SIDES)
-            bases = set(os.path.basename(g) for g in local) - umbrellas
-            named = [g for g in _REASON_GATE_RE.findall(reason)
-                     if os.path.basename(g) in bases]
-            if named:
-                continue
-            out.append((gate,
-                        "a CI step compares committed file(s) (%s) while running "
-                        "it, so the step asserts something about shipped bytes - "
-                        "but the reason names no local gate that makes the same "
-                        "claim: %r" % (", ".join(sorted(set(carried))[:3]), reason)))
-            break
-    return out
+            total = totals[0]
+            have = set(i for i, _n in parts)
+            want = set(range(1, total + 1))
+            if have - want:
+                findings.append((subject, "asks for part(s) %s of %d, which do "
+                                 "not exist" % (sorted(have - want), total)))
+            if want - have:
+                findings.append((subject, "runs parts %s of %d, so part(s) %s "
+                                 "never run" % (sorted(have), total,
+                                                sorted(want - have))))
+    return findings
+
+
+def render_slices(listed, text, stream=None):
+    """`--list`: each slice the runner lists, its tier, and the jobs that run it.
+    Returns the number of slices printed."""
+    out = stream if stream is not None else sys.stdout
+    got = job_slices(text)
+    runs = {}
+    for job in got["jobs"]:
+        for run in job["runs"]:
+            for name in (run["slices"] or []):
+                runs.setdefault(name, set()).add(job["job"])
+    for name in listed["order"]:
+        out.write("  %-18s %-8s %s\n" % (name, listed["tiers"][name],
+                                         ", ".join(sorted(runs.get(name, ())))
+                                         or "(no job)"))
+    return len(listed["order"])
+
 
 
 # --- who audits an exemption's REASON ------------------------------------------
-# `exemption_reason_drift` above answers that question for ONE table. This half
-# answers it for the tree: every exemption carrying a reason must name the
-# instrument that reads it, or say why it can have none.
+# Asked for the tree rather than for one table: every exemption carrying a reason
+# must name the instrument that reads it, or say why it can have none.
 #
 # THE DERIVATION IS BY SHAPE, and the shape cannot tell an exemption from a help
 # table - `FIELD_HELP`, `PRESETS` and `VERDICT_HELP` are all `{subject: sentence}`
@@ -2476,17 +1732,15 @@ _EXEMPTION_ROOTS = ("plugins/audit/scripts", "plugins/audit/hooks", "tools")
 # TWO STRENGTHS, SPELLED APART, because collapsing them would make this table assert
 # more than it can show:
 #
-#   `reason` — the SENTENCE is compared against the world. Only two tables have this,
-#     and each one cost a defect to build: `exemption_reason_drift` knows what a CI
-#     step that diffs a committed file means, `revisit_trigger_drift` resolves "the
-#     panel grows a card" through `_help.COMPOSITION_PATHS`.
+#   `reason` — the SENTENCE is compared against the world, and each such instrument
+#     cost a defect to build: `revisit_trigger_drift`, for one, resolves "the panel
+#     grows a card" through `_help.COMPOSITION_PATHS`.
 #   `live`  — the SUBJECT is checked to still be there, so a row that excuses nothing
 #     is reported. Weaker, and it is the half both earlier fixes ultimately needed:
 #     a row survives its subject long before its sentence stops being true.
 #
 # A table with neither is a finding, which is the whole point of deriving them.
 AUDITED_EXEMPTIONS = {
-    "ABSENT_BY_DESIGN": ("reason", "exemption_reason_drift"),
     "SCHEMA_EXEMPTIONS": ("reason", "revisit_trigger_drift"),
     "NOT_A_GATE": ("live", "coverage"),
     "ALLOW_EXEMPT": ("live", "prove"),
@@ -2510,8 +1764,6 @@ AUDITED_EXEMPTIONS = {
     "SHARED_CONCERNS": ("live", "shared_concern_violations"),
     "CONTRAST_EXEMPTIONS": ("live", "cr_violations"),
     "SCRATCH_EXEMPT": ("live", "scratch_isolation"),
-    "STEP_GUARD_EXEMPT": ("live", "step_guard_drift"),
-    "NOT_LEG_FLAGS": ("live", "sweep_leg_drift"),
     "BASELINE": ("live", "dead_baseline"),
     "KNOWN_CONFIG_MIRRORS": ("reason", "config_read_violations"),
     "PANEL_ROUTE_READERS": ("reason", "panel_route_violations"),
@@ -2843,77 +2095,6 @@ def exemption_audit_drift(repo=None, audited=None, not_exemptions=None):
     return out
 
 
-def compare(read, table=None):
-    """{"missing": [(gate, side, note)], "stale_exemptions": [...]} from READ sets.
-
-    A gate must be named by EVERY side unless a row in the table says which sides it
-    is legitimately absent from and why. Two tables for two sides became one table
-    for four, because a gate absent from three sides would otherwise need an entry in
-    each and the three could disagree.
-
-    Takes the gate sets rather than a repo path so a case can hand it four sets that
-    differ in one place. Proving that a particular side is really compared needs a
-    gate withheld from that side alone, and building four real files to do it would
-    be a case about the readers wearing a case about the rule.
-    """
-    table = ABSENT_BY_DESIGN if table is None else table
-    absent = [label for label, _rel in SIDES if label not in read]
-    if absent:
-        # Loud, and NOT a verdict over the sides the caller did remember: a side with
-        # no gate set read for it would otherwise be an empty set, and an empty set
-        # agrees with every exemption and disagrees with every gate.
-        return {"missing": [],
-                "stale_exemptions": [(", ".join(sorted(absent)), "-",
-                                      "no gate set was read for this side")]}
-
-    exempt = {}
-    for gate, sides, _why in table:
-        exempt[gate] = set(sides)
-    every = set()
-    for names in read.values():
-        every |= names
-
-    missing = []
-    for gate in sorted(every):
-        for label, _rel in SIDES:
-            if gate in read[label]:
-                continue
-            if label in exempt.get(gate, ()):
-                continue
-            missing.append((gate, label,
-                            "named by another side and not by this one; add it or "
-                            "give it a row in ABSENT_BY_DESIGN"))
-
-    # THREE WAYS AN EXEMPTION STOPS DESCRIBING THE SYSTEM. The third is the one a
-    # single-direction check cannot see, and it is why this is checked at all: a row
-    # naming a side that DOES run the gate is not an exemption, it is a sentence
-    # about a state that has passed, and it stays green forever under the first two.
-    stale = []
-    for gate, sides, _why in table:
-        if gate not in every:
-            stale.append((gate, "-", "declared absent by design, but no side "
-                                     "invokes it any more"))
-            continue
-        for label in sides:
-            if label not in dict(SIDES):
-                stale.append((gate, label, "names a side that does not exist"))
-            elif gate in read[label]:
-                stale.append((gate, label, "declared absent from this side, which "
-                                           "invokes it - the row does nothing"))
-    return {"missing": sorted(missing), "stale_exemptions": sorted(stale)}
-
-
-def read_sides(repo=None):
-    """{label: gate set or None} for every side, read once.
-
-    None survives to the caller on purpose - `gates_in` earns the distinction and
-    flattening it here would spend it.
-    """
-    repo = repo or REPO
-    return dict((label, gates_in(os.path.join(repo, rel)))
-                for label, rel in SIDES)
-
-
 def failmode_table_verdict(repo=None):
     """`failmode_table_drift()` as a finding list, with an unreadable tree AS a finding.
 
@@ -3020,220 +2201,6 @@ def untimed_jobs(text):
             "names": [job for job, _keys in jobs], "problem": None}
 
 
-# --- ...and a red job reports every independent step, not only the first ------
-# GitHub skips every step after a failed one unless the step's `if:` says
-# otherwise. A red Windows round then names one failure and hides the rest, and
-# each hidden layer costs another full round. `tools/verify.sh` runs every check
-# and says the list is complete; this holds ci.yml to the same promise: every
-# step after a job's setup carries `!cancelled()`, so it runs and reports itself
-# while the job still fails when any step did.
-_SETUP_USES = re.compile(
-    r"actions/(checkout|setup-[a-z0-9-]+|cache)(/[a-z-]+)?@")
-_SETUP_RUN = re.compile(
-    r"^(pip3?|python3? -m pip) install\b|^npm (ci|install)\b"
-    r"|^npx (--yes )?playwright install\b")
-# (job, step name) -> why the step has to keep the implicit success(): it reads
-# something an earlier non-setup step produced, so running it after that step
-# failed would report a second, spurious failure.
-STEP_GUARD_EXEMPT = {
-    ("manifests", "The report is interactive on plans cut from the scale demo"):
-        "both legs derive their fixture from `/tmp/dl`, the tree the earlier "
-        "`Scale demo` step generates; the legs that depend on nothing earlier "
-        "live in the guarded step above it",
-}
-
-
-def _step_texts(text):
-    """[(job, step name, raw text)] in file order, read off the `- name:` lines.
-
-    Raw lines rather than `_job_steps`' keys, because the question below is
-    whether a PATH appears in a step's body, and a key holds only the first line.
-    """
-    out = []
-    job = None
-    for line in text.splitlines():
-        if re.match(r"  [A-Za-z0-9_-]+:\s*$", line):
-            job = line.strip().rstrip(":")
-        elif re.match(r"      - ", line):
-            got = re.match(r"      - name:\s*(.*)$", line)
-            out.append((job, got.group(1).strip() if got else "?", [line]))
-        elif out:
-            out[-1][2].append(line)
-    return [(j, n, "\n".join(ls)) for j, n, ls in out]
-
-
-def step_exemption_breadth_drift(text, exempt=None):
-    """[(job, step, why)] for an exemption that does not rest on a real dependency.
-
-    NOT DECIDABLE: that an exempt step holds NOTHING BUT dependent work. What is
-    decidable, and checked here, is the dependency the reason itself names - its
-    first backticked absolute path. The step must exist, must mention that path in
-    its own body, and an EARLIER step of the same job must mention it too (else
-    nothing produces it and the exemption excuses nothing). The breadth is pinned
-    the other way: the table names the narrow step, so widening the exemption
-    back to a step with independent legs means editing that row, in review.
-    """
-    table = STEP_GUARD_EXEMPT if exempt is None else exempt
-    steps = _step_texts(text)
-    findings = []
-    for (job, name), why in sorted(table.items()):
-        got = re.search(r"`(/[^`\s]+)`", why)
-        if got is None:
-            findings.append((job, name, "its reason names no backticked path "
-                             "it depends on, so its breadth cannot be read"))
-            continue
-        path = got.group(1)
-        at = [i for i, (j, n, _t) in enumerate(steps) if (j, n) == (job, name)]
-        if not at:
-            findings.append((job, name, "no such step in the workflow"))
-            continue
-        if path not in steps[at[0]][2]:
-            findings.append((job, name, "does not read %s, so the exemption is "
-                             "broader than any dependency" % path))
-        elif not any(j == job and path in t for j, _n, t in steps[:at[0]]):
-            findings.append((job, name, "%s is mentioned by no earlier step of "
-                             "the job, so nothing it depends on can have failed"
-                             % path))
-    return findings
-
-
-def _job_steps(text):
-    """[(job, {key: value})] for every step under every job's `steps:`.
-
-    Indentation is read, as in `untimed_jobs`: a step starts at a `- ` at the
-    depth of the first one under `steps:`, and its own keys sit two columns in,
-    so a key inside a `run: |` body is never taken for the step's. A `run` block
-    scalar contributes its first non-comment line as the key's value.
-    """
-    lines = text.splitlines()
-    out = []
-    job = None
-    in_steps = False
-    dash = None
-    jobs_at = None
-    job_depth = None
-    for i, line in enumerate(lines):
-        if jobs_at is None:
-            if re.match(r"jobs:\s*(#.*)?$", line):
-                jobs_at = i
-            continue
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        indent = len(line) - len(line.lstrip(" "))
-        if indent == 0:
-            break
-        if job_depth is None:
-            job_depth = indent
-        if indent == job_depth:
-            job = line.strip().rstrip(":")
-            in_steps = False
-            dash = None
-            continue
-        stripped = line.strip()
-        if indent == job_depth + 2 and stripped.startswith("steps:"):
-            in_steps = True
-            dash = None
-            continue
-        if indent == job_depth + 2:
-            in_steps = False
-            continue
-        if not in_steps:
-            continue
-        if dash is None and stripped.startswith("- "):
-            dash = indent
-        if dash is None:
-            continue
-        if indent == dash and stripped.startswith("- "):
-            out.append((job, {}))
-            stripped = stripped[2:]
-        elif indent != dash + 2:
-            continue
-        got = re.match(r"([A-Za-z_-]+):\s*(.*)$", stripped)
-        if got and out:
-            key, value = got.group(1), got.group(2).strip()
-            if key == "run" and value in ("|", ">", "|-", ">-"):
-                value = ""
-                for later in lines[i + 1:]:
-                    body = later.strip()
-                    if body and not body.startswith("#"):
-                        value = body
-                        break
-            out[-1][1][key] = value
-    return out
-
-
-def _is_setup_step(keys):
-    if _SETUP_USES.search(keys.get("uses", "")):
-        return True
-    return bool(_SETUP_RUN.match(keys.get("run", "")))
-
-
-def _exempt_condition_problem(cond, earlier_ids):
-    """Why an exempt step's `if:` does not bound its skip to its dependency, or "".
-
-    An exemption drops the implicit success(), which would skip the step after
-    ANY earlier failure; what replaces it must name `!cancelled()` inside
-    `${{ }}` and the outcome of an earlier step of the job (by `id`), so the
-    step is skipped only when the step that produces its input did not succeed.
-    """
-    if not (cond.startswith("${{") and "!cancelled()" in cond):
-        return ("exempt from the implicit success() but its `if:` does not "
-                "hold `!cancelled()` inside `${{ }}`")
-    named = re.findall(r"steps\.([A-Za-z0-9_-]+)\.outcome\s*==", cond)
-    if not any(n in earlier_ids for n in named):
-        return ("exempt from the implicit success() but its `if:` names the "
-                "outcome of no earlier step of the job (by `id`), so it would "
-                "run past failures that are not its dependency's")
-    return ""
-
-
-def step_guard_drift(text, exempt=None):
-    """[(job, step, why)] for each step that a failed earlier step would skip.
-
-    A setup step (checkout, setup-*, cache, an install) is left alone: its
-    failure invalidates what follows. Every other step needs an `if:` holding
-    `!cancelled()` inside `${{ }}` - an `if:` it already had must be combined
-    with it, never replaced - unless `exempt` ({(job, step name): reason}, the
-    table above by default) names it with a reason.
-    """
-    table = STEP_GUARD_EXEMPT if exempt is None else exempt
-    findings = []
-    ids = {}
-    for job, keys in _job_steps(text):
-        step_id = keys.get("id")
-        earlier = set(ids.get(job, ()))
-        if step_id:
-            ids.setdefault(job, set()).add(step_id)
-        if _is_setup_step(keys):
-            continue
-        name = keys.get("name") or keys.get("run") or keys.get("uses") or "?"
-        if table.get((job, name)):
-            why = _exempt_condition_problem(keys.get("if", ""), earlier)
-            if why:
-                findings.append((job, name, why))
-            continue
-        cond = keys.get("if", "")
-        if "!cancelled()" in cond and cond.startswith("${{"):
-            continue
-        findings.append((job, name, "no `if: ${{ !cancelled() ... }}`, so a "
-                         "failure above it skips this step and hides its result"
-                         if "!cancelled()" not in cond else
-                         "`!cancelled()` outside `${{ }}` is not an expression"))
-    return findings
-
-
-def step_guard_findings(text):
-    """`step_guard_drift()` plus the exemption-breadth check, as `render()` rows.
-
-    A row naming a job this workflow does not have is left to the exemption
-    audit: a smaller workflow (a fixture) has no business answering for it.
-    """
-    jobs = set(j for j, _n, _t in _step_texts(text))
-    breadth = [f for f in step_exemption_breadth_drift(text) if f[0] in jobs]
-    return [("%s / %s" % (job, step), why)
-            for job, step, why in step_guard_drift(text) + breadth]
-
-
 # --- ...and every bound is two to three times the longest run it was measured against
 # A bound set by feel is either too tight - a slow runner fails a green job - or
 # so loose it is the six hours again under another number. So the workflow
@@ -3321,180 +2288,69 @@ def job_timeout_verdict(repo=None):
     got = untimed_jobs(text)
     if got["problem"] is not None:
         return [("ci.yml", got["problem"])]
-    return (got["findings"] + job_bound_evidence(text)
-            + step_guard_findings(text))
+    return got["findings"] + job_bound_evidence(text)
+
+
+def slice_verdict(repo=None):
+    """`(slice findings, the parsed list or None, job count)` for the tree.
+
+    A list that could not be had and a workflow that could not be read are each
+    a finding, so neither silence reaches `render()` as an empty list.
+    """
+    root = repo or REPO
+    listed, problem = verify_list(root)
+    try:
+        with io.open(os.path.join(root, CI_REL), encoding="utf-8") as fh:
+            text = fh.read()
+    except (IOError, OSError, UnicodeDecodeError) as exc:
+        return [("ci.yml", "could not be read: %s" % (exc,))], listed, 0
+    findings = ([("verify.sh --list", problem)] if listed is None
+                else slice_drift(text, listed["tiers"]))
+    return (findings + shard_matrix_drift(text), listed,
+            len(_workflow_jobs(text)))
 
 
 def parity(repo=None):
-    """{"missing", "stale_exemptions", "failmodes", "counts"} for the tree.
+    """{"slices", "failmodes", "job_timeouts", "stale_exemptions", "counts"}.
 
-    `failmodes` rides here for the reason the two exemption-reason rules above do:
-    this command is already the one every hand-maintained description is compared
-    by, so the rule needs no second place to be run from - and a description of
-    which hooks fail LOUDLY is the one where a stale sentence is a security claim
-    rather than an inconvenience.
+    The rules that are not slice questions ride here because this command is
+    already the one that reads a runner and the documents describing it, and a
+    second place to run them from would be a second reader of the same files.
     """
-    failmodes = failmode_table_verdict(repo)
-    # The argument question, asked for the one tool whose argument is the leg.
-    # It reads two of the sides on its own and needs nothing `compare()` built.
-    targets = report_target_verdict(repo)
-    # ...and asked again for the sweep, whose flags are its legs.
-    legs = sweep_leg_verdict(repo)
-    # ...and of the workflow alone: does every job end in minutes when it hangs.
-    timeouts = job_timeout_verdict(repo)
-    raw = read_sides(repo)
-    read = {}
-    unreadable = []
-    for label, rel in SIDES:
-        got = raw[label]
-        if got is None:
-            unreadable.append((rel, label, "could not be read at all"))
-        read[label] = got if got is not None else set()
-    counts = dict((k, len(v)) for k, v in read.items())
-    if unreadable:
-        # NOT an empty verdict. A side nothing could read is not a side that agrees.
-        return {"missing": [], "stale_exemptions": unreadable,
-                "failmodes": failmodes, "report_targets": targets,
-                "sweep_legs": legs, "job_timeouts": timeouts,
-                "counts": counts}
-    result = compare(read)
-    result["counts"] = counts
-    # ...and the question `compare()` cannot ask: is each row's REASON still true of
-    # what the other side does. Reported as a stale exemption, because that
-    # is exactly what it is - a row that excuses nothing any more - and folding it
-    # into `missing` would send the reader to add a gate rather than fix a sentence.
-    result["stale_exemptions"] = sorted(
-        list(result["stale_exemptions"])
-        + [(gate, "ci.yml", why) for gate, why in exemption_reason_drift(repo)]
-        # ...and the same question asked of the TREE rather than of one table:
-        # every exemption carrying a reason must name the
-        # instrument that reads it. Reported here because it is the same kind of
-        # answer - a row that has stopped meaning anything - and because this
-        # command is already the one four sides are compared by, so the rule
-        # needs no fifth place to be run from.
-        + [(name, "exemption tables", why)
-           for name, why in exemption_audit_drift(repo)])
-    result["failmodes"] = failmodes
-    result["report_targets"] = targets
-    result["sweep_legs"] = legs
-    result["job_timeouts"] = timeouts
-    return result
-
-
-# --- was each side really READ? -----------------------------------------------
-# `compare()` answers "do the sides agree", and agreement is worth nothing from a
-# side nobody read: an empty set agrees with every other side and with every row in
-# the table. So the suite carries a floor. It used to be one ABSOLUTE term, which
-# catches a reader that returned nothing and cannot catch a document that rotted
-# while the others stood. It sat below the smallest
-# side, so that side could have shed half its gates and still cleared it.
-#
-# TWO TERMS NOW. The absolute one is unchanged - it is the answer to "did this read
-# return anything at all", and nothing about it was wrong. The derived one measures
-# a side against the largest count anyone read, which is the best available evidence
-# of how big the gate set really is.
-#
-# WHAT THE DERIVED TERM GIVES UP, SAID RATHER THAN IMPLIED. It COUPLES the sides: if
-# every side shrinks together the floor shrinks with them and this stays green, and
-# no floor derived from the thing it measures can do otherwise. That case is covered
-# elsewhere and not here - `compare()`'s stale-exemption half reports every row in
-# ABSENT_BY_DESIGN whose gate no side invokes any more, so a gate set that collapsed
-# across all four sides comes back as a table full of dead rows rather than as a
-# quiet pass. It also leaves the LARGEST side judged by the absolute term alone,
-# which is arithmetic rather than a choice: a count is never below its own fraction.
-FLOOR_MINIMUM = 6
-FLOOR_DIVISOR = 2
-
-
-def read_floor(counts):
-    """The fewest gates a side may name before its set stops being evidence of a read.
-
-    Derived from the largest count rather than per-side from the largest OTHER count,
-    which was written first and is the same function: the two can only differ for the
-    largest side itself, and there the fraction is of a number that cannot fall below
-    it. One number is also what a message can print.
-    """
-    largest = max(counts.values(), default=0)
-    return max(FLOOR_MINIMUM, (largest + FLOOR_DIVISOR - 1) // FLOOR_DIVISOR)
-
-
-def underread_sides(counts):
-    """[(label, gates, floor)] for every side that named fewer gates than the floor.
-
-    A list rather than a bool so the finding names the side and both numbers - which
-    side rotted and by how far is the whole content of this check, and `False` is a
-    thing nobody can act on.
-
-    Iterates SIDES rather than `counts`, and reads a missing label as none named: a
-    side absent from the counts is the strongest version of "not read", and
-    `.get(label, 0)` sends it through the same floor as a side that read short.
-    """
-    floor = read_floor(counts)
-    return [(label, counts.get(label, 0), floor)
-            for label, _rel in SIDES if counts.get(label, 0) < floor]
+    slices, listed, jobs = slice_verdict(repo)
+    return {"slices": slices,
+            "failmodes": failmode_table_verdict(repo),
+            "job_timeouts": job_timeout_verdict(repo),
+            "stale_exemptions": exemption_audit_drift(repo),
+            "counts": {"slices": len(listed["order"]) if listed else 0,
+                       "jobs": jobs}}
 
 
 def render(result, stream=None):
     """Print the verdict. Returns the exit code."""
     out = stream if stream is not None else sys.stdout
-    bad = (result["missing"] + result["stale_exemptions"]
-           + result["failmodes"] + result["report_targets"]
-           + result.get("sweep_legs", []) + result.get("job_timeouts", []))
-    out.write("gate parity: %s\n"
-              % (", ".join("%d in %s" % (result["counts"].get(label, 0), label)
-                           for label, _rel in SIDES),))
-    for gate, side, note in result["missing"]:
-        out.write("  MISSING from %s: %s\n      %s\n" % (side, gate, note))
-    for gate, side, note in result["stale_exemptions"]:
-        out.write("  stale exemption (%s / %s): %s\n" % (gate, side, note))
+    bad = (result["slices"] + result["failmodes"] + result["job_timeouts"]
+           + result["stale_exemptions"])
+    out.write("gate parity: %d slice(s) listed by verify.sh --list, %d job(s) in "
+              "ci.yml\n" % (result["counts"].get("slices", 0),
+                            result["counts"].get("jobs", 0)))
+    for subject, note in result["slices"]:
+        out.write("  slice drift (%s): %s\n" % (subject, note))
     for subject, note in result["failmodes"]:
         out.write("  fail-mode drift (%s): %s\n" % (subject, note))
-    for target, side, note in result["report_targets"]:
-        out.write("  report target MISSING from %s: %s\n      %s\n"
-                  % (side, target, note))
-    for leg, side, note in result.get("sweep_legs", []):
-        if side in TARGET_SIDES:
-            out.write("  sweep leg MISSING from %s: %s\n      %s\n"
-                      % (side, leg, note))
-        else:
-            out.write("  sweep leg question (%s / %s): %s\n" % (leg, side, note))
-    for job, note in result.get("job_timeouts", []):
-        out.write("  CI job with no time bound (%s): %s\n" % (job, note))
+    for job, note in result["job_timeouts"]:
+        out.write("  CI job bound (%s): %s\n" % (job, note))
+    for name, note in result["stale_exemptions"]:
+        out.write("  exemption table (%s): %s\n" % (name, note))
     if not bad:
-        out.write("  every side names the same gates, every declared exemption "
-                  "is still real, SECURITY.md's fail modes are the ones "
-                  "hooks.json registers, both runners hand the report "
-                  "checker the same documents, both run the same legs of "
-                  "the sweep, and every CI job carries a time bound two to "
-                  "three times its longest recorded run, or the floor for a "
-                  "sub-minute job\n")
+        out.write("  every slice ci.yml names is one verify.sh lists, every "
+                  "per-run slice has a job, every sharded slice runs all its "
+                  "parts, SECURITY.md's fail modes are the ones hooks.json "
+                  "registers, every CI job carries a time bound two to three "
+                  "times its longest recorded run (or the floor for a "
+                  "sub-minute job), and every exemption table names who "
+                  "audits it\n")
     return 1 if bad else 0
-
-
-def render_list(raw, stream=None):
-    """One column per side, headed by its label. Returns the number of gates listed.
-
-    Derived from SIDES, because it was two hard-coded columns spelled `L` and `C`:
-    `CONTRIBUTING.md` was invisible here for as long as it had been a side, in the
-    one output whose whole job is to show what each side invokes. That is the drift
-    this file reports, inside the file that reports it.
-
-    An unreadable side prints `?` rather than an empty column - a side nothing could
-    read must not look like a side that runs nothing.
-    """
-    out = stream if stream is not None else sys.stdout
-    every = set()
-    for names in raw.values():
-        every |= (names or set())
-    out.write("  %s  gate\n" % "  ".join(label for label, _rel in SIDES))
-    for gate in sorted(every):
-        cells = []
-        for label, _rel in SIDES:
-            names = raw.get(label)
-            mark = "?" if names is None else ("x" if gate in names else "-")
-            cells.append("%-*s" % (len(label), mark))
-        out.write("  %s  %s\n" % ("  ".join(cells), gate))
-    return len(every)
 
 
 def main(argv):
@@ -3503,7 +2359,12 @@ def main(argv):
         return 0
     result = parity()
     if "--list" in argv:
-        render_list(read_sides())
+        listed, problem = verify_list()
+        if listed is None:
+            sys.stdout.write("  (no list: %s)\n" % (problem,))
+        else:
+            with io.open(os.path.join(REPO, CI_REL), encoding="utf-8") as fh:
+                render_slices(listed, fh.read())
     return render(result)
 
 
@@ -3716,46 +2577,292 @@ def _verify_cleanup_cases(check):
           not re.search(r"^[^#\n]*\btrap\b[^\n]*\bRETURN\b", source, re.M))
 
 
+# --- the slices ci.yml runs against the slices verify.sh lists: the cases ------
+_SLICE_CLAUSE = ("a slice ci.yml names that verify.sh --list does not print is "
+                 "red, a per-run slice no job runs is red, and shards that do not "
+                 "cover 1..N are red")
+_SLICE_RUN_CLAUSE = ("verify.sh --only lint under dash leaves no verify-* "
+                     "directory in TMPDIR, and --list prints exactly the slices "
+                     "the run calls execute")
+
+# A workflow of the shape ci.yml has: a guard job, a sharded sweep job whose
+# slice and shard come from its matrix, plain jobs naming their slices, and a
+# job only the release tier runs.
+_SLICE_CI = """\
+on:
+  workflow_dispatch:
+    inputs:
+      tier:
+        default: per-run
+jobs:
+  verified:
+    timeout-minutes: 5
+    steps:
+      - run: python tools/ci-verified.py --sha "$GITHUB_SHA"
+  selftests:
+    timeout-minutes: 26
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        slice: [selftests, selftests-stress]
+        shard: [1, 2, 3]
+        exclude:
+          - os: windows-latest
+            slice: selftests-stress
+    steps:
+      - uses: actions/checkout@v5
+      - run: sh tools/verify.sh --only ${{ matrix.slice }} --shard ${{ matrix.shard }}/3
+  lint:
+    timeout-minutes: 5
+    steps:
+      - run: sh tools/verify.sh --only lint,runner
+  resample:
+    if: ${{ !cancelled() && inputs.tier == 'release' }}
+    timeout-minutes: 40
+    steps:
+      - run: sh tools/verify.sh --only resample
+"""
+_SLICE_LISTED = {"selftests": "per-run", "selftests-stress": "per-run",
+                 "lint": "per-run", "runner": "per-run",
+                 "release": "release", "resample": "release"}
+
+
+def _slice_cases(check):
+    clean = slice_drift(_SLICE_CI, _SLICE_LISTED) + shard_matrix_drift(_SLICE_CI)
+    check("sv0 %s (THE ALLOW CASE: a workflow running every per-run slice, with "
+          "a full shard matrix and a release-only slice no job runs, is clean: "
+          "%r)" % (_SLICE_CLAUSE, clean), clean == [])
+
+    unknown = slice_drift(_SLICE_CI.replace("--only lint,runner",
+                                            "--only lint,runner,lnt"),
+                          _SLICE_LISTED)
+    check("sv1 %s (a job naming a slice the list does not print is named: %r)"
+          % (_SLICE_CLAUSE, unknown),
+          [s for s, _why in unknown] == ["lnt"])
+
+    listed = dict(_SLICE_LISTED, js="per-run")
+    unrun = slice_drift(_SLICE_CI, listed)
+    check("sv2 %s (a per-run slice no job runs is named: %r)"
+          % (_SLICE_CLAUSE, unrun), [s for s, _why in unrun] == ["js"])
+
+    # A per-run slice that only the release-tier job runs is unrun on every
+    # ordinary run, which is the same gap as no job at all.
+    release_only = slice_drift(
+        _SLICE_CI.replace("--only lint,runner", "--only lint"),
+        _SLICE_LISTED.copy())
+    tiered = slice_drift(
+        _SLICE_CI.replace("--only lint,runner", "--only lint")
+                 .replace("--only resample", "--only resample,runner"),
+        _SLICE_LISTED)
+    check("sv3 %s (a per-run slice dropped from its job, and one left only to "
+          "the release-tier job, are both named: %r / %r)"
+          % (_SLICE_CLAUSE, release_only, tiered),
+          [s for s, _why in release_only] == ["runner"]
+          and [s for s, _why in tiered] == ["runner"])
+
+    short = shard_matrix_drift(_SLICE_CI.replace("shard: [1, 2, 3]",
+                                                 "shard: [1, 2]"))
+    over = shard_matrix_drift(_SLICE_CI.replace("shard: [1, 2, 3]",
+                                                "shard: [1, 2, 3, 4]"))
+    check("sv4 %s (a matrix missing part 3 of 3, and one listing a part 4 of 3, "
+          "are both named: %r / %r)" % (_SLICE_CLAUSE, short, over),
+          len(short) >= 1 and any("3" in why for _s, why in short)
+          and len(over) >= 1 and any("4" in why for _s, why in over))
+
+    # Read as GitHub reads the matrix: an exclude that drops one part of one
+    # slice leaves that slice short on that runner, though every list still
+    # carries all three values.
+    holed = shard_matrix_drift(_SLICE_CI.replace(
+        "        exclude:\n",
+        "        exclude:\n          - os: windows-latest\n"
+        "            shard: 2\n"))
+    check("sv5 %s (an exclude removing part 2 on one runner leaves that "
+          "runner's slice short, and it is named: %r)" % (_SLICE_CLAUSE, holed),
+          len(holed) >= 1 and any("windows-latest" in s or "windows-latest" in why
+                                  for s, why in holed))
+
+    # The shape ci.yml really has: cells named by a `leg` axis, and `include` rows
+    # that add the slice to every cell of a leg because they overwrite no listed
+    # value. Read as plain extra cells - the old reading - the slices would ride on
+    # three cells with no os and no shard, and the real cells would resolve no slice.
+    by_leg = _SLICE_CI.replace(
+        "        slice: [selftests, selftests-stress]\n",
+        "        leg: [plain, stress]\n").replace(
+        "            slice: selftests-stress\n",
+        "            leg: stress\n")
+    by_leg = by_leg.replace(
+        "          - os: windows-latest\n            leg: stress\n",
+        "          - os: windows-latest\n            leg: stress\n"
+        "        include:\n          - leg: plain\n            slice: selftests\n"
+        "          - leg: stress\n            slice: selftests-stress\n")
+    legged = job_slices(by_leg)
+    cells = [(r["cell"].get("leg"), r["cell"].get("slice"), r["shard"])
+             for j in legged["jobs"] if j["job"] == "selftests" for r in j["runs"]]
+    alone = _matrix_cells(["        matrix:", "          os: [a, b]",
+                           "          include:", "            - os: c",
+                           "              extra: x"])
+    check("sv11 %s (an `include` row joins every cell it overwrites nothing in, so "
+          "each leg's cells carry its slice and the workflow is clean; one naming a "
+          "value the matrix does not list is a cell of its own: %r / %r / %r)"
+          % (_SLICE_CLAUSE, sorted(set(cells)), legged["problems"], alone),
+          len(cells) == 9 and legged["problems"] == []
+          and set((leg, sl) for leg, sl, _s in cells)
+          == set([("plain", "selftests"), ("stress", "selftests-stress")])
+          and slice_drift(by_leg, _SLICE_LISTED) == []
+          and shard_matrix_drift(by_leg) == []
+          and alone["cells"] == [{"os": "a"}, {"os": "b"}, {"os": "c", "extra": "x"}])
+
+    unread = slice_drift(_SLICE_CI, None)
+    check("sv6 %s (a list that could not be read is a named problem, never an "
+          "empty verdict: %r)" % (_SLICE_CLAUSE, unread), len(unread) == 1)
+
+    real = parity()
+    check("sv7 %s (THE LIVE CLAIM: ci.yml against the real `verify.sh --list` - "
+          "%d slice(s) listed, %d job(s) read, and the counts are what keep an "
+          "unread list or workflow from passing: %r)"
+          % (_SLICE_CLAUSE, real["counts"]["slices"], real["counts"]["jobs"],
+             real["slices"]),
+          real["slices"] == [] and real["counts"]["slices"] > 0
+          and real["counts"]["jobs"] > 0)
+
+    absent = parity(os.path.join(REPO, "no-such-repo-dir"))
+    check("sv8 %s (a tree with no runner and no workflow is a NAMED failure, not "
+          "a clean verdict over nothing: %r)" % (_SLICE_CLAUSE, absent["slices"]),
+          len(absent["slices"]) >= 1
+          and any("could not be read" in why or "not there" in why
+                  for _s, why in absent["slices"]))
+
+    clean = {"slices": [], "failmodes": [], "job_timeouts": [],
+             "stale_exemptions": [], "counts": {"slices": 3, "jobs": 2}}
+    for key, row, needle in (("slices", ("js", "no job runs it"), "js"),
+                             ("failmodes", ("guard-edits / PreToolUse", "why"),
+                              "guard-edits / PreToolUse"),
+                             ("job_timeouts", ("lint", "no bound"), "lint"),
+                             ("stale_exemptions", ("GONE", "outlived"), "GONE")):
+        buf = io.StringIO()
+        code = render(dict(clean, **{key: [row]}), stream=buf)
+        check("sv9 %s (a %s finding alone exits 1 and names its subject, so no "
+              "kind of finding can hide behind the others being clean: %r)"
+              % (_SLICE_CLAUSE, key, buf.getvalue()[-160:]),
+              code == 1 and needle in buf.getvalue()
+              and "every slice ci.yml names" not in buf.getvalue())
+    buf = io.StringIO()
+    code = render(clean, stream=buf)
+    check("sv10 %s (and a clean verdict exits 0 saying what was checked - "
+          "'nothing to report' must not read like 'nothing was compared': %r)"
+          % (_SLICE_CLAUSE, buf.getvalue()),
+          code == 0 and "every slice ci.yml names" in buf.getvalue()
+          and "3 slice(s)" in buf.getvalue())
+
+
+def _verify_stub_bin(root):
+    """A bin directory whose interpreters and tools answer at once and record
+    nothing, so verify.sh's own control flow is what runs: every slice, every
+    trap, every label. `0.0.0` is what each stub prints, so a step whose label
+    is built from a stub's output reads the same in `--list` and in a run."""
+    bin_dir = os.path.join(root, "bin")
+    os.makedirs(bin_dir)
+    for name in ("python3", "python", "ruff", "vermin", "node", "npx", "claude"):
+        path = os.path.join(bin_dir, name)
+        with io.open(path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write("#!/bin/sh\necho 0.0.0\nexit 0\n")
+        os.chmod(path, 0o755)
+    return bin_dir
+
+
+def run_verify(shell, root, args):
+    """(exit code, output, what is left in the TMPDIR it was given) for the
+    shipped verify.sh run under `shell` with the stubs `root/bin` holds."""
+    scratch = os.path.join(root, "tmp")
+    if os.path.isdir(scratch):
+        shutil.rmtree(scratch)
+    os.makedirs(scratch)
+    env = {"PATH": os.path.join(root, "bin") + os.pathsep + "/usr/bin"
+           + os.pathsep + "/bin", "TMPDIR": scratch, "HOME": root}
+    done = subprocess.run([shell, os.path.join(REPO, VERIFY_REL)] + list(args),
+                          cwd=root, env=env, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT)
+    return (done.returncode, done.stdout.decode("utf-8", "replace"),
+            sorted(os.listdir(scratch)))
+
+
+def summary_labels(output):
+    """The labels a run's summary table names, in order, without their status."""
+    tail = output.split("verify: summary", 1)
+    if len(tail) < 2:
+        return None
+    labels = []
+    for line in tail[1].splitlines():
+        got = re.match(r"^  (?:ok|FAIL|skip)  +(.*?)(?: \(--fast\))?$", line)
+        if got:
+            labels.append(got.group(1))
+    return labels
+
+
+def _verify_slice_run_cases(check):
+    from _suite import remove_tree
+    shell = shutil.which("dash") or shutil.which("sh")
+    if shell is None:
+        check("svr0 %s (no POSIX shell on PATH, so verify.sh cannot be run)"
+              % (_SLICE_RUN_CLAUSE,), False)
+        return
+    ran = os.path.basename(shell)
+    root = tempfile.mkdtemp(prefix="verify-slices-selftest-")
+    try:
+        _verify_stub_bin(root)
+        code, out, left = run_verify(shell, root, ["--only", "lint"])
+        check("svr1 %s (under %s, `--only lint` ran its steps, exited %r and left "
+              "%r in TMPDIR: %r)" % (_SLICE_RUN_CLAUSE, ran, code, left,
+                                     _output_tail(out)),
+              code == 0 and left == [] and bool(summary_labels(out)))
+
+        code, out, left = run_verify(shell, root, ["--list"])
+        listed = parse_verify_list(out)
+        check("svr2 %s (under %s, `--list` exited %r, printed slices %r and "
+              "left %r in TMPDIR)" % (_SLICE_RUN_CLAUSE, ran, code,
+                                      sorted((listed or {}).get("tiers", {})),
+                                      left),
+              code == 0 and left == [] and listed is not None
+              and "lint" in listed["tiers"]
+              and "per-run" in listed["tiers"].values()
+              and "release" in listed["tiers"].values())
+        if listed is None:
+            return
+        drift = []
+        for name in listed["order"]:
+            code, out, left = run_verify(shell, root, ["--only", name])
+            ran_labels = summary_labels(out)
+            if ran_labels != listed["steps"][name] or left:
+                drift.append((name, listed["steps"][name], ran_labels, left,
+                              _output_tail(out)))
+        check("svr3 %s (every slice `--list` prints is one `--only` runs, step "
+              "for step, and none leaves a directory behind: %r)"
+              % (_SLICE_RUN_CLAUSE, drift), drift == [])
+
+        per_run = [label for name in listed["order"]
+                   if listed["tiers"][name] == "per-run"
+                   for label in listed["steps"][name]]
+        code, out, left = run_verify(shell, root, [])
+        check("svr4 %s (a run with no flag executes exactly the per-run slices' "
+              "steps, in the order `--list` prints them: %r vs %r, left %r)"
+              % (_SLICE_RUN_CLAUSE, summary_labels(out), per_run, left),
+              summary_labels(out) == per_run and left == [])
+
+        code, out, left = run_verify(shell, root, ["--only", "lnt"])
+        code2, out2, left2 = run_verify(shell, root, ["--only", "lint",
+                                                      "--shard", "1/3"])
+        check("svr5 %s (a slice the list does not print, and a shard of a slice "
+              "that is not a sweep, are refused with exit 2 having run nothing: "
+              "%r %r / %r %r)" % (_SLICE_RUN_CLAUSE, code, _output_tail(out),
+                                  code2, _output_tail(out2)),
+              code == 2 and code2 == 2 and summary_labels(out) is None
+              and summary_labels(out2) is None and left == [] and left2 == [])
+    finally:
+        remove_tree(root)
+
+
 # --- selftest -----------------------------------------------------------------
 def _cases(check):
-    real = parity()
-    check("p0 THE LIVE CLAIM: every description of the gate set names the "
-          "same gates and no exemption has gone stale (%s) - %r"
-          % (", ".join("%s=%d" % (k, v)
-                       for k, v in sorted(real["counts"].items())),
-             real["missing"] + real["stale_exemptions"]),
-          real["missing"] == [] and real["stale_exemptions"] == [])
-
-    check("p1 ...and every side was really READ, so p0 is not a row of empty "
-          "sets agreeing: every side clears a floor of %d, the larger of the "
-          "absolute term and the largest side's share. It is also the case a "
-          "floor set too HIGH fails - the sides legitimately differ in size, "
-          "so a floor AT the largest count would report the smallest side as "
-          "unread: %r / %r"
-          % (read_floor(real["counts"]), real["counts"],
-             underread_sides(real["counts"])),
-          underread_sides(real["counts"]) == [])
-
-    # THE FIXTURE VALUE IS THE OLD FLOOR'S BLIND SPOT, which is the only
-    # reason this case is worth anything: `p1` compared each count with a fixed
-    # number that the rotted side below CLEARS. Both versions score this fixture,
-    # and they disagree about it.
-    rotted = dict((label, 14) for label, _r in SIDES)
-    rotted["CLAUDE.md"] = 6
-    check("p2 a document that rotted while the other sides stood IS reported, "
-          "by name and with both numbers - the count it named and the floor "
-          "the rest of the tree sets: %r" % (underread_sides(rotted),),
-          underread_sides(rotted) == [("CLAUDE.md", 6, 7)])
-
-    empty = dict((label, 0) for label, _r in SIDES)
-    check("p3 ...and a run where NOTHING was read reports every side, at the "
-          "ABSOLUTE floor. This is the direction the derived term cannot "
-          "cover on its own - a fraction of nothing is nothing, and a floor "
-          "of 0 would let the emptiest possible read pass: %r"
-          % (underread_sides(empty),),
-          underread_sides(empty)
-          == [(label, 0, FLOOR_MINIMUM) for label, _r in SIDES])
-
     live = scratch_isolation()
     check("sc0 THE LIVE CLAIM, now over every runnable file under tools/ and not "
           "the runner alone: nothing names a temp path a second run would share, "
@@ -3865,8 +2972,8 @@ def _cases(check):
 
     # --- the runner really runs what the selector names -----------------------
     # F: `--affected` narrowed a run by dropping a gate it could not dispatch and
-    # then reported every selected check green. `parity()` above cannot see it -
-    # both files name the same gates; they disagree about which of them RUN.
+    # then reported every selected check green. The slice rule cannot see it - the
+    # two files disagree about which checks RUN, not about which slices exist.
     _ad = affected_dispatch()
     check("ad0 THE LIVE CLAIM: every command the selector prints for the probe "
           "set is one the runner can dispatch, over %d command(s) against %d "
@@ -3929,694 +3036,16 @@ def _cases(check):
     # not decoration: `_refs.tool_basename_drift()` holds that a `.py` basename
     # written anywhere under `tools/` must name a file that exists, prose included,
     # and a fixture nobody creates is exactly what a stale reference looks like. That
-    # rule's docstring is where the spellings live; `_SCRIPT_RE` above accepts every
-    # extension it may see, so these fixtures are faithful and not evasions. Do not
-    # "fix" them to the Python extension - the lint will stop the commit, and the
-    # thing it is protecting is the rule rather than these names.
+    # rule's docstring is where the spellings live. Do not "fix" them to the Python
+    # extension - the lint will stop the commit, and the thing it is protecting is
+    # the rule rather than these names.
     body = _shell_command_lines(
         "# node tools/ghost.mjs\n  ruff check x  # ruff check y\n")
     check("c0 a commented invocation is NOT an invocation, and a trailing "
-          "comment is cut - all three files discuss their own gates at "
-          "length, so without this every mention would register: %r" % (body,),
+          "comment is cut - the runner discusses its own commands at length, so "
+          "without this the scratch-path and dispatch readers would read every "
+          "mention as a command: %r" % (body,),
           body == ["ruff check x"])
-
-    yml = _yaml_run_lines(
-        "      - name: something about tools/ghost.mjs\n"
-        "        shell: bash\n"
-        "        run: node tools/real.mjs\n"
-        "      - name: block form\n"
-        "        run: |\n"
-        "          # a comment about tools/commented-fixture\n"
-        "          python tools/block-fixture\n"
-        "      - name: after the block, tools/after.mjs\n")
-    check("c1 a workflow is mostly KEYS: only `run:` values and their block "
-          "scalars are commands, so renaming a step cannot change the gate "
-          "set. Written as 'every non-comment line' first, and a step name "
-          "mentioning verify.sh registered as an invocation of it: %r"
-          % (yml,),
-          yml == ["node tools/real.mjs", "python tools/block-fixture"])
-
-    md = _markdown_fence_lines(
-        DOC_REL,
-        "Prose naming `node tools/ghost.mjs` at length.\n\n"
-        "```bash\n# a comment about tools/commented-fixture\n"
-        "node tools/real.mjs  # a trailing note about tools/trailing-fixture\n"
-        "```\n\nMore prose about tools/after.mjs.\n")
-    check("c2 a Markdown document is mostly PROSE, and this one argues about its "
-          "own gates for pages: only fenced blocks are commands. The reader "
-          "comes from `_refs`, which already owns 'the runnable region of a "
-          "document' for the sweep-shape rule - a second definition of that is "
-          "how two rules come to disagree about what a document says. The "
-          "TRAILING note is cut as well, which it was not: an annotated command "
-          "in a fence named a gate the identical annotation in verify.sh did "
-          "not, and a list a reader is meant to annotate is what this side is: "
-          "%r" % (md,),
-          md == ["node tools/real.mjs"])
-
-    tmp = _output.REPO_ROOT  # any real directory; the point is the missing file
-    res = parity(os.path.join(tmp, "no-such-repo-dir"))
-    check("m0 every unreadable side is a NAMED failure, not perfect parity - "
-          "empty sets for all three would report three missing files as "
-          "agreement: %r" % (res["stale_exemptions"],),
-          len(res["stale_exemptions"]) == len(SIDES)
-          and all("could not be read" in n
-                  for _g, _s, n in res["stale_exemptions"]))
-
-    seen = gates_in(os.path.join(REPO, VERIFY_REL))
-    check("g0 the extractor finds an external gate, a linter and a repo script "
-          "in the real verify.sh - three different shapes, so a pattern that "
-          "silently stopped matching one of them fails here",
-          "npx vitest" in seen and "ruff" in seen
-          and "tools/sweep-selftests.py" in seen)
-
-    fx = tempfile.mkdtemp(prefix="gate-parity-")
-    commented = os.path.join(fx, "commented.sh")
-    running = os.path.join(fx, "running.sh")
-    io.open(commented, "w", encoding="utf-8").write(
-        "# node tools/ghost.mjs is what we used to run\n")
-    io.open(running, "w", encoding="utf-8").write("node tools/ghost.mjs\n")
-    seen_c, seen_r = gates_in(commented), gates_in(running)
-    shutil.rmtree(fx, ignore_errors=True)
-    check("g1 THE PAIR: two fixtures differing ONLY in whether the mention is a "
-          "comment give OPPOSITE answers, so the comment rule is doing work "
-          "rather than the extractor finding nothing either way. Asserting "
-          "the empty one alone would pass on a version that always returned "
-          "an empty set (%r vs %r)" % (seen_c, seen_r),
-          seen_c == set() and seen_r == set(["tools/ghost.mjs"]))
-
-    labels = set(label for label, _r in SIDES)
-    bad_side = [(g, s) for g, sides, _w in ABSENT_BY_DESIGN for s in sides
-                if s not in labels]
-    check("e0 every exemption names a side that EXISTS - a row pointing at a "
-          "label nothing reads is a row that can never be wrong: %r"
-          % (bad_side,),
-          bad_side == [])
-
-    dead = [(g, s) for g, s, n in real["stale_exemptions"]
-            if "does nothing" in n or "any more" in n]
-    check("e1 no exemption names a side that RUNS the gate, and none names a "
-          "gate no side runs. The first stays green under a check that only "
-          "asks about its own side; the second is a row that cannot be "
-          "reported missing and therefore asserts nothing - the reason "
-          "`prove-gates.py` had no row until a side named it: %r" % (dead,),
-          dead == [])
-
-    check("e2 and every row carries at least one side and a REASON, because an "
-          "exemption without one is a decision nobody can disagree with "
-          "(%d rows)" % (len(ABSENT_BY_DESIGN),),
-          all(sides for _g, sides, _w in ABSENT_BY_DESIGN)
-          and all(why.strip() for _g, _s, why in ABSENT_BY_DESIGN))
-
-    buf = io.StringIO()
-    code = render({"missing": [("tools/x.mjs", "ci.yml", "why")],
-                   "stale_exemptions": [], "failmodes": [], "report_targets": [],
-                   "counts": {"verify.sh": 3}}, stream=buf)
-    check("r0 a gap exits 1 and names the gate, the SIDE it is missing from, and "
-          "what to do about it - two sides made 'missing' unambiguous and "
-          "three do not",
-          code == 1 and "tools/x.mjs" in buf.getvalue()
-          and "ci.yml" in buf.getvalue() and "why" in buf.getvalue())
-
-    buf = io.StringIO()
-    code = render({"missing": [], "stale_exemptions": [], "failmodes": [],
-                   "report_targets": [],
-                   "counts": dict((l, 9) for l, _r in SIDES)}, stream=buf)
-    check("r1 and parity exits 0 saying so - 'nothing to report' must not read "
-          "like 'nothing was compared'",
-          code == 0 and "every side names" in buf.getvalue())
-
-    buf = io.StringIO()
-    code = render({"missing": [], "stale_exemptions": [],
-                   "failmodes": [("guard-edits / PreToolUse", "why")],
-                   "report_targets": [],
-                   "counts": dict((l, 9) for l, _r in SIDES)}, stream=buf)
-    check("r2 ...and a fail-mode disagreement exits 1 on its OWN. The gate sets "
-          "can agree perfectly while SECURITY.md tells a reader that a blocking "
-          "guard fails quietly, and a verdict that only counted gates would "
-          "print that as a pass",
-          code == 1 and "guard-edits / PreToolUse" in buf.getvalue()
-          and "why" in buf.getvalue())
-
-    buf = io.StringIO()
-    code = render({"missing": [], "stale_exemptions": [], "failmodes": [],
-                   "report_targets": [("<scratch>/live-plan/*.html", "verify.sh",
-                                       "why")],
-                   "counts": dict((l, 9) for l, _r in SIDES)}, stream=buf)
-    check("r3 ...and so does a report target one runner lacks, with the gate sets "
-          "otherwise in perfect agreement - which is exactly the state the two "
-          "runners were in while CI checked a render no local run opened",
-          code == 1 and "<scratch>/live-plan/*.html" in buf.getvalue()
-          and "verify.sh" in buf.getvalue())
-
-    # --- which documents each runner hands the report checker ---------------
-    # The fixtures are written in each runner's OWN dialect, spelled as the real
-    # files spell them: CI's loop over committed reports continues across lines
-    # and its scratch root is a literal, the runner's list lives in a variable
-    # and its scratch root is a `mktemp` directory. Two readers that only agreed
-    # on identical text would pass none of the allow cases below.
-    live = report_target_drift()
-    sets = {}
-    for label in TARGET_SIDES:
-        sets[label] = sorted(report_targets(
-            _side_lines(os.path.join(REPO, dict(SIDES)[label])))["targets"])
-    check("rt0 THE LIVE CLAIM: verify.sh and ci.yml hand the report checker the "
-          "same documents, committed and rendered alike, and each side really "
-          "named some - an empty set on both would agree about nothing: %r / %r"
-          % (live, sets),
-          live == {"findings": [], "problem": None}
-          and sets["verify.sh"] and sets["verify.sh"] == sets["ci.yml"])
-
-    _rt_ci = _yaml_run_lines(
-        "jobs:\n  j:\n    steps:\n      - name: s\n        run: |\n"
-        "          for f in docs/a.html \\\n"
-        "                   docs/b.html; do\n"
-        "            node tools/check-report-interactive.mjs \"$f\"\n"
-        "          done\n"
-        "          node tools/check-report-interactive.mjs /tmp/live-plan/*.html\n"
-        "          node tools/check-report-interactive.mjs "
-        "/tmp/live-plan/aged.html > /tmp/aged.log 2>&1\n")
-    _rt_old = _shell_command_lines(
-        'WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/verify-XXXXXX")\n'
-        'docs="docs/a.html docs/b.html"\n'
-        'for f in $docs; do\n'
-        '  ( node tools/check-report-interactive.mjs "$f" '
-        '>"$WORKDIR/$(basename "$f").log" 2>&1\n'
-        'done\n')
-    _rt_new = _rt_old + _shell_command_lines(
-        'lp="$WORKDIR/live-plan"\n'
-        'node tools/check-report-interactive.mjs "$lp"/*.html || return 1\n'
-        'node tools/check-report-interactive.mjs "$lp/aged.html" > "$lp/a.log" 2>&1\n')
-    _rt_red = report_target_drift(read={"verify.sh": _rt_old, "ci.yml": _rt_ci})
-    check("rt1 THE DEFECT THIS EXISTS FOR: a runner that checks the committed "
-          "reports alone, beside a CI that also checks a fresh render and an aged "
-          "one, is reported - both rendered targets, by name, against the runner "
-          "that lacks them, and nothing against the committed reports both check: "
-          "%r" % (_rt_red,),
-          _rt_red["problem"] is None
-          and sorted(t for t, _s, _n in _rt_red["findings"])
-          == ["<scratch>/live-plan/*.html", "<scratch>/live-plan/aged.html"]
-          and all(s == "verify.sh" for _t, s, _n in _rt_red["findings"]))
-
-    _rt_green = report_target_drift(read={"verify.sh": _rt_new, "ci.yml": _rt_ci})
-    check("rt2 THE ALLOW CASE: the same documents spelled in two dialects - a list "
-          "in a variable against a loop continued over lines, a mktemp root "
-          "against a literal /tmp - agree. A reader that compared text would "
-          "fail here, and one that could not fire would pass rt1's pair only: %r"
-          % (_rt_green,),
-          _rt_green == {"findings": [], "problem": None})
-
-    _rt_back = report_target_drift(read={"verify.sh": _rt_new,
-                                         "ci.yml": _rt_ci[:4]})
-    check("rt3 ...and the comparison runs BOTH ways: a leg only the local runner "
-          "has is reported against CI, because a gate CI lacks is a push that "
-          "was never checked where it lands: %r" % (_rt_back,),
-          _rt_back["problem"] is None
-          and [s for _t, s, _n in _rt_back["findings"]] == ["ci.yml", "ci.yml"])
-
-    _rt_heredoc = report_targets(_shell_command_lines(
-        'for f in docs/a.html; do\n'
-        "  python3 - <<'PYEOF'\n"
-        'for f in docs/wrong.html; do\n'
-        'PYEOF\n'
-        '  node tools/check-report-interactive.mjs "$f"\n'
-        'done\n'))
-    check("rt4 a heredoc's body is another language and binds nothing: a line in "
-          "one that LOOKS like a shell loop does not re-bind the variable the real "
-          "loop around the call set - the real legs carry Python loops inside "
-          "heredocs, beside the call they would otherwise redirect: %r"
-          % (_rt_heredoc,),
-          _rt_heredoc["targets"] == set(["docs/a.html"])
-          and _rt_heredoc["unresolved"] == [])
-
-    # A HERE-STRING IS NOT A HEREDOC. `<<<` feeds one word to a command and ends
-    # there; a reader that took that word for a terminator dropped every line after
-    # it, the checker call included, and reported neither a finding nor a problem.
-    _rt_herestr = report_targets(_shell_command_lines(
-        'grep -q x <<< word\n'
-        'node tools/check-report-interactive.mjs docs/a.html\n'))
-    check("rt6 a here-string ends on its own line: the call AFTER one is still "
-          "read, rather than swallowed as the body of a heredoc that never "
-          "opened: %r" % (_rt_herestr,),
-          _rt_herestr["calls"] == 1
-          and _rt_herestr["targets"] == set(["docs/a.html"]))
-
-    # THE SAME TARGET, BARE ON ONE SIDE AND INSIDE `if ...; then` ON THE OTHER. A
-    # tokeniser that keeps shell punctuation on the word reads the second as a
-    # different document - `iff.html;` - and reports both sides as missing a leg
-    # each has. The fixture file name ends in the letter the separator would be
-    # glued to, so a strip of one trailing character could not pass by accident.
-    _rt_if_ci = _yaml_run_lines(
-        "jobs:\n  j:\n    steps:\n      - name: s\n        run: |\n"
-        "          if node tools/check-report-interactive.mjs /tmp/iff.html; then\n"
-        "            echo ok\n"
-        "          fi\n")
-    _rt_if_local = _shell_command_lines(
-        'WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/verify-XXXXXX")\n'
-        'node tools/check-report-interactive.mjs "$WORKDIR/iff.html"\n')
-    _rt_if = report_target_drift(read={"verify.sh": _rt_if_local,
-                                       "ci.yml": _rt_if_ci})
-    check("rt7 ...and a target written inside `if ...; then` agrees with the same "
-          "target written bare - the separator is shell syntax, not part of the "
-          "document's name: %r" % (_rt_if,),
-          _rt_if == {"findings": [], "problem": None})
-
-    # ...and mirrored, with the variable UNQUOTED inside the `if`. Splitting on
-    # punctuation alone reads `$` as a word of its own, so this is the pair that
-    # tells a tokeniser splitting on whitespace AND punctuation from one that only
-    # separates the punctuation - which the quoted spelling above cannot.
-    _rt_if2 = report_target_drift(read={
-        "verify.sh": _shell_command_lines(
-            'WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/verify-XXXXXX")\n'
-            'if node tools/check-report-interactive.mjs $WORKDIR/iff.html; then\n'
-            '  true\n'
-            'fi\n'),
-        "ci.yml": _yaml_run_lines(
-            "jobs:\n  j:\n    steps:\n      - name: s\n        run: |\n"
-            "          node tools/check-report-interactive.mjs /tmp/iff.html\n")})
-    check("rt8 ...and mirrored: an UNQUOTED variable inside `if ...; then` on the "
-          "local side agrees with the bare literal in CI: %r" % (_rt_if2,),
-          _rt_if2 == {"findings": [], "problem": None})
-
-    _rt_none = report_target_drift(read={"verify.sh": [], "ci.yml": _rt_ci})
-    _rt_unres = report_target_drift(read={
-        "verify.sh": _shell_command_lines(
-            'node tools/check-report-interactive.mjs "$never_assigned"\n'),
-        "ci.yml": _rt_ci})
-    check("rt5 a runner with NO call to the checker, and a target this reader "
-          "cannot expand, are named PROBLEMS - each would otherwise come back as "
-          "an empty finding list, and an unexpanded `$x` compared with anything "
-          "says something false either way: %r / %r" % (_rt_none, _rt_unres),
-          _rt_none["findings"] == [] and "no call" in (_rt_none["problem"] or "")
-          and _rt_unres["findings"] == []
-          and "never_assigned" in (_rt_unres["problem"] or ""))
-
-    # --- which legs of the sweep each runner runs -----------------------------
-    # Fixtures in each runner's own dialect, spelled as the real files spell them:
-    # CI calls `python` from a `run:` key, the local runner calls `python3` through
-    # its `run "label"` wrapper, continued over a line.
-    _sl_src = ('def main(argv):\n'
-               '    enc = _flag_value(argv, "--encoding", None)\n'
-               '    jobs = int(_flag_value(argv, "--jobs", 4))\n'
-               '    quiet = "--quiet" in argv\n'
-               '    shard = _flag_value(argv, "--shard", None)\n'
-               '    record = _flag_value(argv, "--record-costs", None)\n'
-               'if __name__ == "__main__":\n'
-               '    if "--selftest" in sys.argv[1:]:\n'
-               '        pass\n')
-    _sl_ci = _yaml_run_lines(
-        "jobs:\n  j:\n    steps:\n"
-        "      - name: sweep\n        run: python tools/sweep-selftests.py\n"
-        "      - name: own\n        run: python tools/sweep-selftests.py --selftest\n"
-        "      - name: codec\n"
-        "        run: python tools/sweep-selftests.py --encoding cp1252\n")
-    _sl_head = _shell_command_lines(
-        'run "selftests" python3 tools/sweep-selftests.py\n'
-        'run "...and the runner\'s own cases, read directly" \\\n'
-        '  python3 tools/sweep-selftests.py --selftest\n')
-    _sl_fixed = _sl_head + _shell_command_lines(
-        'enc=cp1252\n'
-        'run "selftests again, on a legacy code page" \\\n'
-        '  python3 tools/sweep-selftests.py --encoding="$enc"\n')
-
-    live_legs = sweep_leg_drift()
-    _sl_shape = sweep_flag_shape(io.open(os.path.join(REPO, SWEEP),
-                                         encoding="utf-8").read())
-    _sl_sets = dict((label, sorted(sweep_legs(
-        _side_lines(os.path.join(REPO, dict(SIDES)[label])),
-        _sl_shape["valued"])["legs"])) for label in TARGET_SIDES)
-    check("sl0 THE LIVE CLAIM: verify.sh and ci.yml run the same legs of the "
-          "sweep, and the codec leg is among them on both - a pair that agreed on "
-          "the plain leg alone would agree about nothing CI found: %r / %r"
-          % (live_legs, _sl_sets),
-          live_legs == {"findings": [], "stale": [], "problem": None}
-          and _sl_sets["verify.sh"] == _sl_sets["ci.yml"]
-          and ((), (), ("--encoding cp1252",)) in _sl_sets["verify.sh"])
-
-    _sl_red = sweep_leg_drift(read={"verify.sh": _sl_head, "ci.yml": _sl_ci},
-                              source=_sl_src)
-    check("sl1 THE DEFECT THIS EXISTS FOR: a runner that sweeps once beside a CI "
-          "that sweeps again under a forced codec is reported - the codec leg, by "
-          "its flags, against the runner that lacks it, and nothing against the "
-          "legs both run: %r" % (_sl_red,),
-          _sl_red["problem"] is None and _sl_red["stale"] == []
-          and [(leg, side) for leg, side, _n in _sl_red["findings"]]
-          == [(SWEEP + " --encoding cp1252", "verify.sh")])
-
-    _sl_back = sweep_leg_drift(read={"verify.sh": _sl_fixed,
-                                     "ci.yml": _sl_ci[:2]}, source=_sl_src)
-    check("sl2 ...and BOTH ways: a leg only the local runner runs is reported "
-          "against CI, because a leg CI lacks is a push nobody ran it on: %r"
-          % (_sl_back,),
-          _sl_back["problem"] is None
-          and [(leg, side) for leg, side, _n in _sl_back["findings"]]
-          == [(SWEEP + " --encoding cp1252", "ci.yml")])
-
-    _sl_green = sweep_leg_drift(read={"verify.sh": _sl_fixed, "ci.yml": _sl_ci},
-                                source=_sl_src)
-    check("sl3 THE ALLOW CASE: the same legs in two dialects agree - `python` "
-          "against `python3`, `--encoding cp1252` against `--encoding=\"$enc\"` "
-          "through a variable, a call continued over a line against one on its "
-          "own. A reader comparing text fails here: %r" % (_sl_green,),
-          _sl_green == {"findings": [], "stale": [], "problem": None})
-
-    # THE DECISION WHICH FLAGS ARE LEGS, PINNED. `--jobs` on one side and `--quiet`
-    # on the other change how a leg runs and how it prints, never what it checks,
-    # so the pair below is the same legs. Treat either as a leg and this goes red -
-    # which is the over-fire that would make the rule one people delete.
-    _sl_knobs = sweep_leg_drift(read={
-        "verify.sh": _shell_command_lines(
-            'run "selftests" python3 tools/sweep-selftests.py --jobs 4\n'
-            'run "own" python3 tools/sweep-selftests.py --selftest\n'
-            'run "codec" python3 tools/sweep-selftests.py --encoding cp1252 '
-            '--jobs=2\n'),
-        "ci.yml": _yaml_run_lines(
-            "jobs:\n  j:\n    steps:\n"
-            "      - name: a\n        run: python tools/sweep-selftests.py --quiet\n"
-            "      - name: b\n        run: python tools/sweep-selftests.py --selftest\n"
-            "      - name: c\n        run: python tools/sweep-selftests.py "
-            "--quiet --encoding cp1252\n")}, source=_sl_src)
-    check("sl4 a flag that is not a leg may differ between the sides: `--jobs` in "
-          "either spelling locally and `--quiet` in CI leave the legs the same - "
-          "and `--jobs 4`'s value is consumed with it rather than read as a leg "
-          "of its own: %r" % (_sl_knobs,),
-          _sl_knobs == {"findings": [], "stale": [], "problem": None})
-
-    # --shard IS NOT A LEG, AND ITS VALUE MAY BE A MATRIX EXPRESSION. Dropping a
-    # not-leg flag BEFORE asking whether the words resolved is what lets CI write
-    # `--shard "${{ matrix.shard }}/3"`; the leg flag beside it is still compared.
-    _sh_wf = ("jobs:\n  j:\n    strategy:\n      matrix:\n"
-              "        shard: [1, 2, 3]\n    steps:\n"
-              "      - name: a\n        run: python tools/sweep-selftests.py "
-              "--shard \"${{ matrix.shard }}/3\"\n"
-              "      - name: b\n        run: python tools/sweep-selftests.py --selftest\n"
-              "      - name: c\n        run: python tools/sweep-selftests.py "
-              "--encoding cp1252 --shard \"${{ matrix.shard }}/3\"\n")
-    _sl_sharded = sweep_leg_drift(read={
-        "verify.sh": _sl_fixed, "ci.yml": _yaml_run_lines(_sh_wf)}, source=_sl_src)
-    check("sl20 a CI side that runs each leg as matrix shards runs the SAME legs as "
-          "a side that runs them whole - the shard's `${{ }}` value is dropped "
-          "with the flag rather than reported unresolved: %r" % (_sl_sharded,),
-          _sl_sharded == {"findings": [], "stale": [], "problem": None})
-    _sl_sh_short = sweep_leg_drift(read={
-        "verify.sh": _sl_fixed,
-        "ci.yml": _yaml_run_lines(_sh_wf.replace(" --encoding cp1252", ""))},
-        source=_sl_src)
-    check("sl21 ...and dropping the shard's value does not drop the LEG beside it: "
-          "the same workflow without its codec flag is missing that leg: %r"
-          % (_sl_sh_short["findings"],),
-          [(leg, side) for leg, side, _n in _sl_sh_short["findings"]]
-          == [(SWEEP + " --encoding cp1252", "ci.yml")])
-
-    _shm_ok = shard_matrix_drift(_sh_wf)
-    _shm_gap = shard_matrix_drift(_sh_wf.replace("[1, 2, 3]", "[1, 2]"))
-    _shm_lit = shard_matrix_drift(
-        "jobs:\n  j:\n    steps:\n"
-        "      - name: a\n        run: python tools/sweep-selftests.py --shard 1/3\n"
-        "      - name: b\n        run: python tools/sweep-selftests.py --shard=2/3\n")
-    _shm_lit_ok = shard_matrix_drift(
-        "jobs:\n  j:\n    steps:\n"
-        "      - name: a\n        run: python tools/sweep-selftests.py --shard 1/2\n"
-        "      - name: b\n        run: python tools/sweep-selftests.py --shard=2/2\n")
-    _shm_odd = shard_matrix_drift(
-        "jobs:\n  j:\n    steps:\n"
-        "      - name: a\n        run: python tools/sweep-selftests.py --shard \"$S\"\n")
-    check("shm0 every part of a sharded leg runs: a matrix listing [1, 2, 3] for "
-          "`/3` and literals covering 1/2 and 2/2 are clean; a matrix of [1, 2] "
-          "for `/3`, literals 1/3 and 2/3 alone, and a value this reader cannot "
-          "resolve are each a finding - the shard flag is excused from the leg "
-          "comparison ONLY because of this: %r"
-          % ([_shm_ok, _shm_gap, _shm_lit, _shm_lit_ok, _shm_odd],),
-          _shm_ok == [] and _shm_lit_ok == [] and len(_shm_gap) == 1
-          and "[1, 2]" in _shm_gap[0][1] and len(_shm_lit) == 1
-          and len(_shm_odd) == 1)
-
-    _shm_live_text = io.open(os.path.join(REPO, CI_REL), encoding="utf-8").read()
-    _shm_live = shard_matrix_drift(_shm_live_text)
-    _shm_specs = _shm_live_text.count("--shard ")
-    check("shm1 THE LIVE CLAIM: ci.yml runs every part of every leg it shards "
-          "(%d `--shard` calls read): %r" % (_shm_specs, _shm_live),
-          _shm_live == [] and _shm_specs > 0)
-
-    # THE MATRIX IS HALF OF WHAT MAKES A LEG RUN; the step's `if:` is the other.
-    # Each mutation leaves every step in the file, so the leg comparison cannot see it.
-    _shm_leg_list = "        leg: [plain, cp1252, spaced]\n"
-    _shm_e2e = ("          - os: ubuntu-latest\n            leg: e2e\n"
-                "          - os: windows-latest\n            leg: e2e\n")
-    _shm_drop = shard_matrix_drift(_shm_live_text.replace(
-        _shm_leg_list, "        leg: [plain, spaced]\n"))
-    check("shm2 a leg dropped from the matrix's `leg:` list is named: the steps "
-          "still carry `matrix.leg == 'cp1252'`, so only reading the matrix finds "
-          "that no cell runs them: %r" % (_shm_drop,),
-          _shm_live_text.count(_shm_leg_list) == 1 and len(_shm_drop) == 1
-          and _shm_drop[0][0] == "matrix.leg == 'cp1252'")
-    _shm_typo = shard_matrix_drift(_shm_live_text.replace(
-        "matrix.leg == 'cp1252' }}", "matrix.leg == 'cp1252 ' }}"))
-    _shm_typo2 = shard_matrix_drift(_shm_live_text.replace(
-        "matrix.leg == 'cp1252' }}", "matrix.leg == 'cp1251' }}"))
-    check("shm3 an `if:` that spells a leg differently from the matrix is named "
-          "twice over - the spelling nothing produces, and the real leg left with "
-          "no step: %r" % ([_shm_typo, _shm_typo2],),
-          all(sorted(w[0] for w in f) == ["leg cp1252", "matrix.leg == %r" % v]
-              for f, v in ((_shm_typo, "cp1252 "), (_shm_typo2, "cp1251"))))
-    _shm_noe2e = shard_matrix_drift(_shm_live_text.replace(_shm_e2e, ""))
-    check("shm4 removing the `include` e2e cells is named - every launcher step "
-          "and the runner's own selftest ask for a leg no cell produces: %r"
-          % (_shm_noe2e,),
-          _shm_e2e in _shm_live_text and len(_shm_noe2e) == 1
-          and _shm_noe2e[0][0] == "matrix.leg == 'e2e'")
-    _shm_ex = shard_matrix_drift(_shm_live_text.replace(
-        "          - os: windows-latest\n            leg: spaced\n", ""))
-    _shm_os = shard_matrix_drift(_shm_live_text.replace(
-        "runner.os != 'Windows' && matrix.leg == 'spaced'",
-        "matrix.os == 'macos-latest' && matrix.leg == 'spaced'"))
-    check("shm5 the matrix is read as GitHub reads it: dropping the `exclude` "
-          "entry changes no leg (spaced still runs on ubuntu), so the live file "
-          "stays clean, while an `if:` naming an os no cell has is named: %r"
-          % ([_shm_ex, _shm_os],),
-          _shm_ex == [] and len(_shm_os) == 1
-          and _shm_os[0][0] == "matrix.os == 'macos-latest'")
-
-    _sl_none = sweep_leg_drift(read={"verify.sh": [], "ci.yml": _sl_ci},
-                               source=_sl_src)
-    _sl_unres = sweep_leg_drift(read={
-        "verify.sh": _shell_command_lines(
-            'python3 tools/sweep-selftests.py --encoding "$never_assigned"\n'),
-        "ci.yml": _sl_ci}, source=_sl_src)
-    _sl_noarity = sweep_leg_drift(read={"verify.sh": _sl_fixed, "ci.yml": _sl_ci},
-                                  source="def main(argv):\n    return 0\n")
-    check("sl5 a runner with NO call to the sweep, a flag value this reader "
-          "cannot expand, and a sweep whose valued flags cannot be read are named "
-          "PROBLEMS, never an empty finding list: %r / %r / %r"
-          % (_sl_none, _sl_unres, _sl_noarity),
-          _sl_none["findings"] == [] and "no call" in (_sl_none["problem"] or "")
-          and _sl_unres["findings"] == []
-          and "never_assigned" in (_sl_unres["problem"] or "")
-          and _sl_noarity["findings"] == []
-          and "_flag_value" in (_sl_noarity["problem"] or ""))
-
-    _sl_stale = sweep_leg_drift(
-        read={"verify.sh": _sl_fixed, "ci.yml": _sl_ci}, source=_sl_src,
-        not_legs=dict(NOT_LEG_FLAGS, **{"--gone": "a flag the sweep stopped "
-                                                  "reading long ago, kept here"}))
-    check("sl6 a row excusing a flag the sweep no longer reads is reported as "
-          "stale, and the rows that name live flags are not: %r" % (_sl_stale,),
-          _sl_stale["problem"] is None and _sl_stale["findings"] == []
-          and [flag for flag, _n in _sl_stale["stale"]] == ["--gone"])
-
-    buf = io.StringIO()
-    code = render({"missing": [], "stale_exemptions": [], "failmodes": [],
-                   "report_targets": [],
-                   "sweep_legs": [(SWEEP + " --encoding cp1252", "verify.sh",
-                                   "why")],
-                   "counts": dict((l, 9) for l, _r in SIDES)}, stream=buf)
-    check("sl7 ...and a sweep leg one runner lacks exits 1 on its own, with the "
-          "gate sets otherwise in agreement, naming the leg and the side",
-          code == 1 and "--encoding cp1252" in buf.getvalue()
-          and "MISSING from verify.sh" in buf.getvalue())
-
-    # --- the spellings a line-regex reader lost --------------------------------
-    # Each pair below differs from CI by exactly one spelling of a leg, and each
-    # was read as agreement by a reader that took one literal call per line: the
-    # plain leg is always there, so its "no call" guard never tripped.
-    _sl_env = sweep_leg_drift(read={"verify.sh": _sl_fixed + _shell_command_lines(
-        "PYTHONIOENCODING=cp1252 python3 tools/sweep-selftests.py\n"),
-        "ci.yml": _sl_ci}, source=_sl_src)
-    check("sl8 a call behind an ENV PREFIX is a call, and the prefix is part of "
-          "its leg - `NAME=val cmd` is not an assignment line: %r" % (_sl_env,),
-          _sl_env["problem"] is None
-          and [(leg, side) for leg, side, _n in _sl_env["findings"]]
-          == [("PYTHONIOENCODING=cp1252 " + SWEEP, "ci.yml")])
-
-    _sl_listed = sweep_leg_drift(read={"verify.sh": _shell_command_lines(
-        "python3 tools/sweep-selftests.py; python3 tools/sweep-selftests.py "
-        "--selftest && python3 tools/sweep-selftests.py --encoding cp1252\n"),
-        "ci.yml": _sl_ci}, source=_sl_src)
-    check("sl9 every call on a line joined by `;` or `&&` is read, not the first "
-          "one alone - the three legs on one line agree with CI's three: %r"
-          % (_sl_listed,),
-          _sl_listed == {"findings": [], "stale": [], "problem": None})
-
-    _sl_spelt = sweep_leg_drift(read={"verify.sh": _shell_command_lines(
-        'run "selftests" python3 tools/sweep-selftests.py\n'
-        '"$PYTHON" ./tools/sweep-selftests.py --selftest\n'
-        'SWP=tools/sweep-selftests.py\n'
-        'python3 "$SWP" --encoding cp1252\n'),
-        "ci.yml": _sl_ci}, source=_sl_src)
-    check("sl10 a `./` path, an interpreter in a variable the file never assigns "
-          "(the environment's), and the sweep's path in a variable are each the "
-          "same call - the legs they run agree with CI's: %r" % (_sl_spelt,),
-          _sl_spelt == {"findings": [], "stale": [], "problem": None})
-
-    _sl_opt = sweep_leg_drift(read={"verify.sh": _sl_fixed + _shell_command_lines(
-        "python3 -X utf8 tools/sweep-selftests.py\n"),
-        "ci.yml": _sl_ci}, source=_sl_src)
-    check("sl11 an interpreter option before the sweep is read, and it is part of "
-          "the leg - `-X utf8` changes the codec the suites print through: %r"
-          % (_sl_opt,),
-          _sl_opt["problem"] is None
-          and [(leg, side) for leg, side, _n in _sl_opt["findings"]]
-          == [("-X utf8 " + SWEEP, "ci.yml")])
-
-    _sl_lost = sweep_leg_drift(read={"verify.sh": _sl_fixed + _shell_command_lines(
-        'python3 "$here/../tools/sweep-selftests.py" --encoding utf-16\n'),
-        "ci.yml": _sl_ci}, source=_sl_src)
-    check("sl12 a mention of the sweep this reader cannot resolve is a PROBLEM "
-          "naming the line, never silence: %r" % (_sl_lost,),
-          _sl_lost["findings"] == []
-          and "here/../tools/sweep-selftests.py" in (_sl_lost["problem"] or ""))
-
-    _sl_loop = sweep_leg_drift(read={"verify.sh": _sl_head + _shell_command_lines(
-        'for e in cp1252; do python3 tools/sweep-selftests.py --encoding "$e"; '
-        'done\n'), "ci.yml": _sl_ci}, source=_sl_src)
-    check("sl13 a loop variable is expanded into one leg per loop word, as the "
-          "report reader does through the same scan - the looped codec leg "
-          "agrees with CI's bare one: %r" % (_sl_loop,),
-          _sl_loop == {"findings": [], "stale": [], "problem": None})
-
-    _sl_sub = sweep_leg_drift(read={"verify.sh": _sl_head + _shell_command_lines(
-        "( python3 tools/sweep-selftests.py --encoding cp1252 )\n"),
-        "ci.yml": _sl_ci}, source=_sl_src)
-    check("sl14 a subshell's closing `)` ends the command and is not a flag of "
-          "the leg: %r" % (_sl_sub,),
-          _sl_sub == {"findings": [], "stale": [], "problem": None})
-
-    _rt_env = report_targets(_shell_command_lines(
-        "FOO=1 node tools/check-report-interactive.mjs docs/c.html\n"))
-    _rt_two = report_targets(_shell_command_lines(
-        "node tools/check-report-interactive.mjs docs/a.html && "
-        "node tools/check-report-interactive.mjs docs/b.html\n"))
-    _rt_sub = report_targets(_shell_command_lines(
-        "( node tools/check-report-interactive.mjs --quiet )\n"))
-    check("rt9 the report reader shares those readers: a call behind an env "
-          "prefix is read, a second call on a line is read, and a subshell's `)` "
-          "is not a document - a call with no document is unresolved: "
-          "%r / %r / %r" % (_rt_env, _rt_two, _rt_sub),
-          _rt_env["targets"] == set(["docs/c.html"])
-          and _rt_two["targets"] == set(["docs/a.html", "docs/b.html"])
-          and _rt_sub["targets"] == set() and _rt_sub["unresolved"] != [])
-
-    # --- the fourth side ------------------------------------------------------
-    # CLAUDE.md's list said of itself that it was one of the sides being
-    # compared, and it was the one side nothing read. These drive `compare()` with
-    # fixture sets, because what has to be shown is that a named side is really
-    # compared - and four real files would put the readers under test instead.
-    agreed = dict((label, set(["tools/alpha.mjs", "tools/beta.mjs"])) for label, _r in SIDES)
-    same = compare(agreed, table=())
-    check("x0 THE SECOND DIRECTION, and it looks vacuous on purpose: sides that "
-          "name the same gates report nothing. It is the only case that fails "
-          "if the comparison starts firing unconditionally, which is the other "
-          "way x1 could be green for a bad reason: %r" % (same,),
-          same["missing"] == [] and same["stale_exemptions"] == [])
-
-    short = dict(agreed)
-    short["CLAUDE.md"] = set(["tools/alpha.mjs"])
-    gap = compare(short, table=())
-    check("x1 a gate the other sides name and CLAUDE.md does not is reported "
-          "against CLAUDE.md BY NAME, and nothing else is reported. This case "
-          "exists because the document telling readers it was compared was "
-          "not in SIDES: %r" % (gap["missing"],),
-          [(g, s) for g, s, _n in gap["missing"]]
-          == [("tools/beta.mjs", "CLAUDE.md")])
-
-    lone = dict((label, set()) for label, _r in SIDES)
-    lone["CLAUDE.md"] = set(["tools/lone.mjs"])
-    others = tuple(l for l, _r in SIDES if l != "CLAUDE.md")
-    unrowed = compare(lone, table=())
-    rowed = compare(lone, table=(("tools/lone.mjs", others, "a reason"),))
-    check("x2 THE PAIR behind the two rows CLAUDE.md alone carries: a gate only "
-          "it names is reported against every other side until a row says why, "
-          "and the row then silences exactly those. Neither half was reachable "
-          "before the fourth side, which is why `prove-gates.py` could not be "
-          "given a row that asserted anything: %r vs %r"
-          % (unrowed["missing"], rowed),
-          sorted(s for _g, s, _n in unrowed["missing"])
-          == sorted(others)
-          and rowed["missing"] == [] and rowed["stale_exemptions"] == [])
-
-    forgot = dict((label, set(["tools/alpha.mjs"])) for label, _r in SIDES)
-    del forgot["CLAUDE.md"]
-    unread = compare(forgot, table=())
-    check("x3 a caller that read no gate set for a side gets a NAMED failure "
-          "instead of a verdict over the sides it did remember - substituting "
-          "an empty set would report the unread side as absent from nothing "
-          "and disagreeing with everything: %r" % (unread,),
-          unread["missing"] == []
-          and [(g, s) for g, s, _n in unread["stale_exemptions"]]
-          == [("CLAUDE.md", "-")])
-
-    doc = gates_in(os.path.join(REPO, CLAUDE_REL))
-    check("x4 REAL DOCUMENT, BOTH DIRECTIONS: CLAUDE.md's fences are read, and "
-          "`tools/redfirst.sh` - which it names in PROSE and no side runs - is "
-          "not. Several rows in the table rest on that scope, and a reader "
-          "widened to the whole document would invent a gate every other side "
-          "is missing: %r" % (sorted(doc or []),),
-          doc is not None and "tools/sweep-selftests.py" in doc
-          and "tools/redfirst.sh" not in doc)
-
-    # THE ANNOTATION IS NOT PART OF THE GATE SET, and this says so about the REAL
-    # document rather than about a fixture. `c2` proves the trailing note is cut
-    # from a Markdown fence; what nobody could point at is that the annotation
-    # beside CLAUDE.md's own sweep line is therefore free text - so a comment
-    # that had gone out of date was left standing through a whole release on the
-    # grounds that correcting it might move this check. It cannot. The comment is
-    # cut before `_SCRIPT_RE` ever sees the line, exactly as `_shell_command_lines`
-    # cuts verify.sh's, and a Markdown side that read its annotations would let a
-    # gate be DECLARED by mentioning it - which is the opposite of comparing what
-    # each side RUNS, and would make this the fourth description of the gate set
-    # rather than a check on the other three.
-    _cm_text = io.open(os.path.join(REPO, CLAUDE_REL), encoding="utf-8").read()
-    _cm_run = [ln for ln in _cm_text.split("\n")
-               if ln.startswith("python3 tools/sweep-selftests.py ") and " #" in ln]
-    _cm_before = _markdown_fence_lines(CLAUDE_REL, _cm_text)
-    _cm_after = _markdown_fence_lines(
-        CLAUDE_REL,
-        _cm_text.replace(_cm_run[0],
-                         _cm_run[0].split(" #")[0] + "  # and tools/ghost-gate.mjs")
-        if _cm_run else _cm_text)
-    check("x5 the ANNOTATION beside a fenced command is not read: CLAUDE.md's "
-          "sweep line carries one (%r), and rewriting it to name a tool no side "
-          "runs leaves the runnable lines byte-identical (%d lines either way) "
-          "with no ghost gate invented. This is what makes that comment safe to "
-          "correct, which it was not known to be: %r"
-          % (_cm_run, len(_cm_before),
-             sorted(set(_cm_after) - set(_cm_before))),
-          bool(_cm_run) and _cm_before == _cm_after
-          and "python3 tools/sweep-selftests.py" in _cm_before
-          and not any("ghost-gate" in ln for ln in _cm_after))
-
-    buf = io.StringIO()
-    listed = render_list({"verify.sh": set(["tools/alpha.mjs"]), "ci.yml": set(),
-                          "CONTRIBUTING.md": None,
-                          "CLAUDE.md": set(["tools/alpha.mjs"])}, stream=buf)
-    shown = buf.getvalue()
-    check("l0 --list heads a column per side, derived from SIDES. It was two "
-          "hard-coded columns, so a side it did not know about was invisible "
-          "in the one output that exists to show what each side invokes - and "
-          "an unreadable side prints `?` rather than reading as a side that "
-          "runs nothing: %r" % (shown,),
-          listed == 1 and all(label in shown for label, _r in SIDES)
-          and "x" in shown and "?" in shown)
-
 
     # --- the sweep's isolation against every document that describes it -------
     # Three documents describe what `sweep-selftests.py` points away from the
@@ -4715,47 +3144,6 @@ def _cases(check):
            and _mini_extra["read"] != _mini_extra["labels"]
            and _mini_unplanted["planted"] != _mini_unplanted["read"]))
 
-    # --- is each exemption's REASON still true of the other side? --------------
-    _er_live = exemption_reason_drift()
-    check("er1 THE LIVE CLAIM: every row in ABSENT_BY_DESIGN whose CI step "
-          "compares a committed file names a local gate that makes the same "
-          "claim, and that gate is one a local side really runs. This is the "
-          "case that goes red the day a reason stops being true of the check it "
-          "excuses - which `compare()` cannot see, because the row, its sides "
-          "and the file set all stay correct: %r" % (_er_live,),
-          _er_live == [])
-    # The discriminator, asserted on a step that only READS. Four of the five
-    # exempted scripts name a committed path in CI and only read it; a rule on the
-    # path alone convicts all four, and a lint that fires on correct rows is one
-    # people delete rather than obey.
-    _er_readonly = exemption_reason_drift(table=(
-        ("plugins/audit/scripts/status/audit-status.py", DOC_SIDES,
-         "a reason naming no local gate at all"),))
-    _er_compared = exemption_reason_drift(table=(
-        ("plugins/audit/scripts/demo/gen-demo-usage.py", LOCAL_SIDES,
-         "same throwaway demo tree"),))
-    check("er2 the COMPARISON is what makes a step evidence, not the committed "
-          "path: an exempted script whose CI step merely READS one is clean even "
-          "with a reason that names nothing, while gen-demo-usage.py's own row "
-          "- a step that diffs the committed ledger - is reported. Both "
-          "directions, because "
-          "either alone is a rule that fires on everything or on nothing: "
-          "%r / %r" % (_er_readonly, [g for g, _w in _er_compared]),
-          _er_readonly == []
-          and [g for g, _w in _er_compared]
-          == ["plugins/audit/scripts/demo/gen-demo-usage.py"])
-    _er_umbrella = exemption_reason_drift(table=(
-        ("plugins/audit/scripts/report/render-report.py", DOC_SIDES,
-         "renders throwaway reports, which verify.sh's legs do exactly as CI "
-         "does; a stronger local check compares the committed bytes"),))
-    check("er3 a reason that names only the umbrella script a side IS (verify.sh) "
-          "names no gate making the comparison, and is reported - the case that "
-          "stays green if the umbrella is allowed to satisfy the rule, which it "
-          "did until the sentence naming the real gate could be struck out "
-          "unnoticed: %r" % ([g for g, _w in _er_umbrella],),
-          [g for g, _w in _er_umbrella]
-          == ["plugins/audit/scripts/report/render-report.py"])
-
     # --- THE GENERAL RULE: every exemption names who audits its reason ---------
     # Two defects were recorded before this existed and both had one shape - a row
     # whose sentence had stopped being true while the row stayed green. Each was
@@ -4774,7 +3162,7 @@ def _cases(check):
           "classifying the classification is a regress"
           % (len(_ea_tables),),
           len(_ea_tables) >= 20
-          and "ABSENT_BY_DESIGN" in _ea_tables
+          and "SCRATCH_EXEMPT" in _ea_tables
           and "FIELD_HELP" in _ea_tables,
           repr(sorted(_ea_tables)[:6]))
     # ea2b. A REASON MAY BE SHARED, and this is the case that stops the derivation
@@ -4817,13 +3205,13 @@ def _cases(check):
           [n for n, _w in _ea_ghost] == ["GONE_TABLE"])
     _ea_noinst = exemption_audit_drift(
         audited=dict(AUDITED_EXEMPTIONS,
-                     ABSENT_BY_DESIGN=("reason", "no_such_auditor_anywhere")),
+                     SCRATCH_EXEMPT=("live", "no_such_auditor_anywhere")),
         not_exemptions=NOT_AN_EXEMPTION)
     check("ea5 ...and an instrument that does not exist is reported, which is "
           "what stops this table being the shape NOT_A_GATE forbids: a row that "
           "silences a finding and can never itself be wrong: %r"
           % ([n for n, _w in _ea_noinst],),
-          [n for n, _w in _ea_noinst] == ["ABSENT_BY_DESIGN"])
+          [n for n, _w in _ea_noinst] == ["SCRATCH_EXEMPT"])
     _ea_case = exemption_audit_drift(
         audited=dict(AUDITED_EXEMPTIONS,
                      KNOWN_LAYER_DEBT=("reason",
@@ -5318,125 +3706,9 @@ def _cases(check):
           and _jt_jobless == [("ci.yml", _jt_none["problem"])]
           and len(_jt_absent) == 1 and "could not be read" in _jt_absent[0][1])
 
-    with io.open(os.path.join(REPO, CI_REL), encoding="utf-8") as fh:
-        _sg_live_text = fh.read()
-    _sg_live = step_guard_drift(_sg_live_text)
-    _sg_read = _job_steps(_sg_live_text)
-    check("sg0 THE LIVE CLAIM: every step of ci.yml after a job's setup runs "
-          "after an earlier failure (or is exempted with a reason), over %d "
-          "step(s) read - the count keeps an unread workflow from passing: %r"
-          % (len(_sg_read), _sg_live),
-          len(_sg_read) > 0 and _sg_live == [])
-
-    _sg_wf = ("jobs:\n"
-              "  one:\n"
-              "    steps:\n"
-              "      - uses: actions/checkout@v5\n"
-              "      - uses: actions/setup-node@v5\n"
-              "        with:\n"
-              "          node-version: 20\n"
-              "      - name: Install tools\n"
-              "        run: pip install ruff\n"
-              "      - name: First check\n"
-              "        run: echo one\n"
-              "      - name: Second check\n"
-              "        if: ${{ !cancelled() }}\n"
-              "        run: |\n"
-              "          echo two\n"
-              "      - name: Needs the first\n"
-              "        run: cat /tmp/x\n"
-              "  two:\n"
-              "    steps:\n"
-              "      - name: Windows only\n"
-              "        if: runner.os == 'Windows'\n"
-              "        run: echo w\n"
-              "      - name: Combined\n"
-              "        if: ${{ !cancelled() && runner.os == 'Windows' }}\n"
-              "        run: echo c\n")
-    _sg_got = step_guard_drift(_sg_wf, exempt={})
-    check("sg1 a step after the setup steps with no condition, and one whose "
-          "own `if:` replaced nothing of `!cancelled()`, are reported by job "
-          "and step name: %r" % (_sg_got,),
-          [(j, n) for j, n, _w in _sg_got]
-          == [("one", "First check"), ("one", "Needs the first"),
-              ("two", "Windows only")])
-    _sg_wf_ex = (_sg_wf
-                 .replace("      - name: First check\n",
-                          "      - name: First check\n        id: first\n")
-                 .replace("      - name: Needs the first\n",
-                          "      - name: Needs the first\n"
-                          "        if: ${{ !cancelled() && "
-                          "steps.first.outcome == 'success' }}\n"))
-    _sg_ex = step_guard_drift(_sg_wf_ex, exempt={
-        ("one", "Needs the first"): "reads /tmp/x from First check"})
-    check("sg2 setup steps (checkout, setup-*, an install) and an exempted "
-          "dependent step are NOT reported, and an `if:` that combines "
-          "`!cancelled()` with another condition is accepted: %r" % (_sg_ex,),
-          [(j, n) for j, n, _w in _sg_ex]
-          == [("one", "First check"), ("two", "Windows only")])
-    _sg_bare = step_guard_drift(
-        "jobs:\n  one:\n    steps:\n      - name: Bare\n"
-        "        if: !cancelled()\n        run: echo\n", exempt={})
-    check("sg3 `if: !cancelled()` without `${{ }}` is not a YAML expression "
-          "and is reported, not accepted: %r" % (_sg_bare,),
-          len(_sg_bare) == 1 and "outside" in _sg_bare[0][2])
-    check("sg4 the verdict `parity()` renders carries the finding, named by "
-          "job and step, so it fails the command and not only this function",
-          ("one / First check" in
-           [s for s, _w in step_guard_findings(_sg_wf)]))
-    _sg_x = {("one", "Needs the first"): "reads /tmp/x from First check"}
-    _sg_none = step_guard_drift(_sg_wf.replace("id: first\n", ""), exempt=_sg_x)
-    _sg_unknown = step_guard_drift(
-        _sg_wf_ex.replace("steps.first.", "steps.other."), exempt=_sg_x)
-    _sg_bare_ex = step_guard_drift(
-        _sg_wf_ex.replace("${{ !cancelled() && steps.first.outcome == "
-                          "'success' }}", "steps.first.outcome == 'success'"),
-        exempt=_sg_x)
-    _sg_nocancel = step_guard_drift(
-        _sg_wf_ex.replace("!cancelled() && ", ""), exempt=_sg_x)
-    _sg_named = lambda got: [n for j, n, _w in got if n == "Needs the first"]
-    check("sg7 an exempt step's `if:` must hold `!cancelled()` inside "
-          "`${{ }}` AND the outcome of an earlier step of the job by `id`: "
-          "none at all, an outcome naming no earlier id, no `${{ }}`, and no "
-          "`!cancelled()` are each reported, while the full form (sg2) is not",
-          len(_sg_named(_sg_none)) == 1 and len(_sg_named(_sg_unknown)) == 1
-          and len(_sg_named(_sg_bare_ex)) == 1
-          and len(_sg_named(_sg_nocancel)) == 1)
-    _sg_live_br = step_exemption_breadth_drift(_sg_live_text)
-    check("sg5 THE LIVE EXEMPTION IS NARROW: the one exempted step reads the "
-          "path its reason names and an earlier step produces it: %r"
-          % (_sg_live_br,),
-          _sg_live_br == [] and len(STEP_GUARD_EXEMPT) > 0)
-    _sg_ok = {("one", "Needs the first"): "reads `/tmp/x` from First check"}
-    _sg_wide = ("jobs:\n  one:\n    steps:\n"
-                "      - name: First check\n        run: echo one > /tmp/x\n"
-                "      - name: Needs the first\n"
-                "        run: |\n          cat /tmp/x\n          echo unrelated\n"
-                "      - name: Independent\n        run: echo y\n")
-    _sg_b_ok = step_exemption_breadth_drift(_sg_wide, exempt=_sg_ok)
-    _sg_b_nodep = step_exemption_breadth_drift(
-        _sg_wide.replace("cat /tmp/x", "cat /tmp/y"), exempt=_sg_ok)
-    _sg_b_noprod = step_exemption_breadth_drift(
-        _sg_wide.replace("echo one > /tmp/x", "echo one"), exempt=_sg_ok)
-    _sg_b_nopath = step_exemption_breadth_drift(
-        _sg_wide, exempt={("one", "Needs the first"): "reads x from First"})
-    _sg_b_gone = step_exemption_breadth_drift(
-        _sg_wide, exempt={("one", "Renamed"): "reads `/tmp/x` earlier"})
-    check("sg6 an exemption broader than its dependency is reported: a step "
-          "that does not read the named path, a path no earlier step mentions, "
-          "a reason naming none, and a step that is gone are each a finding, "
-          "while a step reading it after a producer is not - breadth beyond "
-          "that (a dependent step that also holds independent legs) is NOT "
-          "decidable and is pinned by the table naming the narrow step: "
-          "%r / %r / %r / %r / %r"
-          % (_sg_b_ok, _sg_b_nodep, _sg_b_noprod, _sg_b_nopath, _sg_b_gone),
-          _sg_b_ok == []
-          and len(_sg_b_nodep) == 1 and "broader" in _sg_b_nodep[0][2]
-          and len(_sg_b_noprod) == 1 and "earlier" in _sg_b_noprod[0][2]
-          and len(_sg_b_nopath) == 1 and "no backticked" in _sg_b_nopath[0][2]
-          and len(_sg_b_gone) == 1 and "no such step" in _sg_b_gone[0][2])
-
     _verify_cleanup_cases(check)
+    _slice_cases(check)
+    _verify_slice_run_cases(check)
 
     # The verdict behind vsh5, in all its corners. The dash rows are the ones
     # that must stay red: a dash that left nothing is a control that stopped

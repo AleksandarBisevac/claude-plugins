@@ -52,9 +52,10 @@ tools/verify.sh --fast
 tools/verify.sh
 ```
 
-This is what CI checks — the same gate set, described gate by gate in *Tests*
-below, plus the selftest suite run again on Windows to prove the interpreter
-fallback. `tools/verify.sh` itself, run plain, needs more than the stdlib the
+This is what CI checks — CI runs slices of this one runner and nothing else, plus
+the sweep slices again on Windows to prove the interpreter fallback;
+`sh tools/verify.sh --list` prints every slice and its steps, and *Tests* below says
+why each holds what it holds. `tools/verify.sh` itself, run plain, needs more than the stdlib the
 plugin ships with: Node (`npx vitest`, `npx ajv-cli`, the browser gates), `ruff`
 and `vermin` (pip-installed; CI's lint job pins their versions), and the Claude
 Code CLI (`claude plugin validate`; CI installs it with `npm install -g`). None
@@ -164,346 +165,305 @@ adds a step to first-run belongs there and nowhere else.
 
 ## Tests (run before every PR)
 
-**One command runs all of it:**
+**One command runs all of it, and it is the only place the gate set is written down:**
 
 ```bash
-tools/verify.sh                 # every gate CI runs
-tools/verify.sh --fast          # iteration mode: narrower browser sweeps, NOT a gate
-tools/verify.sh --release       # the full set, plus what a version bump owes
+sh tools/verify.sh                  # every per-run slice: what CI runs on every run
+sh tools/verify.sh --list           # every slice, its tier, and the steps it runs
+sh tools/verify.sh --only lint,js   # only the named slices
+sh tools/verify.sh --fast           # iteration mode: narrower browser sweeps, no stress legs, NOT a gate
+sh tools/verify.sh --release        # the per-run slices, plus what a version bump owes
 ```
 
-It exists because typing these by hand cost two red CI runs in one day: once by
-skipping the `ajv` step, and once by bumping the version AFTER the sweep was green
-— a bump stales the README's runnable `curl` pins and the rendered artifacts, both
-of which are checked by name. `--release` is the guard for exactly that, and every
-step runs even after an earlier one fails, so the summary is the whole truth rather
-than the first thing that broke.
+`tools/verify.sh` groups every gate into named **slices**, and `--list` prints them -
+read off the same `run` calls a run makes, so the list cannot describe a run that does
+not happen. CI runs slices of this file and nothing else: every job in
+`.github/workflows/ci.yml` is setup plus one `tools/verify.sh --only <slices>` call, so
+the workflow says where a slice runs (which runner, which shard, which tier) and the
+runner says what it runs. The commands are therefore not listed again here; this
+section says why each slice holds what it holds, and `--list` says what that is today.
 
-`--fast` narrows the width ladder and skips the two systematic accessibility
-sweeps. It prints what it skipped and refuses to say the preconditions hold, and it
-is never what CI runs.
+It exists because typing the gates by hand cost two red CI runs in one day: once by
+skipping the `ajv` step, and once by bumping the version AFTER the sweep was green - a
+bump stales the README's runnable `curl` pins and the rendered artifacts, both of which
+are checked by name. `--release` is the guard for exactly that, and every step runs even
+after an earlier one fails, so the summary is the whole truth rather than the first thing
+that broke.
 
-The individual commands stay documented below, because they are the definition and
-the script is only a caller:
+`--fast` narrows the width ladder, skips the two systematic accessibility sweeps and
+skips the legacy-code-page and spaced sweeps. It prints what it skipped and refuses to say
+the preconditions hold, and it is never what CI runs.
+
+**The tiers.** The per-run slices are what every CI run and every plain `verify.sh` run.
+The release tier adds two: `release`, the preflight a version bump owes (`--release`
+here), and `resample`, which CI runs on a Windows runner when it is dispatched with
+`-f tier=release` (`tools/release.py` does that) and which draws the suites with a Windows
+intermittent record again and again, at the counts verify.sh's `RESAMPLE` table gives
+them. A red draw on a green SHA is a finding to file with `/audit:bug`; nothing files it
+for you yet. A dispatch with no input - the drive's CI cadence, `tools/release.py ci
+<ref>` - runs the per-run tier, which is the workflow's default.
+
+**A verified SHA is not run again.** A push to `main` asks `tools/ci-verified.py` first
+whether a run of `ci.yml` already passed that exact commit - every job `success`, a
+skipped one counting as not passed - and when one did, every other job is skipped and
+the `verified` job names that run. Another commit's run, another workflow's run, the
+asking run itself, a job list it could not read and a question it could not ask each
+refuse, and a refusal runs everything.
+
+**`tools/gate-parity.py` holds the workflow to the list** - in the `lint` slice, with its
+own cases in the sweep: every slice a job names is one `--list` prints, every per-run
+slice is run by some job outside the release tier, and a sharded slice's matrix runs every
+part 1..N on every runner (`shard_matrix_drift()`). It also holds the rules that read a
+runner or a document for a living: the sweep's isolation against every document that
+describes it, the sweep's roots, `SECURITY.md`'s fail-mode table, the scratch-path rule
+for every runnable file under `tools/`, and that every CI job carries a time bound backed
+by a measured `longest` line.
+
+To run one suite, or a few, without a whole slice:
 
 ```bash
-# every selftest suite — stdlib only, no deps. Swept, never enumerated: a list
-# drifted three ways once and CI silently stopped running one suite entirely.
-#
-# ONE RUNNER, and CI runs the same one. This was a `find` loop written out here, a
-# second copy of it in ci.yml that checked MORE (the `N/M cases passed` contract and
-# the `--covered` skip) and a third in verify.sh that checked LESS (the exit code
-# alone) — so a file that exited 0 having asserted nothing was green locally and red
-# in CI. The runner holds the union of all three rules and walks hooks/, scripts/,
-# tests/, tools/ AND .claude/hooks/ recursively through `_output.py_files`, so a
-# file added one
-# directory down is swept without anyone editing a glob.
-#
-# IT SWEEPS tests/ TOO, which is why the second `find` loop that used to sit here is
-# gone: it re-ran the migrated suites the runner had just run. A migrated file exits 0
-# printing where its cases went, and the runner requires that it NOT print the
-# contract — the net under `selftest_coverage()`'s string-literal blind spot.
-#
-# AND EVERY CHILD RUNS IN EMPTY DIRECTORIES IT IS EXPECTED TO LEAVE EMPTY. A suite runs
-# with its cwd AND `TMPDIR` pointed at one scratch directory, its HOME at a second,
-# `PYTHONPYCACHEPREFIX` at a third, and `GIT_CONFIG_GLOBAL` at a git config file in a
-# fourth (below). The first two of those are the WATCHED pair and each
-# holds one file the suite did not put there; the cache prefix is redirected rather than
-# watched, because an interpreter that writes its shadow cache under the HOME it was
-# handed would otherwise convict a child for starting a grandchild.
-#
-# THE FILE IS RED IF ANYTHING WAS ADDED TO EITHER WATCHED DIRECTORY - or, the destructive
-# half a strays-only check would call spotless, if the planted file was DELETED or
-# REWRITTEN. Those are three different bugs with three different repairs, so they are
-# worded apart rather than collapsed into "dirty", and every finding names which of the
-# two channels it came from. Suites here leaked git fixtures into whatever directory
-# `TMPDIR` named for a long time and no gate could see it, because `TMPDIR` is normally
-# the system temp and a stray fixture there is somebody else's problem; the home channel
-# is what caught a suite shelling out to the real `az`, which writes into the operator's
-# home directory on any machine that has it - CI's ubuntu runner among them. HOME is
-# pinned under every name a home lookup reads, not just `HOME`: the `XDG_*` roots are set
-# independently on linux, `USERPROFILE` answers on windows, and git for windows joins
-# `HOMEDRIVE` with `HOMEPATH` by hand.
-#
-# WHAT IS NOT A DIRECTORY IS FILTERED, NOT PASSED THROUGH. The Claude session's variables -
-# every `CLAUDE_` name, plus `CLAUDECODE` and `AUDIT_LOCK_TOKENS` - are dropped, and so is any
-# identity the caller exports (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `EMAIL`); git runs
-# with `GIT_CONFIG_NOSYSTEM` set and `user.useConfigOnly` refusing a guessed identity. No
-# branch and no identity are supplied in their place: a suite leaning on the host's git must
-# fail here the way it fails on a bare runner, which is what a local sweep that stayed green
-# over CI's ubuntu reds was not doing. The same `GIT_CONFIG_COUNT` set turns `maintenance.auto`
-# and `gc.auto` off for every git a suite starts, through a fixture prefix or bare, but one:
-# git's local transport drops that protocol (and any `-c`) before it starts receive-pack, so a
-# push to a local path ends in a detached housekeeping run on the receiving side. So each child's
-# `GIT_CONFIG_GLOBAL` names a runner-owned file, in a directory of its own outside both watched
-# ones, carrying `receive.autogc` off - that key alone, so a suite that takes the pairs out to
-# measure its own fixture prefix still sees a spawn - which does reach receive-pack - and no
-# git a suite starts leaves a detached housekeeping run working in a fixture it is about to read
-# or delete, unless the suite points `GIT_CONFIG_GLOBAL` elsewhere for its own git. The file is
-# checked back afterwards like a planted one, because a suite's `git config --global` now writes
-# there. The caller's own pairs in that protocol are dropped first, so the runner's set is the
-# whole of it.
-#
-# AND THIS COMMENT IS A CHECKED ONE. `gate-parity.py`'s `isolation_drift()` reads the runner's
-# own constants - the families are tuples in that module, not a list restated here - and fails
-# when a family it pins is named by none of the documents that describe the isolation: this
-# block, CLAUDE.md's Tests section, and the docstring beside `_harness.fixture_root()`. It also
-# asks the runner about itself: a watched directory with no channel label beside it is dropped
-# by `zip` and reported about by nothing, and one with no planted file can report a stray but
-# never a deletion. The filtered names above are read off the runner's tables too, and each
-# must appear in every one of those documents as a code span, itself or under a glob like
-# `GIT_AUTHOR_*`. The surface grew more than once and left each document behind by a
-# different amount, which is why there is a rule here instead of a fourth correction.
-#
-# `--jobs 1` gives the old serial shape for a bisect.
-#
-# CI RUNS EACH LEG BELOW AS SHARDS, not as one job: every leg is a matrix cell per part,
-# `--shard I/N`, on every core of the runner (the sweep reads `CI=true`). The parts are
-# balanced by the per-file costs in `.github/sweep-costs.json`, which
-# `--record-costs .github/sweep-costs.json` rewrites from a real run. THE TABLE DECIDES TWO
-# THINGS: the split, and each file's timeout (below). A stale table can therefore cost
-# balance, and it can cost a timeout too tight for a file that has grown past several times
-# its entry. It cannot cost coverage, because the union of the parts is the whole tree (the
-# runner's own sh0 case) and `gate-parity.py`'s `shard_matrix_drift()` fails a matrix that
-# skips a part. And staleness by OMISSION tightens nothing: an entry naming a file no longer
-# swept is printed as a `note:` and ignored by the split, a swept file with no entry is
-# estimated for the split, and for its timeout an untimed staged suite gets the largest any
-# entry - that ghost included - would get, an untimed ordinary file the floor (cases tt0,
-# tt1). Here a leg runs whole, which is the same leg.
-#
-# THE WORKERS ARE ONE BUDGET OF SLOTS, here and in CI. A staged suite (its `__main__` is
-# `_harness.staged_main`) is admitted holding `stage_grant(jobs)` slots, in costliest-first
-# order, and reads the number from `SWEEP_STAGE_GRANT` to size its block pool, so the sweep's
-# workers and the suite's blocks never add up past the machine. Each file's timeout is the
-# floor (`--timeout`) or a multiple of its recorded seconds, whichever is longer - a hang
-# detector calibrated per file, handed down as `SWEEP_FILE_TIMEOUT` so a block still times out
-# before its file. On a CI runner every timeout is also cut to what is left of the sweep's
-# deadline (`SWEEP_DEADLINE`), so a hung file is named before the job's own `timeout-minutes`
-# cancels the job with no file named; case tt5 reads that bound out of `ci.yml` and fails when
-# the deadline and the setup allowance stop fitting under it. The run prints a `budget:` line
-# saying which suites held several slots and the longest timeout given, and every per-file
-# line carries its seconds: a saved CI log re-records the table with
-# `--costs-from-log LOG --platform NAME --record-costs PATH`. Record from WINDOWS logs, the
-# platform that binds; a log carrying a file twice (two legs, two runs) keeps its longer
-# timing.
-python3 tools/sweep-selftests.py
+python3 tools/sweep-selftests.py plugins/audit/tests/test__refs.py tools/where.py
+python3 tools/sweep-selftests.py --jobs 1      # the old serial shape, for a bisect
+```
 
-# ...and the runner's OWN cases, read directly rather than through itself: a `grade()`
-# that always answered "ok" would report its own suite as passing while hiding it.
-python3 tools/sweep-selftests.py --selftest
+### The sweep slices
 
-# ...and the sweep AGAIN, on a stream that cannot spell every character. A pipe on
-# Windows is the machine's legacy code page, and a suite printing a character that
-# page lacks dies there while every other OS stays green; the forced codec
-# reproduces that anywhere. The pass has two halves: the child's stdio codec
-# (PYTHONIOENCODING), and, on POSIX, a locale whose preferred encoding is not UTF-8
-# (LC_ALL=C, LANG=C, PYTHONUTF8=0), which is what `open()` and text-mode
-# `subprocess` use when no encoding is named - a read or capture that omits one
-# fails here as it does on a Windows runner. The runner asks a child under the pins
-# for its `locale.getpreferredencoding(False)` and `sys.getfilesystemencoding()`
-# once: a preferred encoding still UTF-8 refuses the pass as could-not-run (exit 2);
-# a filesystem encoding that is not UTF-8 too - linux's C locale - would make file
-# NAMES ASCII, which no runner has, so there the locale is not pinned and the stdio
-# half runs alone. The pass prints which half ran and why. Windows legs already run
-# under a legacy code page, are not asked, and get the first half only. CI runs
-# this leg and so does verify.sh (`--fast`
-# skips it and says so). gate-parity compares the runners' sweep legs, so one side
-# dropping it fails by the leg's flags.
-python3 tools/sweep-selftests.py --encoding cp1252
+Every selftest suite - stdlib only, no deps. Swept, never enumerated: a list drifted three
+ways once and CI silently stopped running one suite entirely.
 
-# ...and again with TMPDIR under a path holding a space that is reached through a
-# symlink, and the interpreter started through a spaced path. Every suite had run
-# only under a space-free temp root, so a fixture that builds a shell command from
-# an unquoted path was a different command on a machine whose temp directory or
-# virtualenv sits under one. The leg is posix-only (the runner refuses where
-# symlinks are not granted) and `verify.sh --fast` skips it. A suite it cannot run
-# is listed in `SPACED_EXEMPT` with the reason, and the run prints each one.
-python3 tools/sweep-selftests.py --spaced
+ONE RUNNER, and CI runs the same one. This was a `find` loop written out here, a second
+copy of it in ci.yml that checked MORE (the `N/M cases passed` contract and the `--covered`
+skip) and a third in verify.sh that checked LESS (the exit code alone) — so a file that
+exited 0 having asserted nothing was green locally and red in CI. The runner holds the
+union of all three rules and walks hooks/, scripts/, tests/, tools/ AND .claude/hooks/
+recursively through `_output.py_files`, so a file added one directory down is swept
+without anyone editing a glob.
 
-# a mutating gate sweep (`tools/prove-gates.py`) rewrites the working tree for minutes
-# and holds a marker file under the git dir while it does. The sweep above refuses to
-# start while the marker's pid is alive, since it would read a half-mutated tree and
-# report reds that are not real; a marker whose pid is gone is ignored, and the sweep
-# says so. `python3 tools/orchestrator-state.py` prints the same fact.
+IT SWEEPS tests/ TOO, which is why the second `find` loop that used to sit here is gone: it
+re-ran the migrated suites the runner had just run. A migrated file exits 0 printing where
+its cases went, and the runner requires that it NOT print the contract — the net under
+`selftest_coverage()`'s string-literal blind spot.
 
-# the meta-gate: this list, verify.sh and ci.yml describe one gate set, and they had
-# drifted in both directions at once before anything compared them. All THREE are
-# compared now, and this document was the last one added — while claiming to be the
-# definition, it carried seven of the thirteen gates. A gate named by one side and
-# not another fails by name; a legitimate absence needs a row in ABSENT_BY_DESIGN
-# with a reason, and a row that no longer describes the system fails too.
-python3 tools/gate-parity.py
+AND EVERY CHILD RUNS IN EMPTY DIRECTORIES IT IS EXPECTED TO LEAVE EMPTY. A suite runs with
+its cwd AND `TMPDIR` pointed at one scratch directory, its HOME at a second,
+`PYTHONPYCACHEPREFIX` at a third, and `GIT_CONFIG_GLOBAL` at a git config file in a fourth
+(below). The first two of those are the WATCHED pair and each holds one file the suite did
+not put there; the cache prefix is redirected rather than watched, because an interpreter
+that writes its shadow cache under the HOME it was handed would otherwise convict a child
+for starting a grandchild.
 
-# the hook import budget. A hook runs on every matching tool call - seven of them on
-# one edit - so its module-level imports are paid over and over. This diffs
-# sys.modules after loading each hook against a measured floor and fails by name on
-# a newcomer. The wall clock is NOT gated on purpose: it swings between repeats by
-# more than a deferred import is worth. `tools/bench-hooks.py` with no flag prints
-# that measurement for a human deciding whether an optimisation is worth doing.
-#
-# IT MEASURES EVERY INTERPRETER IT CAN FIND, and names the supported versions it
-# could not. A stdlib import graph is not the same on every version, and this plugin
-# promises a range rather than a point - so a verdict taken on one interpreter is
-# reported WITH that interpreter and never as a property of the product. Add one it
-# cannot find on its own with `--python <path>`.
-python3 tools/bench-hooks.py --gate
+THE FILE IS RED IF ANYTHING WAS ADDED TO EITHER WATCHED DIRECTORY - or, the destructive
+half a strays-only check would call spotless, if the planted file was DELETED or REWRITTEN.
+Those are three different bugs with three different repairs, so they are worded apart
+rather than collapsed into "dirty", and every finding names which of the two channels it
+came from. Suites here leaked git fixtures into whatever directory `TMPDIR` named for a
+long time and no gate could see it, because `TMPDIR` is normally the system temp and a
+stray fixture there is somebody else's problem; the home channel is what caught a suite
+shelling out to the real `az`, which writes into the operator's home directory on any
+machine that has it - CI's ubuntu runner among them. HOME is pinned under every name a
+home lookup reads, not just `HOME`: the `XDG_*` roots are set independently on linux,
+`USERPROFILE` answers on windows, and git for windows joins `HOMEDRIVE` with `HOMEPATH` by
+hand.
 
-# the pipeline context ceilings. What each pipeline entry - `/audit:run`, `/audit:next`,
-# `/audit:resume`, the `/audit:phase` run form and `add`, `/audit:task add`, sign-off -
-# makes the main loop read before any work, against the pipeline-cost design's ceilings,
-# and the agents' starts against theirs. A pipeline command that reads a reference file
-# first breaches whatever its size: the step driver prints the rule a step needs at that
-# step, and the agents carry theirs in their prompts. With no flag the tool prints the
-# whole measurement, per entry and per file, for a human deciding what to cut.
-python3 tools/measure-context.py --gate
+WHAT IS NOT A DIRECTORY IS FILTERED, NOT PASSED THROUGH. The Claude session's variables -
+every `CLAUDE_` name, plus `CLAUDECODE` and `AUDIT_LOCK_TOKENS` - are dropped, and so is
+any identity the caller exports (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `EMAIL`); git runs with
+`GIT_CONFIG_NOSYSTEM` set and `user.useConfigOnly` refusing a guessed identity. No branch
+and no identity are supplied in their place: a suite leaning on the host's git must fail
+here the way it fails on a bare runner, which is what a local sweep that stayed green over
+CI's ubuntu reds was not doing. The same `GIT_CONFIG_COUNT` set turns `maintenance.auto`
+and `gc.auto` off for every git a suite starts, through a fixture prefix or bare, but one:
+git's local transport drops that protocol (and any `-c`) before it starts receive-pack, so
+a push to a local path ends in a detached housekeeping run on the receiving side. So each
+child's `GIT_CONFIG_GLOBAL` names a runner-owned file, in a directory of its own outside
+both watched ones, carrying `receive.autogc` off - that key alone, so a suite that takes
+the pairs out to measure its own fixture prefix still sees a spawn - which does reach
+receive-pack - and no git a suite starts leaves a detached housekeeping run working in a
+fixture it is about to read or delete, unless the suite points `GIT_CONFIG_GLOBAL`
+elsewhere for its own git. The file is checked back afterwards like a planted one, because
+a suite's `git config --global` now writes there. The caller's own pairs in that protocol
+are dropped first, so the runner's set is the whole of it.
 
-# the half of the pipeline that WRITES to a repository, driven against a real one.
-# Nothing else in this list creates a git repository: every other gate works on a
-# manifest, a rendered document or a synthetic project directory, so the commit
-# trail, the branch resolution, `guard-history-rewrite`'s ancestry question, the
-# journal's git anchor and the ledger's author had never been executed by a gate at
-# all. Each of them reads git and each FAILS OPEN when git cannot be asked, so on a
-# fixture with no `.git` a check that could not run printed what a check that found
-# nothing prints - which is why the gap was invisible rather than tolerated.
-#
-# It is also where the hooks `ci.yml`'s own launcher steps leave out are driven
-# through `py-launch.sh`: journal-writes, meter-usage, guard-history-rewrite,
-# guard-bash-writes and detect-plan-skip. The first two are the ones the product's
-# adjectives rest on - "auditable" and "measurable" - and three of them belong here
-# rather than beside the others because their evidence IS a repository. `remind-tdd`
-# is wired in `ci.yml` beside the launcher steps instead, and belongs there rather than
-# here because it needs no repository: its evidence is its own state file, keyed by
-# session id. Every hook `hooks.json` registers is driven through the launcher by one
-# side or the other, so no hook is a remainder anywhere.
-#
-# What it does NOT cover is stated in its own output rather than implied: the
-# Claude-driven half - explorer, executor, reviewer - is not gateable, and a green
-# run says the machinery around the model works on a real repository.
-python3 tools/check-git-pipeline.py
+AND THIS PASSAGE IS A CHECKED ONE. `gate-parity.py`'s `isolation_drift()` reads the
+runner's own constants - the families are tuples in that module, not a list restated here -
+and fails when a family it pins is named by none of the documents that describe the
+isolation: this passage, CLAUDE.md's Tests section, and the docstring beside
+`_harness.fixture_root()`. It also asks the runner about itself: a watched directory with
+no channel label beside it is dropped by `zip` and reported about by nothing, and one with
+no planted file can report a stray but never a deletion. The filtered names above are read
+off the runner's tables too, and each must appear in every one of those documents as a
+code span, itself or under a glob like `GIT_AUTHOR_*`. The surface grew more than once and
+left each document behind by a different amount, which is why there is a rule here instead
+of a fourth correction.
 
-# the plan gate's tiers, driven through the launcher with a payload on stdin - the
-# script ci.yml's e2e step calls, so the same scenarios run locally
-python3 tools/check-plan-gate-e2e.py
+CI RUNS EACH SWEEP SLICE AS SHARDS, not as one job: every slice is a matrix cell per part,
+`--shard I/N`, on every core of the runner (the sweep reads `CI=true`). The parts are
+balanced by the per-file costs in `.github/sweep-costs.json`, which `--record-costs
+.github/sweep-costs.json` rewrites from a real run. THE TABLE DECIDES TWO THINGS: the
+split, and each file's timeout (below). A stale table can therefore cost balance, and it
+can cost a timeout too tight for a file that has grown past several times its entry. It
+cannot cost coverage, because the union of the parts is the whole tree (the runner's own
+sh0 case) and `gate-parity.py`'s `shard_matrix_drift()` fails a matrix that skips a part.
+And staleness by OMISSION tightens nothing: an entry naming a file no longer swept is
+printed as a `note:` and ignored by the split, a swept file with no entry is estimated for
+the split, and for its timeout an untimed staged suite gets the largest any entry - that
+ghost included - would get, an untimed ordinary file the floor (cases tt0, tt1). Here a
+slice runs whole, which is the same leg.
 
-# the JavaScript unit tests. They ran only in CI for a long time, so a change under
-# scripts/ui/ could reach a push with none of the suites covering it having run.
-npx vitest run
+THE WORKERS ARE ONE BUDGET OF SLOTS, here and in CI. A staged suite (its `__main__` is
+`_harness.staged_main`) is admitted holding `stage_grant(jobs)` slots, in costliest-first
+order, and reads the number from `SWEEP_STAGE_GRANT` to size its block pool, so the sweep's
+workers and the suite's blocks never add up past the machine. Each file's timeout is the
+floor (`--timeout`) or a multiple of its recorded seconds, whichever is longer - a hang
+detector calibrated per file, handed down as `SWEEP_FILE_TIMEOUT` so a block still times
+out before its file. On a CI runner every timeout is also cut to what is left of the
+sweep's deadline (`SWEEP_DEADLINE`), so a hung file is named before the job's own
+`timeout-minutes` cancels the job with no file named; case tt5 reads that bound out of
+`ci.yml` and fails when the deadline and the setup allowance stop fitting under it. The run
+prints a `budget:` line saying which suites held several slots and the longest timeout
+given, and every per-file line carries its seconds: a saved CI log re-records the table
+with `--costs-from-log LOG --platform NAME --record-costs PATH`. Record from WINDOWS logs,
+the platform that binds; a log carrying a file twice (two legs, two runs) keeps its longer
+timing.
 
-# manifests: structural validator + JSON Schema
-python3 plugins/audit/scripts/manifest/validate-manifest.py plugins/audit/templates/audit-plan.starter.json
-python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json
-npx --yes ajv-cli validate --spec=draft2020 -s plugins/audit/schema/audit-plan.schema.json \
-  -d plugins/audit/templates/audit-plan.starter.json
+**`runner`** is the runner's OWN cases, read directly rather than through itself: a
+`grade()` that always answered "ok" would report its own suite as passing while hiding it.
 
-# plugin/marketplace structure
-claude plugin validate .
-claude plugin validate plugins/audit
+**`selftests-stress`** is the sweep AGAIN, on a stream that cannot spell every character
+and with TMPDIR under a spaced, linked path, in one execution and graded by the plain
+rules. A pipe on Windows is the machine's legacy code page, and a suite printing a
+character that page lacks dies there while every other OS stays green; the forced codec
+reproduces that anywhere. The codec half has two halves of its own: the child's stdio
+codec (PYTHONIOENCODING), and, on POSIX, a locale whose preferred encoding is not UTF-8
+(LC_ALL=C, LANG=C, PYTHONUTF8=0), which is what `open()` and text-mode `subprocess` use
+when no encoding is named - a read or capture that omits one fails here as it does on a
+Windows runner. The runner asks a child under the pins for its
+`locale.getpreferredencoding(False)` and `sys.getfilesystemencoding()` once: a preferred
+encoding still UTF-8 refuses the pass as could-not-run (exit 2); a filesystem encoding that
+is not UTF-8 too - linux's C locale - would make file NAMES ASCII, which no runner has, so
+there the locale is not pinned and the stdio half runs alone. The pass prints which half
+ran and why. The spaced half exists because every suite had run only under a space-free
+temp root, so a fixture that builds a shell command from an unquoted path was a different
+command on a machine whose temp directory or virtualenv sits under one. It is posix-only
+(the runner refuses where symlinks are not granted); a suite it cannot run is listed in
+`SPACED_EXEMPT` with the reason, and the run prints each one. **`selftests-cp1252`** is the
+codec leg alone, for the Windows cells, where `--spaced` is refused and the pipe is already
+a legacy code page.
 
-# the dialect and the 3.8 floor. `ruff` selects the rules in pyproject.toml (syntax
-# errors, pyflakes, invalid escapes, and E225 — whitespace around an operator, the one
-# preview rule, enabled by name so no other preview rule turns on); the AST lint in
-# `_output.house_style_violations()` is what enforces the bans vermin cannot see —
-# annotations, walrus, `typing`, `dataclasses`, `from __future__`.
-ruff check plugins/audit tools
-vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
+A mutating gate sweep (`tools/prove-gates.py`) rewrites the working tree for minutes and
+holds a marker file under the git dir while it does. The sweep refuses to start while the
+marker's pid is alive, since it would read a half-mutated tree and report reds that are not
+real; a marker whose pid is gone is ignored, and the sweep says so.
+`python3 tools/orchestrator-state.py` prints the same fact.
 
-# the rendered artifacts, byte for byte against a fresh render, and the demo GIF's
-# preconditions — the plan gate still refusing an unplanned edit, in its own words.
-#
-# TWO ARMS, AND THEY ANSWER DIFFERENT QUESTIONS. The fresh render is compared with the
-# file ON DISK, which is right for the iteration loop; the second arm compares the disk
-# with what HEAD tracks, because nothing asked that and it is where this repository has
-# actually been bitten. Re-render, forget to stage, and the first arm is satisfied while
-# a `git archive` of the commit still carries the old bytes — four published documents
-# at once, and the live demo went a month stale by the same route. A page nobody could
-# look up in HEAD is named as that rather than counted either way; a run that could look
-# up none of them fails saying so.
-#
-# AND THEY RUN AT DIFFERENT MOMENTS. Before a commit, the second arm is red for as long
-# as a re-rendered page is uncommitted, so the correct change is red until it lands.
-# The pre-commit set therefore asks the fresh render alone: the selftest sweep
-# (`--selftest` asks no other arm) and a plain or `--affected` `tools/verify.sh`
-# (`--before-commit`). After a commit, the second arm is what finds a page committed
-# without its re-render: `tools/verify.sh --release` runs `--against-commit`, and the
-# command below, run with no flag, asks both. CI runs it with no flag too, but there the
-# checkout IS the commit, so the second arm cannot fire. Its first arm is what catches
-# a stale committed page there. Before a PR your work is committed, so run it as written.
-# The tool's selftest pins these calls in verify.sh and ci.yml by exact line, and pins
-# the line around each: a ci.yml call is read only as a one-line `run:` with no deeper
-# continuation or as a line in a plain `run: |` block, and a call continued from the line
-# above only from the runner's `run "<label>" \` wrapper. So a flag moved, dropped, or
-# put on a continuation line fails a case.
+### The other per-run slices
+
+**`e2e`** drives the hooks through `py-launch.sh`, because the selftests call `decide()`
+directly and cannot prove the wiring: the launcher's interpreter fallback and its loud
+failure with no interpreter, the plan gate's tiers (`tools/check-plan-gate-e2e.py`, whose
+scenarios also run in the sweep), the capability policy, the TDD nudge on its
+non-blocking channel, and the half of the pipeline that WRITES to a repository, driven
+against a real one (`tools/check-git-pipeline.py`). Nothing else creates a git repository:
+the commit trail, the branch resolution, `guard-history-rewrite`'s ancestry question, the
+journal's git anchor and the ledger's author each read git and each FAIL OPEN when git
+cannot be asked, so on a fixture with no `.git` a check that could not run printed what a
+check that found nothing prints. That script also drives the hooks the launcher steps leave
+out - journal-writes, meter-usage, guard-history-rewrite, guard-bash-writes and
+detect-plan-skip - and every hook `hooks.json` registers is driven through the launcher by
+one step or another. What it does NOT cover is stated in its own output: the Claude-driven
+half - explorer, executor, reviewer - is not gateable. CI runs this slice on both runners.
+
+**`lint`** is the repository-wide checks. Gate parity (above). The hook import budget: a
+hook runs on every matching tool call, so its module-level imports are paid over and over;
+`tools/bench-hooks.py --gate` diffs `sys.modules` after loading each hook against a
+measured floor and fails by name on a newcomer, measuring every interpreter it can find and
+naming the supported versions it could not - the wall clock is NOT gated, because it swings
+between repeats by more than a deferred import is worth, and the tool with no flag prints
+that measurement. The pipeline context ceilings: what each pipeline entry makes the main
+loop read before any work, against the pipeline-cost design's ceilings. `ruff` selects the
+rules in pyproject.toml (syntax errors, pyflakes, invalid escapes, and E225 — whitespace
+around an operator, the one preview rule, enabled by name so no other preview rule turns
+on); the AST lint in `_output.house_style_violations()` is what enforces the bans vermin
+cannot see — annotations, walrus, `typing`, `dataclasses`, `from __future__`. `vermin
+-t=3.8-` holds the 3.8 floor over scripts, hooks and tests. Then the committed files, asked
+two questions: does any of them carry the identity of the machine that made it
+(`tools/check-committed-pii.py`, which never prints what it matched - a CI log on a public
+repo is public - and whose `BASELINE` holds what is already committed, with a reason that is
+itself checked), and does every committed evidence row record a verdict the runner can
+produce, and does every commit a committed manifest names resolve
+(`tools/check-example-ledgers.py`, which REFUSES rather than passing when it compared
+nothing, and refuses on a clone too truncated to answer - the step that called the shipped
+example healthy was once green BECAUSE the clone was shallow, so CI's checkout for this
+slice takes the whole history).
+
+**`js`** is the JavaScript as behaviour: vitest, cross-checked against `_fmt.py` in the same
+run, and `node --check` on every ui part, because a syntax error kills the whole inline
+script while every substring pin stays green. They ran only in CI for a long time, so a
+change under scripts/ui/ could reach a push with none of the suites covering it having run.
+
+**`manifests`** is the plans and the committed artifacts: the structural validator and the
+JSON Schema over the starter, this repo's own plan and the example; the sharded layout; the
+doctor over this repo and the example (and its `--json` form); the CI status gate and a
+report render; and the committed artifacts.
+
+THE RENDERED ARTIFACTS HAVE TWO ARMS, AND THEY ANSWER DIFFERENT QUESTIONS. The fresh render
+is compared with the file ON DISK, which is right for the iteration loop; the second arm
+compares the disk with what HEAD tracks, because nothing asked that and it is where this
+repository has actually been bitten. Re-render, forget to stage, and the first arm is
+satisfied while a `git archive` of the commit still carries the old bytes — four published
+documents at once, and the live demo went a month stale by the same route. AND THEY RUN AT
+DIFFERENT MOMENTS. Before a commit, the second arm is red for as long as a re-rendered page
+is uncommitted, so the correct change is red until it lands. The pre-commit set therefore
+asks the fresh render alone: the selftest sweep (`--selftest` asks no other arm) and this
+slice (`--before-commit`), which is also what CI runs - there the checkout IS the commit,
+so the second arm could not fire anyway. After a commit, the second arm is what finds a
+page committed without its re-render: the `release` slice runs `--against-commit`, and the
+tool run by hand with no flag asks both. Before a PR your work is committed, so run it so:
+
+```bash
 python3 tools/check-rendered-artifacts.py
-
-# ...and the half that tool deliberately does NOT make. docs/index.html is a byte
-# copy of the committed example report, so covering it with a row in that tool's
-# table would render one published page from two inputs; it is covered by a
-# COMPOSITION instead — fresh source (the line above) plus proven copy (this line).
-# CI has run this all along and this list did not name it, so the list was short by
-# exactly the step that catches a release follower. Neither half can now go quiet on
-# its own: `copy_check_missing()` in that same tool reads the files carrying this
-# cmp and goes red when one stops carrying it.
-cmp docs/index.html examples/acme-store/acme-store-audit.html
-
-# the demo GIF is a recorded session, so this starts none: it replays the edit the
-# recording refused against require-plan and fails naming the GIF when the refusal
-# moved from the recorded text, or the committed bytes from the recorded sha256.
-python3 tools/capture-demo-gif.py --check
-
-# the same committed files, asked the other question: does any of them carry the
-# identity of the machine that made it? A user found their own user name and their
-# whole directory layout in a committed journal row (CWE-532), and the journal is
-# committed ON PURPOSE. `_journal_io` closed the channel by construction; this reads
-# the bytes GIT TRACKS, which is the only thing that can prove no other writer, no
-# older artifact and no hand edit put it back. It never prints what it matched - a
-# CI log on a public repo is public - and what is already committed and cannot be
-# rewritten sits in its `BASELINE` with a reason that is itself checked.
-python3 tools/check-committed-pii.py
-
-# ...and the same committed files read for CONTENT rather than bytes. One row in the
-# example's evidence ledger recorded `passed` while its own observations named a file
-# the gate had rewritten: a faithful record of how the runner used to behave, and so
-# a verdict no current run can produce. Nothing read that ledger, because unlike the usage
-# ledger below it is hand-written narrative that no generator derives - which is the
-# defect rather than the one stale row. It measures every committed row against the
-# schema's published vocabulary (derived, never listed - COMPATIBILITY.md declines to
-# close that enum) and against itself, holds a cached `testEvidence` pointer to the
-# row it names, and REFUSES rather than passing when it compared nothing. It asks a
-# second question of the same committed files - does this repository have the commits
-# its manifests name (task commits, phase base refs, a bug's fixedIn) - and that half
-# refuses on a clone too truncated to answer, because a truncated clone answers "I
-# cannot resolve that" to a fabricated SHA and to an intact one alike. That is not a
-# hypothetical: the step that called the shipped example healthy was green BECAUSE
-# the clone was shallow, so CI's checkout for this gate now takes the whole history.
-python3 tools/check-example-ledgers.py
-
-# ...and the third question about the same committed files: the example's usage
-# ledger is DERIVED from its manifest, so a phase added to the example desynchronises
-# the two silently. This regenerates it and diffs. It ran only in CI at first, and
-# it cost a red run on a release candidate that had already been built, tagged and
-# pushed - the exemption that permitted the absence read "same throwaway demo tree",
-# which described a different check. `verify.sh` runs it with a temp dir for you.
-python3 plugins/audit/scripts/demo/gen-demo-usage.py \
-    examples/acme-store/audit-plan.json --out-dir "$(mktemp -d)"
-
-# the browser gates. NOTHING ELSE can prove the report paints and stays interactive,
-# or that the panel's controls do what their labels say: a selftest asserts what the
-# CSS SAYS. The panel leg is the long one.
-#
-# The report gate carries TWO arms over the phone layout and they fail apart. The
-# absolute one bounds the share of the screen an open filter panel may pin over the
-# table; the relative one compares this document's filter chrome against the figure
-# recorded for it in `tools/ui-checks/report-layout-baseline.json`, so a fixture that
-# moves a long way is reported even where the absolute bar is not crossed — one shipped
-# example once grew to nearly four times its height under a bar it never reached, and
-# only its neighbour failing gave it away. A move you meant is
-# blessed by re-running that gate on the one document with `--record` and committing
-# the line that changed; the failure prints the command. Recording refuses on a report
-# with any other failure, and `ui-checks/layout-baseline.mjs` is where the tolerance
-# and its defence live.
-node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html
-node tools/capture-screenshots.mjs --check
 ```
+
+The tool's selftest pins its calls in verify.sh by exact line - the plain run's
+`--before-commit`, the release slice's `--against-commit` - and pins that ci.yml carries
+none, so a flag moved, dropped, or put on a continuation line fails a case.
+
+...and the half that tool deliberately does NOT make. docs/index.html is a byte copy of the
+committed example report, so covering it with a row in that tool's table would render one
+published page from two inputs; it is covered by a COMPOSITION instead — fresh source (that
+tool) plus proven copy (a `cmp` in this slice). Neither half can go quiet on its own:
+`copy_check_missing()` in that same tool reads the runner carrying that `cmp` and goes red
+when it stops carrying it.
+
+The example's usage ledger is DERIVED from its manifest, so a phase added to the example
+desynchronises the two silently; this slice regenerates it and diffs. It ran only in CI at
+first, and it cost a red run on a release candidate that had already been built, tagged and
+pushed. The scale demo's fixture is rebuilt and validated, and the page is judged over its
+markup with every `<script>` block stripped. The demo GIF is a recorded session, so this
+starts none: it replays the edit the recording refused against require-plan and fails
+naming the GIF when the refusal moved from the recorded text, or the committed bytes from
+the recorded sha256.
+
+**`plugin`** is the plugin and marketplace structure (`claude plugin validate`).
+
+**`report`** and **`panel`** are the browser gates. NOTHING ELSE can prove the report paints
+and stays interactive, or that the panel's controls do what their labels say: a selftest
+asserts what the CSS SAYS. The panel slice is the long one, and serial on purpose. The
+report slice drives the committed reports - docs/index.html is not among them, since the
+manifests slice proves it a byte copy of one - and the rendered-plan legs no commit holds:
+this repo's own live plan, a plan whose phases all share one status, an all-parked plan
+with and without `--no-proposals`, and a report older than the checks.
+
+The report gate carries TWO arms over the phone layout and they fail apart. The absolute
+one bounds the share of the screen an open filter panel may pin over the table; the
+relative one compares this document's filter chrome against the figure recorded for it in
+`tools/ui-checks/report-layout-baseline.json`, so a fixture that moves a long way is
+reported even where the absolute bar is not crossed — one shipped example once grew to
+nearly four times its height under a bar it never reached, and only its neighbour failing
+gave it away. A move you meant is blessed by re-running that gate on the one document with
+`--record` and committing the line that changed; the failure prints the command. Recording
+refuses on a report with any other failure, and `ui-checks/layout-baseline.mjs` is where
+the tolerance and its defence live.
 
 ### A task gate that runs what the change can break
 
@@ -525,9 +485,10 @@ these, and `plugins/audit/tests/test_derive_phase_gate.py` reads them off this l
 each file by the rules a whole sweep applies, and refuses a path it does not sweep, naming it — so
 a listing that drifts from the sweep fails by name instead of quietly running something else.
 
-CI (`.github/workflows/ci.yml`) runs the selftest suite on ubuntu + windows —
-the windows leg proves the `python3` → `python` → `py` interpreter fallback
-(the manifest-validation and plugin-validate jobs run on ubuntu).
+CI (`.github/workflows/ci.yml`) runs the sweep slices on ubuntu + windows, and the
+`runner` and `e2e` slices on both - the windows cells prove the `python3` → `python`
+→ `py` interpreter fallback; every other slice runs on ubuntu. Which job runs which
+slice is `python3 tools/gate-parity.py --list`.
 
 ## Hard rules
 
@@ -546,9 +507,9 @@ the windows leg proves the `python3` → `python` → `py` interpreter fallback
   remembering to register it were once two separate acts, and one suite went
   unrun for two releases as a result.
 - **Every `.py` under `hooks/` and `scripts/` is scanned wherever it sits.** The
-  selftest sweeps — the one above and CI's two — use `find`, and
-  `_output.py_files()` is the single recursive walk behind both of `_output.py`'s
-  AST lints and every scanner in `_deps.py`. A rule stood here requiring `.py` to
+  selftest sweep — one runner, run by verify.sh's sweep slices here and in CI —
+  walks the tree through `_output.py_files()`, the single recursive walk behind
+  both of `_output.py`'s AST lints and every scanner in `_deps.py`. A rule stood here requiring `.py` to
   stay flat, one directory deep, and its only reason was that all three of those
   scanners were non-recursive: a file dropped into a subdirectory silently
   stopped being tested. The hazard was the **silence**, not the subdirectory, and
@@ -1353,7 +1314,7 @@ after it, while the graph was still clean, which is the only cheap moment to sta
 holding one. It reports both directions: a root document nothing links to, and a link
 that points at a path which is not there. Each exemption is declared with its reason,
 and a reason that has stopped describing the tree is itself reported — the same shape
-`EXCLUDED` and `ABSENT_BY_DESIGN` already use here.
+`EXCLUDED` already uses here.
 
 **Revisit trigger, on the user side:** when `QUICKSTART.md` stops being a path and
 starts being a reference — when it explains a config key, offers a second way to do a

@@ -50,9 +50,37 @@
         "file": "PLUGIN-BUILD-GUIDE.md:435",
         "issue": "The diff regenerates this module-map line (drive-phase no longer imports _manifest_rules). PLUGIN-BUILD-GUIDE.md is in the stamp's dirtyPaths but not in the stamp's `scope`, and is not in the brief's diff command. It is an undeclared change to the task, so a `done --commit` could refuse over it as a path no in_progress task covers, and it escapes this diff's review.",
         "resolution": "Run `audit-task.py scope P130.6 --files ...,PLUGIN-BUILD-GUIDE.md` before the close, or commit that file under the task."
+      },
+      {
+        "id": "P130-R5",
+        "severity": "low",
+        "file": ".github/workflows/ci.yml:39-44",
+        "issue": "The comment says a run on main 'is the record of what landed and is never cancelled'. `cancel-in-progress: false` only stops a RUNNING run being cancelled. GitHub still cancels a PENDING run when a newer run queues in the same group `ci-refs/heads/main`. Two pushes to main in quick succession, or a push while a dispatch on main is queued, can leave a main SHA with a cancelled run. CHANGELOG.md says 'everywhere but main' with the same implication. Read from GitHub's concurrency semantics; not exercised.",
+        "resolution": "Reword the comment to say a RUNNING main run is never cancelled and a queued one can be replaced, or key the group on the SHA on main so main runs never share a group."
+      },
+      {
+        "id": "P130-R6",
+        "severity": "low",
+        "file": "tools/gate-parity.py:1579",
+        "issue": "'Every per-run slice has a job' reads a job's `if:` only for `inputs.tier == 'release'`. Mutated copies with `if: ${{ false }}` on browser-panel, and a push-only condition on browser-panel, both returned [] for slice_drift and shard_matrix_drift (lines 1609-1642). The claim holds only for the one condition shape it reads.",
+        "resolution": "Treat a job `if:` as the known per-run guard only when it reduces to the verified-run guard, optionally with the release-tier term; otherwise report it as a condition the reader cannot prove runs on every run. Add sv cases for `if: false` and a push-only condition."
+      },
+      {
+        "id": "P130-R7",
+        "severity": "low",
+        "file": "tools/ci-verified.py:128-141",
+        "issue": "`decide()` matches on `head_sha` and `path` but never on the run's `event` (ask_github at 162-165). A pull_request run's `head_sha` is the PR head while its checkout is the merge commit; if main later receives that SHA by fast-forward, the PR run vouches for a tree it never tested and every main job is skipped. The docstring's 'exactly this commit' holds for workflow_dispatch and push only.",
+        "resolution": "Fetch `event` with the run listing and accept only workflow_dispatch and push runs. Add a cv case where a green pull_request run on the same SHA refuses."
+      },
+      {
+        "id": "P130-R8",
+        "severity": "low",
+        "file": "tools/check-git-pipeline.py:11",
+        "issue": "Untouched files still say ci.yml carries the launcher steps and the scale-demo step (tools/check-git-pipeline.py:11,29,38,226; plugins/audit/tests/test_gen_demo_manifest.py:729,800). This diff moved those steps into verify.sh's e2e and manifests slices.",
+        "resolution": "Change 'ci.yml' to tools/verify.sh's e2e slice / the manifests slice at those lines."
       }
     ],
-    "outcome": "[findings: 4 - 0 high, 0 med, 4 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 8 - 0 high, 0 med, 8 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [

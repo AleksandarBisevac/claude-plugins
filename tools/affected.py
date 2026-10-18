@@ -87,11 +87,12 @@ TREE_SCANNERS = (
 
 PANEL_GATE = "node tools/capture-screenshots.mjs --check --only panel"
 REPORT_GATE = "node tools/check-report-interactive.mjs %s"
-REPORT_DOCS = ("examples/acme-store/acme-store-audit.html",
-               "docs/index.html", "docs/demo-large.html")
+# The committed reports verify.sh's report slice drives. docs/index.html is not one:
+# it is a byte copy of the acme report, which the manifests slice proves by `cmp`.
+REPORT_DOCS = ("examples/acme-store/acme-store-audit.html", "docs/demo-large.html")
 # `--before-commit` because a narrowed run happens before the commit: the tool's
 # other arm asks what HEAD carries, and that is red for every change that re-renders
-# a page until the change is committed. CI and `verify.sh --release` ask it.
+# a page until the change is committed. verify.sh's release slice asks it.
 ARTIFACTS = "python3 tools/check-rendered-artifacts.py --before-commit"
 
 # The JavaScript unit tests under `tools/ui-tests/`. They were selectable by nothing
@@ -101,11 +102,21 @@ ARTIFACTS = "python3 tools/check-rendered-artifacts.py --before-commit"
 # is never the expensive decision.
 VITEST = "npx vitest run"
 
-# The meta-gate. Several files describe one gate set - the runner, the workflow and
-# the two root documents - and editing any of them is what makes them disagree. Which
-# files those are is `gate-parity.py`'s own table and is deliberately not copied here;
-# see the sweep-document branch for what this selects on instead.
+# The meta-gate. The workflow runs slices of the runner, and `gate-parity.py` holds
+# the workflow to the runner's `--list` - so editing either is what makes them
+# disagree. The documents that describe the sweep select it too (the sweep-document
+# branch), which is a widening this file is allowed.
 PARITY = "python3 tools/gate-parity.py"
+
+# The workflow, and the tools whose OWN cases read it: the slice rule (gate-parity),
+# the sweep's deadline against the selftests job's bound (tt5), the rendered-artifact
+# tool's pin that the workflow carries no call of its own (ra29), and the release
+# dispatch's tier input (rt2). Listed because each reads it by path, which no import
+# graph shows; a reader added later and missed here under-selects, so a new one
+# belongs on this list in the same change.
+WORKFLOW = ".github/workflows/ci.yml"
+WORKFLOW_READERS = ("tools/gate-parity.py", "tools/sweep-selftests.py",
+                    "tools/check-rendered-artifacts.py", "tools/release.py")
 
 # A tool's OWN cases. Every `.py` under `tools/` carries an inline suite, and until
 # this existed nothing here selected one: a change to a tool was classified "a tool
@@ -329,6 +340,15 @@ def select(paths):
             suites.add("test__output.py")
         if posix.endswith(".md"):
             suites.add("test__deps.py")
+        if posix == WORKFLOW:
+            # THE WORKFLOW IS NO SWEEP DOCUMENT any more - every job is one verify.sh
+            # call - but it is what the slice rule holds against `verify.sh --list`,
+            # and the tools whose own cases read it go red when it moves.
+            gates.append(PARITY)
+            gates.extend(TOOL_SELFTEST % (rel,) for rel in WORKFLOW_READERS)
+            reasons.append("%s - the workflow, so the slice rule and the cases "
+                           "that read it are re-checked" % (posix,))
+            continue
         if posix in SWEEP_DOCS:
             suites.add("test__deps.py")
             # EVERY sweep document, not only the workflow. Some of them are parity
@@ -585,12 +605,14 @@ def _cases(check):
     yml = ".github/workflows/ci.yml"
     dotted = sel(yml)
     undotted = sel("github/workflows/ci.yml")
-    check("a0 the workflow is a sweep document and half the gate set, so it "
-          "narrows to the refs pins and the parity check instead of demanding "
-          "everything: %r" % (dotted,),
+    check("a0 the workflow is what the slice rule holds against the runner, so it "
+          "narrows to the refs pins, the parity check and the cases of every tool "
+          "that reads it by path, instead of demanding everything: %r" % (dotted,),
           (not dotted["full"])
           and "test__refs.py" in dotted["suites"]
-          and PARITY in dotted["gates"])
+          and PARITY in dotted["gates"]
+          and all(TOOL_SELFTEST % (rel,) in dotted["gates"]
+                  for rel in WORKFLOW_READERS))
 
     check("a1 THE PAIR: the same path with and without its leading dot give "
           "OPPOSITE answers. `lstrip(\"./\")` strips CHARACTERS, so it ate the "

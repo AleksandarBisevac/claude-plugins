@@ -165,8 +165,9 @@ _GATE_MODULES = ("_output.py", "_deps.py", "_refs.py",
 # written, asserted over the real tree by its own suite, and proven by nothing.
 #
 # THE META-GATE, AND WHAT IT FELL THROUGH IS NEITHER A NAME NOR A SIGNATURE.
-# `gate-parity.py` is what keeps four hand-maintained descriptions of the gate set
-# honest with each other, and nothing proved any of its checks. It was NOT missed
+# `gate-parity.py` was what kept the hand-maintained descriptions of the gate set
+# honest with each other - it holds the workflow to the runner's slices now - and
+# nothing proved any of its checks. It was NOT missed
 # the way `hand_rolled_runners()` was missed above: `isolation_drift` ends in a shape
 # above and `scratch_isolation` walks the tree through `_output.py_files()`, so both
 # arms would have derived them the moment anything opened the file. Nothing opened it -
@@ -1086,17 +1087,6 @@ TABLE = (
  # real runner against every side.
  ("sweep_roots_drift", "CLAUDE.md", "sub", r"tools/ AND \.claude/hooks/",
   (r"tools/ AND \.claude/hooks/", "tools/"), "tools/gate-parity.py", "sr0"),
- # THE SHIPPED DEFECT, VERBATIM, and the mutation is the row that actually shipped.
- # `render-report.py` is excused locally on a reason that NAMES the local gate
- # making the equivalent claim; strike that name out and the reason excuses
- # nothing - which is exactly the state `gen-demo-usage.py` sat in behind "same
- # throwaway demo tree" while a CI step diffed the committed ledger. The mutation
- # leaves the row, its sides and the file set untouched; only the SENTENCE stops
- # being true, which is the one thing `compare()` cannot see.
- ("exemption_reason_drift", "tools/gate-parity.py", "replace",
-  "check-rendered-artifacts.py, which is stronger because it compares bytes",
-  "a stronger local check compares those bytes instead of this one",
-  "tools/gate-parity.py", "er1"),
  # AN EXEMPTION TABLE RENAMED OUT FROM UNDER ITS CLASSIFICATION. The row in
  # `AUDITED_EXEMPTIONS` then names a subject that does not exist, which is the
  # register's own recurring shape one level up: an excuse that outlived the thing
@@ -1116,42 +1106,28 @@ TABLE = (
   '  if "$@" >"$WORKDIR/step.log" 2>&1; then',
   '  if "$@" >/tmp/verify-step.log 2>&1; then',
   "tools/gate-parity.py", "sc0"),
- # THE LEG A RUNNER DROPS WHILE STILL NAMING THE TOOL. `verify.sh` called the report
- # checker on the committed reports alone while CI also checked a fresh render, so
- # both named the checker and parity was perfect. The mutation is that state: one
- # rendered leg's call gone, every tool still named. `rt0` reads the real pair.
- ("report_target_drift", "tools/verify.sh", "replace",
-  '  node tools/check-report-interactive.mjs "$one/one-status.html" || return 1',
-  "  true",
-  "tools/gate-parity.py", "rt0"),
- # A SHARDED LEG THAT SKIPS A PART. `--shard` is excused from the leg comparison
- # only because CI runs every part; the mutation is the matrix that dropped one,
- # every leg still named on both sides. `shm1` reads the real workflow.
+ # A SHARDED SLICE THAT SKIPS A PART. A sweep slice may be split only because the
+ # cells together still run every file; the mutation is the matrix that dropped
+ # one, every slice still named by a job. `sv7` reads the real workflow against
+ # the real runner's list.
  ("shard_matrix_drift", ".github/workflows/ci.yml", "replace",
   "        shard: [1, 2, 3]",
   "        shard: [1, 2]",
-  "tools/gate-parity.py", "shm1"),
- # A LEG THE MATRIX NO LONGER PRODUCES. Every step stays in ci.yml and every
- # `if:` still spells its leg, so the leg comparison is silent; only reading the
- # matrix's own `leg:` list finds that no cell runs `--encoding cp1252`.
- ("shard_matrix_drift", ".github/workflows/ci.yml", "replace",
-  "        leg: [plain, cp1252, spaced]",
-  "        leg: [plain, spaced]",
-  "tools/gate-parity.py", "shm2"),
- # ...and the include cells that alone produce the e2e leg.
- ("shard_matrix_drift", ".github/workflows/ci.yml", "replace",
-  "          - os: ubuntu-latest\n            leg: e2e\n"
-  "          - os: windows-latest\n            leg: e2e\n",
-  "",
-  "tools/gate-parity.py", "shm4"),
- # ...and the same blind spot for the sweep, whose flags are its legs. CI sweeps a
- # second time under a forced legacy codec; the mutation is the runner that did
- # not, with the sweep still named on both sides so every gate set still agrees.
- # `sl0` reads the real pair.
- ("sweep_leg_drift", "tools/verify.sh", "replace",
-  "    python3 tools/sweep-selftests.py --encoding cp1252",
-  "    true",
-  "tools/gate-parity.py", "sl0"),
+  "tools/gate-parity.py", "sv7"),
+ # A PER-RUN SLICE NO JOB RUNS ANY MORE. The runner still lists it and every other
+ # cell still runs, so nothing else notices that the Windows code-page leg is gone
+ # from CI; only holding the matrix to the list does.
+ ("slice_drift", ".github/workflows/ci.yml", "replace",
+  "        leg: [plain, stress, cp1252]",
+  "        leg: [plain, stress]",
+  "tools/gate-parity.py", "sv7"),
+ # ...and the other direction: a job naming a slice the runner does not list,
+ # which the runner refuses the day the job runs - a red CI run with every local
+ # gate green.
+ ("slice_drift", ".github/workflows/ci.yml", "replace",
+  "run: sh tools/verify.sh --only lint,runner,e2e",
+  "run: sh tools/verify.sh --only lint,runner,e2e,lnt",
+  "tools/gate-parity.py", "sv7"),
  # ...and the other question asked of that same runner, which is a PAIR rather
  # than a file: the selector chooses the checks and the runner dispatches them, and
  # the fault was a check the selector named and the runner had no arm for. The
@@ -1181,24 +1157,6 @@ TABLE = (
  # unique in the document and whose hook stays wired after it goes.
  ("failmode_table_drift", "SECURITY.md", "drop", r"^\| `remind-tdd` \|",
   None, "tools/gate-parity.py", "fm0"),
- # A RED CI RUN MUST BE A COMPLETE LIST. A step after a job's setup without
- # `!cancelled()` is skipped when anything above it fails, so one broken check
- # hides the rest and each hidden layer costs another full round. Strip the
- # condition from one lint step and `sg0`, which reads the live workflow, must go
- # red naming that step.
- ("step_guard_drift", ".github/workflows/ci.yml", "replace",
-  "      - name: ruff (rules and py38 target from pyproject.toml)\n"
-  "        if: ${{ !cancelled() }}\n",
-  "      - name: ruff (rules and py38 target from pyproject.toml)\n",
-  "tools/gate-parity.py", "sg0"),
- # THE EXEMPTION'S BREADTH CHECK, SWITCHED OFF. The exempt step must read the
- # path its reason names; stop asking and an exemption that no longer rests on any
- # dependency (a step widened, or its dependency dropped) passes. `sg6`'s
- # fixture is the step that does not read the named path, and it must go red.
- ("step_exemption_breadth_drift", "tools/gate-parity.py", "replace",
-  "        if path not in steps[at[0]][2]:\n",
-  "        if False:\n",
-  "tools/gate-parity.py", "sg6"),
 
  # --- The remainder the hand-written source list was hiding --------------------
  # Fifteen lints arrived the moment `_gate_sources()` became a walk. Every row
@@ -2015,62 +1973,25 @@ ALLOW = (
   "            if not any(name in w for w in windows)]",
   "            if not any(root in w for w in windows)]",
   "tools/gate-parity.py", "sr2"),
- # THE OVER-FIRE IS COMPARING SPELLINGS. CI writes its scratch root as a literal
- # `/tmp/` and the runner as a `mktemp` directory. The mutation stops substituting
- # the placeholder for the `mktemp` variable, so the runner's rendered targets stay
- # unexpanded `$WORKDIR/...` words, which the reader reports as a PROBLEM rather
- # than comparing - on a pair that is spelled differently and agrees. `rt2` is that
- # pair, and it expects the two sides to agree with no problem.
- ("report_target_drift", "tools/gate-parity.py", "replace",
-  "            return SCRATCH",
-  "            return match.group(0)",
-  "tools/gate-parity.py", "rt2"),
- # THE OVER-FIRE IS READING A MACHINE KNOB AS A LEG. The local runner may pin how
- # many suites run at once and CI may quiet the inventory; neither changes which
- # suites run or how they are graded. The mutation stops excusing `--jobs`, so a
- # side that pins it runs a "different" leg - the noise that trains a reader to
- # ignore the rule. `sl4` is that pair, and it expects agreement.
- ("sweep_leg_drift", "tools/gate-parity.py", "replace",
-  "        if word in not_legs:",
-  "        if word in not_legs and word != \"--jobs\":",
-  "tools/gate-parity.py", "sl4"),
- # THE OVER-FIRE IS CONVICTING A MATRIX THAT RUNS EVERY PART. Drop the comparison
- # of the listed parts against 1..N and every sharded workflow reads as skipping
- # one - `shm0`'s clean `[1, 2, 3]` for `/3` is the pair that expects silence.
+ # THE OVER-FIRE IS CONVICTING A MATRIX THAT RUNS EVERY PART. Report the missing
+ # parts whether or not any are missing and every sharded workflow reads as
+ # skipping one - `sv0`'s full `[1, 2, 3]` for `/3` is the pair that expects
+ # silence.
  ("shard_matrix_drift", "tools/gate-parity.py", "replace",
-  "            elif [v.strip() for v in lists[0].split(\",\")] != want:",
-  "            elif True:",
-  "tools/gate-parity.py", "shm0"),
- # THE MATRIX CHECK'S TWO OVER-FIRES. Convict every value an `if:` names, or
- # every produced leg for having no step, and the live ci.yml - which `shm1` reads
- # and expects clean - is reported broken.
- ("shard_matrix_drift", "tools/gate-parity.py", "replace",
-  "        if val not in produced.get(key, set()):",
-  "        if True:",
-  "tools/gate-parity.py", "shm1"),
- ("shard_matrix_drift", "tools/gate-parity.py", "replace",
-  "    for leg in sorted(produced.get(\"leg\", set()) - named):",
-  "    for leg in sorted(produced.get(\"leg\", set())):",
-  "tools/gate-parity.py", "shm1"),
- # THE OVER-FIRE THIS RULE IS ONE LINE AWAY FROM. The discriminator is the
- # COMPARISON: four of the five exempted scripts name a committed path in CI and
- # only READ it - `render-report.py docs/audit/audit-plan.json --out-dir /tmp/...`
- # is exactly what its reason says it is. Drop the diff/cmp requirement and the
- # rule convicts all four, which is a lint people delete rather than obey. `er2`
- # is the case that fails on that version.
- ("exemption_reason_drift", "tools/gate-parity.py", "replace",
-  "            if not any(word in step for word in _COMPARES):",
-  "            if False:",
-  "tools/gate-parity.py", "er2"),
- # THE SETUP CARVE-OUT, REMOVED. A checkout, a setup-* or an install is left
- # unconditional on purpose - its failure invalidates what follows, so running on
- # past it only reports a second, spurious failure. Stop skipping them and the
- # rule convicts every job's first steps. `sg2` is the fixture with setup steps
- # and an exempted step in it, and it must go red on that version.
- ("step_guard_drift", "tools/gate-parity.py", "replace",
-  "        if _is_setup_step(keys):\n            continue\n",
+  "            if want - have:",
+  "            if True:",
+  "tools/gate-parity.py", "sv0"),
+ # THE SLICE RULE'S TWO OVER-FIRES. Convict every per-run slice whatever runs it,
+ # or every slice a job names whether the list prints it or not, and a workflow
+ # that runs every slice it should - `sv0`'s fixture - is reported broken.
+ ("slice_drift", "tools/gate-parity.py", "replace",
+  "        if \"per-run\" in tiers:\n            continue\n",
   "        if False:\n            continue\n",
-  "tools/gate-parity.py", "sg2"),
+  "tools/gate-parity.py", "sv0"),
+ ("slice_drift", "tools/gate-parity.py", "replace",
+  "        if name not in listed:",
+  "        if True:",
+  "tools/gate-parity.py", "sv0"),
  # THE DERIVATION, WIDENED PAST THE THING IT SEPARATES. A reason is a SENTENCE;
  # the length floor is what tells an excuse from a label, and `{"P1": "done"}` is
  # data. Drop it to nothing and every string-to-string map in the tree becomes an
@@ -2363,14 +2284,6 @@ ALLOW = (
  # asserts a vocabulary WITH members stays quiet.
  ("claim_drift", S + "manifest/_areas.py", "replace",
   "        if not members:", "        if members is not None:", ARE, "oa29"),
- # THE BREADTH CHECK, OVER-FIRING. The second half asks whether an EARLIER step
- # mentions the dependency. Make it unconditional and the live exemption - whose
- # dependency `Scale demo` really does produce - is convicted. `sg5` reads the
- # live workflow and must go red.
- ("step_exemption_breadth_drift", "tools/gate-parity.py", "replace",
-  "        elif not any(j == job and path in t for j, _n, t in steps[:at[0]]):\n",
-  "        elif True:\n",
-  "tools/gate-parity.py", "sg5"),
 )
 
 
@@ -2903,9 +2816,11 @@ def prove(row, repo=None):
         # `sweep-selftests.scratch_debris()` fails any suite that leaves anything
         # in the directory it was handed; `_suite.unsafe_removal_violations()`
         # walks `tools/` and convicts THIS file the day it builds a repository and
-        # writes an object into one; and `gate-parity`'s ABSENT_BY_DESIGN row for
-        # this tool reports itself stale the day a workflow adopts it, which is
-        # the half that keeps "it never runs on the windows leg" honest.
+        # writes an object into one. The half that keeps "it never runs on the
+        # windows leg" true is weaker and said so: CI runs verify.sh's slices and
+        # nothing else, no slice runs this tool (`sh tools/verify.sh --list`
+        # shows it), and nothing fails the day one is taught to - the change
+        # would have to add it to a slice, where review sees it.
         shutil.rmtree(scratch, ignore_errors=True)
     cases = failing_ids(gate)
     if "REDFIRST FAILED" in text:

@@ -29,7 +29,9 @@ reads "done":
                         as one is uncommitted - so before the commit it
                         could never pass. A red here leaves a local commit
                         only; amend it and resume, nothing has gone out
-  push-ci-branch        push `ci/v<version>`, dispatch `ci.yml` on it, and
+  push-ci-branch        push `ci/v<version>`, dispatch `ci.yml` on it with
+                        `-f tier=release` (the per-run jobs plus the Windows
+                        re-sample), and
                         record the commit pushed (HEAD at that moment) -
                         the push creates no local `ci/...` branch, so that
                         bare name resolves to nothing afterwards
@@ -68,7 +70,8 @@ rather than restated from the hook's own `bypass_armed`.
 
 `release.py ci <ref>` runs the CI step ALONE: a landed phase that wants CI
 run the same way this release's `wait-ci` step runs it does not need a
-version or a release in flight to ask for it.
+version or a release in flight to ask for it. It dispatches with no input,
+so the workflow's default - the per-run tier - is what runs.
 
 Exit codes: 0 the whole pipeline (or the lone `ci` step) went green -
 1 a step failed, named, with the resume command printed - 2 usage error.
@@ -401,12 +404,18 @@ def _ci_branch(version):
     return "ci/v%s" % (version,)
 
 
-def dispatch_ci(ctx, ref):
-    rc, out = ctx.run(["gh", "workflow", "run", "ci.yml", "--ref", ref])
+def dispatch_ci(ctx, ref, tier=None):
+    """Dispatch ci.yml on `ref`. With no `tier` the workflow's own default runs,
+    which is the per-run tier; a release candidate passes `tier="release"`, which
+    adds the Windows re-sample job to every per-run job."""
+    argv = ["gh", "workflow", "run", "ci.yml", "--ref", ref]
+    if tier is not None:
+        argv += ["-f", "tier=%s" % (tier,)]
+    rc, out = ctx.run(argv)
     if rc != 0:
-        return False, "gh workflow run ci.yml --ref %s failed: %s" % (
-            ref, excerpt(out))
-    return True, "dispatched ci.yml on %s" % (ref,)
+        return False, "%s failed: %s" % (" ".join(argv), excerpt(out))
+    return True, "dispatched ci.yml on %s%s" % (
+        ref, "" if tier is None else " (tier %s)" % (tier,))
 
 
 def wait_ci(ctx, ref, sha=None):
@@ -471,7 +480,7 @@ def step_push_ci_branch(ctx):
         return False, "push to %s failed: %s" % (branch, excerpt(out))
     ctx.state["ciBranch"] = branch
     ctx.state["ciSha"] = sha
-    ok, detail = dispatch_ci(ctx, branch)
+    ok, detail = dispatch_ci(ctx, branch, tier="release")
     if not ok:
         return False, detail
     return True, "pushed %s (%s) and %s" % (branch, sha, detail)
@@ -813,6 +822,52 @@ def _call_list(runner):
     return excerpt(repr(runner.calls))
 
 
+_TIER_CLAUSE = ("the release dispatch passes -f tier=release, and a dispatch "
+                "with no input runs the per-run tier")
+
+
+def _workflow_tier_input(text):
+    """`{"default", "options"}` of the `tier` input under `workflow_dispatch:`,
+    or None when the workflow declares no such input. Read by indentation, the
+    way GitHub nests it: `workflow_dispatch:` > `inputs:` > `tier:` > its keys,
+    with `options:` as a block list one level under its key."""
+    lines = text.splitlines()
+    path = ("workflow_dispatch", "inputs", "tier")
+    depth = []                       # indents of the path keys matched so far
+    found = None
+    keys = {}
+    options = []
+    in_options = None
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if found is not None:
+            if indent <= found:
+                break
+            if in_options is not None and indent > in_options \
+                    and stripped.startswith("- "):
+                options.append(stripped[2:].strip().strip("'\""))
+                continue
+            in_options = None
+            key, _sep, value = stripped.partition(":")
+            if key == "options" and not value.strip():
+                in_options = indent
+            else:
+                keys[key] = value.strip().strip("'\"")
+            continue
+        while depth and indent <= depth[-1]:
+            depth.pop()
+        if len(depth) < len(path) and stripped == path[len(depth)] + ":":
+            depth.append(indent)
+            if len(depth) == len(path):
+                found = indent
+    if found is None:
+        return None
+    return {"default": keys.get("default"), "options": options}
+
+
 def _fixture_repo(bugs=None):
     """A scratch tree carrying just what the steps under test read: the plan
     (for `preflight`), `plugin.json` (for `bump-version`), `CHANGELOG.md` and
@@ -941,8 +996,38 @@ def _cases(check):
               and ctx.state.get("ciSha") == "c0mm1tted"
               and "c0mm1tted" in (ctx.state["steps"].get("wait-ci")
                                   or {}).get("detail", ""))
+        released = [c for c in runner.calls if c.startswith("gh workflow run")]
+        check("rt1 %s (the release pipeline's dispatch: %r)"
+              % (_TIER_CLAUSE, released),
+              released == ["gh workflow run ci.yml --ref ci/v9.9.9 "
+                           "-f tier=release"])
     finally:
         remove_tree(tmp)
+
+    # --- a phase's CI dispatch passes no input, and the workflow reads that ----
+    # as the per-run tier: the drive's cadence and `release.py ci` both dispatch
+    # with `--ref` alone, so the default IS what every non-release run gets.
+    phase_runner = FakeRunner(_faithful_responses(_new_world()))
+    cmd_ci(["ci/p999"], repo=REPO, runner=phase_runner, out=io.StringIO())
+    phase_dispatch = [c for c in phase_runner.calls
+                      if c.startswith("gh workflow run")]
+    with io.open(os.path.join(REPO, ".github", "workflows", "ci.yml"),
+                 encoding="utf-8") as fh:
+        workflow = fh.read()
+    tier_input = _workflow_tier_input(workflow)
+    check("rt2 %s (a phase dispatch %r; the workflow's tier input %r)"
+          % (_TIER_CLAUSE, phase_dispatch, tier_input),
+          phase_dispatch == ["gh workflow run ci.yml --ref ci/p999"]
+          and tier_input == {"default": "per-run",
+                             "options": ["per-run", "release"]})
+    # The second direction: a workflow defaulting to the release tier, or with
+    # no tier input at all, must not read as one that runs the per-run tier.
+    as_release = _workflow_tier_input(
+        workflow.replace("default: per-run", "default: release"))
+    no_input = _workflow_tier_input("on:\n  workflow_dispatch:\njobs:\n")
+    check("rt3 %s (a workflow defaulting to release reads %r, one with no "
+          "tier input reads %r)" % (_TIER_CLAUSE, as_release, no_input),
+          (as_release or {}).get("default") == "release" and no_input is None)
 
     # --- a red at the CI step stops there, and resume starts there -------------
     tmp = _fixture_repo()

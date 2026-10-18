@@ -2686,10 +2686,15 @@ RETIRED_SWEEPS = ((SWEEP_FLAT, "flat sweep"),
                   (SWEEP_FIND, "hand-written sweep"))
 
 # Every document that shows a reader how to run the suites. The commit that did the
-# conversion named three; the tree carries six, and pinning three of six would leave the
-# other three free to rot in exactly the way this constant exists to prevent.
+# conversion named only half of the ones the tree carried, and pinning half would leave
+# the rest free to rot in exactly the way this constant exists to prevent;
+# `sweep_doc_drift()` below is what holds the list whole now.
+#
+# THE WORKFLOW IS NOT ONE ANY MORE. Every ci.yml job is setup plus one `tools/verify.sh
+# --only <slices>` call, so the workflow teaches no sweep: verify.sh's sweep slices do,
+# and a workflow listed here would be red for carrying no runner it has no reason to
+# carry. `sweep_doc_drift()` still reads it, and reports it the day it names one again.
 SWEEP_DOCS = (
-    ".github/workflows/ci.yml",
     "CLAUDE.md",
     "CONTRIBUTING.md",
     "PLUGIN-BUILD-GUIDE.md",

@@ -577,7 +577,9 @@ def _cases(check):
     check("c1 the real tree carries at least 120 references (%d) - a pattern that "
           "quietly stops matching must fail HERE, not report 0 missing" % len(real),
           len(real) >= 120, repr(len(real)))
-    _load_bearing = ("plugins/audit/commands", ".github/workflows/ci.yml",
+    # `tools`, where the workflow was: every ci.yml job is one verify.sh call now, so
+    # the script paths the workflow used to spell live in tools/verify.sh.
+    _load_bearing = ("plugins/audit/commands", "tools",
                      "PLUGIN-BUILD-GUIDE.md", "plugins/audit/README.md")
     check("c2 each of the four surfaces that carry the bulk is non-zero: %r"
           % (dict((s, counts[s]) for s in _load_bearing),),
@@ -1079,7 +1081,14 @@ def _cases(check):
     # One document per format, named rather than indexed, because the three cases that
     # matter now are each about a DIFFERENT runnable region and `SWEEP_DOCS[0]` says
     # nothing about which.
-    _yml = [r for r in M.SWEEP_DOCS if r.endswith((".yml", ".yaml"))][0]
+    #
+    # THE WORKFLOW LEFT THE LIST when every CI job became one verify.sh call, so no
+    # real sweep document is YAML any more - and the YAML region is still a rule
+    # `_runnable_text` carries for the day one is. These cases add a workflow fixture
+    # to the list for their own run alone, and put the real list back after.
+    _real_sweep_docs = M.SWEEP_DOCS
+    _yml = ".github/workflows/ci.yml"
+    M.SWEEP_DOCS = _real_sweep_docs + (_yml,)
     _md = [r for r in M.SWEEP_DOCS if r.endswith(".md")][0]
     _jsn = [r for r in M.SWEEP_DOCS if r.endswith(".json")][0]
     try:
@@ -1198,6 +1207,7 @@ def _cases(check):
               and "no runnable-region rule"
               in M._runnable_text("NOTES.rst", M.SWEEP_RUNNER)[1])
     finally:
+        M.SWEEP_DOCS = _real_sweep_docs
         shutil.rmtree(tmp, ignore_errors=True)
 
     # And on the real guide, which is where the prose actually lives.

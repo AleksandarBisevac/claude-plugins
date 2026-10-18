@@ -33,8 +33,9 @@ with this repo's own recipe, until its commit. So `--selftest` - which the pre-c
 sweep runs - and `--before-commit` ask the fresh render alone, `--against-commit` asks
 HEAD alone, and a run with no flag asks both. After a commit, `tools/verify.sh
 --release` (`--against-commit`) and a no-flag run by hand are where the HEAD arm can
-catch a page committed without its re-render. CI runs with no flag, but there the
-checkout IS the commit, so that arm cannot fire. `arm_verdict()` names an arm a run
+catch a page committed without its re-render. CI runs verify.sh's manifests slice,
+which passes `--before-commit`; there the checkout IS the commit, so the HEAD arm
+could not fire anyway. `arm_verdict()` names an arm a run
 left out rather than going quiet about it, and `run_arms()` reads which arms the runner
 and the workflow really ask.
 
@@ -127,7 +128,7 @@ DEMO_FIXTURE_FLAGS = ("--phases", "40", "--tasks", "5")
 # mean rendering the example twice and calling the second render a different file.
 COPY_PROVEN = [
     ("docs/index.html", "examples/acme-store/acme-store-audit.html",
-     (".github/workflows/ci.yml", "tools/verify.sh")),
+     ("tools/verify.sh",)),
 ]
 
 # `cmp` as a whole word: `cmp -s a b` and `if ! cmp -s a b; then` are the same step
@@ -628,16 +629,17 @@ def committed_report(result):
 # WHERE IT CAN CATCH SOMETHING. After a commit: a re-render committed without its
 # page staged is what the arm exists for, and `tools/verify.sh --release` or a no-flag
 # run by hand is where it is found before a push. On CI it cannot fire - the checkout
-# IS the commit - so CI's no-flag run holds it only as the same call everybody makes;
-# the fresh-render arm is what goes red there on a stale committed page.
+# IS the commit - so CI asks the fresh-render arm alone, through verify.sh's
+# manifests slice, and that arm is what goes red there on a stale committed page.
 #
 # So each run names the arms it asks, and a run that leaves one out says so in its
 # output rather than printing a verdict that reads as covering both:
 #   * `--before-commit` - the fresh render only. The sweep (through `--selftest`,
-#     which asks `SELFTEST_ARMS`) and a plain or `--affected` `tools/verify.sh` run.
-#   * `--against-commit` - HEAD only. `tools/verify.sh --release`, whose plain half
-#     has already asked the fresh render on the same tree.
-#   * no flag - both. CI, and a run by hand after a commit.
+#     which asks `SELFTEST_ARMS`), and verify.sh's manifests slice - so a plain or
+#     `--affected` run, and CI.
+#   * `--against-commit` - HEAD only. verify.sh's release slice (`--release`),
+#     whose plain half has already asked the fresh render on the same tree.
+#   * no flag - both. A run by hand after a commit.
 # `run_arms()` reads those calls out of the runner and the workflow, so a flag moved
 # on either is a failing case here rather than a sentence that stopped being true.
 FRESH_ARM = "fresh"
@@ -706,7 +708,7 @@ _CI_REL = ".github/workflows/ci.yml"
 # return - none of which the shell treats as a blank. ra29k reads the reader's AST
 # for a helper that forgets.
 _BLANKS = " \t"
-_RELEASE_OPEN = re.compile(r'^if \[ "\$RELEASE" -eq 1 \]; then[ \t]*$')
+_RELEASE_OPEN = re.compile(r'^slice_release\(\) \{[ \t]*$')
 _CALL_LINES = (("python3 %s" % (_THIS_TOOL,), ALL_ARMS),
                ("python3 %s --before-commit" % (_THIS_TOOL,), BEFORE_COMMIT_ARMS),
                ("python3 %s --against-commit" % (_THIS_TOOL,), AGAINST_COMMIT_ARMS))
@@ -849,17 +851,17 @@ def call_lines(text, yaml=False):
 
 
 def release_lines(text):
-    """(first, last) line numbers of the runner's `--release` block, or None.
+    """(first, last) line numbers of the runner's release slice, or None.
 
-    The block opens on `if [ "$RELEASE" -eq 1 ]; then` and closes on the first `fi`
-    at the start of a line after it. None when no block was found, so a runner that
+    The slice opens on `slice_release() {` and closes on the first `}` alone at
+    the start of a line after it. None when no slice was found, so a runner that
     lost it is not read as one whose release asks nothing.
     """
     lines = shell_lines(text)
     opens = [i for i, line in enumerate(lines) if _RELEASE_OPEN.match(line)]
     if not opens:
         return None
-    closes = [i for i in range(opens[0] + 1, len(lines)) if lines[i] == "fi"]
+    closes = [i for i in range(opens[0] + 1, len(lines)) if lines[i] == "}"]
     if not closes:
         return None
     return opens[0] + 1, closes[0] + 1
@@ -1403,22 +1405,26 @@ def _arm_cases(check):
     _runs = run_arms()
     _found = dict((part, None if calls is None else [c for _n, c in calls])
                   for part, calls in _runs.items())
+    # ci.yml names no call: every job is setup plus one verify.sh call, and the
+    # manifests slice CI runs carries the `--before-commit` line counted under
+    # "plain". A call written into the workflow again would be a second copy of the
+    # gate, and it lands in "ci" here.
     check("ra29 each run carries its exact call line, exactly once and nothing else "
-          "naming this tool: verify.sh's plain run `--before-commit`, its --release "
-          "block `--against-commit`, ci.yml the line with no flag: %r" % (_runs,),
+          "naming this tool: verify.sh's plain run `--before-commit`, its release "
+          "slice `--against-commit`, and ci.yml none: %r" % (_runs,),
           _found == {"plain": [BEFORE_COMMIT_ARMS],
-                     "release": [AGAINST_COMMIT_ARMS], "ci": [ALL_ARMS]})
+                     "release": [AGAINST_COMMIT_ARMS], "ci": []})
     _fx_runner = ("run \"x\" \\\n  python3 %s --before-commit\n"
-                  "if [ \"$RELEASE\" -eq 1 ]; then\n"
+                  "slice_release() {\n"
                   "  python3 %s --against-commit\n"
-                  "fi\n" % ((_THIS_TOOL,) * 2))
+                  "}\n" % ((_THIS_TOOL,) * 2))
     # A form feed inside the block is no line break to the shell, so it must not
     # move the block's end either.
     _fx_ff = ("run \"x\" \\\n  python3 %s --before-commit\n"
-              "if [ \"$RELEASE\" -eq 1 ]; then\n"
+              "slice_release() {\n"
               "  echo a\x0cb\n"
               "  python3 %s --against-commit\n"
-              "fi\n" % ((_THIS_TOOL,) * 2))
+              "}\n" % ((_THIS_TOOL,) * 2))
     # THE FILES ARE READ AS THE SHELL READS THEM: a carriage return written into
     # verify.sh stays inside its line. Opened with universal newlines it would
     # become a line break, and the call after it would read as the plain run's.
@@ -1426,8 +1432,8 @@ def _arm_cases(check):
     try:
         for rel, body in (
                 (_VERIFY_REL, 'run "x" \\\n: \r  python3 %s --before-commit\n'
-                              'if [ "$RELEASE" -eq 1 ]; then\n'
-                              '  python3 %s --against-commit\nfi\n'
+                              'slice_release() {\n'
+                              '  python3 %s --against-commit\n}\n'
                               % ((_THIS_TOOL,) * 2)),
                 (_CI_REL, "        run: |\n          python3 %s\n" % (_THIS_TOOL,))):
             path = os.path.join(_cr_root, rel.replace("/", os.sep))

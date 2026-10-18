@@ -38,7 +38,7 @@ claude-plugins/                           # this repo (personal, public)
   CHANGELOG.md / SECURITY.md / CONTRIBUTING.md
   LICENSE                                 # MIT
 .gitignore
-.github/workflows/ci.yml                # selftests + validators on ubuntu/windows
+.github/workflows/ci.yml                # every job: setup + one tools/verify.sh --only <slices> call
   docs/audit/audit-plan.json              # DOGFOOD manifest: this repo's roadmap, CI-validated
   docs/audit/audit-report.html/.md        # rendered dogfood report (regenerated from the manifest)
   docs/index.html / demo-large.html       # GitHub Pages live demo (rendered reports)
@@ -6186,34 +6186,25 @@ collapsible, filterable Composition tab (v0.14.0).
 
 ## 4. Verify
 
-CI (`.github/workflows/ci.yml`) runs 1–2 plus `claude plugin validate` on
-ubuntu + windows for every push/PR. Locally:
+`tools/verify.sh` is the one description of the gate set, grouped into named slices, and
+`sh tools/verify.sh --list` prints every slice and the steps it runs. CI
+(`.github/workflows/ci.yml`) is that runner and nothing else: every job is setup plus one
+`tools/verify.sh --only <slices>` call, on ubuntu and windows, for every push/PR - and a push
+to main whose commit a run already verified runs only `tools/ci-verified.py`.
+`CONTRIBUTING.md`'s *Tests* section says why each slice holds what it holds. Locally:
 
 ```bash
-# 1. Hooks + scripts pass their own selftests (every hook and script carries its own
-#    selftest; CI sweeps the directories — stdlib only). `find`, not `*.py`: a glob
-#    stops at the top level, so a file one directory down is silently never run and
-#    the sweep still exits 0 — a green build over a partial tree.
-python3 tools/sweep-selftests.py
-# ...plus the suites that have moved out into tests/ (see §2). A migrated file still
-# exits 0 on --selftest, so the loop above stays green over a suite it no longer runs.
-for f in $(find plugins/audit/tests -name '*.py' | sort); do
-  python3 "$f" --selftest || exit 1
-done
-# launcher fails LOUD without an interpreter (permissionDecision "ask" JSON):
-env PATH=/nonexistent /bin/sh plugins/audit/hooks/py-launch.sh guard-edits.py ask < /dev/null
+# 1. Every gate CI runs, and the list of what that is today
+sh tools/verify.sh
+sh tools/verify.sh --list
+# ...or one suite, or a few, without a whole slice: the sweep runner takes paths,
+# grades each the way a whole sweep does, and refuses one it does not sweep
+python3 tools/sweep-selftests.py plugins/audit/tests/test__refs.py
 
-# 2. Schema + validator accept the starter AND the dogfood manifest
-python3 plugins/audit/scripts/manifest/validate-manifest.py plugins/audit/templates/audit-plan.starter.json
-python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json
-npx ajv-cli validate --spec=draft2020 -s plugins/audit/schema/audit-plan.schema.json \
-  -d plugins/audit/templates/audit-plan.starter.json
-claude plugin validate . && claude plugin validate plugins/audit
-
-# 3. IP scrub — must print nothing (substitute your source project's identifiers)
+# 2. IP scrub — must print nothing (substitute your source project's identifiers)
 grep -riE '<client-name>|<internal-lib>|<bundle-id>' .
 
-# 4. End-to-end in a throwaway repo
+# 3. End-to-end in a throwaway repo
 /plugin marketplace add /abs/path/to/claude-plugins
 /plugin install audit@quality-gates
 #   generate the manifest with /audit:init (or copy the templates), then:

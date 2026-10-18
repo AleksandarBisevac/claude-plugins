@@ -6,7 +6,44 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ## [Unreleased]
 
+### Changed
+- **CI is one executable description of the gate set.** `tools/verify.sh` groups every gate
+  into named slices - `--only <slice,...>`, `--shard I/N` for a sweep slice, `--list` printing
+  each slice, its tier and its steps from the same calls a run makes, `--loud` (the default
+  under `CI=true`) - and names the interpreter it resolved. Every job in
+  `.github/workflows/ci.yml` is setup plus one `tools/verify.sh --only` call, so the workflow
+  carries no inline shell: the launcher, policy and TDD-nudge drives, the sharded-layout,
+  doctor, scale-demo and ui-parse checks moved into the runner, and the inline fresh-render,
+  Usage-section and `os.kill` measurement steps are gone (`check-rendered-artifacts.py`
+  already compares the rendered artifacts byte for byte). The ubuntu code-page and spaced
+  legs are one stress slice run in one execution; the Windows code-page cells stay, as
+  their own slice, until the Windows intermittents are shown gone from the plain cells. The
+  report slice no longer drives `docs/index.html`, which the manifests slice proves a byte
+  copy of the acme report.
+- **A `tier` workflow input.** A dispatch with no input - the drive's CI cadence,
+  `tools/release.py ci <ref>` - runs the per-run tier; `tools/release.py`'s release dispatch
+  passes `-f tier=release`, which adds a Windows re-sample job drawing the suites with an
+  intermittent record at the counts verify.sh's `RESAMPLE` table gives them.
+- **A newer run on the same ref cancels an older one**, everywhere but `main`.
+
+### Added
+- **A push to `main` of an already-verified commit runs only the guard.**
+  `tools/ci-verified.py` asks GitHub whether a run of `ci.yml` already passed that exact
+  commit - every job `success`, a skipped job counting as not passed - and when one did, every
+  other job is skipped and the `verified` job names the run. Another commit's run, another
+  workflow's run, the asking run, an unreadable job list and a question it could not ask each
+  refuse, and a refusal runs everything.
+
 ### Removed
+- **The gate-set comparisons `tools/gate-parity.py` no longer needs.** With one description
+  there is nothing to compare: the gate-set comparison across the runner, the workflow and
+  the root documents, and its exemption table, the
+  report-target and sweep-leg comparisons with their shell reader, and the per-step
+  `!cancelled()` guard check go, with their cases and `tools/prove-gates.py` rows. What stays
+  is what the workflow says about the slices: every slice a job names is one `verify.sh --list`
+  prints, every per-run slice has a job outside the release tier, and a sharded slice's
+  matrix runs every part on every runner. `CONTRIBUTING.md` and `PLUGIN-BUILD-GUIDE.md` point
+  at `verify.sh --list` instead of listing the commands.
 - **The falsifier, which 3.4.0 added.** The drive no longer applies a planned test's mutation:
   there is no falsifier stage between the green gate and the close, no `falsifier` decision
   (`retry`, `accept`, `block`) and no note recording a survivor. `audit-task.py scope` loses
