@@ -9915,7 +9915,8 @@
       "P130.17-ywo"
     ],
     "vitest.config.mjs": [
-      "P130.4"
+      "P130.4",
+      "P130.7"
     ],
     "plugins/audit/scripts/_utc_stamp.py": [
       "P130.4"
