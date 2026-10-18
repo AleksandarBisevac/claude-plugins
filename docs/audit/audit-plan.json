@@ -916,7 +916,8 @@
       "P130.1",
       "P130.2",
       "P130.8",
-      "P130.9"
+      "P130.9",
+      "P130.22-ywo"
     ],
     ".gitignore": [
       "P4.4",
@@ -1087,7 +1088,8 @@
       "P130.2",
       "P130.6",
       "P130.7",
-      "P130.9"
+      "P130.9",
+      "P130.22-ywo"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -2480,7 +2482,8 @@
       "P129.9-izt",
       "P130.4",
       "P130.5",
-      "P130.8"
+      "P130.8",
+      "P130.23-ywo"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -2727,7 +2730,8 @@
       "P125.40-0h5",
       "P125.47-0h5",
       "P130.4",
-      "P130.8"
+      "P130.8",
+      "P130.23-ywo"
     ],
     "plugins/audit/reference/execute-task.md": [
       "P55.21",
@@ -4105,7 +4109,8 @@
       "P125.128-0h5",
       "P130.6",
       "P130.8",
-      "P130.18-ywo"
+      "P130.18-ywo",
+      "P130.23-ywo"
     ],
     "plugins/audit/scripts/manifest/_manifest_vocab.py": [
       "P18.2",
@@ -4429,7 +4434,8 @@
       "P122.8-z4y",
       "P123.20",
       "P123.33",
-      "P130.8"
+      "P130.8",
+      "P130.23-ywo"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
@@ -5294,7 +5300,8 @@
       "P125.94-0h5",
       "P125.136-0h5",
       "P130.4",
-      "P130.5"
+      "P130.5",
+      "P130.23-ywo"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
@@ -5727,7 +5734,8 @@
       "P125.128-0h5",
       "P130.6",
       "P130.18-ywo",
-      "P130.21-ywo"
+      "P130.21-ywo",
+      "P130.23-ywo"
     ],
     "plugins/audit/tests/test__manifest_vocab.py": [
       "P20.6",
@@ -6612,7 +6620,8 @@
       "P118.6",
       "P123.24",
       "P123.74-64p",
-      "P130.7"
+      "P130.7",
+      "P130.22-ywo"
     ],
     "plugins/audit/tests/test_guard_bash_writes.py": [
       "P20.1",
@@ -6896,7 +6905,8 @@
       "P123.40-64p",
       "P125.40-0h5",
       "P125.136-0h5",
-      "P130.4"
+      "P130.4",
+      "P130.23-ywo"
     ],
     "plugins/audit/tests/test_resolve_branch.py": [
       "P64.1"
@@ -7107,7 +7117,8 @@
       "P118.2",
       "P123.20",
       "P123.49-64p",
-      "P123.53-64p"
+      "P123.53-64p",
+      "P130.23-ywo"
     ],
     "pyproject.toml": [
       "P9.1",
@@ -7243,7 +7254,8 @@
       "P118.13-v7t",
       "P118.15-v7t",
       "P128.13-0h5",
-      "P128.56-izt"
+      "P128.56-izt",
+      "P130.22-ywo"
     ],
     "tools/check-prohibitions.py": [
       "P32.8",
@@ -7322,7 +7334,8 @@
       "P130.2",
       "P130.7",
       "P130.8",
-      "P130.9"
+      "P130.9",
+      "P130.22-ywo"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -9825,7 +9838,8 @@
       "P125.99-0h5"
     ],
     "tools/ci-verified.py": [
-      "P130.2"
+      "P130.2",
+      "P130.22-ywo"
     ],
     "plugins/audit/scripts/_surface_digest.py": [
       "P130.3"
@@ -9907,6 +9921,9 @@
     ],
     "plugins/audit/tests/test__utc_stamp.py": [
       "P130.4"
+    ],
+    ".claude/skills/reproducing-ci-locally/SKILL.md": [
+      "P130.22-ywo"
     ]
   },
   "bugs": [
