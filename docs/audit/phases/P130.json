@@ -1144,7 +1144,9 @@
         "P130.29-ywo",
         "P130.30-ywo",
         "P130.31-ywo",
-        "P130.32-ywo"
+        "P130.32-ywo",
+        "P130.33-ywo",
+        "P130.34-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -2738,6 +2740,112 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.33-ywo",
+      "title": "A declared test is bound to the case that carries it by id, and the brief asks for exactly that",
+      "status": "pending",
+      "description": "F737. `_filed_returns.tests_add_gaps` (plugins/audit/scripts/manifest/_filed_returns.py around :412) takes a tests.add clause as the text after the first ':' and `title_names_clause` (around :372) matches a filed title only as `<clause>` or `<one case-id token> <clause>` with an optional ` (detail)`. Three returns this phase drew false 'no filed counterpart' lines for three different reasons (a file-name token before the id; ids only; a clause opening with a parenthetical no title carries). The brief contradicts itself: agents/audit-executor.md (around :26) says title the case with the clause verbatim, its return shape (around :104) asks for a test name/id. The gap list is handed to the reviewer as a drive fact, so a false gap can become a false finding. Fix: bind structurally - the executor returns, per tests.add entry (by index), the case id it added; the drive checks that id against the labels the suite printed (case ids as `_harness.case_id` reads them); free-text matching goes. Make the brief and the return shape say one thing. Acceptance: (1) a return naming the right case id per entry draws no gap whatever the title wording; (2) a return naming an id the suite did not print draws a gap naming the entry and the id; (3) a return with no binding for an entry draws a gap; (4) the reviewer brief carries only real gaps; (5) audit-executor.md and execute-task.md state the one rule.",
+      "files": [
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__filed_returns.py: a return binding each tests.add entry to a printed case id draws no gap regardless of the title wording, while an unprinted id or a missing binding draws a gap naming the entry"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.24-ywo",
+        "P130.26-ywo"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.34-ywo",
+      "title": "The Bash-write path and the Edit path of the plan gate read a task's coverage through one function",
+      "status": "pending",
+      "description": "F738. In a linked task worktree the Edit path (plugins/audit/hooks/require-plan.py around :783/:812) asks `_config.task_binding`, which reads the bound task's files from the phase tree's plan, while the Bash-write path (plugins/audit/hooks/guard-secrets-read.py around :2345/:2370) calls `in_progress_files` on the worktree's own copy of the phase shard, where the task is still `pending`. Every declared file then looks uncovered: the first heredoc write spends the one free file and the second is refused; conversely a sibling stale-in_progress in that copy passes the Bash path while Edit refuses it. Seen in four tasks of P130. Fix: one coverage reader in hooks/_config.py, task_binding first, that both paths call; delete the second reading. Change only which coverage function the Bash path calls - not how it reads the command. Acceptance: (1) a parity case: for the same bound worktree and path, the Edit verdict and the Bash-write verdict agree, for a declared file, an undeclared file, and a file declared only by a stale sibling - shown red before the change; (2) a second heredoc write to a declared file in a bound worktree is allowed; (3) the full sweep is green; (4) tools/bench-hooks.py --gate passes.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test__config.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: in a bound task worktree whose shard copy still reads the task pending, a Bash heredoc write and an Edit of the same declared file get the same verdict, and so do an undeclared file and a file only a stale sibling declares"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.23-ywo",
+        "P130.27-ywo"
+      ],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,

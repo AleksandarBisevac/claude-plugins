@@ -1,0 +1,49 @@
+{
+  "gates": {
+    "ci-verified selftest (python3 tools/ci-verified.py --selftest)": "pass",
+    "gate-parity selftest (python3 tools/gate-parity.py --selftest)": "pass",
+    "gate-parity live (python3 tools/gate-parity.py, exit 0)": "pass",
+    "check-git-pipeline selftest": "pass",
+    "test_gen_demo_manifest selftest": "pass",
+    "ruff check tools plugins/audit": "pass",
+    "prose lints (_output.prose_number_claims, _deps.doc_prose_numbers) over the task tree": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T05:02:20Z",
+    "basis": "`sh -c python3 tools/ci-verified.py --selftest && python3 tools/gate-parity.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 12/13 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_GUARD_TERMS': TypeError: _run() got an unexpected keyword argument 'event'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_RELEASE_TERM': TypeError: _run() got an unexpected keyword argument 'event'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_if_tier': TypeError: _run() got an unexpected keyword argument 'event'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'VOUCHING_EVENTS': TypeError: _run() got an unexpected keyword argument 'event'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_can_vouch': TypeError: _run() got an unexpected keyword argument 'event'; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(1) ci.yml concurrency comment and CHANGELOG line reworded (reword option taken, group not re-keyed): a running main run is never cancelled, a run queued behind it is replaced by a newer push. (2) gate-parity.py: new _if_tier() reduces a job's if: to an && chain of whole terms; only !cancelled(), needs.verified.outputs.run=='' and (for release) inputs.tier=='release' are accepted, anything else gives a problems row naming the job ('its condition ... cannot be proved to run on every run') and tier 'unproved' so its slices are not counted as per-run; jobs with no verify.sh call (the push-only verified guard) are not judged; the missing-slice message no longer says 'only the release tier does' for an unproved job; new case sv12 (sv0 allow case still green). (3) ci-verified.py: VOUCHING_EVENTS = workflow_dispatch, push; decide() refuses other events with a why naming the event; ask_github fetches jobs only for runs that can be accepted; docstring updated; _run fixture carries event; new case cv18 (cv1 still verifies). (4) check-git-pipeline.py (4 sites) and test_gen_demo_manifest.py (2 sites) now name verify.sh's e2e and manifests slices, read off sh tools/verify.sh --list; grep -n ci.yml of those two files finds no hit. (5) reproducing-ci-locally SKILL.md names sh tools/verify.sh --list. Selftests: gate-parity 70/70, ci-verified 18/18, check-git-pipeline 21/21, test_gen_demo_manifest 131/131; ruff clean. Note: the test file line numbers in the task text (729, 800) had drifted; the two live hits were 698 and 769. A first Bash heredoc edit of gate-parity.py passed the plan gate as the free file, a second one on ci-verified.py was refused, and I finished with the Edit tool (allowed).",
+    "descriptive": "CI's main-concurrency wording is true, the slice check refuses a job whose if: it cannot prove runs every time, and ci-verified no longer lets a pull_request run vouch for a main SHA."
+  },
+  "testsAdded": [
+    "sv12 a per-run job carrying `if: ${{ false }}` and one carrying a push-only condition are each reported by slice_drift naming the job, while the verified-run guard alone and with the release-tier term report nothing",
+    "cv18 a green pull_request run on the asking SHA and workflow path, every job success, refuses and names its event in why; a green workflow_dispatch run and a green push run on the same SHA still verify"
+  ],
+  "falsifiers": {
+    "tools/ci-verified.py: (inline --selftest, `_cases`) a green pull_request run on the asking SHA and workflow path, every job success, refuses and names its event in why; a green workflow_dispatch run and a green push run on the same SHA still verify": {
+      "file": "tools/ci-verified.py",
+      "find": "    return run.get(\"event\") in VOUCHING_EVENTS",
+      "replace": "    return True",
+      "command": [
+        "python3",
+        "tools/ci-verified.py",
+        "--selftest"
+      ]
+    },
+    "tools/gate-parity.py: (inline --selftest, the sv cases) a per-run job carrying `if: ${{ false }}` and one carrying a push-only condition are each reported by slice_drift naming the job, while the verified-run guard alone and with the release-tier term report nothing": {
+      "file": "tools/gate-parity.py",
+      "find": "    if other:\n        return None, (",
+      "replace": "    if False and other:\n        return None, (",
+      "command": [
+        "python3",
+        "tools/gate-parity.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n1 ci.yml:40-43 and CHANGELOG.md:27-29 now say a running main run is never cancelled and a queued one is replaced (cancel-in-progress false on main; group holds one running and one pending run - GitHub's documented behaviour, not re-measured here); gate-parity.py _if_tier is the line that rejects other conditions; ci-verified.py _can_vouch/decide is the line refusing other events\n2 not yet mutated by me in the tree: red-first before the fix was watched (FAIL sv12, FAIL cv18); falsifiers for both are in the return and the drive runs them; over-fire direction: sv0 plus the guard-only and release-tier assertions in sv12 and cv1/cv18 dispatch/push assertions are the allow cases\n3 grep -n ci.yml tools/check-git-pipeline.py plugins/audit/tests/test_gen_demo_manifest.py: 0 hits after the edit (6 sites fixed); the bare shape 'event' check was applied to both decide() and ask_github\n4 n/a - no rule addressed to an agent (a SKILL.md pointer to sh tools/verify.sh --list was added; gate-parity.py holds the workflow's slice names to that list)\n5 n/a - no property recorded\n6 the slice check reads the parsed if: expression's && terms, not its spelling; allow case (guard alone, guard plus release term, absent if) shown quiet in sv12/sv0 before the deny\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:ed70cfb6953cd11805ba2fa602e2c2235af7bfc7f2bb7adc27e585956518b02a\",\"dirtyDigest\":\"sha256:1493c6563c6207291f1027db92d35ce2bd3e98cf5202f3dec4135fe70731c86a\",\"dirtyPaths\":{\".claude/skills/reproducing-ci-locally/SKILL.md\":\"d43fce75bafc3645\",\".github/workflows/ci.yml\":\"b56f6599188ec589\",\"CHANGELOG.md\":\"675f103783bf953c\",\"plugins/audit/tests/test_gen_demo_manifest.py\":\"7880414abe134dcd\",\"tools/check-git-pipeline.py\":\"bcddac50e034e5b1\",\"tools/ci-verified.py\":\"28049b943d87d3ab\",\"tools/gate-parity.py\":\"c9f3f0fffecb8a72\"},\"head\":\"b6252aae\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".claude/skills/reproducing-ci-locally/SKILL.md\",\".github/workflows/ci.yml\",\"CHANGELOG.md\",\"plugins/audit/tests/test_gen_demo_manifest.py\",\"tools/check-git-pipeline.py\",\"tools/ci-verified.py\",\"tools/gate-parity.py\"],\"scopeDigest\":\"sha256:6ecf72ff25dbbc18affcfbe3198006cba3693267bf979710dc65d432f4ae89aa\",\"v\":2}"
+}
