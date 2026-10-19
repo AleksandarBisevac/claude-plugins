@@ -9263,7 +9263,8 @@
       "P130.33-ywo",
       "P130.35-ywo",
       "P130.38-ywo",
-      "P130.43-ywo"
+      "P130.43-ywo",
+      "P130.44-ywo"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -9384,7 +9385,8 @@
       "P130.35-ywo",
       "P130.38-ywo",
       "P130.39-ywo",
-      "P130.43-ywo"
+      "P130.43-ywo",
+      "P130.44-ywo"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6",
@@ -9669,12 +9671,14 @@
       "P124.9",
       "P130.8",
       "P130.24-ywo",
-      "P130.38-ywo"
+      "P130.38-ywo",
+      "P130.44-ywo"
     ],
     "plugins/audit/tests/test__runner_collects.py": [
       "P124.9",
       "P130.24-ywo",
-      "P130.38-ywo"
+      "P130.38-ywo",
+      "P130.44-ywo"
     ],
     "plugins/audit/scripts/manifest/_scope_companions.py": [
       "P124.10",
