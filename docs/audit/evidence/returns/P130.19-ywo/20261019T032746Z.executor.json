@@ -1,0 +1,32 @@
+{
+  "gates": {
+    "own-test: python3 plugins/audit/tests/test__ui_theme.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T03:30:06Z",
+    "basis": "`python3 plugins/audit/tests/test__ui_theme.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 96 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - every backticked function call named in the comments of .gitattributes, and the one beside UI_DIR in _ui_theme.py, is a function defined under plugins/audit/scripts or tools (read 13 comment lines above UI_DIR, 2 names; no definition for ['ui_surface_digests']) (house FAIL): SELFTEST FAILED: 95/96 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Wrote the case first (title = tests.add clause verbatim): it reads backticked `name(...)` calls from the comment lines of .gitattributes and from the comment block directly above `UI_DIR = _output.UI_DIR` in _ui_theme.py, collects every `def` under plugins/audit/scripts and tools, and fails on a name with no definition; it also fails if the UI_DIR block yields no name (an extractor matching nothing must not read as all clear). First run on the old comments: FAIL 95/96, 'no definition for [ui_surface_digests]'. Fix: the _ui_theme.py comment now names `ui_surface_sources()` and `_surface_digest.py` as they are (_surface_digest.py:121 calls _output.ui_surface_sources()). The .gitattributes pin on _ui_theme.py is DROPPED, with its comment: no reader still needs its bytes fixed by that line. The digest that read raw bytes is gone (it now hashes the assembled page text, and Python's source reader normalises CRLF inside the literals anyway); prove-gates' only row on the file uses the single-line anchor 'CONTRAST_EXEMPTIONS = (' read in text mode; test__surface_digest edits it as text; and the `* text=auto eol=lf` rule at the top of .gitattributes already gives it eol=lf (git check-attr after the drop: text: auto, eol: lf). The ui/** pin stays (read_asset reads it with newline=''). Result: test__ui_theme.py --selftest 96/96; test__surface_digest 8/8; measure-context --selftest 40/40; ruff clean on the two files. `git grep ui_surface_digests -- . ':!docs/audit'` returns nothing (rc=1). Falsifier checked by hand (then restored, pycache purged): swapping the name back in the _ui_theme.py comment gives 95/96. Tests-only run; the full sweep was not run (own-tests).",
+    "descriptive": "The two stale comments no longer describe a removed digest function, the redundant _ui_theme.py LF pin is gone, and a case now keeps backticked function names in those comments honest."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__ui_theme.py: every backticked function call named in the comments of .gitattributes, and the one beside UI_DIR in _ui_theme.py, is a function defined under plugins/audit/scripts or tools"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test__ui_theme.py: every backticked function call named in the comments of .gitattributes, and the one beside UI_DIR in _ui_theme.py, is a function defined under plugins/audit/scripts or tools": {
+      "file": "plugins/audit/scripts/_ui_theme.py",
+      "find": "(`ui_surface_sources()`",
+      "replace": "(`ui_surface_digests()`",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__ui_theme.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n1 _ui_theme.py:872-874 names ui_surface_sources() (defined _output.py:807) and _surface_digest.py (calls it at line 121); the .gitattributes sentence is deleted with the pin it explained\n2 comment mutated back to ui_surface_digests() -> 95/96 red -> restored 96/96; first red was on the unmodified comments. No over-fire direction: the case only flags a name with no def\n3 git grep -n ui_surface_digests -- . ':!docs/audit': 2 hits (.gitattributes:27, _ui_theme.py:872), both fixed; now 0. Other backticked calls in .gitattributes (screenshot_capture_drift) were in the removed comment and exist in _refs anyway\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:4605697ab39d36d12ecf293ebc38ecf20ec703caaea8c23942afdcf4a65c2996\",\"dirtyDigest\":\"sha256:bbd88e99425d98a0df9bb8eaf3b34d9f1ae5c4796c776524daab0a28411fe594\",\"dirtyPaths\":{\".gitattributes\":\"f54bdefdf0106552\",\"plugins/audit/scripts/_ui_theme.py\":\"d384db397fe1fdb0\",\"plugins/audit/tests/test__ui_theme.py\":\"b00ef43e56ab62a9\"},\"head\":\"a24dec84\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".gitattributes\",\"plugins/audit/scripts/_ui_theme.py\",\"plugins/audit/tests/test__ui_theme.py\"],\"scopeDigest\":\"sha256:9c5c6b3e12a14dac10082ad128d81dab2ac542cb4be1a672e9d94256a4ea0e83\",\"v\":2}"
+}

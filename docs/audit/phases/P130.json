@@ -1498,7 +1498,7 @@
     {
       "id": "P130.13-ywo",
       "title": "unblock returns a task blocked with attempts left to pending, without running it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fault F699. `audit-task.py unblock <id> --reason` refuses a task that is blocked with fewer attempts spent than its ceiling: `_unblock_refusal` (plugins/audit/scripts/manifest/audit-task.py:7361) answers 'is blocked with N of M attempt(s) spent -- `start <id>` still runs it and clears its block, so there is no spent count to reset'. A task blocked on purpose (held, 0 attempts) therefore has no way back to pending except `start`, which runs it, or cancel plus re-add, which loses `movedFrom` lineage and `notes`. The verb is defined as 'reset the spent attempts', so with none spent it has nothing to do; no other verb clears a block without running the task. Fix: `unblock` on a BLOCKED task with attempts below the ceiling clears the block - status pending, `blockedReason` removed - and leaves `attempts` as it is (the count is reset only when it has reached the ceiling, as today). It still takes the human's `--reason`, writes through `_write_plan`, journals `task.unblock` with the reason and the changes, and reports `adoEchoOwed` as it does for a blocked task today. A task that is pending, in_progress with attempts left, done or cancelled is still refused, each with its existing sentence. Update the verb's own comment block above `cmd_unblock` (:7335), the `_unblock_refusal` docstring, `plugins/audit/commands/task.md`'s `unblock` subcommand section and the `/audit:task` row of `plugins/audit/README.md` (which says 'a task with attempts left is refused, since `start` still runs it') so all of them describe both arms. The existing case ub1 in test_audit_task.py asserts the refusal for its fixture task blocked with attempts left and is rewritten, not deleted: that arm becomes an ALLOW case. Acceptance: (1) a pending task blocked with a reason and no attempts, then unblocked with a reason, reads pending with no `blockedReason`, its `attempts`, `notes` and `movedFrom` unchanged, and one `task.unblock` journal row carries the reason; (2) a task blocked with attempts spent below the ceiling behaves the same and keeps its count; (3) a blocked task at the ceiling still has its count reset to zero and goes to pending, exactly as before; (4) unblock of a pending task, of an in_progress task with attempts left, of a done task and of a phase id is refused and writes nothing; (5) the usage block, VERB_FLAGS, commands/task.md and the README row agree on what the verb does.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1564,19 +1564,34 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a24dec84fabd",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: _unblock_refusal now returns None for any blocked task (below the ceiling it is no longer refused); _locked_unblock resets attempts only when spent >= ceiling, always clears status/blockedReason of a blocked task, journals changes without an attempts entry when the count is kept, and the success line and --json 'attempts' report the kept or reset count. Comment block above cmd_unblock and the _unblock_refusal docstring describe both arms. commands/task.md (frontmatter description + unblock section) and README /audit:task row rewritten. test_audit_task.py: ub1 rewritten (the blocked-with-attempts-left arm moved out; a running task with attempts left joined the refusals), new ub5 (ALLOW: held with 0 attempts keeps notes/movedFrom, blocked with 1 attempt keeps its count, one task.unblock row per reason) and ub6 (at-ceiling reset still happens; pending, running-with-attempts-left, done, phase id refused with the plan bytes unchanged). Ran python3 plugins/audit/tests/test_audit_task.py --selftest --stage ub-block: red 5/6 before the fix (ub5 failed), 6/6 after. ruff and vermin clean on both py files. Not run: full sweep. Left out of scope (still describe the old refusal, outside this task's files): PLUGIN-BUILD-GUIDE.md ~5190-5194 and ~4435, plugins/audit/reference/manifest-conventions.md:466, plugins/audit/reference/verbs-in-full.md:65-66, scripts/governance/drive-phase.py comments at ~4134-4155 (its remedy text picks unblock only when attempts are spent, still correct). CHANGELOG.md:577-579 is history.",
+        "descriptive": "unblock can now release a task held or blocked with attempts left back to pending without running it, keeping its notes, lineage and count."
       },
       "startedAt": "2026-10-19T02:30:39Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T03:27:40Z",
+      "verifiedBy": [
+        "ub5 unblock of a task blocked with no attempts spent puts it back to pending with blockedReason removed, attempts, notes and movedFrom unchanged, and one task.unblock journal row carrying the reason; the same for a task blocked with attempts below the ceiling",
+        "ub6 unblock still resets the count of a blocked task at the ceiling, and still refuses a pending task, an in_progress task with attempts left, a done task and a phase id, writing nothing"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T03:27:33Z.f99e53",
         "status": "passed",
         "at": "2026-10-19T03:27:33Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "a24dec84fabd",
+        "at": "2026-10-19T03:27:40Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-19T02:33:08Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage ub-block` in a throwaway tree at HEAD exited 1 with 1 of 6 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ub5 (house FAIL): SELFTEST FAILED: 5/6 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1759,13 +1774,15 @@
     {
       "id": "P130.16-ywo",
       "title": "A verb adds or replaces a meta.buildCommands key on an existing plan",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fault F714, part (b). No `audit-task.py` verb or config setting writes a `meta.buildCommands` key on an existing plan: only `/audit:init` (a new plan) and the panel's `PUT /api/composition` (plugins/audit/scripts/panel/_panel_write.py, `apply_composition` :2344) do, and the panel needs a browser session token. A fix task that had to add the `vitest` key stopped on this and was cancelled, and the redesign plan routes every buildCommands edit through the panel for the same reason. Fix: a new `audit-task.py` verb that sets one key - `build-command <key> --command \"<cmd>\" [manifest]` - adding the key when absent and refusing an existing key unless `--replace` is passed (the refusal names the current value); `--remove` drops a key and is refused while any task's or phase's gate entry names it. The command text is judged by `_machine_paths.executed_value_refusal`, the judgement the panel already applies to the same field (`_EXECUTED_ROWS` in _panel_write.py), and is written byte for byte. The write goes through the plan's lock, `_write_plan` and the validator, and journals one row naming the key, the old and the new value and the reason. Wire it everywhere a verb is declared: the usage block at the top of audit-task.py, `VERB_FLAGS`, the argparse table, `plugins/audit/commands/task.md` (argument-hint, description and a subcommand section) and the `/audit:task` row in `plugins/audit/README.md`. Adding a verb is free under COMPATIBILITY.md; no existing key's reading changes. Acceptance: (1) on a plan without `vitest`, `build-command vitest --command 'npx vitest run'` adds the key, revalidates, and writes one journal row; (2) the same call on a plan that has the key is refused naming the current value and writes nothing, and with `--replace` it replaces it; (3) a command carrying a machine path is refused with the panel's sentence; (4) `--remove` of a key a gate entry still names is refused naming the entry, and of an unused key removes it; (5) the usage block, VERB_FLAGS, commands/task.md and the README row all name the verb with the same flags.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/commands/task.md",
-        "plugins/audit/README.md"
+        "plugins/audit/README.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__refs.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1797,21 +1814,22 @@
       "dependsOn": [
         "P130.6"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T03:27:42Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.17-ywo",
       "title": "The panel browser check's poll-window waits derive from the panel's poll interval, settled by repeated measurement first",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fault F716, one sighting. `node tools/capture-screenshots.mjs --check` once failed with 'gate card: an event appended to plan-gate-events.jsonl never reached the Overview table within 6.5s' and passed on the immediate rerun. `assertGateCard` (tools/capture-screenshots.mjs:5188) appends a line and waits a hand-written 6500 ms (:5215) for it to appear; the panel polls run-status every 5000 ms (`startRunPoll`, plugins/audit/scripts/ui/panel/run-status.js:214), so the margin over one poll is what is left for the poll's own round trip and the repaint, and an append that lands just after a poll leaves only that margin. The same literal stands at :4501, :4528, :4823 and :4836, so it is one class. Step one is measurement, not a fix: the repeated `--check` runs are the orchestrator's, because the capture lock is machine-wide, so the executor first makes the check say the elapsed time at which each poll-window wait was satisfied (a note line per wait), and hands over the command to run it repeatedly idle and under a parallel sweep. Fix: one exported function returns the poll-window wait from the panel's poll interval as the assembled panel declares it (read off the page's script, never retyped) plus a margin the function documents, and every one of those waits uses it; if the measurement shows misses beyond that bound, the bound comes from the measured round trip and the return says so. If the repeated runs show no miss and the waits are already inside the bound, close no-change with the measurement in the outcome. Acceptance: (1) no hand-written poll-window wait remains in capture-screenshots.mjs (a grep for the literal finds none); (2) each poll-window wait prints its elapsed time in --check; (3) the vitest case is red if the interval and the wait are allowed to diverge; (4) the return carries the orchestrator-ready command for the repeated measurement and, once run, its spread. NEW PATH (absent at HEAD, created by this task): tools/ui-tests/gate-card-wait.test.mjs, which vitest.config.mjs's include glob already covers.",
       "files": [
         "tools/capture-screenshots.mjs",
@@ -1845,16 +1863,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T03:27:44Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.18-ywo",
@@ -1914,7 +1933,7 @@
     {
       "id": "P130.19-ywo",
       "title": "The .gitattributes and _ui_theme.py comments state the screenshot digest that exists",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fault F722. The screenshot staleness digest moved from `_output.ui_surface_digests()`, which hashed `_ui_theme.py`'s raw bytes, to plugins/audit/scripts/_surface_digest.py, which hashes the assembled page text; `_output.ui_surface_sources()` (plugins/audit/scripts/_output.py:807) stayed. Two comments still describe the removed function: .gitattributes:26-32 says `ui_surface_digests()` hashes `_ui_theme.py` as a member of both surfaces, reading raw bytes, so an unpinned CRLF checkout moved every digest; plugins/audit/scripts/_ui_theme.py:872 says the anchor's walk needs the UI directory for `ui_surface_digests()`. No function of that name exists at HEAD (`git grep ui_surface_digests` hits only these two comments and the plan's own history under docs/audit/). Fix: rewrite both comments to the reason that holds now. For the .gitattributes pin on `_ui_theme.py`, find which reader still needs its bytes fixed - a check that reads the file as bytes or matches multi-line anchors in it (tools/prove-gates.py replaces anchors in it, test__ui_theme.py reads it) - and say that reader; if none does, drop the pin and say so in the return. The `_ui_theme.py` comment names `ui_surface_sources()` and `_surface_digest.py` as they are. Acceptance: (1) `git grep ui_surface_digests -- . ':!docs/audit'` returns nothing; (2) the .gitattributes comment names a reader that exists and reads `_ui_theme.py`'s bytes, or the pin is gone with the reason in the return; (3) the new case is red on the current comments and green after.",
       "files": [
         ".gitattributes",
@@ -1947,16 +1966,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T03:27:46Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.20-ywo",

@@ -1,0 +1,55 @@
+{
+  "gates": {
+    "own-tests: python3 plugins/audit/tests/test_audit_task.py --selftest --stage bcm-block": "pass",
+    "full test_audit_task.py --selftest (all stages)": "pass",
+    "test__refs.py --selftest": "pass",
+    "test__deps.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py --quiet (whole tree, in the task tree)": "pass",
+    "python3 tools/measure-context.py --gate": "pass",
+    "python3 tools/gate-parity.py": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- ... plugins/audit/scripts hooks tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T03:58:45Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage bcm-block` in a throwaway tree at HEAD exited 1 with 2 of 2 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `bcm-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - bcm1 (house FAIL), bcm2 (house FAIL): SELFTEST FAILED: 0/2 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-task.py gains the build-command verb: `build-command <key> (--command CMD [--replace] | --remove) [--reason TEXT|-]`. Door (cmd_build_command) refuses before the lock a key that is not one word, a key carrying a machine path (check_free_text), --remove with --command/--replace, no --command and no --remove, and a command judged by _machine_paths.executed_value_refusal under the field name the panel uses (meta.buildCommands), so the sentence is byte-identical to the panel's. _locked_build_command reads the plan (_read_plan), refuses an existing key without --replace naming its current value, refuses --replace and --remove of an absent key, refuses --remove naming each phase testGate / task tests.gate entry that names the key (_gate_holders, every status), writes through _write_plan (index_fields=meta, revalidated, rolled back on findings), and journals one buildcommand.change row with details field=meta.buildCommands.<key>, from, to, reason. Command text stored verbatim (a double-space/quote fixture asserted equal). Wired: usage block, VERB_FLAGS row, parser choices + --command (dest build_command, because dest `command` is the verb word) / --replace / --remove, doors map, commands/task.md (description, argument-hint, a short subcommand section), README /audit:task row. Tests: new stage bcm-block (bcm1, bcm2, titled with the tests.add clauses verbatim after the case id), plus the existing derived grids extended for the new verb in test_audit_task.py (vf grid _vf_pos, vf4 _vf_ok, tw5 _tw_argv). Cross-file lints made me edit two files outside `files`: PLUGIN-BUILD-GUIDE.md (test__deps e1 requires a code span naming the verb under the audit-task.py section; added a paragraph) and plugins/audit/tests/test__refs.py (tk1 regex now admits a hyphenated verb, tk3 and pf2 enumerations list build-command); the plan gate allowed both writes. commands/task.md body is held under the measure-context ceiling, so the section there is four lines and the detail lives in the README row and PLUGIN-BUILD-GUIDE.md. Results: test_audit_task.py 1082/1082, test__refs.py 286/286, test__deps.py 244/244, whole sweep 340/340 files ok (16400 cases) in the task tree, ruff clean, vermin clean, gate-parity and measure-context --gate OK. Additions beyond the spec text, stated: an optional --reason (the spec journals 'the reason' but names no flag for it), and refusal of --replace/--remove on an absent key. --remove checks only phase testGate and task tests.gate as specified, not meta.fullGate or meta.phaseGate.always, which can also name a key.",
+    "descriptive": "A new audit-task.py build-command verb adds, replaces or removes one meta.buildCommands key on an existing plan without the panel's browser session, with the panel's machine-path refusal, a refusal that names the current value or the gate entry holding the key, and one journal row per write."
+  },
+  "testsAdded": [
+    "bcm1 build-command adds an absent meta.buildCommands key and journals it, refuses an existing key without --replace and replaces it with --replace, refuses a command carrying a machine path, and refuses --remove of a key a gate entry names, writing nothing on every refusal",
+    "bcm2 the build-command verb is in the usage block and in VERB_FLAGS with exactly the flags commands/task.md documents"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_audit_task.py: build-command adds an absent meta.buildCommands key and journals it, refuses an existing key without --replace and replaces it with --replace, refuses a command carrying a machine path, and refuses --remove of a key a gate entry names, writing nothing on every refusal": {
+      "file": "plugins/audit/scripts/manifest/audit-task.py",
+      "find": "    if key in build and not args.replace:",
+      "replace": "    if False and key in build and not args.replace:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_task.py",
+        "--selftest",
+        "--stage",
+        "bcm-block"
+      ]
+    },
+    "plugins/audit/tests/test_audit_task.py: the build-command verb is in the usage block and in VERB_FLAGS with exactly the flags commands/task.md documents": {
+      "file": "plugins/audit/commands/task.md",
+      "find": "[--replace] [--remove] [--reason",
+      "replace": "[--remove] [--reason",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_task.py",
+        "--selftest",
+        "--stage",
+        "bcm-block"
+      ]
+    }
+  },
+  "claims": "claims:\n1 audit-task.py cmd_build_command / _build_command_refusal / _locked_build_command implement every sentence of the section comment above them; the journal action is buildcommand.change and the details are field/from/to/reason; the task.md section says only add, refuse-unless-replace, remove-unless-named, reason journaled\n2 falsifiers run in a scratch copy: dropping the existing-key refusal turns bcm1 red; dropping --replace from the task.md hint, from the README hint, and --remove from VERB_FLAGS turn bcm2 red (the first draft of bcm2 stayed green under the task.md mutation because it read the whole document, so it now reads the hint line and the README cell only); skipping the gate-holder check turns bcm1 red; all restored, 2/2 green. Allow case: --replace on a held key and --remove of an unnamed key both succeed in bcm1\n3 n/a - the task is a new verb, not a fix of a reported defect; class sweep of the verb list: tw5, vf grid, vf4, test__refs tk1/tk3/pf2, test__deps e1 each enumerated verbs and each was updated\n4 n/a - no rule addressed to an agent; the README and PLUGIN-BUILD-GUIDE.md paragraphs describe behaviour the new cases assert\n5 n/a - no timing or measured property recorded; the byte ceiling is printed by tools/measure-context.py --gate and no figure is written into any document\n6 n/a - no guard; the machine-path decision reads the command value through _machine_paths.executed_value_refusal, the same function the panel calls\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:68e83c3da6b654f1666d5b5d6f2245a43e20441b4919f797d118fbe6a6b55a3d\",\"dirtyDigest\":\"sha256:e9c2cf14ea842f54284785871c0f5714808cbe5a0d75c146df9882a6cab71d13\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"f0d8362eba32bfcd\",\"plugins/audit/README.md\":\"0a236223d3281489\",\"plugins/audit/commands/task.md\":\"0f76c272bbd006d4\",\"plugins/audit/scripts/manifest/audit-task.py\":\"7210a38afc053b45\",\"plugins/audit/tests/test__refs.py\":\"d2f56a6a2a001af6\",\"plugins/audit/tests/test_audit_task.py\":\"8a2b9fabb13c5054\"},\"head\":\"a24dec84\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/README.md\",\"plugins/audit/commands/task.md\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:b62aabb7fc2419b00b656bd114dcb0140e6d3ee05e686af8d46e4c89a6059c49\",\"v\":2}"
+}

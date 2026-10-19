@@ -1,0 +1,23 @@
+{
+  "gates": {
+    "npx vitest run tools/ui-tests/gate-card-wait.test.mjs": "pass",
+    "npx vitest run (whole suite)": "pass",
+    "ruff check tools plugins/audit": "pass",
+    "test__refs/test__panel_page/test__output/test__panel_runstate/test_panel_server selftests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T03:35:13Z",
+    "basis": "`npx vitest run tools/ui-tests/gate-card-wait.test.mjs` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion; failing without an assertion: the poll-window wait capture-screenshots.mjs exports is computed from the poll interval the assembled panel script declares and exceeds it by the documented margin, and a changed interval moves the wait (TypeError: pollIntervalOf is not a function): Tests  1 failed (1); no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'pollIntervalOf': TypeError: pollIntervalOf is not a function; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/capture-screenshots.mjs: new exports POLL_MARGIN_MS (1500, documented), pollIntervalOf(script) (exactly one setInterval(pollRunStatus, N) in the assembled panel script, else throws naming the count), pollWindowMs(interval); internal waitForPoll/sleepPollWindow derive the window from the assembled panel (one assembledPanelScript() helper, shared with the polled-state guard so test__refs d2's resolver-call count stays exact) and print 'poll-window <label>: satisfied|MISSED after N ms of a M ms window' per wait. All 8 hand-written waits (live-data x2, combo(b) sleeps x2, gate card x3, gate shot x1) converted; grep for 6500 and 6.5 in the file finds none. New tools/ui-tests/gate-card-wait.test.mjs, one case titled with the tests.add clause verbatim. vitest: 852 pass. NOT done: the repeated measurement (browser gate, orchestrator-owned) - margin kept at the previous 1500 ms until measured; if any 'MISSED' or elapsed approaches the window under load, raise POLL_MARGIN_MS from the measured round trip.",
+    "descriptive": "Poll-window waits in the panel browser check now derive from the panel's own poll interval and report their elapsed time, so the F716 flake can be measured and bounded."
+  },
+  "testsAdded": [
+    "tools/ui-tests/gate-card-wait.test.mjs: the poll-window wait capture-screenshots.mjs exports is computed from the poll interval the assembled panel script declares and exceeds it by the documented margin, and a changed interval moves the wait"
+  ],
+  "claims": "claims:\n1 capture-screenshots.mjs waitForPoll/sleepPollWindow use panelPollWindowMs() = pollWindowMs(pollIntervalOf(assembledPanelScript())); verified node import gives 5000 -> 6500\n2 mutations: window const 6500 -> red (expected 6500 to be 13845); margin 0 -> red; hand timeout:6500 reinserted -> red (expected 1 to be 0); all restored (cmp identical). Second-direction: pollIntervalOf throws on 0 and 2 declarations (asserted)\n3 grep 6500|6.5 in capture-screenshots.mjs: 0 hits after; sites converted: live x2, combo(b) x2, gate card x3, gate shot x1; STALL_POLL_MS/PROBE_MS left, unrelated to the panel poll\n4 n/a - no rule to an agent\n5 margin NOT measured: repeated runs are the orchestrator's; command: for i in 1 2 3 4 5 6 7 8 9 10; do node tools/capture-screenshots.mjs --check 2>&1 | grep -E 'poll-window|FAIL'; done  (idle, then again with python3 tools/sweep-selftests.py running in parallel); decisive output: any MISSED line, or any 'satisfied after N ms' with N close to the window\n6 n/a - no guard\n7 no number written into prose; 1500 is the constant's value and its comment points at the printed elapsed times",
+  "stamp": "audit-stamp: {\"content\":\"sha256:dba9c5dce2c8a11680f27296c17618f2af6c1691c849c34627471fbf1f5c8211\",\"dirtyDigest\":\"sha256:f7d81315c6c5aa8bd499e4f8300fb4b012da3f3760e15a0da9285c2e2f195d38\",\"dirtyPaths\":{\"tools/capture-screenshots.mjs\":\"b6fff0e479c4afd1\",\"tools/ui-tests/gate-card-wait.test.mjs\":\"43f379c999d7881e\"},\"head\":\"a24dec84\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/capture-screenshots.mjs\",\"tools/ui-tests/gate-card-wait.test.mjs\"],\"scopeDigest\":\"sha256:0208faff2fae0937a5ba210165ab61a639ff143c29ed6b4e5f5ae9cf442656d9\",\"v\":2}"
+}
