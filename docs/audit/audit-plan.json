@@ -3512,7 +3512,8 @@
       "P125.61-0h5",
       "P130.4",
       "P130.8",
-      "P130.10-ywo"
+      "P130.10-ywo",
+      "P130.28-ywo"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -4114,7 +4115,8 @@
       "P130.6",
       "P130.8",
       "P130.18-ywo",
-      "P130.23-ywo"
+      "P130.23-ywo",
+      "P130.28-ywo"
     ],
     "plugins/audit/scripts/manifest/_manifest_vocab.py": [
       "P18.2",
@@ -5741,7 +5743,8 @@
       "P130.6",
       "P130.18-ywo",
       "P130.21-ywo",
-      "P130.23-ywo"
+      "P130.23-ywo",
+      "P130.28-ywo"
     ],
     "plugins/audit/tests/test__manifest_vocab.py": [
       "P20.6",
@@ -6586,7 +6589,8 @@
       "P125.125-0h5",
       "P130.4",
       "P130.10-ywo",
-      "P130.25-ywo"
+      "P130.25-ywo",
+      "P130.28-ywo"
     ],
     "plugins/audit/tests/test_detect_plan_skip.py": [
       "P72.1",
@@ -7437,7 +7441,8 @@
       "P130.2",
       "P130.7",
       "P130.8",
-      "P130.9"
+      "P130.9",
+      "P130.28-ywo"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -7729,7 +7734,8 @@
       "P125.125-0h5",
       "P125.126-0h5",
       "P125.138-0h5",
-      "P128.43-izt"
+      "P128.43-izt",
+      "P130.28-ywo"
     ],
     "plugins/audit/scripts/status/_claude_home.py": [
       "P77.2",
@@ -7777,7 +7783,8 @@
       "P100.4-zxo",
       "P122.8-z4y",
       "P130.8",
-      "P130.10-ywo"
+      "P130.10-ywo",
+      "P130.28-ywo"
     ],
     "plugins/audit/tests/test__verdict_binding.py": [
       "P74.3-qq5",
@@ -7788,7 +7795,8 @@
       "P100.2",
       "P124.3",
       "P125.136-0h5",
-      "P130.10-ywo"
+      "P130.10-ywo",
+      "P130.28-ywo"
     ],
     "plugins/audit/scripts/governance/record-outside-run.py": [
       "P74.9-qq5",
