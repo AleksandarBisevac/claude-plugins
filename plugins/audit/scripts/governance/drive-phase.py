@@ -1150,14 +1150,27 @@ def scope_gap(ctx, state, task):
     build = build if isinstance(build, dict) else {}
     entries, _source = _mio.gate_entries(phase, task)
     runners = []
+    unclassified = []
     for entry in entries:
         runner = _gate_derive.entry_collector(build.get(entry, entry))
-        if runner and runner not in runners:
+        if runner is None:
+            unclassified.append(entry)
+        elif runner not in runners:
             runners.append(runner)
     for path in paths:
         if not runners:
             continue
         takers = _runner_collects.runners_taking(path, runners)
+        if not takers and unclassified:
+            # The runners this reading knows are not the gate's whole set: an
+            # entry it cannot classify (`node --test`, `python3 -m unittest`) may
+            # be the one that runs this suite, so "no runner takes it" is not
+            # known - say so once and let the start go on.
+            ctx["did"].append("could not tell whether the gate runs %s: no known "
+                              "runner (%s) takes it and the entry %s is not one "
+                              "this reading classifies" % (
+                                  path, ", ".join(runners), _clip(unclassified[0], 60)))
+            continue
         if not takers:
             # The gate names runners and none of them reads this path's language.
             return E_OK, decision(

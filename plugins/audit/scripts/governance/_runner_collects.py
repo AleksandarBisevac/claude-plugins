@@ -71,6 +71,7 @@ This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__runner_collects.py`.
 """
 
+import ast
 import os
 import re
 import subprocess
@@ -665,35 +666,79 @@ def _pytest_config(path, project):
 
 # --- the sweep ------------------------------------------------------------------
 
+def _root_literal(node):
+    """One `SWEEP_DIRS` entry as a `/`-joined string - a string constant or an
+    `os.path.join` of them - or None for any other expression."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if (isinstance(node, ast.Call) and not node.keywords and node.args
+            and isinstance(node.func, ast.Attribute) and node.func.attr == "join"
+            and isinstance(node.func.value, ast.Attribute)
+            and node.func.value.attr == "path"
+            and isinstance(node.func.value.value, ast.Name)
+            and node.func.value.value.id == "os"):
+        parts = [_root_literal(a) for a in node.args]
+        if all(p is not None for p in parts):
+            return "/".join(parts)
+    return None
+
+
 def _sweep_roots(text):
-    """The directories named in the `SWEEP_DIRS = (...)` tuple of the sweep script's
-    source, joined with `/`, or None when the tuple is not there. Comment lines are
-    skipped; an entry is a string or an `os.path.join` of strings."""
-    block = re.search(r"^SWEEP_DIRS\s*=\s*\((.*?)^\)", text, re.S | re.M)
-    if not block:
-        return None
-    roots = []
-    for line in block.group(1).splitlines():
-        if line.strip().startswith("#"):
+    """`(roots, problem)` for the `SWEEP_DIRS` tuple of the sweep script's source.
+    The tuple is READ AS CODE: a line-by-line reading joined every quoted string
+    on a line, so a compact tuple or a comment holding a quote produced a wrong
+    root without a word. `problem` is the sentence saying why no root list could
+    be read - no assignment, a source that does not parse, or an entry that is not
+    a string or an `os.path.join` of strings - and `roots` is then None; a partial
+    list is never returned."""
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError) as exc:
+        return None, "its source does not parse (%s)" % (exc,)
+    for node in tree.body:
+        if not (isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == "SWEEP_DIRS" for t in node.targets)):
             continue
-        parts = re.findall(r"[\"']([^\"']+)[\"']", line)
-        if parts:
-            roots.append("/".join(parts))
-    return roots or None
+        if not isinstance(node.value, (ast.Tuple, ast.List)):
+            return None, "SWEEP_DIRS is not a literal tuple"
+        roots = [_root_literal(e) for e in node.value.elts]
+        if any(r is None for r in roots):
+            return None, ("SWEEP_DIRS holds an entry that is not a string or an "
+                          "os.path.join of strings, so it is not a literal")
+        return (roots, None) if roots else (None, "SWEEP_DIRS is empty")
+    return None, "it assigns no SWEEP_DIRS"
+
+
+def _bare_in_roots(name, roots, project):
+    """Whether a `.py` called `name` exists under any sweep root of `project`."""
+    return any(rel.rsplit("/", 1)[-1] == name
+               for root in roots
+               for rel, _full in _output.py_files(os.path.join(project, *root.split("/"))))
 
 
 def _sweep_reading(path, project):
     _name, text = _read_text(project, (SWEEP_SCRIPT,))
-    roots = _sweep_roots(text) if text else None
+    roots, problem = _sweep_roots(text) if text else (None, "it is missing or unreadable")
     if roots is None:
-        return _cannot("%s is missing or names no SWEEP_DIRS tuple this reading can "
-                       "read, so which Python files the sweep runs is not known"
-                       % (SWEEP_SCRIPT,))
-    if path.endswith(".py") and any(path.startswith(r + "/") for r in roots):
+        return _cannot("%s names no SWEEP_DIRS this reading can read (%s), so which "
+                       "Python files the sweep runs is not known"
+                       % (SWEEP_SCRIPT, problem))
+    where = ", ".join(roots)
+    if "/" not in path and path.endswith(".py"):
+        # A bare basename is how a task spells a suite of the sweep's own trees;
+        # it is resolved against the roots, not judged by a prefix it cannot have.
+        if _bare_in_roots(path, roots, project):
+            return _answer(COLLECTED, "config", "%s sweeps every .py under %s, and "
+                           "%s is one" % (SWEEP_SCRIPT, where, path))
+        if not os.path.exists(os.path.join(project, path)):
+            return _cannot("%s is a bare name found under none of the sweep roots "
+                           "(%s) and not at the project root, so where it will be "
+                           "written is not known" % (path, where))
+    elif path.endswith(".py") and any(path.startswith(r + "/") for r in roots):
         return _answer(COLLECTED, "config", "%s sweeps every .py under %s"
-                       % (SWEEP_SCRIPT, ", ".join(roots)))
+                       % (SWEEP_SCRIPT, where))
     return _answer(NOT_COLLECTED, "config", "%s sweeps .py files under %s only, and %s "
-                   "is not one" % (SWEEP_SCRIPT, ", ".join(roots), path))
+                   "is not one" % (SWEEP_SCRIPT, where, path))
 
 
 # --- the question -----------------------------------------------------------------

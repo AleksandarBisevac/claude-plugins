@@ -6869,6 +6869,51 @@ def _scope_language_cases(check):
           code == 0 and _dispatched(text) == ["P1.1"] and "scope-gap" not in text)
 
 
+UNCLASSIFIED_CLAUSE = (
+    "a gate holding an entry no known runner classifies answers could-not-tell for "
+    "a path no known runner takes, and the task starts")
+
+
+def _unclassified_entry_cases(check):
+    def clause(cid, detail):
+        return "%s %s (%s)" % (cid, UNCLASSIFIED_CLAUSE, detail)
+
+    M, why = _load("drive_phase_unclassified")
+    if M is None:
+        check(clause("uc0", "the driver loads: %r" % (why,)), False)
+        return
+
+    def run(prefix, add_path, gate):
+        root, mpath = _language_repo(prefix, add_path, gate)
+        code, text = _next_wave(M, root, mpath)
+        return code, text, tasks_of(mpath)["P1.1"]
+
+    node = "node --test lib/store.test.mjs"
+    unit = "python3 -m unittest discover -s backend/tests"
+    code, text, task = run("ucjs", "lib/store.test.mjs", (SWEEP_GATE, node))
+    check(clause("uc1", "a .mjs suite, a gate of the sweep and `node --test`: one "
+                 "could-not-tell line, the task dispatched, no scope-gap: %r" % (text,)),
+          code == 0 and _dispatched(text) == ["P1.1"] and "scope-gap" not in text
+          and text.count("could not tell") == 1)
+    code, text, task = run("ucpy", "backend/tests/test_mine.py", (VITEST_GATE, unit))
+    check(clause("uc2", "a .py suite, a gate of vitest and `python3 -m unittest`: "
+                 "the same answer: %r" % (text,)),
+          code == 0 and _dispatched(text) == ["P1.1"] and "scope-gap" not in text
+          and text.count("could not tell") == 1)
+    code, text, task = run("ucknown", "lib/store.test.mjs", (SWEEP_GATE,))
+    check(clause("uc3", "the other direction: a gate whose every entry the preflight "
+                 "classifies has no unclassified one, so the real misroute still "
+                 "stops: %r" % (text,)),
+          code == 0 and instruction(text) == ("decide", "scope-gap", None)
+          and "no runner in this gate takes lib/store.test.mjs" in text
+          and not _dispatched(text))
+    code, text, task = run("ucdefinite", "docs/test_mine.py", (SWEEP_GATE, unit))
+    check(clause("uc4", "a known runner's own definite no is not softened by the "
+                 "unclassified entry beside it: %r" % (text,)),
+          code == 0 and instruction(text) == ("decide", "scope-gap", None)
+          and "sweep does not collect docs/test_mine.py" in text)
+
+
 STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("dr-block", "_refusal_cases"),
           ("dd-block", "_decide_cases"), ("ct-block", "_continue_cases"),
@@ -6918,6 +6963,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("wh-block", "_wave_hooks_cases"),
           ("pf-block", "_preflight_cases"),
           ("pg-block", "_scope_language_cases"),
+          ("pu-block", "_unclassified_entry_cases"),
           ("tx-block", "_text_cases"),
           ("sn-block", "_signal_cases"), ("sn3-block", "_explain_cases"),
           ("sn5-block", "_signal_drive_cases"),

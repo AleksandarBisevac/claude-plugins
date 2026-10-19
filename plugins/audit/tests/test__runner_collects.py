@@ -376,8 +376,92 @@ def _language(check, tmp):
           _answer(bare, "tests/test_x.py", "sweep") == M.COULD_NOT_TELL)
 
 
+SWEEP_BARE_CLAUSE = ("a bare basename present under a sweep root is collected by the "
+                     "sweep, and a compact or commented SWEEP_DIRS tuple reads its "
+                     "roots right")
+
+# Three spellings of the same two roots that the old line-by-line reading got
+# wrong: the whole tuple on one line, a trailing comment carrying quoted strings,
+# and a one-entry-per-line tuple whose comment quotes a path.
+SWEEP_COMPACT = 'SWEEP_DIRS = (os.path.join("backend", "tests"), "tools")\n'
+SWEEP_COMMENTED = """\
+SWEEP_DIRS = (
+    os.path.join("backend", "tests"),  # was os.path.join("old", "tests")
+    "tools",  # 'scripts' live elsewhere
+)
+"""
+SWEEP_COMPUTED = 'SWEEP_DIRS = tuple(d for d in ("backend", "tools"))\n'
+
+
+def _sweep_bare(check, tmp):
+    def clause(cid, detail):
+        return "%s %s (%s)" % (cid, SWEEP_BARE_CLAUSE, detail)
+
+    root = _project(os.path.join(tmp, "sw-bare"), {
+        "tools/sweep-selftests.py": SWEEP_SOURCE,
+        "backend/tests/test_inside.py": "",
+        "backend/tests/deep/test_nested.py": "",
+        "docs/test_outside.py": "",
+        "test_rootfile.py": ""})
+    got = _answer(root, "test_inside.py", "sweep")
+    check(clause("sb1", "test_inside.py exists under backend/tests: %r" % (got,)),
+          got == M.COLLECTED)
+    got = _answer(root, "test_nested.py", "sweep")
+    check(clause("sb2", "a basename deeper under a root is found too: %r" % (got,)),
+          got == M.COLLECTED)
+    got = _answer(root, "test_outside.py", "sweep")
+    check(clause("sb3", "a basename that exists only outside every root is never "
+                 "collected, and is not a definite no either - which directory it "
+                 "names is not known: %r" % (got,)),
+          got == M.COULD_NOT_TELL)
+    got = _answer(root, "test_rootfile.py", "sweep")
+    check(clause("sb4", "a bare name that is a file at the project root is the "
+                 "root file, which no sweep root holds: %r" % (got,)),
+          got == M.NOT_COLLECTED)
+    got = _answer(root, "test_notyet.py", "sweep")
+    check(clause("sb5", "a bare name that exists nowhere (a suite the task is "
+                 "about to write) is could-not-tell, never a definite no: %r"
+                 % (got,)),
+          got == M.COULD_NOT_TELL)
+    got = _answer(root, "docs/test_outside.py", "sweep")
+    check(clause("sb6", "a path with a directory is still judged by prefix alone, "
+                 "so the misroute stays definite: %r" % (got,)),
+          got == M.NOT_COLLECTED)
+    for cid, label, source in (("sb7", "compact", SWEEP_COMPACT),
+                               ("sb8", "commented", SWEEP_COMMENTED)):
+        proj = _project(os.path.join(tmp, "sw-" + label), {
+            "tools/sweep-selftests.py": source,
+            "backend/tests/test_x.py": ""})
+        reads = M.collects("backend/tests/test_x.py", "sweep", proj)
+        wrong = [_answer(proj, p, "sweep") for p in
+                 ("old/tests/test_x.py", "scripts/test_x.py",
+                  "backend/tools/test_x.py", "docs/test_x.py")]
+        check(clause(cid, "a %s tuple reads backend/tests and tools: %r, %r"
+                     % (label, reads["answer"], reads["basis"])),
+              reads["answer"] == M.COLLECTED
+              and _answer(proj, "tools/check_x.py", "sweep") == M.COLLECTED
+              and wrong == [M.NOT_COLLECTED] * 4
+              and "backend/tests" in reads["basis"])
+    proj = _project(os.path.join(tmp, "sw-computed"), {
+        "tools/sweep-selftests.py": SWEEP_COMPUTED, "tools/test_x.py": ""})
+    reads = M.collects("tools/test_x.py", "sweep", proj)
+    check(clause("sb9", "a SWEEP_DIRS that is not a literal is refused loudly, "
+                 "naming it, and never read as an empty or partial root list: %r"
+                 % (reads,)),
+          reads["answer"] == M.COULD_NOT_TELL and "literal" in reads["basis"])
+    for cid, label, source in (("sb10", "unassigned", "X = 1\n"),
+                               ("sb11", "unparsable", "SWEEP_DIRS = (\n")):
+        proj = _project(os.path.join(tmp, "sw-" + label), {
+            "tools/sweep-selftests.py": source})
+        reads = M.collects("tools/test_x.py", "sweep", proj)
+        check(clause(cid, "a script with %s SWEEP_DIRS gives no verdict: %r"
+                     % (label, reads["answer"])),
+              reads["answer"] == M.COULD_NOT_TELL)
+
+
 def _cases(check):
     tmp = _harness.fixture_root("runner-collects-")   # removed at exit
+    _sweep_bare(check, tmp)
     _vitest(check, tmp)
     _refusals(check, tmp)
     _glob(check)

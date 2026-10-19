@@ -246,9 +246,23 @@
         "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1197-1200",
         "issue": "The unbalanced-quote fallback in gate_entry_commands separates commands on bare operators only. It does not drop redirection targets, which the docstring says it does for the main path. `python3 a/test_x.py > a/test_y.py \"x` (unbalanced) would count a/test_y.py as an argument and refuse with a sentence that is false of it. The entry is broken shell anyway, so this is low.",
         "resolution": "In the fallback, skip the word after any token matching _is_redirection, or return no commands at all (read nothing) when the entry cannot be delimited."
+      },
+      {
+        "id": "P130-R33",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:1152-1173",
+        "issue": "The executor's trade-off makes the misroute stop effectively dead. `unclassified` collects every entry for which `_gate_derive.entry_collector` (_gate_derive.py:263-275) returns None, and that function only knows vitest/jest/pytest (UNIT_RUNNERS) and sweep-selftests.py. This repo's own meta.buildCommands (docs/audit/audit-plan.json) resolves validate, plugin-validate, gate, report, lint, shots and interactive to commands that all return None (read by running a json load of meta.buildCommands and matching each against entry_collector's rules); any gate the repo declares and that holds one of them (the phase gate certainly does) therefore makes `unclassified` non-empty, so `if not takers and unclassified` at :1166 always takes the could-not-tell branch and the `no runner in this gate takes %s` decision at :1175 is unreachable. It only fires for a gate made solely of vitest/jest/pytest/sweep entries, which real gates (lint, validate, build entries) almost never are. Acceptance (4) says the P130.38 misroute stops 'still fire', but only the test fixtures keep them alive (uc3 uses a single-entry gate, line test_drive_phase.py uc3, `(SWEEP_GATE,)`), not production gates. The could-not-tell line is also misleading for such gates: it names unclassified[0], which is a lint or validate entry, as the entry that 'may run' the suite.",
+        "resolution": "Count an entry as unclassified only when it can run tests: it names a suite path (`_phases.is_suite_path` on a `_phases.shell_word_path` word) or a known test module/runner token (`-m unittest`, `--test`, `mocha`, `tap`, `ava`, `node --test`, `npm test`). Lint, validate, report, shots entries are then ignored and the definite 'no runner takes this path' stop fires again for gates like this repo's. Name that qualifying entry (not unclassified[0] blindly) in the could-not-tell line."
+      },
+      {
+        "id": "P130-R34",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_drive_phase.py (_unclassified_entry_cases, uc3/uc4)",
+        "issue": "No case holds the realistic shape: a known-runner gate plus a non-test entry (lint, validate). uc3 and uc4 use only the sweep or sweep plus `python3 -m unittest`, so the suite stays green while finding 1 holds; nothing pins that a lint-only extra entry leaves the stop in force.",
+        "resolution": "Add a case: gate (SWEEP_GATE, a lint command such as `ruff check .`) with a `.mjs` suite path expects the scope-gap decision, alongside the existing uc1/uc2 could-not-tell cases, which should keep a test-capable unclassified entry."
       }
     ],
-    "outcome": "[findings: 32 - 0 high, 6 med, 26 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 34 - 0 high, 7 med, 27 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
