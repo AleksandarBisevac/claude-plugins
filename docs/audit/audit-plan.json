@@ -7300,7 +7300,8 @@
       "P130.8",
       "P130.9",
       "P130.17-ywo",
-      "P130.32-ywo"
+      "P130.32-ywo",
+      "P130.45-ywo"
     ],
     "tools/check-committed-pii.py": [
       "P51.4",
