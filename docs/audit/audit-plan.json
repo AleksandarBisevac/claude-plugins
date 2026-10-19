@@ -3528,7 +3528,8 @@
       "P130.8",
       "P130.10-ywo",
       "P130.28-ywo",
-      "P130.35-ywo"
+      "P130.35-ywo",
+      "P130.30-ywo"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -7625,7 +7626,8 @@
       "P123.49-64p",
       "P125.44-0h5",
       "P125.49-0h5",
-      "P125.136-0h5"
+      "P125.136-0h5",
+      "P130.30-ywo"
     ],
     "plugins/audit/scripts/governance/import-evidence.py": [
       "P80.5",
