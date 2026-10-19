@@ -65,6 +65,7 @@ import _harness                                    # sets sys.path for scripts/ 
 import _output                                     # noqa: E402  (finding_code, for the muted cases)
 from _output import safe_stdio                     # noqa: E402
 import _manifest_rules as M                        # noqa: E402
+import _evidence_io                                # noqa: E402  (the prefix a gate entry may not take)
 import _manifest_phases as _phases_mod             # noqa: E402  (the alias's other
 #                                                    end: `ta1` pins that the
 #                                                    re-export is the same object)
@@ -1072,6 +1073,7 @@ def _cases(record):
     _cases_schema_input(record)
     _cases_falsifier(record)
     _cases_directory_entries(record)
+    _cases_derived_gate_entries(record)
 
 
 # --- tests.falsifiers: kept in the schema, read by nothing -------------------
@@ -1378,6 +1380,38 @@ def _cases_directory_entries(record):
                    _dir_plan(["plugins/audit", "docs/"])),
                expect=1),
            repr(found))
+
+
+def _cases_derived_gate_entries(record):
+    """A gate entry spelled with the reserved derived-step prefix never binds."""
+    prefix = _evidence_io.DERIVED_STEP_PREFIX
+    entry = prefix + "lint"
+
+    def warnings_for(mutate):
+        plan = _valid_manifest()
+        mutate(plan)
+        return [w for w in M.validate(plan)[1] if "reserved" in w]
+
+    def task_gate(gate):
+        return lambda m: m["phases"][0]["tasks"][0]["tests"].update(gate=gate)
+
+    named = warnings_for(task_gate(["test", entry]))
+    phase = warnings_for(lambda m: m["phases"][0].update(testGate=[entry]))
+    record("dg1 a task gate entry named with the derived-step prefix draws a "
+           "warning naming the entry",
+           len(named) == 1 and repr(entry) in named[0] and "P0.1" in named[0]
+           and repr(prefix) in named[0] and "never binds" in named[0],
+           repr(named))
+    # THE SECOND DIRECTION, because dg1 passes on a rule that warns about every
+    # gate: an ordinary entry, and one that only contains the prefix, draw nothing.
+    ordinary = warnings_for(task_gate(["test", "lint", "x" + entry]))
+    record("dg2 ...and an entry that does not START with the prefix draws no such "
+           "warning, nor does a plan with no gate at all",
+           ordinary == [] and warnings_for(lambda m: None) == [], repr(ordinary))
+    record("dg3 ...and a phase's own gate entry carrying the prefix is named too, "
+           "under the phase and not under a task",
+           len(phase) == 1 and "P0" in phase[0] and repr(entry) in phase[0]
+           and "P0.1" not in phase[0], repr(phase))
 
 
 def _reads_no_file(call, expect):

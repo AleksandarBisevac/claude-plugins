@@ -99,13 +99,39 @@ def _derived_step_cases(check):
           and different in interleaved)
 
 
+def _reserved_prefix_cases(check):
+    """A gate entry spelled with the derived-step prefix cannot bind, and the
+    refusal says that rather than blaming a different gate."""
+    prefix = _evidence_io.DERIVED_STEP_PREFIX
+    entry = prefix + "lint"
+    # What the recorder wrote for such a task: the entry as a step, which
+    # `declared_steps` reads as derived and so leaves out of the declared gate.
+    measured = {"steps": [{"name": "test"}, {"name": entry}], "gateSource": "task"}
+    refused = M.gate_mismatch(measured, ["test", entry], "task") or ""
+    phase = M.gate_mismatch(measured, ["test", entry], "phase") or ""
+    # THE SECOND DIRECTION: a task whose entries do not start with the prefix keeps
+    # the sentence it always had, and does not mention a reserved prefix.
+    plain = M.gate_mismatch({"steps": [{"name": "lint"}]}, ["test", "x" + entry],
+                            "task") or ""
+    check("vb35 a task whose own gate entry carries the derived-step prefix is "
+          "refused with a sentence naming the reserved prefix: %r / %r"
+          % (refused, plain),
+          repr(entry) in refused and repr(prefix) in refused
+          and "reserved" in refused and "task" in refused
+          and "a verdict about a different gate" not in refused
+          and repr(entry) in phase and "reserved" in phase
+          and plain.startswith("it was measured under the gate")
+          and "reserved" not in plain)
+
+
 def _cases(check):
-    check("vb1a gate measured under the same entries is not a mismatch",
+    check("vb1 a gate measured under the same entries is not a mismatch",
           M.gate_mismatch({"steps": [{"name": "test"}]}, ["test"], "phase") is None)
     check("vb2 ...and one measured under other entries is, saying both",
           "[lint]" in (M.gate_mismatch({"steps": [{"name": "lint"}]}, ["test"],
                                        "phase") or ""))
     _derived_step_cases(check)
+    _reserved_prefix_cases(check)
     check("vb3 a red after the last green is unanswered; a green after it retires it",
           M.red_after_green([{"ts": "1", "status": "passed"},
                              {"ts": "2", "status": "failed"}]) is not None

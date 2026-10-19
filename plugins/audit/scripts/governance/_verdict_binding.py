@@ -297,7 +297,20 @@ def gate_mismatch(measured, entries, source, build=None):
     gate's change can break are recorded after the declared steps, and
     `_evidence_io.declared_steps` - the answer the recorder digests - says
     which of a row's steps are declared. Only those are compared.
+
+    THE ONE GATE THAT CAN NEVER BIND, AND SAID AS THAT: an entry of the gate being
+    asked about that starts with `DERIVED_STEP_PREFIX` is read back as a derived
+    step, so the row it recorded is cut short of it and no run can match. The
+    generic sentence below would blame a gate that changed; this one names the
+    entry and the reserved prefix, which is the only repair.
     """
+    reserved = [e for e in entries if _evidence_io.is_derived_step(e)]
+    if reserved:
+        return ("the %s gate entry %r starts with %r, which is reserved for the "
+                "steps a run adds beside the gate - such an entry is read back "
+                "as one of those, so no verdict can bind it; rename the entry"
+                % ("task" if source == "task" else "phase", reserved[0],
+                   _evidence_io.DERIVED_STEP_PREFIX))
     recorded, dropped = _evidence_io.declared_steps(
         [s.get("name") for s in (measured.get("steps") or [])
          if isinstance(s, dict)], measured.get("stepsDropped"))

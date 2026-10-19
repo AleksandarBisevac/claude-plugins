@@ -2037,6 +2037,112 @@ def allow_coverage(script_dir=None, repo=None):
     return [n for n in gate_names(script_dir, repo) if n not in named]
 
 
+_HOLE = None    # one run of text a label fills in at run time
+_FORMAT_SPEC = re.compile(r"%[-#0 +]*\d*(?:\.\d+)?[sdrfxi]")
+
+
+def _label_template(node):
+    """A `check()` label as a list of characters and `_HOLE`s, from its AST.
+
+    A string constant is its characters; `"..." % (...)` is its left side with each
+    format specifier a hole; `a + b` is both sides; anything else (a variable, a
+    call) is one hole. The holes are what keep a label built in a loop from being
+    called undefined: its fixed part is still read, and the part filled at run time
+    can be anything.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return list(node.value)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return _label_template(node.left) + _label_template(node.right)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
+        left = _label_template(node.left)
+        text = "".join(c if c is not _HOLE else "\0" for c in left)
+        out = []
+        for i, piece in enumerate(_FORMAT_SPEC.split(text.replace("%%", "\1"))):
+            if i:
+                out.append(_HOLE)
+            out.extend("%" if c == "\1" else c for c in piece
+                       if c != "\0")
+            out.extend(_HOLE for c in piece if c == "\0")
+        return out
+    return [_HOLE]
+
+
+def _label_templates(path):
+    """Every `check(...)` label in a suite's source as a template; None when the
+    file cannot be read or parsed, which the caller must not read as "no labels"."""
+    try:
+        tree = ast.parse(io.open(path, encoding="utf-8").read())
+    except (OSError, SyntaxError, ValueError):
+        return None
+    return [_label_template(n.args[0]) for n in ast.walk(tree)
+            if isinstance(n, ast.Call) and n.args
+            and isinstance(n.func, ast.Name) and n.func.id == "check"]
+
+
+def _could_contain(template, text):
+    """Can some filling of the template's holes contain `text` as a substring?
+
+    Only if `text` also touches a fixed character of the template: a hole accepts
+    any text, so a selector that fits wholly inside one is not evidence that any
+    label carries it, and a check that accepted it would accept every selector.
+    """
+    seen = set()
+
+    def walk(i, j, anchored):
+        if j == len(text):
+            return anchored
+        if (i, j, anchored) in seen or i == len(template):
+            return False
+        seen.add((i, j, anchored))
+        if template[i] is _HOLE:
+            return any(walk(i + 1, j + k, anchored)
+                       for k in range(len(text) - j + 1))
+        return template[i] == text[j] and walk(i + 1, j + 1, True)
+
+    return any(walk(i, 0, False) for i in range(len(template) + 1))
+
+
+def _template_defines(template, target):
+    """Does a label of this shape carry the row's selector?
+
+    An id is the template's leading token, read only while it is literal: a hole
+    right after the id could be more id (`zz1` + `a`), so it is not trusted.
+    """
+    if isinstance(target, tuple):
+        return _could_contain(template, target[1])
+    lead = template[:len(target) + 1]
+    return (lead[:len(target)] == list(target)
+            and (len(lead) == len(target)
+                 or (lead[-1] is not _HOLE and lead[-1].isspace())))
+
+
+def undefined_cases(rows, repo=None):
+    """`(lint, suite, selector)` for every row whose case no suite source defines.
+
+    A SECOND CHECK ON THE SAME SELECTOR, AND THE ONE THAT NEEDS NO MUTATION.
+    `verdict()` reports LABEL GONE only on a run that mutates the tree and sends a
+    suite red, so a row keyed on an id that stopped existing - a label that lost
+    the space after its id reads as another id, `vb1 a` as `vb1a` - sat in the
+    table until somebody ran the proof. Reading the suite's `check()` labels is
+    the half the selftest can do on every sweep.
+
+    A row naming no case (the coarse claim) is not this function's business, and a
+    suite it cannot read is reported as undefined rather than skipped: an empty
+    answer must mean every named case was found.
+    """
+    out = []
+    for row in rows:
+        lint, suite, target = row[0], row[5], row[6]
+        if target is None:
+            continue
+        templates = _label_templates(os.path.join(repo or REPO, suite))
+        if templates is None or not any(_template_defines(t, target)
+                                        for t in templates):
+            out.append((lint, suite, selector_text(target)))
+    return out
+
+
 # --- the verdict, as a pure function of the report ----------------------------
 COARSE = "RED (SUITE ONLY)"
 
@@ -2245,7 +2351,8 @@ def prove(row, repo=None):
     return {"lint": lint, "verdict": said, "detail": detail, "cases": cases}
 
 
-def render(rows, missing, stale=(), stream=None, claim="gates proven red"):
+def render(rows, missing, stale=(), stream=None, claim="gates proven red",
+           undefined=()):
     """The report for ONE direction's rows. `claim` is what a proven row means.
 
     Parameterised rather than duplicated: the arithmetic, the coarse notice and the
@@ -2267,14 +2374,20 @@ def render(rows, missing, stale=(), stream=None, claim="gates proven red"):
         out.write("  NO SUCH LINT: the row for %s names a rule nothing in the tree "
                   "derives any more, so whatever it just reddened credits "
                   "nothing\n" % (name,))
+    for lint, suite, selector in undefined:
+        out.write("  NO SUCH CASE: the row for %s names %r, which no check() in %s "
+                  "spells, so its proof can only ever read LABEL GONE\n"
+                  % (lint, selector, suite))
     for r in coarse:
         out.write("  NAMES NO CASE: %s is proven only by its whole suite going "
                   "red\n" % (r["lint"],))
     out.write("%d of %d %s%s%s\n"
               % (len(rows) - len(bad), len(rows), claim,
                  ("; %d lint(s) missing a row" % len(missing)) if missing else "",
-                 ("; %d row(s) naming no lint" % len(stale)) if stale else ""))
-    return 1 if (bad or missing or stale) else 0
+                 ("; %d row(s) naming no lint" % len(stale)) if stale else "")
+              + (("; %d row(s) naming no case" % len(undefined))
+                 if undefined else ""))
+    return 1 if (bad or missing or stale or undefined) else 0
 
 
 ALLOW_CLAIM = "guards proven to stay quiet on known-good input"
@@ -2339,14 +2452,15 @@ def _prove(want_red, want_allow, table, allow, only):
                          "restores it\n" % (len(table),))
         code |= render([prove(row) for row in table],
                        coverage() if only is None else [],
-                       stale_rows(table))
+                       stale_rows(table), undefined=undefined_cases(table))
     if want_allow:
         sys.stdout.write("\nproving %d guard(s) stay QUIET; each weakens the GUARD "
                          "so it over-fires, and the named allow case must go red\n"
                          % (len(allow),))
         code |= render([prove(row) for row in allow],
                        allow_coverage() if only is None else [],
-                       stale_rows(allow), claim=ALLOW_CLAIM)
+                       stale_rows(allow), claim=ALLOW_CLAIM,
+                       undefined=undefined_cases(allow))
     return code
 
 
@@ -2392,6 +2506,53 @@ def _cases(check):
           % (stale_rows((_planted, TABLE[0])), stale_rows((TABLE[0],))),
           stale_rows((_planted, TABLE[0])) == ["no_such_lint_violations"]
           and stale_rows((TABLE[0],)) == [])
+
+    # A ROW NAMING A CASE NO SUITE DEFINES, found without running a suite. A case
+    # whose label lost the space after its id changes id silently (`vb1 a gate`
+    # became `vb1a gate`), and a row keyed on the old id then reads LABEL GONE only
+    # on a run that mutates the tree - so the table is read against the suites'
+    # source here. The suite is a scratch file, not a path of the plugin, so the
+    # case fails on this function and not on the tree it happens to run in.
+    _c1d_dir = tempfile.mkdtemp(prefix="prove-gates-c1d-")
+    try:
+        with io.open(os.path.join(_c1d_dir, "suite_zz"), "w",
+                     encoding="utf-8") as _fh:
+            _fh.write('def _cases(check):\n'
+                      '    check("zz1 a defined case", True)\n'
+                      '    check("zz2 another, %d" % (3,), True)\n'
+                      '    check("a sentence label with no id", True)\n')
+        _row = ("lint_a", "x", "drop", "a", None, "suite_zz", "zz1")
+        _gone = ("lint_b", "x", "drop", "a", None, "suite_zz", "zz9")
+        _glued = ("lint_c", "x", "drop", "a", None, "suite_zz", "zz1a")
+        _sub = ("lint_d", "x", "drop", "a", None, "suite_zz",
+                substr("a sentence label"))
+        _sub_gone = ("lint_e", "x", "drop", "a", None, "suite_zz",
+                     substr("no such words"))
+        _coarse = ("lint_f", "x", "drop", "a", None, "suite_zz", None)
+        _undef = undefined_cases(
+            (_row, _gone, _glued, _sub, _sub_gone, _coarse), repo=_c1d_dir)
+    finally:
+        shutil.rmtree(_c1d_dir, ignore_errors=True)
+    check("c1d a gate row naming a case id that no suite defines is refused by "
+          "name, while a row naming a defined id is accepted: %r" % (_undef,),
+          [u[0] for u in _undef] == ["lint_b", "lint_c", "lint_e"]
+          and all(u[2] in ("zz9", "zz1a", "no such words") for u in _undef)
+          and all(u[1] == "suite_zz" for u in _undef))
+
+    _undef_tree = undefined_cases(TABLE + ALLOW)
+    check("c1e every case a row names is spelled by a check() in the suite the "
+          "row runs - the tree's own tables, read against the tree's own "
+          "suites: %r" % (_undef_tree,),
+          _undef_tree == [])
+    _buf = io.StringIO()
+    _code = render([], [], undefined=[("lint_b", "suite_zz", "zz9")],
+                   stream=_buf)
+    check("c1f ...and a row naming an undefined case fails the run BY NAME, "
+          "where the same render with no such row exits clean: %r"
+          % (_buf.getvalue()[-160:],),
+          _code == 1 and "NO SUCH CASE: the row for lint_b names 'zz9'"
+          in _buf.getvalue()
+          and render([], [], stream=io.StringIO()) == 0)
 
     # THE RETIRED LINTS, asked of the three places one lives in: the derivation, the
     # red table and the quiet table. The list is this case's data - lints whose

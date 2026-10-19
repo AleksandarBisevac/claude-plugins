@@ -2908,7 +2908,39 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test__manifest_rules.py: a task gate entry named with the derived-step prefix draws a warning naming the entry": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__manifest_rules.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/manifest/_manifest_rules.py",
+            "find": "    add(_check_reserved_gate_entries(manifest))\n",
+            "replace": "    pass\n"
+          },
+          "plugins/audit/tests/test__verdict_binding.py: a task whose own gate entry carries the derived-step prefix is refused with a sentence naming the reserved prefix": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__verdict_binding.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/governance/_verdict_binding.py",
+            "find": "    if reserved:\n",
+            "replace": "    if False:\n"
+          },
+          "tools/prove-gates.py: (inline --selftest) a gate row naming a case id that no suite defines is refused by name, while a row naming a defined id is accepted": {
+            "command": [
+              "python3",
+              "tools/prove-gates.py",
+              "--selftest"
+            ],
+            "file": "tools/prove-gates.py",
+            "find": "if templates is None or not any(_template_defines(t, target)",
+            "replace": "if False and not any(_template_defines(t, target)"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -2931,7 +2963,12 @@
       "startedAt": "2026-10-19T10:39:59Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T11:28:48Z.1420fb",
+        "status": "passed",
+        "at": "2026-10-19T11:28:48Z"
+      }
     },
     {
       "id": "P130.29-ywo",
@@ -3066,7 +3103,7 @@
     {
       "id": "P130.31-ywo",
       "title": "build-command --remove refuses a key that meta.fullGate or meta.phaseGate.always names",
-      "status": "in_progress",
+      "status": "done",
       "description": "F736 item 1. audit-task.py _build_command_refusal (--remove arm) asks _gate_holders, which reads only phase testGate and task tests.gate. meta.fullGate and meta.phaseGate.always (check meta.phaseGate.exclude too) name meta.buildCommands keys as well; removing such a key leaves a dangling reference. Extend the holder read with those plan-level lists, named in the refusal, and add a case per holder, red before the change.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -3127,19 +3164,35 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3ca7ffa57bbc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: _gate_holders now appends _plan_gate_holders(meta, key), which names meta.fullGate, meta.phaseGate.always and meta.phaseGate.exclude when each list holds the key; the refusal text names them and says a meta.* list is edited in the plan's meta. test_audit_task.py: new stage bcp-block (_bcm_plan_holder_cases) with bcm3 (fullGate and always refused, exit 2, bytes and journal unchanged), bcm3b (exclude refused), bcm4 (unnamed key still removed, the two named stay). Selftest 1088/1088; test__refs 286/286. commands/task.md not touched (outside files).",
+        "descriptive": "build-command --remove no longer leaves a dangling reference in meta.fullGate or meta.phaseGate.always/exclude."
       },
       "startedAt": "2026-10-19T10:40:08Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T11:17:51Z",
+      "verifiedBy": [
+        "bcm3 build-command --remove refuses a key named by meta.fullGate, and one named by meta.phaseGate.always, and writes nothing",
+        "bcm4 build-command --remove still removes a key no gate, fullGate or phaseGate.always names",
+        "bcm3b ...and one named by meta.phaseGate.exclude (extra, not a tests.add entry)"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T11:15:08Z.c4dd64",
         "status": "passed",
         "at": "2026-10-19T11:15:08Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "3ca7ffa57bbc",
+        "at": "2026-10-19T11:17:51Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-19T10:48:10Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 1088 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bcm3 (house FAIL), bcm3b (house FAIL), bcm4 (house FAIL): SELFTEST FAILED: 1085/1088 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {

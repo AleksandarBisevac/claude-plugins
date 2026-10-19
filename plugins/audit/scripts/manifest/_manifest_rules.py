@@ -106,6 +106,7 @@ import _manifest_typos as _typos  # noqa: E402  (the did-you-mean detectors)
 import _manifest_crossrefs as _crossrefs  # noqa: E402  (ids, refs, cycles, fileIndex, bugs)
 import _json_schema as _js  # noqa: E402  (the published schema, read as ajv reads it)
 import _branch as _branch  # noqa: E402  (where a phase branches from, and its name)
+import _evidence_io  # noqa: E402  (DERIVED_STEP_PREFIX: the name a gate entry may not take)
 import _status_facts  # noqa: E402  (CLOSED_BUG: the one reading of "not open", for a
 #                                    mute whose bug is closed)
 
@@ -586,6 +587,47 @@ def bound_validator(root=None):
                                  schema=schema)
 
 
+# --- a gate entry the recorder cannot bind -----------------------------------------
+def _check_reserved_gate_entries(manifest):
+    """Warnings for a gate entry spelled with the derived-step prefix.
+    Returns (findings, warnings), findings always empty.
+
+    A WARNING, NOT A FINDING: nothing fails to run - the entry executes and is
+    recorded - but its row is read back with the entry cut off as a derived step,
+    so no verdict ever binds that gate. `gate_mismatch` says the same thing at the
+    moment a commit or sign-off is refused; this says it when the plan is written.
+    Covers a phase's `testGate` and a task's `tests.gate`, the two declarations
+    `declared_gate_entries` reads.
+    """
+    w = []
+    phases = manifest.get("phases")
+    for phase in phases if isinstance(phases, list) else []:
+        if not isinstance(phase, dict):
+            continue
+        w.extend(_reserved_entry_warnings(
+            "phase %s" % (phase.get("id") or "?"), "testGate",
+            phase.get("testGate")))
+        tasks = phase.get("tasks")
+        for task in tasks if isinstance(tasks, list) else []:
+            tests = task.get("tests") if isinstance(task, dict) else None
+            if isinstance(tests, dict):
+                w.extend(_reserved_entry_warnings(
+                    "task %s" % (task.get("id") or "?"), "tests.gate",
+                    tests.get("gate")))
+    return ([], w)
+
+
+def _reserved_entry_warnings(subject, field, declaration):
+    return [_output.finding(
+        "rules.gate.reserved-entry",
+        "%s: %s entry %r starts with %r, which is reserved for the steps a run "
+        "adds beside the gate - the entry is read back as one of those, so its "
+        "gate never binds a verdict; rename it"
+        % (subject, field, entry, _evidence_io.DERIVED_STEP_PREFIX))
+        for entry in _mio.declared_gate_entries(declaration)
+        if _evidence_io.is_derived_step(entry)]
+
+
 # --- validate: one walk, then one question per piece ------------------------------
 # `validate()` was 354 lines, and its size was never the reason it was hard to
 # cut. The reason was the INDEX: seven accumulating locals built by one pass over
@@ -758,6 +800,7 @@ def validate(manifest, today=None, schema=None):
     add(_check_priority(manifest, phases))
     add(_check_ado_parents(manifest, phases))
     add(_check_derived(manifest))
+    add(_check_reserved_gate_entries(manifest))
     add(_check_muted(manifest, index, today))
     # LAST, and handed every finding raised above, so a fault a hand-written
     # rule already refused is said once.
