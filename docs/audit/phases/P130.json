@@ -1296,7 +1296,8 @@
         "P130.45-ywo",
         "P130.46-ywo",
         "P130.47-ywo",
-        "P130.48-ywo"
+        "P130.48-ywo",
+        "P130.49-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -4702,7 +4703,7 @@
     {
       "id": "P130.45-ywo",
       "title": "The second batch of P130 review lows is fixed: the base reading fails open, its no-HEAD sentence is true, the poll-wait check reads every wait, and two descriptions match what runs",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F742 (a),(c),(d),(e). (a) plugins/audit/scripts/governance/run-test-gate.py around :650 `base_reading` catches only OSError/ValueError on an advisory path; any other error crashes the gate run - catch broadly there and report the reading as could-not-read with the error named (SECURITY.md fail-open table); drive-phase.py around :893-895 prints 'no base run recorded' when git names no HEAD - say that no HEAD was named. (c) tools/ui-tests/gate-card-wait.test.mjs: `pollDependent()` (around :143) sees only literal durations and RUNSTATUS names, so a computed duration escapes - treat any wait whose duration is not a numeric literal below the poll interval as poll-dependent unless it is a call of the two helpers or on the explicit allow-list; `blank()` (around :80) is a hand-rolled tokenizer with no regex-literal handling - an unbalanced quote inside a regex literal blanks the rest of the file; make it refuse loudly (throw naming the line) when it reaches end of file inside a string, so a desync cannot pass silently. (d) .claude/skills/reproducing-ci-locally/SKILL.md around :28-30 says the jobs read yields only verify.sh calls; .github/workflows/ci.yml has other run steps (e.g. a pip install around :226) - say setup steps plus one verify.sh call per job. (e) plugins/audit/commands/next.md:2 says '(phase order, then task-id order)'; since P130.35-ywo a ready task fixing a suite red at base goes first - say so in the same line (the file is under the measure-context ceiling). Acceptance: (1) an unexpected error inside base_reading yields a could-not-read reading and the gate's own verdict unchanged (case in test_run_test_gate.py); (2) a computed-duration wait added in a fixture is reported; (3) blank() on a fixture ending inside a string throws; (4) full sweep and vitest green; (5) tools/measure-context.py --gate passes.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -4744,21 +4745,22 @@
         "P130.39-ywo",
         "P130.46-ywo"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T21:11:23Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.46-ywo",
       "title": "A task commit carries the task's change, and a restarted task with a kept worktree is never run in the phase tree",
-      "status": "in_progress",
+      "status": "done",
       "description": "REPLACES P130.43-ywo. Its finished work is saved as a patch: <outside-repo> (git apply --check passed on the phase head) - apply it in your tree, then fix the pre-commit review's findings: (1) MEDIUM: commit-task-work.py (~:400) moves a declared file that is neither on disk nor tracked to `skipped`, and (~:917) passes any_red_first=bool(targets['declared']), so a task whose declared files are all NEW (the F741 shape: the work is a new file in a kept tree) still gets an empty commit under could-not-prove - key the refusal on 'the task declares any non-record file', not on 'a declared file resolved'; case for it. (2) LOW-MEDIUM: audit-task.py `done --commit` (~:6254) calls close_evidence_refusal without the new rule - refuse when no commit since the task's start touches a declared non-record file (keeps pd5b/tw5/lo4/lo6, whose change sits in an earlier commit since start); case for it. (3) LOW: drive-phase.py (~:2718) checks only that the kept-tree directory exists; require its marker (as manage-worktrees adoption does) and stop naming the tree when the marker is missing rather than making a fresh tree and orphaning the old one. (4) LOW: add direct cases in test__scoped_commit.py for the new parameters. The original task follows: F741. P130.18-ywo was recorded done at a commit holding only plan and evidence files: after a manual `start`, drive-phase `wave_step` (around :2644) ran it serially in the PHASE tree because a task was in_progress, while its work sat in the kept worktree (`close_wave` records it in keptTrees, read only when a new wave opens); the gate measured the phase tree (scopeDigest of the unchanged declared files), went green, and the close committed nothing of the task. The only no-change refusal, `_scoped_commit.close_evidence_refusal` (around :1121, called from commit-task-work.py around :893), refuses only when red-first is `not-attempted`; `could-not-prove` passes. Fix: (1) commit-task-work refuses a task commit whose staged change holds no file outside docs/audit and the run records, unless the task is closed with an explicit no-change verb, naming the declared files and the tree the gate measured; (2) when the task being advanced has a kept worktree that holds changes, the drive integrates it or runs it in that worktree - never dispatches or gates it in the phase tree; (3) a falsifier that could not run because its find-text is absent from the measured tree stops the close with that sentence instead of writing a note (the stage is retired at HEAD - if so, put the absent-text check on the red-first record instead: a recorded red whose cases do not exist in the committed tree refuses). Acceptance: (1) a fixture where the task tree holds the change and the phase tree does not: the drive does not commit an empty task and names the kept tree; (2) commit-task-work refuses a commit whose diff is plan files only, with the declared files named; (3) an honest no-change close still works through its verb; (4) the full sweep is green.",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
@@ -4803,14 +4805,16 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9b1437082330",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Attempt 1's work was confirmed in the project tree (git diff --stat HEAD shows _scoped_commit.py, commit-task-work.py, drive-phase.py, audit-task.py and their tests). Fix: audit-task.py _attempt_commits now takes `project` first and spells each path `git log --name-only` prints through hooks _config.git_to_plan(line, git_root, project), loaded with _loader.load_hooks_config(modname=\"audit__config\") as its neighbours do; the pathspecs it receives were already plan_to_git output. Both callers (_no_change_moves, _close_evidence_refusal) pass project. The no-change message now names a path in the plan's spelling, which in a nested project is the declared entry. Added case nn3 in test_audit_task.py (_nested_no_change_cases, real git init with the project at member/): _attempt_commits returns exactly ['src/a.py'] and not 'member/src/a.py' - equality, because nn1's substring test cannot tell the two spellings apart. nn3 was not run red by me; it has no falsifier of its own (one per tests.add entry). Runs, one at a time from plugins/audit, each exit 0: test__deps 250/250 (gb1 green), test_audit_task 1094/1094 (lo-ce4, lo-ce5, nn3 PASS), test_commit_task_work 130/130, test_drive_phase 391/391, test__refs 286/286. ruff check and vermin -t=3.8- on audit-task.py and test_audit_task.py exit 0.",
+        "descriptive": "audit-task.py's attempt log goes through the git path-base pair, so test__deps gb1 is green again, with a nested-project case locking the plan spelling."
       },
       "startedAt": "2026-10-19T20:36:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T21:11:22Z",
+      "verifiedBy": [
+        "nn3"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T21:03:34Z.e488e8",
@@ -4822,7 +4826,19 @@
           "at": "2026-10-19T20:19:36Z",
           "text": "files widened by PLUGIN-BUILD-GUIDE.md: owed by _deps.map_drift on run 2026-10-19T20:19:34Z.038d34"
         }
-      ]
+      ],
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "9b1437082330",
+        "at": "2026-10-19T21:11:22Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-19T20:52:26Z",
+        "basis": "`python3 plugins/audit/tests/test_commit_task_work.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 130 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ctw-ro1 (house FAIL), ctw-ro3 (house FAIL): SELFTEST FAILED: 128/130 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
     },
     {
       "id": "P130.47-ywo",
@@ -4909,6 +4925,64 @@
       "blockedBy": [],
       "dependsOn": [
         "P130.44-ywo"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.49-ywo",
+      "title": "A bound case id is graded only against the suite that holds it, and the commit refusals of P130.46 name the right verb and fail loudly",
+      "status": "pending",
+      "description": "F745. (a) `_filed_returns.case_binding_gaps` (plugins/audit/scripts/manifest/_filed_returns.py ~:460, message ~:483) checks every bound id against the labels printed by the one `--` command the submit ran, so ids bound to cases in other suites read 'which the suite did not print' although they exist and pass (P130.46-ywo: kr1, kr2 in test_drive_phase.py; lo-ce4, lo-ce5, nn3 in test_audit_task.py, while the command ran test_commit_task_work.py). Grade an id only against the suite its tests.add entry names; an entry whose suite the submit did not run is 'not checked' with that reason, never 'not printed'. (b1) commit-task-work.py ~:923 -> `_scoped_commit` advice ~:1162-1173 names `--no-change` and 'bring it into <tree> first'; when the attempt's work is already in an earlier commit since start, name `audit-task.py done <id> --commit <sha>` instead. (b2) audit-task.py `_attempt_commits` returns None when `git log` fails (~:6136-6139) and the caller (~:6309) refuses only on `[]`, so a failed git log falls through to the narrower question - refuse loudly naming the git failure (guard path, fail-loud). (b3) drive-phase.py `kept_tree_stop` (~:2773) gets a direct case; kr1 must not accept a None sha. Acceptance: (1) a submit whose command ran suite A, binding ids in suites A and B, grades A's ids and reports B's as not checked; (2) the earlier-commit case names done --commit; (3) a failing git log refuses; (4) kept_tree_stop has a case; (5) full sweep green.",
+      "files": [
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__filed_returns.py: an id bound to a case in a suite the submit did not run is reported not checked, while an id in the suite it ran is graded against that suite's labels",
+          "plugins/audit/tests/test_audit_task.py: done --commit refuses loudly when git log fails, naming the failure"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.45-ywo",
+        "P130.47-ywo",
+        "P130.48-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
