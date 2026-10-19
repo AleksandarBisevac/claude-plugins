@@ -2976,7 +2976,8 @@
       "P125.142-0h5",
       "P130.6",
       "P130.8",
-      "P130.9"
+      "P130.9",
+      "P130.33-ywo"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
