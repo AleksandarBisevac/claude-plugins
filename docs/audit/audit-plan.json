@@ -4361,7 +4361,8 @@
       "P130.13-ywo",
       "P130.16-ywo",
       "P130.18-ywo",
-      "P130.20-ywo"
+      "P130.20-ywo",
+      "P130.31-ywo"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -6439,7 +6440,8 @@
       "P130.16-ywo",
       "P130.18-ywo",
       "P130.20-ywo",
-      "P130.29-ywo"
+      "P130.29-ywo",
+      "P130.31-ywo"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -7210,7 +7212,8 @@
       "P130.3",
       "P130.8",
       "P130.9",
-      "P130.17-ywo"
+      "P130.17-ywo",
+      "P130.32-ywo"
     ],
     "tools/check-committed-pii.py": [
       "P51.4",
@@ -9951,7 +9954,8 @@
       "P130.9"
     ],
     "tools/ui-tests/gate-card-wait.test.mjs": [
-      "P130.17-ywo"
+      "P130.17-ywo",
+      "P130.32-ywo"
     ],
     "vitest.config.mjs": [
       "P130.4",
