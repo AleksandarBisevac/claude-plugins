@@ -2162,7 +2162,8 @@
       "P118.9",
       "P118.14-v7t",
       "P125.65-0h5",
-      "P125.82-0h5"
+      "P125.82-0h5",
+      "P130.45-ywo"
     ],
     "plugins/audit/commands/panel.md": [
       "P57.3",
@@ -3909,7 +3910,8 @@
       "P130.8",
       "P130.10-ywo",
       "P130.35-ywo",
-      "P130.40-ywo"
+      "P130.40-ywo",
+      "P130.45-ywo"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -7088,7 +7090,8 @@
       "P128.33-0h5",
       "P130.10-ywo",
       "P130.35-ywo",
-      "P130.40-ywo"
+      "P130.40-ywo",
+      "P130.45-ywo"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
@@ -9277,7 +9280,8 @@
       "P130.35-ywo",
       "P130.38-ywo",
       "P130.43-ywo",
-      "P130.44-ywo"
+      "P130.44-ywo",
+      "P130.45-ywo"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -10061,7 +10065,8 @@
     ],
     "tools/ui-tests/gate-card-wait.test.mjs": [
       "P130.17-ywo",
-      "P130.32-ywo"
+      "P130.32-ywo",
+      "P130.45-ywo"
     ],
     "vitest.config.mjs": [
       "P130.4",
@@ -10077,7 +10082,8 @@
     ],
     ".claude/skills/reproducing-ci-locally/SKILL.md": [
       "P130.22-ywo",
-      "P130.37-ywo"
+      "P130.37-ywo",
+      "P130.45-ywo"
     ],
     "tools/ui-tests/phase-order.test.mjs": [
       "P130.7"
