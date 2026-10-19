@@ -197,10 +197,10 @@ def _script(name):
 
 
 # A `sitecustomize` every child interpreter imports before its script runs: it
-# answers an argument-less `time.gmtime()` - the stamp a verb writes - with one
-# fixed second, and leaves every other clock reading alone. A child, because the
-# verbs the driver calls are processes of their own and an in-process patch
-# would never reach them.
+# answers an argument-less `time.gmtime()` - the stamp a verb writes, including
+# `_utc_stamp.utc_stamp` when it is given no epoch - with one fixed second, and
+# leaves every other clock reading alone. A child, because the verbs the driver
+# calls are processes of their own and an in-process patch would never reach them.
 _PINNED_GMTIME = (
     "import time as _time\n"
     "_real_gmtime = _time.gmtime\n"
@@ -211,8 +211,8 @@ _PINNED_GMTIME = (
 
 @contextlib.contextmanager
 def _pinned_clock(at):
-    """Every Python child started inside the block reads `time.gmtime()` as the
-    epoch second `at`."""
+    """Every Python child started inside the block stamps the epoch second `at`:
+    `time.gmtime()` and `_utc_stamp.utc_stamp()` both read it."""
     where = os.path.realpath(_harness.fixture_root("drive-clock-"))
     with open(os.path.join(where, "sitecustomize.py"), "w", encoding="utf-8") as fh:
         fh.write(_PINNED_GMTIME % (at,))
@@ -5884,11 +5884,33 @@ def _scope_change_cases(check):
           task.get("status") == "done" and "%s P1.1" % (M.CLOSED,) in text
           and "scope-changed" not in text)
 
-    # Both starts run under one pinned second, which is what a fast runner
-    # does by accident: left to the real clock the retry usually lands a
-    # second later and the case passes whatever the start's identity is.
-    root, mpath = _repo("scope-retry", task_ids=TASKS[:1], per_task="phase")
+    state = _scope_retry_run(M, "scope-retry", 0)
+    check("sc4 a retry whose new start falls in the same second as the start it "
+          "replaces dispatches the executor again and does not read the "
+          "previous start's return, marks or brief: %r" % (state["detail"],),
+          _scope_retry_ok(state))
+    # The first start is held 1.2 seconds before it runs, as a loaded
+    # runner holds it: the pinned second has to reach the stamp, not the real
+    # clock's guess at it, or the retry's start is no longer in the same second.
+    # The case is there for a pin that reaches nothing: it passes on the real
+    # clock whenever the run is quick and fails when the first call is slow.
+    slow = _scope_retry_run(M, "scope-retry-slow", 1.2)
+    check("sc4b sc4 holds its same-second precondition when the first in-process "
+          "drive call takes longer than a second: %r" % (slow["detail"],),
+          _scope_retry_ok(slow)
+          and slow["restarted"] == time.strftime(
+              "%Y-%m-%dT%H:%M:%SZ", time.gmtime(slow["pin"] + 1)))
+
+
+def _scope_retry_run(M, prefix, delay):
+    """One scope-changed retry, both starts under one pinned second, the first
+    drive call held `delay` seconds after the pin is read. Both starts run under
+    the pin, which is what a fast runner does by accident: left to the real
+    clock the retry usually lands a second later and a case about the retry's
+    identity passes whatever the start's identity is."""
+    root, mpath = _repo(prefix, task_ids=TASKS[:1], per_task="phase")
     pin = int(time.time())
+    time.sleep(delay)
     with _pinned_clock(pin):
         _code, first = _next(M, root, mpath)
     started = tasks_of(mpath).get("P1.1", {}).get("startedAt")
@@ -5905,19 +5927,29 @@ def _scope_change_cases(check):
     new_return = _filed_path(mpath, "P1.1")
     briefs = [_BRIEF.search(text) for text in (first, again)]
     briefs = [b.group(1) if b else None for b in briefs]
-    check("sc4 a retry whose new start falls in the same second as the start it "
-          "replaces dispatches the executor again and does not read the "
-          "previous start's return, marks or brief: %r"
-          % ((code, started, restarted, before, _attempts(mpath, "P1.1"),
-              old_return, new_return, briefs, again[:300]),),
-          started == time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(pin))
-          and instruction(again) == ("dispatch", "executor", "P1.1")
-          and _attempts(mpath, "P1.1") == before + 1
-          and _fr.return_start_key(restarted) != _fr.return_start_key(started)
-          and old_return is not None and os.path.isfile(old_return)
-          and new_return is not None and new_return != old_return
-          and not os.path.exists(new_return)
-          and None not in briefs and briefs[0] != briefs[1])
+    return {
+        "pin": pin, "started": started, "restarted": restarted, "code": code,
+        "again": again, "before": before, "after": _attempts(mpath, "P1.1"),
+        "old_return": old_return, "new_return": new_return, "briefs": briefs,
+        "detail": (code, started, restarted, before, _attempts(mpath, "P1.1"),
+                   old_return, new_return, briefs, again[:300])}
+
+
+def _scope_retry_ok(state):
+    """`_scope_retry_run`'s verdict: the first start took the pinned second and
+    the retry re-dispatched under a start of its own."""
+    started, restarted = state["started"], state["restarted"]
+    old_return, new_return = state["old_return"], state["new_return"]
+    briefs = state["briefs"]
+    return (started == time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                     time.gmtime(state["pin"]))
+            and instruction(state["again"]) == ("dispatch", "executor", "P1.1")
+            and state["after"] == state["before"] + 1
+            and _fr.return_start_key(restarted) != _fr.return_start_key(started)
+            and old_return is not None and os.path.isfile(old_return)
+            and new_return is not None and new_return != old_return
+            and not os.path.exists(new_return)
+            and None not in briefs and briefs[0] != briefs[1])
 
 
 # --- the signal: one line per step, the full text behind --explain ----------
@@ -7323,7 +7355,13 @@ def _ascii_locale_cases(check):
     held = dict((k, os.environ.get(k)) for k in ASCII_ENV)
     try:
         os.environ.update(ASCII_ENV)
-        res = _harness.run_stage(os.path.abspath(__file__), ASCII_BLOCK, out_dir)
+        # Under the block's own budget, which the sweep sets from the file's
+        # timeout, so the re-run is reported by its own label before this block
+        # is reported as not having finished at all.
+        res = _harness.run_stage(
+            os.path.abspath(__file__), ASCII_BLOCK, out_dir,
+            timeout=max(1, _harness.stage_timeout()
+                        - _harness.STAGE_TIMEOUT_MARGIN))
     finally:
         for k, v in held.items():
             if v is None:

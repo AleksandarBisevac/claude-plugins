@@ -50,6 +50,25 @@ def _cases(check):
           % (aware,),
           M.utc_stamp(instant) == aware == "2009-02-13T23:31:30Z")
 
+    seen = []
+    real_gmtime = time.gmtime
+
+    def spy(*args):
+        seen.append(args)
+        return real_gmtime(0)
+
+    time.gmtime = spy
+    try:
+        none_stamp = M.utc_stamp()
+        pinned_stamp = M.utc_stamp(1700000000)
+    finally:
+        time.gmtime = real_gmtime
+    check("us5 no epoch asks the clock with an argument-less time.gmtime(), the "
+          "seam a test pins a child's clock through, and an epoch is passed "
+          "through: %r" % (seen,),
+          seen == [(), (1700000000,)]
+          and none_stamp == pinned_stamp == "1970-01-01T00:00:00Z")
+
 
 def _selftest():
     return _harness.run(_cases)

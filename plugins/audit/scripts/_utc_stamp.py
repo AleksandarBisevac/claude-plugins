@@ -60,8 +60,10 @@ def utc_stamp(epoch=None):
     `epoch=0` is the instant 1970-01-01T00:00:00Z and not "now": the test is
     `is None`, because a falsy zero is a real moment.
     """
+    # Argument-less gmtime() when no epoch is given: that call is the seam a test
+    # pins a child's clock through, and `gmtime(time.time())` would route around it.
     return time.strftime(STAMP_FORMAT,
-                         time.gmtime(time.time() if epoch is None else epoch))
+                         time.gmtime() if epoch is None else time.gmtime(epoch))
 
 
 if __name__ == "__main__":

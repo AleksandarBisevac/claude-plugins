@@ -1,0 +1,25 @@
+{
+  "gates": {
+    "own-tests: python3 plugins/audit/tests/test_drive_phase.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__utc_stamp.py --selftest": "pass",
+    "ruff check on the three files": "pass",
+    "vermin -t=3.8- on _utc_stamp.py and tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T09:29:16Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage sc-block` in a throwaway tree at HEAD exited 1 with failing cases sc4 (house FAIL), sc4b (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 4/5 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 4/6 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Structural fix per the review. plugins/audit/scripts/_utc_stamp.py: utc_stamp calls argument-less time.gmtime() when epoch is None and time.gmtime(epoch) otherwise (epoch=0 still a moment), so the child sitecustomize that patches gmtime(None) reaches it again. plugins/audit/tests/test__utc_stamp.py: new case us5 patches time.gmtime in-process with a spy and asserts utc_stamp() calls it with no argument and utc_stamp(1700000000) passes the epoch; watched it FAIL before the fix (seen [(1792401906.22,), (1700000000,)], 4/5) and PASS after (5/5). plugins/audit/tests/test_drive_phase.py: the frame-inspecting time.time half of the pinned-clock sitecustomize is deleted (back to the HEAD gmtime-only _PINNED_GMTIME, comment and docstring updated); sc4, sc4b (delay 1.2, requires restarted == pin+1) and the al-block budget derived from _harness.stage_timeout() - STAGE_TIMEOUT_MARGIN are kept. Evidence: whole test_drive_phase.py alone ALL PASS 374/374 (exit 0, 2:30 wall); --stage sc-block 6/6 with sc4 and sc4b PASS; test__utc_stamp.py 5/5; ruff check clean on the three files; vermin reports no violations. Red proof for sc4b is the helper run in the submit (HEAD's _utc_stamp.py with time.gmtime(time.time()) plus my test files). Not run: the full tools/sweep-selftests.py and other gate commands (own-tests only); the six-parallel-copies load run was not repeated this attempt (done in attempt 1, 6/6 passed with sc4/sc4b PASS) - the fix is now structural so the pin no longer depends on frame inspection.",
+    "descriptive": "The pinned second reaches utc_stamp again because it asks argument-less gmtime(), so sc4 holds its same-second precondition under load without any frame-inspecting patch."
+  },
+  "testsAdded": [
+    "sc4b: plugins/audit/tests/test_drive_phase.py: sc4 holds its same-second precondition when the first in-process drive call takes longer than a second",
+    "us5: plugins/audit/tests/test__utc_stamp.py: no epoch asks the clock with an argument-less time.gmtime() (extra case, not a tests.add entry)",
+    "sc4 (retained, refactored to _scope_retry_run/_scope_retry_ok)"
+  ],
+  "claims": "claims:\n- utc_stamp behaviour is identical: epoch None reads the clock, epoch (including 0) is formatted as before; evidence: us1-us4 PASS and 5/5 in test__utc_stamp.py --selftest.\n- us5 can fail: it printed FAIL us5 with the pre-fix code (seen [(1792401906.22,), (1700000000,)]) before the edit.\n- sc4b depends on the fix: proved by the submit's red-first helper run in a throwaway tree at HEAD (see redFirst basis), not by editing the shared tree.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:e627c8c64964de2f6c644405ce7077fa9dac359beeb706c2921d9d7dc406c7fa\",\"dirtyDigest\":\"sha256:7684896af0b020e41c4fa1991b1075b72415e557f0b2756602664ef87509bf7b\",\"dirtyPaths\":{\"plugins/audit/scripts/_utc_stamp.py\":\"1e8118e9d8860379\",\"plugins/audit/tests/test__utc_stamp.py\":\"29d03093e8e05104\",\"plugins/audit/tests/test_drive_phase.py\":\"18a9cc16e4136945\"},\"head\":\"b116578a\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/_utc_stamp.py\",\"plugins/audit/tests/test__utc_stamp.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:50371784957d3386550eb7e4d9e80cc5a460ed710e3796b4b1cf9b5c834e476f\",\"v\":2}"
+}

@@ -2669,22 +2669,32 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-19T08:42:18Z",
+      "startedAt": "2026-10-19T09:24:40Z",
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-19T09:22:31Z.b01dc1",
+        "runId": "2026-10-19T09:42:55Z.ca766a",
         "status": "passed",
-        "at": "2026-10-19T09:22:31Z"
-      }
+        "at": "2026-10-19T09:42:55Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-19T09:42:56Z",
+          "text": "falsifier could-not-run for `plugins/audit/tests/test_drive_phase.py: sc4 holds its same-second precondition when the first in-process drive call takes longer than a second`: mutation at plugins/audit/tests/test_drive_phase.py (the mutation's `find` text is not in plugins/audit/tests/test_drive_phase.py - no mutant was applied)"
+        },
+        {
+          "at": "2026-10-19T09:43:08Z",
+          "text": "falsifier could-not-run for `plugins/audit/tests/test_drive_phase.py: sc4 holds its same-second precondition when the first in-process drive call takes longer than a second` accepted at the close: The falsifier stage is retired at HEAD by P130.6-ywo and runs only because the drive is the installed 3.4.0; the executor proved sc4b red with _utc_stamp.py reverted to HEAD in a scratch copy (5/6) and us5 red on the pre-fix code (4/5); the gate is green. (mutation at plugins/audit/tests/test_drive_phase.py; the mutation's `find` text is not in plugins/audit/tests/test_drive_phase.py - no mutant was applied)"
+        }
+      ]
     },
     {
       "id": "P130.27-ywo",
