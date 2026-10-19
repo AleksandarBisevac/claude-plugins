@@ -8,8 +8,8 @@ The half of this plugin that writes to a repository, driven against a REAL one.
     tools/check-git-pipeline.py --selftest  # this file's own cases
 
 WHY THIS EXISTS. Nothing in the gate set ever created a git repository. `verify.sh`
-and `ci.yml` between them ran the renderer, the validators, `--gate`, the usage views
-and four hooks through the launcher - all of it against a manifest, a transcript or a
+and the CI steps it replaced between them ran the renderer, the validators, `--gate`,
+the usage views and four hooks through the launcher - all of it against a manifest, a transcript or a
 synthetic project directory, and none of it against a codebase with history. The
 worked example under `examples/` is manifest data and rendered output: no source, no
 commits, nothing to fork.
@@ -26,8 +26,9 @@ for `.git` "instead of the manifest's own directory - which is what this did unt
 was run against a real repo". That bug was found by a human driving the pipeline by
 hand. This is that hand, in the gate set.
 
-IT IS ALSO WHERE THE REMAINING HOOKS ARE WIRED. `ci.yml` drove four hooks through
-`py-launch.sh` and said exactly why that is not optional - the selftests call
+IT IS ALSO WHERE THE REMAINING HOOKS ARE WIRED. The steps of verify.sh's `e2e` slice
+(`sh tools/verify.sh --list` prints them) drive four hooks through
+`py-launch.sh` and say exactly why that is not optional - the selftests call
 `decide()` directly and cannot prove the launcher, the stdin contract or the emitted
 JSON. The hooks left out were `journal-writes`, `meter-usage`, `guard-history-rewrite`,
 `guard-bash-writes` and `detect-plan-skip`, and the first two are the ones the
@@ -35,8 +36,8 @@ product's own adjectives rest on: "auditable" and "measurable". All five run her
 and three of them are here rather than beside the other four because their evidence
 IS a repository - a ledger author from `git config`, a dirty set from
 `git status --porcelain`, an ancestry question from `merge-base --is-ancestor`.
-`remind-tdd.py` is wired in `ci.yml` beside the other launcher steps rather than
-here, and belongs there because it needs NO repository: its evidence is its own
+`remind-tdd.py` is wired in the `e2e` slice (its "the TDD nudge, through the
+launcher" step) beside the other launcher steps rather than here, and belongs there because it needs NO repository: its evidence is its own
 state file, keyed by session id. Every hook `hooks.json` registers is therefore
 driven through the launcher by one side or the other, and none is a remainder.
 
@@ -223,7 +224,7 @@ def hook(fx, name, mode, payload):
 
     Not `python3 hooks/<name>`: the launcher, the stdin contract and the emitted
     JSON shape are precisely what a selftest calling `decide()` cannot prove, which
-    is what the four existing wiring steps in `ci.yml` say about themselves.
+    is what the launcher steps of verify.sh's `e2e` slice say about themselves.
     """
     return run([fx["sh"], LAUNCHER, name, mode], fx["root"], fx["env"],
                stdin=json.dumps(payload))

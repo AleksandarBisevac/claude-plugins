@@ -16,6 +16,10 @@ WHAT COUNTS AS VERIFIED - `decide()`, and each half of it is a refusal when it
 does not hold:
 
   * a run of THIS workflow file (`path`), on exactly this commit (`head_sha`);
+  * of a `workflow_dispatch` or a `push` event, because only those check out
+    `head_sha` itself - a `pull_request` run is listed under the PR head and
+    builds the merge commit, so its green is about other bytes (the jobs of a run
+    that fails this are not even read);
   * not the run asking (`--run-id`);
   * completed, with conclusion `success`;
   * its job list readable, holding at least one job that is not exempt;
@@ -47,6 +51,11 @@ import sys
 import tempfile
 
 GH_BIN = "gh"
+
+# The events whose run builds the commit it is listed under. A pull_request run
+# is listed under the PR head but checks out the merge commit, so it can be green
+# over bytes that never become the branch it is merged into.
+VOUCHING_EVENTS = ("workflow_dispatch", "push")
 
 USAGE = ("usage: ci-verified.py --repo OWNER/NAME --workflow FILE --sha SHA "
          "--run-id ID [--exempt-job NAME ...] [--output PATH] | --selftest\n")
@@ -92,6 +101,11 @@ def _is_exempt(name, exempt):
     return any(name == e or name.startswith(e + " (") for e in exempt)
 
 
+def _can_vouch(run):
+    """Whether the run's event is one whose checkout is `head_sha` itself."""
+    return run.get("event") in VOUCHING_EVENTS
+
+
 def _job_problem(jobs, exempt):
     """Why a readable job list does not prove its run, or None."""
     counted = [j for j in jobs if not _is_exempt(j.get("name") or "", exempt)]
@@ -132,6 +146,12 @@ def decide(sha, workflow, self_run, runs, jobs_of, exempt=()):
         if run.get("path") != path:
             why.append("run %s is of %s, not %s" % (rid, run.get("path"), path))
             continue
+        if not _can_vouch(run):
+            why.append("run %s is a %s run, and only %s runs check out this "
+                       "commit itself (a pull_request run's head_sha is the PR "
+                       "head while it builds the merge commit)"
+                       % (rid, run.get("event"), " or ".join(VOUCHING_EVENTS)))
+            continue
         if run.get("status") != "completed" or run.get("conclusion") != "success":
             why.append("run %s is %s/%s" % (rid, run.get("status"),
                                             run.get("conclusion")))
@@ -161,7 +181,8 @@ def ask_github(repo, workflow, sha, api=None):
         return None, {}
     jobs_of = {}
     for run in runs:
-        if run.get("head_sha") != sha or run.get("conclusion") != "success":
+        if (run.get("head_sha") != sha or run.get("conclusion") != "success"
+                or not _can_vouch(run)):
             continue
         got, why = ask(jobs_path(repo, run.get("id")))
         jobs = (got or {}).get("jobs") if why is None else None
@@ -239,9 +260,9 @@ _SELF = 900
 
 
 def _run(run_id, sha=_SHA, path=".github/workflows/ci.yml", status="completed",
-         conclusion="success"):
+         conclusion="success", event="workflow_dispatch"):
     return {"id": run_id, "head_sha": sha, "path": path, "status": status,
-            "conclusion": conclusion}
+            "conclusion": conclusion, "event": event}
 
 
 def _jobs(*pairs):
@@ -338,6 +359,26 @@ def _cases(check):
             return {"workflow_runs": runs if runs is not None else []}, None
         ask.seen = seen
         return ask
+
+    # An event other than the two that check out the commit itself is refused: a
+    # pull_request run's head_sha is the PR head while its checkout is the merge
+    # commit, so its green says nothing about the bytes of a fast-forwarded main.
+    # The jobs of a run that cannot be accepted are never asked for.
+    pr = _ask([_run(112, event="pull_request")], {112: _GREEN})
+    dispatch = _ask([_run(113, event="workflow_dispatch")], {113: _GREEN})
+    pushed = _ask([_run(114, event="push")], {114: _GREEN})
+    api = fake_api([_run(203, event="pull_request"), _run(204, event="push")],
+                   {203: _GREEN, 204: _GREEN})
+    ask_github("o/n", _WORKFLOW, _SHA, api)
+    check("cv18 a green pull_request run on the asking SHA and workflow path, every "
+          "job success, refuses and names its event in why; a green "
+          "workflow_dispatch run and a green push run on the same SHA still verify "
+          "(%r / %r / %r; jobs asked for: %r)" % (pr, dispatch, pushed, api.seen),
+          pr["verified"] is None
+          and any("pull_request" in why for why in pr["why"])
+          and dispatch["verified"] == 113 and pushed["verified"] == 114
+          and jobs_path("o/n", 203) not in api.seen
+          and jobs_path("o/n", 204) in api.seen)
 
     api = fake_api([_run(201)], {201: _GREEN})
     runs, jobs_of = ask_github("o/n", _WORKFLOW, _SHA, api)

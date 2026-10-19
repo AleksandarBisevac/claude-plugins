@@ -585,7 +585,13 @@ def failmode_table_drift(repo=None):
 VERIFY_LIST_TIMEOUT = 60
 _SLICE_LINE = re.compile(r"^  ([a-z0-9][a-z0-9-]*) \((per-run|release)\)$")
 _STEP_LINE = re.compile(r"^    (\S.*)$")
-_RELEASE_TIER_IF = re.compile(r"inputs\.tier\s*==\s*'release'")
+# The terms a job's `if:` may be made of and still be PROVED to run on every run: the
+# two the workflow puts on its jobs (not cancelled, and no earlier run verified the
+# commit) and, for the release-tier job, the tier input. They are compared as whole
+# terms of an `&&` chain with the spaces removed, so a condition that merely MENTIONS
+# one of them (`... || false`, a `github.event_name` test beside it) is not one.
+_GUARD_TERMS = frozenset(["!cancelled()", "needs.verified.outputs.run==''"])
+_RELEASE_TERM = "inputs.tier=='release'"
 _EXPR = re.compile(r"\$\{\{\s*(.*?)\s*\}\}")
 _MATRIX_WORD = re.compile(r"\$\{\{matrix\.([A-Za-z0-9_-]+)\}\}")
 _VERIFY_CALL = re.compile(r"(?:^|[\s;&|(])(?:\./)?tools/verify\.sh(?=\s|$)(.*)$",
@@ -820,11 +826,34 @@ def _resolve(word, cell):
     return _MATRIX_WORD.sub(lambda m: cell.get(m.group(1), m.group(0)), word)
 
 
+def _if_tier(condition):
+    """`(tier, why)` for a job's `if:` value - exactly one is None.
+
+    No condition, or one made only of the guard terms, is `per-run`; with the
+    release-tier term it is `release`. Any other term is a `why`, because a job
+    that may be skipped on an ordinary run (`false`, a push-only test) runs its
+    slices on no run the caller can name.
+    """
+    expr = condition.strip()
+    if expr.startswith("${{") and expr.endswith("}}"):
+        expr = expr[3:-2]
+    terms = [t for t in "".join(expr.split()).split("&&") if t]
+    other = [t for t in terms if t not in _GUARD_TERMS and t != _RELEASE_TERM]
+    if other:
+        return None, ("its condition %r cannot be proved to run on every run "
+                      "(unproved: %s), so its slices are not counted as run "
+                      "by an ordinary CI run" % (condition.strip(),
+                                                  ", ".join(other)))
+    return ("release" if _RELEASE_TERM in terms else "per-run"), None
+
+
 def job_slices(text):
     """{"jobs": [...], "problems": [...], "problem": str or None} for a workflow.
 
-    One entry per job: its id, its tier (`release` when its `if:` asks for
-    `inputs.tier == 'release'`, else `per-run`), and one run per verify.sh call
+    One entry per job: its id, its tier (`release` when its `if:` carries
+    `inputs.tier == 'release'`, `per-run` when it carries only the guard terms or
+    nothing, and `unproved` when a job that calls verify.sh has any other
+    condition - which is also a `problems` row), and one run per verify.sh call
     per matrix cell - the slices it names (None for a call with no `--only`,
     which runs every per-run slice), its `--shard` and the matrix keys that
     produced it. A value a cell cannot resolve is a `problems` row naming the
@@ -836,13 +865,14 @@ def job_slices(text):
                 "problem": "no top-level `jobs:` block, so no job could be read"}
     out, problems = [], []
     for job, lines in jobs:
-        tier = ("release" if _RELEASE_TIER_IF.search(_job_keys(lines).get("if", ""))
-                else "per-run")
         calls = [args for run in _job_runs(lines) for args in _verify_args(run)]
-        entry = {"job": job, "tier": tier, "runs": []}
+        tier, why = _if_tier(_job_keys(lines).get("if", ""))
+        entry = {"job": job, "tier": tier or "unproved", "runs": []}
         out.append(entry)
         if not calls:
-            continue
+            continue            # a guard job carries no slice, so no condition to prove
+        if why is not None:
+            problems.append((job, why))
         matrix = _matrix_cells(lines)
         if matrix["problem"] is not None:
             problems.append((job, matrix["problem"]))
@@ -898,7 +928,12 @@ def slice_drift(text, listed):
             continue
         findings.append((name, "a per-run slice no job outside the release tier "
                          "runs, so an ordinary CI run never runs it%s"
-                         % (" (only the release tier does)" if tiers else "")))
+                         % "".join(
+                             ["; only the release tier does"
+                              if "release" in tiers else "",
+                              "; a job whose condition cannot be proved runs it "
+                              "(see that job's own finding)"
+                              if "unproved" in tiers else ""])))
     return findings + [("%s (job)" % (job,), why) for job, why in got["problems"]]
 
 
@@ -1965,6 +2000,37 @@ def _slice_cases(check):
           and slice_drift(by_leg, _SLICE_LISTED) == []
           and shard_matrix_drift(by_leg) == []
           and alone["cells"] == [{"os": "a"}, {"os": "b"}, {"os": "c", "extra": "x"}])
+
+    # A job's `if:` is held to what it reduces to, not to whether it mentions the
+    # release tier: a condition that is false, or true on a push only, leaves its
+    # slices unrun on an ordinary run while the job still reads as per-run.
+    def with_if(cond):
+        text = _SLICE_CI.replace("  lint:\n    timeout-minutes: 5\n",
+                                 "  lint:\n    if: %s\n    timeout-minutes: 5\n"
+                                 % (cond,))
+        assert text != _SLICE_CI, "the lint job's header moved in the fixture"
+        return text
+
+    guard = "${{ !cancelled() && needs.verified.outputs.run == '' }}"
+    tiered_guard = ("${{ !cancelled() && needs.verified.outputs.run == '' && "
+                    "inputs.tier == 'release' }}")
+    release_job = _SLICE_CI.replace("${{ !cancelled() && inputs.tier == 'release' }}",
+                                    tiered_guard)
+    assert release_job != _SLICE_CI, "the resample job's condition moved"
+    never = slice_drift(with_if("${{ false }}"), _SLICE_LISTED)
+    push_only = slice_drift(with_if("${{ github.event_name == 'push' }}"),
+                            _SLICE_LISTED)
+    guarded = slice_drift(with_if(guard), _SLICE_LISTED)
+    released = slice_drift(release_job, _SLICE_LISTED)
+    check("sv12 a per-run job carrying `if: ${{ false }}` and one carrying a "
+          "push-only condition are each reported by slice_drift naming the job, "
+          "while the verified-run guard alone and with the release-tier term "
+          "report nothing (%r / %r / %r / %r)" % (never, push_only, guarded,
+                                                  released),
+          [(s, w) for s, w in never if s == "lint (job)"]
+          and all("cannot be proved" in w for s, w in never if s == "lint (job)")
+          and [s for s, _w in push_only if s.endswith("(job)")] == ["lint (job)"]
+          and guarded == [] and released == [])
 
     unread = slice_drift(_SLICE_CI, None)
     check("sv6 %s (a list that could not be read is a named problem, never an "

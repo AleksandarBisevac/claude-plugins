@@ -37,8 +37,10 @@ permissions:
   # tools/ci-verified.py lists this workflow's runs and their jobs.
   actions: read
 
-# A newer run on the same ref supersedes an older one everywhere but main, where a
-# run is the record of what landed and is never cancelled.
+# On any ref but main a newer run cancels an older one, running or queued. On main
+# (`cancel-in-progress` is false there) a RUNNING run is never cancelled, but the group
+# `ci-refs/heads/main` holds one running and one pending run, so a run still queued when
+# a newer push to main queues behind it is replaced and never runs.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}

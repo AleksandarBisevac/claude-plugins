@@ -25,6 +25,11 @@ sed -n '/jobs:/,$p' .github/workflows/ci.yml
 grep -rn "run:" .github/workflows/
 ```
 
+**In this repo** that read yields only `sh tools/verify.sh --only <slices>` calls: every
+CI job is setup plus one such call, and `tools/verify.sh` says what a slice runs.
+`sh tools/verify.sh --list` prints each slice, its tier and the steps it executes, which
+is the gate in this repo; `gate-parity.py` holds the workflow's slice names to that list.
+
 Copy out four things, verbatim:
 
 1. **The commands and their order.**

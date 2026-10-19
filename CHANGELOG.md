@@ -24,7 +24,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `tools/release.py ci <ref>` - runs the per-run tier; `tools/release.py`'s release dispatch
   passes `-f tier=release`, which adds a Windows re-sample job drawing the suites with an
   intermittent record at the counts verify.sh's `RESAMPLE` table gives them.
-- **A newer run on the same ref cancels an older one**, everywhere but `main`.
+- **A newer run on the same ref cancels an older one** on every ref but `main`. On `main` a
+  running run is never cancelled, but a run still queued is replaced when a newer push to
+  `main` queues behind it.
 - **The prose lints read the files git tracks.** `_output.prose_scan_set()` asks
   `git ls-files` first, so an agent's untracked scratch document is nobody's finding, and
   falls back to the `.gitignore` derivation where git cannot answer - an export with no

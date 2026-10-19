@@ -695,8 +695,8 @@ def _cases(check):
           sorted(_claim_cov["stale"]) == _written, _claim_cov["stale"])
 
     # Determinism, both halves. The lease must not draw from `rng`, and it must
-    # not move a byte of the default run - `docs/demo-large.html` (ci.yml's
-    # 40x5 scale demo) and the `docs/screenshots/panel-*` set are rendered from
+    # not move a byte of the default run - `docs/demo-large.html` (the 40x5
+    # scale demo that verify.sh's `manifests` slice renders) and the `docs/screenshots/panel-*` set are rendered from
     # that run and are committed.
     check("with_claim is deterministic: two runs are byte-identical",
           json.dumps(M.generate(n_phases=9, n_tasks=4, seed=11, with_claim=True),
@@ -766,7 +766,8 @@ def _cases(check):
           _reads == [])
     _cli_claim = _cli_claim_options(_gdm_src)
     check("no argv reaches the lease: every committed artifact goes through "
-          "main() (ci.yml's scale-demo step, tools/capture-screenshots.mjs), so "
+          "main() (the scale-demo step of verify.sh's `manifests` slice, "
+          "tools/capture-screenshots.mjs), so "
           "the absence of a flag is what keeps docs/ claim-free structurally "
           "rather than by habit: %r" % (_cli_claim,), _cli_claim == [])
     check("...and the scanner would see such a flag if one were added - it "

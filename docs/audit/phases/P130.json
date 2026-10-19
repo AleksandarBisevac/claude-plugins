@@ -197,9 +197,16 @@
         "file": "tools/ui-tests/gate-card-wait.test.mjs:77-106",
         "issue": "blank() is a hand-rolled tokenizer with no regex-literal and no nested-template (`${ '...' }`) handling. An unbalanced quote inside a future regex literal would desync it and blank the rest of the file, silently dropping every later wait from waitSites(); the real-file assertions would stay green because stale/broad only look at allow-listed finds and unlisted would be empty. Today's file has no such regex (grep over the file finds none), so this is latent.",
         "resolution": "Cross-check the scan: assert that the count of primitive-call matches in the blanked text equals the count from a plain regexp over the unblanked text minus those inside comments, or fail when blank() ends with a different line count/bracket balance than the source. One assertion makes a desync red rather than silent."
+      },
+      {
+        "id": "P130-R26",
+        "severity": "low",
+        "file": ".claude/skills/reproducing-ci-locally/SKILL.md:28-30",
+        "issue": "The added paragraph says the `sed -n '/jobs:/,$p'` / `grep run:` read 'yields only `sh tools/verify.sh --only <slices>` calls' and that 'every CI job is setup plus one such call'. The read also yields non-verify.sh run steps: .github/workflows/ci.yml:115 (the `verified` job's ci-verified.py call, a gh/python step with no verify.sh) and the pip install / setup run steps at :226, :246, :271, :293. The sentence is a claim about the workflow that the workflow does not bear out literally.",
+        "resolution": "Reword to 'the gate itself is in `sh tools/verify.sh --only <slices>` calls; the other run steps are setup and the verified-run guard', keeping the pointer to `sh tools/verify.sh --list`."
       }
     ],
-    "outcome": "[findings: 25 - 0 high, 4 med, 21 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 26 - 0 high, 4 med, 22 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
