@@ -109,12 +109,15 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   validation and change echo as Plan & models. There is **no form for it yet**; say so rather than
   sending someone looking for a tab that is not there. Edit `meta.areas` by hand, or let
   `/audit:init` write it.
-- **Help, over the API only (v0.31).** `GET /api/help?path=` answers any config or manifest field
-  with the description its **schema** gives it — extracted at request time, so the panel and the
-  file your editor validates cannot say different things — plus four concept pages (how the plan
-  gate grades, how an area resolves a reviewer, how a policy reaches a verdict, what the journal
-  proves) and the `audit:guide` agent's card. There is **no drawer for it yet**; say so rather
-  than sending someone clicking for an ⓘ that is not there. For a question the schema does not
+- **Help, in a drawer (v0.31).** The **Help** button in the page header opens the help drawer on
+  its index; the ⓘ beside a field opens it on that field. Hovering or focusing an ⓘ gives the
+  panel's own one-line microcopy, and pressing it opens the drawer, which adds the description the
+  **schema** gives the field — extracted at request time, so the panel and the file your editor
+  validates cannot say different things — with its type, enum and default. The drawer also holds
+  four concept pages (how the plan gate grades, how an area resolves a reviewer, how a policy
+  reaches a verdict, what the journal proves) and the `audit:guide` agent's card. Some ⓘ are a
+  tooltip only: a switch or a discovered capability the schemas do not document has no page
+  behind it. The same answers are on `GET /api/help?path=`. For a question the schema does not
   answer, ask for the `audit:guide` subagent by name — it reads the plugin's own docs and cites
   them, and it is read-only.
 - **Nothing is written without showing you what** — on both Settings and Plan & models. Save

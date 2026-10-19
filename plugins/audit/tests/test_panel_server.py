@@ -48,6 +48,7 @@ import fnmatch
 import io
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -1482,8 +1483,50 @@ def _example_gitignore_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _command_item(text, lead):
+    """The bullet of the command file that opens with `lead`, as one string, or
+    None when no bullet does. A bullet runs to the next bullet or a blank line."""
+    grabbed, inside = [], False
+    for line in text.splitlines():
+        if line.startswith(lead):
+            inside = True
+        elif inside and (line.startswith("- ") or not line.strip()):
+            break
+        if inside:
+            grabbed.append(line.strip())
+    return " ".join(grabbed) if grabbed else None
+
+
+def _help_item_cases(check):
+    """`commands/panel.md` is read by the model, so a sentence in it saying the
+    help drawer is absent makes the model tell users something false. The page the
+    panel ships is the reference: the item is judged against what that page holds,
+    not against a copy of its wording."""
+    path = os.path.join(M._output.PLUGIN_ROOT, "commands", "panel.md")
+    with open(path, encoding="utf-8") as fh:
+        item = _command_item(fh.read(), "- **Help")
+    html = M.UI_HTML
+    # The way in the page offers: the header button's visible label, and the hint
+    # glyph the field-level control carries.
+    button = re.search(r"id=helpbtn[^>]*>([^<]+)</button>", html)
+    label = button.group(1).strip() if button else None
+    drawer_shipped = ("openHelpIndex" in html and "openHelp(" in html
+                      and label is not None)
+    low = (item or "").lower()
+    check("while the assembled panel page carries the help drawer, the help item "
+          "in commands/panel.md does not say the drawer is absent and names the "
+          "control that opens it (item found %r, button label %r, page carries "
+          "drawer %r)" % (item is not None, label, drawer_shipped),
+          item is not None and drawer_shipped
+          and not re.search(r"no drawer|drawer[^.]*\byet\b|\bno\b[^.]*\bdrawer",
+                            low)
+          and "over the api only" not in low
+          and "ⓘ" in item and ("**%s**" % label) in item)
+
+
 def _selftest():
     def body(check):
+        _help_item_cases(check)
         _cases(check)
         _full_run_cache_cases(check)
         _root_token_guard_cases(check)

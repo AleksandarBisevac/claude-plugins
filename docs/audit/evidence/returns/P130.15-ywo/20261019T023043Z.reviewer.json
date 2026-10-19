@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: the 'Help, over the API only' item says 'There is **no drawer for it yet**'; rewrite it to describe the shipped drawer, retitle it, keep the audit:guide pointer, and check the other 'no ... yet' sentences. Diff (panel.md:112-122) retitles to 'Help, in a drawer (v0.31)', names the header **Help** button (panel.html:9 id=helpbtn, wired at help-drawer.js:379 to openHelpIndex) and the field-level button (hints.js:57 onclick openHelp(ref)), says ref-less hints are tooltip-only (matches hints.js ref-less branch), lists schema description/type/enum/default, the four concept pages (re-derived: _help.payload() topics are gate-tiers, areas, policy, journal; agent card present), keeps GET /api/help and the audit:guide pointer. The file's only remaining 'yet' sentences: panel.md:109 'no form for it yet' (Areas) is still true (no /api/areas reference under scripts/ui; write-confirmation.js:219 says meta.areas has no control) and panel.md:183 'nothing has run yet' is empty-state wording, not a feature-absence claim; the executor's return names both with verdicts, as acceptance (3) asks. The claim describes the diff: the test file adds import re, _command_item, _help_item_cases, called first in _selftest, as outcome says.",
+  "missing": [],
+  "redFirst": "proved",
+  "redFirstBasis": "Executor's redFirst is proved by the red-first helper: test_panel_server.py --selftest at HEAD in a throwaway tree exited 1, 103/104, the task's own case failing its assertion (item found True, button label 'Help', page carries drawer True), green with the working-tree implementation (104/104). That is a named command, non-zero exit, collected test and an assertion failing, so the word holds. A falsifier (heading reverted to 'over the API only') is also filed.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate's selftests entry runs the whole project sweep (python3 tools/sweep-selftests.py), so the bound is the whole suite and the question is not asked of it; the remaining entries (validate, plugin-validate, gate, report, lint, shots, interactive) are not test selections over the changed behaviour."
+ },
+ "verdict": "clean",
+ "tasks": []
+}
