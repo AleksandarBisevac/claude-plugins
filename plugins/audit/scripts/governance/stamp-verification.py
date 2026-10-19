@@ -393,7 +393,11 @@ def resolve_scope(args):
             return None, "cannot read/parse %s: %s" % (args.manifest, exc)
         if not isinstance(manifest, dict):
             return None, "manifest %s is not a JSON object" % (args.manifest,)
-        return task_files(manifest, args.task)
+        files, problem = task_files(manifest, args.task)
+        if problem is not None:
+            return None, problem
+        offset = project_offset(args.project, args.manifest)
+        return [_checkout_entry(offset, f) for f in files], None
     return list(args.files or []), None
 
 
@@ -465,14 +469,68 @@ def _own_checkout_rel(path):
     above it. A manifest outside the project - a wave task's tree, the plan in
     the phase tree - is named by where it sits in ITS repository, so the stamp
     (committed in a filed return) never carries the machine's absolute path."""
-    here = os.path.dirname(os.path.abspath(path))
+    top = _checkout_top_above(os.path.dirname(os.path.abspath(path)))
+    return None if top is None else _output.posix_rel(os.path.abspath(path), top)
+
+
+def _checkout_top_above(start):
+    """The nearest directory at or above `start` holding a `.git` entry - a
+    directory, or the file a linked worktree carries - or None."""
+    here = os.path.abspath(start)
     while True:
         if os.path.exists(os.path.join(here, ".git")):
-            return _output.posix_rel(os.path.abspath(path), here)
+            return here
         up = os.path.dirname(here)
         if up == here:
             return None
         here = up
+
+
+def project_offset(project, manifest):
+    """The place of `manifest`'s project under its checkout's top, spelled with
+    "/" - "" for a project that IS its checkout, for no manifest, for no
+    checkout above the manifest, and when `project` is not a checkout's top.
+
+    A task's `files` are PROJECT-relative, while a stamp digests, copies and
+    names CHECKOUT-relative paths, so `project` (the tree the stamp reads) is
+    asked first: handed the project directory itself, or a directory below the
+    top, its paths are already the project's and nothing is prefixed. The
+    manifest may sit in another checkout than `project` - a member's worktree is
+    a checkout of the same repository - which is why the offset is measured
+    where the manifest is and applied where the stamp reads."""
+    if not manifest or _checkout_top_above(project) != os.path.abspath(project):
+        return ""
+    path = os.path.abspath(manifest)
+    top = _checkout_top_above(os.path.dirname(path))
+    if top is None:
+        return ""
+    rel = _output.posix_rel(os.path.realpath(_output.project_of_manifest(path)),
+                            os.path.realpath(top))
+    return "" if rel == "." or rel == ".." or rel.startswith("../") else rel
+
+
+def _checkout_entry(offset, entry):
+    """`entry`, a project-relative declared path, as the checkout spells it."""
+    if not offset or not isinstance(entry, str) or os.path.isabs(entry):
+        return entry
+    return posixpath.join(offset, entry.replace("\\", "/"))
+
+
+def checkout_task(task, offset):
+    """`task` with its declared `files`, and the path part of each `tests.add`
+    entry, prefixed with `offset` - the one place a task's project-relative
+    entries become the checkout-relative form the stamp and the throwaway read.
+    The same task back when `offset` is empty, so a project that is its git
+    root is read exactly as before."""
+    if not offset:
+        return task
+    tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
+    adds = [a if not isinstance(a, str) else ":".join(
+        [_checkout_entry(offset, a.split(":", 1)[0])] + a.split(":", 1)[1:])
+        for a in tests.get("add") or []]
+    return dict(task,
+                files=[_checkout_entry(offset, f) for f in task.get("files") or []],
+                tests=dict(tests, add=adds))
 
 
 def stored_manifest(project, label, pathmod=os.path):
@@ -3376,6 +3434,7 @@ def _red_scope(args, cmd, deadline):
                               args.task)
     if problem is not None:
         return None, problem
+    task = checkout_task(task, project_offset(args.project, args.manifest))
     implementation, tests = split_scope(task)
     if not tests and not _declares_directory(task):
         return None, ("task %s declares no test file, so a throwaway at HEAD "

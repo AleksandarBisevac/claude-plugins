@@ -1,0 +1,52 @@
+{
+  "gates": {
+    "test_stamp_verification.py --selftest (whole file)": "pass",
+    "test_drive_phase.py --selftest (whole file)": "pass",
+    "test__output.py --selftest": "pass",
+    "test__deps.py --selftest": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- plugins/audit/{scripts,hooks,tests}": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T02:42:23Z",
+    "basis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest --stage sv-nested-files` in a throwaway tree at HEAD exited 1 with 3 of 4 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `sv-nested-files`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - in a project nested under its git root, take with --task (project-relative files) digests the file under the project directory, compare names it moved after an edit, and red finds the task's test file under the project; a project that is its git root stamps exactly as before (sv35 take digests app/src/mine.py, the project's file, and not the checkout top's src/mine.py: exit=0 scope=['src/mine.py'] got='sha256:6bc3bb7c9b2a2836abf5162f780c615ef4468deffc3b11e51f2dd7c184dff76b' want='sha256:1272f91758331e8efa0e24e2d9114da89a1ae1904d1830774e5dc20d81856e17' top='sha256:6bc3bb7c9b2a2836abf5162f780c615ef4468deffc3b11e51f2dd7c184dff76b') (house FAIL) and 2 more: SELFTEST FAILED: 1/4 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "stamp-verification.py: new project_offset(project, manifest) (the manifest's project place under its checkout top, '' for a project that is its git root / project not a checkout top / no manifest), _checkout_entry, checkout_task (prefix files and tests.add paths), _checkout_top_above (shared with _own_checkout_rel). resolve_scope (take --task) and _red_scope (red) both call them; compare untouched (reads the stamp's recorded scope). drive-phase.py: follow_red_gate runs recipes in member_project(ctx, tree) or ctx['project'] (was tree or ctx['gitRoot']); member_project docstring rewritten to say the stamp helper is handed the checkout top and prefixes the project offset itself. Tests: test_stamp_verification.py sv35-sv38 (stage sv-nested-files; nested take digest of app/src/mine.py, compare stale with scopeDigest moved and 'moved: app/src/mine.py', nested red atHead/copied under app/ and proved, flat --task == --files twin); test_drive_phase.py np1 (follow_red_gate cwd: member/app, project dir with no tree, tree top / ctx project for a flat project) and np2 (phase_gate --project-dir = nested project with no --tree; verify-invariants --project = nested project via red_gate_stop and run_signoff). (c) settled by np2: already right at HEAD, no code change; np2 passes before the fix by design (a pin). (d) grep 'tree or ctx[\"gitRoot\"]|falsif' in drive-phase.py: no falsify root survives; the 3 remaining 'tree or gitRoot' uses are compare/red/take --project (stamp helper, checkout top by design) and take_stamp's HEAD message. Kept ctx['gitRoot'] uses and why (drive-phase.py lines after edit): 1219/1232 member_project itself; 1389 stamp compare --project (stamp scope is checkout-relative, recorded in the stamp); 1449 ci_run git/gh cwd; 1550 git push; 1910/1912 worktreeRoot and tree naming (repo-level); 1966/1973 integration-state git-path; 2037/2099/2102 shot-follow tree: paths there come from integrate-task's git-diff paths (checkout-relative) so the checkout top is the base they are digested at - NOT changed, but integrate-task.py's undeclared_paths compares those checkout-relative paths against project-relative task files, which looks like the same two-bases defect for a nested project; I only read it, did not test it, and it is outside this task's files - worth its own fault; 2185 file-by-file byte compare of git-status (checkout-relative) paths between tree and git root; 2355-2455 carry refs / remotes (repo-level git); 2509 error text; 2917/2931 audit-lock --project (repo-level lock); 2985/3032 rev-parse HEAD / merge-base; 4526/4555/4570 stamp red/take --project (checkout top by design, the helper now offsets); 4617 rev-parse. Process note: my first drive-phase.py edit was a python heredoc (gate then refused the second heredoc write to stamp-verification.py as a writer's free-file spend); I redid those edits with the Edit tool; the gate's refusal was not worked around.",
+    "descriptive": "For a project nested under its git root, a task's project-relative files are now digested, compared and proved-red at the project's place in the checkout, and follower recipes run in the project directory."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_stamp_verification.py: sv35 sv36 sv37 sv38 (clause + detail)",
+    "plugins/audit/tests/test_drive_phase.py: np1 np2 (clause + detail)"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_stamp_verification.py: in a project nested under its git root, take with --task (project-relative files) digests the file under the project directory, compare names it moved after an edit, and red finds the task's test file under the project; a project that is its git root stamps exactly as before": {
+      "file": "plugins/audit/scripts/governance/stamp-verification.py",
+      "find": "    if not manifest or _checkout_top_above(project) != os.path.abspath(project):\n        return \"\"",
+      "replace": "    if True:\n        return \"\"",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "--selftest",
+        "--stage",
+        "sv-nested-files"
+      ]
+    },
+    "plugins/audit/tests/test_drive_phase.py: for a nested project, follow_red_gate runs a follower recipe in the project's directory inside the member tree (ctx project with no tree), and phase_gate and the invariants run are handed the nested project directory": {
+      "file": "plugins/audit/scripts/governance/drive-phase.py",
+      "find": "where = member_project(ctx, tree) or ctx[\"project\"]",
+      "replace": "where = tree or ctx[\"gitRoot\"]",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_drive_phase.py",
+        "--selftest",
+        "--stage",
+        "np-block"
+      ]
+    }
+  },
+  "claims": "claims:\n1 stamp-verification.py project_offset/checkout_task are what resolve_scope and _red_scope call (sv35 digest of app/src/mine.py, sv37 atHead app/src/mine.py); member_project docstring rewritten to say only what the code does (drive-phase.py:1216-1232)\n2 falsifiers applied in a scratch copy (pycache purged): offset forced to empty -> sv-nested-files 1/4 red; follow_red_gate back to tree-or-gitRoot -> np-block 1/2 red; restored (real tree untouched). allow twin: sv38 flat --task == --files stays green; np1 flat rows pin the top for a flat project\n3 grep 'tree or ctx[\"gitRoot\"]' and every ctx['gitRoot'] in drive-phase.py accounted in outcome.technical (kept, with reasons); integrate-task undeclared_paths left, not tested, flagged\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:fc0ad115af32baa5e1919ef2ef9d9659dd9f5c4758827dbcc1a0c4068f3ef4b4\",\"dirtyDigest\":\"sha256:a8d84a7668b3c32c1629fe620bee1ca699ed962c4ffa214804bbf2c1f1e6bc3e\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/drive-phase.py\":\"544ad73be19daf47\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"a9ecd77ec8082e55\",\"plugins/audit/tests/test_drive_phase.py\":\"68d2061430abe7e6\",\"plugins/audit/tests/test_stamp_verification.py\":\"11bff85ebc5acb47\"},\"head\":\"f1466861\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/tests/test_drive_phase.py\",\"plugins/audit/tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:9c56e79841e9c5f410c119ade4d49cbadac21a94453d0eda709c2ff3dc58752e\",\"v\":2}"
+}

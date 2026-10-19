@@ -1,0 +1,35 @@
+{
+  "gates": {
+    "own-test: python3 plugins/audit/tests/test_panel_server.py --selftest": "pass (104/104)",
+    "ruff check test_panel_server.py": "pass",
+    "vermin -t=3.8- on test_panel_server.py": "pass (min 3.7)",
+    "test__deps.py --selftest": "pass (244/244)"
+  },
+  "redFirst": {
+    "at": "2026-10-19T02:35:43Z",
+    "basis": "`python3 plugins/audit/tests/test_panel_server.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 104 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - while the assembled panel page carries the help drawer, the help item in commands/panel.md does not say the drawer is absent and names the control that opens it (item found True, button label 'Help', page carries drawer True) (house FAIL): SELFTEST FAILED: 103/104 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "commands/panel.md: the 'Help, over the API only (v0.31)' item is now 'Help, in a drawer (v0.31)': the header Help button (panel.html id=helpbtn, wired in help-drawer.js:379 to openHelpIndex) opens the index; the \u24d8 beside a field (hints.js: a real button with a ref calls openHelp(ref)) opens it on the field; ref-less \u24d8 are tooltip-only (hints.js comment); drawer shows schema description, type/enum/default, the concept pages (four topics: gate-tiers, areas, policy, journal, verified via _help.payload()), the audit:guide card; GET /api/help kept as the same answers; audit:guide pointer kept. test_panel_server.py: added import re, _command_item, _help_item_cases (first in _selftest body); the case judges the item against M.UI_HTML (drawer symbols and the helpbtn label derived from the page) and requires no 'no drawer'/'yet' absence phrasing, no 'over the API only', the \u24d8 glyph and the **Help** label. Verdicts on the file's remaining 'no ... yet' sentences: (a) Areas item line 109 'no form for it yet' STILL TRUE - grep of panel.html and ui/panel/*.js finds no /api/areas call or meta.areas control, and write-confirmation.js:219 says meta.areas has no control on the form; left unchanged. (b) line 180 'nothing has run yet' is the panel's own empty-state wording, not a claim about a missing feature; left. No other 'yet' in the file (grep -n yet panel.md).",
+    "descriptive": "The panel command file no longer tells the model the help drawer does not exist; it says what opens it, and a selftest case keeps it that way."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_panel_server.py: while the assembled panel page carries the help drawer, the help item in commands/panel.md does not say the drawer is absent and names the control that opens it"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_panel_server.py: while the assembled panel page carries the help drawer, the help item in commands/panel.md does not say the drawer is absent and names the control that opens it": {
+      "file": "plugins/audit/commands/panel.md",
+      "find": "- **Help, in a drawer (v0.31).**",
+      "replace": "- **Help, over the API only (v0.31).**",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_panel_server.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n1 panel.md help item: Help button = panel.html id=helpbtn + help-drawer.js:379 openHelpIndex; \u24d8 = hints.js hint() button onclick openHelp(ref); tooltip-only ref-less span = hints.js else-branch; four topics = _help.payload() topics list printed above\n2 case red on unedited panel.md (103/104, FAIL line), green after (104/104); falsifier (heading reverted to 'over the API only') supplied for the drive to run\n3 grep 'over the API only|no drawer|drawer for it' over plugins/audit examples README docs: hits = panel.md:106 Areas heading (API-only is still true, left), hints.js:61 comment about ref-less hint (true, left), evidence/plan rows (history)\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no new number written; 'four concept pages' kept from before and re-derived from _help.payload() (4 topic ids)",
+  "stamp": "audit-stamp: {\"content\":\"sha256:e0176da3b1a965017d907f622dc626b51f04c395109b1a43a55bd4667324d7dc\",\"dirtyDigest\":\"sha256:5b546649dde3f05bf01380deb84a36dc9e04149166bb049f5fe9296e14352e5a\",\"dirtyPaths\":{\"plugins/audit/commands/panel.md\":\"2de1829fab17322e\",\"plugins/audit/tests/test_panel_server.py\":\"17124e1cbcaaaa57\"},\"head\":\"f1466861\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/commands/panel.md\",\"plugins/audit/tests/test_panel_server.py\"],\"scopeDigest\":\"sha256:2c277f62171f8b8b9fdd3627d5e1c6aab57f5f2136e1e84bfde29637300cb461\",\"v\":2}"
+}

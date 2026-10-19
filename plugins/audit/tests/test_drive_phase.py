@@ -6621,6 +6621,100 @@ def _carry_local_cases(check):
           and "and pushed to origin" in text)
 
 
+NESTED_PROJECT_CLAUSE = ("for a nested project, follow_red_gate runs a follower "
+                         "recipe in the project's directory inside the member "
+                         "tree (ctx project with no tree), and phase_gate and "
+                         "the invariants run are handed the nested project "
+                         "directory")
+
+
+class _Reached(Exception):
+    """Raised by a stubbed verb once the call under test has been recorded."""
+
+
+def _nested_project_cases(check):
+    """A recipe is printed by a gate step, which runs in the project directory,
+    so its paths are project-relative: for a project under its git root it runs
+    in the project's directory inside the member tree, and the phase gate and the
+    invariants are handed the project directory, never the checkout's top."""
+    def clause(detail):
+        return "%s (%s)" % (NESTED_PROJECT_CLAUSE, detail)
+
+    M, why = _load("drive_phase_nested_project")
+    if M is None:
+        check(clause("np0 the driver loads: %r" % (why,)), False)
+        return
+    scratch = _harness.fixture_root("nested-project-")
+    try:
+        top = os.path.join(scratch, "top")
+        app = os.path.join(top, "app")
+        member = os.path.join(scratch, "member")
+        plan = os.path.join(scratch, "audit-plan.json")
+        with open(plan, "w", encoding="utf-8") as fh:
+            json.dump({"meta": {"version": 3}, "phases": []}, fh)
+        nested = {"project": app, "gitRoot": top, "manifest": plan, "did": [],
+                  "phase": PHASE, "config": {}}
+        flat = dict(nested, project=top)
+        task, phase = {"id": "P1.1", "attempts": 0}, {"id": PHASE}
+        ran = []
+        M.owed_followers = lambda ctx, text: ("run1", [
+            {"path": "docs/map.txt", "recipe": "regen map", "owner": "o"}])
+        M.widen_task = lambda *a, **kw: None
+        M.write_state = lambda *a, **kw: None
+        M.task_gate = lambda *a, **kw: (0, "", "")
+        M._evio = argparse.Namespace(run_recipe=lambda recipe, cwd: (ran.append(cwd) or (0, ())))
+
+        def where(ctx, tree):
+            del ran[:]
+            M.follow_red_gate(ctx, {}, phase, task, "", tree=tree)
+            return ran[0] if ran else None
+        got = [where(nested, member), where(nested, None), where(flat, member),
+               where(flat, None)]
+        want = [os.path.join(member, "app"), app, member, top]
+        check(clause("np1 the recipe runs in app/ inside the member tree for a "
+                     "nested project, in the project directory with no tree, and "
+                     "at the tree's top for a project that is its git root: "
+                     "got=%r want=%r" % (got, want)),
+              got == want)
+
+        seen = []
+
+        def verb(ctx, script, args, **kw):
+            seen.append((script, list(args)))
+            if script == "verify-invariants.py":
+                raise _Reached()
+            return 0, "", ""
+        M.run_verb = verb
+        M.phase_gate(nested, phase)
+        gate = [a for s, a in seen if s == "run-test-gate.py"]
+        del seen[:]
+        try:
+            M.red_gate_stop(nested, phase, "", "")
+        except _Reached:
+            pass
+        stop_inv = [a for s, a in seen if s == "verify-invariants.py"]
+        del seen[:]
+        M.git_head = lambda ctx: "head"
+        M.green_phase_gate = lambda ctx, state, phase, head: ([], None)
+        M.runtime_boot_root = lambda manifest, phase: (False, None)
+        try:
+            M.run_signoff(nested, {}, phase)
+        except _Reached:
+            pass
+        inv = [a for s, a in seen if s == "verify-invariants.py"]
+        check(clause("np2 phase_gate hands run-test-gate --project-dir the nested "
+                     "project directory with no --tree, and the sign-off's "
+                     "invariants run, red or green, gets it as --project: "
+                     "gate=%r invariants=%r red-gate invariants=%r"
+                     % (gate, inv, stop_inv)),
+              len(gate) == 1 and gate[0][gate[0].index("--project-dir") + 1] == app
+              and "--tree" not in gate[0]
+              and all(len(i) == 1 and i[0][i[0].index("--project") + 1] == app
+                      for i in (inv, stop_inv)))
+    finally:
+        _harness.remove_tree(scratch)
+
+
 STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("dr-block", "_refusal_cases"),
           ("dd-block", "_decide_cases"), ("ct-block", "_continue_cases"),
@@ -6682,6 +6776,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("cr-block", "_carry_cases"),
           ("cl-block", "_carry_local_cases"),
           ("sl-block", "_slice_cases"),
+          ("np-block", "_nested_project_cases"),
           ("sb-block", "_stage_cases"))
 
 

@@ -1222,8 +1222,11 @@ def member_project(ctx, tree):
     nested under its git root its top is not where the project's files, the
     gate's commands or the project-relative record paths are. Everything that
     reads a task's declared `files` or runs the gate's commands reads them from
-    here; the stamp helper is the other kind of caller, reading git-root-relative
-    paths, and is handed the checkout's top."""
+    here. The stamp helper is handed the checkout's top instead and finds the
+    project itself: it prefixes the project's offset under its git root (read
+    off the manifest it is given) onto the task's declared entries, so the
+    paths it digests, copies and names are checkout-relative while the plan's
+    stay project-relative."""
     if not tree:
         return tree
     rel = os.path.relpath(ctx["project"], ctx["gitRoot"])
@@ -1340,7 +1343,10 @@ def follow_red_gate(ctx, state, phase, task, text, tree=None):
                       % (", ".join(sorted(set(str(f.get("owner")) for f in owed))), run_id))
     if stop is not None:
         return stop, None
-    where = tree or ctx["gitRoot"]
+    # A recipe is printed by a gate step, which runs in the project directory,
+    # so its paths are project-relative: it runs where the project is, inside
+    # the member tree when the task has one.
+    where = member_project(ctx, tree) or ctx["project"]
     made = [f for f in owed if f.get("recipe") and not f.get("needsBrowser")]
     for follower in made:
         code, said = _evio.run_recipe(follower["recipe"], where)

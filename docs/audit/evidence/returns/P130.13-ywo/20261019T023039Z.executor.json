@@ -1,0 +1,49 @@
+{
+  "gates": {
+    "ub-block stage of test_audit_task.py (own tests)": "pass",
+    "ruff check (two edited .py)": "pass",
+    "vermin -t=3.8- (two edited .py)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T02:33:08Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage ub-block` in a throwaway tree at HEAD exited 1 with 1 of 6 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ub5 (house FAIL): SELFTEST FAILED: 5/6 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-task.py: _unblock_refusal now returns None for any blocked task (below the ceiling it is no longer refused); _locked_unblock resets attempts only when spent >= ceiling, always clears status/blockedReason of a blocked task, journals changes without an attempts entry when the count is kept, and the success line and --json 'attempts' report the kept or reset count. Comment block above cmd_unblock and the _unblock_refusal docstring describe both arms. commands/task.md (frontmatter description + unblock section) and README /audit:task row rewritten. test_audit_task.py: ub1 rewritten (the blocked-with-attempts-left arm moved out; a running task with attempts left joined the refusals), new ub5 (ALLOW: held with 0 attempts keeps notes/movedFrom, blocked with 1 attempt keeps its count, one task.unblock row per reason) and ub6 (at-ceiling reset still happens; pending, running-with-attempts-left, done, phase id refused with the plan bytes unchanged). Ran python3 plugins/audit/tests/test_audit_task.py --selftest --stage ub-block: red 5/6 before the fix (ub5 failed), 6/6 after. ruff and vermin clean on both py files. Not run: full sweep. Left out of scope (still describe the old refusal, outside this task's files): PLUGIN-BUILD-GUIDE.md ~5190-5194 and ~4435, plugins/audit/reference/manifest-conventions.md:466, plugins/audit/reference/verbs-in-full.md:65-66, scripts/governance/drive-phase.py comments at ~4134-4155 (its remedy text picks unblock only when attempts are spent, still correct). CHANGELOG.md:577-579 is history.",
+    "descriptive": "unblock can now release a task held or blocked with attempts left back to pending without running it, keeping its notes, lineage and count."
+  },
+  "testsAdded": [
+    "ub5 unblock of a task blocked with no attempts spent puts it back to pending with blockedReason removed, attempts, notes and movedFrom unchanged, and one task.unblock journal row carrying the reason; the same for a task blocked with attempts below the ceiling",
+    "ub6 unblock still resets the count of a blocked task at the ceiling, and still refuses a pending task, an in_progress task with attempts left, a done task and a phase id, writing nothing"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_audit_task.py: unblock of a task blocked with no attempts spent puts it back to pending with blockedReason removed, attempts, notes and movedFrom unchanged, and one task.unblock journal row carrying the reason; the same for a task blocked with attempts below the ceiling": {
+      "file": "plugins/audit/scripts/manifest/audit-task.py",
+      "find": "    if status == \"blocked\":\n        return None\n    attempts = _mio.recorded_attempt(node) or 0",
+      "replace": "    attempts = _mio.recorded_attempt(node) or 0",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_task.py",
+        "--selftest",
+        "--stage",
+        "ub-block"
+      ]
+    },
+    "plugins/audit/tests/test_audit_task.py: unblock still resets the count of a blocked task at the ceiling, and still refuses a pending task, an in_progress task with attempts left, a done task and a phase id, writing nothing": {
+      "file": "plugins/audit/scripts/manifest/audit-task.py",
+      "find": "    reset = spent >= _attempt_ceiling(node)",
+      "replace": "    reset = False",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_task.py",
+        "--selftest",
+        "--stage",
+        "ub-block"
+      ]
+    }
+  },
+  "claims": "claims:\n1 audit-task.py _unblock_refusal returns None for status blocked; _locked_unblock sets reset = spent >= ceiling and clears status/blockedReason independent of it; the comment above cmd_unblock and the docstring say exactly that\n2 ub5 red before the fix (5/6), green after (6/6); falsifiers: dropping the blocked early return turns ub5 red, reset = False turns ub6 red (run by the drive, not by me)\n3 git grep unblock outside my files: PLUGIN-BUILD-GUIDE.md, reference/manifest-conventions.md, reference/verbs-in-full.md, drive-phase.py comments still describe the old refusal - left because outside the task files, reported to the orchestrator\n4 n/a - no rule to an agent added\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:2215bd9e74787a97d8b94a925f076ec770e1d14837125ff23feb472f947ae1d0\",\"dirtyDigest\":\"sha256:b8410128c5038a1d66913be5c5260cca9049a15b31178cb2ac0ebb7519e283e3\",\"dirtyPaths\":{\"plugins/audit/README.md\":\"951513b3a32c03f3\",\"plugins/audit/commands/task.md\":\"b1af51e16fde3e03\",\"plugins/audit/scripts/manifest/audit-task.py\":\"572cfb37ac58563d\",\"plugins/audit/tests/test_audit_task.py\":\"e8584a0567e0886d\"},\"head\":\"f1466861\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/README.md\",\"plugins/audit/commands/task.md\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:1c6fa33ae310bdfd6eaf5b9c52e589deb91f805cdf9090b1a7195e19b2af0db0\",\"v\":2}"
+}

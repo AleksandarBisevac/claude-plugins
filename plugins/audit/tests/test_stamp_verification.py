@@ -338,6 +338,105 @@ def _nested_record_cases(check):
           and notes_text.count("moved: app/docs/audit/journal-notes.md") == 1)
 
 
+NESTED_FILES_CLAUSE = ("in a project nested under its git root, take with --task "
+                       "(project-relative files) digests the file under the "
+                       "project directory, compare names it moved after an edit, "
+                       "and red finds the task's test file under the project; a "
+                       "project that is its git root stamps exactly as before")
+
+
+def _nested_red_repo(prefix):
+    """A repository whose project sits under `app/` and whose working tree holds
+    a fix and its new test there, with the plan under the project and the task
+    declaring PROJECT-relative files. `(root, manifest path)`."""
+    root = _seeded_repo(prefix)
+    app = os.path.join(root, "app")
+    for where in (os.path.join(app, "src"), os.path.join(app, "tests"),
+                  os.path.join(app, ".claude"),
+                  os.path.join(app, "docs", "audit")):
+        os.makedirs(where)
+    _write(os.path.join(app, ".claude", "audit.config.json"),
+           json.dumps({"manifestPath": "docs/audit/audit-plan.json"}))
+    _write(os.path.join(app, "src", "mine.py"), "v = 1\n")
+    _write(os.path.join(app, "tests", "test_mine.py"),
+           _red_test("import mine", "mine.v >= 1", label="old1"))
+    _git(root, "add", "app")
+    _git(root, "commit", "-q", "-m", "nested seed")
+    _write(os.path.join(app, "src", "mine.py"), "v = 2\n")
+    _write(os.path.join(app, "tests", "test_mine.py"),
+           _red_test("import mine", "mine.v == 2"))
+    manifest = json.loads(json.dumps(MANIFEST))
+    task = manifest["phases"][0]["tasks"][0]
+    task["files"] = ["src/mine.py", "tests/test_mine.py"]
+    task["tests"] = {"mode": "tdd", "add": ["tests/test_mine.py: v is two"]}
+    man = os.path.join(app, "docs", "audit", "audit-plan.json")
+    _write(man, json.dumps(manifest))
+    return root, man
+
+
+def _nested_files_cases(check):
+    def clause(detail):
+        return "%s (%s)" % (NESTED_FILES_CLAUSE, detail)
+
+    root, man_path = _nested_repo("stamp-nested-files-")
+    app = os.path.join(root, "app")
+    code, text = _run(["take", "--project", root, "--manifest", man_path,
+                       "--task", "P1.1", "--json"])
+    try:
+        taken = json.loads(text)
+    except ValueError:
+        taken = {}
+    stamp = taken.get("stamp") or {}
+    want, _b = _tree_stamp.scope_digest(root, ["app/src/mine.py"])
+    wrong, _b = _tree_stamp.scope_digest(root, ["src/mine.py"])
+    check(clause("sv35 take digests app/src/mine.py, the project's file, and not "
+                 "the checkout top's src/mine.py: exit=%r scope=%r got=%r "
+                 "want=%r top=%r" % (code, stamp.get("scope"),
+                                     stamp.get("scopeDigest"), want, wrong)),
+          code == 0 and want != wrong and stamp.get("scope") == ["app/src/mine.py"]
+          and stamp.get("scopeDigest") == want)
+    line = taken.get("line") or ""
+    _write(os.path.join(app, "src", "mine.py"), "v = 8\n")
+    c_code, c_text = _run(["compare", "--project", root], stdin_text=line)
+    check(clause("sv36 after an edit to app/src/mine.py compare is stale, the "
+                 "scope digest itself moved, and that checkout-relative path is "
+                 "named once: exit=%r named=%r scopeMoved=%r"
+                 % (c_code, c_text.count("moved: app/src/mine.py"),
+                    "scopeDigest  moved" in c_text)),
+          c_code == M.E_STALE and c_text.count("moved: app/src/mine.py") == 1
+          and "scopeDigest  moved" in c_text)
+
+    py = sys.executable
+    red_root, red_man = _nested_red_repo("stamp-nested-red-")
+    r_code, got = _red(red_root, red_man, [py, "app/tests/test_mine.py"])
+    block = got.get("redFirst") or {}
+    check(clause("sv37 red finds the task's test file under app/ and runs it: "
+                 "exit=%r atHead=%r copied=%r block=%r note=%r"
+                 % (r_code, got.get("atHead"), got.get("copied"), block,
+                    got.get("note") or got.get("unparsed"))),
+          r_code == M.E_PROVED and block.get("status") == "proved"
+          and got.get("atHead") == ["app/src/mine.py"]
+          and got.get("copied") == ["app/tests/test_mine.py"])
+
+    # The mutation this twin is there for: a prefix applied everywhere. A project
+    # that IS its git root has no offset, so --task and --files must agree.
+    flat = _seeded_repo("stamp-flat-files-")
+    flat_man = os.path.join(flat, "audit-plan.json")
+    _write(flat_man, json.dumps(MANIFEST))
+    by_task = _run(["take", "--project", flat, "--manifest", flat_man,
+                    "--task", "P1.1", "--json"])[1]
+    by_files = _run(["take", "--project", flat, "--manifest", flat_man,
+                     "--files", "src/mine.py", "--json"])[1]
+    t_stamp, f_stamp = (json.loads(by_task).get("stamp") or {},
+                        json.loads(by_files).get("stamp") or {})
+    keep = ("scope", "scopeDigest", "head", "manifest")
+    check(clause("sv38 a project that is its git root stamps --task exactly as "
+                 "--files: %r vs %r" % (dict((k, t_stamp.get(k)) for k in keep),
+                                        dict((k, f_stamp.get(k)) for k in keep))),
+          t_stamp.get("scope") == ["src/mine.py"] and t_stamp.get("scopeDigest")
+          and all(t_stamp.get(k) == f_stamp.get(k) for k in keep))
+
+
 class _Stub(object):
     """A bag of attributes standing in for a module the drive reads."""
 
@@ -5494,6 +5593,7 @@ STAGES = (
     ("sv-recorder", "_recorder_cases"),
     ("sv-nested", "_nested_record_cases"),
     ("sv-nested-drive", "_nested_drive_cases"),
+    ("sv-nested-files", "_nested_files_cases"),
     ("sv-recorder-dirty", "_recorder_dirty_cases"),
     ("sr-red", "_red_cases"),
     ("sr-tally", "_tally_cases"),

@@ -1544,7 +1544,12 @@
       "startedAt": "2026-10-19T02:30:39Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T02:53:33Z.44bbc8",
+        "status": "failed",
+        "at": "2026-10-19T02:53:33Z"
+      }
     },
     {
       "id": "P130.14-ywo",
@@ -1574,7 +1579,33 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test_drive_phase.py: for a nested project, follow_red_gate runs a follower recipe in the project's directory inside the member tree (ctx project with no tree), and phase_gate and the invariants run are handed the nested project directory": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_drive_phase.py",
+              "--selftest",
+              "--stage",
+              "np-block"
+            ],
+            "file": "plugins/audit/scripts/governance/drive-phase.py",
+            "find": "where = member_project(ctx, tree) or ctx[\"project\"]",
+            "replace": "where = tree or ctx[\"gitRoot\"]"
+          },
+          "plugins/audit/tests/test_stamp_verification.py: in a project nested under its git root, take with --task (project-relative files) digests the file under the project directory, compare names it moved after an edit, and red finds the task's test file under the project; a project that is its git root stamps exactly as before": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_stamp_verification.py",
+              "--selftest",
+              "--stage",
+              "sv-nested-files"
+            ],
+            "file": "plugins/audit/scripts/governance/stamp-verification.py",
+            "find": "    if not manifest or _checkout_top_above(project) != os.path.abspath(project):\n        return \"\"",
+            "replace": "    if True:\n        return \"\""
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -1597,7 +1628,12 @@
       "startedAt": "2026-10-19T02:30:41Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T03:04:16Z.2711a5",
+        "status": "passed",
+        "at": "2026-10-19T03:04:16Z"
+      }
     },
     {
       "id": "P130.15-ywo",
