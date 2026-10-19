@@ -1209,11 +1209,12 @@
         "P130.33-ywo",
         "P130.34-ywo",
         "P130.35-ywo",
-        "P130.36-ywo",
         "P130.37-ywo",
         "P130.38-ywo",
         "P130.39-ywo",
-        "P130.40-ywo"
+        "P130.40-ywo",
+        "P130.41-ywo",
+        "P130.42-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -3062,7 +3063,7 @@
     {
       "id": "P130.30-ywo",
       "title": "Integration compares changed paths and declared files on one base for a project nested under its git root",
-      "status": "in_progress",
+      "status": "done",
       "description": "F735. integrate-task.py undeclared_paths(task files, paths) compares checkout-relative git paths with project-relative `files`; for a member project every declared path reads undeclared and a checkout-root file of the same name reads covered. Rebase onto one base (the existing project-relative helper) before the comparison at integrate-task.py:485, and at the other sites F735 lists: status/audit-lookup.py:992 (declared vs _phase_diff_paths) and governance/derive-phase-gate.py:267 with _gate_derive.py:703. Acceptance: a nested-project case per site red before and green after; the full sweep is green.",
       "files": [
         "plugins/audit/scripts/git/integrate-task.py",
@@ -3128,19 +3129,37 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "23ff1ddbaf74",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added _evidence_io.project_spelling(path, git_root, project): a checkout-relative git path spelled from the project (stripped of the project's offset; a path outside the project gets the ../ steps that reach it so it cannot collide with a project path; identity when the project is its git root). integrate-task.undeclared_paths(declared, paths, git_root=None, project=None) now compares each path as the project spells it, returning the original checkout-relative paths; integrate() passes git_root and project. audit-lookup._phase_diff_paths returns project spelling so the 'outside every task's declared files' list is on one base. derive-phase-gate._gather_facts runs `git diff --name-only --relative base...HEAD` so changedSince is project-relative; _gate_derive.py:703 needed no edit because it reads facts['changedSince'] which is now project-relative. Cases: test_integrate_task n1/n2 (_nested_world/_nested_cases), test_audit_lookup nl1/nl2 (_nested_scope_cases), test_derive_phase_gate n1 (_nested_changed_cases, a file outside the task's files; the plan gate allowed it). _evidence_io.py is also outside the task's files and was allowed as the free file. Noted, not fixed (out of F735's site list): audit-lookup's DOCS_AUDIT_EXCLUDE pathspec and the per-task 'git diff ... -- <files>' (lines near 939/960) are project-relative pathspecs run from gitRoot, so for a nested project they exclude/select the checkout-root docs/audit and files rather than the project's. A heredoc write to derive-phase-gate.py was refused by the plan gate (heredoc-to-interpreter rule); redone with the Edit tool, which was allowed. Full sweep not run by me (own-tests only).",
+        "descriptive": "For a project nested under its git root, integration, the phase brief's outside-declared list and the phase-gate changedSince now compare git's paths and the plan's declared files on one base."
       },
       "startedAt": "2026-10-19T10:40:04Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T11:43:35Z",
+      "verifiedBy": [
+        "n1 a project nested under its git root - a declared project-relative file is not reported undeclared, and an undeclared sibling is (plugins/audit/tests/test_integrate_task.py)",
+        "nl1 the phase-diff outside-declared list is computed on one base for a nested project (plugins/audit/tests/test_audit_lookup.py)",
+        "n2 a nested project's declared file alone integrates with no decision owed",
+        "nl2 a project that is its own git root lists the undeclared paths as git spells them",
+        "n1 changedSince for a nested project is spelled from the project (plugins/audit/tests/test_derive_phase_gate.py)"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T11:40:56Z.5e0c4c",
         "status": "passed",
         "at": "2026-10-19T11:40:56Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "23ff1ddbaf74",
+        "at": "2026-10-19T11:43:35Z",
+        "return": "docs/audit/evidence/returns/P130.30-ywo/20261019T104004Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-19T10:50:48Z",
+        "basis": "`sh -c python3 plugins/audit/tests/test_integrate_task.py --selftest && python3 plugins/audit/tests/test_audit_lookup.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases n1 (house FAIL), n2 (house FAIL), but with the working tree's implementation the task's tests do not all pass (SELFTEST FAILED: 6/17 cases passed), so the red is not one the fix turns green - SELFTEST FAILED: 30/32 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -3241,7 +3260,7 @@
     {
       "id": "P130.32-ywo",
       "title": "Every poll-dependent wait in capture-screenshots.mjs is proven to route through waitForPoll or sleepPollWindow",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F736 item 2 (P130.17-ywo review low). gate-card-wait.test.mjs:58-62 pins the wait function and greps the old 6500 literal only. Add a structural check over tools/capture-screenshots.mjs: every waitForFunction/waitForTimeout/setTimeout call site touching the poll is a call of waitForPoll/sleepPollWindow, or sits on an explicit allow-list carrying a reason per entry. Prove it red by adding a hand-written wait with another number in a scratch copy (not in the tree).",
       "files": [
         "tools/ui-tests/gate-card-wait.test.mjs",
@@ -3276,16 +3295,17 @@
       "dependsOn": [
         "P130.26-ywo"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T11:43:37Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.33-ywo",
@@ -3344,7 +3364,7 @@
     {
       "id": "P130.34-ywo",
       "title": "The Bash-write path and the Edit path of the plan gate read a task's coverage through one function",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F738. In a linked task worktree the Edit path (plugins/audit/hooks/require-plan.py around :783/:812) asks `_config.task_binding`, which reads the bound task's files from the phase tree's plan, while the Bash-write path (plugins/audit/hooks/guard-secrets-read.py around :2345/:2370) calls `in_progress_files` on the worktree's own copy of the phase shard, where the task is still `pending`. Every declared file then looks uncovered: the first heredoc write spends the one free file and the second is refused; conversely a sibling stale-in_progress in that copy passes the Bash path while Edit refuses it. Seen in four tasks of P130. Fix: one coverage reader in hooks/_config.py, task_binding first, that both paths call; delete the second reading. Change only which coverage function the Bash path calls - not how it reads the command. Acceptance: (1) a parity case: for the same bound worktree and path, the Edit verdict and the Bash-write verdict agree, for a declared file, an undeclared file, and a file declared only by a stale sibling - shown red before the change; (2) a second heredoc write to a declared file in a bound worktree is allowed; (3) the full sweep is green; (4) tools/bench-hooks.py --gate passes.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -3383,16 +3403,17 @@
         "P130.27-ywo",
         "P130.26-ywo"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T11:43:39Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.35-ywo",
@@ -3453,7 +3474,7 @@
     {
       "id": "P130.36-ywo",
       "title": "The gate-entry shape check refuses only the suite-list shape, never a chained command, a repeated tool path or two node ids of one file",
-      "status": "pending",
+      "status": "cancelled",
       "description": "Review of P130.18-ywo (filed at docs/audit/evidence/returns/P130.18-ywo/20261019T064404Z.reviewer.json, read it). `gate_entry_shape_problem` (plugins/audit/scripts/manifest/_manifest_phases.py around :1180-1219), which add, add --from-file, scope --gate/--gate-set refuse on and validate warns on, has false positives on a WRITE path: (1) it reads the whole entry as one command and never splits on `&&`, `||`, `;`, `|`, so `python3 a/test_x.py && python3 a/test_y.py` (a correct entry; the plan's own lint gate uses the same joiner) is refused with a false sentence; (2) 'names a path twice' applies to every path-shaped word, so `pytest a/test_x.py::t1 a/test_x.py::t2` and `python3 tools/r.py --in docs/p.json --out docs/p.json` are refused with no way round; (3) the validator warning skips done/cancelled tasks although the task's clause says a plan already holding the shape warns - decide by the clause: warn for every task, the plan's own finished tasks included, since a warning is free; (4) an interpreter option before the first path (`python3 -u a/test_x.py a/test_y.py`, `python3 -X dev ...`) hides the shape. Fix: evaluate each simple command of the entry separately (split on the shell list operators outside quotes - use shlex in punctuation mode, no regex); 'twice' counts only suite paths (the suite-path predicate the module already has), compared without a `::node` suffix only when no suffix differs; skip interpreter options (words starting with '-' and their argument for -X/-W/-m-style flags) before deciding 'run as a program'. Every refusal sentence must stay true. Acceptance: (1) each of the reviewer's four probes behaves as stated (chained entry accepted, node ids and in-place tool accepted, finished-task warning present, `python3 -u a b` shape caught); (2) the original F720/F721 shapes are still refused; (3) prove-gates' rows for this predicate stay green both directions; (4) the full sweep is green.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_phases.py",
@@ -3492,16 +3513,17 @@
         "P130.31-ywo",
         "P130.26-ywo"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: Cancelled to re-add behind P130.41-ywo: the code it fixes (P130.18-ywo's gate-entry shape check) was never committed - P130.18-ywo's close carried only plan files after a restart - so its executor found nothing to change and filed nothing."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-19T11:43:41Z",
+      "completedAt": "2026-10-19T11:46:05Z",
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.37-ywo",
@@ -3746,6 +3768,116 @@
         "P130.34-ywo",
         "P130.35-ywo",
         "P130.39-ywo"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.41-ywo",
+      "title": "P130.18-ywo's gate-entry shape check is in the branch: its work, recorded done, was never committed",
+      "status": "pending",
+      "description": "P130.18-ywo is recorded done at 45eb29ca, but that commit carries only plan and evidence files: after the task was restarted with start, the work already in its tree was snapshotted as pre-existing, so the close committed nothing of it. The work is saved as a patch: <outside-repo> (base b6252aae; it conflicts with later commits P130.20-ywo, P130.31-ywo and P130.28-ywo in audit-task.py, test__manifest_rules.py and test_audit_task.py - port it with a 3-way apply against that base, keeping every later change). The task is P130.18-ywo's own description, which follows: Faults F720 and F721. (a) `add --from-file` minted tasks of this phase with gate entries such as `python3 plugins/audit/tests/test__config.py plugins/audit/tests/test_commit_task_work.py`, which run the first suite with the second as its argument, and one entry naming the same suite twice. Read at HEAD, that derivation came from the installed 3.4.0 copy, whose `_task_gate_setup` read a sibling's shape before the recorded spelling; HEAD resolves through `_gate_derive.resolve_shape` (plugins/audit/scripts/manifest/audit-task.py:2698, spelling first) and, for the same tasks, gives `python3 tools/sweep-selftests.py <suites>`. What HEAD still lacks is the other half the fault asks: nothing checks a gate entry's shape where it is written, so a hand-written or sibling-derived entry of that shape is accepted by `add`, `add --from-file`, `scope --gate` and `scope --gate-set`, and the validator says nothing. Fix: one predicate, in the lowest module both audit-task.py and the validator reach (`_manifest_phases.py`, beside `gate_entry_paths` and `is_suite_path`; layer_violations() decides), reports an entry that is not a `meta.buildCommands` key whose first path-shaped word is itself a suite file and that names a further suite path, and an entry naming one path twice. The write verbs refuse such an entry, naming it and naming `meta.phaseGate.derived.spelling` when the plan records one; `_manifest_rules.py` reports it on an existing plan as a WARNING, never an error, because COMPATIBILITY.md promises validation stays additive. (b) `scope <id> --gate-set a b c docs/audit/audit-plan.json` writes the manifest path as a fourth gate entry, because `--gate-set` is declared with `nargs='*'` (audit-task.py:13854) and swallows the positional after it; passing the manifest first works. Fix: when the manifest positional is absent and the last `--gate-set` value names an existing file the manifest loader reads as a plan, that value is the manifest, not a gate entry - `retarget` shares the flag and the fix; and a gate entry naming an existing JSON manifest file is refused at write time in any position. The parser's comment beside `--gate-set` says both. Acceptance: (1) an `add --from-file` batch whose tasks each name several Python suites in tests.add and no gate, on a plan that records the spelling and holds siblings with `python3 tools/sweep-selftests.py ...` entries, gives each task one spelled entry naming all its suites; (2) `add`, `add --from-file`, `scope --gate` and `scope --gate-set` refuse `python3 a/test_x.py a/test_y.py` and an entry naming one suite twice, writing nothing; (3) validate-manifest reports such an entry already in a plan as a warning and exits as it did before; (4) `scope <id> --gate-set a b <manifest>` and `scope <manifest> <id> --gate-set a b` write the same gate, `[a, b]`; (5) a gate entry that is a manifest path is refused in either order.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/tests/test__manifest_rules.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__manifest_phases.py: the gate-entry shape predicate reports an entry whose first path word is a suite file followed by another suite path, and an entry naming one path twice, and reports nothing for a buildCommands key, a spelled sweep entry or a single-suite entry",
+          "plugins/audit/tests/test_audit_task.py: add, add --from-file, scope --gate and scope --gate-set refuse a malformed gate entry and write nothing; an add --from-file batch of several Python suites per task gets one spelled entry per task; scope --gate-set with the manifest positional last writes the same gate as with it first, and a manifest path as a gate entry is refused",
+          "plugins/audit/tests/test__manifest_rules.py: a plan already holding a malformed gate entry draws a warning naming the task and the entry, and no error"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.31-ywo",
+        "P130.28-ywo"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.42-ywo",
+      "title": "The gate-entry shape check refuses only the suite-list shape, never a chained command, a repeated tool path or two node ids of one file",
+      "status": "pending",
+      "description": "REPLACES P130.36-ywo, cancelled because the code it fixes was not in the branch (see land-gate-entry-shape). Review of P130.18-ywo (filed at docs/audit/evidence/returns/P130.18-ywo/20261019T064404Z.reviewer.json, read it). `gate_entry_shape_problem` (plugins/audit/scripts/manifest/_manifest_phases.py around :1180-1219), which add, add --from-file, scope --gate/--gate-set refuse on and validate warns on, has false positives on a WRITE path: (1) it reads the whole entry as one command and never splits on `&&`, `||`, `;`, `|`, so `python3 a/test_x.py && python3 a/test_y.py` (a correct entry; the plan's own lint gate uses the same joiner) is refused with a false sentence; (2) 'names a path twice' applies to every path-shaped word, so `pytest a/test_x.py::t1 a/test_x.py::t2` and `python3 tools/r.py --in docs/p.json --out docs/p.json` are refused with no way round; (3) the validator warning skips done/cancelled tasks although the task's clause says a plan already holding the shape warns - decide by the clause: warn for every task, the plan's own finished tasks included, since a warning is free; (4) an interpreter option before the first path (`python3 -u a/test_x.py a/test_y.py`, `python3 -X dev ...`) hides the shape. Fix: evaluate each simple command of the entry separately (split on the shell list operators outside quotes - use shlex in punctuation mode, no regex); 'twice' counts only suite paths (the suite-path predicate the module already has), compared without a `::node` suffix only when no suffix differs; skip interpreter options (words starting with '-' and their argument for -X/-W/-m-style flags) before deciding 'run as a program'. Every refusal sentence must stay true. Acceptance: (1) each of the reviewer's four probes behaves as stated (chained entry accepted, node ids and in-place tool accepted, finished-task warning present, `python3 -u a b` shape caught); (2) the original F720/F721 shapes are still refused; (3) prove-gates' rows for this predicate stay green both directions; (4) the full sweep is green.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "plugins/audit/tests/test__manifest_rules.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__manifest_phases.py: a chained entry of two single-suite commands, two node ids of one file, and a tool given one path as input and output draw no shape problem, while an interpreter option before a suite list still does",
+          "plugins/audit/tests/test__manifest_rules.py: a finished task holding a malformed gate entry draws the warning too"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.26-ywo",
+        "P130.29-ywo",
+        "P130.31-ywo",
+        "P130.41-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
