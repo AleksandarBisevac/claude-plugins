@@ -1,0 +1,36 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_drive_phase.py --selftest": "pass (396/396, exit 0)",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass (286/286, exit 0)",
+    "python3 plugins/audit/tests/test__output.py --selftest": "pass (259/259)",
+    "python3 plugins/audit/tests/test__deps.py --selftest": "pass (250/250)",
+    "ruff check drive-phase.py test_drive_phase.py": "pass",
+    "vermin -t=3.8- on both files": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T21:51:02Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage mt-block` in a throwaway tree at HEAD exited 1 with 3 of 5 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `mt-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - mt1 (house FAIL), mt2 (house FAIL), mt3 (house FAIL): SELFTEST FAILED: 2/5 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added _verb_with_text(ctx, script, args, flag, text) to plugins/audit/scripts/governance/drive-phase.py: sends `flag -` and the text on stdin (a blank text goes on argv as-is, since a verb refuses an empty stdin). Routed every built-string prose value through it: widen_task `note --text` (the F743 call; scope and note are now two separate calls), the CI-red bug-add `--description`, apply_answer `block --reason` and `done --no-change --reason`, close_task `done --intent-basis`, and the sign-off `--summary`. Left on argv on purpose: `--review-outcome` (a hex head prefix, and stdin carries one flag per call, signoff already uses it for --summary), `--accept-open ID=text` (not a PROSE_FLAGS flag, no shell-gap check), `bug-add` positional title (a positional cannot be `-`; it is a fixed template over branch/sha/run id). Tests in plugins/audit/tests/test_drive_phase.py: new stage `mt-block` (_machine_text_cases) with argv_prose_violations(source), an AST lint over List/Tuple/Call-positional neighbours (exempting calls to the helper), cases mt1 (widen_task with a basis holding two spaces and backticks writes the note verbatim; refused with exit 2 at HEAD, the F743 failure), mt2 (shipped driver has no violations and >=5 helper calls), mt3 (scratch copy with a reintroduced argv call in list, tuple and `+=` forms is reported once each), mt4 (allow direction: literal value, helper call and non-prose flag not reported). Red at HEAD: mt1, mt2, mt3 FAIL (2/5 passed) with the test file in place and drive-phase.py unmodified; green after: 5/5 in the mt-block stage, 396/396 for the whole file. OUTSIDE THE TASK'S FILES, NOT EDITED: plugins/audit/scripts/governance/full-gate.py:397-400 passes a built string (_described(...)) as `bug-add --description` in argv through _run_verb (:454, list-form subprocess with no stdin, so no shell touches it but the verb's shell-gap check still reads it); it needs the same stdin route. plugins/audit/scripts/governance/run-test-gate.py:4795 only prints an audit-task.py command for a human to run, not a call. No other script under plugins/audit/scripts shells out to audit-task.py with a prose flag (grep of audit-task.py / bug-add / note / block call forms). No falsifier supplied: the falsifier stage is retired at HEAD. The lint is also not exempt-able by name: the helper's flag and text are separate parameters, so its own call sites read as separate neighbours only when passed positionally and are spared by callee name.",
+    "descriptive": "The drive now sends every text it builds to a verb on stdin through one helper, and a lint fails if an argv call carrying a built string after a prose flag comes back."
+  },
+  "testsAdded": [
+    "mt1 a scope widening whose note text holds a run of spaces and a backtick is written verbatim, and no verb call in drive-phase.py passes a built string as an argv prose value",
+    "mt2",
+    "mt3",
+    "mt4"
+  ],
+  "casesAdded": [
+    [
+      "mt1",
+      "mt2",
+      "mt3",
+      "mt4"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:40639eff708ef82fb0d4eb0dfceb7d330bf61a73778b0c4626a55b39429ee248\",\"dirtyDigest\":\"sha256:b5ad397336a35cec29449587ebead65c1acab246c54d92b69fa83bc1e8047b78\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/drive-phase.py\":\"4a20609e937e9126\",\"plugins/audit/tests/test_drive_phase.py\":\"6ff78d6800e78a3b\"},\"head\":\"4efd5fbb\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:b62de0cfdd181bd7ecc2bc97495cb3a11d843cfc90a901d1b81265f43b460fb9\",\"v\":2}",
+  "testsAddGaps": []
+}

@@ -4703,7 +4703,7 @@
     {
       "id": "P130.45-ywo",
       "title": "The second batch of P130 review lows is fixed: the base reading fails open, its no-HEAD sentence is true, the poll-wait check reads every wait, and two descriptions match what runs",
-      "status": "in_progress",
+      "status": "done",
       "description": "F742 (a),(c),(d),(e). (a) plugins/audit/scripts/governance/run-test-gate.py around :650 `base_reading` catches only OSError/ValueError on an advisory path; any other error crashes the gate run - catch broadly there and report the reading as could-not-read with the error named (SECURITY.md fail-open table); drive-phase.py around :893-895 prints 'no base run recorded' when git names no HEAD - say that no HEAD was named. (c) tools/ui-tests/gate-card-wait.test.mjs: `pollDependent()` (around :143) sees only literal durations and RUNSTATUS names, so a computed duration escapes - treat any wait whose duration is not a numeric literal below the poll interval as poll-dependent unless it is a call of the two helpers or on the explicit allow-list; `blank()` (around :80) is a hand-rolled tokenizer with no regex-literal handling - an unbalanced quote inside a regex literal blanks the rest of the file; make it refuse loudly (throw naming the line) when it reaches end of file inside a string, so a desync cannot pass silently. (d) .claude/skills/reproducing-ci-locally/SKILL.md around :28-30 says the jobs read yields only verify.sh calls; .github/workflows/ci.yml has other run steps (e.g. a pip install around :226) - say setup steps plus one verify.sh call per job. (e) plugins/audit/commands/next.md:2 says '(phase order, then task-id order)'; since P130.35-ywo a ready task fixing a suite red at base goes first - say so in the same line (the file is under the measure-context ceiling). Acceptance: (1) an unexpected error inside base_reading yields a could-not-read reading and the gate's own verdict unchanged (case in test_run_test_gate.py); (2) a computed-duration wait added in a fixture is reported; (3) blank() on a fixture ending inside a string throws; (4) full sweep and vitest green; (5) tools/measure-context.py --gate passes.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -4748,19 +4748,34 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4efd5fbbf8c5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(a) run-test-gate.py base_reading now catches Exception on the ledger read and on the base_red comparison, returning verdict unreadable with the error type and text in the basis; drive-phase.py base_red_why says 'git named no HEAD for that run' when the reading carries a head key holding nothing (probed: head None gives that sentence, head set or key absent gives 'no base run recorded'; test_drive_phase 391/391). (c) gate-card-wait.test.mjs: durationOf() reads the duration of waitForTimeout, setTimeout and waitForFunction's timeout option; pollDependent treats any duration that is not a numeric literal (or a once-declared numeric const) below the poll interval as poll-dependent; blank() throws naming the line when a string is open at end of file. The stricter rule flagged two real waits (timeout: PANEL_BOOT_MS and TAB_WIRED_MS, constants of 20000/10000) not in the allow-list, so I added two reasoned entries to POLL_WAIT_ALLOWED in tools/capture-screenshots.mjs, which is outside this task's declared files (the edit tool did not refuse it). (d) SKILL.md now says setup steps plus one verify.sh call per job. (e) next.md line 2 adds 'a ready task fixing a suite red at base goes first'; measure-context --gate passes. Added bz6 to test_run_test_gate.py (557/557) and one vitest case (vitest 854 passed, sweep 340/340 files ok). No test added for the drive-phase NO-HEAD sentence: test_drive_phase.py is not in this task's files; probe only.",
+        "descriptive": "An unexpected error in the advisory base reading no longer crashes a gate run, the no-HEAD sentence is true, the poll-wait scan reads computed durations and refuses a desynced tokenizer, and two descriptions match what runs."
       },
       "startedAt": "2026-10-19T21:11:23Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T21:39:51Z",
+      "verifiedBy": [
+        "bz6 an unexpected error inside the base reading leaves the gate verdict unchanged and reports the base as could-not-read with the error named",
+        "a wait whose duration is computed is reported as poll-dependent, and a source ending inside a string makes the scanner throw"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T21:39:49Z.b6ede4",
         "status": "passed",
         "at": "2026-10-19T21:39:49Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "4efd5fbbf8c5",
+        "at": "2026-10-19T21:39:51Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-19T21:28:10Z",
+        "basis": "`python3 plugins/audit/tests/test_run_test_gate.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 557 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bz6 (house FAIL): SELFTEST FAILED: 556/557 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -4849,7 +4864,7 @@
     {
       "id": "P130.47-ywo",
       "title": "The drive hands machine-written text to a verb on stdin, so a verb's shell-damage check never judges text no shell touched",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F743. audit-task.py (around :1273) reads argv prose values for the marks a shell leaves (a run of spaces, whitespace before punctuation) and refuses them - right for a human-typed line, wrong for text a script built. The installed 3.4.0 drive deadlocked on this (a falsifier run's output passed as `note --text <argv>` was refused every call). HEAD has no falsifier stage, but drive-phase.py still passes machine text through argv: widen_task (around :1386) `note --text`, and any other `_verb_or_stop(..., '--text'|'--reason'|'--description', <built string>)` call - find them all (grep the drive and every script that shells out to audit-task.py). Fix: every such call passes the value as `-` and the text on stdin, through one helper in the drive (e.g. `_verb_with_text(ctx, verb_args, flag, text)`), so no call site can regress; add a lint case (in test_drive_phase.py, reading drive-phase.py's AST) that fails when a `_verb_or_stop` call carries a non-literal value after `--text`/`--reason`/`--description`. Acceptance: (1) a widen whose note text holds a run of spaces and a backtick succeeds and the note is written verbatim; (2) the lint case is red on a reintroduced argv call in a scratch copy; (3) full sweep green.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -4884,16 +4899,17 @@
         "P130.44-ywo",
         "P130.46-ywo"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T21:39:52Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.48-ywo",
@@ -4947,7 +4963,7 @@
       "id": "P130.49-ywo",
       "title": "A bound case id is graded only against the suite that holds it, and the commit refusals of P130.46 name the right verb and fail loudly",
       "status": "pending",
-      "description": "F745. (a) `_filed_returns.case_binding_gaps` (plugins/audit/scripts/manifest/_filed_returns.py ~:460, message ~:483) checks every bound id against the labels printed by the one `--` command the submit ran, so ids bound to cases in other suites read 'which the suite did not print' although they exist and pass (P130.46-ywo: kr1, kr2 in test_drive_phase.py; lo-ce4, lo-ce5, nn3 in test_audit_task.py, while the command ran test_commit_task_work.py). Grade an id only against the suite its tests.add entry names; an entry whose suite the submit did not run is 'not checked' with that reason, never 'not printed'. (b1) commit-task-work.py ~:923 -> `_scoped_commit` advice ~:1162-1173 names `--no-change` and 'bring it into <tree> first'; when the attempt's work is already in an earlier commit since start, name `audit-task.py done <id> --commit <sha>` instead. (b2) audit-task.py `_attempt_commits` returns None when `git log` fails (~:6136-6139) and the caller (~:6309) refuses only on `[]`, so a failed git log falls through to the narrower question - refuse loudly naming the git failure (guard path, fail-loud). (b3) drive-phase.py `kept_tree_stop` (~:2773) gets a direct case; kr1 must not accept a None sha. Acceptance: (1) a submit whose command ran suite A, binding ids in suites A and B, grades A's ids and reports B's as not checked; (2) the earlier-commit case names done --commit; (3) a failing git log refuses; (4) kept_tree_stop has a case; (5) full sweep green.",
+      "description": "F745. (a) `_filed_returns.case_binding_gaps` (plugins/audit/scripts/manifest/_filed_returns.py ~:460, message ~:483) checks every bound id against the labels printed by the one `--` command the submit ran, so ids bound to cases in other suites read 'which the suite did not print' although they exist and pass (P130.46-ywo: kr1, kr2 in test_drive_phase.py; lo-ce4, lo-ce5, nn3 in test_audit_task.py, while the command ran test_commit_task_work.py). Grade an id only against the suite its tests.add entry names; an entry whose suite the submit did not run is 'not checked' with that reason, never 'not printed'. (b1) commit-task-work.py ~:923 -> `_scoped_commit` advice ~:1162-1173 names `--no-change` and 'bring it into <tree> first'; when the attempt's work is already in an earlier commit since start, name `audit-task.py done <id> --commit <sha>` instead. (b2) audit-task.py `_attempt_commits` returns None when `git log` fails (~:6136-6139) and the caller (~:6309) refuses only on `[]`, so a failed git log falls through to the narrower question - refuse loudly naming the git failure (guard path, fail-loud). (b3) drive-phase.py `kept_tree_stop` (~:2773) gets a direct case; kr1 must not accept a None sha. (c) plugins/audit/scripts/governance/full-gate.py (~:397-400, via _run_verb ~:454) passes a built string (`_described(...)`) as `bug-add --description` on argv, which audit-task.py's shell-damage check judges - send it on stdin the way drive-phase.py `_verb_with_text` (P130.47-ywo) does. Acceptance: (1) a submit whose command ran suite A, binding ids in suites A and B, grades A's ids and reports B's as not checked; (2) the earlier-commit case names done --commit; (3) a failing git log refuses; (4) kept_tree_stop has a case; (5) full sweep green.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
         "plugins/audit/tests/test__filed_returns.py",
@@ -4957,7 +4973,9 @@
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/tests/test_drive_phase.py"
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/governance/full-gate.py",
+        "plugins/audit/tests/test_full_gate.py"
       ],
       "tests": {
         "mode": "tdd",
