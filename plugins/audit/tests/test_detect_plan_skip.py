@@ -245,6 +245,30 @@ def _cases(check):
     finally:
         _sh.rmtree(tmp_i, ignore_errors=True)
 
+    # (ts) the bypass file's `ts` is whatever _config.local_stamp() says.
+    # THE SENTINEL IS NOT A TIMESTAMP, so an inline strftime that happens to
+    # spell the same format cannot satisfy it: only a call through the helper
+    # puts these bytes in the file.
+    tmp_ts = Path(tempfile.mkdtemp(prefix="dps-stamp-"))
+    real_stamp = M._config.local_stamp
+    sentinel = "SENTINEL-LOCAL-STAMP"
+    try:
+        M._config.local_stamp = lambda: sentinel
+        M._arm_bypass(tmp_ts / "state", tmp_ts / "logs", "s-ts",
+                      "#no-plan", "#no-plan quick fix")
+        try:
+            ts_obj = json.loads((tmp_ts / "state" / "plan-bypass-s-ts.json")
+                                .read_text(encoding="utf-8"))
+        except Exception:
+            ts_obj = {}
+    finally:
+        M._config.local_stamp = real_stamp
+        _sh.rmtree(tmp_ts, ignore_errors=True)
+    check("arming the plan-first bypass writes a `ts` equal to the value "
+          "_config.local_stamp() returns (local_stamp patched to a sentinel), "
+          "red with the inline strftime restored",
+          ts_obj.get("ts") == sentinel, repr(ts_obj))
+
     # (r) which plugin copy is executing the hooks
     # DRIVEN AS A PROCESS, because the fact only exists in one. `CLAUDE_PLUGIN_ROOT`
     # is interpolated into hooks.json's command strings when a session starts and

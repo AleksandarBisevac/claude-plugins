@@ -119,9 +119,11 @@ def _arm_bypass(state_dir, logs_dir, session_id,
 
     Extracted from main() so the TTL contract is testable (v0.34 B4). The slot
     carries `armedAtEpoch` as EPOCH SECONDS -- require-plan compares clock to
-    clock, with no %z ISO parsing to get wrong -- and both the log line and the
-    message say the bypass expires unused after 30 minutes, because a fact that
-    changes what the keyword means belongs where the keyword is used.
+    clock, with no %z ISO parsing to get wrong -- while `ts`, the human-readable
+    stamp beside it, is `_config.local_stamp()`'s, never a second spelling -- and
+    both the log line and the message say the bypass expires unused after 30
+    minutes, because a fact that changes what the keyword means belongs where
+    the keyword is used.
 
     THE PROMPT'S WORDING NEVER REACHES A SURFACE ANYTHING PAINTS. The
     keyword is typed in the same sentence as whatever the person was actually
@@ -155,7 +157,7 @@ def _arm_bypass(state_dir, logs_dir, session_id,
     does not carry it either - it names the keyword, not the sentence. The
     distinction that decides this is not which directory a file sits in but
     whether anything paints it."""
-    ts = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime())
+    ts = _config.local_stamp()
     snippet = " ".join(prompt.split())[:120]
     minutes = _config.BYPASS_TTL_SECONDS // 60
     _config.ensure_local_dir(state_dir)

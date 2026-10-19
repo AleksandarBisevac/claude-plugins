@@ -2178,7 +2178,7 @@
     {
       "id": "P130.21-ywo",
       "title": "The retired falsifier schema properties say they are retired and read by nothing",
-      "status": "in_progress",
+      "status": "done",
       "description": "F726. plugins/audit/schema/audit-plan.schema.json (around $defs/falsifier, lines ~1860-1880): the property descriptions of the retired falsifier definition still describe the stage in the present tense, and `timeout` names drive-phase.py's FALSIFIER_TIMEOUT, which no longer exists. Reword each property description to say the field is retired and read by nothing, and remove the reference to the deleted constant; the schema still accepts the fields. Acceptance: (1) no description under $defs/falsifier names FALSIFIER_TIMEOUT or describes behaviour in the present tense; (2) a plan carrying tests.falsifiers still validates; (3) a case in test__manifest_rules.py reads the schema and fails on a falsifier property description that lacks the word retired.",
       "files": [
         "plugins/audit/schema/audit-plan.schema.json",
@@ -2225,19 +2225,33 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6f856734b1d9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/schema/audit-plan.schema.json: reworded the five $defs/falsifier property descriptions (file, find, replace, command, timeout) to say retired and read by nothing, past tense, and removed the FALSIFIER_TIMEOUT reference; no keyword changed so tests.falsifiers still validates (fz1 green, validate-manifest OK). plugins/audit/tests/test__manifest_rules.py: added case fz4 in _cases_falsifier (reads $defs/falsifier.properties, requires the word retired in each via regex, none naming FALSIFIER_TIMEOUT, and a non-empty property set so it cannot pass vacuously) and `import re`. Left: test_drive_phase.py:7174 still names FALSIFIER_TIMEOUT in a retired-names list (a test asserting absence, not the schema; not in this task's files). claims: 1 schema lines under $defs/falsifier.properties are the reworded text, each states retirement only; 2 fz4 red on pre-edit schema, green after; falsifier below; 3 grep FALSIFIER_TIMEOUT over plugins tools .claude: 2 hits before, schema (fixed) and test_drive_phase.py:7174 (left, absence list); 4 n/a; 5 n/a; 6 n/a; 7 n/a",
+        "descriptive": "The retired falsifier schema properties now say they are retired and read by nothing, and a selftest case holds that."
       },
       "startedAt": "2026-10-19T05:59:13Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T07:06:33Z",
+      "verifiedBy": [
+        "fz4 every property description under the schema's $defs/falsifier says retired and none names FALSIFIER_TIMEOUT"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T07:06:28Z.1aea22",
         "status": "passed",
         "at": "2026-10-19T07:06:28Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "6f856734b1d9",
+        "at": "2026-10-19T07:06:33Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-19T06:00:40Z",
+        "basis": "`python3 plugins/audit/tests/test__manifest_rules.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 169 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fz4 (house FAIL): SELFTEST FAILED: 168/169 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2443,7 +2457,19 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test_detect_plan_skip.py: arming the plan-first bypass writes a `ts` equal to the value _config.local_stamp() returns (local_stamp patched to a sentinel), red with the inline strftime restored": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_detect_plan_skip.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/hooks/detect-plan-skip.py",
+            "find": "    ts = _config.local_stamp()\n",
+            "replace": "    ts = time.strftime(\"%Y-%m-%dT%H:%M:%S%z\", time.localtime())\n"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -2468,9 +2494,9 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-19T06:43:33Z.7d1718",
-        "status": "failed",
-        "at": "2026-10-19T06:43:33Z"
+        "runId": "2026-10-19T07:21:16Z.dba9bd",
+        "status": "passed",
+        "at": "2026-10-19T07:21:16Z"
       }
     },
     {

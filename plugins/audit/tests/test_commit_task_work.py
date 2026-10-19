@@ -782,7 +782,7 @@ def _records_cases(check, repos):
               {"meta": {"commit": {}}})))
 
     # --- the refusal builder, both directions -------------------------------
-    check("ctw29SECOND-DIRECTION CASE: with nothing foreign there is NO "
+    check("ctw29 SECOND-DIRECTION CASE: with nothing foreign there is NO "
           "refusal, so the caller's branch reads as a question rather than "
           "as a string test - a builder that always returned a sentence "
           "would refuse every run and pass every refusal case above",
