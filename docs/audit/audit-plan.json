@@ -4124,7 +4124,8 @@
       "P130.18-ywo",
       "P130.36-ywo",
       "P130.41-ywo",
-      "P130.42-ywo"
+      "P130.42-ywo",
+      "P130.39-ywo"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -5775,7 +5776,8 @@
       "P130.18-ywo",
       "P130.36-ywo",
       "P130.41-ywo",
-      "P130.42-ywo"
+      "P130.42-ywo",
+      "P130.39-ywo"
     ],
     "plugins/audit/tests/test__manifest_rules.py": [
       "P18.2",
