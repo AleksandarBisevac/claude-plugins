@@ -96,6 +96,9 @@ Usage:
   audit-task.py bug-close <bugId> [manifest] --status wontfix|not_a_bug|fixed
                 --reason TEXT|- [--commit <sha>]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py build-command <key> (--command "<cmd>" [--replace] | --remove)
+                [manifest] [--reason TEXT|-]
+                [--project-dir DIR] [--takeover] [--json]
   audit-task.py reindex [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py mute --test <path> --reason TEXT|- --owner NAME
@@ -13335,6 +13338,165 @@ def _locked_record_listing(args, project, config, mpath, out):
     return 0
 
 
+# --- build-command: one meta.buildCommands key, set on a plan that exists -------
+# THE FIELD'S ONLY WRITERS WERE `add-phase`'s DRAFT AND THE PANEL'S SAVE, and the
+# panel needs a browser session. A fix task that had to add one key stopped there,
+# so the key is written here, through the same lock, `_write_plan` and validator
+# every other verb on this plan uses.
+#
+# THE COMMAND IS JUDGED BY THE PANEL'S OWN READING, `executed_value_refusal`, under
+# the field name the panel files it under, so both doors give one sentence. It is
+# written byte for byte: a gate entry resolves through this value as it stands.
+#
+# AN EXISTING KEY IS NOT OVERWRITTEN BY ACCIDENT, and a `--replace` of a key that
+# is not there is refused as well: it would add a key the caller believed they
+# were correcting, which is a typo made silently permanent.
+#
+# `--remove` IS REFUSED WHILE A GATE ENTRY NAMES THE KEY. A gate entry that names
+# no build command is run as a literal shell command (`_evidence_io.
+# resolved_commands`), so dropping a key a gate still names does not fail - it
+# changes what the gate runs.
+#
+# THE COMMAND TEXT IS IN THE ROW AS `from`/`to`, the fields `_journal_io` allows
+# for a plan value that moved; `command` stays off its allow-list, and the row
+# carries the key's dotted path in `field`.
+BUILD_COMMAND_FIELD = "meta.buildCommands"
+
+
+def cmd_build_command(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    key = args.title or ""
+    if not key.strip() or key != key.strip() or len(key.split()) != 1:
+        out("[audit-task] build-command needs the key as one word, e.g. "
+            "`build-command vitest --command \"npx vitest run\"` -- a "
+            "gate entry names a key exactly, and one with whitespace in it "
+            "would be run as a command instead")
+        return E_USAGE
+    machine = _journal_io.check_free_text(project, "the build-command key", key)
+    if machine:
+        out("[audit-task] " + machine)
+        return E_USAGE
+    command = args.build_command
+    if args.remove and (command is not None or args.replace):
+        out("[audit-task] build-command --remove drops the key and takes no "
+            "--command or --replace -- two answers to one question, and "
+            "guessing which was meant is how a command gets lost; nothing "
+            "written")
+        return E_USAGE
+    if not args.remove:
+        if command is None or not command.strip():
+            out("[audit-task] build-command needs --command \"<cmd>\" (or "
+                "--remove to drop the key) -- a key with no command runs "
+                "nothing; nothing written")
+            return E_USAGE
+        machine = _machine_paths.executed_value_refusal(
+            project, BUILD_COMMAND_FIELD, command)
+        if machine:
+            out("[audit-task] " + machine)
+            return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_build_command(
+                           args, project, config, mpath, key, out))
+
+
+def _gate_holders(assembled, key):
+    """The gate entries that name `key`, as `P2 (testGate)` / `P2.3
+    (tests.gate)`, in plan order: every phase and every task, whatever its
+    status, since a finished task's gate is re-read against the plan too."""
+    held = []
+    for phase in assembled.get("phases") or []:
+        if not isinstance(phase, dict):
+            continue
+        if key in (phase.get("testGate") or []):
+            held.append("%s (testGate)" % (phase.get("id"),))
+        for task in phase.get("tasks") or []:
+            tests = task.get("tests") if isinstance(task, dict) else None
+            gate = tests.get("gate") if isinstance(tests, dict) else None
+            if isinstance(gate, list) and key in gate:
+                held.append("%s (tests.gate)" % (task.get("id"),))
+    return held
+
+
+def _build_command_refusal(args, build, key, assembled):
+    """Why the verb may not touch `key`, or None. Every arm names the state it
+    found, so the caller can correct the call rather than guess."""
+    if args.remove:
+        if key not in build:
+            return ("build-command: %r is not a key of meta.buildCommands (%s) "
+                    "-- nothing to remove" % (key, ", ".join(sorted(build))
+                                              or "it holds none"))
+        held = _gate_holders(assembled, key)
+        if held:
+            return ("build-command: %r is named by %s -- a gate entry that "
+                    "names no key runs as a literal shell command, so dropping "
+                    "it would change what that gate runs. Re-point or drop the "
+                    "entry first (`scope --gate-drop`, `retarget --gate-drop`)"
+                    % (key, ", ".join(held)))
+        return None
+    if key in build and not args.replace:
+        return ("build-command: %r already runs %r -- pass --replace to "
+                "overwrite it; nothing written" % (key, build[key]))
+    if key not in build and args.replace:
+        return ("build-command: --replace names %r, which meta.buildCommands "
+                "does not hold (%s) -- drop --replace to add it, or check the "
+                "key's spelling; nothing written"
+                % (key, ", ".join(sorted(build)) or "it holds none"))
+    return None
+
+
+def _locked_build_command(args, project, config, mpath, key, out):
+    """Add, replace or remove `key` in `meta.buildCommands`, under lock."""
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    meta = dict(assembled.get("meta") or {})
+    build = dict(meta["buildCommands"]) if isinstance(
+        meta.get("buildCommands"), dict) else {}
+    refusal = _build_command_refusal(args, build, key, assembled)
+    if refusal:
+        out("[audit-task] " + refusal)
+        return E_USAGE
+    was = build.get(key)
+    now = None if args.remove else args.build_command
+    if args.remove:
+        del build[key]
+        verb = "removed"
+    else:
+        build[key] = now
+        verb = "replaced" if was is not None else "added"
+    meta["buildCommands"] = build
+    assembled["meta"] = meta
+
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [],
+                        "the build command", out, index_fields=("meta",))
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    field = "%s.%s" % (BUILD_COMMAND_FIELD, key)
+    reason = (args.reason or "").strip()
+    summary = "%s %s%s" % (field, verb, ": " + reason if reason else "")
+    details = {"field": field, "from": was, "to": now}
+    if reason:
+        details["reason"] = reason
+    jres = _journal_row(project, config, mpath, "buildcommand.change", summary,
+                        details)
+    index_note = _index_dirty_note(written, mpath, project, None)
+    if args.as_json:
+        result = {"ok": True, "key": key, "change": verb, "from": was,
+                  "to": now, "written": written}
+        out(_json_tail(result, args, jres, warnings, written_manifest,
+                       index_note))
+        return 0
+    out("[audit-task] %s" % (summary,))
+    _report_tail(out, jres, "buildcommand.change", warnings, written_manifest,
+                 written, index_note)
+    return 0
+
+
 # --- next-id: the id a hand-written record takes ---------------------------------
 # A bug, a parked proposal and a bug's fix task are the records the model still
 # writes by hand (`commands/bug.md`, `init.md`), so they were also the ids the model
@@ -13749,6 +13911,10 @@ VERB_FLAGS = {
     # pair is trusted on - all four required, one flag per field.
     "record-listing": ("listing_all", "listing_related", "spelling",
                        "verified_on"),
+    # `build-command` sets, replaces or drops ONE `meta.buildCommands` key. The
+    # command's dest is `build_command` and not `command`, which the parser
+    # already holds for the verb word itself.
+    "build-command": ("build_command", "replace", "remove", "reason"),
 }
 
 
@@ -13783,7 +13949,7 @@ def build_parser():
                             "unblock", "note", "couple", "uncouple", "finding",
                             "resolve-finding", "correct", "bug-add",
                             "bug-close", "reindex", "mute", "unmute",
-                            "record-listing", "file-return"])
+                            "record-listing", "build-command", "file-return"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -14096,6 +14262,18 @@ def build_parser():
                    metavar="CMD",
                    help="record-listing: run now, and its answer stored as the "
                         "version the listing is trusted on")
+    # `build-command` only: the key is the positional, and what it does to it is
+    # one of these. The command's dest is not `command` - that is the verb word.
+    p.add_argument("--command", dest="build_command", default=None,
+                   metavar="CMD",
+                   help="build-command: the command the key runs, written "
+                        "byte for byte")
+    p.add_argument("--replace", action="store_true", default=False,
+                   help="build-command: overwrite a key that already exists "
+                        "(refused without it, naming the current value)")
+    p.add_argument("--remove", action="store_true", default=False,
+                   help="build-command: drop the key (refused while a "
+                        "phase's testGate or a task's tests.gate names it)")
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--json", action="store_true", dest="as_json")
     return _claude_home.attach_usage_hint(p)
@@ -14406,6 +14584,7 @@ def _dispatch(args, argv, out):
              "bug-close": cmd_bug_close, "reindex": cmd_reindex,
              "mute": cmd_mute, "unmute": cmd_unmute,
              "record-listing": cmd_record_listing,
+             "build-command": cmd_build_command,
              "file-return": cmd_file_return}
     try:
         return doors[args.command](args, out)

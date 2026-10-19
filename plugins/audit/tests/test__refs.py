@@ -2754,7 +2754,7 @@ def _cases(check):
           "a flag list into a verb nobody can run and read as compliance: %r"
           % (_tk_verbs,),
           _tk_verbs != []
-          and all(re.match(r"^[a-z]+$", v) for v in _tk_verbs))
+          and all(re.match(r"^[a-z]+(-[a-z]+)*$", v) for v in _tk_verbs))
     # BOTH COMMAND DOCS, because reading one of them was the defect twice.
     # `tk2` compared `commands/task.md` against the usage block and nothing
     # compared `commands/phase.md`, so that hint advertised three flags for `add`
@@ -2789,9 +2789,10 @@ def _cases(check):
           "procedure - enumerated, so a rename on either side is a finding "
           "rather than a silent skip: %r"
           % ((_tk_shared, sorted(_tk_flags)),),
-          _tk_shared == ["add", "add-phase", "block", "cancel", "couple", "done",
-                         "move", "mute", "note", "reindex", "reopen", "scope",
-                         "start", "unblock", "uncouple", "unmute"]
+          _tk_shared == ["add", "add-phase", "block", "build-command", "cancel",
+                         "couple", "done", "move", "mute", "note", "reindex",
+                         "reopen", "scope", "start", "unblock", "uncouple",
+                         "unmute"]
           and "move" in _tk_flags and "move" in _at_usage)
     # `_tk_all`, not `_tk_flags`: the latter has no row for a verb that came from
     # the other document, and indexing it here raised `KeyError` the first time
@@ -2970,9 +2971,10 @@ def _cases(check):
           "copy of the script would each leave pf1 green over nothing at all: %r"
           % ((_pf_verbs, _pf_checked),),
           _pf_checked != [] and "--gate-clear" in _pf_checked
-          and _pf_verbs == ["add", "add-phase", "block", "cancel", "couple",
-                            "done", "move", "mute", "note", "reopen", "scope",
-                            "start", "unblock", "uncouple", "unmute"]
+          and _pf_verbs == ["add", "add-phase", "block", "build-command",
+                            "cancel", "couple", "done", "move", "mute", "note",
+                            "reopen", "scope", "start", "unblock", "uncouple",
+                            "unmute"]
           and _pf_same != "" and _pf_same == _at_src
           and _at_dest.get("--gate-clear") == "gate_clear"
           and _at_dest.get("--blocked-by") == "blocked_by")

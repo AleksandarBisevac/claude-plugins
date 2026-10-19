@@ -4455,7 +4455,11 @@ def _flag_cases(check):
                                    "executor"],
                    # `record-listing` takes no id, and the misplaced-flag
                    # check fires before its body asks for its four flags.
-                   "record-listing": ["record-listing"]}
+                   "record-listing": ["record-listing"],
+                   # `build-command` names its key as the positional, and the
+                   # misplaced-flag check fires before its body asks for the
+                   # one flag that decides what it does.
+                   "build-command": ["build-command", "k"]}
         _vf_leaks = []
         for _vfv in sorted(M.VERB_FLAGS):
             _vfknown = set(M.VERB_FLAGS[_vfv]) | set(M.UNIVERSAL_FLAGS)
@@ -4627,6 +4631,10 @@ def _flag_cases(check):
              "lister {paths}", "--spelling", "runner {paths}",
              "--verified-on", "echo v-vf", "--json",
              "--project-dir", _vf_rl_proj])[0]
+        _vf_bc_proj, _vf_bc_mp = mk("vf-buildcmd", base_manifest())
+        _vf_ok["build-command/--command"] = run(
+            ["build-command", "vitest", "--command", "npx vitest run",
+             "--json", "--project-dir", _vf_bc_proj])[0]
         check("vf4 SECOND-DIRECTION CASE: every flag a verb DOES read still "
               "works, and `--json` / `--project-dir` reach every verb - a guard "
               "that fires on a correct call is a guard somebody routes around "
@@ -7812,6 +7820,8 @@ def _close_cases(check):
                                 "--listing-related", "lister {paths}",
                                 "--spelling", "runner {paths}",
                                 "--verified-on", "echo v-tw"]),
+            ("build-command", ["build-command", "vitest", "--command",
+                               "npx vitest run"]),
         )
         # `signoff` gets its own pair too: by its row every other row has left P2
         # with open work, which it rightly refuses.
@@ -18280,6 +18290,192 @@ def _record_listing_cases(check):
         _harness.remove_tree(tmp)
 
 
+BCM_ADD_CLAUSE = (
+    "build-command adds an absent meta.buildCommands key and journals it, "
+    "refuses an existing key without --replace and replaces it with "
+    "--replace, refuses a command carrying a machine path, and refuses "
+    "--remove of a key a gate entry names, writing nothing on every refusal")
+BCM_DOCS_CLAUSE = (
+    "the build-command verb is in the usage block and in VERB_FLAGS with "
+    "exactly the flags commands/task.md documents")
+
+
+def _bcm_fixture(base_manifest):
+    """The base plan with three build commands and gate entries naming two of
+    them: `test` by P2's `testGate`, `lint` by P2.3's own `tests.gate`. `spare`
+    is named by nothing, so a `--remove` of it is the one that may succeed."""
+    fx = base_manifest()
+    fx["meta"]["buildCommands"] = {"test": "true", "lint": "true",
+                                   "spare": "true"}
+    fx["phases"][1]["tasks"][1]["tests"] = {
+        "mode": "gate-only", "add": [], "expectRedFirst": False,
+        "gate": ["lint"]}
+    return fx
+
+
+def _build_command_cases(check):
+    """`build-command`: the verb that sets, replaces or drops one
+    `meta.buildCommands` key on a plan that exists, through the lock, the
+    manifest writer and the validator, with one journal row per write."""
+    import _machine_paths
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, _run_on_stdin, base_manifest, mk, _mk_empty, _task_in, _pin, _unpin,
+     _PD_SHA, _pd_fixture, _pd_repo, _git) = _at_kit(tmp)
+    try:
+        def raw(path):
+            with open(path, "rb") as fh:
+                return fh.read()
+
+        def build(mpath):
+            return dict((_mio.load_manifest(mpath).get("meta") or {})
+                        .get("buildCommands") or {})
+
+        def rows(project):
+            jmod = _panel_write._journalmod()
+            return [r for r in (jmod.read_all(project) if jmod else [])
+                    if r.get("action") == "buildcommand.change"]
+
+        def details(row):
+            return row.get("details") or {}
+
+        spaced = 'npx vitest run  --reporter "dot"'
+        leak = "/Users/someone/bin/vitest run"
+        proj, mpath = mk("bcm-write", _bcm_fixture(base_manifest))
+        add_code, add_txt = run(["build-command", "vitest", "--command",
+                                 "npx vitest run", "--project-dir", proj])
+        after_add = build(mpath)
+        add_rows = rows(proj)
+        findings = M._validator().validate(_mio.load_manifest(mpath))[0]
+
+        # EVERY REFUSAL BELOW IS COMPARED AGAINST THE BYTES OF THE PLAN AND THE
+        # COUNT OF ROWS, because a refusal that wrote is the fault, and exit 2
+        # on its own would pass a verb that wrote and then complained.
+        written = raw(mpath)
+        dup_code, dup_txt = run(["build-command", "vitest", "--command",
+                                 "npx other", "--project-dir", proj])
+        nothing_to_replace = run(["build-command", "nowhere", "--command",
+                                  "x", "--replace", "--project-dir", proj])
+        leak_code, leak_txt = run(["build-command", "vitest", "--command",
+                                   leak, "--replace", "--project-dir", proj])
+        leak_new = run(["build-command", "fresh", "--command", leak,
+                        "--project-dir", proj])
+        neither = run(["build-command", "vitest", "--project-dir", proj])
+        both = run(["build-command", "vitest", "--command", "x", "--remove",
+                    "--project-dir", proj])
+        rm_phase_code, rm_phase_txt = run(["build-command", "test", "--remove",
+                                           "--project-dir", proj])
+        rm_task_code, rm_task_txt = run(["build-command", "lint", "--remove",
+                                         "--project-dir", proj])
+        rm_absent = run(["build-command", "nowhere", "--remove",
+                         "--project-dir", proj])
+        refused_clean = (raw(mpath) == written and len(rows(proj)) == 1)
+
+        rep_code, rep_txt = run(["build-command", "vitest", "--command",
+                                 spaced, "--replace", "--reason", "add a "
+                                 "reporter", "--project-dir", proj])
+        after_rep = build(mpath)
+        rep_rows = rows(proj)
+        rm_code, rm_txt = run(["build-command", "spare", "--remove",
+                               "--project-dir", proj])
+        after_rm = build(mpath)
+        all_rows = rows(proj)
+
+        sproj, smpath = mk("bcm-sharded", _bcm_fixture(base_manifest),
+                           sharded=True)
+        s_code, _s_txt = run(["build-command", "vitest", "--command",
+                              "npx vitest run", "--project-dir", sproj])
+
+        check(
+            "bcm1 " + BCM_ADD_CLAUSE,
+            add_code == 0 and after_add.get("vitest") == "npx vitest run"
+            and after_add.get("test") == "true"
+            and findings == []
+            and len(add_rows) == 1
+            and details(add_rows[0]).get("field") == "meta.buildCommands.vitest"
+            and details(add_rows[0]).get("from") is None
+            and details(add_rows[0]).get("to") == "npx vitest run"
+            and dup_code == 2 and "npx vitest run" in dup_txt
+            and "--replace" in dup_txt
+            and nothing_to_replace[0] == 2
+            and leak_code == 2 and leak_new[0] == 2
+            and ("[audit-task] " + _machine_paths.executed_value_refusal(
+                proj, "meta.buildCommands", leak)) in leak_txt
+            and neither[0] == 2 and both[0] == 2 and rm_absent[0] == 2
+            and rm_phase_code == 2 and "P2" in rm_phase_txt
+            and "testGate" in rm_phase_txt
+            and rm_task_code == 2 and "P2.3" in rm_task_txt
+            and "tests.gate" in rm_task_txt
+            and refused_clean
+            and rep_code == 0 and after_rep.get("vitest") == spaced
+            and len(rep_rows) == 2
+            and details(rep_rows[1]).get("from") == "npx vitest run"
+            and details(rep_rows[1]).get("to") == spaced
+            and details(rep_rows[1]).get("reason") == "add a reporter"
+            and rm_code == 0 and "spare" not in after_rm
+            and after_rm.get("lint") == "true"
+            and len(all_rows) == 3
+            and details(all_rows[2]).get("field") == "meta.buildCommands.spare"
+            and details(all_rows[2]).get("from") == "true"
+            and details(all_rows[2]).get("to") is None
+            and s_code == 0 and build(smpath).get("vitest") == "npx vitest run",
+            "add %r %r; rows %r; refused %r; replace %r %r; remove %r %r"
+            % ((add_code, add_txt[-120:]), after_add,
+               [details(r) for r in all_rows],
+               (dup_code, dup_txt[-200:], nothing_to_replace[0], leak_code,
+                leak_new[0], neither[0], both[0], rm_absent[0],
+                (rm_phase_code, rm_phase_txt[-200:]),
+                (rm_task_code, rm_task_txt[-200:]), refused_clean),
+               rep_code, after_rep.get("vitest"), rm_code, sorted(after_rm)))
+
+        usage = str(M.__doc__ or "")
+        usage_at = usage.find("audit-task.py build-command")
+        usage_end = usage.find("\n  audit-task.py ", usage_at + 1)
+        usage_flags = set(re.findall(
+            r"--[a-z][a-z-]*", usage[usage_at:usage_end]
+            if usage_at >= 0 and usage_end > usage_at else ""))
+        spelled = M.option_dests()
+        universal = set(spelled[d] for d in M.UNIVERSAL_FLAGS)
+        table_flags = set(spelled[d] for d in
+                          M.VERB_FLAGS.get("build-command", ()))
+
+        def segment(cell):
+            """The flags of every `build-command <key>` form in the one hint
+            or README cell it is given, or None when it spells none. The cell
+            and not the document: the verb's section repeats the flags, and a
+            hint that dropped one would read as documented through it."""
+            hits = re.findall(r"build-command <key>(.*?)(?: \\?\| |$)", cell)
+            return (set(re.findall(r"--[a-z][a-z-]*", " ".join(hits)))
+                    if hits else None)
+
+        with open(os.path.join(_output.PLUGIN_ROOT, "commands", "task.md"),
+                  "r", encoding="utf-8") as fh:
+            task_md = fh.read()
+        with open(os.path.join(_output.PLUGIN_ROOT, "README.md"), "r",
+                  encoding="utf-8") as fh:
+            readme = fh.read()
+        hint_line = re.search(r"^argument-hint: '(.*)'$", task_md, re.M)
+        row = [ln for ln in readme.splitlines()
+               if ln.startswith("| `/audit:task` | ")]
+        readme_cell = row[0].split(" | ")[1] if row else ""
+        section = _phase_section(task_md, "Subcommand: `build-command")
+        hint_flags = segment(hint_line.group(1) if hint_line else "")
+        readme_flags = segment(readme_cell)
+        section_flags = set(re.findall(r"--[a-z][a-z-]*", section))
+        check(
+            "bcm2 " + BCM_DOCS_CLAUSE,
+            table_flags != set()
+            and (usage_flags - universal) == table_flags
+            and hint_flags == table_flags
+            and readme_flags == table_flags
+            and table_flags <= section_flags,
+            "table %r; usage %r; hint %r; README %r; section %r"
+            % (sorted(table_flags), sorted(usage_flags - universal),
+               hint_flags and sorted(hint_flags),
+               readme_flags and sorted(readme_flags), sorted(section_flags)))
+    finally:
+        _harness.remove_tree(tmp)
+
+
 RETIRED_FLAG_CLAUSE = ("scope --falsifiers is a usage error and writes "
                        "nothing")
 _RF_ENTRY = "tests/t.py: x"
@@ -18346,6 +18542,7 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("fp-block", "_first_plan_cases"),
           ("bx-block", "_batch_fix_cases"),
           ("rl-block", "_record_listing_cases"),
+          ("bcm-block", "_build_command_cases"),
           ("xf-block", "_crossfile_cases"),
           ("rf-block", "_retired_flag_cases"))
 

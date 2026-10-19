@@ -5297,6 +5297,14 @@ raises about this field after the write rolls every file back, exit 1, with the 
 so a `spelling` or `related` with no `{paths}` is refused in the validator's words. The write is
 index-only and records `listing.recorded`, naming the fields that moved rather than the commands.
 
+`build-command <key> --command "<cmd>" [--replace]` / `build-command <key> --remove` sets or drops
+one `meta.buildCommands` key on a plan that exists, the door that does not need the panel's browser
+session. The command is judged by `_machine_paths.executed_value_refusal` under the field name the
+panel files it under, and is written byte for byte. An existing key is refused, naming its value,
+unless `--replace`; `--replace` or `--remove` of an absent key is refused; `--remove` is also
+refused, naming each entry, while a phase's `testGate` or a task's `tests.gate` names the key.
+The write is index-only and records `buildcommand.change` with the key, the old and the new value.
+
 ### `plugins/audit/scripts/usage/audit-usage.py`
 `/audit:usage` — token spend, attributed, rendering its own final ASCII output (no box
 drawing, no ANSI, no emoji) so the command file can print it verbatim without paying a model

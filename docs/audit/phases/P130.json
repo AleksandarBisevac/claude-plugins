@@ -1808,7 +1808,33 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test_audit_task.py: build-command adds an absent meta.buildCommands key and journals it, refuses an existing key without --replace and replaces it with --replace, refuses a command carrying a machine path, and refuses --remove of a key a gate entry names, writing nothing on every refusal": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_audit_task.py",
+              "--selftest",
+              "--stage",
+              "bcm-block"
+            ],
+            "file": "plugins/audit/scripts/manifest/audit-task.py",
+            "find": "    if key in build and not args.replace:",
+            "replace": "    if False and key in build and not args.replace:"
+          },
+          "plugins/audit/tests/test_audit_task.py: the build-command verb is in the usage block and in VERB_FLAGS with exactly the flags commands/task.md documents": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_audit_task.py",
+              "--selftest",
+              "--stage",
+              "bcm-block"
+            ],
+            "file": "plugins/audit/commands/task.md",
+            "find": "[--replace] [--remove] [--reason",
+            "replace": "[--remove] [--reason"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -1831,12 +1857,17 @@
       "startedAt": "2026-10-19T03:27:42Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T04:55:05Z.5a9ff2",
+        "status": "passed",
+        "at": "2026-10-19T04:55:05Z"
+      }
     },
     {
       "id": "P130.17-ywo",
       "title": "The panel browser check's poll-window waits derive from the panel's poll interval, settled by repeated measurement first",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fault F716, one sighting. `node tools/capture-screenshots.mjs --check` once failed with 'gate card: an event appended to plan-gate-events.jsonl never reached the Overview table within 6.5s' and passed on the immediate rerun. `assertGateCard` (tools/capture-screenshots.mjs:5188) appends a line and waits a hand-written 6500 ms (:5215) for it to appear; the panel polls run-status every 5000 ms (`startRunPoll`, plugins/audit/scripts/ui/panel/run-status.js:214), so the margin over one poll is what is left for the poll's own round trip and the repaint, and an append that lands just after a poll leaves only that margin. The same literal stands at :4501, :4528, :4823 and :4836, so it is one class. Step one is measurement, not a fix: the repeated `--check` runs are the orchestrator's, because the capture lock is machine-wide, so the executor first makes the check say the elapsed time at which each poll-window wait was satisfied (a note line per wait), and hands over the command to run it repeatedly idle and under a parallel sweep. Fix: one exported function returns the poll-window wait from the panel's poll interval as the assembled panel declares it (read off the page's script, never retyped) plus a margin the function documents, and every one of those waits uses it; if the measurement shows misses beyond that bound, the bound comes from the measured round trip and the return says so. If the repeated runs show no miss and the waits are already inside the bound, close no-change with the measurement in the outcome. Acceptance: (1) no hand-written poll-window wait remains in capture-screenshots.mjs (a grep for the literal finds none); (2) each poll-window wait prints its elapsed time in --check; (3) the vitest case is red if the interval and the wait are allowed to diverge; (4) the return carries the orchestrator-ready command for the repeated measurement and, once run, its spread. NEW PATH (absent at HEAD, created by this task): tools/ui-tests/gate-card-wait.test.mjs, which vitest.config.mjs's include glob already covers.",
       "files": [
         "tools/capture-screenshots.mjs",
@@ -1872,19 +1903,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "eedd95a805a8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/capture-screenshots.mjs: new exports POLL_MARGIN_MS (1500, documented), pollIntervalOf(script) (exactly one setInterval(pollRunStatus, N) in the assembled panel script, else throws naming the count), pollWindowMs(interval); internal waitForPoll/sleepPollWindow derive the window from the assembled panel (one assembledPanelScript() helper, shared with the polled-state guard so test__refs d2's resolver-call count stays exact) and print 'poll-window <label>: satisfied|MISSED after N ms of a M ms window' per wait. All 8 hand-written waits (live-data x2, combo(b) sleeps x2, gate card x3, gate shot x1) converted; grep for 6500 and 6.5 in the file finds none. New tools/ui-tests/gate-card-wait.test.mjs, one case titled with the tests.add clause verbatim. vitest: 852 pass. NOT done: the repeated measurement (browser gate, orchestrator-owned) - margin kept at the previous 1500 ms until measured; if any 'MISSED' or elapsed approaches the window under load, raise POLL_MARGIN_MS from the measured round trip.",
+        "descriptive": "Poll-window waits in the panel browser check now derive from the panel's own poll interval and report their elapsed time, so the F716 flake can be measured and bounded."
       },
       "startedAt": "2026-10-19T03:27:44Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T04:44:13Z",
+      "verifiedBy": [
+        "tools/ui-tests/gate-card-wait.test.mjs: the poll-window wait capture-screenshots.mjs exports is computed from the poll interval the assembled panel script declares and exceeds it by the documented margin, and a changed interval moves the wait"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T04:32:21Z.1b9bbe",
         "status": "passed",
         "at": "2026-10-19T04:32:21Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "eedd95a805a8",
+        "at": "2026-10-19T04:44:13Z",
+        "return": "docs/audit/evidence/returns/P130.17-ywo/20261019T032744Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-19T03:35:13Z",
+        "basis": "`npx vitest run tools/ui-tests/gate-card-wait.test.mjs` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion; failing without an assertion: the poll-window wait capture-screenshots.mjs exports is computed from the poll interval the assembled panel script declares and exceeds it by the documented margin, and a changed interval moves the wait (TypeError: pollIntervalOf is not a function): Tests  1 failed (1); no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'pollIntervalOf': TypeError: pollIntervalOf is not a function; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
