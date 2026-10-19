@@ -1,0 +1,54 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_integrate_task.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_audit_lookup.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_derive_phase_gate.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__evidence_io.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__gate_derive.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__output.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__deps.py --selftest": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T10:50:48Z",
+    "basis": "`sh -c python3 plugins/audit/tests/test_integrate_task.py --selftest && python3 plugins/audit/tests/test_audit_lookup.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases n1 (house FAIL), n2 (house FAIL), but with the working tree's implementation the task's tests do not all pass (SELFTEST FAILED: 6/17 cases passed), so the red is not one the fix turns green - SELFTEST FAILED: 30/32 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added _evidence_io.project_spelling(path, git_root, project): a checkout-relative git path spelled from the project (stripped of the project's offset; a path outside the project gets the ../ steps that reach it so it cannot collide with a project path; identity when the project is its git root). integrate-task.undeclared_paths(declared, paths, git_root=None, project=None) now compares each path as the project spells it, returning the original checkout-relative paths; integrate() passes git_root and project. audit-lookup._phase_diff_paths returns project spelling so the 'outside every task's declared files' list is on one base. derive-phase-gate._gather_facts runs `git diff --name-only --relative base...HEAD` so changedSince is project-relative; _gate_derive.py:703 needed no edit because it reads facts['changedSince'] which is now project-relative. Cases: test_integrate_task n1/n2 (_nested_world/_nested_cases), test_audit_lookup nl1/nl2 (_nested_scope_cases), test_derive_phase_gate n1 (_nested_changed_cases, a file outside the task's files; the plan gate allowed it). _evidence_io.py is also outside the task's files and was allowed as the free file. Noted, not fixed (out of F735's site list): audit-lookup's DOCS_AUDIT_EXCLUDE pathspec and the per-task 'git diff ... -- <files>' (lines near 939/960) are project-relative pathspecs run from gitRoot, so for a nested project they exclude/select the checkout-root docs/audit and files rather than the project's. A heredoc write to derive-phase-gate.py was refused by the plan gate (heredoc-to-interpreter rule); redone with the Edit tool, which was allowed. Full sweep not run by me (own-tests only).",
+    "descriptive": "For a project nested under its git root, integration, the phase brief's outside-declared list and the phase-gate changedSince now compare git's paths and the plan's declared files on one base."
+  },
+  "testsAdded": [
+    "n1 a project nested under its git root - a declared project-relative file is not reported undeclared, and an undeclared sibling is (plugins/audit/tests/test_integrate_task.py)",
+    "nl1 the phase-diff outside-declared list is computed on one base for a nested project (plugins/audit/tests/test_audit_lookup.py)",
+    "n2 a nested project's declared file alone integrates with no decision owed",
+    "nl2 a project that is its own git root lists the undeclared paths as git spells them",
+    "n1 changedSince for a nested project is spelled from the project (plugins/audit/tests/test_derive_phase_gate.py)"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_integrate_task.py: a project nested under its git root - a declared project-relative file is not reported undeclared, and an undeclared sibling is": {
+      "file": "plugins/audit/scripts/git/integrate-task.py",
+      "find": "extra = undeclared_paths(task.get(\"files\") or [], paths, git_root, project)",
+      "replace": "extra = undeclared_paths(task.get(\"files\") or [], paths)",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_integrate_task.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test_audit_lookup.py: the phase-diff outside-declared list is computed on one base for a nested project": {
+      "file": "plugins/audit/scripts/status/audit-lookup.py",
+      "find": "[_evio.project_spelling(p, ctx[\"gitRoot\"], ctx[\"project\"])",
+      "replace": "[p",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "--selftest"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:a6c2d24a74286651b593ecded1359068826232e5755c12eb8b7cab2d49a0fc3f\",\"dirtyDigest\":\"sha256:05ea78e28906c52f262afcbc958bcb8bbb71c7349812958a3d2e6a67c5866dc0\",\"dirtyPaths\":{\"plugins/audit/scripts/git/integrate-task.py\":\"ee5375f8f0815c33\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"9e15c97542e4c4b2\",\"plugins/audit/scripts/governance/derive-phase-gate.py\":\"2cf4f1e52da184e7\",\"plugins/audit/scripts/status/audit-lookup.py\":\"f0b247ac6f924269\",\"plugins/audit/tests/test_audit_lookup.py\":\"178801ba8eb7ed9d\",\"plugins/audit/tests/test_derive_phase_gate.py\":\"cea96c4d73436f5a\",\"plugins/audit/tests/test_integrate_task.py\":\"69f8e7f511bbc254\"},\"head\":\"7273a6ca\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/git/integrate-task.py\",\"plugins/audit/scripts/governance/_gate_derive.py\",\"plugins/audit/scripts/governance/derive-phase-gate.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/tests/test_audit_lookup.py\",\"plugins/audit/tests/test_integrate_task.py\"],\"scopeDigest\":\"sha256:b468ec355bb058b2db540b6e89041daf23f46b77bba9437cf4ba7bae8e044b03\",\"v\":2}"
+}
