@@ -1256,7 +1256,31 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test__verdict_binding.py: a recorded row whose steps are the declared entries followed by affected/related and affected/python steps has no gate mismatch, while a row whose declared part differs, or whose gateDigest differs, still has one": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__verdict_binding.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/governance/_evidence_io.py",
+            "find": "    return names[:cut], dropped if cut == len(names) else 0\n",
+            "replace": "    return names, dropped\n"
+          },
+          "plugins/audit/tests/test_commit_task_work.py: on a fixture plan with a derived phase gate, a green recorded run of a narrower task gate commits without --override-verdict": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_commit_task_work.py",
+              "--selftest",
+              "--stage",
+              "ag-block"
+            ],
+            "file": "plugins/audit/scripts/governance/_evidence_io.py",
+            "find": "    return names[:cut], dropped if cut == len(names) else 0\n",
+            "replace": "    return names, dropped\n"
+          }
+        }
       },
       "model": "opus",
       "skills": [
@@ -1277,7 +1301,12 @@
       "startedAt": "2026-10-18T21:25:40Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T02:30:36Z.dc27e6",
+        "status": "passed",
+        "at": "2026-10-19T02:30:36Z"
+      }
     },
     {
       "id": "P130.11-ywo",

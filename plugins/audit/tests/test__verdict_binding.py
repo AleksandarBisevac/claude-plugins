@@ -54,12 +54,58 @@ def _bind(root, mpath, entries=("test",)):
                      "run the gate", "no gate here")
 
 
+def _derived_step_cases(check):
+    """A task's recorded row carries the steps its gate declared AND the
+    `affected/<arm>: <suites>` steps the recorder adds when the task gate is
+    narrower than the phase gate. The prefix is spelled here as the ledger
+    holds it - a row on disk is the contract - and pinned to the one module that
+    defines it, so the fixture cannot drift from what the recorder writes."""
+    prefix = getattr(_evidence_io, "DERIVED_STEP_PREFIX", None)
+    derived = [{"name": "affected/related: tests/test_b.py"},
+               {"name": "affected/python: tests/test_c.py, tests/test_d.py"}]
+    digest = _evidence_io.gate_digest(["test"], None)
+
+    def row(declared, gate_digest=digest, source="task", extra=None):
+        return {"steps": [{"name": n} for n in declared] + derived
+                + list(extra or []), "gateSource": source,
+                _evidence_io.GATE_DIGEST_KEY: gate_digest}
+    same = M.gate_mismatch(row(["test"]), ["test"], "task")
+    other = M.gate_mismatch(row(["lint"]), ["test"], "task") or ""
+    widened = M.gate_mismatch(row(["test"]), ["test", "lint"], "task") or ""
+    narrowed = M.gate_mismatch(row(["test", "lint"]), ["test"], "task") or ""
+    moved = M.gate_mismatch(row(["test"], gate_digest="sha256:other"),
+                            ["test"], "task") or ""
+    resourced = M.gate_mismatch(row(["test"], source="phase"),
+                                ["test"], "task") or ""
+    # A declared-looking step AFTER a derived one is not a shape the recorder
+    # writes, so nothing past the first derived step is read as declared.
+    interleaved = M.gate_mismatch(row(["test"], extra=[{"name": "lint"}]),
+                                  ["test"], "task") or ""
+    different = "a verdict about a different gate is not this gate's verdict"
+    check("vb34 a recorded row whose steps are the declared entries followed by "
+          "affected/related and affected/python steps has no gate mismatch, "
+          "while a row whose declared part differs, or whose gateDigest "
+          "differs, still has one: prefix %r / %r / %r / %r / %r / %r / %r / %r"
+          % (prefix, same, other, widened, narrowed, moved, resourced,
+             interleaved),
+          prefix == "affected/"
+          and all(str(s["name"]).startswith(prefix or "\0") for s in derived)
+          and same is None
+          and "measured under the gate [lint]" in other and different in other
+          and "declares [test, lint]" in widened and different in widened
+          and "[test, lint]" in narrowed and different in narrowed
+          and "resolve to different commands now" in moved
+          and "(phase gate)" in resourced and different in resourced
+          and different in interleaved)
+
+
 def _cases(check):
-    check("vb1 a gate measured under the same entries is not a mismatch",
+    check("vb1a gate measured under the same entries is not a mismatch",
           M.gate_mismatch({"steps": [{"name": "test"}]}, ["test"], "phase") is None)
     check("vb2 ...and one measured under other entries is, saying both",
           "[lint]" in (M.gate_mismatch({"steps": [{"name": "lint"}]}, ["test"],
                                        "phase") or ""))
+    _derived_step_cases(check)
     check("vb3 a red after the last green is unanswered; a green after it retires it",
           M.red_after_green([{"ts": "1", "status": "passed"},
                              {"ts": "2", "status": "failed"}]) is not None

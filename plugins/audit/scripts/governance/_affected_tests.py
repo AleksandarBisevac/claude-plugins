@@ -59,9 +59,10 @@ import _manifest_phases as _phases   # noqa: E402  (is_suite_path, gate_entry_pa
 import _gate_derive                  # noqa: E402  (the e2e reading of a path, the
 #                                       path-scoped shape and its re-pointing:
 #                                       asked, not copied)
+import _evidence_io                  # noqa: E402  (DERIVED_STEP_PREFIX: the name a
+#                                       row's measured-not-declared steps carry)
 
 ARMS = ("related", "python", "e2e-changed", "e2e-widening")
-STEP_PREFIX = "affected/"
 # Prose is not app source: a change to these alone reaches no spec.
 _DOC_EXTENSIONS = (".md", ".rst", ".txt")
 
@@ -329,9 +330,11 @@ def entries_for(suites, phase, meta, project, lister=None):
     """`(steps, widen)` -- `[(name, command)]`, one or more per arm, each in the
     project's own path-scoped spelling (`_gate_derive.resolve_shape`:
     `meta.phaseGate.derived.spelling` when it carries a `{paths}` placeholder,
-    else a sibling task's path-scoped entry). The name
-    is `affected/<arm>: <suites>`, which is how a recorded row attributes each
-    suite to its arm. No spelling means no command can run them: `widen`."""
+    else a sibling task's path-scoped entry). The name is
+    `_evidence_io.DERIVED_STEP_PREFIX` followed by `<arm>: <suites>`, which is
+    how a recorded row attributes each suite to its arm - and how
+    `_evidence_io.declared_steps` tells it from a declared step. No spelling
+    means no command can run them: `widen`."""
     meta = meta if isinstance(meta, dict) else {}
     build = meta.get("buildCommands")
     build = build if isinstance(build, dict) else None
@@ -358,8 +361,8 @@ def entries_for(suites, phase, meta, project, lister=None):
                 scoped, build, paths, project, lister=lister)
         for entry in entries:
             named = [p for p in paths if shlex.quote(p) in entry] or paths
-            steps.append(("%s%s: %s" % (STEP_PREFIX, arm, ", ".join(named)),
-                          entry))
+            steps.append(("%s%s: %s" % (_evidence_io.DERIVED_STEP_PREFIX, arm,
+                                        ", ".join(named)), entry))
     return steps, None
 
 

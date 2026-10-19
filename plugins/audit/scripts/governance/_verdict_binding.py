@@ -292,12 +292,16 @@ def gate_mismatch(measured, entries, source, build=None):
     as its phase's fallback are different claims - and so is `gateDigest`, the
     entries beside what `meta.buildCommands` resolves each to: a name that held
     still while its command changed is a different gate too.
+
+    THE STEPS A TASK'S RUN ADDS ARE NOT ITS GATE: the suites a narrower task
+    gate's change can break are recorded after the declared steps, and
+    `_evidence_io.declared_steps` - the answer the recorder digests - says
+    which of a row's steps are declared. Only those are compared.
     """
-    recorded = [str(s.get("name")) for s in (measured.get("steps") or [])
-                if isinstance(s, dict)]
+    recorded, dropped = _evidence_io.declared_steps(
+        [s.get("name") for s in (measured.get("steps") or [])
+         if isinstance(s, dict)], measured.get("stepsDropped"))
     now = list(entries)
-    dropped = measured.get("stepsDropped")
-    dropped = dropped if isinstance(dropped, int) and dropped > 0 else 0
     same_steps = (recorded == now[:len(recorded)]
                   and len(recorded) + dropped == len(now))
     was_source = measured.get("gateSource")

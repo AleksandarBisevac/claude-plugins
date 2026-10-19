@@ -1688,6 +1688,44 @@ def _gate_identity_cases(check, repos):
           code == 0 and "not established" not in text)
 
 
+@_own_repos
+def _affected_gate_cases(check, repos):
+    # A TASK GATE NARROWER THAN ITS PHASE'S, UNDER A DERIVED PHASE GATE. The
+    # recorder adds the suites the task's change can break as steps of their
+    # own (here the Python import-graph arm: `tests/test_a.py` imports the
+    # task's `src/a.py`, and the spelling gives them a command), so the row
+    # carries more steps than the task declares. Those are measured, not
+    # declared, and must not read as a different gate.
+    fx = repos.make()
+    index = _mio.read_json(fx["manifest"])
+    index["meta"]["buildCommands"]["wide"] = "true"
+    index["meta"]["phaseGate"] = {"derived": {"spelling": "true {paths}"}}
+    TI._write_json(fx["manifest"], index)
+    os.makedirs(os.path.join(fx["root"], "tests"))
+    _write(os.path.join(fx["root"], "tests", "test_a.py"), "import a\n")
+    _set_task(fx, gate=["test"], phase_gate=["test", "wide"])
+    TI._git(fx["root"], "add", "--", INDEX_REL, SHARD_REL, "tests/test_a.py")
+    TI._git(fx["root"], "commit", "-q", "-m",
+            "fixture: a derived phase gate wider than the task's", "--",
+            INDEX_REL, SHARD_REL, "tests/test_a.py")
+    _dirty_work(fx)
+    gate_code, gate_text = _gate(fx)
+    row = _newest_row(fx)
+    names = [str(s.get("name")) for s in (row.get("steps") or [])]
+    derived = [n for n in names if n != "test"]
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw86 on a fixture plan with a derived phase gate, a green recorded "
+          "run of a narrower task gate commits without --override-verdict: "
+          "gate %r, row %r steps %r, commit %r / %r"
+          % (gate_code, row.get("status"), names, code, text),
+          gate_code == 0 and row.get("status") == "passed"
+          and names[:1] == ["test"] and len(derived) >= 1
+          and any("tests/test_a.py" in n for n in derived)
+          and code == 0 and "committed" in text and _head(fx) != before
+          and OWNED in _carried(fx, _head(fx)))
+
+
 # --- helpers for editing a recorded ledger -------------------------------------
 def _ledger_file_with(fx, needle):
     """The ledger file holding `needle`, and its lines."""
@@ -2398,6 +2436,7 @@ STAGES = (("nm-block", "_no_maintenance_cases"),
           ("br-block", "_branch_cases"), ("eg-block", "_empty_gate_cases"),
           ("rr-block", "_retired_red_cases"),
           ("gi-block", "_gate_identity_cases"),
+          ("ag-block", "_affected_gate_cases"),
           ("kd-block", "_kept_deletion_hook_cases"),
           ("cl-block", "_claims_cases"), ("sl-block", "_success_line_cases"),
           ("dp-block", "_default_project_cases"),

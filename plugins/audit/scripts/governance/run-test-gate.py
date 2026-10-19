@@ -2463,7 +2463,7 @@ def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands,
     wide, _left = split_not_commands(
         _resolved([e for e in phase_entries if e not in names], build,
                   meta.get("nodePreamble")), manifest)
-    steps = [("%sphase-gate: %s" % (_affected.STEP_PREFIX, name), command)
+    steps = [("%sphase-gate: %s" % (_ev.DERIVED_STEP_PREFIX, name), command)
              for name, command in wide]
     return steps, [command for _name, command in wide], info
 
@@ -5133,10 +5133,9 @@ def main(argv, out=print):
     if terr:
         out("[run-test-gate] %s" % terr)
         return E_ASK
-    # THE TASK'S OWN GATE, AND WHAT ITS CHANGE CAN BREAK. The declared list is
-    # kept apart: it is what the gate digest binds a commit to, while the
-    # affected steps are measured, never declared.
-    declared_commands = list(commands)
+    # THE TASK'S OWN GATE, AND WHAT ITS CHANGE CAN BREAK. The declared part is
+    # what the gate digest binds a commit to, while the affected steps are
+    # measured, never declared.
     published_extra = []
     affected_info = None
     # A task borrowing its phase's gate (`source == "phase"`) runs the wide gate
@@ -5151,6 +5150,12 @@ def main(argv, out=print):
         if not args.as_json:
             for line in affected_lines(affected_info):
                 out("[run-test-gate] %s" % (line,))
+    # READ BACK THE WAY THE COMMITTER READS A ROW. Which of these steps are the
+    # declared gate is `_ev.declared_steps`' answer - the one `commit-task-work`
+    # gives over the recorded row - so the digest below is taken over exactly
+    # the part a later comparison recovers, never over a second split of it.
+    declared_commands = commands[:len(_ev.declared_steps(
+        [name for name, _command in commands])[0])]
     # THE HALF OF THE OVERLAP QUESTION THAT NEEDS NOTHING FROM THE RUN, asked
     # here rather than at the end of one. Both sides of it - the files the work
     # declares, and the fact that an empty declaration can be related to nothing -

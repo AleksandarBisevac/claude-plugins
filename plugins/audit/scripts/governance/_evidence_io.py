@@ -397,6 +397,45 @@ REUSE_KEY = "reuseKey"
 # The row key for `gate_digest`'s answer.
 GATE_DIGEST_KEY = "gateDigest"
 
+# THE STEPS A TASK'S RUN ADDS THAT ITS GATE DID NOT DECLARE. A task gate
+# narrower than its phase's runs the suites its change can break beside it
+# (`_affected_tests.entries_for`, `run-test-gate.affected_steps`), each recorded
+# under a name carrying this prefix. They are measured, never declared, so the
+# question "which steps of this row are the gate it was measured under" has one
+# answer, `declared_steps`, which the recorder digests and the committer
+# compares - spelled here and nowhere else. The prefix is therefore reserved: a
+# gate entry spelled with it reads as derived, and its gate never binds.
+DERIVED_STEP_PREFIX = "affected/"
+
+
+def is_derived_step(name):
+    """True when a recorded step name is one the recorder added, not declared."""
+    return isinstance(name, str) and name.startswith(DERIVED_STEP_PREFIX)
+
+
+def declared_steps(names, dropped=0):
+    """`(declared, dropped)` - the step names in `names` that are the declared
+    gate, and how many of the steps a row dropped for length were declared.
+
+    THE DERIVED STEPS COME LAST: the recorder appends them after every declared
+    entry, so the declared gate is the names before the first derived one. A
+    declared-looking name AFTER a derived one is no shape the recorder writes,
+    so nothing is split off and every name is answered as declared - the
+    comparison then refuses rather than binding on a guess.
+
+    `dropped` is the row's `stepsDropped`. Dropped steps are the tail: with a
+    derived step kept, every dropped one came after it and none was declared;
+    with none kept, which of them were declared is not recorded, so all are
+    counted as declared and a gate the row cannot speak for is refused.
+    """
+    names = [str(n) for n in (names or [])]
+    dropped = dropped if isinstance(dropped, int) and dropped > 0 else 0
+    cut = next((i for i, name in enumerate(names) if is_derived_step(name)),
+               len(names))
+    if any(not is_derived_step(name) for name in names[cut:]):
+        return names, dropped
+    return names[:cut], dropped if cut == len(names) else 0
+
 # THE BANNERS A MEASURED RUN PRINTED THAT A GREEN EXIT STILL CARRIES, kept on its
 # row so a later repeat of that verdict can print them again. Without them a
 # repeat said `GATE GREEN` and nothing else, and the caller that asks a question
