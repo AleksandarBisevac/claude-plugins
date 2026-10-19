@@ -4432,7 +4432,8 @@ re-starting the task, so a gate that could not run spends no attempt; `block` ru
 `commit-audit-state.py` after the block verb (`keep_record`), since a blocked task gets no task
 commit to carry the rows its gate wrote, and a blocked task's stop and a stalled phase both print
 each blocked task's own remedy (`blocked_remedy`): `start <id>` while it has attempts left,
-`unblock <id> --reason` once they are spent (`attempts_spent`). A task gate's banners ride its did-line
+`unblock <id> --reason` once they are spent (`attempts_spent`; `unblock` also clears a block while
+attempts are left, but that remedy runs the task, which is why `start` is the one named). A task gate's banners ride its did-line
 (`gate P1.1 green (NO OVERLAP)`), and a high-risk task a `risk.confirmed` journal row of this
 phase names (`confirmed_in_advance`) commits without the decision, its did-line saying so. A print whose call closed, blocked or signed off an item
 carrying an `ado` link, on a plan whose board takes the echo, adds `ado echo owed: <ids>`
@@ -5190,9 +5191,10 @@ doctor and `reconcile` join runs recorded under an old id to the live task. `blo
 `task.move`, `task.block`, `task.note`. `unblock <taskId> --reason TEXT` is the way past the
 attempt ceiling `start` refuses at, `--force` included: on a task that has spent its attempts it
 resets `attempts` to 0 and, on a blocked one, moves it to `pending` and drops `blockedReason`,
-journaling `task.unblock` with the human's reason. A task with attempts left is refused
-(`_unblock_refusal`) - `start` still runs it - so a count is never reset for a block about
-something else.
+journaling `task.unblock` with the human's reason. A blocked task with attempts left has only the
+block cleared and keeps its count, so a count is never reset for a block about something else; a
+pending or running task with attempts left is refused (`_unblock_refusal`), since `start` still
+runs it.
 
 `finding <phaseId>`, `resolve-finding <findingId>` and `correct <phaseId>` write a sign-off's
 review record, which used to be hand-edited into the shard. `finding` appends entries in the

@@ -15664,6 +15664,28 @@ def _unblock_cases(check):
               and t8.get("attempts") == 0 and "blockedReason" not in t8
               and [r[0] for r in again] == [M.E_USAGE] * 4
               and read(mpath) == steady)
+        # READ, NOT CAUGHT: a suite that cannot open the document it compares
+        # must fail rather than assert on an empty window. The window is the
+        # blocked-status step of the shipped reference, from its marker to the
+        # next numbered step; the verb clears the block of a blocked task with
+        # attempts left (ub5), so a sentence saying it refuses one describes a
+        # refusal the verb no longer makes.
+        with open(os.path.join(_output.PLUGIN_ROOT, "reference",
+                               "verbs-in-full.md"), "r", encoding="utf-8") as fh:
+            _ub_guide = fh.read()
+        _ub_from = _ub_guide.find('2. `status == "blocked"`')
+        _ub_to = _ub_guide.find("3. `status ==", _ub_from + 1)
+        _ub_step = (_ub_guide[_ub_from:_ub_to]
+                    if _ub_from >= 0 and _ub_to > _ub_from else "")
+        _ub_flat = " ".join(_ub_step.split())
+        check("ub7 the shipped reference/verbs-in-full.md unblock paragraph no "
+              "longer says unblock refuses a task with attempts left, and says "
+              "what it does instead: %r" % (_ub_flat[-330:],),
+              "unblock <id>" in _ub_flat
+              and "unblock refuses" not in _ub_flat
+              and "`unblock` refuses" not in _ub_flat
+              and "refuses a task with attempts left" not in _ub_flat
+              and "keeps" in _ub_flat)
     finally:
         _harness.remove_tree(root)
 

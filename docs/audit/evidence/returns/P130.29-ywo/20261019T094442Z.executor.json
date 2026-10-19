@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "own-test (test_audit_task.py --selftest --stage ub-block)": "pass",
+    "test__refs.py --selftest": "pass",
+    "test__deps.py --selftest": "pass",
+    "test__output.py --selftest": "pass",
+    "ruff check (test_audit_task.py, drive-phase.py)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T09:50:44Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage ub-block` in a throwaway tree at HEAD exited 1 with 1 of 7 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ub7 (house FAIL): SELFTEST FAILED: 6/7 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Rewrote the description of `unblock` in plugins/audit/reference/verbs-in-full.md (step 2: unblock also clears a blocked task with attempts left, keeps its count; only pending/running with attempts left is refused), plugins/audit/reference/manifest-conventions.md (task.unblock row), PLUGIN-BUILD-GUIDE.md (blocked_remedy paragraph and the unblock verb paragraph at the _unblock_refusal sentence) and the attempts_spent docstring in plugins/audit/scripts/governance/drive-phase.py, after reading audit-task.py cmd_unblock/_unblock_refusal/_locked_unblock. No numbers written. Added case ub7 in _unblock_cases of plugins/audit/tests/test_audit_task.py (reads the shipped verbs-in-full.md step 2 window, fails on 'unblock refuses' / 'refuses a task with attempts left', requires 'unblock <id>' and 'keeps'). Left: plugins/audit/tests/test_drive_phase.py:3372 case text says 'not `unblock`, which refuses it' (bk1, outside this task's files; the driver's remedy of `start` for a blocked task with attempts left is still correct); CHANGELOG.md:579 is history; commands/task.md:95 and README already state the new behaviour.",
+    "descriptive": "The documents and the drive-phase docstring now describe unblock as it behaves: it clears a block with attempts left and keeps the count, and refuses only pending or running tasks with attempts left."
+  },
+  "testsAdded": [
+    "ub7 the shipped reference/verbs-in-full.md unblock paragraph no longer says unblock refuses a task with attempts left (title carries the tests.add clause verbatim; case id ub7 in test_audit_task.py stage ub-block)"
+  ],
+  "claims": "claims:\n1 verbs-in-full.md:62-68 and PLUGIN-BUILD-GUIDE.md ~5193-5197 now say what audit-task.py _unblock_refusal (returns None for status blocked) and _locked_unblock (reset only when spent >= ceiling; block cleared for blocked) do\n2 ub7 FAIL on old text (6/7) -> PASS after (7/7); the negative assertions are on the old sentence 'refuses a task with attempts left' which was the failing text\n3 grep -rniE 'unblock[^.]{0,80}(refus|attempts left)|(refus|attempts left)[^.]{0,80}unblock' over *.md,*.py: remaining hits are the corrected sentences, the verb's own code, test_drive_phase.py:3372 (left, outside files, reported), CHANGELOG.md:579 (history), evidence/phase records (history)\n4 n/a \u2014 no rule to an agent\n5 n/a \u2014 no property recorded\n6 n/a \u2014 no guard\n7 n/a \u2014 no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:95300b043dbb8085d516213d4132684157649b32900914800eb1703df1d18cf4\",\"dirtyDigest\":\"sha256:983514c4e3cd1dfb178d4c06ee5f6cc9c813b30bb16e79d1632e2fa2419bce78\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"4fdde3d755090cb3\",\"plugins/audit/reference/manifest-conventions.md\":\"3dcf22ba52a8ddf2\",\"plugins/audit/reference/verbs-in-full.md\":\"bef883dde73fa839\",\"plugins/audit/scripts/governance/drive-phase.py\":\"743cea6b3177a955\",\"plugins/audit/tests/test_audit_task.py\":\"98d49fbb85737a7a\"},\"head\":\"4579db62\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/manifest-conventions.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:8a4982644fb84fc2265f18203ccfe77671fff3f4751174198ddaa993231c6d07\",\"v\":2}"
+}

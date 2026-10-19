@@ -4145,9 +4145,10 @@ DEFAULT_MAX_ATTEMPTS = 3
 
 
 def attempts_spent(task):
-    """Whether `task` has spent the attempts it may take - the line between
-    `unblock`, which refuses a task with attempts left, and `start`, which
-    refuses one without."""
+    """Whether `task` has spent the attempts it may take - the line past which
+    `start` refuses it and `unblock` is the only verb that takes it back; below
+    it `start` runs the task, and `unblock` would clear a block without
+    running it."""
     ceiling = task.get("maxAttempts")
     if isinstance(ceiling, bool) or not isinstance(ceiling, int) or ceiling < 1:
         ceiling = DEFAULT_MAX_ATTEMPTS

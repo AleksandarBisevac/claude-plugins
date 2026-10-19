@@ -63,7 +63,9 @@ Execute exactly `<taskId>`, with status guards:
    restarted by `audit-task.py start`, which clears `blockedReason` and records the old reason in
    its `task.start` row — a pending task still carrying one would read as waiting; a task whose
    attempts are spent is `audit-task.py unblock <id> --reason "<their words>"`'s, since `start`
-   refuses it and `unblock` refuses a task with attempts left.
+   refuses it. `unblock` also takes a blocked task with attempts left back to `pending` without
+   running it, and keeps its count; only a pending or running task with attempts left is refused
+   by it, since `start` still runs that.
 3. `status == "in_progress"` → the drive resumes it at the step its last run stopped on: the
    driver keeps its state per phase, so no re-execution question is asked, and an agent that
    filed nothing becomes a named decision rather than a silent second dispatch.

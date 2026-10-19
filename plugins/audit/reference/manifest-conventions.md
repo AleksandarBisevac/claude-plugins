@@ -463,9 +463,10 @@ The journal's **completion-record actions**:
 - `task.block` — `audit-task.py block` set a task blocked with its reason (details: taskId,
   phaseId, reason, changes). It is the verb's own row, the way `task.done` sits beside
   `task.complete`: the hook derives `task.blocked` from a status an edit tool moved
-- `task.unblock` — `audit-task.py unblock` gave a task whose attempts are spent a fresh
-  budget: `attempts` back to 0 and, for a blocked task, `status` back to pending with its
-  `blockedReason` cleared (details: taskId, phaseId, reason, changes)
+- `task.unblock` — `audit-task.py unblock` took a task back without running it: a task whose
+  attempts are spent gets a fresh budget (`attempts` back to 0), and a blocked task goes
+  `status` back to pending with its `blockedReason` cleared, its count kept when attempts were
+  left (details: taskId, phaseId, reason, changes)
 - `task.start` — `audit-task.py start` promoted a task to in_progress (details: taskId,
   phaseId, attempt, changes; `commit` is the HEAD the start was taken at, absent outside git,
   and is where a later `done --no-change` starts the span of commits it asks about)

@@ -1,0 +1,62 @@
+{
+  "gates": {
+    "test_require_plan.py --selftest": "pass (236/236)",
+    "test__manifest_rules.py --selftest": "pass (170/170)",
+    "test_validate_manifest.py --selftest": "pass (56/56)",
+    "test__config.py --selftest": "pass (347/347)",
+    "test__refs.py --selftest": "pass (286/286)",
+    "tools/sweep-selftests.py": "pass (340/340 files ok)",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8-": "pass (no incompatible versions)"
+  },
+  "redFirst": {
+    "at": "2026-10-19T09:58:31Z",
+    "basis": "`sh -c python3 plugins/audit/tests/test_require_plan.py --selftest && python3 plugins/audit/tests/test__manifest_rules.py --selftest && python3 plugins/audit/tests/test_validate_manifest.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases s7b (house FAIL), bt8 (house FAIL), but the fix run collected 56 case(s) and the task's run 236, so a failing case may be missing rather than passing - SELFTEST FAILED: 234/236 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "F729 fixed. (a) _config.declaring_tasks now returns every task whose entry covers the file (all covering keys, not only the first), with `entry` and `direct` fields (docstring keeps 'for a message, never for a verdict'). require-plan.py: new _split_declared/_covers_clause; the bound-tree sentence names only owners (entry names the file itself, or task in_progress) as 'declared by', and renders a pending task's directory entry as '(covered by the directory entry `lib/` of P1.5 (status \"pending\"), which opens nothing until that task is started)'; _declaration_note with only such covers takes the undeclared branch (widen scope / add task remedies) with a stated sentence naming the directory entry. (b) _manifest_rules.directory_entry_warnings(manifest, is_dir=None) is the pure predicate (entry ending in / or is_dir true; no is_dir reads no file; coded rules.files.directory-entry); validate-manifest.py supplies os.path.isdir against _output.project_of_manifest and appends the warning (exit code unchanged). Own tree plan validated: 27 directory warnings, still exit 0. Note: my first _config.py edit went through a python heredoc and was allowed as the writer's free file; the following require-plan.py heredoc write was refused by the plan gate, and I then used the Edit tool (allowed) for all remaining source edits. Tests: bt8 and s7b in test_require_plan.py, dr1 in test__manifest_rules.py, dd1 in test_validate_manifest.py. Bound fixture gained tasks P1.5/P1.6/P1.7.",
+    "descriptive": "A refusal no longer names a not-started task as the owner of a file it only covers through a directory entry, and validate-manifest warns on directories listed in a task's files."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_require_plan.py: bt8 a bound in_progress task refused a new file under a directory entry of a pending task gets a refusal that does not name the pending task as the file's owner; a pending task naming the file itself, and an in_progress task covering it, are still named",
+    "plugins/audit/tests/test_require_plan.py: s7b a file covered only by the DIRECTORY entry of an unstarted task is not stated as declared by that task (extra case, not a tests.add entry)",
+    "plugins/audit/tests/test__manifest_rules.py: dr1 the directory-entry predicate reports a task files entry the supplied directory test calls a directory, or one ending in /, naming the task and the entry, reports nothing for file entries, and reads no file when given no directory test",
+    "plugins/audit/tests/test_validate_manifest.py: dd1 a plan whose task lists an existing project directory in files draws a warning naming the task and the entry, and the exit code is the one the same plan without the entry gets"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_require_plan.py: a bound in_progress task refused a new file under a directory entry of a pending task gets a refusal that does not name the pending task as the file's owner; a pending task naming the file itself, and an in_progress task covering it, are still named": {
+      "file": "plugins/audit/hooks/require-plan.py",
+      "find": "if d.get(\"direct\") or d.get(\"status\") == \"in_progress\"]",
+      "replace": "if True]",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_require_plan.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test__manifest_rules.py: the directory-entry predicate reports a task files entry the supplied directory test calls a directory, or one ending in /, naming the task and the entry, reports nothing for file entries, and reads no file when given no directory test": {
+      "file": "plugins/audit/scripts/manifest/_manifest_rules.py",
+      "find": "if entry.endswith(\"/\") or _asks_dir(is_dir, entry):",
+      "replace": "if True:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__manifest_rules.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test_validate_manifest.py: a plan whose task lists an existing project directory in files draws a warning naming the task and the entry, and the exit code is the one the same plan without the entry gets": {
+      "file": "plugins/audit/scripts/manifest/validate-manifest.py",
+      "find": "manifest, lambda entry: os.path.isdir(os.path.join(project, entry)))",
+      "replace": "manifest, None)",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_validate_manifest.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n1 _config.py declaring_tasks (all covering keys, entry/direct fields); require-plan.py _split_declared/_covers_clause and the bound sentence in decide step 2c; _manifest_rules.directory_entry_warnings; validate-manifest.py main passes os.path.isdir\n2 bt8 went red on unfixed code (refusal named P1.5 for lib/exact.ts and lib/new.ts), dd1 red (no warning), dr1 red (AttributeError); three falsifiers declared for the helper to run; allow case (file entries draw nothing, exit code equal) is inside dr1 and dd1\n3 grep declaring_tasks consumers in hooks/: 2 (require-plan.py bound sentence and _declaration_note), both changed; _config.py's own use none else\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard decision reads command text; the sentence reads entry/status of the plan\n7 n/a - no number written in prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:00e2b24fddd3347ee2f095a504ae9a4de037029308c7d3490ebe7caddc55eafb\",\"dirtyDigest\":\"sha256:38e7d4f4a26ecb3a115e51fda47b633ebb7176e83035f1867f2434f6a4ec982d\",\"dirtyPaths\":{\"plugins/audit/hooks/_config.py\":\"811ec315ad4010b0\",\"plugins/audit/hooks/require-plan.py\":\"9448756c7f4f64cd\",\"plugins/audit/scripts/manifest/_manifest_rules.py\":\"d0e1aae4a7cac3a7\",\"plugins/audit/scripts/manifest/validate-manifest.py\":\"3fe82519fcd44544\",\"plugins/audit/tests/test__manifest_rules.py\":\"1c83930283cc8a2a\",\"plugins/audit/tests/test_require_plan.py\":\"1c4089f282f65458\",\"plugins/audit/tests/test_validate_manifest.py\":\"b39b1fe9eebcda41\"},\"head\":\"4579db62\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/require-plan.py\",\"plugins/audit/scripts/manifest/_manifest_rules.py\",\"plugins/audit/scripts/manifest/validate-manifest.py\",\"plugins/audit/tests/test__config.py\",\"plugins/audit/tests/test__manifest_rules.py\",\"plugins/audit/tests/test_require_plan.py\",\"plugins/audit/tests/test_validate_manifest.py\"],\"scopeDigest\":\"sha256:69685cd230ba01bc0733331543391998476d892ba71202921a9727755c23cdf6\",\"v\":2}"
+}
