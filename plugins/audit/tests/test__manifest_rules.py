@@ -1074,6 +1074,40 @@ def _cases(record):
     _cases_falsifier(record)
     _cases_directory_entries(record)
     _cases_derived_gate_entries(record)
+    _cases_gate_entry_shape(record)
+
+
+# --- a gate entry that runs one suite with another as its argument -----------
+_GX_BAD = "python3 tests/test_a.py tests/test_b.py"
+_GX_SPELLED = "python3 tools/sweep-selftests.py tests/test_a.py tests/test_b.py"
+
+
+def _gx_plan(entries, status="pending"):
+    m = _valid_manifest()
+    task = m["phases"][0]["tasks"][0]
+    task["status"] = status
+    task["tests"] = {"mode": "regression", "gate": list(entries)}
+    return m
+
+
+def _cases_gate_entry_shape(record):
+    f_bad, w_bad = M.validate(_gx_plan([_GX_BAD, "tests/ok.py"]))
+    f_ok, w_ok = M.validate(_gx_plan([_GX_SPELLED, "tests/ok.py"]))
+    f_none, _w_none = M.validate(_valid_manifest())
+    named = [str(x) for x in w_bad if "P0.1" in str(x) and _GX_BAD in str(x)]
+    record("gx1 a plan already holding a malformed gate entry draws a warning "
+           "naming the task and the entry, and no error",
+           len(named) == 1 and f_bad == f_ok == f_none,
+           ([str(x) for x in w_bad], f_bad, f_ok))
+    # The over-fire direction: a warning raised on every gate would pass gx1;
+    # the spelled entry beside it names the same suites and must stay quiet,
+    # and so must a finished task, whose gate nobody can still correct.
+    _f_done, w_done = M.validate(_gx_plan([_GX_BAD], status="done"))
+    record("gx2 ALLOW: a spelled sweep entry naming the same two suites draws "
+           "no such warning, and neither does a finished task holding the "
+           "malformed one: %r" % ([str(x) for x in w_ok],),
+           not any(_GX_SPELLED in str(x) for x in w_ok)
+           and not any(_GX_BAD in str(x) for x in w_done))
 
 
 # --- tests.falsifiers: kept in the schema, read by nothing -------------------

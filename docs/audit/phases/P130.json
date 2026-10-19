@@ -225,9 +225,16 @@
         "file": "plugins/audit/scripts/governance/_runner_collects.py:121-127",
         "issue": "_sweep_roots takes every quoted string on a line and joins them with '/', so a compact or commented tuple becomes a wrong root silently. I called it: SWEEP_DIRS = (\\n \"tools\", \".claude/hooks\",\\n) gives ['tools/.claude/hooks'], and a trailing comment like '# the \"x\" dir' gives ['tools/x']. A wrong root makes every real suite a false NOT_COLLECTED, and nothing reports it as could-not-tell. No case parses the real tools/sweep-selftests.py. Both new cases use fixture SWEEP_DIRS text (test__runner_collects.py:211-218, test_drive_phase.py:293-294). On today's file I checked it yields the five correct roots.",
         "resolution": "Parse the tuple with ast.literal_eval or an AST walk, which handles os.path.join. If that cannot be done, treat any line holding more than one separate string argument, or a trailing comment, as unreadable and return None. Add a selftest case asserting that _sweep_roots on the repo's real tools/sweep-selftests.py equals its SWEEP_DIRS, so a reformat goes red rather than silent."
+      },
+      {
+        "id": "P130-R30",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py; plugins/audit/tests/test__manifest_rules.py (index state in claude-plugins-P130.41-ywo)",
+        "issue": "git ls-files -u in the task tree still lists stage 1/2/3 entries for both conflicted files (status UU), although the working-tree text has no conflict markers. A plain commit or commit-by-path refuses unmerged paths until they are re-added.",
+        "resolution": "Run git add on those two paths before the close commits (resolution is already correct in the working tree), and check git ls-files -u prints nothing."
       }
     ],
-    "outcome": "[findings: 29 - 0 high, 6 med, 23 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 30 - 0 high, 6 med, 24 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -3749,7 +3756,7 @@
     {
       "id": "P130.38-ywo",
       "title": "The task-start scope preflight asks a runner only about the paths it can collect, and a Python suite counts as collected by the sweep",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fault F731. scope_gap (plugins/audit/scripts/governance/drive-phase.py:1073-1115) keeps, from a task's gate entries, only those whose entry_runner is in _gate_derive.UNIT_RUNNERS, then declares a scope-gap when none of those runners collects a tests.add path. The Python suites here are collected by tools/sweep-selftests.py behind the `selftests` entry, whose entry_runner is None, so it is never asked; with `vitest` also in the gate, every Python test path draws NOT_COLLECTED from vitest and a scope-gap decision whose only remedies are widen (adds vitest.config.mjs, which the task never edits) or block. Seen on P130.4 (test__config.py) and P130.7 (test__deps.py). Fix: read how _gate_derive already splits paths by language (_runners_for, _gate_derive.py:312) and have scope_gap ask a runner only about paths that runner can take, treating plugins/audit/tests/*.py (and the project's own Python suite location) as collected by the sweep when the gate holds `selftests`; the alternative of counting any collecting runner is acceptable only if it reuses that same split, and the return names which was taken. A path no runner of the gate can take at all must still be reported rather than silently passed. Acceptance: (1) a Python tests.add path under a gate holding `selftests` and `vitest` draws no scope-gap decision and no could-not-tell line; (2) a .mjs/.js tests.add path vitest does not collect still draws the scope-gap decision with its widen remedy; (3) a Python path under a gate holding neither the sweep nor pytest is still reported; (4) each new case is red with the fix reverted (the return shows the red run). REPLACES P130.24-ywo, cancelled because its gate could not go green while test_drive_phase case sc4 was red at the base (F733); its finished work is saved as a patch: <outside-repo> (git apply --check passed on the phase head). Apply it, verify every suite the task names, prove the tests.add cases red by reverting the implementation half in a scratch copy, then submit. Do not redo the work. Also owed: test__refs c5 reads fixture literals as references to missing scripts (plugins/audit/tests/test__runner_collects.py ~:366-368 and test_drive_phase.py ~:6768-6787); spell them unanchored (e.g. backend/tests/...).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -3813,19 +3820,34 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fcd0817a4e48",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Applied the saved patch P130.24-ywo.patch in the task tree with git apply -3 (clean on all five files; git diff --stat shows _gate_derive.py, _runner_collects.py, drive-phase.py, test__runner_collects.py, test_drive_phase.py, 245 insertions / 8 deletions; I ran git restore --staged . afterwards to leave the index as it was). Option taken: scope_gap asks each runner only about paths of its language via _runner_collects.runners_taking (LANGUAGE_RUNNERS: .py -> sweep, pytest; js/mjs/cjs/jsx/ts/mts/cts/tsx -> vitest, jest), and the sweep (entry_collector in _gate_derive recognises tools/sweep-selftests.py) is asked via a new _sweep_reading that reads SWEEP_DIRS from the project's sweep script; it is NOT the 'count any collecting runner' alternative. A path no runner of the gate can take (e.g. python under a vitest-only gate, .mjs under a sweep-only gate) returns a scope-gap decision saying so, with config None (no widen file), so nothing is silently passed. Also did the owed fixture-literal fix: in test__runner_collects.py and test_drive_phase.py the fixture sweep root and paths now read backend/tests/test_x.py and backend/tests/test_mine.py (unanchored), so test__refs c5 is green. Runs from the task tree one at a time, all exit 0: test_drive_phase 380/380, test__runner_collects 107/107, test__refs 286/286, plus test__gate_derive, test__deps, test__output green.",
+        "descriptive": "The task-start preflight no longer stops a task whose Python suite the project's sweep runs just because vitest is also in the gate, and still reports a path no runner of the gate can take."
       },
       "startedAt": "2026-10-19T12:12:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T13:44:49Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_drive_phase.py: scope_gap on a task whose tests.add is a plugins/audit/tests/test_*.py path and whose gate holds selftests and vitest returns no decision; a .mjs path vitest does not collect still returns the scope-gap decision naming vitest.config.mjs; a Python path under a gate with neither the sweep nor pytest is still reported -- case ids: _scope_language_cases (stage pg-block), six checks each titled with that clause plus a parenthesised detail",
+        "plugins/audit/tests/test__runner_collects.py: the language split the preflight uses sends a .py path to the sweep or pytest and a .js/.mjs/.ts path to vitest or jest, and names no runner for a path none of the gate's runners can take -- case ids: _language, checks each titled with that clause plus a parenthesised detail"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T13:16:45Z.24042b",
         "status": "passed",
         "at": "2026-10-19T13:16:45Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "fcd0817a4e48",
+        "at": "2026-10-19T13:44:49Z",
+        "return": "docs/audit/evidence/returns/P130.38-ywo/20261019T121258Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-19T12:42:22Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD: the run timed out after 39 s and its process group was torn down; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {

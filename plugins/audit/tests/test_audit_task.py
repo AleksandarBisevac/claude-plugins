@@ -18714,6 +18714,162 @@ def _retired_flag_cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+GATE_ENTRY_CLAUSE = (
+    "add, add --from-file, scope --gate and scope --gate-set refuse a "
+    "malformed gate entry and write nothing; an add --from-file batch of "
+    "several Python suites per task gets one spelled entry per task; scope "
+    "--gate-set with the manifest positional last writes the same gate as "
+    "with it first, and a manifest path as a gate entry is refused")
+_GX_SPELLING = "python3 tools/sweep-selftests.py {paths}"
+_GX_TWO = "python3 backend/tests/test_x.py backend/tests/test_y.py"
+_GX_TWICE = "python3 backend/tests/test_x.py backend/tests/test_x.py"
+_GX_PLAN = "docs/audit/audit-plan.json"
+
+
+def _gate_entry_cases(check):
+    """The shape of a gate entry is asked where it is WRITTEN: four verbs
+    refuse the entry that runs one suite with another as its argument, `add
+    --from-file` derives one spelled entry naming every suite of a task, and
+    `--gate-set` leaves a trailing manifest positional alone."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, _run_on_stdin, base_manifest, mk, _mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, _pd_fixture, _pd_repo, _git) = _at_kit(tmp)
+
+    def plan(spelled=True):
+        m = base_manifest()
+        m["meta"]["buildCommands"]["selftests"] = "python3 tools/sweep-selftests.py"
+        if spelled:
+            m["meta"]["phaseGate"] = {"derived": {"spelling": _GX_SPELLING}}
+        m["phases"][1]["tasks"][0]["tests"] = {
+            "mode": "tdd", "expectRedFirst": True,
+            "add": ["backend/tests/test_old.py: the old case"],
+            "gate": ["python3 tools/sweep-selftests.py "
+                     "backend/tests/test_old.py"]}
+        m["phases"][1]["tasks"][1]["tests"] = {
+            "mode": "gate-only", "expectRedFirst": False, "add": [],
+            "gate": ["test"]}
+        return m
+
+    def tree(proj):
+        seen = {}
+        base = os.path.join(proj, "docs", "audit")
+        for dirpath, _dirs, files in os.walk(base):
+            for name in files:
+                full = os.path.join(dirpath, name)
+                with open(full, "rb") as fh:
+                    seen[os.path.relpath(full, base)] = fh.read()
+        return seen
+
+    def gate(mp, tid="P2.3"):
+        return ((task_in(mp, tid) or {}).get("tests") or {}).get("gate")
+
+    def batch(proj, tasks, name="batch.json"):
+        path = os.path.join(proj, name)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"phase": {"id": "P2"}, "tasks": tasks}, fh)
+        return path
+
+    suites = ["backend/tests/test_a.py: the first case",
+              "backend/tests/test_b.py: the second case"]
+    spelled_both = ("python3 tools/sweep-selftests.py "
+                    "backend/tests/test_a.py backend/tests/test_b.py")
+    spelled_cd = spelled_both.replace("test_a", "test_c").replace(
+        "test_b", "test_d")
+    try:
+        proj, mp = mk("gx", plan())
+        before = tree(proj)
+        outcomes = []
+        for entry in (_GX_TWO, _GX_TWICE):
+            for argv in (
+                    ["add", "Fresh", "--phase", "P2", "--tests-mode",
+                     "gate-only", "--gate", entry],
+                    ["add", "--from-file", batch(proj, [
+                        {"title": "Fresh", "tests": {
+                            "mode": "gate-only", "gate": [entry]}}])],
+                    ["scope", "P2.3", "--gate", entry],
+                    ["scope", "P2.3", "--gate-set", "test", entry]):
+                code, txt = run(argv + ["--project-dir", proj])
+                outcomes.append((argv[0], argv[-2] if argv[0] == "scope" else "",
+                                 code, entry in txt,
+                                 "meta.phaseGate.derived.spelling" in txt,
+                                 tree(proj) == before))
+        refused = all(c == 2 and named and spelling and untouched
+                      for _v, _f, c, named, spelling, untouched in outcomes)
+        # THE ALLOW CASE for the refusals, so a predicate that fired on every
+        # entry cannot pass: the spelled entry names the same two suites.
+        ok_code, ok_txt = run(["scope", "P2.3", "--gate", spelled_both,
+                               "--project-dir", proj])
+        ok_gate = gate(mp)
+        # ...and on a plan recording no spelling, the refusal says so rather
+        # than naming a field that is not there.
+        proj_n, _mp_n = mk("gx-nospell", plan(spelled=False))
+        code_n, txt_n = run(["scope", "P2.3", "--gate", _GX_TWO,
+                             "--project-dir", proj_n])
+
+        proj_b, mp_b = mk("gx-batch", plan())
+        code_b, txt_b = run(["add", "--from-file", batch(proj_b, [
+            {"title": "One", "tests": {"mode": "tdd", "add": suites}},
+            {"title": "Two", "tests": {"mode": "tdd", "add": [
+                suites[1].replace("test_b", "test_c"),
+                suites[0].replace("test_a", "test_d")]}}]),
+            "--project-dir", proj_b])
+        batch_gates = [gate(mp_b, "P2.4"), gate(mp_b, "P2.5")]
+
+        positional = []
+        try:
+            for name, argv in (
+                    ("last", ["scope", "P2.3", "--gate-set", "a", "b", _GX_PLAN]),
+                    ("first", ["scope", "P2.3", _GX_PLAN, "--gate-set", "a", "b"]),
+                    ("swapped", ["scope", _GX_PLAN, "P2.3", "--gate-set", "a",
+                                 "b"]),
+                    ("retarget", ["retarget", "P2", "--gate-set", "a", "b",
+                                  _GX_PLAN])):
+                proj_p, mp_p = mk("gx-pos-" + name, plan())
+                _pin(proj_p, proj_p)
+                code_p, txt_p = run(argv)
+                tid = "P2" if argv[0] == "retarget" else "P2.3"
+                got = (_mio.load_manifest(mp_p)["phases"][1].get("testGate")
+                       if tid == "P2" else gate(mp_p))
+                positional.append((name, code_p, got))
+            # A file that is NOT a plan stays a gate entry: the last value is
+            # the manifest only when the manifest loader reads it as a plan.
+            proj_q, mp_q = mk("gx-notplan", plan())
+            with open(os.path.join(proj_q, "notes.json"), "w") as fh:
+                fh.write('{"x": 1}')
+            _pin(proj_q, proj_q)
+            code_q, _txt_q = run(["scope", "P2.3", "--gate-set", "a",
+                                  "notes.json"])
+            notplan = gate(mp_q)
+            # A manifest path as a gate entry is refused in either order.
+            proj_m, mp_m = mk("gx-manifest", plan())
+            _pin(proj_m, proj_m)
+            before_m = tree(proj_m)
+            refusals = []
+            for argv in (["scope", "P2.3", "--gate", _GX_PLAN],
+                         ["scope", "P2.3", _GX_PLAN, "--gate", _GX_PLAN],
+                         ["scope", "P2.3", _GX_PLAN, "--gate-set", "a",
+                          _GX_PLAN],
+                         ["scope", "P2.3", "--gate", _GX_PLAN, _GX_PLAN]):
+                code_m, txt_m = run(argv)
+                refusals.append((code_m, "manifest" in txt_m.lower(),
+                                 tree(proj_m) == before_m))
+        finally:
+            _unpin()
+
+        check("gx1 " + GATE_ENTRY_CLAUSE + " (%s)" % (
+            (refused, ok_code, ok_gate, code_n, txt_n[-160:], code_b,
+             batch_gates, positional, code_q, notplan, refusals),),
+              refused and ok_code == 0 and ok_gate == [spelled_both]
+              and code_n == 2 and _GX_TWO in txt_n
+              and "meta.phaseGate.derived.spelling" not in txt_n
+              and code_b == 0 and batch_gates == [[spelled_both], [spelled_cd]]
+              and all(c == 0 and g == ["a", "b"] for _n, c, g in positional)
+              and code_q == 0 and notplan == ["a", "notes.json"]
+              and all(c == 2 and named and same for c, named, same in refusals))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("at3-block", "_flag_cases"), ("at4-block", "_start_cases"),
           ("at5-block", "_close_cases"), ("at6-block", "_group_cases"),
@@ -18736,7 +18892,8 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("bcm-block", "_build_command_cases"),
           ("bcp-block", "_bcm_plan_holder_cases"),
           ("xf-block", "_crossfile_cases"),
-          ("rf-block", "_retired_flag_cases"))
+          ("rf-block", "_retired_flag_cases"),
+          ("gx-block", "_gate_entry_cases"))
 
 
 if __name__ == "__main__":

@@ -1383,6 +1383,111 @@ def _retarget_gate_contradiction(args):
     return None
 
 
+# --- what a gate entry may be, asked where it is written -----------------------
+def _reads_as_plan(path):
+    """Whether `path` is an existing file the manifest loader reads as a plan:
+    a JSON object holding a `phases` list. A JSON file that is not one (a
+    config, a package manifest) is an ordinary file and stays a legal word."""
+    if not isinstance(path, str) or not path.strip() or not os.path.isfile(path):
+        return False
+    try:
+        loaded = _mio.load_manifest(path)
+    except Exception:
+        return False
+    return isinstance(loaded, dict) and isinstance(loaded.get("phases"), list)
+
+
+def _names_plan_file(entry, project):
+    """Whether the WHOLE gate entry is the path of a plan, as typed from the
+    working directory or from the project root the gate runs from. An entry
+    that merely passes the manifest to a command (`validate-manifest.py
+    docs/audit/audit-plan.json`) is a command and is not this."""
+    word = entry.strip() if isinstance(entry, str) else ""
+    if not word or len(word.split()) != 1:
+        return False
+    return _reads_as_plan(word) or (
+        not os.path.isabs(word) and _reads_as_plan(os.path.join(project, word)))
+
+
+def _recorded_spelling(assembled):
+    """The spelling the plan records for a gate entry naming several paths, or
+    None. Read through `_gate_derive.resolve_shape` -- the one reader the task
+    gate derivation uses -- with no phase, so only the recorded spelling can
+    answer and a sibling's entry never does."""
+    meta = (assembled or {}).get("meta") if isinstance(assembled, dict) else None
+    meta = meta if isinstance(meta, dict) else {}
+    gate = meta.get("phaseGate")
+    shape, source, _lines = _gate_derive.resolve_shape(
+        {}, meta.get("buildCommands"),
+        gate.get("derived") if isinstance(gate, dict) else None)
+    return shape[0] if source == _gate_derive.SPELLING_SOURCE else None
+
+
+def _gate_write_refusal(entries, assembled, project, where, shape=True):
+    """The refusal line for the first gate entry about to be WRITTEN that is
+    not an entry a gate can run, or None.
+
+    ASKED OF THE ENTRIES THE VERB IS ABOUT TO WRITE, never of a gate it merely
+    keeps: `--gate-drop` leaves old entries standing, and refusing a call for
+    what an earlier one wrote would make the cure unreachable. Two questions:
+    an entry that is the plan's own path (`--gate-set a b <manifest>` read the
+    manifest as a third word before the flag learned to leave it alone), and,
+    when `shape` is set, `_manifest_phases.gate_entry_shape_problem`. `retarget`
+    asks the first alone -- a phase's `testGate` was never held to the second.
+
+    The remedy names `meta.phaseGate.derived.spelling` only when the plan
+    records one: pointing at a field that is not there is a second fault.
+    """
+    build = ((assembled or {}).get("meta") or {}).get("buildCommands") \
+        if isinstance(assembled, dict) else None
+    build = build if isinstance(build, dict) else {}
+    for entry in entries or ():
+        if not isinstance(entry, str) or entry in build:
+            continue
+        if _names_plan_file(entry, project):
+            return ("[audit-task] %s entry %r is the path of a plan, not a "
+                    "command -- refused, nothing written. A manifest goes "
+                    "BEFORE the flag (`scope <id> <manifest> --gate-set a b`); "
+                    "`--gate-set` takes every word after it." % (where, entry))
+        problem = _phases.gate_entry_shape_problem(entry, build) if shape \
+            else None
+        if problem:
+            spelling = _recorded_spelling(assembled)
+            return ("[audit-task] %s entry %r %s -- refused, nothing written. "
+                    "%s" % (where, entry, problem,
+                            ("This plan records the spelling that names "
+                             "several suites in meta.phaseGate.derived."
+                             "spelling (%s): write the entry in it, or leave "
+                             "--gate off and list the suites in --tests-add."
+                             % (spelling,)) if spelling else
+                            "Write one entry that names every suite behind its "
+                            "runner, or one entry per suite."))
+    return None
+
+
+def _manifest_beside_gate_set(args):
+    """Move a manifest the parser could not see out of `--gate-set`, in place.
+
+    `--gate-set` is `nargs="*"`, so it takes every word after it: in
+    `scope <id> --gate-set a b <manifest>` the manifest arrives as a third
+    gate entry and the positional slot stays empty. When no manifest positional
+    was given and the LAST value names a file the loader reads as a plan, that
+    value is the manifest. And `scope <manifest> <id>` reaches `title` and
+    `manifest` swapped, which the same test straightens: a task or phase id is
+    never a plan file, so a plan in the first slot is the manifest. `scope` and
+    `retarget` share the flag and both come here.
+    """
+    if args.command not in ("scope", "retarget"):
+        return
+    if args.title and args.manifest and _reads_as_plan(args.title) \
+            and not _reads_as_plan(args.manifest):
+        args.title, args.manifest = args.manifest, args.title
+    values = args.gate_set
+    if args.manifest is None and values and _reads_as_plan(values[-1]):
+        args.manifest = values[-1]
+        args.gate_set = list(values[:-1])
+
+
 def _model_floor(risk):
     """The model `add` derives for a task at `risk` when the caller names none.
 
@@ -3912,6 +4017,13 @@ def _locked_add(args, project, config, mpath, title, out):
                                                 assembled, failing_row,
                                                 project, companions,
                                                 runner_aware=bool(fixes))
+    # THE GATE AS WRITTEN, whichever arm produced it: a `--gate` typed by hand
+    # and an entry re-pointed off a sibling are the same list on disk.
+    gate_refusal = _gate_write_refusal(task["tests"]["gate"], assembled, project,
+                                       "tests.gate")
+    if gate_refusal:
+        out(gate_refusal)
+        return E_USAGE
     if fixes:
         bare_runner = _runnerless_test_note(targets, project, task["tests"]["gate"],
                                             gate_basis, fixes, records)
@@ -8635,6 +8747,11 @@ def _batch_build_tasks(doc, ids, keys, phase, first, assembled, project, mpath):
         task, _unnamed, gate_basis = _build_task(
             tid, spec_task["title"].strip(), args, phase, assembled, None,
             project, companions, runner_aware=bool(fixes))
+        gate_refusal = _gate_write_refusal(task["tests"]["gate"], assembled,
+                                           project, "tests.gate")
+        if gate_refusal:
+            bad.append("tasks[%d]: %s" % (i, gate_refusal))
+            continue
         basis = _companion_basis(companions) if companions else ""
         if fixes:
             bare_runner = _runnerless_test_note(targets, project,
@@ -8650,8 +8767,9 @@ def _batch_build_tasks(doc, ids, keys, phase, first, assembled, project, mpath):
         phase["tasks"][first + i] = task
         bases.append(basis)
     if bad:
-        return None, ("[audit-task] REFUSED: the batch names a fix the plan cannot "
-                      "take -- nothing written:\n  - %s" % ("\n  - ".join(bad),))
+        return None, ("[audit-task] REFUSED: the batch names a task the plan "
+                      "cannot take -- nothing written:\n  - %s"
+                      % ("\n  - ".join(bad),))
     return bases, None
 
 
@@ -9249,6 +9367,14 @@ def _locked_scope(args, project, config, mpath, tid, out):
         if gate_refusal:
             out(gate_refusal)
             return E_USAGE
+        # ONLY WHAT THIS CALL WRITES: the entries a `--gate-drop` leaves
+        # standing were accepted by an earlier call, or by none.
+        gate_refusal = _gate_write_refusal(
+            list(args.gate or []) + list(args.gate_set or []), assembled,
+            project, "tests.gate")
+        if gate_refusal:
+            out(gate_refusal)
+            return E_USAGE
         if was_gate != now_gate:
             changes.append({"id": tid, "field": "tests.gate",
                             "from": was_gate, "to": now_gate})
@@ -9737,6 +9863,14 @@ def _locked_retarget(args, project, config, mpath, pid, out):
     if args.gate or args.gate_clear or args.gate_set is not None or args.gate_drop:
         was = list(node.get("testGate") or [])
         now, refusal = _retarget_gate_now(args, was)
+        if refusal:
+            out(refusal)
+            return E_USAGE
+        # The plan's own path is the one entry shape refused here; a phase's
+        # `testGate` was never held to the suite-shape rule a task's gate is.
+        refusal = _gate_write_refusal(
+            list(args.gate or []) + list(args.gate_set or []), assembled,
+            project, "testGate", shape=False)
         if refusal:
             out(refusal)
             return E_USAGE
@@ -14095,6 +14229,14 @@ def build_parser():
     # ("an empty gate is --gate-clear, which says so") -- argparse's own usage
     # error for a starved `"+"` would answer instead, in argparse's words and
     # not this project's.
+    #
+    # `nargs="*"` TAKES EVERY WORD AFTER IT, so `scope <id> --gate-set a b
+    # <manifest>` arrives as three gate entries and no manifest. Two readings
+    # keep that from writing the plan's path into the gate:
+    # `_manifest_beside_gate_set` hands the last value back as the manifest
+    # when none was given and the loader reads that file as a plan, and
+    # `_gate_write_refusal` refuses a plan's path as a gate entry wherever it
+    # stands (a manifest written before the flag, and again after it).
     p.add_argument("--gate-drop", dest="gate_drop", action="append",
                    default=None,
                    help="retarget, scope: drop one gate entry (repeatable)")
@@ -14650,6 +14792,9 @@ def _dispatch(args, argv, out):
                           "the task id) and give --technical its text; nothing "
                           "written" % (args.technical,))
         return E_USAGE
+    # BEFORE the machine-path door below: a manifest `--gate-set` swallowed is
+    # an absolute path on a good day, and would be refused there as a gate.
+    _manifest_beside_gate_set(args)
     stop = resolve_briefs(args, out)
     if stop is None:
         stop = resolve_verbatim_values(args, out)

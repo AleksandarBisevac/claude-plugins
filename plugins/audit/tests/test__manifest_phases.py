@@ -1257,6 +1257,42 @@ def _cases(check):
           "has no own entries: %r" % (_og_borrowed,),
           _og_borrowed == [])
 
+    # --- what shape a gate entry has ---------------------------------------
+    # `python3 a/test_x.py a/test_y.py` runs the first suite with the second as
+    # its ARGUMENT, so the second never runs as a suite. The allow cases below
+    # are what stop the predicate firing on every entry that merely names two
+    # paths: a spelled sweep entry names suites too, and a suite may be given a
+    # non-suite argument.
+    _gx_ask = getattr(M, "gate_entry_shape_problem", lambda *a: "missing")
+    _gx_two = ("python3 plugins/audit/tests/test__config.py "
+               "plugins/audit/tests/test_commit_task_work.py")
+    _gx_twice = "python3 plugins/audit/tests/test__config.py " \
+                "plugins/audit/tests/test__config.py"
+    _gx_repeat = ("python3 tools/sweep-selftests.py a/test_x.py a/test_y.py "
+                  "a/test_x.py")
+    _gx_bad = [_gx_ask(e) for e in (_gx_two, _gx_twice, _gx_repeat)]
+    _gx_keys = {"python3 a/test_x.py a/test_y.py": "true"}
+    _gx_quiet = [(e, _gx_ask(e, _gx_keys)) for e in (
+        "python3 a/test_x.py a/test_y.py",
+        "python3 tools/sweep-selftests.py a/test_x.py a/test_y.py",
+        "python3 plugins/audit/tests/test__config.py",
+        "python3 plugins/audit/tests/test__config.py --selftest",
+        "python3 a/test_x.py --out report.json",
+        "node tools/check.mjs a/test_x.py a/test_y.py", "lint", "npm test", "")]
+    check("gx1 the gate-entry shape predicate reports an entry whose first path "
+          "word is a suite file followed by another suite path, and an entry "
+          "naming one path twice, and reports nothing for a buildCommands key, "
+          "a spelled sweep entry or a single-suite entry",
+          all(isinstance(r, str) and r for r in _gx_bad)
+          and all(r is None for _e, r in _gx_quiet)
+          and _gx_ask(None) is None and _gx_ask(7) is None,
+          (_gx_bad, [(e, r) for e, r in _gx_quiet if r is not None]))
+    check("gx2 ...and the reason names the paths it objects to, so the refusal "
+          "built from it can show the entry's own words: %r" % (_gx_bad,),
+          "test_commit_task_work.py" in _gx_bad[0]
+          and "test__config.py" in _gx_bad[1]
+          and "a/test_x.py" in _gx_bad[2])
+
     # --- what an open finding is -------------------------------------------
     _of_ph = {"review": {"findings": [
         {"id": "fa", "status": "fixed"},

@@ -1152,6 +1152,73 @@ def gate_entry_paths(entry):
     return found
 
 
+# The words a gate entry starts its SCRIPT with: what is run, not what is tested.
+# `python3 a/test_x.py a/test_y.py` runs the first path as a program and hands
+# it the second, so only the first is a suite that ran. A test RUNNER
+# (`pytest`, `go test`, `npx playwright test`) takes every path it is given as a
+# suite, so an entry naming several behind one of those is the ordinary spelling
+# and must not be read as this fault.
+_SCRIPT_RUNNER = re.compile(
+    r"^(?:python[0-9.]*|py|node|nodejs|deno|bun|ruby|perl|php|bash|sh|zsh|"
+    r"pwsh|powershell)$")
+
+
+def _is_script_runner(word):
+    """Whether `word` (a shell word's value, or None) names an interpreter."""
+    base = str(word or "").replace("\\", "/").rsplit("/", 1)[-1]
+    return bool(_SCRIPT_RUNNER.match(base.lower().replace(".exe", "")))
+
+
+def gate_entry_shape_problem(entry, build=None):
+    """Why `entry` is not a gate entry that runs what it names, or None.
+
+    Two shapes are reported, each a gate that passes while a suite never ran:
+
+      * a path named TWICE -- the same suite listed again runs it again or, as
+        an argument, asks it for itself; either way one of the two words is
+        not doing what the entry's author meant;
+      * a suite file run as a PROGRAM with another suite behind it
+        (`python3 a/test_x.py a/test_y.py`): the second is only the first's
+        argument, so it never ran as a suite. "Run as a program" is read from
+        the word in front of the first path -- an interpreter, or nothing at
+        all -- because a test runner given two suites runs both.
+
+    `build` is `meta.buildCommands` (or any container of its keys): an entry
+    that IS a key is resolved through the plan whole and is not read here.
+    A spelled sweep entry (`python3 tools/sweep-selftests.py a/test_x.py
+    a/test_y.py`) is quiet because its first path word is the sweep, which is
+    not a suite file.
+
+    The reason is a clause that names the paths, so a refusal and a warning can
+    each put it after the entry they quote.
+    """
+    if not isinstance(entry, str) or (build and entry in build):
+        return None
+    paths, previous, first_before = [], None, None
+    for _raw, value in shell_words(entry):
+        path = shell_word_path(value)
+        if path:
+            if not paths:
+                first_before = previous
+            paths.append(path)
+        previous = value
+    if not paths:
+        return None
+    again = [p for i, p in enumerate(paths) if p in paths[:i]]
+    if again:
+        return "names %s more than once" % ", ".join(
+            repr(p) for p in sorted(set(again)))
+    if is_suite_path(paths[0]) and (first_before is None
+                                    or _is_script_runner(first_before)):
+        extra = [p for p in paths[1:] if is_suite_path(p)]
+        if extra:
+            return ("runs %r as a program and hands it %s as arguments, so %s"
+                    % (paths[0], ", ".join(repr(p) for p in extra),
+                       "they never run as suites" if len(extra) > 1
+                       else "it never runs as a suite"))
+    return None
+
+
 def own_gate_entries(manifest, phase, task):
     """The gate entries that are `task`'s OWN, as declared and unresolved:
     what `run-test-gate.py --own` runs, and what decides whether the executor
@@ -1566,6 +1633,20 @@ def _walk_phases(phases, build_keys=()):
             if task.get("status") not in TERMINAL:
                 w.extend(_comma_joined_gate(task_gate, build_keys, twhere,
                                             "tests.gate"))
+                # A WARNING, AND ONLY FOR A TASK STILL TO RUN: the verbs refuse
+                # the shape when it is written now, but a plan written before
+                # that holds some, and validation stays additive -- a finished
+                # task's gate is a record, not something left to correct.
+                for entry in task_gate:
+                    problem = gate_entry_shape_problem(entry, build_keys)
+                    if problem:
+                        w.append(_output.finding(
+                            "phases.gate_entry_shape.malformed",
+                            "%s: tests.gate entry %r %s - write one entry "
+                            "naming every suite behind the plan's runner "
+                            "(`meta.phaseGate.derived.spelling` when it records "
+                            "one), or one entry per suite"
+                            % (twhere, entry, problem)))
             gate_basis = (tests.get("gateBasis")
                           if isinstance(tests, dict) else None)
             if phase_gate and task_gate == phase_gate \
