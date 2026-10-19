@@ -1132,7 +1132,8 @@
         "P130.24-ywo",
         "P130.25-ywo",
         "P130.26-ywo",
-        "P130.27-ywo"
+        "P130.27-ywo",
+        "P130.28-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -1227,7 +1228,7 @@
     {
       "id": "P130.10-ywo",
       "title": "One function answers what a task's gate is, so a green verdict that carries derived affected steps can be committed",
-      "status": "in_progress",
+      "status": "done",
       "description": "run-test-gate.py records a task's verdict under every step it ran: the declared entries plus the derived `affected/related` and `affected/python` steps it adds when the task gate is narrower than the phase gate (STEP_PREFIX in _affected_tests.py). gate_mismatch in _verdict_binding.py compares the recorded step names with the declared entries and refuses, and a fresh recorded run adds the same steps again, so such a task can never be committed without --override-verdict. Make one function the answer to 'which steps of a recorded row are the declared gate' and have both the recorder and the committer's comparison call it: the derived steps are measured, never declared. The function lives in the lowest module both callers may import (_evidence_io, which _verdict_binding already imports; layer_violations() decides). A widened or narrowed declared gate, a changed gateDigest and a changed gateSource still refuse. Acceptance: (1) a plan with meta.phaseGate.derived whose task gate is narrower than the phase gate records a green row carrying affected steps, and commit-task-work commits it with no override; (2) a row whose declared steps differ from the task's entries is still refused with the existing sentence; (3) a row whose declared entries match but whose gateDigest differs is still refused; (4) the derived-step prefix is spelled in one module only (a grep for the literal finds one definition); (5) _deps layer_violations() reports nothing.",
       "files": [
         "plugins/audit/scripts/governance/_verdict_binding.py",
@@ -1293,19 +1294,34 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f14668612949",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added _evidence_io.DERIVED_STEP_PREFIX (the only definition of the literal under plugins/audit/scripts; `grep -rn affected/ plugins/audit/scripts plugins/audit/hooks` -> one hit, _evidence_io.py:408), is_derived_step() and declared_steps(names, dropped): the declared gate is the names before the first derived step; a non-derived name after a derived one splits nothing (refuses); a row's stepsDropped counts as declared only when no derived step was kept (fail-closed when the split is unrecorded). _verdict_binding.gate_mismatch now compares declared_steps() of the row (sentence lists the declared part). run-test-gate.py derives declared_commands (the gateDigest input) from _ev.declared_steps over its own command list after the affected steps join, and names the phase-gate widening step with _ev.DERIVED_STEP_PREFIX; _affected_tests.entries_for uses _evidence_io.DERIVED_STEP_PREFIX (STEP_PREFIX removed; no other user found by grep). New import edge _affected_tests -> _evidence_io: layer_violations() reports no new entry - it reports one pre-existing violation, ('panel/_panel_state.py', 'runtime-loads render-report (layer 9) from layer 7'), identical on a git-archive export of HEAD 6220678a, in a file outside this task. The edge made test__deps g1 red (module-map fence stale), so PLUGIN-BUILD-GUIDE.md line 390 was updated to match `_deps.py --render` (diff was exactly that line) - this file is OUTSIDE the task's declared files; the plan gate allowed the Edit. Tests: vb34 in test__verdict_binding.py (same-steps+derived -> None; declared part differs, widened, narrowed, gateDigest moved, gateSource moved, interleaved -> refused with the existing sentences; prefix pinned to the module constant); ctw86 in a new staged block ag-block of test_commit_task_work.py (fixture: meta.phaseGate.derived.spelling 'true {paths}', phase testGate [test, wide], task gate [test], tests/test_a.py importing src/a.py -> real run-test-gate --record writes steps ['test', 'affected/python: tests/test_a.py'], commit-task-work exits 0 with no override). Red on base: vb34 FAIL (39/40), ctw86 FAIL (0/1) with the REFUSED 'measured under the gate [test, affected/python: tests/test_a.py]' sentence. Green after: test__verdict_binding 40/40 exit 0; test_commit_task_work full 126/126 exit 0; test_run_test_gate 548/548 exit 0; test__affected_tests 22/22; test__evidence_io 308/308; test__deps 331/331 (after the guide line); ruff exit 0 and vermin exit 0 on the six touched .py files. Falsifier (declared_steps returning names unsplit) proven in a scratch copy: vb34 red 39/40 exit 1, ctw86 red 0/1 exit 1. Plan-gate refusal, verbatim, on a python3 heredoc edit of run-test-gate.py (a file in this task's files): '[plan gate] A source-file write from a heredoc fed to an interpreter's stdin (python3 - <<EOF ...), which is the same capability as python -c and is graded as one bypasses the plan-first gate: plugins/audit/scripts/governance/run-test-gate.py (in the linked worktree ...) ... This path is outside the running task's `files` ... This writer's one free file was already spent on plugins/audit/scripts/governance/_affected_tests.py' - the earlier heredoc edit of _affected_tests.py was graded as the free file; the same run-test-gate.py change was then made with the Edit tool, which the gate allowed (it had already allowed an Edit of that file). The gate's 'outside the running task's files' reading in the linked worktree contradicts the brief's file list; worth a look. A first draft reused id ctw80 (already used at line 1541); the suite's duplicate-id check caught it and the case is ctw86.",
+        "descriptive": "A task whose gate is narrower than its phase's now commits on its own green verdict: the affected steps the recorder adds are measured, not declared, and one function in _evidence_io says so for both recorder and committer."
       },
       "startedAt": "2026-10-18T21:25:40Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T02:30:37Z",
+      "verifiedBy": [
+        "test__verdict_binding.py vb34 a recorded row whose steps are the declared entries followed by affected/related and affected/python steps has no gate mismatch, while a row whose declared part differs, or whose gateDigest differs, still has one",
+        "test_commit_task_work.py ctw86 on a fixture plan with a derived phase gate, a green recorded run of a narrower task gate commits without --override-verdict"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T02:30:36Z.dc27e6",
         "status": "passed",
         "at": "2026-10-19T02:30:36Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "f14668612949",
+        "at": "2026-10-19T02:30:37Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-18T21:39:56Z",
+        "basis": "`python3 plugins/audit/tests/test__verdict_binding.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 40 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - vb34 (house FAIL): SELFTEST FAILED: 39/40 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1480,7 +1496,7 @@
     {
       "id": "P130.13-ywo",
       "title": "unblock returns a task blocked with attempts left to pending, without running it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fault F699. `audit-task.py unblock <id> --reason` refuses a task that is blocked with fewer attempts spent than its ceiling: `_unblock_refusal` (plugins/audit/scripts/manifest/audit-task.py:7361) answers 'is blocked with N of M attempt(s) spent -- `start <id>` still runs it and clears its block, so there is no spent count to reset'. A task blocked on purpose (held, 0 attempts) therefore has no way back to pending except `start`, which runs it, or cancel plus re-add, which loses `movedFrom` lineage and `notes`. The verb is defined as 'reset the spent attempts', so with none spent it has nothing to do; no other verb clears a block without running the task. Fix: `unblock` on a BLOCKED task with attempts below the ceiling clears the block - status pending, `blockedReason` removed - and leaves `attempts` as it is (the count is reset only when it has reached the ceiling, as today). It still takes the human's `--reason`, writes through `_write_plan`, journals `task.unblock` with the reason and the changes, and reports `adoEchoOwed` as it does for a blocked task today. A task that is pending, in_progress with attempts left, done or cancelled is still refused, each with its existing sentence. Update the verb's own comment block above `cmd_unblock` (:7335), the `_unblock_refusal` docstring, `plugins/audit/commands/task.md`'s `unblock` subcommand section and the `/audit:task` row of `plugins/audit/README.md` (which says 'a task with attempts left is refused, since `start` still runs it') so all of them describe both arms. The existing case ub1 in test_audit_task.py asserts the refusal for its fixture task blocked with attempts left and is rewritten, not deleted: that arm becomes an ALLOW case. Acceptance: (1) a pending task blocked with a reason and no attempts, then unblocked with a reason, reads pending with no `blockedReason`, its `attempts`, `notes` and `movedFrom` unchanged, and one `task.unblock` journal row carries the reason; (2) a task blocked with attempts spent below the ceiling behaves the same and keeps its count; (3) a blocked task at the ceiling still has its count reset to zero and goes to pending, exactly as before; (4) unblock of a pending task, of an in_progress task with attempts left, of a done task and of a phase id is refused and writes nothing; (5) the usage block, VERB_FLAGS, commands/task.md and the README row agree on what the verb does.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1518,21 +1534,22 @@
       "dependsOn": [
         "P130.6"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T02:30:39Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.14-ywo",
       "title": "For a project nested under its git root, the stamp helper, the follower recipes and the phase gate all read the member project",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Faults F708 and F709, the remainder of the nested-project fix. Two path bases still meet in one call. (a) The stamp helper: `take_stamp` and `red_block` in plugins/audit/scripts/governance/drive-phase.py (:4548 and :4519) call `stamp-verification.py take|red --project <tree or gitRoot> --manifest <m> --task <id>`; the task's `files` are PROJECT-relative, but `resolve_scope` (plugins/audit/scripts/governance/stamp-verification.py:377) and `_red_scope` (:3345, `expand_declared(root, task.get('files'))` with root = the checkout's top) read them against the checkout's top, so for a project under `app/` the declared-file part of a stamp digests `<top>/src/x.py` instead of `<top>/app/src/x.py`, and `red` looks for the task's test files in the wrong directory. The existing nested case sv30 in test_stamp_verification.py sidesteps this by passing `--files app/src/mine.py`. (b) The follower recipes: `follow_red_gate` (drive-phase.py:1343) runs each recipe in `tree or ctx['gitRoot']`; a recipe is printed by a gate step, which runs in the project directory, so its paths are project-relative and it must run in `member_project(ctx, tree)` - or `ctx['project']` when there is no tree. (c) The phase gate: `phase_gate` (drive-phase.py:3720) calls `run-test-gate.py ... --project-dir ctx['project']` with no `--tree`, and `red_gate_stop` / `run_signoff` call `verify-invariants.py --project ctx['project']`. Read at HEAD, run-test-gate's `tree_of` takes no `--tree` as 'measure the project itself', and `ctx['project']` is the nested directory, so this third may already be right: settle it with a case rather than a reading, and change code only if the case is red. (d) The `falsify` fallback the fault names is retired by the in-flight task that removes the falsifier; confirm no `tree or ctx['gitRoot']` root for it survives. Fix for (a): one function turns a task's project-relative entries into the checkout-relative form the stamp reads - the project's offset under its own git root (as `member_project` computes it, or from `_output.project_of_manifest(--manifest)` relative to that manifest's git top), prefixed onto each entry - and both `take --task` and `red` call it; a project that IS its git root gets byte-identical stamps. `compare` keeps reading the scope recorded inside the stamp. Then the `member_project` docstring's sentence that the stamp helper 'reads git-root-relative paths, and is handed the checkout's top' is rewritten to say what is true after the change. Acceptance: (1) in the `_nested_repo` fixture (project under `app/`), `take --project <top> --manifest <app manifest> --task <id>` for a task declaring `src/mine.py` records the digest of `app/src/mine.py`, and after an edit to that file `compare` reports it moved by its checkout-relative path; (2) `red` in the same fixture finds the task's test file under `app/` and runs; (3) for a project that is its git root, take and red produce what they produced before (the existing cases stay green unchanged); (4) `follow_red_gate` runs a recipe in the project's directory inside the member tree for a nested project, and in `ctx['project']` with no tree; (5) a nested-project case pins the argv `phase_gate` and the invariants run receive to the nested project directory; (6) no caller in drive-phase.py hands a task-declared path or a recipe to the checkout's top for a nested project (the return lists every `ctx['gitRoot']` use it kept and why).",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -1570,21 +1587,22 @@
       "dependsOn": [
         "P130.6"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T02:30:41Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.15-ywo",
       "title": "commands/panel.md describes the help drawer the panel ships instead of saying there is none",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fault F710. plugins/audit/commands/panel.md, the 'Help, over the API only' item (:112-119, the sentence at :116), says 'There is **no drawer for it yet**; say so rather than sending someone clicking for an ⓘ that is not there.' The drawer ships: plugins/audit/scripts/ui/panel/help-drawer.js builds it (`openHelp`, `openHelpIndex`), and the ⓘ hint in hints.js opens it beside a field. The command file is read by the model, so it instructs the model to tell users something false. Fix: rewrite the item to describe the drawer as it ships - what opens it, what it shows (field descriptions extracted from the schemas, the concept pages) - and keep the pointer to the `audit:guide` subagent for a question the schema does not answer; retitle the item so it no longer says 'over the API only'. The same file holds other 'no … yet' sentences (the Areas item says there is no form for `meta.areas`): check each against the shipped panel and fix any that is stale in this task, naming the ones that are still true in the return. Acceptance: (1) commands/panel.md says nowhere that the help drawer is absent; (2) the help item names how the drawer opens, and that naming matches the panel's code; (3) every remaining 'no … yet' sentence in the file was checked against the panel, and the return lists the verdict for each; (4) the new case is red on the current file and green after the edit.",
       "files": [
         "plugins/audit/commands/panel.md",
@@ -1616,16 +1634,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T02:30:43Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.16-ywo",
@@ -2222,6 +2241,62 @@
       "blockedBy": [],
       "dependsOn": [
         "P130.7"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.28-ywo",
+      "title": "A case id that loses its title's space is caught, and a gate entry may not take the derived-step prefix",
+      "status": "pending",
+      "description": "F734, plus the low-med finding of the P130.10-ywo pre-commit review. (A) Two case labels lost the space between id and title in two tasks: `vb1 a gate...` became `vb1a gate...` (plugins/audit/tests/test__verdict_binding.py:103) and `ctw29 SECOND-DIRECTION CASE` became `ctw29SECOND-DIRECTION CASE` (plugins/audit/tests/test_commit_task_work.py:785). `_harness.case_id()` (plugins/audit/tests/_harness.py around :614-630) takes the first token and `_CASE_ID` accepts both glued forms as ids, so the case silently changes id and anything keyed on the old id (prove-gates rows, addMap entries, logs) stops finding it with no failure. Restore both spaces. Remove the class rather than the instances: every case id something outside the suite names (tools/prove-gates.py rows, tests.addMap entries in docs/audit plans) must resolve to a case its suite defines, and prove-gates refuses by name a row whose case id no suite defines - find where prove-gates reads its case ids and add the check there, proven red by restoring one glued label in a scratch copy. (B) A gate entry whose name starts with the derived-step prefix (`_evidence_io.DERIVED_STEP_PREFIX`) can never bind since P130.10-ywo: `declared_steps` cuts it off. Make it a validation warning naming the entry and the reason (`_manifest_rules`), and make gate_mismatch's refusal name that cause when the task's own entries carry the prefix, instead of the generic different-gate sentence. Acceptance: (1) both labels read `<id> <title>`; (2) prove-gates refuses a row naming an undefined case id, shown red in a scratch copy and green on the tree; (3) a plan whose task gate entry starts with the prefix draws a warning; (4) gate_mismatch names the reserved prefix for such a task; (5) the full sweep is green.",
+      "files": [
+        "plugins/audit/tests/test__verdict_binding.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/_harness.py",
+        "tools/prove-gates.py",
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "plugins/audit/tests/test__manifest_rules.py",
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "plugins/audit/scripts/governance/_evidence_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/prove-gates.py: (inline --selftest) a gate row naming a case id that no suite defines is refused by name, while a row naming a defined id is accepted",
+          "plugins/audit/tests/test__manifest_rules.py: a task gate entry named with the derived-step prefix draws a warning naming the entry",
+          "plugins/audit/tests/test__verdict_binding.py: a task whose own gate entry carries the derived-step prefix is refused with a sentence naming the reserved prefix"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.25-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
