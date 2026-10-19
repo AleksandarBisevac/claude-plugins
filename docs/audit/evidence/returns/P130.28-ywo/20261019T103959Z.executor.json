@@ -1,0 +1,58 @@
+{
+  "gates": {
+    "own-tests": "pass",
+    "sweep-selftests": "pass",
+    "test__refs --selftest": "pass",
+    "prove-gates --list": "pass",
+    "ruff": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T11:03:59Z",
+    "basis": "`sh -c python3 tools/prove-gates.py --selftest && python3 plugins/audit/tests/test__manifest_rules.py --selftest && python3 plugins/audit/tests/test__verdict_binding.py --selftest` in a throwaway tree at HEAD exited 1 on \"NameError: name 'undefined_cases' is not defined\" (read as python), and the task introduces 'undefined_cases': absent from HEAD's plugins/audit/scripts/manifest/_manifest_rules.py, plugins/audit/scripts/governance/_verdict_binding.py, plugins/audit/scripts/governance/_evidence_io.py, tools/prove-gates.py and present in the working tree's tools/prove-gates.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(A) vb1 label space restored in test__verdict_binding.py (the ctw29 label already read with its space in this tree). tools/prove-gates.py gained undefined_cases(): reads each row's suite by AST, builds a template per check() label (string constants, % specifiers and variables as holes), and refuses by name (NO SUCH CASE, exit 1 via render(undefined=)) any row whose id or substr selector no label can spell; a selector fitting wholly inside a hole does not count. Selftest cases c1d (fixture suite in a tempdir: defined id and substr accepted, undefined, glued and absent substr refused), c1e (the tree's own TABLE+ALLOW all resolve: 0 undefined of 177 rows), c1f (render fails by name). (B) _manifest_rules.py: _check_reserved_gate_entries warns, code rules.gate.reserved-entry, naming task/phase, field, entry and DERIVED_STEP_PREFIX, for tests.gate and testGate; _verdict_binding.gate_mismatch returns a sentence naming the entry and reserved prefix when the entries asked about carry it. New edge _manifest_rules -> _evidence_io (strictly downward; layer lint green); PLUGIN-BUILD-GUIDE.md module map regenerated with _deps.py --write-map (one line, outside files, docs path). Cases: test__manifest_rules dg1 dg2 dg3 (dg2 is the second direction), test__verdict_binding vb35 (with plain-mismatch second direction). Gates: prove-gates 41/41, manifest_rules 173/173, verdict_binding 41/41, test__refs 286/286 and test__deps 244/244 (both after fixture basenames were spelled without the python extension), prove-gates --list exit 0 with no UNANCHORED rows, ruff clean, tools/sweep-selftests.py 340/340 files ok 16419 cases exit 0. Note: one earlier heredoc write to _verdict_binding.py was refused by the plan gate (heredoc to interpreter stdin); finished with the Edit tool instead.",
+    "descriptive": "A case label that loses the space after its id now fails the sweep by name through prove-gates, and a gate entry spelled with the reserved affected/ prefix draws a validation warning and a refusal that says why."
+  },
+  "testsAdded": [
+    "tools/prove-gates.py: (inline --selftest) a gate row naming a case id that no suite defines is refused by name, while a row naming a defined id is accepted -> c1d (with c1e, c1f)",
+    "plugins/audit/tests/test__manifest_rules.py: a task gate entry named with the derived-step prefix draws a warning naming the entry -> dg1 (with dg2, dg3)",
+    "plugins/audit/tests/test__verdict_binding.py: a task whose own gate entry carries the derived-step prefix is refused with a sentence naming the reserved prefix -> vb35"
+  ],
+  "falsifiers": {
+    "tools/prove-gates.py: (inline --selftest) a gate row naming a case id that no suite defines is refused by name, while a row naming a defined id is accepted": {
+      "file": "tools/prove-gates.py",
+      "find": "if templates is None or not any(_template_defines(t, target)",
+      "replace": "if False and not any(_template_defines(t, target)",
+      "command": [
+        "python3",
+        "tools/prove-gates.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test__manifest_rules.py: a task gate entry named with the derived-step prefix draws a warning naming the entry": {
+      "file": "plugins/audit/scripts/manifest/_manifest_rules.py",
+      "find": "    add(_check_reserved_gate_entries(manifest))\n",
+      "replace": "    pass\n",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__manifest_rules.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test__verdict_binding.py: a task whose own gate entry carries the derived-step prefix is refused with a sentence naming the reserved prefix": {
+      "file": "plugins/audit/scripts/governance/_verdict_binding.py",
+      "find": "    if reserved:\n",
+      "replace": "    if False:\n",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__verdict_binding.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims: (1) Both labels read id-space-title: vb1 edited, ctw29 already correct in this tree (grep ctw29 shows 'ctw29 SECOND-DIRECTION'). (2) prove-gates refusal shown red in a scratch copy with a glued label, green on the tree: undefined_cases output above. (3)-(4) verified by dg1 and vb35 going red then green. (5) sweep exit 0, 340/340 files. Not claimed: the static reader cannot see labels produced outside a check() call with a literal; such a row would be refused, loudly.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:33e6b92d3e82d22e940f1f5f94a7a4fdc152a6d2d8d1657f09a37e65d2e70df5\",\"dirtyDigest\":\"sha256:4a0363320b34213cc4cd755bdd3c754c62ee12320e588872ecd0773b78507229\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"c30111ac0ec2c271\",\"plugins/audit/scripts/governance/_verdict_binding.py\":\"be51e06745e18a4d\",\"plugins/audit/scripts/manifest/_manifest_rules.py\":\"01d4f83c62c7ea15\",\"plugins/audit/tests/test__manifest_rules.py\":\"90779e201cbeb0ca\",\"plugins/audit/tests/test__verdict_binding.py\":\"d6de29e8fe1fb7d8\",\"tools/prove-gates.py\":\"2f729c5c4988243a\"},\"head\":\"7273a6ca\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/_verdict_binding.py\",\"plugins/audit/scripts/manifest/_manifest_rules.py\",\"plugins/audit/tests/_harness.py\",\"plugins/audit/tests/test__manifest_rules.py\",\"plugins/audit/tests/test__verdict_binding.py\",\"plugins/audit/tests/test_commit_task_work.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:8d023b45d1af9a1e5086e08c0cc5617a84a8d922fa477d18acb4e4adcc4aca0f\",\"v\":2}"
+}

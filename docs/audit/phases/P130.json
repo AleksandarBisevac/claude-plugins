@@ -2887,7 +2887,8 @@
         "plugins/audit/scripts/manifest/_manifest_rules.py",
         "plugins/audit/tests/test__manifest_rules.py",
         "plugins/audit/scripts/governance/_verdict_binding.py",
-        "plugins/audit/scripts/governance/_evidence_io.py"
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
