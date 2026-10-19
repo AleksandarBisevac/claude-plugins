@@ -1116,7 +1116,8 @@
       "P125.95-0h5",
       "P125.125-0h5",
       "P125.138-0h5",
-      "P130.27-ywo"
+      "P130.27-ywo",
+      "P130.39-ywo"
     ],
     "COMPATIBILITY.md": [
       "P18.8",
@@ -2491,7 +2492,8 @@
       "P130.5",
       "P130.8",
       "P130.23-ywo",
-      "P130.34-ywo"
+      "P130.34-ywo",
+      "P130.39-ywo"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -2743,7 +2745,8 @@
       "P130.4",
       "P130.8",
       "P130.23-ywo",
-      "P130.34-ywo"
+      "P130.34-ywo",
+      "P130.39-ywo"
     ],
     "plugins/audit/reference/execute-task.md": [
       "P55.21",
@@ -4165,7 +4168,8 @@
       "P129.7-izt",
       "P129.8-izt",
       "P130.8",
-      "P130.27-ywo"
+      "P130.27-ywo",
+      "P130.39-ywo"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -5325,7 +5329,8 @@
       "P130.4",
       "P130.5",
       "P130.23-ywo",
-      "P130.34-ywo"
+      "P130.34-ywo",
+      "P130.39-ywo"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
@@ -6947,7 +6952,8 @@
       "P125.40-0h5",
       "P125.136-0h5",
       "P130.4",
-      "P130.23-ywo"
+      "P130.23-ywo",
+      "P130.39-ywo"
     ],
     "plugins/audit/tests/test_resolve_branch.py": [
       "P64.1"
@@ -9331,7 +9337,8 @@
       "P130.26-ywo",
       "P130.33-ywo",
       "P130.35-ywo",
-      "P130.38-ywo"
+      "P130.38-ywo",
+      "P130.39-ywo"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6",
