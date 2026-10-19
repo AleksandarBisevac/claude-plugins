@@ -7046,6 +7046,44 @@ def _unclassified_entry_cases(check):
                  "unclassified entry beside it: %r" % (text,)),
           code == 0 and instruction(text) == ("decide", "scope-gap", None)
           and "sweep does not collect docs/test_mine.py" in text)
+    _unclassified_lint_entry_cases(check, run, clause)
+
+
+# The shape this repo's own gate has: the sweep plus entries that validate, lint,
+# render or screenshot and run no test of a language the sweep leaves out.
+REALISTIC_GATE = (
+    SWEEP_GATE,
+    "python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json",
+    "claude plugin validate . && claude plugin validate plugins/audit",
+    "python3 plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate",
+    "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json "
+    "--out-dir /tmp/audit-report",
+    "ruff check plugins/audit tools && vermin -t=3.8- --no-tips --violations "
+    "plugins/audit/scripts plugins/audit/hooks plugins/audit/tests",
+    "node tools/capture-screenshots.mjs --check",
+    "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html",
+)
+
+
+def _unclassified_lint_entry_cases(check, run, clause):
+    code, text, task = run("uclint", "lib/store.test.mjs", REALISTIC_GATE)
+    check(clause("uc5", "the sweep beside validate, lint, report and screenshot "
+                 "entries, none of which runs a test: the real misroute still "
+                 "stops at scope-gap: %r" % (text,)),
+          code == 0 and instruction(text) == ("decide", "scope-gap", None)
+          and "no runner in this gate takes lib/store.test.mjs" in text
+          and "could not tell" not in text and not _dispatched(text)
+          and task.get("status") == "pending")
+    for cid, prefix, extra in (
+            ("uc6", "ucmocha", "npx mocha lib/"),
+            ("uc7", "ucrunner", "node tools/run-suites.mjs lib/store.test.mjs"),
+            ("uc8", "ucavatap", "npx ava lib/store.test.mjs")):
+        code, text, task = run(prefix, "lib/store.test.mjs", REALISTIC_GATE + (extra,))
+        check(clause(cid, "the same gate with `%s` added, an entry that can run "
+                     "tests and that no runner classifies: could-not-tell, "
+                     "dispatched, no scope-gap: %r" % (extra, text)),
+              code == 0 and _dispatched(text) == ["P1.1"] and "scope-gap" not in text
+              and text.count("could not tell") == 1)
 
 
 STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),

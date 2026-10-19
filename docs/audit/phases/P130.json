@@ -5008,7 +5008,12 @@
       "startedAt": "2026-10-19T22:04:56Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T22:22:44Z.f1ff66",
+        "status": "passed",
+        "at": "2026-10-19T22:22:44Z"
+      }
     },
     {
       "id": "P130.49-ywo",

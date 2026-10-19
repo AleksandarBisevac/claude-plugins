@@ -1,0 +1,48 @@
+{
+  "gates": {
+    "own-tests: test_drive_phase.py --selftest --stage pu-block": "pass",
+    "test_drive_phase.py --selftest (full)": "pass",
+    "test__refs.py --selftest": "pass",
+    "ruff check (two files)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T22:11:35Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage pu-block` in a throwaway tree at HEAD exited 1 with 1 of 8 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - uc5 (house FAIL): SELFTEST FAILED: 7/8 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: added module-level TEST_RUNNER_TOKENS table and can_run_tests(); scope_gap now counts an unclassified entry only when its resolved command carries a runner token (-m unittest, -m pytest, node --test, mocha, tap, ava, jasmine, karma, matched by basename) or names a suite FILE (word with an extension for which _phases.is_suite_path is true; a directory like plugins/audit/tests given to vermin is deliberately not counted, since it would have kept this repo's lint entry unclassified-and-counted). test_drive_phase.py: REALISTIC_GATE (this repo's buildCommands shape) and _unclassified_lint_entry_cases, called from _unclassified_entry_cases (stage pu-block): uc5 misroute stop kept; uc6 mocha, uc7 node tools/run-suites.mjs <suite path>, uc8 ava still answer could-not-tell. uc1-uc4 green. Full test_drive_phase selftest 400/400, test__refs 286/286, ruff clean.",
+    "descriptive": "The scope-gap misroute stop works again for repos whose gate carries lint/validate/report entries; only entries that can run tests soften it to could-not-tell."
+  },
+  "testsAdded": [
+    "uc5",
+    "uc6",
+    "uc7",
+    "uc8"
+  ],
+  "casesAdded": [
+    [
+      "uc5",
+      "uc6",
+      "uc7",
+      "uc8"
+    ]
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_drive_phase.py: a gate of the sweep plus lint and validate entries still stops for a path no known runner takes, while a gate holding a test-running entry no known runner classifies answers could-not-tell": {
+      "file": "plugins/audit/scripts/governance/drive-phase.py",
+      "find": "            if can_run_tests(build.get(entry, entry)):",
+      "replace": "            if True:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_drive_phase.py",
+        "--selftest",
+        "--stage",
+        "pu-block"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:c185b5cfbbf796b8217f7eda8a2790d011386f6fa19096384276adbb37224750\",\"dirtyDigest\":\"sha256:b5ad397336a35cec29449587ebead65c1acab246c54d92b69fa83bc1e8047b78\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/drive-phase.py\":\"21bda3da19ca93f0\",\"plugins/audit/tests/test_drive_phase.py\":\"12b6ee5cd7e2e3c3\"},\"head\":\"c69cf688\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:e6e3db77234599f8a4cdbf52ca11ca2a050e48bcb66ec1e453effb249ed45560\",\"v\":2}",
+  "testsAddGaps": []
+}

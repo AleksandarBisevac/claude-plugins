@@ -1157,6 +1157,32 @@ def render_decision(ctx, pending):
         else explain_command(ctx, subject)))
 
 
+# Words that make a gate entry a test run, for the entries `entry_collector` cannot
+# classify. A tuple matches as a contiguous run of words; a bare word matches a
+# command's basename (`./node_modules/.bin/mocha`). Everything else in a gate -
+# validate, lint, report, screenshots - runs no suite and cannot be the one that
+# collects a path no known runner takes.
+TEST_RUNNER_TOKENS = (("-m", "unittest"), ("-m", "pytest"), ("node", "--test"),
+                      "mocha", "tap", "ava", "jasmine", "karma")
+
+
+def can_run_tests(command):
+    """Whether an unclassified gate entry could run tests: it carries a known
+    test-runner token, or names a suite FILE (a word whose last segment has an
+    extension and reads as a suite - a directory such as `plugins/audit/tests`
+    handed to a linter is not one)."""
+    words = [w.strip("\"'") for w in str(command or "").split()]
+    base = [w.rsplit("/", 1)[-1] for w in words]
+    for token in TEST_RUNNER_TOKENS:
+        if isinstance(token, tuple):
+            if any(tuple(words[i:i + len(token)]) == token
+                   for i in range(len(words))):
+                return True
+        elif token in base:
+            return True
+    return any("." in b and _phases.is_suite_path(w) for w, b in zip(words, base))
+
+
 def scope_gap(ctx, state, task):
     """The task-start preflight: ask the runner of the task's gate whether it
     collects each declared `tests.add` path. A definite NOT_COLLECTED is the
@@ -1176,7 +1202,8 @@ def scope_gap(ctx, state, task):
     for entry in entries:
         runner = _gate_derive.entry_collector(build.get(entry, entry))
         if runner is None:
-            unclassified.append(entry)
+            if can_run_tests(build.get(entry, entry)):
+                unclassified.append(entry)
         elif runner not in runners:
             runners.append(runner)
     for path in paths:
