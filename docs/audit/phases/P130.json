@@ -1214,7 +1214,8 @@
         "P130.39-ywo",
         "P130.40-ywo",
         "P130.41-ywo",
-        "P130.42-ywo"
+        "P130.42-ywo",
+        "P130.43-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -3388,7 +3389,7 @@
     {
       "id": "P130.34-ywo",
       "title": "The Bash-write path and the Edit path of the plan gate read a task's coverage through one function",
-      "status": "in_progress",
+      "status": "done",
       "description": "F738. In a linked task worktree the Edit path (plugins/audit/hooks/require-plan.py around :783/:812) asks `_config.task_binding`, which reads the bound task's files from the phase tree's plan, while the Bash-write path (plugins/audit/hooks/guard-secrets-read.py around :2345/:2370) calls `in_progress_files` on the worktree's own copy of the phase shard, where the task is still `pending`. Every declared file then looks uncovered: the first heredoc write spends the one free file and the second is refused; conversely a sibling stale-in_progress in that copy passes the Bash path while Edit refuses it. Seen in four tasks of P130. Fix: one coverage reader in hooks/_config.py, task_binding first, that both paths call; delete the second reading. Change only which coverage function the Bash path calls - not how it reads the command. Acceptance: (1) a parity case: for the same bound worktree and path, the Edit verdict and the Bash-write verdict agree, for a declared file, an undeclared file, and a file declared only by a stale sibling - shown red before the change; (2) a second heredoc write to a declared file in a bound worktree is allowed; (3) the full sweep is green; (4) tools/bench-hooks.py --gate passes.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -3441,19 +3442,38 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fa3faa97fb6e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added _config.task_covered_files and task_covered_outputs (task_binding first; broken binding covers nothing; bound tree reads the phase tree's plan restricted to the bound task; ordinary tree falls through to in_progress_task_map / in_progress_outputs). guard-secrets-read._ungoverned_write_target now calls task_covered_files instead of in_progress_files (nothing else about reading the command changed). require-plan steps 2c, 3 and 3b call the same two functions with the binding it already read, so the Edit and Bash arms share one reader. Tests: new stage _bound_worktree_cases in test_guard_secrets_read.py builds a real bound worktree whose shard copy has the bound task pending and a stale sibling in_progress (bw1 parity for declared / undeclared / stale-sibling-only file, plus explicit expected verdicts; bw2 two heredoc writes by a fresh session to two declared files allowed and no free file spent); tb11-tb14 in test__config.py cover the reader directly. test_guard_secrets_read 707/707, test__config 351/351, test_require_plan 236/236, test_guard_bash_writes 237/237, test__refs 286/286, bench-hooks --gate exit 0, ruff clean, vermin clean. NOT run: the full sweep (orchestrator). Note: a Bash heredoc write to _config.py was refused by the plan gate (change magnitude 82 > 80, 'outside the running task files'), which is the very symptom this task fixes seen on my own edit; I stopped using Bash for writes and made all edits with the Edit tool, which the gate allowed. guard-bash-writes.py:2045 (the post-hoc Stop/Post reporter) still calls in_progress_files on the worktree's own copy - outside this task's files and not the Bash-write PreToolUse path; left alone, a candidate follow-up.",
+        "descriptive": "A task worktree's shell write and its Edit now read the same coverage, so declared files are allowed on the first and second heredoc write and a stale sibling's file is refused on both."
       },
       "startedAt": "2026-10-19T11:43:39Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T12:10:46Z",
+      "verifiedBy": [
+        "bw1 in a bound task worktree whose shard copy still reads the task pending, a Bash heredoc write and an Edit of the same declared file get the same verdict, and so do an undeclared file and a file only a stale sibling declares (carries tests.add entry of test_guard_secrets_read.py)",
+        "bw2 a second heredoc write to a declared file in a bound worktree is allowed, the first having spent no free file",
+        "tb11 a bound tree's coverage is the bound task's files out of the PHASE tree's plan",
+        "tb12 a tree whose binding cannot be proved covers nothing",
+        "tb13 an ordinary tree's coverage is its running tasks' files",
+        "tb14 the output reader follows the same rule"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T12:10:32Z.cd887c",
         "status": "passed",
         "at": "2026-10-19T12:10:32Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "fa3faa97fb6e",
+        "at": "2026-10-19T12:10:46Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-19T11:48:37Z",
+        "basis": "`python3 plugins/audit/tests/test_guard_secrets_read.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 707 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bw1 (house FAIL), bw2 (house FAIL): SELFTEST FAILED: 705/707 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -3919,6 +3939,60 @@
         "P130.29-ywo",
         "P130.31-ywo",
         "P130.41-ywo"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.43-ywo",
+      "title": "A task commit carries the task's change, and a restarted task with a kept worktree is never run in the phase tree",
+      "status": "pending",
+      "description": "F741. P130.18-ywo was recorded done at a commit holding only plan and evidence files: after a manual `start`, drive-phase `wave_step` (around :2644) ran it serially in the PHASE tree because a task was in_progress, while its work sat in the kept worktree (`close_wave` records it in keptTrees, read only when a new wave opens); the gate measured the phase tree (scopeDigest of the unchanged declared files), went green, and the close committed nothing of the task. The only no-change refusal, `_scoped_commit.close_evidence_refusal` (around :1121, called from commit-task-work.py around :893), refuses only when red-first is `not-attempted`; `could-not-prove` passes. Fix: (1) commit-task-work refuses a task commit whose staged change holds no file outside docs/audit and the run records, unless the task is closed with an explicit no-change verb, naming the declared files and the tree the gate measured; (2) when the task being advanced has a kept worktree that holds changes, the drive integrates it or runs it in that worktree - never dispatches or gates it in the phase tree; (3) a falsifier that could not run because its find-text is absent from the measured tree stops the close with that sentence instead of writing a note (the stage is retired at HEAD - if so, put the absent-text check on the red-first record instead: a recorded red whose cases do not exist in the committed tree refuses). Acceptance: (1) a fixture where the task tree holds the change and the phase tree does not: the drive does not commit an empty task and names the kept tree; (2) commit-task-work refuses a commit whose diff is plan files only, with the declared files named; (3) an honest no-change close still works through its verb; (4) the full sweep is green.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_commit_task_work.py: a task commit whose staged change holds only plan and record files is refused, naming the declared files, while an explicit no-change close still records",
+          "plugins/audit/tests/test_drive_phase.py: a restarted task whose kept worktree holds changes is not dispatched or gated in the phase tree, and the drive names the kept tree"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.35-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
