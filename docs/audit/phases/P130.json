@@ -1212,7 +1212,8 @@
         "P130.36-ywo",
         "P130.37-ywo",
         "P130.38-ywo",
-        "P130.39-ywo"
+        "P130.39-ywo",
+        "P130.40-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -3531,6 +3532,96 @@
       "blockedBy": [],
       "dependsOn": [
         "P130.34-ywo"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.40-ywo",
+      "title": "One function pair is the only way git path output becomes plan spelling and a plan path becomes a git pathspec, every site routes through it, and a lint names any listing call that does not",
+      "status": "pending",
+      "description": "F740. Fourth recurrence of the two-path-bases class (F708/F709 in P130.14-ywo, F735 in P130.30-ywo), so an invariant replaces per-site patches. (1) THE PAIR. Two functions in plugins/audit/hooks/_config.py: `git_to_plan(path, git_root, project)` turns one path git printed (checkout-relative: status --porcelain, diff/show/log --name-only|--name-status, diff-tree) into plan spelling. `plan_to_git(entry, git_root, project)` turns a declared `files` entry into a checkout-relative pathspec, or None when it lies outside the checkout. Both handle both topologies: a member project (project directory under the git root, offset `member`) and `meta.gitRoot` below the project (offset `..`, plan spelling carries the `test/` prefix). The same directory is the identity. A git path outside the project is spelled with `../` so it cannot equal a declared entry. Callers that run git from the project with `ls-files`/`ls-tree` (cwd-relative output) or `--relative` must say so through a third argument or a named variant, not by skipping the pair. WHY THIS HOME: hooks may not import scripts/ and hooks/guard-bash-writes.py needs the pair, while scripts/ reach hooks/_config.py through `_loader.load_hooks_config()`, the one door `_deps` allows. `_loader` sits directly above `_output` in `_deps.LAYERS`, so every module that needs the pair can load it, including `_tree_stamp`, `_status_facts` and `_invariants`, which sit BELOW `_evidence_io` and could not import `_evidence_io.project_spelling`. Delete `_evidence_io.project_spelling` and `_status_facts._strip_git_root` and move their callers to the pair. Keep no second spelling. Also fix project_spelling's defect on the way: it returns the path unchanged when the git root lies below the project. (2) ROUTE every site of F740 through the pair. audit-lookup.py: `_phase_diff_paths` output, `DOCS_AUDIT_EXCLUDE` built from the project's docs/audit via plan_to_git rather than a literal, `_task_commit_diff_lines` and `_diff_lines` pathspecs (including the wave-tree arm), `existing_test_lines` output. integrate-task.py `undeclared_paths`. derive-phase-gate.py changedSince. run-test-gate.py: `_declared_by` / `classify_mutations` / `dirty_outside` / `_named_by_run` over `_tree_stamp.porcelain`, plus `task_changed_paths`' show-prefix arithmetic. _tree_stamp.py `dirty_digest` exclusion. _invariants.py commit-scope allow-list. audit-task.py `_declared_rels` / `_no_change_moves` (plan_to_git replaces `_invariants._rel(join(project, e), git_root)`). close-phase.py `uncommitted_declared` and the tip writer's prefix (`:1928`, `:2229`). hooks/guard-bash-writes.py dirty paths. The hook learns the checkout prefix once per session (cached in its state file; layout does not change mid-session) so its per-call cost is unchanged; `tools/bench-hooks.py --gate` stays green. (3) THE LINT. `_deps.git_path_base_violations(script_dir=None, hooks_dir=None, exempt=None)` walks every .py under scripts/ and hooks/ with the shared walk. It finds each call whose argv literal holds a git path-listing form: `status --porcelain*`, `diff`/`show`/`log` with `--name-only`/`--name-status`, `diff-tree`, `ls-files`, `ls-tree --name-only`, or a `--` pathspec after diff/show/log. It names `<file>:<function>` unless that function calls `git_to_plan`/`plan_to_git` or has a row in `_deps.GIT_PATH_BASE_EXEMPT`. The table is keyed (basename, function) with a reason, for single-base sites whose paths never meet a plan entry: _scoped_commit, commit-manifest-index, drive-phase carry and integration checks, _invariants audit-state and index checks, _filed_returns, the doctor modules, _merge_install, manage-worktrees, _journal_io, stamp-verification, integrate-task's record and bytes reads, _panel_viewer, _output's repo lint. Each reason must be non-empty, and a row naming a function that no longer exists, or that no longer makes a listing call, is reported as stale. The name ends in `_violations` so tools/prove-gates.py derives its row. Prove it red: in a scratch copy, revert `audit-lookup._phase_diff_paths` to dev HEAD `46e9e2ec`'s body; the lint must name `audit-lookup.py:_phase_diff_paths`. Prove the allow side too: an exempt row with an empty reason must fail. Acceptance: (a) the pair's own cases cover the member project, gitRoot-below-project, the same directory, a path outside the project, path == offset, and a symlinked project; (b) one nested-project fixture case per site group (a real `git init` with the project at `member/`): audit-lookup (phase diff excludes member/docs/audit; the task-commit diff and `_diff_lines` are non-empty for a declared changed file), integrate-task, derive-phase-gate, run-test-gate plus _tree_stamp (a gate rewriting a declared file is owned and refused; recorder rows leave the dirty digest unchanged), _invariants commit-scope (no breach for a declared file), audit-task, close-phase, guard-bash-writes; each case is shown red on dev HEAD before the fix; (c) the lint is red-first as above; (d) `_evidence_io.project_spelling` and `_status_facts._strip_git_root` have no callers left and are gone; (e) the full sweep, `tools/bench-hooks.py --gate` and `tools/prove-gates.py` (the new row in both directions) are green.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/git/integrate-task.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_tree_stamp.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/_deps.py",
+        "tools/prove-gates.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/tests/test__deps.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/tests/test_integrate_task.py",
+        "plugins/audit/tests/test_derive_phase_gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test__tree_stamp.py",
+        "plugins/audit/tests/test__invariants.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_guard_bash_writes.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__config.py: git_to_plan/plan_to_git over member project, gitRoot-below-project, same dir, outside path, path == offset, symlinked project",
+          "plugins/audit/tests/test__deps.py: git_path_base_violations names audit-lookup.py:_phase_diff_paths when reverted to dev HEAD in a scratch copy; an empty exempt reason and a stale exempt row are reported",
+          "plugins/audit/tests/test_audit_lookup.py: nested project - phase diff excludes member/docs/audit; task-commit diff and _diff_lines are non-empty for a declared changed file",
+          "plugins/audit/tests/test_integrate_task.py: nested project and gitRoot-below-project - a declared change is not undeclared",
+          "plugins/audit/tests/test_derive_phase_gate.py: nested project - changedSince is spelled as the plan spells it",
+          "plugins/audit/tests/test_run_test_gate.py: nested project - a gate rewriting a declared file is owned and refused; dirt outside the declared files is foreign",
+          "plugins/audit/tests/test__tree_stamp.py: nested project - recorder rows leave dirty_digest unchanged",
+          "plugins/audit/tests/test__invariants.py: nested project - commit-scope reports no breach for a declared file",
+          "plugins/audit/tests/test_audit_task.py: nested project - _no_change_moves and _held_dirt still find a declared file's change through plan_to_git",
+          "plugins/audit/tests/test_close_phase.py: nested project - uncommitted_declared names the declared file in plan spelling",
+          "plugins/audit/tests/test_guard_bash_writes.py: nested project - a shell write to a project file is attributed under its project-relative name and its window test reads the real file"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "before-you-claim",
+        "writing-python",
+        "no-silent-pass"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.30-ywo",
+        "P130.28-ywo",
+        "P130.31-ywo",
+        "P130.34-ywo",
+        "P130.35-ywo",
+        "P130.39-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
