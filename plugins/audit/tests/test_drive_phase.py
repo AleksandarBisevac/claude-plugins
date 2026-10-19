@@ -5764,6 +5764,36 @@ def _close_evidence_cases(check):
           task.get("status") == "done" and task.get("commit")
           and "%s P1.1" % (M.CLOSED,) in text)
 
+    # The binding is the executor's `casesAdded`, read by id; the drive files
+    # its own reading beside the claim, so the reviewer's brief prints a gap the
+    # drive saw rather than one it recomputes blind to the suite's output.
+    entry = "%s: the f1 case" % (TESTS_ADD_FILE,)
+    filed_gaps = {}
+    for tag, over in (("unbound", {"testsAdded": ["f1 a title nobody matches"]}),
+                      ("bound", {"testsAdded": ["whatever words"],
+                                 "casesAdded": ["f11"]})):
+        root, mpath = _repo("ce-bind-%s" % (tag,), task_ids=TASKS[:1],
+                            per_task="phase")
+        _commit_plan(root, mpath, _with_tests_add, "fixture: tests.add")
+        _next(M, root, mpath)
+        code, text = _file_executor(root, mpath, "P1.1", over)
+        path = _filed_path(mpath, "P1.1")
+        with open(path, "r", encoding="utf-8") as fh:
+            filed = json.load(fh)
+        filed_gaps[tag] = (code, filed.get(_fr.GAPS_FIELD), text)
+    check("ce6 a return with no `casesAdded` is filed with the entry named in "
+          "`testsAddGaps` and the filing says so, however its titles read; one "
+          "binding the entry to an id is filed with no gap, and says the id was "
+          "not checked because no test command ran: %r"
+          % ({k: (v[0], v[1], v[2][-300:]) for k, v in filed_gaps.items()},),
+          filed_gaps["unbound"][0] == 0 and filed_gaps["bound"][0] == 0
+          and len(filed_gaps["unbound"][1]) == 1
+          and filed_gaps["unbound"][1][0].startswith(entry)
+          and "not bound to a printed case" in filed_gaps["unbound"][2]
+          and filed_gaps["bound"][1] == []
+          and "not bound to a printed case" not in filed_gaps["bound"][2]
+          and "not checked" in filed_gaps["bound"][2])
+
     root, mpath = _repo("ce-tracked", task_ids=TASKS[:1], per_task="phase")
     with open(os.path.join(root, "notes.txt"), "w", encoding="utf-8") as fh:
         fh.write("v0\n")
@@ -7217,22 +7247,19 @@ def _review_rules_cases(check):
                              for p in unsupported))
 
     add_task = {"tests": {"add": ["tests/test_x.py: once the card enters "
-                                 "the viewport"],
-                         "addMap": {"tests/test_y.py: isto": "test_y_case"}}}
-    add_task["tests"]["add"].append("tests/test_y.py: isto")
-    present = M.tests_add_gaps(
-        add_task, ["once the card enters the viewport", "test_y_case"])
-    mapped_only = M.tests_add_gaps(
-        add_task, ["something unrelated", "test_y_case"])
-    missing = M.tests_add_gaps(add_task, ["something unrelated"])
-    check("fv3 a declared case matched by its own verbatim clause, or (across "
-          "languages) by an explicit addMap entry, names no gap; one matched "
-          "by neither is named by the drive: %r"
-          % ((present, mapped_only, missing),),
+                                 "the viewport", "tests/test_y.py: isto"]}}
+    printed = ["fv31 once the card enters the viewport", "fv32 isto je to"]
+    present = M.case_binding_gaps(add_task, ["fv31", "fv32"], printed)
+    wrong_id = M.case_binding_gaps(add_task, ["fv31", "fv99"], printed)
+    unbound = M.case_binding_gaps(add_task, ["fv31"], printed)
+    check("fv3 a declared case bound to a printed case id names no gap, in any "
+          "language of title; an id the suite did not print, or an entry with "
+          "no id, is named by the drive with its entry: %r"
+          % ((present, wrong_id, unbound),),
           present == []
-          and mapped_only == ["tests/test_x.py: once the card enters the "
-                             "viewport"]
-          and len(missing) == 2)
+          and len(wrong_id) == 1 and wrong_id[0].startswith("tests/test_y.py: isto")
+          and "`fv99`" in wrong_id[0]
+          and len(unbound) == 1 and unbound[0].startswith("tests/test_y.py: isto"))
 
     low = [{"id": 1, "severity": "low", "file": "a:1",
             "issue": "contradicts task clause: scope widened", "resolution": "r"}]

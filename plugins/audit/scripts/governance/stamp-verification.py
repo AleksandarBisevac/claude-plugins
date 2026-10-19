@@ -3601,7 +3601,12 @@ def run_red(args, cmd, out):
                    else _remove_throwaway(root, holder, path))
         if previous is not None:
             _proc_group.disarm_interrupt(previous)
+    # The labels the suite printed, from the run that shows the work whole: the
+    # fix run when one was made, else the task's own. None when the runner
+    # prints none this reads - `drive-phase.py submit` grades a case id against it.
+    shown = run["fix"]["text"] if run["fix"] is not None else run["text"]
     payload = {"verdict": verdict, "redFirst": block, "note": note,
+               "printed": _runner_output.printed_labels(shown, cmd),
                "atHead": scope["implementation"], "copied": copied,
                "leftovers": leftovers,
                "dependencies": {"source": deps["source"], "linked": deps["linked"],

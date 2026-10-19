@@ -306,6 +306,20 @@ def house_case_id(label):
     return head[0]
 
 
+def printed_labels(text, cmd=None):
+    """The labels a house run printed, one per `PASS <label>` or `FAIL <label>`
+    line, or None when the run is not a house one - jest, pytest and unittest
+    print no label for a passing case, so for them the answer is "unknown",
+    never an empty list a binding would be graded against."""
+    text = plain_text(text)
+    tally = read_tally(text, cmd)
+    if tally is None or tally["runner"] != "house":
+        return None
+    return [ln.split(" ", 1)[1].strip() for ln in text.splitlines()
+            if (ln.startswith("PASS ") or ln.startswith("FAIL "))
+            and ln.split(" ", 1)[1].strip()]
+
+
 def _house_cases(text):
     out = []
     for ln in text.splitlines():

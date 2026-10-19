@@ -3431,7 +3431,8 @@
         "plugins/audit/scripts/governance/stamp-verification.py",
         "plugins/audit/tests/test_audit_lookup.py",
         "plugins/audit/tests/test_stamp_verification.py",
-        "plugins/audit/tests/test__runner_output.py"
+        "plugins/audit/tests/test__runner_output.py",
+        "plugins/audit/reference/phase-signoff.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -3449,7 +3450,19 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test__filed_returns.py: a return binding each tests.add entry to a printed case id draws no gap regardless of the title wording, while an unprinted id or a missing binding draws a gap naming the entry": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__filed_returns.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/manifest/_filed_returns.py",
+            "find": "                 if seen is not None and one not in seen]",
+            "replace": "                 if False]"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -3473,7 +3486,18 @@
       "startedAt": "2026-10-19T14:29:02Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T14:59:47Z.fe3f85",
+        "status": "passed",
+        "at": "2026-10-19T14:59:47Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-19T14:48:58Z",
+          "text": "files widened by plugins/audit/reference/phase-signoff.md: widened by the integration answer"
+        }
+      ]
     },
     {
       "id": "P130.34-ywo",

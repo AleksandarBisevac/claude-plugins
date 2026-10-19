@@ -113,6 +113,13 @@ REVIEW_VERDICTS = ("clean", "findings")
 # the enum.
 RED_FIRST_WORDS = ("proved", "could-not-prove", "not-attempted")
 
+# The executor's binding of each declared test to the case that carries it: a
+# list parallel to `tests.add`, by index.
+CASES_FIELD = "casesAdded"
+# The drive's own reading of that binding, written into the filed return at
+# `submit` beside the stamp: what the reviewer's brief prints as the gaps.
+GAPS_FIELD = "testsAddGaps"
+
 # The grade only a reviewer gives - `_refs.RED_FIRST_REVIEWER_ONLY`, held equal
 # to it by `pk4` in the tests - and the words of the inherited-test question,
 # held equal to the plan schema's `intentCheck.inheritedTests` enum the same way.
@@ -266,6 +273,20 @@ def _tests_add_empty_problem(added, task):
             % (len(declared), mode))
 
 
+def _cases_added_problems(cases):
+    """Why the return's `casesAdded` cannot be read as a binding, as a list of
+    sentences. The field is optional in the shape - an absent one is a gap per
+    declared entry (`case_binding_gaps`), which is what a reviewer reads - but
+    one that is present must hold, per entry, a case id, a list of ids, or null
+    for an entry that carries no case."""
+    if not isinstance(cases, list):
+        return ["`%s` is not a list (one case id per tests.add entry, by index)"
+                % (CASES_FIELD,)]
+    return ["`%s[%d]` is %r, not a case id, a list of case ids or null"
+            % (CASES_FIELD, i, item) for i, item in enumerate(cases)
+            if item is not None and _bound_ids(item) is None]
+
+
 def _executor_problems(body, task=None):
     problems = []
     if not isinstance(body.get("gates"), dict):
@@ -285,6 +306,8 @@ def _executor_problems(body, task=None):
         gap = _tests_add_empty_problem(added, task)
         if gap:
             problems.append(gap)
+    if CASES_FIELD in body:
+        problems += _cases_added_problems(body[CASES_FIELD])
     red = body.get("redFirst")
     if not isinstance(red, dict):
         problems.append("`redFirst` is missing or not an object")
@@ -361,7 +384,7 @@ def claim_section(task, filed_return):
     tests.add gap the same brief states - two entry points, which
     `_deps.layer_violations()` refuses to let runtime-load each other - so
     the one home for logic both need is a module below them both, the same
-    reason `tests_add_gaps` and `floor_contradicted_clause` sit here too."""
+    reason `case_binding_gaps` and `floor_contradicted_clause` sit here too."""
     body = (filed_return if isinstance(filed_return, str)
             else json.dumps(filed_return, indent=2, sort_keys=True))
     return "\n".join([
@@ -371,9 +394,9 @@ def claim_section(task, filed_return):
 
 def title_names_clause(title, clause):
     """Whether a case's printed title is `clause`, or `clause` followed by its
-    detail after ` (` - the one reading of a title, shared by the red-first
-    helper's `--case NAME` and `tests_add_gaps`, so a title one accepts is never
-    one the other reports as unfiled. A paraphrase, a title that merely starts
+    detail after ` (` - the red-first helper's reading of `--case NAME`. It is
+    not how a declared test is matched to the case that carries it: that is a
+    binding by id (`case_binding_gaps`). A paraphrase, a title that merely starts
     with the clause's letters, and an empty clause do not match. Read in place,
     so a long detail costs no prefix copy.
 
@@ -409,29 +432,57 @@ def _names_at(title, clause, start):
     return end == len(title) or title.startswith(" (", end)
 
 
-def tests_add_gaps(task, filed_titles):
-    """Declared `tests.add` entries with no filed counterpart in
-    `filed_titles` (a return's `testsAdded`). A case is matched by its
-    title - the executor reuses the clause the plan declares, with or without
-    its detail after ` (` (`title_names_clause`) - or by
-    an explicit `tests.addMap` entry the task itself carries (declared path ->
-    filed title), never by a fuzzy compare: scored as one string diff, this
-    flagged most of the danuvia tasks, mostly Serbian plan text against
-    English test titles."""
-    tests = (task or {}).get("tests") or {}
-    declared = [str(e) for e in tests.get("add") or []]
-    titles = [str(t).strip() for t in filed_titles or []]
-    add_map = tests.get("addMap") if isinstance(tests.get("addMap"), dict) else {}
+def _bound_ids(binding):
+    """The case ids one `casesAdded` item names, or None when it names none: a
+    non-empty word, or a non-empty list of them."""
+    items = [binding] if isinstance(binding, str) else binding
+    if not isinstance(items, list) or not items:
+        return None
+    if not all(isinstance(i, str) and i.strip() for i in items):
+        return None
+    return [i.strip() for i in items]
+
+
+def _printed_ids(printed):
+    """What a bound id may equal: each printed label whole, and its leading
+    token when that token is id-shaped (`_CASE_ID_TOKEN`) - so an id-less
+    label's first word is no id, and a prefix of an id is none either."""
+    ids = set()
+    for label in printed:
+        label = str(label).strip()
+        ids.add(label)
+        head = label.split(None, 1)
+        if head and _CASE_ID_TOKEN.match(head[0]):
+            ids.add(head[0])
+    return ids
+
+
+def case_binding_gaps(task, cases_added, printed):
+    """One sentence per declared `tests.add` entry the return does not bind to
+    a case the suite printed, each opening with the entry itself.
+
+    THE BINDING IS BY ID AND BY INDEX. `cases_added[i]` is the case id (or list
+    of ids, when one entry covers several cases) the executor says carries
+    `tests.add[i]`; the wording of a title is nobody's business, which is why a
+    return naming the right case draws nothing whatever its titles say. An
+    entry with no item, a null one or one not readable as ids is a gap; so is
+    an id the suite did not print. `printed` is the list of labels the test
+    command printed, or None when its runner prints none the drive reads - then
+    only the presence of a binding is graded, and the caller says the ids were
+    not checked. Items past the declared list add nothing."""
+    declared = [str(e) for e in ((task or {}).get("tests") or {}).get("add") or []]
+    given = cases_added if isinstance(cases_added, list) else []
+    seen = _printed_ids(printed) if printed is not None else None
     gaps = []
-    for entry in declared:
-        clause = entry.split(":", 1)[1].strip() if ":" in entry else entry.strip()
-        mapped = add_map.get(entry) or add_map.get(clause)
-        wanted = [entry.strip(), clause]
-        if mapped:
-            wanted.append(str(mapped).strip())
-        if any(title_names_clause(t, w) for t in titles for w in wanted):
+    for index, entry in enumerate(declared):
+        ids = _bound_ids(given[index]) if index < len(given) else None
+        if ids is None:
+            gaps.append("%s - no case id bound (`%s[%d]` is absent or not an id)"
+                        % (entry, CASES_FIELD, index))
             continue
-        gaps.append(entry)
+        gaps += ["%s - bound to `%s`, which the suite did not print"
+                 % (entry, one) for one in ids
+                 if seen is not None and one not in seen]
     return gaps
 
 

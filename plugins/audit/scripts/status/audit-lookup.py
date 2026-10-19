@@ -600,9 +600,11 @@ WIDEN_RULE = ("When you widen a runner's include, widen it for the repo's test "
               "layout, not for the one directory in front of you.")
 
 
-TITLE_RULE = ("Title each case you file with its tests.add clause (the text after "
-              "the path) verbatim, or have the task carry a tests.addMap entry for "
-              "it; any other wording is reported as a gap.")
+BIND_RULE = ("Return `casesAdded`: for each tests.add entry, by index, the case id "
+             "the suite prints for the case you added (a list of ids when one entry "
+             "covers several cases). The drive checks each id against the labels the "
+             "suite printed; an entry with no id, or an id the suite did not print, "
+             "is reported as a gap. Your titles are free wording.")
 
 
 def compose_executor_brief(manifest, phase, task, ctx, files, gate):
@@ -659,7 +661,7 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
                                           json.dumps(tests.get("expectRedFirst"))),
         "tests.add:"] + (["- %s" % (a,) for a in (tests.get("add") or [])]
                          or ["- none"])
-        + ([TITLE_RULE] if tests.get("add") else [])
+        + ([BIND_RULE] if tests.get("add") else [])
         + ["gate, %s:" % (whose,)] + gate_lines(manifest, entries)
         + ([WIDEN_RULE] if tests.get("add") else []))
     reading = gate["reading"]
@@ -1039,9 +1041,21 @@ CLAUSE_QUOTING_LINES = [
     % (_fr._CONTRADICTED_CLAUSE_MARKER,)]
 
 
-def _tests_add_review_lines(task, filed_titles):
-    """`tests.add`, the gaps `tests_add_gaps` already named before any
-    reviewer runs, and the two questions (4) asks of every declared test:
+def _filed_gaps(task, filed):
+    """The tests.add gaps a filed return carries: the drive's own reading
+    (`testsAddGaps`, written at `submit` against the labels the suite printed)
+    when the return holds one, else the binding alone - what a return filed
+    before the drive wrote that field can still be graded on."""
+    held = filed.get(_fr.GAPS_FIELD)
+    if isinstance(held, list):
+        return [str(g) for g in held]
+    return _fr.case_binding_gaps(task, filed.get(_fr.CASES_FIELD), None)
+
+
+def _tests_add_review_lines(task, filed):
+    """`tests.add`, the gaps the drive already named before any reviewer runs
+    (`filed` is the executor's return as an object), and the two questions (4)
+    asks of every declared test:
     can it fail on the unfixed code, and does it reach a real external
     service or side effect rather than a stub. Measured on the testbed with
     the same model: the plugin's executors alone shipped a lazy-load test
@@ -1050,7 +1064,7 @@ def _tests_add_review_lines(task, filed_titles):
     shipped."""
     tests = task.get("tests") or {}
     add = [str(a) for a in tests.get("add") or []]
-    gaps = _fr.tests_add_gaps(task, filed_titles)
+    gaps = _filed_gaps(task, filed)
     lines = ["tests.add:"] + (["- %s" % (a,) for a in add] or ["- none"])
     if gaps:
         lines += ["Declared with no filed counterpart (named by the drive, "
@@ -1084,8 +1098,7 @@ def compose_reviewer_brief(manifest, phase, task, ctx, filed):
                       _verbatim(phase.get("desiredOutcome"),
                                 "The phase records no desiredOutcome."))
     lines += _section("The intent question", CLAUSE_QUOTING_LINES)
-    lines += _section("tests.add", _tests_add_review_lines(
-        task, filed_obj.get("testsAdded")))
+    lines += _section("tests.add", _tests_add_review_lines(task, filed_obj))
     lines += _section("The recorded gate run", [
         "runId %s, status %s, at %s (task.testEvidence)"
         % (evidence.get("runId"), evidence.get("status"), evidence.get("at"))
@@ -1405,8 +1418,7 @@ def phase_brief_parts(manifest, phase, ctx):
         units.append((task, _section("%s %s" % (tid, task.get("title") or ""), [
             "commit: %s" % (task.get("commit"),),
             "files:"] + ["- %s" % (f,) for f in task.get("files") or []]
-            + _tests_add_review_lines(
-                task, _filed_obj(text).get("testsAdded")) + [
+            + _tests_add_review_lines(task, _filed_obj(text)) + [
             _recorded_run_line(evidence, rows, rows_why),
             "gate commands, %s:" % (whose,)] + gate_lines(manifest, entries)
             + _task_commit_diff_lines(ctx, task.get("commit"),

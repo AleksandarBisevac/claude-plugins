@@ -872,23 +872,59 @@ def _same_second_cases(check):
         _harness.remove_tree(root)
 
 
-def _case_title_cases(check):
-    clause = "a filed title carries its detail after a parenthesis"
-    task = {"tests": {"add": ["the-suite: " + clause]}}
-    declared = task["tests"]["add"][0]
-    detail = M.tests_add_gaps(task, [clause + " (sr1 counted 3 of 3)"])
-    bare = M.tests_add_gaps(task, [clause])
-    # The deny twin: a title that only STARTS with the clause, or paraphrases it,
-    # is no counterpart - it is what makes the rule unconditional-proof.
-    run_on = M.tests_add_gaps(task, [clause + "s and more"])
-    spaced = M.tests_add_gaps(task, [clause + " extra words"])
-    paraphrase = M.tests_add_gaps(task, ["detail follows a bracket in a filed title"])
-    check("a filed case title that is the tests.add clause followed by its detail "
-          "after an opening parenthesis counts as that clause's counterpart, and a "
-          "title that only paraphrases it does not (%r)"
-          % ((detail, bare, run_on, spaced, paraphrase),),
-          detail == [] and bare == [] and run_on == [declared]
-          and spaced == [declared] and paraphrase == [declared])
+def _case_binding_cases(check):
+    """A declared test is bound to the case that carries it by id, never by the
+    wording of a title. The entries and printed labels are the ones the
+    phase's own filed returns drew false gaps over: three entries sharing the id
+    `gx1` in three suites, an entry covering several ids (`sv35 sv36`), and a
+    clause no title carries."""
+    add = ["plugins/audit/tests/test__manifest_phases.py: the gate-entry shape "
+           "predicate reports an entry naming one path twice",
+           "plugins/audit/tests/test_audit_task.py: add, add --from-file and "
+           "scope --gate refuse a malformed gate entry",
+           "plugins/audit/tests/test_stamp_verification.py: (clause + detail)"]
+    task = {"tests": {"add": add}}
+    printed = ["gx1 the gate-entry shape predicate reports an entry whose first "
+               "path word is a suite file", "gx2 ...and the reason names the paths",
+               "sv35 first of four", "sv36 second", "plain unidentified label"]
+    right = M.case_binding_gaps(task, ["gx1", "gx2", ["sv35", "sv36"]], printed)
+    unprinted = M.case_binding_gaps(task, ["gx1", "gx9", "sv99"], printed)
+    missing = M.case_binding_gaps(task, ["gx1", None], printed)
+    absent = M.case_binding_gaps(task, None, printed)
+    # The deny twin of the id match: a bound word that is only a PREFIX of a
+    # printed id, or the first word of an id-less label, is no printed case.
+    prefix = M.case_binding_gaps(task, ["gx", "gx2", "sv3"], printed)
+    unknown = M.case_binding_gaps(task, ["gx1", "gx9", "anything"], None)
+    check("cb1 a return binding each tests.add entry to a printed case id draws "
+          "no gap regardless of the title wording, while an unprinted id or a "
+          "missing binding draws a gap naming the entry (%r)"
+          % ((right, unprinted, missing, absent, prefix, unknown),),
+          right == []
+          and len(unprinted) == 2 and unprinted[0].startswith(add[1])
+          and "`gx9`" in unprinted[0] and unprinted[1].startswith(add[2])
+          and "`sv99`" in unprinted[1]
+          and len(missing) == 2 and missing[0].startswith(add[1])
+          and "no case id" in missing[0] and missing[1].startswith(add[2])
+          and len(absent) == 3 and all(g.startswith(e) and "no case id" in g
+                                       for g, e in zip(absent, add))
+          and [g.split(" - ")[0] for g in prefix] == [add[0], add[2]]
+          and unknown == [])
+    check("cb2 a task declaring nothing has no gap, and a binding longer than "
+          "the declared list adds none (%r)"
+          % ((M.case_binding_gaps({}, None, printed),
+              M.case_binding_gaps(task, ["gx1", "gx2", "sv35", "extra9"], printed)),),
+          M.case_binding_gaps({}, None, printed) == []
+          and M.case_binding_gaps({"tests": {"add": []}}, ["x1"], printed) == []
+          and M.case_binding_gaps(task, ["gx1", "gx2", "sv35", "extra9"],
+                                  printed) == [])
+    shape = [M.return_problems("executor", _executor(casesAdded=v))
+             for v in (["gx1"], [["sv35", "sv36"], "gx1"], "gx1", [7], [[]], [""])]
+    check("cb3 the shape takes a list of ids or id lists and refuses any other "
+          "`casesAdded`, and a return without the field is still whole (%r)"
+          % (shape, ),
+          shape[0] == [] and shape[1] == []
+          and all(len(p) == 1 and "casesAdded" in p[0] for p in shape[2:])
+          and M.return_problems("executor", _executor()) == [])
 
 
 def _case_id_title_cases(check):
@@ -897,7 +933,6 @@ def _case_id_title_cases(check):
               "then its detail, names that clause; a paraphrase or an id glued "
               "to the clause does not")
     names = M.title_names_clause
-    task = {"tests": {"add": ["the-suite: " + clause]}}
     accepted = [names("se3 " + clause, clause),
                 names("ldoc1 " + clause + " (3 of 3)", clause),
                 names("cas60 " + clause, clause)]
@@ -909,13 +944,12 @@ def _case_id_title_cases(check):
                names("se3 " + clause + "s and more", clause),
                names("se3 " + clause + " extra", clause),
                names("se3 ", clause)]
-    gaps = M.tests_add_gaps(task, ["se3 " + clause + " (detail)"])
     runner = _loader.load_script("_runner_output.py")
     shared = M._CASE_ID_TOKEN.pattern == runner._HOUSE_CASE_ID.pattern
     check(clause + " (id-prefixed titles accepted, paraphrase, two ids, glued "
           "id, run-on clause refused, id shape is the runner's own: %r)"
-          % ((accepted, refused, gaps, shared),),
-          accepted == [True] * 3 and refused == [False] * 8 and gaps == []
+          % ((accepted, refused, shared),),
+          accepted == [True] * 3 and refused == [False] * 8
           and shared)
 
 
@@ -968,7 +1002,7 @@ def _selftest():
     def body(check):
         _harness.stage(check, "fz-block", _falsifiers_cases)
         _harness.stage(check, "cm-block", _clause_marker_cases)
-        _harness.stage(check, "ct-block", _case_title_cases)
+        _harness.stage(check, "cb-block", _case_binding_cases)
         _harness.stage(check, "ci-block", _case_id_title_cases)
         _harness.stage(check, "fr-block", _cases)
         _harness.stage(check, "ss-block", _same_second_cases)

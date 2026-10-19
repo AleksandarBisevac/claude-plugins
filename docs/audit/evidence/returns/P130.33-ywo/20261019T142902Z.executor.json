@@ -1,0 +1,43 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_drive_phase.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__filed_returns.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_audit_lookup.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_stamp_verification.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__runner_output.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__deps.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__output.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass",
+    "ruff check plugins/audit tools": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T14:36:55Z",
+    "basis": "`python3 plugins/audit/tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_filed_returns' has no attribute 'case_binding_gaps'\" (read as python), and the task introduces 'case_binding_gaps': absent from HEAD's plugins/audit/scripts/manifest/_filed_returns.py, plugins/audit/agents/audit-executor.md, plugins/audit/reference/execute-task.md, plugins/audit/scripts/governance/drive-phase.py, plugins/audit/scripts/status/audit-lookup.py, plugins/audit/scripts/governance/_runner_output.py, plugins/audit/scripts/governance/stamp-verification.py and present in the working tree's plugins/audit/scripts/manifest/_filed_returns.py, plugins/audit/agents/audit-executor.md, plugins/audit/scripts/governance/drive-phase.py, plugins/audit/scripts/status/audit-lookup.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Attempt 2. Attempt 1's changes were already in the task tree; applied quality-gates-internal/plans/2026-10-17-redesign-implementation/patches/P130.33-outofscope.patch with git apply -3 (exit 0, fell back to direct application), then git restore --staged; git diff --stat shows 13 files: attempt 1's ten plus audit-lookup.py, _runner_output.py (printed_labels) and stamp-verification.py (payload.printed). Suites run one at a time from the tree, each exit 0: test_drive_phase 381/381, test__filed_returns 107/107, test_audit_lookup 110/110, test_stamp_verification 300/300, test__runner_output 17/17, test__deps 244/244, test__output 259/259, test__refs 286/286; ruff check plugins/audit tools exit 0. Binding rule unchanged from attempt 1: casesAdded[i] (id or list of ids) binds tests.add[i], checked against the printed labels; missing binding or unprinted id draws a gap naming the entry and the id; titles are free. The reviewer brief (audit-lookup.py) now uses the same rule, so no AttributeError.",
+    "descriptive": "A tests.add entry is bound to the case id that carries it, checked against the suite's printed labels, end to end through the drive, stamp and reviewer brief."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__filed_returns.py: a return binding each tests.add entry to a printed case id draws no gap regardless of the title wording, while an unprinted id or a missing binding draws a gap naming the entry"
+  ],
+  "casesAdded": [
+    "cb1"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test__filed_returns.py: a return binding each tests.add entry to a printed case id draws no gap regardless of the title wording, while an unprinted id or a missing binding draws a gap naming the entry": {
+      "file": "plugins/audit/scripts/manifest/_filed_returns.py",
+      "find": "                 if seen is not None and one not in seen]",
+      "replace": "                 if False]",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__filed_returns.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n1 _filed_returns.py case_binding_gaps reads casesAdded by index and checks ids against the printed labels; drive-phase.py files testsAddGaps; audit-lookup.py now uses the same binding rule (patch applied); audit-executor.md and execute-task.md state it\n2 attempt 1: cb block raised on HEAD (no case_binding_gaps), green after; falsifier turns the unprinted-id arm to `if False` and must turn cb1 red (found once in the file, grep count 1); not re-mutated in attempt 2\n3 attempt 1 swept tests_add_gaps/addMap; audit-lookup.py was the left hit, now covered by the patch; CHANGELOG addMap hits are history, left\n4 the rule in audit-executor.md names drive-phase.py submit / case_binding_gaps and says it reports and does not refuse\n5 n/a - no timing recorded\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:1fc12113c181f2d7a28893cbd651b98785db23f0be2a0a29d92a3bab1261fb58\",\"dirtyDigest\":\"sha256:c6200ed91e2310cb83ab328b203ab21aa491727e1b741a2ce399d3b777a36ccd\",\"dirtyPaths\":{\"plugins/audit/agents/audit-executor.md\":\"e8fe00ea82bf2ac5\",\"plugins/audit/reference/execute-task.md\":\"56f20c33375d0509\",\"plugins/audit/reference/phase-signoff.md\":\"65ec307105d3d4b7\",\"plugins/audit/scripts/governance/_runner_output.py\":\"076a92c43e7e7fe6\",\"plugins/audit/scripts/governance/drive-phase.py\":\"72fd789c14f37579\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"dda207d61a4b8728\",\"plugins/audit/scripts/manifest/_filed_returns.py\":\"134ba1ef8fa8ff25\",\"plugins/audit/scripts/status/audit-lookup.py\":\"2333a966cb712858\",\"plugins/audit/tests/test__filed_returns.py\":\"93e4d9d42d97caa0\",\"plugins/audit/tests/test__runner_output.py\":\"e260b5cb258bfe6e\",\"plugins/audit/tests/test_audit_lookup.py\":\"f2441bf4d2c0b485\",\"plugins/audit/tests/test_drive_phase.py\":\"af860d537acf7e2d\",\"plugins/audit/tests/test_stamp_verification.py\":\"19c6516bb9420ef9\"},\"head\":\"a7d72ddb\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/agents/audit-executor.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/_runner_output.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/scripts/manifest/_filed_returns.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/tests/test__filed_returns.py\",\"plugins/audit/tests/test__runner_output.py\",\"plugins/audit/tests/test_audit_lookup.py\",\"plugins/audit/tests/test_drive_phase.py\",\"plugins/audit/tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:d19faa51d74a53903c87a629ebd2cf9639fb69ea62b62672d83a7d4ce3982710\",\"v\":2}"
+}

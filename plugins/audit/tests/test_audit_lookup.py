@@ -748,39 +748,33 @@ def _brief_cases(check):
           and "submit P1.1 --role executor" in text
           and "--own --quiet" in text)
 
-    # The brief's sentence is read off what `tests_add_gaps` accepts: each
-    # route is shown to be a match there, a paraphrase is shown to be a gap,
-    # and only then is the brief asked to name the same two routes.
+    # The brief's sentence is read off what `case_binding_gaps` accepts: the
+    # binding it asks for is shown to draw no gap, an entry left unbound is
+    # shown to draw one, and only then is the brief asked to name that binding.
     import _filed_returns as _fr
-    declared = task["tests"]["add"][0]
-    clause = declared.split(":", 1)[1].strip()
-    mapped_task = {"tests": {"add": [declared],
-                             "addMap": {declared: "a differently worded title"}}}
-    accepted_verbatim = _fr.tests_add_gaps(task, [clause]) == []
-    accepted_mapped = _fr.tests_add_gaps(mapped_task,
-                                         ["a differently worded title"]) == []
-    paraphrase_is_gap = _fr.tests_add_gaps(task, ["sums are exact"]) == [declared]
-    rule_lines = [ln for ln in text.splitlines() if "tests.addMap" in ln]
+    bound_clean = _fr.case_binding_gaps(task, ["bf1"], ["bf1 any title at all"]) == []
+    unbound_gap = len(_fr.case_binding_gaps(task, None, None)) == 1
+    unprinted_gap = len(_fr.case_binding_gaps(task, ["bf2"], ["bf1 x"])) == 1
+    rule_lines = [ln for ln in text.splitlines() if _fr.CASES_FIELD in ln]
     none_task = _bf_manifest()
     none_task["phases"][0]["tasks"][0]["tests"]["add"] = []
     proj_n, mpath_n = project("bf-exec-none", none_task)
     brief(proj_n, mpath_n, "P1.1", "executor")
     text_none = read(brief_file(proj_n, "P1.1", "20260101T000000Z.executor.md")) or ""
     check("plugins/audit/tests/test_audit_lookup.py: an executor brief for a task "
-          "with tests.add states, beside the list, that each case title is the "
-          "clause verbatim or a tests.addMap entry, and a brief for a task with "
-          "no tests.add does not",
-          len(rule_lines) == 1 and "verbatim" in rule_lines[0]
+          "with tests.add states, beside the list, that each entry is bound by "
+          "returning `casesAdded`, and a brief for a task with no tests.add "
+          "does not",
+          len(rule_lines) == 1 and "by index" in rule_lines[0]
           and text.index("tests.add:") < text.index(rule_lines[0])
-          and "tests.addMap" not in text_none and "tests.add:" in text_none)
+          and _fr.CASES_FIELD not in text_none and "tests.add:" in text_none)
     check("plugins/audit/tests/test_audit_lookup.py: the sentence the brief prints "
-          "names the same two matches tests_add_gaps accepts (verbatim clause, "
-          "addMap entry) - read off the function's behaviour, not a second copy "
-          "of the wording",
-          accepted_verbatim and accepted_mapped and paraphrase_is_gap
-          and len(rule_lines) == 1 and "clause" in rule_lines[0]
-          and "verbatim" in rule_lines[0] and "tests.addMap" in rule_lines[0]
-          and "paraphrase" not in rule_lines[0])
+          "names the binding case_binding_gaps grades (an id per entry, checked "
+          "against what the suite printed) and no title or addMap route - read off "
+          "the function's behaviour, not a second copy of the wording",
+          bound_clean and unbound_gap and unprinted_gap
+          and "printed" in text[text.index(rule_lines[0]):][:600]
+          and "tests.addMap" not in text and "verbatim" not in rule_lines[0])
 
     def brief_streams(proj, mpath, node_id, role):
         """stdout and stderr kept APART - `drive-phase.py`'s

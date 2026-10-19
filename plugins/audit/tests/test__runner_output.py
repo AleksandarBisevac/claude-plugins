@@ -251,7 +251,21 @@ def _layer_cases(check):
           siblings == ["_output"])
 
 
+def _printed_cases(check):
+    house = ("PASS pl1 first case\nFAIL pl2 second case (why)\nPASS \n"
+             "SELFTEST FAILED: 1/2 cases passed\n")
+    pytest = "=== 2 passed in 0.01s ===\n"
+    got = (M.printed_labels(house), M.printed_labels(pytest),
+           M.printed_labels("PASS pl1 x\n"), M.printed_labels(""))
+    check("pl1 a house run's printed labels are its PASS and FAIL lines, and a "
+          "runner that prints none for a passing case, or a run with no tally, "
+          "answers None - unknown, never an empty list a binding is graded "
+          "against: %r" % (got,),
+          got == (["pl1 first case", "pl2 second case (why)"], None, None, None))
+
+
 def _cases(check):
+    _printed_cases(check)
     _table_cases(check)
     _summary_cases(check)
     _jest_cases(check)

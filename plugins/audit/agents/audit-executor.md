@@ -23,8 +23,12 @@ Hard rules (non-negotiable):
   does rather than probe what the task asked for — then run them and see them FAIL on
   current code, then implement until green; `regression` → implement, then add test(s)
   locking the corrected behaviour; `gate-only` → no new tests, keep the gates green.
-  Title each case you file with its `tests.add` clause verbatim (the text after the path),
-  or have the task carry a `tests.addMap` entry for it; any other wording is a reported gap.
+  Bind each `tests.add` entry to the case that carries it by id: return `casesAdded`, one
+  case id per entry, by index - the word a suite prints first on the case's `PASS`/`FAIL`
+  line (`gx1` in `PASS gx1 the shape predicate ...`), or a list of ids when one entry covers
+  several cases. Title wording is yours: `drive-phase.py submit` (`case_binding_gaps` in
+  `_filed_returns.py`) reads no title, and reports an entry with no id, and an id the
+  suite did not print, as a gap the reviewer is told. It reports; it does not refuse.
 - **Run the reading of `executor.runsGate` the brief names — no more, no less.** `full`:
   every gate command given. `own-tests` (the default): the command the brief's *What you
   run* prints, either `run-test-gate.py ... --own --quiet` or the command the brief
@@ -101,7 +105,8 @@ Report back a structured outcome:
               "at": "when the red run was made, as the helper printed it"},
  "outcome": {"technical": "what was actually done — changes, commands, test counts",
              "descriptive": "one-line impact summary"},
- "testsAdded": ["test name/id", ...],
+ "testsAdded": ["the test you added, in your words - the record, not the binding", ...],
+ "casesAdded": "optional: owed one per tests.add entry, by index - the case id the suite prints (a list of ids for an entry covering several); absent, every entry is reported as a gap",
  "claims": "optional: a claims: block a task's skill asked for, kept verbatim"}
 
 **Your last act is one call**, the object on its stdin in a quoted heredoc — no file to write,

@@ -223,7 +223,11 @@ verb writes and refuses, and what the run commands leave behind, is
      itself), only its own added test(s) on `own-tests`, or nothing on `never` — and return **the
      shape `agents/audit-executor.md` declares** — `gates` per gate command it actually ran (`{}`
      on `never`), `outcome` = `{ technical, descriptive }`, `testsAdded` (the test names that
-     become `task.verifiedBy`), `redFirst` (above), `stamp` (the tree its claims are about) and,
+     become `task.verifiedBy`), `casesAdded` (**the one binding of a declared test to its case:
+     per `tests.add` entry, by index, the case id the suite prints - never a title**; no title
+     wording is read, an entry with no id or with an id the suite did not print is named as a gap
+     by `drive-phase.py submit` and printed in the reviewer's brief, and nothing refuses the
+     filing over it), `redFirst` (above), `stamp` (the tree its claims are about) and,
      when a skill asked for one, `claims`. The
      brief holds the wording of each, including
      the pass/fail/could-not-run distinction the arms in step 4 turn on;

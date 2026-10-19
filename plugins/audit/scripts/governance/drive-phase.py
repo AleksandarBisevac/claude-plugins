@@ -1420,7 +1420,7 @@ def review_items(reviewer):
     return ", ".join(items)
 
 
-# `claim_section`, `tests_add_gaps` and `floor_contradicted_clause` live in
+# `claim_section`, `case_binding_gaps` and `floor_contradicted_clause` live in
 # `_filed_returns.py`, not here - ONE HOME for logic the reviewer brief
 # (`audit-lookup.py`) and this driver both need, below both in the layer
 # graph. Two entry points may not runtime-load each other
@@ -1430,7 +1430,7 @@ def review_items(reviewer):
 # re-defined, so this file's own cases (`test_drive_phase.py`) and anything
 # that reads `M.claim_section` off this module keep working unchanged.
 claim_section = _fr.claim_section
-tests_add_gaps = _fr.tests_add_gaps
+case_binding_gaps = _fr.case_binding_gaps
 floor_contradicted_clause = _fr.floor_contradicted_clause
 
 
@@ -4550,6 +4550,8 @@ def red_block(ctx, task, args, cmd, tree=None):
                              % (task["id"], " ".join((out + err).split()))}, None
         return None, relay_refusal(ctx, "stamp-verification.py", code, out + err)
     block = payload.get("redFirst") if isinstance(payload, dict) else None
+    printed = payload.get("printed") if isinstance(payload, dict) else None
+    ctx["printed"] = printed if isinstance(printed, list) else None
     if not isinstance(block, dict):
         return None, _stopped(ctx, "the red-first helper gave no block (exit %d): "
                               "%s Nothing filed." % (code, payload.get("note")
@@ -4708,11 +4710,22 @@ def submit(ctx, manifest, args, cmd, text):
             return stop
         body["stamp"] = line
         ctx["did"].append("stamp taken")
-        gaps = tests_add_gaps(task, body.get("testsAdded"))
+        printed = ctx.get("printed") if cmd else None
+        gaps = case_binding_gaps(task, body.get(_fr.CASES_FIELD), printed)
+        # The drive's own reading, filed beside the claim: the reviewer's brief
+        # prints these and not a recomputation that could not see the output.
+        body[_fr.GAPS_FIELD] = gaps
         if gaps:
             ctx["did"].append(
-                "tests.add names %d case(s) with no filed counterpart: %s"
-                % (len(gaps), "; ".join(gaps)))
+                "tests.add: %d entr%s not bound to a printed case: %s"
+                % (len(gaps), "y is" if len(gaps) == 1 else "ies are",
+                   "; ".join(gaps)))
+        elif printed is None and (task.get("tests") or {}).get("add"):
+            ctx["did"].append(
+                "tests.add: the case ids were not checked against what the "
+                "suite printed - %s" % (
+                    "no test command was given" if not cmd else
+                    "its runner prints no per-case labels the drive reads"))
         text = json.dumps(body, indent=2) + "\n"
     head = args.head
     if args.slice is not None and (task is not None or args.role != "reviewer"):

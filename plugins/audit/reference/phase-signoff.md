@@ -99,9 +99,10 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    module names, never the model's own severity word: probe 2 measured 4 of 6 Opus/Sonnet runs
    rating such a finding `low`, which review-convergence would park as a carried low rather than
    open a fix task over. **A `tests.add` case with no filed counterpart is named by the drive**,
-   mechanically, at the point the executor files - `tests_add_gaps` matches a declared case by its
-   own verbatim clause or an explicit `tests.addMap` entry, never a fuzzy compare (scored as one
-   string diff, that flagged most of the danuvia tasks on language alone). **A reviewer's `matches`
+   mechanically, at the point the executor files - `case_binding_gaps` binds a declared case to
+   the case id the executor returned for it (`casesAdded`, by index) and checks that id against the
+   labels the suite printed, reading no title (a title compare, scored as one string diff, flagged
+   most of the danuvia tasks on language alone). **A reviewer's `matches`
    answer whose note quotes none of the task's own `description`** is refused as unsupported before
    it can file - `unsupported_match_basis` in `_filed_returns.py` - so a renamed scope cannot read
    back as matching on the strength of the executor's own restatement. **A planned test's

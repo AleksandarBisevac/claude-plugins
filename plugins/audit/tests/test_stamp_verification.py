@@ -770,6 +770,11 @@ def _red_cases(check):
           and got.get("copied") == ["tests/test_mine.py"]
           and len(str(tw.get("head") or "")) >= 7)
 
+    check("sr4p the payload names the labels the suite printed, from the run that "
+          "shows the work whole (the fix run), so `drive-phase.py submit` can grade "
+          "a returned case id against them: %r" % (got.get("printed"),),
+          got.get("printed") == ["old1", "new1"])
+
     root_g, man_g = _red_repo("stamp-red-green-",
                               _red_test("import mine", "mine.v >= 1"))
     code_g, got_g = _red(root_g, man_g, [py, "tests/test_mine.py"])
@@ -5653,19 +5658,20 @@ def _cases(check, only=()):
 
 
 def _case_title_cases(check):
-    """`--case NAME` and the submit-time filed-counterpart check read one title
-    with one predicate, so no label is named by one and not the other."""
+    """`--case NAME` reads a printed title with `title_names_clause`, and with
+    nothing wider. It is the helper's reading only: a declared test is bound to
+    its case by id (`case_binding_gaps`), not by this match."""
     clause = "the red-first helper reads a title"
-    task = {"tests": {"add": ["the-suite: " + clause]}}
     labels = [clause, clause + " (detail 2/2)", clause + "s", clause + " extra",
               "something else entirely", ""]
     cases = [(lab,
               M._is_named({"id": None, "label": lab}, clause),
-              _filed_returns.tests_add_gaps(task, [lab]) == [])
+              _filed_returns.title_names_clause(lab, clause))
              for lab in labels]
-    disagree = [lab for lab, named, counted in cases if named != counted]
-    check("the red-first helper's case match and the filed-counterpart check are "
-          "the same function's answer (%r)" % (cases,),
+    disagree = [lab for lab, named, read in cases if named != read]
+    check("the red-first helper's `--case` match is `title_names_clause`'s answer "
+          "on every label, and a title only starting with the clause, a "
+          "paraphrase and an empty one do not match (%r)" % (cases,),
           not disagree and [c[1] for c in cases] == [True, True, False, False, False, False]
           and M._filed_returns.title_names_clause is _filed_returns.title_names_clause)
 
