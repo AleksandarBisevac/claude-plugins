@@ -6746,6 +6746,96 @@ def _nested_project_cases(check):
     finally:
         _harness.remove_tree(scratch)
 
+SCOPE_LANGUAGE_CLAUSE = (
+    "plugins/audit/tests/test_drive_phase.py: scope_gap on a task whose tests.add "
+    "is a plugins/audit/tests/test_*.py path and whose gate holds selftests and "
+    "vitest returns no decision; a .mjs path vitest does not collect still returns "
+    "the scope-gap decision naming vitest.config.mjs; a Python path under a gate "
+    "with neither the sweep nor pytest is still reported")
+
+SWEEP_GATE = "python3 tools/sweep-selftests.py"
+VITEST_GATE = "npx vitest run"
+# The sweep script's root list, the one thing the preflight reads from it.
+SWEEP_ROOTS = ('SWEEP_DIRS = (\n    os.path.join("backend", "tests"),\n'
+               '    "tools",\n)\n')
+
+
+def _language_repo(prefix, add_path, gate, config="vitest.config.mjs"):
+    """A one-task fixture whose gate is `gate`, whose only declared test is
+    `add_path`, with a sweep script and a vitest config that includes only
+    `tests/unit/**` (`config` names the config file; None writes none)."""
+    root, mpath = _repo(prefix, task_ids=TASKS[:1], gate=gate)
+    with open(mpath, encoding="utf-8") as fh:
+        plan = json.load(fh)
+    plan["phases"][0]["tasks"][0]["tests"]["add"] = ["%s: it holds" % (add_path,)]
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh, indent=2)
+    os.makedirs(os.path.join(root, "tools"))
+    with open(os.path.join(root, "tools", "sweep-selftests.py"), "w",
+              encoding="utf-8") as fh:
+        fh.write(SWEEP_ROOTS)
+    if config:
+        with open(os.path.join(root, config), "w", encoding="utf-8") as fh:
+            fh.write("export default { test: { include: ['tests/unit/**/*.test.ts'] } };\n")
+    for argv in (["add", "-A"], ["commit", "-qm", "language fixture"]):
+        _harness.git(root, *argv)
+    return root, mpath
+
+
+def _scope_language_cases(check):
+    def clause(detail):
+        return "%s (%s)" % (SCOPE_LANGUAGE_CLAUSE, detail)
+
+    M, why = _load("drive_phase_language")
+    if M is None:
+        check(clause("the driver loads"), False, why)
+        return
+
+    def run(prefix, add_path, gate, config="vitest.config.mjs"):
+        root, mpath = _language_repo(prefix, add_path, gate, config)
+        code, text = _next_wave(M, root, mpath)
+        return code, text, tasks_of(mpath)["P1.1"]
+
+    both = (SWEEP_GATE, VITEST_GATE)
+    code, text, task = run("pyboth", "backend/tests/test_mine.py", both)
+    check(clause("a Python suite under the sweep and vitest draws no scope-gap and "
+                 "no could-not-tell line, and the task is dispatched: %r" % (text,)),
+          code == 0 and _dispatched(text) == ["P1.1"] and "scope-gap" not in text
+          and "could not tell" not in text)
+    code, text, task = run("mjs", "lib/store.test.mjs", both)
+    check(clause("a .mjs test vitest does not collect still stops at scope-gap "
+                 "naming vitest and vitest.config.mjs, with the widen remedy and "
+                 "the task still pending: %r" % (text,)),
+          code == 0 and instruction(text) == ("decide", "scope-gap", None)
+          and "vitest.config.mjs" in text and "widen|block" in text
+          and "vitest does not collect lib/store.test.mjs" in text
+          and not _dispatched(text) and task.get("status") == "pending")
+    code, text, task = run("pyvitest", "backend/tests/test_mine.py",
+                           (VITEST_GATE,))
+    check(clause("a Python suite under a gate holding neither the sweep nor pytest "
+                 "is reported as a scope-gap that says no runner of the gate takes "
+                 "it: %r" % (text,)),
+          code == 0 and instruction(text) == ("decide", "scope-gap", None)
+          and "no runner in this gate takes backend/tests/test_mine.py" in text
+          and not _dispatched(text))
+    code, text, task = run("jsonly", "lib/store.test.mjs", (SWEEP_GATE,))
+    check(clause("a .mjs test under a gate holding only the sweep is reported the "
+                 "same way: %r" % (text,)),
+          code == 0 and instruction(text) == ("decide", "scope-gap", None)
+          and "no runner in this gate takes lib/store.test.mjs" in text)
+    code, text, task = run("pyoutside", "docs/test_mine.py", both)
+    check(clause("a Python suite outside the sweep's roots is still reported "
+                 "though the sweep is in the gate (the guard must not pass every "
+                 ".py): %r" % (text,)),
+          code == 0 and instruction(text) == ("decide", "scope-gap", None)
+          and "sweep does not collect docs/test_mine.py" in text)
+    code, text, task = run("pypytest", "tests/test_mine.py", ("python3 -m pytest",),
+                           config=None)
+    check(clause("a Python suite under a gate holding pytest is asked of pytest "
+                 "alone and, collected by its defaults, draws no decision: %r"
+                 % (text,)),
+          code == 0 and _dispatched(text) == ["P1.1"] and "scope-gap" not in text)
+
 
 STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("dr-block", "_refusal_cases"),
@@ -6795,6 +6885,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("wd-block", "_wave_redo_cases"), ("wg-block", "_wave_regate_cases"),
           ("wh-block", "_wave_hooks_cases"),
           ("pf-block", "_preflight_cases"),
+          ("pg-block", "_scope_language_cases"),
           ("tx-block", "_text_cases"),
           ("sn-block", "_signal_cases"), ("sn3-block", "_explain_cases"),
           ("sn5-block", "_signal_drive_cases"),

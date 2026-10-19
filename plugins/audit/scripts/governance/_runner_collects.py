@@ -119,6 +119,32 @@ PYTEST_CONFIG_FILES = ("pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini")
 PYTEST_OVERRIDE_KEYS = ("python_files", "testpaths", "norecursedirs")
 
 
+# --- which language a runner reads ------------------------------------------------
+# A runner is only worth asking about a path of a language it can run: vitest handed
+# a Python suite answers NOT_COLLECTED about a file it could never have taken, and
+# that definite answer used to stop a task whose suite the project's own sweep runs.
+# `sweep` is the project's `tools/sweep-selftests.py`: it is not a runner this module
+# lists, but it runs every Python suite under its own roots, so it is asked like one.
+SWEEP = "sweep"
+SWEEP_SCRIPT = "tools/sweep-selftests.py"
+JS_EXTENSIONS = ("js", "mjs", "cjs", "jsx", "ts", "mts", "cts", "tsx")
+LANGUAGE_RUNNERS = ((("py",), (SWEEP, "pytest")),
+                    (JS_EXTENSIONS, ("vitest", "jest")))
+
+
+def runners_taking(path, runners):
+    """The members of `runners`, in their order, whose language fits `path`: a `.py`
+    goes to the sweep or pytest, a JavaScript or TypeScript file to vitest or jest.
+    A path of any other language, or a gate holding only the other language's
+    runners, gives `[]` - the caller says that no runner takes it; nothing here
+    falls back to the whole list."""
+    ext = str(path or "").replace("\\", "/").rsplit("/", 1)[-1].rpartition(".")[2]
+    for extensions, takers in LANGUAGE_RUNNERS:
+        if ext in extensions:
+            return [r for r in runners if r in takers]
+    return []
+
+
 def _answer(answer, via, basis):
     return {"answer": answer, "via": via, "basis": basis}
 
@@ -637,6 +663,39 @@ def _pytest_config(path, project):
                                             "match" if fits else "do not match", base))
 
 
+# --- the sweep ------------------------------------------------------------------
+
+def _sweep_roots(text):
+    """The directories named in the `SWEEP_DIRS = (...)` tuple of the sweep script's
+    source, joined with `/`, or None when the tuple is not there. Comment lines are
+    skipped; an entry is a string or an `os.path.join` of strings."""
+    block = re.search(r"^SWEEP_DIRS\s*=\s*\((.*?)^\)", text, re.S | re.M)
+    if not block:
+        return None
+    roots = []
+    for line in block.group(1).splitlines():
+        if line.strip().startswith("#"):
+            continue
+        parts = re.findall(r"[\"']([^\"']+)[\"']", line)
+        if parts:
+            roots.append("/".join(parts))
+    return roots or None
+
+
+def _sweep_reading(path, project):
+    _name, text = _read_text(project, (SWEEP_SCRIPT,))
+    roots = _sweep_roots(text) if text else None
+    if roots is None:
+        return _cannot("%s is missing or names no SWEEP_DIRS tuple this reading can "
+                       "read, so which Python files the sweep runs is not known"
+                       % (SWEEP_SCRIPT,))
+    if path.endswith(".py") and any(path.startswith(r + "/") for r in roots):
+        return _answer(COLLECTED, "config", "%s sweeps every .py under %s"
+                       % (SWEEP_SCRIPT, ", ".join(roots)))
+    return _answer(NOT_COLLECTED, "config", "%s sweeps .py files under %s only, and %s "
+                   "is not one" % (SWEEP_SCRIPT, ", ".join(roots), path))
+
+
 # --- the question -----------------------------------------------------------------
 
 def collects(path, runner, project, lister=None):
@@ -651,10 +710,12 @@ def collects(path, runner, project, lister=None):
     this module knows.
     """
     name = runner.strip() if isinstance(runner, str) else ""
-    if name not in ("vitest", "jest", "pytest"):
-        return _cannot("runner %r is not one this reading knows (vitest, jest, pytest)"
-                       % (runner,))
+    if name not in ("vitest", "jest", "pytest", SWEEP):
+        return _cannot("runner %r is not one this reading knows (vitest, jest, "
+                       "pytest, %s)" % (runner, SWEEP))
     path = path.replace("\\", "/")
+    if name == SWEEP:
+        return _sweep_reading(path, project)
     listed = (lister or LISTERS[name])(name, project)
     if listed:
         answer = _from_listing(path, listed, project, name)

@@ -260,6 +260,21 @@ def entry_runner(entry):
     return None
 
 
+def entry_collector(entry):
+    """What collects the tests of a gate entry for the task-start preflight: the
+    entry's `entry_runner`, or `sweep` for an entry running the project's
+    `sweep-selftests.py`, or None. Kept apart from `entry_runner` on purpose: the
+    sweep is not a path-scoped runner, so handing it to the re-point above would
+    count it as a second known runner and narrow gates that were never narrowed."""
+    runner = entry_runner(entry)
+    if runner in UNIT_RUNNERS:
+        return runner
+    for _raw, value in _phases.shell_words(entry):
+        if (value or "").replace("\\", "/").rsplit("/", 1)[-1] == "sweep-selftests.py":
+            return _runner_collects.SWEEP
+    return None
+
+
 def _e2e_like(path):
     parts = path.replace("\\", "/").split("/")
     return (any(seg in E2E_SEGMENTS for seg in parts[:-1])

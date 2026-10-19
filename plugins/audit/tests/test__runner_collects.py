@@ -316,6 +316,66 @@ def _pytest(check, tmp):
           and _answer(quiet, "tests/helpers.py", "pytest") == M.NOT_COLLECTED)
 
 
+LANGUAGE_CLAUSE = ("plugins/audit/tests/test__runner_collects.py: the language split "
+                   "the preflight uses sends a .py path to the sweep or pytest and a "
+                   ".js/.mjs/.ts path to vitest or jest, and names no runner for a "
+                   "path none of the gate's runners can take")
+
+# The shape of the project's own sweep roots: a tuple of directory names, some of
+# them joined, with a comment line the reader must skip.
+SWEEP_SOURCE = """\
+SWEEP_DIRS = (
+    os.path.join("plugins", "audit", "scripts"),
+    os.path.join("backend", "tests"),
+    # os.path.join("not", "swept"),
+    "tools",
+)
+"""
+
+
+def _language(check, tmp):
+    def clause(detail):
+        return "%s (%s)" % (LANGUAGE_CLAUSE, detail)
+
+    def split(path, *runners):
+        return M.runners_taking(path, list(runners))
+
+    everything = ("vitest", "sweep", "jest", "pytest")
+    check(clause("a .py path goes to the sweep and pytest, in the gate's order, "
+                 "and to neither vitest nor jest: %r" % (split("tests/a.py", *everything),)),
+          split("tests/a.py", *everything) == ["sweep", "pytest"])
+    for ext in (".js", ".mjs", ".cjs", ".ts", ".mts", ".tsx", ".jsx"):
+        check(clause("a %s path goes to vitest and jest and to neither the sweep "
+                     "nor pytest: %r" % (ext, split("src/a.test" + ext, *everything))),
+              split("src/a.test" + ext, *everything) == ["vitest", "jest"])
+    check(clause("a gate holding only the runners of the other language yields "
+                 "an empty list, not the gate's runners: %r %r"
+                 % (split("tests/a.py", "vitest"), split("src/a.test.mjs", "sweep"))),
+          split("tests/a.py", "vitest") == [] and split("src/a.test.mjs", "sweep") == []
+          and split("tests/a.py", "vitest", "jest") == [])
+    check(clause("a path of a language no runner reads is taken by none: %r"
+                 % (split("spec/a_spec.rb", *everything),)),
+          split("spec/a_spec.rb", *everything) == [])
+    check(clause("the split is a subset of the argument in its order, and an empty "
+                 "gate gives an empty answer: %r" % (split("tests/a.py", "pytest", "sweep"),)),
+          split("tests/a.py", "pytest", "sweep") == ["pytest", "sweep"]
+          and split("tests/a.py") == [])
+    root = _project(os.path.join(tmp, "sw"), {"tools/sweep-selftests.py": SWEEP_SOURCE})
+    check(clause("the sweep collects a .py under one of its roots, and a .py "
+                 "outside them is not collected: %r %r"
+                 % (_answer(root, "backend/tests/test_x.py", "sweep"),
+                    _answer(root, "docs/test_x.py", "sweep"))),
+          _answer(root, "backend/tests/test_x.py", "sweep") == M.COLLECTED
+          and _answer(root, "tools/check_x.py", "sweep") == M.COLLECTED
+          and _answer(root, "docs/test_x.py", "sweep") == M.NOT_COLLECTED
+          and _answer(root, "not/swept/test_x.py", "sweep") == M.NOT_COLLECTED
+          and _answer(root, "toolsmith/test_x.py", "sweep") == M.NOT_COLLECTED)
+    bare = _project(os.path.join(tmp, "sw-none"), {"README.md": "x"})
+    check(clause("a project with no sweep script to read gives no verdict on "
+                 "a .py path: %r" % (_answer(bare, "tests/test_x.py", "sweep"),)),
+          _answer(bare, "tests/test_x.py", "sweep") == M.COULD_NOT_TELL)
+
+
 def _cases(check):
     tmp = _harness.fixture_root("runner-collects-")   # removed at exit
     _vitest(check, tmp)
@@ -325,6 +385,7 @@ def _cases(check):
     _jest(check, tmp)
     _pytest(check, tmp)
     _listers(check, tmp)
+    _language(check, tmp)
 
 
 def _selftest():

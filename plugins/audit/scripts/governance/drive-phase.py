@@ -1086,14 +1086,23 @@ def scope_gap(ctx, state, task):
     entries, _source = _mio.gate_entries(phase, task)
     runners = []
     for entry in entries:
-        runner = _gate_derive.entry_runner(build.get(entry, entry))
-        if runner in _gate_derive.UNIT_RUNNERS and runner not in runners:
+        runner = _gate_derive.entry_collector(build.get(entry, entry))
+        if runner and runner not in runners:
             runners.append(runner)
     for path in paths:
+        if not runners:
+            continue
+        takers = _runner_collects.runners_taking(path, runners)
+        if not takers:
+            # The gate names runners and none of them reads this path's language.
+            return E_OK, decision(
+                ctx, state, "scope-gap", task,
+                "no runner in this gate takes %s (the gate runs %s); no runner "
+                "config file exists to widen" % (path, ", ".join(runners)),
+                extra={"config": None})
         answers = [(r, _runner_collects.collects(path, r, ctx["project"]))
-                   for r in runners]
-        if not answers or any(a["answer"] == _runner_collects.COLLECTED
-                              for _r, a in answers):
+                   for r in takers]
+        if any(a["answer"] == _runner_collects.COLLECTED for _r, a in answers):
             continue
         if any(a["answer"] == _runner_collects.COULD_NOT_TELL for _r, a in answers):
             ctx["did"].append("could not tell whether %s collects %s: %s" % (
