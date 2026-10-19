@@ -120,9 +120,37 @@
         "file": "tools/ui-tests/gate-card-wait.test.mjs:58-62",
         "issue": "The test pins the wait function (pollIntervalOf/pollWindowMs) and greps capture-screenshots.mjs for the 6500 / 6.5s literals, but nothing proves each of the eight converted sites routes through waitForPoll/sleepPollWindow. A future hand-written wait with a different number (say 7000) or a waitForFunction with an inline timeout passes both the function cases and the literal grep, so the interval and a wait can still diverge at a call site.",
         "resolution": "Extend the source check to count `waitForFunction(` calls carrying a numeric `timeout:` in the poll-window sites, or assert that every `waitForTimeout(` argument in the assertLiveData/assertComboOverlay/assertGateCard bodies is the computed window. Alternatively, file it as a known limit in the test header's WHAT THIS CANNOT SEE block."
+      },
+      {
+        "id": "P130-R15",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1190-1219",
+        "issue": "gate_entry_shape_problem reads a whole entry as one command, never splitting on && || ; |. Probed read-only: 'python3 a/test_x.py && python3 a/test_y.py' (two suites run in sequence, a correct entry, and the same joiner the plan's own lint gate uses) is reported as 'runs a/test_x.py as a program and hands it a/test_y.py as arguments' - a false statement - and would be refused by add, add --from-file, scope --gate and --gate-set and warned on by validate. No test covers a chained entry (gx1 quiet list has none).",
+        "resolution": "Cut the shell words at control operators before reading, judge each segment on its own (first path, the word before it, the extra suite paths), and add a chained-suites allow case to gx1."
+      },
+      {
+        "id": "P130-R16",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1208-1211",
+        "issue": "The 'names a path twice' rule applies to every path-shaped word, not to suites. Probed: 'pytest a/test_x.py::t1 a/test_x.py::t2' (two distinct node ids) and 'python3 tools/r.py --in docs/p.json --out docs/p.json' are both refused/warned as naming a path more than once. The task says an entry naming one suite twice; an in-place tool invocation or two node ids of one file are legitimate and would be refused with no way round.",
+        "resolution": "Restrict the repeat rule to is_suite_path words and compare them with any '::' node id kept (or only flag when the whole word is identical); add an allow case for node ids and for a non-suite repeated path."
+      },
+      {
+        "id": "P130-R17",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1636-1649 and plugins/audit/tests/test__manifest_rules.py:1103-1105",
+        "issue": "contradicts task clause: acceptance (3) and tests.add say validate-manifest reports such an entry 'already in a plan' / 'a plan already holding a malformed gate entry' as a warning; the walk warns only for a task whose status is not TERMINAL, and gx2 pins silence for a done task. A plan holding the shape in finished tasks (the very tasks the fault was filed on) validates silent. The narrowing is the executor's own reading and the comment justifies it, but the clause does not carry it.",
+        "resolution": "Warn for every task regardless of status (it is only a warning), or get the clause amended before narrowing; drop the done-task half of gx2 accordingly."
+      },
+      {
+        "id": "P130-R18",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1180-1186",
+        "issue": "'Run as a program' is read from the word IMMEDIATELY before the first path, so an interpreter option hides it: 'python3 -u a/test_x.py a/test_y.py' and 'python3 -X dev a/test_x.py a/test_y.py' return None (probed) although they have exactly the F720 shape. The predicate's own docstring claims the interpreter-or-nothing reading.",
+        "resolution": "Walk back from the first path to the segment start, skipping option words (and their values), and treat '-m <module>' as a runner; add the option case to gx1."
       }
     ],
-    "outcome": "[findings: 14 - 0 high, 1 med, 13 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 18 - 0 high, 4 med, 14 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1983,7 +2011,41 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test__manifest_phases.py: the gate-entry shape predicate reports an entry whose first path word is a suite file followed by another suite path, and an entry naming one path twice, and reports nothing for a buildCommands key, a spelled sweep entry or a single-suite entry": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__manifest_phases.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/manifest/_manifest_phases.py",
+            "find": "again = [p for i, p in enumerate(paths) if p in paths[:i]]",
+            "replace": "again = []"
+          },
+          "plugins/audit/tests/test__manifest_rules.py: a plan already holding a malformed gate entry draws a warning naming the task and the entry, and no error": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__manifest_rules.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/manifest/_manifest_phases.py",
+            "find": "problem = gate_entry_shape_problem(entry, build_keys)",
+            "replace": "problem = None"
+          },
+          "plugins/audit/tests/test_audit_task.py: add, add --from-file, scope --gate and scope --gate-set refuse a malformed gate entry and write nothing; an add --from-file batch of several Python suites per task gets one spelled entry per task; scope --gate-set with the manifest positional last writes the same gate as with it first, and a manifest path as a gate entry is refused": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_audit_task.py",
+              "--selftest",
+              "--stage",
+              "gx-block"
+            ],
+            "file": "plugins/audit/scripts/manifest/audit-task.py",
+            "find": "if _names_plan_file(entry, project):",
+            "replace": "if False:"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -2008,10 +2070,36 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-19T05:55:33Z.6c52c7",
-        "status": "failed",
-        "at": "2026-10-19T05:55:33Z"
-      }
+        "runId": "2026-10-19T07:50:59Z.178357",
+        "status": "passed",
+        "at": "2026-10-19T07:50:59Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-19T07:51:02Z",
+          "text": "falsifier could-not-run for `plugins/audit/tests/test__manifest_phases.py: the gate-entry shape predicate reports an entry whose first path word is a suite file followed by another suite path, and an entry naming one path twice, and reports nothing for a buildCommands key, a spelled sweep entry or a single-suite entry`: mutation at plugins/audit/scripts/manifest/_manifest_phases.py (the mutation's `find` text is not in plugins/audit/scripts/manifest/_manifest_phases.py - no mutant was applied)"
+        },
+        {
+          "at": "2026-10-19T07:51:03Z",
+          "text": "falsifier could-not-run for `plugins/audit/tests/test__manifest_rules.py: a plan already holding a malformed gate entry draws a warning naming the task and the entry, and no error`: mutation at plugins/audit/scripts/manifest/_manifest_phases.py (the mutation's `find` text is not in plugins/audit/scripts/manifest/_manifest_phases.py - no mutant was applied)"
+        },
+        {
+          "at": "2026-10-19T07:51:04Z",
+          "text": "falsifier could-not-run for `plugins/audit/tests/test_audit_task.py: add, add --from-file, scope --gate and scope --gate-set refuse a malformed gate entry and write nothing; an add --from-file batch of several Python suites per task gets one spelled entry per task; scope --gate-set with the manifest positional last writes the same gate as with it first, and a manifest path as a gate entry is refused`: mutation at plugins/audit/scripts/manifest/audit-task.py (the mutation's `find` text is not in plugins/audit/scripts/manifest/audit-task.py - no mutant was applied)"
+        },
+        {
+          "at": "2026-10-19T07:51:18Z",
+          "text": "falsifier could-not-run for `plugins/audit/tests/test__manifest_phases.py: the gate-entry shape predicate reports an entry whose first path word is a suite file followed by another suite path, and an entry naming one path twice, and reports nothing for a buildCommands key, a spelled sweep entry or a single-suite entry` accepted at the close: The falsifier stage is retired at HEAD by P130.6-ywo (71f35616) and runs here only because the drive is the installed 3.4.0; the same cases were proved red before the fix in attempt 1 (red-first proved, 2026-10-19T05:44:35Z), and the gate is green. (mutation at plugins/audit/scripts/manifest/_manifest_phases.py; the mutation's `find` text is not in plugins/audit/scripts/manifest/_manifest_phases.py - no mutant was applied)"
+        },
+        {
+          "at": "2026-10-19T07:51:19Z",
+          "text": "falsifier could-not-run for `plugins/audit/tests/test__manifest_rules.py: a plan already holding a malformed gate entry draws a warning naming the task and the entry, and no error` accepted at the close: The falsifier stage is retired at HEAD by P130.6-ywo (71f35616) and runs here only because the drive is the installed 3.4.0; the same cases were proved red before the fix in attempt 1 (red-first proved, 2026-10-19T05:44:35Z), and the gate is green. (mutation at plugins/audit/scripts/manifest/_manifest_phases.py; the mutation's `find` text is not in plugins/audit/scripts/manifest/_manifest_phases.py - no mutant was applied)"
+        },
+        {
+          "at": "2026-10-19T07:51:20Z",
+          "text": "falsifier could-not-run for `plugins/audit/tests/test_audit_task.py: add, add --from-file, scope --gate and scope --gate-set refuse a malformed gate entry and write nothing; an add --from-file batch of several Python suites per task gets one spelled entry per task; scope --gate-set with the manifest positional last writes the same gate as with it first, and a manifest path as a gate entry is refused` accepted at the close: The falsifier stage is retired at HEAD by P130.6-ywo (71f35616) and runs here only because the drive is the installed 3.4.0; the same cases were proved red before the fix in attempt 1 (red-first proved, 2026-10-19T05:44:35Z), and the gate is green. (mutation at plugins/audit/scripts/manifest/audit-task.py; the mutation's `find` text is not in plugins/audit/scripts/manifest/audit-task.py - no mutant was applied)"
+        }
+      ]
     },
     {
       "id": "P130.19-ywo",
@@ -2434,7 +2522,7 @@
     {
       "id": "P130.25-ywo",
       "title": "The ctw29 case label has its space back, and detect-plan-skip stamps the bypass file through _config.local_stamp()",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fault F732 (the P130.4 review, filed at docs/audit/evidence/returns/P130.4/20261018T063658Z.reviewer.json). Two lows, both verified at HEAD 6220678a. (a) plugins/audit/tests/test_commit_task_work.py:785 reads check(\"ctw29SECOND-DIRECTION CASE: ...; restore the space after ctw29 so the label matches its siblings. (b) plugins/audit/hooks/detect-plan-skip.py:158 builds time.strftime(\"%Y-%m-%dT%H:%M:%S%z\", time.localtime()) inline; replace it with _config.local_stamp() (plugins/audit/hooks/_config.py:4194), which owns that spelling and which require-plan.py already calls, and keep the docstring at :122 true. Acceptance: (1) the ctw29 label has the space and no other line of that file changes; (2) detect-plan-skip's bypass file `ts` is exactly what _config.local_stamp() returns, shown by a case that patches local_stamp and reads the file; (3) the new case is red with the inline strftime restored (the return shows the red run); (4) grep -n 'strftime' plugins/audit/hooks/detect-plan-skip.py finds no stamp of the local-offset spelling.",
       "files": [
         "plugins/audit/tests/test_commit_task_work.py",
@@ -2484,19 +2572,33 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "502b3a4f6f37",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "detect-plan-skip.py _arm_bypass now sets ts = _config.local_stamp() (no strftime left in the file; docstring says ts is local_stamp's). test_commit_task_work.py: ctw29 label restored to 'ctw29 SECOND-DIRECTION CASE' (one-line diff). test_detect_plan_skip.py: new case patching _config.local_stamp to a sentinel and reading the plan-bypass-<session>.json file. Selftests: detect_plan_skip 46/46, commit_task_work 126/126, test__refs 286/286; ruff clean. The sc4 case in test_drive_phase.py was not touched or run.",
+        "descriptive": "The bypass file's ts now comes from the one owner of the local-offset stamp, and the ctw29 case label has its space back."
       },
       "startedAt": "2026-10-19T05:59:15Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T07:21:27Z",
+      "verifiedBy": [
+        "arming the plan-first bypass writes a `ts` equal to the value _config.local_stamp() returns (local_stamp patched to a sentinel), red with the inline strftime restored (no case-id prefix; the tests.add clause is the title, in plugins/audit/tests/test_detect_plan_skip.py)"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T07:21:16Z.dba9bd",
         "status": "passed",
         "at": "2026-10-19T07:21:16Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "502b3a4f6f37",
+        "at": "2026-10-19T07:21:27Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-19T06:01:07Z",
+        "basis": "`python3 plugins/audit/tests/test_detect_plan_skip.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 46 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - arming the plan-first bypass writes a `ts` equal to the value _config.local_stamp() returns (local_stamp patched to a sentinel), red with the inline strftime restored ({'ts': '2026-10-19T08:01:04+0200', 'armedAtEpoch': 1792389664}) (house FAIL): SELFTEST FAILED: 45/46 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {

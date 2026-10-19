@@ -1,0 +1,59 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_audit_task.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__manifest_phases.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__manifest_rules.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T07:24:24Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage gx-block` in a throwaway tree at HEAD exited 1 with failing cases --stage names a block of this suite: ['gx-block'] (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 0/1 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Restart after an orchestrator block; no code changed this run. Verified the task tree (claude-plugins-P130.18-ywo) still holds the work and is green, one suite at a time, each with --selftest: test__refs.py exit 0 (286/286), test_audit_task.py exit 0 (1083/1083), test__manifest_phases.py exit 0 (127/127), test__manifest_rules.py exit 0 (170/170). test_drive_phase.py case sc4 is a known base red owned by another task and was not run or touched. Implementation is the earlier one: gate_entry_shape_problem in _manifest_phases.py, write-verb refusals and the --gate-set manifest-positional handling in audit-task.py, warning in _manifest_rules.py.",
+    "descriptive": "A gate entry running one suite with another as its argument, naming one path twice or naming the manifest is refused at write time and warned on in an existing plan; scope --gate-set takes the manifest positional last."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__manifest_phases.py: the gate-entry shape predicate reports an entry whose first path word is a suite file followed by another suite path, and an entry naming one path twice, and reports nothing for a buildCommands key, a spelled sweep entry or a single-suite entry (case gx1; gx2 is a companion)",
+    "plugins/audit/tests/test_audit_task.py: add, add --from-file, scope --gate and scope --gate-set refuse a malformed gate entry and write nothing; an add --from-file batch of several Python suites per task gets one spelled entry per task; scope --gate-set with the manifest positional last writes the same gate as with it first, and a manifest path as a gate entry is refused (case gx1, stage gx-block)",
+    "plugins/audit/tests/test__manifest_rules.py: a plan already holding a malformed gate entry draws a warning naming the task and the entry, and no error (case gx1; gx2 is the allow companion)"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test__manifest_phases.py: the gate-entry shape predicate reports an entry whose first path word is a suite file followed by another suite path, and an entry naming one path twice, and reports nothing for a buildCommands key, a spelled sweep entry or a single-suite entry": {
+      "file": "plugins/audit/scripts/manifest/_manifest_phases.py",
+      "find": "again = [p for i, p in enumerate(paths) if p in paths[:i]]",
+      "replace": "again = []",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test_audit_task.py: add, add --from-file, scope --gate and scope --gate-set refuse a malformed gate entry and write nothing; an add --from-file batch of several Python suites per task gets one spelled entry per task; scope --gate-set with the manifest positional last writes the same gate as with it first, and a manifest path as a gate entry is refused": {
+      "file": "plugins/audit/scripts/manifest/audit-task.py",
+      "find": "if _names_plan_file(entry, project):",
+      "replace": "if False:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_task.py",
+        "--selftest",
+        "--stage",
+        "gx-block"
+      ]
+    },
+    "plugins/audit/tests/test__manifest_rules.py: a plan already holding a malformed gate entry draws a warning naming the task and the entry, and no error": {
+      "file": "plugins/audit/scripts/manifest/_manifest_phases.py",
+      "find": "problem = gate_entry_shape_problem(entry, build_keys)",
+      "replace": "problem = None",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__manifest_rules.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n1 n/a - no behaviour claimed; this run only re-verified earlier work\n2 not re-mutated this run; the earlier red-first proof is cited in redFirst and the three falsifiers are carried over unchanged\n3 n/a - not a fix of a reported defect in this run\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard written this run\n7 n/a - no number written; suite tallies are quoted from the commands that print them",
+  "stamp": "audit-stamp: {\"content\":\"sha256:e7e22e0d9cc3600ef34b54f8ffc2ee3a1086c821555f4dc0769bc401244b2884\",\"dirtyDigest\":\"sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"dirtyPaths\":{},\"head\":\"502b3a4f\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/_manifest_phases.py\",\"plugins/audit/scripts/manifest/_manifest_rules.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test__manifest_phases.py\",\"plugins/audit/tests/test__manifest_rules.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:9c911ec103e038903cf48d5eea005b9b194214221b9f4d550b0a09def50d9235\",\"v\":2}"
+}
