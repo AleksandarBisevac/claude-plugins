@@ -3463,14 +3463,14 @@
         "P130.38-ywo",
         "P130.26-ywo"
       ],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-19T13:44:55Z",
+      "startedAt": "2026-10-19T14:29:02Z",
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "signals"
@@ -3875,7 +3875,7 @@
       "id": "P130.39-ywo",
       "title": "The low findings of the P130.23, P130.27 and P130.29 reviews are fixed, and no refusal sentence states something false",
       "status": "pending",
-      "description": "Review lows (read the filed reviews: docs/audit/evidence/returns/P130.23-ywo/20261019T094437Z.reviewer.json and P130.27-ywo/20261019T094439Z.reviewer.json). (1) plugins/audit/hooks/require-plan.py (around :118-125, :137-151, :891-905): `_covers_clause` says a directory entry 'opens nothing until that task is started' for every non-direct row that is not in_progress, including done and cancelled tasks, which `/audit:task start` refuses - the sentence is false for them; give terminal tasks the terminal wording `_declaration_note` already has. (2) plugins/audit/hooks/_config.py (around :3530-3546): the branch where ONE task lists both a directory and the exact file (promotion to direct) is reached by no case - add one. (3) `_declaration_note`'s docstring (require-plan.py around :529-533) still says three causes; name the fourth (covered only by an unstarted directory entry). (4) plugins/audit/scripts/manifest/_manifest_vocab.py:900: a reworded comment joined two sentences on one long line; rewrap to the neighbours' width. (5) CLAUDE.md around :279-285: after the rewritten isolation paragraph, '`gate-parity.py` is why that cannot come back.' now reads as guarding the unchecked isolation drift; make the antecedent explicit (the gate-set descriptions). (6) plugins/audit/tests/test_drive_phase.py around :3372 says `unblock` refuses a task with attempts left, which P130.13-ywo changed; reword. (7) plugins/audit/commands/task.md still describes the `build-command --remove` refusal as gate entries only; since P130.31-ywo it also names meta.fullGate, meta.phaseGate.always and meta.phaseGate.exclude holders - say so in one line (the file is held under the measure-context ceiling). Acceptance: (1) a done task covering a file through a directory gets a refusal whose sentence is true for a done task (case in test_require_plan.py); (2) the promotion branch has a case; (3) the full sweep is green; (4) prose lints (_output.prose_number_claims, _deps.doc_prose_numbers) report nothing new.",
+      "description": "Review lows (read the filed reviews: docs/audit/evidence/returns/P130.23-ywo/20261019T094437Z.reviewer.json and P130.27-ywo/20261019T094439Z.reviewer.json). (1) plugins/audit/hooks/require-plan.py (around :118-125, :137-151, :891-905): `_covers_clause` says a directory entry 'opens nothing until that task is started' for every non-direct row that is not in_progress, including done and cancelled tasks, which `/audit:task start` refuses - the sentence is false for them; give terminal tasks the terminal wording `_declaration_note` already has. (2) plugins/audit/hooks/_config.py (around :3530-3546): the branch where ONE task lists both a directory and the exact file (promotion to direct) is reached by no case - add one. (3) `_declaration_note`'s docstring (require-plan.py around :529-533) still says three causes; name the fourth (covered only by an unstarted directory entry). (4) plugins/audit/scripts/manifest/_manifest_vocab.py:900: a reworded comment joined two sentences on one long line; rewrap to the neighbours' width. (5) CLAUDE.md around :279-285: after the rewritten isolation paragraph, '`gate-parity.py` is why that cannot come back.' now reads as guarding the unchecked isolation drift; make the antecedent explicit (the gate-set descriptions). (6) plugins/audit/tests/test_drive_phase.py around :3372 says `unblock` refuses a task with attempts left, which P130.13-ywo changed; reword. (7) plugins/audit/commands/task.md still describes the `build-command --remove` refusal as gate entries only; since P130.31-ywo it also names meta.fullGate, meta.phaseGate.always and meta.phaseGate.exclude holders - say so in one line (the file is held under the measure-context ceiling). (8) From the P130.42-ywo review (docs/audit/evidence/returns/P130.42-ywo/20261019T134458Z.reviewer.json): `_PLAIN_INTERPRETER_FLAGS` in plugins/audit/scripts/manifest/_manifest_phases.py (around :1114-1135) is Python's flag set but is applied to every `_SCRIPT_RUNNER` name, so `bash -s a/test_x.sh a/test_y.sh` is refused with a false sentence - apply the plain-flag skip only to python interpreters and leave other runners with options unread; (9) the unbalanced-quote fallback of `gate_entry_commands` (around :1197-1200) does not drop redirection targets, so a redirect target reads as an argument - drop them there too, or leave such an entry unread. Acceptance: (1) a done task covering a file through a directory gets a refusal whose sentence is true for a done task (case in test_require_plan.py); (2) the promotion branch has a case; (3) the full sweep is green; (4) prose lints (_output.prose_number_claims, _deps.doc_prose_numbers) report nothing new.",
       "files": [
         "plugins/audit/hooks/require-plan.py",
         "plugins/audit/hooks/_config.py",
@@ -3884,7 +3884,9 @@
         "plugins/audit/scripts/manifest/_manifest_vocab.py",
         "CLAUDE.md",
         "plugins/audit/tests/test_drive_phase.py",
-        "plugins/audit/commands/task.md"
+        "plugins/audit/commands/task.md",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_phases.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -4098,7 +4100,7 @@
     {
       "id": "P130.42-ywo",
       "title": "The gate-entry shape check refuses only the suite-list shape, never a chained command, a repeated tool path or two node ids of one file",
-      "status": "in_progress",
+      "status": "done",
       "description": "REPLACES P130.36-ywo, cancelled because the code it fixes was not in the branch (see land-gate-entry-shape). Review of P130.18-ywo (filed at docs/audit/evidence/returns/P130.18-ywo/20261019T064404Z.reviewer.json, read it). `gate_entry_shape_problem` (plugins/audit/scripts/manifest/_manifest_phases.py around :1180-1219), which add, add --from-file, scope --gate/--gate-set refuse on and validate warns on, has false positives on a WRITE path: (1) it reads the whole entry as one command and never splits on `&&`, `||`, `;`, `|`, so `python3 a/test_x.py && python3 a/test_y.py` (a correct entry; the plan's own lint gate uses the same joiner) is refused with a false sentence; (2) 'names a path twice' applies to every path-shaped word, so `pytest a/test_x.py::t1 a/test_x.py::t2` and `python3 tools/r.py --in docs/p.json --out docs/p.json` are refused with no way round; (3) the validator warning skips done/cancelled tasks although the task's clause says a plan already holding the shape warns - decide by the clause: warn for every task, the plan's own finished tasks included, since a warning is free; (4) an interpreter option before the first path (`python3 -u a/test_x.py a/test_y.py`, `python3 -X dev ...`) hides the shape. Fix: evaluate each simple command of the entry separately (split on the shell list operators outside quotes - use shlex in punctuation mode, no regex); 'twice' counts only suite paths (the suite-path predicate the module already has), compared without a `::node` suffix only when no suffix differs; skip interpreter options (words starting with '-' and their argument for -X/-W/-m-style flags) before deciding 'run as a program'. Every refusal sentence must stay true. Acceptance: (1) each of the reviewer's four probes behaves as stated (chained entry accepted, node ids and in-place tool accepted, finished-task warning present, `python3 -u a b` shape caught); (2) the original F720/F721 shapes are still refused; (3) prove-gates' rows for this predicate stay green both directions; (4) the full sweep is green.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_phases.py",
@@ -4162,19 +4164,35 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8ccaa35c4f50",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "gate_entry_shape_problem in plugins/audit/scripts/manifest/_manifest_phases.py now reads each simple command separately via new gate_entry_commands (shlex punctuation reader, no regex; backslashes stay ordinary; redirection targets dropped; unbalanced quote falls back to whitespace split with bare operators separating). 'Twice' counts only suite paths, compared as written words (so ::node ids of one file differ). 'Run as a program' is decided by _runs_first_path_as_program: nothing before the path, or an interpreter followed only by plain python flags (-u -B ..., -X/-W with argument); any other option (-m, -c, node --test) leaves the entry unread so no refusal sentence can be false. The validator warning phases.gate_entry_shape.malformed is now raised for every task, finished ones included (comma-joined check keeps its non-terminal gate). Tests: gx3/gx4 in test__manifest_phases.py (10 quiet entries incl. chained &&/||/;/newline/pipe, node ids, in-place tool, redirect, -m, node --test; 7 caught entries incl. -u, -X dev, -uB, -Xdev, a bad command after a good one, repeated node id; plus a sentence-names-only-the-faulty-command case), gx2 split and gx3 in test__manifest_rules.py (done and cancelled warn; spelled entry on done task stays quiet). Ran: test__manifest_phases 129/129, test__manifest_rules 176/176, test_audit_task 1089/1089, test__refs 286/286, test__output 259/259, test__deps 244/244 all exit 0; validate-manifest on the real plan exit 0 (warnings only). prove-gates: grep of tools/prove-gates.py found no row naming this predicate, so no prove-gates run was made; the full sweep was not run (own-tests mode).",
+        "descriptive": "The gate-entry shape check no longer refuses chained commands, node ids of one file or in-place tools, still catches python -u a b, and warns on finished tasks too."
       },
       "startedAt": "2026-10-19T13:44:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T14:28:49Z",
+      "verifiedBy": [
+        "gx3 (test__manifest_phases.py): a chained entry of two single-suite commands, two node ids of one file, and a tool given one path as input and output draw no shape problem, while an interpreter option before a suite list still does",
+        "gx3 (test__manifest_rules.py): a finished task holding a malformed gate entry draws the warning too",
+        "gx4 (test__manifest_phases.py): ...and the sentence of a chained entry names only the command at fault (supporting case)"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T14:26:19Z.50bbcb",
         "status": "passed",
         "at": "2026-10-19T14:26:19Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8ccaa35c4f50",
+        "at": "2026-10-19T14:28:49Z",
+        "return": "docs/audit/evidence/returns/P130.42-ywo/20261019T134458Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-19T13:51:48Z",
+        "basis": "`sh -c python3 plugins/audit/tests/test__manifest_phases.py --selftest && python3 plugins/audit/tests/test__manifest_rules.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases gx3 (house FAIL), gx4 (house FAIL), but none is the task's own (gx3 a chained entry of two single-suite commands, two node ids of one file, and a tool given one path as input and output draw no shape problem, while an interpreter option before a suite list still does (([('python3 a/test_x.py && python3 a/test_y.py', \"runs 'a/test_x.py' as a program and hands it 'a/test_y.py' as arguments, so it never runs as a suite\"), ('python3 a/test_x.py || python3 a/test_y.py', \"runs 'a/test_x.py' as a program and hands it 'a/test_y.py' as arguments, so it never runs as a suite\"), ('python3 a/test_x.py\\npython3 a/test_y.py', \"runs 'a/test_x.py' as a program and hands it 'a/test_y.py' as arguments, so it never runs as a suite\"), ('pytest a/test_x.py::t1 a/test_x.py::t2', \"names 'a/test_x.py' more than once\"), ('pytest a/test_x.py a/test_x.py::t2', \"names 'a/test_x.py' more than once\"), ('python3 tools/r.py --in docs/p.json --out docs/p.json', \"names 'docs/p.json' more than once\"), ('python3 a/test_x.py > a/test_y.py', \"runs 'a/test_x.py' as a program and hands it 'a/test_y.py' as arguments, so it never runs as a suite\")], [('python3 -u a/test_x.py a/test_y.py', None), ('python3 -X dev a/test_x.py a/test_y.py', None), ('python3 -uB a/test_x.py a/test_y.py', None), ('python3 -Xdev a/test_x.py a/test_y.py', None)])): the runner locates it in no declared test file; gx4 ...and the sentence of a chained entry names only the command at fault: \"runs 'a/test_ok.py' as a program and hands it 'a/test_x.py', 'a/test_y.py' as arguments, so they never run as suites\": the runner locates it in no declared test file) - a case is the task's only when the runner locates it in a declared test file (plugins/audit/tests/test__manifest_phases.py, plugins/audit/tests/test__manifest_rules.py, plugins/audit/tests/test_audit_task.py) whose named class defines it, with no identical def in HEAD's test files - SELFTEST FAILED: 127/129 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
