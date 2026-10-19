@@ -1,0 +1,68 @@
+{
+  "gates": {
+    "own-tests: test__runner_collects.py --selftest": "pass",
+    "own-tests: test_drive_phase.py --selftest": "pass",
+    "test__refs.py --selftest": "pass",
+    "ruff check (4 touched files)": "pass",
+    "vermin -t=3.8- (governance + test__runner_collects)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T19:31:43Z",
+    "basis": "`python3 tools/sweep-selftests.py plugins/audit/tests/test__runner_collects.py plugins/audit/tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out after 71 s and its process group was torn down; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "_runner_collects.py: SWEEP_DIRS is now read with ast (a tuple/list of strings or os.path.join of strings; any other expression, an unparsable source, no assignment or an empty tuple is a loud COULD_NOT_TELL naming why, never a partial list). A bare .py basename is resolved against the sweep roots via _output.py_files: found under a root -> COLLECTED; absent from every root but a file at the project root -> NOT_COLLECTED; found nowhere -> COULD_NOT_TELL (a suite the task is about to write, or one living in some other directory, is not a definite no). A path with a directory keeps the prefix judgement, so the P130.38 misroute stops are unchanged. drive-phase.py scope_gap: gate entries entry_collector returns None for are collected as unclassified; when the no-known-runner-takes-this-path branch is reached with any unclassified entry it prints one could-not-tell line and continues (task starts) instead of the scope-gap decision. Tests: 11 cases sb1-sb11 in test__runner_collects.py (118/118), 4 cases uc1-uc4 in test_drive_phase.py (389/389); both suites red on pre-fix code (6 and 2 FAILs seen before implementing). Verified the real tools/sweep-selftests.py reads as its five roots and test_audit_task.py draws COLLECTED. Trade-off for the owner: literal reading of 'any gate entry unclassified' means a gate that also holds lint/validate entries (entry_collector None) answers could-not-tell where it used to stop with 'no runner takes this path'; the other three stops (a known runner's definite NOT_COLLECTED) are untouched. The full sweep was not run by me (own-tests only).",
+    "descriptive": "The scope preflight no longer stops falsely on a bare-basename sweep suite or a gate with an entry it cannot classify, and SWEEP_DIRS is read as code."
+  },
+  "testsAdded": [
+    "test__runner_collects.py sb1-sb11",
+    "test_drive_phase.py uc1-uc4"
+  ],
+  "casesAdded": [
+    [
+      "sb1",
+      "sb2",
+      "sb3",
+      "sb4",
+      "sb5",
+      "sb6",
+      "sb7",
+      "sb8",
+      "sb9",
+      "sb10",
+      "sb11"
+    ],
+    [
+      "uc1",
+      "uc2",
+      "uc3",
+      "uc4"
+    ]
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test__runner_collects.py: a bare basename present under a sweep root is collected by the sweep, and a compact or commented SWEEP_DIRS tuple reads its roots right": {
+      "file": "plugins/audit/scripts/governance/_runner_collects.py",
+      "find": "        if _bare_in_roots(path, roots, project):",
+      "replace": "        if False and _bare_in_roots(path, roots, project):",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__runner_collects.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test_drive_phase.py: a gate holding an entry no known runner classifies answers could-not-tell for a path no known runner takes, and the task starts": {
+      "file": "plugins/audit/scripts/governance/drive-phase.py",
+      "find": "        if not takers and unclassified:",
+      "replace": "        if not takers and False:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_drive_phase.py",
+        "--selftest"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:0d5b8288578443fd2b6d686c3f49c34de44bdd257668e3046c12795cab562514\",\"dirtyDigest\":\"sha256:0fa7fd9091a8483fb6b3dbea2a4a9501a1eeac0edc815a13be50bf343e222053\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_runner_collects.py\":\"ec920fdf624da684\",\"plugins/audit/scripts/governance/drive-phase.py\":\"dabb9f94b5963b94\",\"plugins/audit/tests/test__runner_collects.py\":\"a4bd8d5ea9bf800d\",\"plugins/audit/tests/test_drive_phase.py\":\"aae0e2ca429fefa5\"},\"head\":\"d9b39d42\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_runner_collects.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/tests/test__runner_collects.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:dfe04ce1bca0f33b0ee95709f3ed47c6a857f50b9ae64d15deb870940b133b88\",\"v\":2}",
+  "testsAddGaps": []
+}

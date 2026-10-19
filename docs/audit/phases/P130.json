@@ -1281,7 +1281,8 @@
         "P130.44-ywo",
         "P130.45-ywo",
         "P130.46-ywo",
-        "P130.47-ywo"
+        "P130.47-ywo",
+        "P130.48-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -4662,7 +4663,12 @@
       "startedAt": "2026-10-19T19:14:22Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T19:43:23Z.2108ff",
+        "status": "passed",
+        "at": "2026-10-19T19:43:23Z"
+      }
     },
     {
       "id": "P130.45-ywo",
@@ -4813,6 +4819,54 @@
       "dependsOn": [
         "P130.44-ywo",
         "P130.46-ywo"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.48-ywo",
+      "title": "Only a gate entry that can run tests makes the scope-gap preflight answer could-not-tell",
+      "status": "pending",
+      "description": "Review of P130.44-ywo (docs/audit/evidence/returns/P130.44-ywo/20261019T191422Z.reviewer.json). In drive-phase.py scope_gap (around :1152-1173) every gate entry `_gate_derive.entry_collector` cannot classify counts as 'unclassified', and any unclassified entry turns 'no known runner takes this path' into could-not-tell; this repo's buildCommands (validate, plugin-validate, gate, report, lint, shots, interactive) are all unclassified, so the misroute stop can never fire here. Fix: an unclassified entry counts only when it can run tests - it names a suite path (`_manifest_phases.is_suite_path` over its words) or a known test-runner token (`-m unittest`, `-m pytest`, `node --test`, mocha, tap, ava, jasmine, karma; one module-level table) - so lint/validate/report entries are ignored. Acceptance: (1) a gate of the sweep plus lint/validate entries keeps the stop for a path no known runner takes (case for the realistic shape); (2) a gate holding `node --test x.test.mjs` or `python3 -m unittest ...` still answers could-not-tell; (3) the P130.44 cases uc1-uc4 stay green; (4) full sweep green.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a gate of the sweep plus lint and validate entries still stops for a path no known runner takes, while a gate holding a test-running entry no known runner classifies answers could-not-tell"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass"
+      ],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.44-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
