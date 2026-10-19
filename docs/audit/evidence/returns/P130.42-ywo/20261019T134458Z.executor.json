@@ -1,0 +1,52 @@
+{
+  "gates": {
+    "test__manifest_phases.py --selftest": "pass",
+    "test__manifest_rules.py --selftest": "pass",
+    "test_audit_task.py --selftest": "pass",
+    "test__refs.py --selftest": "pass",
+    "test__output.py --selftest": "pass",
+    "test__deps.py --selftest": "pass",
+    "validate-manifest.py docs/audit/audit-plan.json": "pass",
+    "ruff check (touched files)": "pass",
+    "vermin scripts/manifest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T13:51:48Z",
+    "basis": "`sh -c python3 plugins/audit/tests/test__manifest_phases.py --selftest && python3 plugins/audit/tests/test__manifest_rules.py --selftest` in a throwaway tree at HEAD exited 1 with failing cases gx3 (house FAIL), gx4 (house FAIL), but none is the task's own (gx3 a chained entry of two single-suite commands, two node ids of one file, and a tool given one path as input and output draw no shape problem, while an interpreter option before a suite list still does (([('python3 a/test_x.py && python3 a/test_y.py', \"runs 'a/test_x.py' as a program and hands it 'a/test_y.py' as arguments, so it never runs as a suite\"), ('python3 a/test_x.py || python3 a/test_y.py', \"runs 'a/test_x.py' as a program and hands it 'a/test_y.py' as arguments, so it never runs as a suite\"), ('python3 a/test_x.py\\npython3 a/test_y.py', \"runs 'a/test_x.py' as a program and hands it 'a/test_y.py' as arguments, so it never runs as a suite\"), ('pytest a/test_x.py::t1 a/test_x.py::t2', \"names 'a/test_x.py' more than once\"), ('pytest a/test_x.py a/test_x.py::t2', \"names 'a/test_x.py' more than once\"), ('python3 tools/r.py --in docs/p.json --out docs/p.json', \"names 'docs/p.json' more than once\"), ('python3 a/test_x.py > a/test_y.py', \"runs 'a/test_x.py' as a program and hands it 'a/test_y.py' as arguments, so it never runs as a suite\")], [('python3 -u a/test_x.py a/test_y.py', None), ('python3 -X dev a/test_x.py a/test_y.py', None), ('python3 -uB a/test_x.py a/test_y.py', None), ('python3 -Xdev a/test_x.py a/test_y.py', None)])): the runner locates it in no declared test file; gx4 ...and the sentence of a chained entry names only the command at fault: \"runs 'a/test_ok.py' as a program and hands it 'a/test_x.py', 'a/test_y.py' as arguments, so they never run as suites\": the runner locates it in no declared test file) - a case is the task's only when the runner locates it in a declared test file (plugins/audit/tests/test__manifest_phases.py, plugins/audit/tests/test__manifest_rules.py, plugins/audit/tests/test_audit_task.py) whose named class defines it, with no identical def in HEAD's test files - SELFTEST FAILED: 127/129 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "gate_entry_shape_problem in plugins/audit/scripts/manifest/_manifest_phases.py now reads each simple command separately via new gate_entry_commands (shlex punctuation reader, no regex; backslashes stay ordinary; redirection targets dropped; unbalanced quote falls back to whitespace split with bare operators separating). 'Twice' counts only suite paths, compared as written words (so ::node ids of one file differ). 'Run as a program' is decided by _runs_first_path_as_program: nothing before the path, or an interpreter followed only by plain python flags (-u -B ..., -X/-W with argument); any other option (-m, -c, node --test) leaves the entry unread so no refusal sentence can be false. The validator warning phases.gate_entry_shape.malformed is now raised for every task, finished ones included (comma-joined check keeps its non-terminal gate). Tests: gx3/gx4 in test__manifest_phases.py (10 quiet entries incl. chained &&/||/;/newline/pipe, node ids, in-place tool, redirect, -m, node --test; 7 caught entries incl. -u, -X dev, -uB, -Xdev, a bad command after a good one, repeated node id; plus a sentence-names-only-the-faulty-command case), gx2 split and gx3 in test__manifest_rules.py (done and cancelled warn; spelled entry on done task stays quiet). Ran: test__manifest_phases 129/129, test__manifest_rules 176/176, test_audit_task 1089/1089, test__refs 286/286, test__output 259/259, test__deps 244/244 all exit 0; validate-manifest on the real plan exit 0 (warnings only). prove-gates: grep of tools/prove-gates.py found no row naming this predicate, so no prove-gates run was made; the full sweep was not run (own-tests mode).",
+    "descriptive": "The gate-entry shape check no longer refuses chained commands, node ids of one file or in-place tools, still catches python -u a b, and warns on finished tasks too."
+  },
+  "testsAdded": [
+    "gx3 (test__manifest_phases.py): a chained entry of two single-suite commands, two node ids of one file, and a tool given one path as input and output draw no shape problem, while an interpreter option before a suite list still does",
+    "gx3 (test__manifest_rules.py): a finished task holding a malformed gate entry draws the warning too",
+    "gx4 (test__manifest_phases.py): ...and the sentence of a chained entry names only the command at fault (supporting case)"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test__manifest_phases.py: a chained entry of two single-suite commands, two node ids of one file, and a tool given one path as input and output draw no shape problem, while an interpreter option before a suite list still does": {
+      "file": "plugins/audit/scripts/manifest/_manifest_phases.py",
+      "find": "        elif _is_list_operator(token):",
+      "replace": "        elif False and _is_list_operator(token):",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test__manifest_rules.py: a finished task holding a malformed gate entry draws the warning too": {
+      "file": "plugins/audit/scripts/manifest/_manifest_phases.py",
+      "find": "            for entry in task_gate:\n                problem = gate_entry_shape_problem(entry, build_keys)",
+      "replace": "            for entry in (task_gate if task.get(\"status\") not in TERMINAL else ()):\n                problem = gate_entry_shape_problem(entry, build_keys)",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__manifest_rules.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n- every refusal sentence stays true: a command is judged alone, -m/-c/node --test are left unread, redirect targets are dropped; evidence: gx3 quiet group (10 entries) and caught group (7 entries) in test__manifest_phases.py\n- the finished-task warning is deliberate per the task clause; evidence: gx3 in test__manifest_rules.py covers done and cancelled\n- known miss, not a false positive: a quoted bare && word splits a command, and NAME=value before the interpreter hides the shape",
+  "stamp": "audit-stamp: {\"content\":\"sha256:e13fb9b9d95289f221a5e2aa4214fee3d8f37c2c543bd791301645882b916735\",\"dirtyDigest\":\"sha256:7197c22c0292750bd7bfd4b312623274a734b1e69ee8fd878aff8b4dbc30ccb8\",\"dirtyPaths\":{\"plugins/audit/scripts/manifest/_manifest_phases.py\":\"3f8db9a8c6f26a69\",\"plugins/audit/tests/test__manifest_phases.py\":\"85dd8d9c89a39a44\",\"plugins/audit/tests/test__manifest_rules.py\":\"0fc4e1842557d14f\"},\"head\":\"a7d72ddb\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/_manifest_phases.py\",\"plugins/audit/tests/test__manifest_phases.py\",\"plugins/audit/tests/test__manifest_rules.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:8c2169b8f64d3d36e742ba4720d57c7e22063e3760c228bbc697549639a0dd79\",\"v\":2}"
+}
