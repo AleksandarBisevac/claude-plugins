@@ -1,0 +1,34 @@
+{
+  "gates": {
+    "own-tests: python3 plugins/audit/tests/test__manifest_rules.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass",
+    "ruff check plugins/audit/tests/test__manifest_rules.py": "pass",
+    "validate-manifest.py docs/audit/audit-plan.json": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T06:00:40Z",
+    "basis": "`python3 plugins/audit/tests/test__manifest_rules.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 169 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fz4 (house FAIL): SELFTEST FAILED: 168/169 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "plugins/audit/schema/audit-plan.schema.json: reworded the five $defs/falsifier property descriptions (file, find, replace, command, timeout) to say retired and read by nothing, past tense, and removed the FALSIFIER_TIMEOUT reference; no keyword changed so tests.falsifiers still validates (fz1 green, validate-manifest OK). plugins/audit/tests/test__manifest_rules.py: added case fz4 in _cases_falsifier (reads $defs/falsifier.properties, requires the word retired in each via regex, none naming FALSIFIER_TIMEOUT, and a non-empty property set so it cannot pass vacuously) and `import re`. Left: test_drive_phase.py:7174 still names FALSIFIER_TIMEOUT in a retired-names list (a test asserting absence, not the schema; not in this task's files). claims: 1 schema lines under $defs/falsifier.properties are the reworded text, each states retirement only; 2 fz4 red on pre-edit schema, green after; falsifier below; 3 grep FALSIFIER_TIMEOUT over plugins tools .claude: 2 hits before, schema (fixed) and test_drive_phase.py:7174 (left, absence list); 4 n/a; 5 n/a; 6 n/a; 7 n/a",
+    "descriptive": "The retired falsifier schema properties now say they are retired and read by nothing, and a selftest case holds that."
+  },
+  "testsAdded": [
+    "fz4 every property description under the schema's $defs/falsifier says retired and none names FALSIFIER_TIMEOUT"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test__manifest_rules.py: every property description under the schema's $defs/falsifier says retired and none names FALSIFIER_TIMEOUT": {
+      "file": "plugins/audit/schema/audit-plan.schema.json",
+      "find": "Retired and read by nothing: the file a mutation was once written against",
+      "replace": "The file a mutation edits",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__manifest_rules.py",
+        "--selftest"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:02c38d2f6dc60d74dffd2abab5b36b81dacaf8cf0f99ad34b8d2c7e9b52d5700\",\"dirtyDigest\":\"sha256:8d6ea6900156943d221ec28f68b517b796c7970d5b95c3f3c29b7a874b3c9fbd\",\"dirtyPaths\":{\"plugins/audit/schema/audit-plan.schema.json\":\"06d84aafbf390b62\",\"plugins/audit/tests/test__manifest_rules.py\":\"d86d72195923108c\"},\"head\":\"078998fa\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/schema/audit-plan.schema.json\",\"plugins/audit/tests/test__manifest_rules.py\"],\"scopeDigest\":\"sha256:3e47a6b644649138a4d5db05f2e0d7b95b9f972c97038ab0c9df703ce6b3d004\",\"v\":2}"
+}

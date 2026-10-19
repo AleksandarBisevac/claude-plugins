@@ -1146,7 +1146,8 @@
         "P130.31-ywo",
         "P130.32-ywo",
         "P130.33-ywo",
-        "P130.34-ywo"
+        "P130.34-ywo",
+        "P130.35-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -2095,7 +2096,7 @@
     {
       "id": "P130.20-ywo",
       "title": "done refuses a missing or swallowed --technical value with a REFUSED line on stderr and a non-zero exit",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F724. audit-task.py done: a trailing `--technical` with no value exits 2 with an argparse usage error and no REFUSED line; `--technical docs/audit/audit-plan.json` exits 0 and records the manifest path as outcome.technical, swallowing the positional (same class as the --gate-set positional swallow); done's own refusals go to stdout without a REFUSED: prefix. Fix: a value for --technical that is the manifest path (or any existing .json path the verb would read as its manifest) is refused naming the flag; a flag given without a value is refused with `REFUSED: --technical needs a value` on stderr, exit 2; done's refusals print on stderr with the REFUSED: prefix the other verbs use. Acceptance: (1) `done <id> --technical` exits non-zero, stderr starts with REFUSED and names --technical, nothing written; (2) `done <id> --technical <manifest>` is refused and the manifest stays the positional; (3) an existing done refusal case now finds REFUSED: on stderr; (4) an ordinary done with --technical \"text\" still writes it.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -2129,21 +2130,22 @@
       "dependsOn": [
         "P130.6"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T05:59:11Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.21-ywo",
       "title": "The retired falsifier schema properties say they are retired and read by nothing",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F726. plugins/audit/schema/audit-plan.schema.json (around $defs/falsifier, lines ~1860-1880): the property descriptions of the retired falsifier definition still describe the stage in the present tense, and `timeout` names drive-phase.py's FALSIFIER_TIMEOUT, which no longer exists. Reword each property description to say the field is retired and read by nothing, and remove the reference to the deleted constant; the schema still accepts the fields. Acceptance: (1) no description under $defs/falsifier names FALSIFIER_TIMEOUT or describes behaviour in the present tense; (2) a plan carrying tests.falsifiers still validates; (3) a case in test__manifest_rules.py reads the schema and fails on a falsifier property description that lacks the word retired.",
       "files": [
         "plugins/audit/schema/audit-plan.schema.json",
@@ -2176,16 +2178,17 @@
       "dependsOn": [
         "P130.6"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T05:59:13Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.22-ywo",
@@ -2369,7 +2372,7 @@
     {
       "id": "P130.25-ywo",
       "title": "The ctw29 case label has its space back, and detect-plan-skip stamps the bypass file through _config.local_stamp()",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fault F732 (the P130.4 review, filed at docs/audit/evidence/returns/P130.4/20261018T063658Z.reviewer.json). Two lows, both verified at HEAD 6220678a. (a) plugins/audit/tests/test_commit_task_work.py:785 reads check(\"ctw29SECOND-DIRECTION CASE: ...; restore the space after ctw29 so the label matches its siblings. (b) plugins/audit/hooks/detect-plan-skip.py:158 builds time.strftime(\"%Y-%m-%dT%H:%M:%S%z\", time.localtime()) inline; replace it with _config.local_stamp() (plugins/audit/hooks/_config.py:4194), which owns that spelling and which require-plan.py already calls, and keep the docstring at :122 true. Acceptance: (1) the ctw29 label has the space and no other line of that file changes; (2) detect-plan-skip's bypass file `ts` is exactly what _config.local_stamp() returns, shown by a case that patches local_stamp and reads the file; (3) the new case is red with the inline strftime restored (the return shows the red run); (4) grep -n 'strftime' plugins/audit/hooks/detect-plan-skip.py finds no stamp of the local-offset spelling.",
       "files": [
         "plugins/audit/tests/test_commit_task_work.py",
@@ -2405,16 +2408,17 @@
       "dependsOn": [
         "P130.10-ywo"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T05:59:15Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.26-ywo",
@@ -2863,6 +2867,62 @@
       "dependsOn": [
         "P130.23-ywo",
         "P130.27-ywo"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.35-ywo",
+      "title": "A task gate that is red only where its base is red says so, and a task that fixes a base red is selected first",
+      "status": "pending",
+      "description": "F739. When the base commit a task started from already fails a suite, every task gate in the phase is red on that suite although the tasks' own work is green; the drive cannot tell the two apart, and its wave selection (lowest ready ids first) does not run the task that fixes the base red first. Seen in this phase: one test case failing at the base made three consecutive task gates red. (a) In run-test-gate.py's verdict: when a failing suite is also failing in a recorded run of the same gate at the task's base commit (the evidence ledger, `_evidence_io`, holds rows keyed by tested head), the step reports it as `red at base too` with that run's id, and the task verdict distinguishes 'red only where the base is red' from 'red the task introduced'. It is still not green: commit-task-work still refuses it unless the owner overrides - the change is in what the verdict SAYS and in the drive's decision line, which names the base run and suggests running the fixing task first. No base run recorded: say that, never assume. (b) In the wave selector (find it: `_wave.select` / `_status_facts.ready_tasks`): a ready task whose description or bug link declares it fixes a suite that is red at base (simplest honest signal: its tests.add names that suite AND the base run records that suite failing) is ordered first. Acceptance: (1) fixture: base run red on suite S, task run red on S only -> verdict names the base run and 'red at base too'; (2) task run red on S and T, base red on S only -> T is charged to the task; (3) no base run -> the verdict says none was recorded; (4) commit-task-work still refuses all three; (5) wave selection puts the S-fixing task first when S is red at base, and is unchanged otherwise; (6) the full sweep is green.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/_wave.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test__wave.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: a task run red only on a suite its base run is also red on names the base run and says red at base too, a suite red only in the task run is charged to the task, and with no base run the verdict says none was recorded",
+          "plugins/audit/tests/test__wave.py: a ready task whose tests.add names a suite red at base is selected first, and selection is unchanged when no suite is red at base"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.26-ywo",
+        "P130.24-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
