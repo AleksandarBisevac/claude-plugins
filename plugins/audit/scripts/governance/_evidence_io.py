@@ -3275,6 +3275,31 @@ def project_relative(spelling, project):
     return rel, None
 
 
+def project_spelling(path, git_root, project):
+    """`path`, a checkout-relative path as git names it, spelled from `project`
+    when the project is a subdirectory of its git root.
+
+    A task declares its `files` from the project while `git diff --name-only`
+    and `git status` name paths from the checkout's top, so comparing the two
+    unrebased reads every declared file of a nested project as undeclared and a
+    checkout-root file of the same name as covered. A path outside the project
+    is spelled with the `../` steps that reach it, which no declared entry can
+    equal, so it stays outside instead of colliding with a project path. A
+    project that is its git root (or lies outside it) leaves `path` as given."""
+    try:
+        offset = _output.posix_rel(os.path.realpath(project),
+                                   os.path.realpath(git_root))
+    except ValueError:
+        return path
+    if offset == "." or offset == ".." or offset.startswith("../"):
+        return path
+    if path == offset:
+        return "."
+    if path.startswith(offset + "/"):
+        return path[len(offset) + 1:]
+    return "../" * (offset.count("/") + 1) + path
+
+
 def suite_listing(project, run=None):
     """`{"project", "tracked", "listingFailed"}` - what `pin_suite` pins
     onto: every path `git ls-files` lists from `project`, already spelled

@@ -587,7 +587,37 @@ def _cases(check):
           "%r" % (out7,),
           code7 == M.E_USAGE and "no phase" in out7)
 
+    _nested_changed_cases(check)
     _repo_listing_cases(check)
+
+
+def _nested_changed_cases(check):
+    """A project that is a SUBDIRECTORY of its git root. `git diff --name-only`
+    names paths from the checkout's top, while the gate's suites, the touched
+    paths and the commands run from the project: `changedSince` must be the
+    project's spelling or a changed suite is never learned (it reads as
+    `proj/tests/x.test.ts`, a path that does not exist from where it runs)."""
+    root = os.path.realpath(_harness.fixture_root("derive-phase-gate-nested-"))
+    repo = os.path.join(root, "repo")
+    proj = os.path.join(repo, "proj")
+    os.makedirs(os.path.join(proj, "tests"))
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "T")
+    _write_script(proj, "README.md", "hello\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "init")
+    base = _harness.git(repo, "rev-parse", "HEAD", prefix=("git",)).strip()
+    _write_script(proj, os.path.join("tests", "x.test.ts"), "// a suite\n")
+    _write_script(repo, "outside.txt", "not the project's\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "work")
+    phase = {"id": "P1", "baseRef": base, "tasks": []}
+    facts, lines = M._gather_facts({"meta": {"version": 2}, "phases": [phase]},
+                                   phase, proj, lambda _l: None)
+    check("n1 changedSince for a nested project is spelled from the project "
+          "(%r %r)" % (facts.get("changedSince"), lines),
+          facts.get("changedSince") == ["tests/x.test.ts"])
 
 
 # --- this repository's own recorded listing ------------------------------------

@@ -1906,12 +1906,70 @@ def _brief_cases(check):
           and brief(proj, mpath, "P1.1", "phase")[0] == M.E_NOMATCH)
 
 
+_NESTED_GIT = ("git",) + _harness.NO_AUTO_MAINTENANCE + (
+    "-c", "user.email=t@t.t", "-c", "user.name=t",
+    "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main")
+
+
+def _nested_scope_cases(check):
+    """A project that is a SUBDIRECTORY of its git root: git names the phase
+    diff's paths from the root, a task declares its files from the project."""
+    root = os.path.realpath(_harness.fixture_root("audit-lookup-nested-"))
+    repo = os.path.join(root, "repo")
+    proj = os.path.join(repo, "proj")
+
+    def put(rel, text):
+        path = os.path.join(repo, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+
+    def git(*argv):
+        return _harness.git(repo, *argv, prefix=_NESTED_GIT, timeout=30).strip()
+
+    os.makedirs(proj)
+    put("proj/src/a.py", "a = 1\n")
+    put("src/a.py", "root a = 1\n")
+    git("init", "-q")
+    git("add", "-A")
+    git("commit", "-qm", "base")
+    base = git("rev-parse", "HEAD")
+    # The declared file, an undeclared sibling in the project, and a checkout-root
+    # file that shares the declared file's NAME: spelled from the root, the
+    # declared change reads `proj/src/a.py` (undeclared) and the root file
+    # reads `src/a.py` (covered) - the reverse of the truth.
+    put("proj/src/a.py", "a = 2\n")
+    put("proj/src/extra.py", "z = 1\n")
+    put("src/a.py", "root a = 2\n")
+    git("add", "-A")
+    git("commit", "-qm", "work")
+    head = git("rev-parse", "HEAD")
+    phase = {"id": "P1", "baseRef": base,
+             "tasks": [{"id": "P1.1", "files": ["src/a.py"]}]}
+    lines = M._phase_scope_lines({"project": proj, "gitRoot": repo}, phase, head)
+    marker = "Paths outside every task's declared files:"
+    outside = lines[lines.index(marker) + 1:] if marker in lines else None
+    check("nl1 the phase-diff outside-declared list is computed on one base for a "
+          "nested project (%r)" % (lines,),
+          outside is not None
+          and sorted(outside) == ["- ../src/a.py", "- src/extra.py"])
+    # The allow direction: a project that IS its git root keeps its paths as
+    # git spells them, so rebasing must be a no-op there.
+    flat = {"project": repo, "gitRoot": repo}
+    flat_lines = M._phase_scope_lines(flat, phase, head)
+    flat_out = flat_lines[flat_lines.index(marker) + 1:]
+    check("nl2 a project that is its own git root lists the undeclared paths as "
+          "git spells them (%r)" % (flat_lines,),
+          sorted(flat_out) == ["- proj/src/a.py", "- proj/src/extra.py"])
+
+
 def _selftest():
     def body(check):
         # Each block staged, so one that raises still lets the other run.
         _harness.stage(check, "al-block", _cases)
         _harness.stage(check, "sl-block", _success_line_cases)
         _harness.stage(check, "bf-block", _brief_cases)
+        _harness.stage(check, "nl-block", _nested_scope_cases)
     return _harness.run(body)
 
 

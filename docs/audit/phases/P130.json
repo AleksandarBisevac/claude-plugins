@@ -2877,7 +2877,7 @@
     {
       "id": "P130.28-ywo",
       "title": "A case id that loses its title's space is caught, and a gate entry may not take the derived-step prefix",
-      "status": "in_progress",
+      "status": "done",
       "description": "F734, plus the low-med finding of the P130.10-ywo pre-commit review. (A) Two case labels lost the space between id and title in two tasks: `vb1 a gate...` became `vb1a gate...` (plugins/audit/tests/test__verdict_binding.py:103) and `ctw29 SECOND-DIRECTION CASE` became `ctw29SECOND-DIRECTION CASE` (plugins/audit/tests/test_commit_task_work.py:785). `_harness.case_id()` (plugins/audit/tests/_harness.py around :614-630) takes the first token and `_CASE_ID` accepts both glued forms as ids, so the case silently changes id and anything keyed on the old id (prove-gates rows, addMap entries, logs) stops finding it with no failure. Restore both spaces. Remove the class rather than the instances: every case id something outside the suite names (tools/prove-gates.py rows, tests.addMap entries in docs/audit plans) must resolve to a case its suite defines, and prove-gates refuses by name a row whose case id no suite defines - find where prove-gates reads its case ids and add the check there, proven red by restoring one glued label in a scratch copy. (B) A gate entry whose name starts with the derived-step prefix (`_evidence_io.DERIVED_STEP_PREFIX`) can never bind since P130.10-ywo: `declared_steps` cuts it off. Make it a validation warning naming the entry and the reason (`_manifest_rules`), and make gate_mismatch's refusal name that cause when the task's own entries carry the prefix, instead of the generic different-gate sentence. Acceptance: (1) both labels read `<id> <title>`; (2) prove-gates refuses a row naming an undefined case id, shown red in a scratch copy and green on the tree; (3) a plan whose task gate entry starts with the prefix draws a warning; (4) gate_mismatch names the reserved prefix for such a task; (5) the full sweep is green.",
       "files": [
         "plugins/audit/tests/test__verdict_binding.py",
@@ -2955,19 +2955,35 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a1ac841725ed",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(A) vb1 label space restored in test__verdict_binding.py (the ctw29 label already read with its space in this tree). tools/prove-gates.py gained undefined_cases(): reads each row's suite by AST, builds a template per check() label (string constants, % specifiers and variables as holes), and refuses by name (NO SUCH CASE, exit 1 via render(undefined=)) any row whose id or substr selector no label can spell; a selector fitting wholly inside a hole does not count. Selftest cases c1d (fixture suite in a tempdir: defined id and substr accepted, undefined, glued and absent substr refused), c1e (the tree's own TABLE+ALLOW all resolve: 0 undefined of 177 rows), c1f (render fails by name). (B) _manifest_rules.py: _check_reserved_gate_entries warns, code rules.gate.reserved-entry, naming task/phase, field, entry and DERIVED_STEP_PREFIX, for tests.gate and testGate; _verdict_binding.gate_mismatch returns a sentence naming the entry and reserved prefix when the entries asked about carry it. New edge _manifest_rules -> _evidence_io (strictly downward; layer lint green); PLUGIN-BUILD-GUIDE.md module map regenerated with _deps.py --write-map (one line, outside files, docs path). Cases: test__manifest_rules dg1 dg2 dg3 (dg2 is the second direction), test__verdict_binding vb35 (with plain-mismatch second direction). Gates: prove-gates 41/41, manifest_rules 173/173, verdict_binding 41/41, test__refs 286/286 and test__deps 244/244 (both after fixture basenames were spelled without the python extension), prove-gates --list exit 0 with no UNANCHORED rows, ruff clean, tools/sweep-selftests.py 340/340 files ok 16419 cases exit 0. Note: one earlier heredoc write to _verdict_binding.py was refused by the plan gate (heredoc to interpreter stdin); finished with the Edit tool instead.",
+        "descriptive": "A case label that loses the space after its id now fails the sweep by name through prove-gates, and a gate entry spelled with the reserved affected/ prefix draws a validation warning and a refusal that says why."
       },
       "startedAt": "2026-10-19T10:39:59Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T11:29:36Z",
+      "verifiedBy": [
+        "tools/prove-gates.py: (inline --selftest) a gate row naming a case id that no suite defines is refused by name, while a row naming a defined id is accepted -> c1d (with c1e, c1f)",
+        "plugins/audit/tests/test__manifest_rules.py: a task gate entry named with the derived-step prefix draws a warning naming the entry -> dg1 (with dg2, dg3)",
+        "plugins/audit/tests/test__verdict_binding.py: a task whose own gate entry carries the derived-step prefix is refused with a sentence naming the reserved prefix -> vb35"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T11:28:48Z.1420fb",
         "status": "passed",
         "at": "2026-10-19T11:28:48Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "a1ac841725ed",
+        "at": "2026-10-19T11:29:36Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-19T11:03:59Z",
+        "basis": "`sh -c python3 tools/prove-gates.py --selftest && python3 plugins/audit/tests/test__manifest_rules.py --selftest && python3 plugins/audit/tests/test__verdict_binding.py --selftest` in a throwaway tree at HEAD exited 1 on \"NameError: name 'undefined_cases' is not defined\" (read as python), and the task introduces 'undefined_cases': absent from HEAD's plugins/audit/scripts/manifest/_manifest_rules.py, plugins/audit/scripts/governance/_verdict_binding.py, plugins/audit/scripts/governance/_evidence_io.py, tools/prove-gates.py and present in the working tree's tools/prove-gates.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -3075,7 +3091,29 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test_audit_lookup.py: the phase-diff outside-declared list is computed on one base for a nested project": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_audit_lookup.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/status/audit-lookup.py",
+            "find": "[_evio.project_spelling(p, ctx[\"gitRoot\"], ctx[\"project\"])",
+            "replace": "[p"
+          },
+          "plugins/audit/tests/test_integrate_task.py: a project nested under its git root - a declared project-relative file is not reported undeclared, and an undeclared sibling is": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_integrate_task.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/git/integrate-task.py",
+            "find": "extra = undeclared_paths(task.get(\"files\") or [], paths, git_root, project)",
+            "replace": "extra = undeclared_paths(task.get(\"files\") or [], paths)"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -3098,7 +3136,12 @@
       "startedAt": "2026-10-19T10:40:04Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T11:40:56Z.5e0c4c",
+        "status": "passed",
+        "at": "2026-10-19T11:40:56Z"
+      }
     },
     {
       "id": "P130.31-ywo",

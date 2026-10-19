@@ -264,7 +264,11 @@ def _gather_facts(manifest, phase, project, out):
 
     base_ref = phase.get("baseRef") if isinstance(phase, dict) else None
     if isinstance(base_ref, str) and base_ref.strip():
-        diff_cmd = "git diff --name-only %s...HEAD" % shlex.quote(base_ref)
+        # `--relative`: git names a diff's paths from the checkout's top, while
+        # every suite this gate learns is run, and every touched path declared,
+        # from the project - the two differ for a project nested under its git
+        # root, and a changed suite spelled from the top names no file there.
+        diff_cmd = "git diff --name-only --relative %s...HEAD" % shlex.quote(base_ref)
         diff_res = _spawn(diff_cmd, project, GIT_TIMEOUT_SECONDS)
         if diff_res["exit"] == 0:
             facts["changedSince"] = _gate_derive.output_lines(diff_res["output"])

@@ -1,0 +1,19 @@
+{
+ "findings": [],
+ "preExisting": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/scripts/status/audit-lookup.py:1199-1214",
+   "issue": "existing_test_lines still lists the phase's modified test files spelled from the checkout top, so the same brief now shows the 'Phase diff paths' list project-spelled and this list checkout-spelled for a nested project. The executor's noted DOCS_AUDIT_EXCLUDE / per-task pathspec sites (about lines 939 and 960) are the same class. Display-only here, nothing compares them.",
+   "resolution": "Left to the follow-up that owns the remaining two-bases sites (P130.40-ywo); spell this list through _evidence_io.project_spelling when it lands."}
+ ],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'Rebase onto one base (the existing project-relative helper) before the comparison at integrate-task.py:485, and at the other sites F735 lists: status/audit-lookup.py:992 ... and governance/derive-phase-gate.py:267 with _gate_derive.py:703. Acceptance: a nested-project case per site red before and green after'. The diff adds _evidence_io.project_spelling (_evidence_io.py:3278-3300): strips the project's offset, gives a path outside the project the ../ steps that reach it so it cannot equal a declared entry, and is the identity when the project is its git root. integrate-task.undeclared_paths (integrate-task.py:254-265) compares each path as spelled from the project and returns the original checkout paths; integrate() passes git_root and project (line 493). audit-lookup._phase_diff_paths (line 972) returns the project spelling, so the outside-declared set compared at line 996 is on one base. derive-phase-gate.py:271 adds --relative to the diff; _gate_derive.py:703 reads facts['changedSince'] unedited, as the executor says. The outcome describes the diff faithfully, including the out-of-list sites it noted and did not fix. The task says 'the existing project-relative helper' and the diff adds a new sibling helper next to project_relative rather than reusing it, which is a reasonable reading because project_relative refuses outside paths. Read as a divergence it would be a low one. I ran test_integrate_task.py --selftest once in the task tree: 32/32 passed, with n1 and n2 passing. Each of the three sites has a nested-project case (n1/n2, nl1/nl2, n1 in test_derive_phase_gate). nl1 and the derive n1 would fail unfixed by their expected values (unfixed gives proj/src/a.py and proj/src/extra.py, and proj/tests/x.test.ts plus outside.txt). Known topology defect of project_spelling (git root below the project) belongs to P130.40-ywo and is not reported.",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "The executor filed could-not-prove from the red-first helper. At HEAD the integrate and lookup selftests exited 1 with n1 and n2 failing, but the second run with the working tree's implementation copied in did not pass ('SELFTEST FAILED: 6/17 cases passed'), so the helper would not call the red one the fix turns green. That reason is quoted verbatim and I echo it. My one run of the integrate selftest in the task tree is green (32/32), so the 6/17 was an artefact of the throwaway tree, not of the implementation.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate entry 'selftests' is `python3 tools/sweep-selftests.py`, which runs the whole project, so the question has no bound. The other entries (validate, plugin-validate, gate, report, lint, shots, interactive) select no test the diff's behaviour could be deleted from."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

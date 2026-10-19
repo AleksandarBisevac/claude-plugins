@@ -285,6 +285,69 @@ def _undeclared_cases(check):
           and _read(world["proj"], "a.txt") == "a\n")
 
 
+def _nested_world(prefix, files, declared):
+    """A committed repository whose PROJECT is its subdirectory `proj/`, holding
+    `files` (checkout-relative path -> text) and a manifest declaring `declared`
+    (project-relative) for task P1.1, with that task's real worktree. -> dict."""
+    root = os.path.realpath(_harness.fixture_root(prefix))
+    repo = os.path.join(root, "repo")
+    proj = os.path.join(repo, "proj")
+    os.makedirs(proj)
+    for rel, text in files.items():
+        _write(repo, rel, text)
+    manifest = {"meta": {"version": 3, "developmentBranch": "main", "gitRoot": ".."},
+                "phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                            "tasks": [{"id": "P1.1", "title": "P1.1",
+                                       "status": "in_progress", "files": declared}]}]}
+    manifest_path = os.path.join(proj, "audit-plan.json")
+    with open(manifest_path, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, indent=2)
+    _run(repo, "init", "-q")
+    _run(repo, "add", "-A")
+    _run(repo, "commit", "-qm", "base")
+    base = _run(repo, "rev-parse", "HEAD").strip()
+    code, answer = MW.do_task_add(repo, manifest, "P1.1", base, project=proj,
+                                  path=os.path.join(root, "wt-P1.1"))
+    if code != 0:
+        raise RuntimeError("task-add P1.1: %r" % (answer,))
+    return {"repo": repo, "proj": proj, "manifest": manifest,
+            "manifest_path": manifest_path, "tree": answer["path"]}
+
+
+def _nested_cases(check):
+    world = _nested_world("itn", {"a.txt": "root a\n", "proj/a.txt": "proj a\n"},
+                          ["a.txt"])
+    tree = world["tree"]
+    _write(tree, "proj/a.txt", "proj a1\n")
+    _write(tree, "proj/extra.txt", "x\n")
+    _write(tree, "a.txt", "root a1\n")
+    phase = world["manifest"]["phases"][0]
+    code, ans = M.integrate(world["manifest"], phase, phase["tasks"][0],
+                            world["manifest_path"], world["proj"], world["repo"])
+    decision = ans.get("decision") or {}
+    # The fixture: the checkout-root `a.txt` shares the declared file's NAME, so a
+    # comparison that never rebases reads it covered and reads `proj/a.txt` (the
+    # declared one) undeclared - the answer must be the reverse.
+    check("n1 a project nested under its git root - a declared project-relative "
+          "file is not reported undeclared, and an undeclared sibling is (%r %r)"
+          % (code, decision),
+          code == 3 and decision.get("kind") == "undeclared-change"
+          and decision.get("paths") == ["a.txt", "proj/extra.txt"])
+    # The allow direction: a rebase that reported everything undeclared would pass
+    # the case above; here the nested declared file alone must integrate.
+    world = _nested_world("itn2", {"a.txt": "root a\n", "proj/a.txt": "proj a\n"},
+                          ["a.txt"])
+    _write(world["tree"], "proj/a.txt", "proj a1\n")
+    phase = world["manifest"]["phases"][0]
+    code, ans = M.integrate(world["manifest"], phase, phase["tasks"][0],
+                            world["manifest_path"], world["proj"], world["repo"])
+    check("n2 a nested project's declared file alone integrates with no decision "
+          "owed (%r %r)" % (code, ans.get("decision")),
+          code == 0 and not ans.get("decision")
+          and _read(world["repo"], "proj/a.txt") == "proj a1\n"
+          and _read(world["repo"], "a.txt") == "root a\n")
+
+
 GUIDE = "PLUGIN-BUILD-GUIDE.md"
 
 
@@ -443,6 +506,7 @@ def _cases(check):
     _harness.stage(check, "iti", _index_cases)
     _harness.stage(check, "itl", _lockfile_cases)
     _harness.stage(check, "itu", _undeclared_cases)
+    _harness.stage(check, "itn", _nested_cases)
     _harness.stage(check, "itf", _follower_cases)
     _harness.stage(check, "itx", _noop_owner_cases)
     _harness.stage(check, "itm", _cli_cases)

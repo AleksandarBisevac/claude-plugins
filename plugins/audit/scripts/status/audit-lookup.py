@@ -966,7 +966,11 @@ def _phase_diff_paths(ctx, base, head):
         return None, "`%s` exited %d (%s)." % (
             command, done.returncode,
             _excerpt.excerpt(done.stderr.decode("utf-8", "replace")))
-    return [p for p in done.stdout.decode("utf-8", "replace").splitlines()
+    # git names these from the checkout's top, a task declares its files from
+    # the project: one base, or a nested project's declared file reads as an
+    # outside path and a checkout-root file of the same name reads as covered.
+    return [_evio.project_spelling(p, ctx["gitRoot"], ctx["project"])
+            for p in done.stdout.decode("utf-8", "replace").splitlines()
             if p], None
 
 

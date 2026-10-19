@@ -251,10 +251,18 @@ def _base_bytes(root, base, rel):
 
 
 # --- the decisions (pure over bytes) ------------------------------------------------
-def undeclared_paths(declared, paths):
-    """The paths no declared entry covers, sorted."""
+def undeclared_paths(declared, paths, git_root=None, project=None):
+    """The paths no declared entry covers, sorted, as given.
+
+    `paths` are the checkout's (git names them from its top) and `declared` the
+    project's, so with a `git_root` and a `project` each path is compared as the
+    project spells it; without them the two already share a base."""
+    def spelled(path):
+        if git_root is None or project is None:
+            return path
+        return _evidence_io.project_spelling(path, git_root, project)
     return sorted(p for p in paths
-                  if not any(_task_outputs.covers(d, p) for d in declared))
+                  if not any(_task_outputs.covers(d, spelled(p)) for d in declared))
 
 
 def attribution(entries, task_id, base, path):
@@ -482,7 +490,7 @@ def _integrate(manifest, phase, task, manifest_path, project, git_root, undeclar
         return _refuse(answer, "conflict", conflicts, involved,
                        "; ".join("%s: %s" % (p, w) for p, w in sorted(conflicts.items())))
 
-    extra = undeclared_paths(task.get("files") or [], paths)
+    extra = undeclared_paths(task.get("files") or [], paths, git_root, project)
     claimed = owned(tree, extra) if extra else []
     followers, unreproduced = reproduced(tree, base, claimed)
     extra = [p for p in extra if p not in [f["path"] for f in followers]]
