@@ -3982,7 +3982,7 @@
     {
       "id": "P130.39-ywo",
       "title": "The low findings of the P130.23, P130.27 and P130.29 reviews are fixed, and no refusal sentence states something false",
-      "status": "in_progress",
+      "status": "done",
       "description": "Review lows (read the filed reviews: docs/audit/evidence/returns/P130.23-ywo/20261019T094437Z.reviewer.json and P130.27-ywo/20261019T094439Z.reviewer.json). (1) plugins/audit/hooks/require-plan.py (around :118-125, :137-151, :891-905): `_covers_clause` says a directory entry 'opens nothing until that task is started' for every non-direct row that is not in_progress, including done and cancelled tasks, which `/audit:task start` refuses - the sentence is false for them; give terminal tasks the terminal wording `_declaration_note` already has. (2) plugins/audit/hooks/_config.py (around :3530-3546): the branch where ONE task lists both a directory and the exact file (promotion to direct) is reached by no case - add one. (3) `_declaration_note`'s docstring (require-plan.py around :529-533) still says three causes; name the fourth (covered only by an unstarted directory entry). (4) plugins/audit/scripts/manifest/_manifest_vocab.py:900: a reworded comment joined two sentences on one long line; rewrap to the neighbours' width. (5) CLAUDE.md around :279-285: after the rewritten isolation paragraph, '`gate-parity.py` is why that cannot come back.' now reads as guarding the unchecked isolation drift; make the antecedent explicit (the gate-set descriptions). (6) plugins/audit/tests/test_drive_phase.py around :3372 says `unblock` refuses a task with attempts left, which P130.13-ywo changed; reword. (7) plugins/audit/commands/task.md still describes the `build-command --remove` refusal as gate entries only; since P130.31-ywo it also names meta.fullGate, meta.phaseGate.always and meta.phaseGate.exclude holders - say so in one line (the file is held under the measure-context ceiling). (8) From the P130.42-ywo review (docs/audit/evidence/returns/P130.42-ywo/20261019T134458Z.reviewer.json): `_PLAIN_INTERPRETER_FLAGS` in plugins/audit/scripts/manifest/_manifest_phases.py (around :1114-1135) is Python's flag set but is applied to every `_SCRIPT_RUNNER` name, so `bash -s a/test_x.sh a/test_y.sh` is refused with a false sentence - apply the plain-flag skip only to python interpreters and leave other runners with options unread; (9) the unbalanced-quote fallback of `gate_entry_commands` (around :1197-1200) does not drop redirection targets, so a redirect target reads as an argument - drop them there too, or leave such an entry unread. Acceptance: (1) a done task covering a file through a directory gets a refusal whose sentence is true for a done task (case in test_require_plan.py); (2) the promotion branch has a case; (3) the full sweep is green; (4) prose lints (_output.prose_number_claims, _deps.doc_prose_numbers) report nothing new.",
       "files": [
         "plugins/audit/hooks/require-plan.py",
@@ -4049,25 +4049,43 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4765b8b9a851",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(1) require-plan.py _covers_clause: terminal covers (done/cancelled) now say 'terminal work is not re-started: `/audit:task start <id>` refuses it'; unstarted keep 'until that task is started'; mixed says both. (2) test__config.py dt1: declaring_tasks reports one task listing src/ and src/a.ts once, as direct (hooks/_config.py unchanged). (3) _declaration_note docstring now enumerates the causes (incl. only-an-unstarted-directory-covers) without a count. (4) _manifest_vocab.py comment rewrapped. (5) CLAUDE.md antecedent now 'gate-parity.py is why the gate-set descriptions cannot drift apart again' (Edit allowed, no guard refusal). (6) test_drive_phase.py bk1 label now says unblock clears the block without running it. (7) commands/task.md one line names meta.fullGate / meta.phaseGate.always|exclude holders; measure-context '/audit:task add' 7989/8000 (a longer wording breached at 8018). (8) _manifest_phases.py: _is_python_runner added; _runs_first_path_as_program applies _only_plain_options only to python interpreters, other runners with options are left unread (case gx5). (9) gate_entry_commands fallback drops attached redirection words via _ATTACHED_REDIRECTION (case gx6). Added gx5, gx6, s7c, s7d (unstarted keeps its sentence), dt1. Ran: test_require_plan 238/238, test__config 352/352, test__manifest_phases 131/131, test_drive_phase 385/385, test__refs 286/286, full tools/sweep-selftests.py 340/340 files exit 0 (run before the final task.md rewording; measure-context --gate passes after), prose_number_claims [] and doc_prose_numbers [], ruff clean, vermin ok, gate-parity ok.",
+        "descriptive": "Refusal sentences no longer claim a done task's directory entry opens when started, and the review lows (python-only flag skip, redirection fallback, stale docs) are fixed."
       },
       "startedAt": "2026-10-19T16:31:37Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T16:55:26Z",
+      "verifiedBy": [
+        "test_require_plan.py: s7c a done task covering the file through a directory entry gets a refusal sentence that does not say the entry opens when the task starts",
+        "test_require_plan.py: s7d ...and the unstarted task keeps the sentence that IS true of it",
+        "test__config.py: dt1 one task listing both a directory and the exact file is reported once, as direct",
+        "test__manifest_phases.py: gx5",
+        "test__manifest_phases.py: gx6"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T16:55:17Z.b6332b",
         "status": "passed",
         "at": "2026-10-19T16:55:17Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "4765b8b9a851",
+        "at": "2026-10-19T16:55:26Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-19T16:43:58Z",
+        "basis": "`python3 plugins/audit/tests/test_require_plan.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 238 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - s7c (house FAIL): SELFTEST FAILED: 237/238 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P130.40-ywo",
       "title": "One function pair is the only way git path output becomes plan spelling and a plan path becomes a git pathspec, every site routes through it, and a lint names any listing call that does not",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F740. Fourth recurrence of the two-path-bases class (F708/F709 in P130.14-ywo, F735 in P130.30-ywo), so an invariant replaces per-site patches. (1) THE PAIR. Two functions in plugins/audit/hooks/_config.py: `git_to_plan(path, git_root, project)` turns one path git printed (checkout-relative: status --porcelain, diff/show/log --name-only|--name-status, diff-tree) into plan spelling. `plan_to_git(entry, git_root, project)` turns a declared `files` entry into a checkout-relative pathspec, or None when it lies outside the checkout. Both handle both topologies: a member project (project directory under the git root, offset `member`) and `meta.gitRoot` below the project (offset `..`, plan spelling carries the `test/` prefix). The same directory is the identity. A git path outside the project is spelled with `../` so it cannot equal a declared entry. Callers that run git from the project with `ls-files`/`ls-tree` (cwd-relative output) or `--relative` must say so through a third argument or a named variant, not by skipping the pair. WHY THIS HOME: hooks may not import scripts/ and hooks/guard-bash-writes.py needs the pair, while scripts/ reach hooks/_config.py through `_loader.load_hooks_config()`, the one door `_deps` allows. `_loader` sits directly above `_output` in `_deps.LAYERS`, so every module that needs the pair can load it, including `_tree_stamp`, `_status_facts` and `_invariants`, which sit BELOW `_evidence_io` and could not import `_evidence_io.project_spelling`. Delete `_evidence_io.project_spelling` and `_status_facts._strip_git_root` and move their callers to the pair. Keep no second spelling. Also fix project_spelling's defect on the way: it returns the path unchanged when the git root lies below the project. (2) ROUTE every site of F740 through the pair. audit-lookup.py: `_phase_diff_paths` output, `DOCS_AUDIT_EXCLUDE` built from the project's docs/audit via plan_to_git rather than a literal, `_task_commit_diff_lines` and `_diff_lines` pathspecs (including the wave-tree arm), `existing_test_lines` output. integrate-task.py `undeclared_paths`. derive-phase-gate.py changedSince. run-test-gate.py: `_declared_by` / `classify_mutations` / `dirty_outside` / `_named_by_run` over `_tree_stamp.porcelain`, plus `task_changed_paths`' show-prefix arithmetic. _tree_stamp.py `dirty_digest` exclusion. _invariants.py commit-scope allow-list. audit-task.py `_declared_rels` / `_no_change_moves` (plan_to_git replaces `_invariants._rel(join(project, e), git_root)`). close-phase.py `uncommitted_declared` and the tip writer's prefix (`:1928`, `:2229`). hooks/guard-bash-writes.py dirty paths. The hook learns the checkout prefix once per session (cached in its state file; layout does not change mid-session) so its per-call cost is unchanged; `tools/bench-hooks.py --gate` stays green. (3) THE LINT. `_deps.git_path_base_violations(script_dir=None, hooks_dir=None, exempt=None)` walks every .py under scripts/ and hooks/ with the shared walk. It finds each call whose argv literal holds a git path-listing form: `status --porcelain*`, `diff`/`show`/`log` with `--name-only`/`--name-status`, `diff-tree`, `ls-files`, `ls-tree --name-only`, or a `--` pathspec after diff/show/log. It names `<file>:<function>` unless that function calls `git_to_plan`/`plan_to_git` or has a row in `_deps.GIT_PATH_BASE_EXEMPT`. The table is keyed (basename, function) with a reason, for single-base sites whose paths never meet a plan entry: _scoped_commit, commit-manifest-index, drive-phase carry and integration checks, _invariants audit-state and index checks, _filed_returns, the doctor modules, _merge_install, manage-worktrees, _journal_io, stamp-verification, integrate-task's record and bytes reads, _panel_viewer, _output's repo lint. Each reason must be non-empty, and a row naming a function that no longer exists, or that no longer makes a listing call, is reported as stale. The name ends in `_violations` so tools/prove-gates.py derives its row. Prove it red: in a scratch copy, revert `audit-lookup._phase_diff_paths` to dev HEAD `46e9e2ec`'s body; the lint must name `audit-lookup.py:_phase_diff_paths`. Prove the allow side too: an exempt row with an empty reason must fail. Acceptance: (a) the pair's own cases cover the member project, gitRoot-below-project, the same directory, a path outside the project, path == offset, and a symlinked project; (b) one nested-project fixture case per site group (a real `git init` with the project at `member/`): audit-lookup (phase diff excludes member/docs/audit; the task-commit diff and `_diff_lines` are non-empty for a declared changed file), integrate-task, derive-phase-gate, run-test-gate plus _tree_stamp (a gate rewriting a declared file is owned and refused; recorder rows leave the dirty digest unchanged), _invariants commit-scope (no breach for a declared file), audit-task, close-phase, guard-bash-writes; each case is shown red on dev HEAD before the fix; (c) the lint is red-first as above; (d) `_evidence_io.project_spelling` and `_status_facts._strip_git_root` have no callers left and are gone; (e) the full sweep, `tools/bench-hooks.py --gate` and `tools/prove-gates.py` (the new row in both directions) are green.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -4097,7 +4115,8 @@
         "plugins/audit/tests/test__invariants.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/tests/test_close_phase.py",
-        "plugins/audit/tests/test_guard_bash_writes.py"
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "tools/gate-parity.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -4143,16 +4162,22 @@
         "P130.35-ywo",
         "P130.39-ywo"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T16:55:27Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T18:26:53Z.4265d9",
+        "status": "failed",
+        "at": "2026-10-19T18:26:53Z"
+      }
     },
     {
       "id": "P130.41-ywo",
@@ -4334,7 +4359,7 @@
     {
       "id": "P130.43-ywo",
       "title": "A task commit carries the task's change, and a restarted task with a kept worktree is never run in the phase tree",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F741. P130.18-ywo was recorded done at a commit holding only plan and evidence files: after a manual `start`, drive-phase `wave_step` (around :2644) ran it serially in the PHASE tree because a task was in_progress, while its work sat in the kept worktree (`close_wave` records it in keptTrees, read only when a new wave opens); the gate measured the phase tree (scopeDigest of the unchanged declared files), went green, and the close committed nothing of the task. The only no-change refusal, `_scoped_commit.close_evidence_refusal` (around :1121, called from commit-task-work.py around :893), refuses only when red-first is `not-attempted`; `could-not-prove` passes. Fix: (1) commit-task-work refuses a task commit whose staged change holds no file outside docs/audit and the run records, unless the task is closed with an explicit no-change verb, naming the declared files and the tree the gate measured; (2) when the task being advanced has a kept worktree that holds changes, the drive integrates it or runs it in that worktree - never dispatches or gates it in the phase tree; (3) a falsifier that could not run because its find-text is absent from the measured tree stops the close with that sentence instead of writing a note (the stage is retired at HEAD - if so, put the absent-text check on the red-first record instead: a recorded red whose cases do not exist in the committed tree refuses). Acceptance: (1) a fixture where the task tree holds the change and the phase tree does not: the drive does not commit an empty task and names the kept tree; (2) commit-task-work refuses a commit whose diff is plan files only, with the declared files named; (3) an honest no-change close still works through its verb; (4) the full sweep is green.",
       "files": [
         "plugins/audit/scripts/governance/commit-task-work.py",
@@ -4361,7 +4386,33 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test_commit_task_work.py: a task commit whose staged change holds only plan and record files is refused, naming the declared files, while an explicit no-change close still records": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_commit_task_work.py",
+              "--selftest",
+              "--stage",
+              "ro-block"
+            ],
+            "file": "plugins/audit/scripts/governance/commit-task-work.py",
+            "find": "tree=project, any_red_first=bool(targets[\"declared\"]))",
+            "replace": "tree=project, any_red_first=False)"
+          },
+          "plugins/audit/tests/test_drive_phase.py: a restarted task whose kept worktree holds changes is not dispatched or gated in the phase tree, and the drive names the kept tree": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_drive_phase.py",
+              "--selftest",
+              "--stage",
+              "kr-block"
+            ],
+            "file": "plugins/audit/scripts/governance/drive-phase.py",
+            "find": "    return path if isinstance(path, str) and os.path.isdir(path) else None",
+            "replace": "    return None"
+          }
+        }
       },
       "model": "opus",
       "skills": [
@@ -4374,16 +4425,22 @@
       "dependsOn": [
         "P130.35-ywo"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T16:55:29Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T18:37:42Z.b7ed33",
+        "status": "passed",
+        "at": "2026-10-19T18:37:42Z"
+      }
     },
     {
       "id": "P130.44-ywo",

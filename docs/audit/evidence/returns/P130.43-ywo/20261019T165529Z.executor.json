@@ -1,0 +1,56 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_drive_phase.py --selftest --stage kr-block": "pass",
+    "python3 plugins/audit/tests/test_commit_task_work.py --selftest --stage ro-block": "pass",
+    "python3 plugins/audit/tests/test_commit_task_work.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__scoped_commit.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_drive_phase.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_audit_task.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T17:20:31Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage kr-block` in a throwaway tree at HEAD exited 1 with 1 of 1 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests on HEAD's code failing only the unknown-stage check for `kr-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - kr1 (house FAIL): SELFTEST FAILED: 0/1 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(1) _scoped_commit.close_evidence_refusal gains declared=, tree= and any_red_first=; with any_red_first an unchanged declared set refuses whatever red-first word the return carries (or with none filed), naming the declared files, the tree the close is made from, the red-first word, the kept-tree remedy and the `done --no-change` verb. commit-task-work passes any_red_first=bool(targets['declared']) plus declared_names() (new helper: the task's files in plan spelling whose rel is a declared work path) and tree=project. A task declaring only record entries keeps the old not-attempted-only question. `done --commit` (audit-task.py, not this task's file) keeps the not-attempted-only rule: turning it on there reddened test_audit_task pd5b, tw5, lo4, lo6 (1085/1089; pristine HEAD export 1089/1089), which pin closes on SHAs whose change sits in an earlier commit. (2) drive-phase: kept_tree(state, task) (a keptTrees entry still on disk), kept_members(state, phase), kept_tree_stop(ctx, state, task). wave_step, before its in-progress NO_WAVE test, opens a wave over in_progress tasks whose kept tree stands, so task-add adopts the tree and the task is dispatched, gated and integrated there. advance() with tree None stops on such a task, naming the tree (covers width 1 and the --only task drive). (3) Not done: the alternate form of fix item 3 (a recorded red whose cases are absent from the committed tree refuses). The red-first record holds only status/basis/at/source (counted over the 384 filed executor returns in docs/audit/evidence/returns; key Counter printed status 384, basis 384, at 379, source 215), so the cases appear only inside the prose basis. A check would need stamp-verification.py to write a structured case list, and that file is outside this task's files. Tests: ctw-ro1/ctw-ro2 (ro-block) in test_commit_task_work.py; kr1 (kr-block) in test_drive_phase.py, a wave fixture where P1.1 is blocked with its change in its kept tree, restarted with `audit-task.py start`, then driven with a gate that is green anywhere and logs its cwd. Before the fix kr1 was red: P1.1 was dispatched with no tree line in its brief. ctw-ro1 was red: commit-task-work committed b44d52a7 holding only docs/audit files, the F741 45eb29ca shape. After the fix: test_commit_task_work 128/128, test__scoped_commit 31/31, test_drive_phase 386/386, test_audit_task 1089/1089, test__output 259/259, test__deps 244/244, test__refs 286/286, each run alone with exit 0. ruff and vermin are clean on the five files. With the fix, kr1 closes P1.1 at a commit carrying src/f1.txt, and the gate log names only the kept tree.",
+    "descriptive": "A task commit of plan and record files alone is refused whatever the red-first word says, and a hand-restarted wave member with a kept tree runs in that tree, never in the phase tree."
+  },
+  "testsAdded": [
+    "ctw-ro1 a task commit whose staged change holds only plan and record files is refused, naming the declared files, while an explicit no-change close still records",
+    "kr1 a restarted task whose kept worktree holds changes is not dispatched or gated in the phase tree, and the drive names the kept tree"
+  ],
+  "casesAdded": [
+    "ctw-ro1",
+    "kr1"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_commit_task_work.py: a task commit whose staged change holds only plan and record files is refused, naming the declared files, while an explicit no-change close still records": {
+      "file": "plugins/audit/scripts/governance/commit-task-work.py",
+      "find": "tree=project, any_red_first=bool(targets[\"declared\"]))",
+      "replace": "tree=project, any_red_first=False)",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "--selftest",
+        "--stage",
+        "ro-block"
+      ]
+    },
+    "plugins/audit/tests/test_drive_phase.py: a restarted task whose kept worktree holds changes is not dispatched or gated in the phase tree, and the drive names the kept tree": {
+      "file": "plugins/audit/scripts/governance/drive-phase.py",
+      "find": "    return path if isinstance(path, str) and os.path.isdir(path) else None",
+      "replace": "    return None",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_drive_phase.py",
+        "--selftest",
+        "--stage",
+        "kr-block"
+      ]
+    }
+  },
+  "claims": "claims:\n1 _scoped_commit.py close_evidence_refusal: the `changed is False and (any_red_first or word == RED_FIRST_NOT_ATTEMPTED)` branch is the one the new section comment describes; commit-task-work.py passes any_red_first=bool(targets[\"declared\"]); drive-phase.py wave_step's kept_members branch and advance()'s kept_tree_stop are what the two docstrings describe\n2 in a scratch copy (HEAD export plus this diff): any_red_first=False -> ctw-ro1 red (1/2); kept_tree returning None -> kr1 red (0/1); over-fire `changed is not None` -> ctw-ro2 (allow) red (1/2); scratch copy deleted afterwards, __pycache__ purged before the runs\n3 grep RED_FIRST_NOT_ATTEMPTED|close_evidence_refusal: _refs.py:952 is the vocabulary (left as is); audit-task.py:6254 done --commit keeps the old rule, because widening it reddened 4 test_audit_task cases (pd5b tw5 lo4 lo6) that pin closes on an earlier commit; commit-task-work.py: fixed. grep keptTrees in drive-phase.py: add_tree pops it, close_wave writes it, kept_tree reads it (new); no other reader\n4 n/a - no rule addressed to an agent; the stop sentence names the remedy, and the drive enforces it\n5 n/a - no property recorded\n6 the guard decides on state: a keptTrees entry plus os.path.isdir and the task's status, not on any command text; the allow direction is the existing wave and serial suites (test_drive_phase 386/386) and ctw-ro2\n7 tallies quoted with the commands that printed them (each suite's --selftest); no number is written into code or docs",
+  "stamp": "audit-stamp: {\"content\":\"sha256:4bf7ce104f51f36e880934472a839c98b28aa19b4f05b1d9b1890baaa26377f5\",\"dirtyDigest\":\"sha256:3a81b6f07272c1feb9ef687cc8c08c2585090b7dfdc428f6560467facc8e4b87\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_scoped_commit.py\":\"230627cda233974b\",\"plugins/audit/scripts/governance/commit-task-work.py\":\"1befd11be013ca0e\",\"plugins/audit/scripts/governance/drive-phase.py\":\"5a353e945c212d36\",\"plugins/audit/tests/test_commit_task_work.py\":\"2659ba42ebacfb76\",\"plugins/audit/tests/test_drive_phase.py\":\"02ee960159f08ae0\"},\"head\":\"4765b8b9\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_scoped_commit.py\",\"plugins/audit/scripts/governance/commit-task-work.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/tests/test__scoped_commit.py\",\"plugins/audit/tests/test_commit_task_work.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:d990794a876502d3510fd55f34944ba8560e2b58b1e146b86fdf26cc98a0e582\",\"v\":2}"
+}
