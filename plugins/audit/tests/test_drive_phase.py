@@ -7107,6 +7107,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("bs-block", "_brief_scope_cases"),
           ("sc-block", "_scope_change_cases"), ("fv-block", "_review_rules_cases"),
           ("fp-block", "_retired_falsifier_cases"),
+          ("mt-block", "_machine_text_cases"),
           ("gt-block", "_git_stdin_cases"),
           ("ci-block", "_ci_cadence_cases"),
           ("cr-block", "_carry_cases"),
@@ -7313,6 +7314,118 @@ def _ci_cadence_cases(check):
           and not rules.validate_config({"ci": {"cadence": {"hours": 4}}})[0]
           and rules.validate_config({"ci": {"cadence": {"closes": 0}}})[0]
           and "ci" in rules.KNOWN_ROOT)
+
+
+MACHINE_TEXT_CLAUSE = ("a scope widening whose note text holds a run of spaces and "
+                       "a backtick is written verbatim, and no verb call in "
+                       "drive-phase.py passes a built string as an argv prose "
+                       "value")
+
+# The flags whose value a verb reads for the marks a shell leaves in a typed
+# line. `--review-outcome` is left out on purpose: `signoff` reads `--summary`
+# in the same call and stdin carries one flag, and what the drive builds into
+# the other is a hex head prefix, which holds none of those marks.
+ARGV_PROSE_FLAGS = ("--text", "--reason", "--description", "--summary",
+                    "--intent-basis", "--outcome", "--technical",
+                    "--descriptive")
+STDIN_TEXT_HELPER = "_verb_with_text"
+
+
+def argv_prose_violations(source):
+    """`["line N: <flag>"]` for every place `source` writes a prose flag as a
+    literal followed by something that is not a literal - in a list, a tuple or
+    a call's positional arguments - outside a call to `_verb_with_text`, whose
+    flag and text are separate parameters because it sends the text on stdin.
+    A list or call is read as a sequence of neighbours, so the argv builders
+    (`args += [...]`, `_task_args(ctx, ..., flag, value)`, a tuple handed to
+    one) are all seen without naming any of them."""
+    tree = ast.parse(source)
+    spared = set()
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == STDIN_TEXT_HELPER):
+            spared.update(id(arg) for arg in node.args)
+            spared.add(id(node))
+
+    def sequences(node):
+        if isinstance(node, (ast.List, ast.Tuple)):
+            yield node.elts
+        elif isinstance(node, ast.Call) and id(node) not in spared:
+            yield node.args
+
+    found = []
+    for node in ast.walk(tree):
+        for elts in sequences(node):
+            for here, after in zip(elts, elts[1:]):
+                literal = (isinstance(here, ast.Constant)
+                           and isinstance(here.value, str))
+                if (literal and here.value in ARGV_PROSE_FLAGS
+                        and not isinstance(after, ast.Constant)):
+                    found.append("line %d: %s" % (here.lineno, here.value))
+    return sorted(set(found))
+
+
+def _machine_text_cases(check):
+    """Text a script built goes to a verb on stdin, so a verb's shell-damage
+    check never judges text no shell touched."""
+    def clause(case, detail):
+        return "%s %s (%s)" % (case, MACHINE_TEXT_CLAUSE, detail)
+
+    M, why = _load("machine_text_mod")
+    check("mt0 the driver loads: %r" % (why,), M is not None)
+    if M is None:
+        return
+    root, mpath = _repo("machine-text", task_ids=TASKS[:1])
+    basis = "owed by  `lint`  on run 7"
+    ns = argparse.Namespace(project_dir=root, manifest=mpath, verbose=False,
+                            phase=PHASE, task_only=False)
+    with _Env(root):
+        ctx = M.context(ns)
+        task = tasks_of(mpath)["P1.1"]
+        stop = M.widen_task(ctx, {}, task, ["src/f2.txt"], basis)
+    wanted = "files widened by src/f2.txt: %s" % (basis,)
+    notes = _notes_of(mpath, "P1.1")
+    check(clause("mt1", "widen_task with a basis holding two spaces and backticks "
+                 "stops on nothing and the note is the built text byte for "
+                 "byte; stop=%r notes=%r" % (stop, notes)),
+          stop is None and notes == [wanted]
+          and "src/f2.txt" in (tasks_of(mpath)["P1.1"].get("files") or []))
+
+    with open(_loader.script_path(DRIVER), "r", encoding="utf-8") as fh:
+        source = fh.read()
+    seen = argv_prose_violations(source)
+    helper_calls = [n for n in ast.walk(ast.parse(source))
+                    if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                    and n.func.id == STDIN_TEXT_HELPER]
+    check(clause("mt2", "the driver as shipped passes no non-literal after a prose "
+                 "flag in any argv it builds, and does send text through the "
+                 "helper (%d calls); found %r" % (len(helper_calls), seen)),
+          seen == [] and len(helper_calls) >= 5)
+
+    list_form = ('def regress(ctx, built):\n'
+                 '    return _verb_or_stop(ctx, "audit-task.py", _task_args(\n'
+                 '        ctx, "note", "P1.1", "--text", built))\n')
+    tuple_form = ('def regress(ctx, built):\n'
+                  '    for args in (("note", "P1.1", "--text", built),):\n'
+                  '        _verb_or_stop(ctx, "audit-task.py", args)\n')
+    extend_form = ('def regress(ctx, built):\n'
+                   '    args = ["bug-add", "t"]\n'
+                   '    args += ["--description", built]\n')
+    reds = [argv_prose_violations(source + "\n\n" + extra)
+            for extra in (list_form, tuple_form, extend_form)]
+    check(clause("mt3", "a scratch copy of the driver with a call carrying a built "
+                 "string after a prose flag is reported, in each of the three "
+                 "shapes an argv is built in; got %r" % (reds,)),
+          all(len(r) == 1 for r in reds))
+    # THE OTHER DIRECTION: a lint that reported every flag would pass mt3 too.
+    fine = ('def ok(ctx, built):\n'
+            '    _verb_with_text(ctx, "audit-task.py", _task_args(\n'
+            '        ctx, "note", "P1.1"), "--text", built)\n'
+            '    return ["--text", "a literal", "--severity", built]\n')
+    check(clause("mt4", "a literal after a prose flag, a text handed to the helper "
+                 "and a non-prose flag beside a built value are not reported; "
+                 "got %r" % (argv_prose_violations(fine),)),
+          argv_prose_violations(fine) == [])
 
 
 EMPTY_BLOB = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"

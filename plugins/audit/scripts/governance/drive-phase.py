@@ -764,6 +764,23 @@ def _verb_or_stop(ctx, script, args, stdin=None):
     return out, None
 
 
+def _verb_with_text(ctx, script, args, flag, text):
+    """`_verb_or_stop` for a verb whose prose flag `flag` carries `text` the
+    drive built: the flag goes as `flag -` and the text on stdin, so no shell
+    and no argv stands between the drive and the manifest.
+
+    A verb reads the marks a shell leaves (a run of spaces, whitespace before
+    punctuation) off every prose value that arrives on argv and refuses it - the
+    right test for a line a person typed, and wrong for text assembled here,
+    which holds a doubled space whenever a piece it was built from did. The
+    stdin route is the one that arrives verbatim. Stdin carries ONE flag per
+    call, and a verb refuses an empty `-`, so a blank `text` goes on argv as it
+    is: there is nothing in it for a check to read and nothing to lose."""
+    if not (text or "").strip():
+        return _verb_or_stop(ctx, script, list(args) + [flag, text or ""])
+    return _verb_or_stop(ctx, script, list(args) + [flag, "-"], stdin=text)
+
+
 def _task_args(ctx, verb, task_id, *extra):
     return [verb, task_id, ctx["manifest"], "--project-dir", ctx["project"]] \
         + list(extra)
@@ -1400,12 +1417,15 @@ def widen_task(ctx, state, task, paths, basis):
     new = [p for p in dict.fromkeys(paths) if p not in files]
     if not new:
         return None
-    for args in (("scope", task["id"], "--files", ",".join(files + new)),
-                 ("note", task["id"], "--text", "files widened by %s: %s"
-                  % (", ".join(new), basis))):
-        _out, stop = _verb_or_stop(ctx, "audit-task.py", _task_args(ctx, *args))
-        if stop is not None:
-            return stop
+    _out, stop = _verb_or_stop(ctx, "audit-task.py", _task_args(
+        ctx, "scope", task["id"], "--files", ",".join(files + new)))
+    if stop is not None:
+        return stop
+    _out, stop = _verb_with_text(
+        ctx, "audit-task.py", _task_args(ctx, "note", task["id"]), "--text",
+        "files widened by %s: %s" % (", ".join(new), basis))
+    if stop is not None:
+        return stop
     stop = commit_scope_index(ctx, "%s widened by %s" % (task["id"], ", ".join(new)))
     if stop is not None:
         return stop
@@ -1583,9 +1603,9 @@ def ci_file_red(ctx, run, row):
            "the failing jobs and cases. Filed by the drive's ci.cadence read."
            % (row.get("databaseId"), run["branch"], run["sha"],
               row.get("conclusion"), row.get("url") or "no run URL"))
-    _out, stop = _verb_or_stop(ctx, "audit-task.py", [
+    _out, stop = _verb_with_text(ctx, "audit-task.py", [
         "bug-add", title, ctx["manifest"], "--project-dir", ctx["project"],
-        "--severity", "high", "--description", why])
+        "--severity", "high"], "--description", why)
     return stop
 
 
@@ -1711,10 +1731,13 @@ def close_task(ctx, state, phase, task, intent_basis=None):
     if not sha:
         return decision(ctx, state, "no-change", task, "")
     extra = ["--commit", sha.group(1), "--from-return"]
-    if intent_basis is not None:
-        extra += ["--intent", "not-asked", "--intent-basis", intent_basis]
-    _out, stop = _verb_or_stop(ctx, "audit-task.py",
-                               _task_args(ctx, "done", task["id"], *extra))
+    done_args = _task_args(ctx, "done", task["id"], *extra)
+    if intent_basis is None:
+        _out, stop = _verb_or_stop(ctx, "audit-task.py", done_args)
+    else:
+        _out, stop = _verb_with_text(
+            ctx, "audit-task.py", done_args + ["--intent", "not-asked"],
+            "--intent-basis", intent_basis)
     if stop is not None:
         return stop
     ctx["did"].append("%s %s at %s" % (CLOSED, task["id"], sha.group(1)[:7]))
@@ -2963,8 +2986,9 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         return apply_phase_answer(ctx, state, manifest, phase, pending, answer,
                                   reason, fixes)
     if answer == "block":
-        _out, stop = _verb_or_stop(ctx, "audit-task.py", _task_args(
-            ctx, "block", task["id"], "--reason", reason))
+        _out, stop = _verb_with_text(
+            ctx, "audit-task.py", _task_args(ctx, "block", task["id"]),
+            "--reason", reason)
         if stop is not None:
             return stop
         ctx["did"].append("blocked %s" % (task["id"],))
@@ -3037,8 +3061,9 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         write_state(ctx, state)
         return None
     if answer == "no-change":
-        _out, stop = _verb_or_stop(ctx, "audit-task.py", _task_args(
-            ctx, "done", task["id"], "--no-change", "--reason", reason))
+        _out, stop = _verb_with_text(
+            ctx, "audit-task.py",
+            _task_args(ctx, "done", task["id"], "--no-change"), "--reason", reason)
         if stop is None:
             ctx["did"].append("%s %s (no change)" % (CLOSED, task["id"]))
         return stop
@@ -4102,7 +4127,7 @@ def run_signoff(ctx, state, phase):
         ctx["did"].append("invariants clean")
     summary = signoff_summary(state, phase, head)
     args = ["signoff", phase["id"], ctx["manifest"], "--project-dir",
-            ctx["project"], "--verdict", "passed", "--summary", summary]
+            ctx["project"], "--verdict", "passed"]
     # THE HUMAN'S WORDS ARE THE DISPOSITION. A `sign-off` answered over an
     # open finding - one no fix task landed for - is the human accepting it
     # open, and the verb refuses a sign-off that leaves one unsaid, so each is
@@ -4118,7 +4143,7 @@ def run_signoff(ctx, state, phase):
     if mark.get("head"):
         args += ["--review-outcome", "phase review filed at head %s"
                  % (mark["head"][:12],)]
-    _out, stop = _verb_or_stop(ctx, "audit-task.py", args)
+    _out, stop = _verb_with_text(ctx, "audit-task.py", args, "--summary", summary)
     if stop is not None:
         drop_held_gate(ctx, state)
         return stop

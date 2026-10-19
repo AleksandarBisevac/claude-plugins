@@ -260,9 +260,37 @@
         "file": "plugins/audit/tests/test_drive_phase.py (_unclassified_entry_cases, uc3/uc4)",
         "issue": "No case holds the realistic shape: a known-runner gate plus a non-test entry (lint, validate). uc3 and uc4 use only the sweep or sweep plus `python3 -m unittest`, so the suite stays green while finding 1 holds; nothing pins that a lint-only extra entry leaves the stop in force.",
         "resolution": "Add a case: gate (SWEEP_GATE, a lint command such as `ruff check .`) with a `.mjs` suite path expects the scope-gap decision, alongside the existing uc1/uc2 could-not-tell cases, which should keep a test-capable unclassified entry."
+      },
+      {
+        "id": "P130-R35",
+        "severity": "med",
+        "file": "plugins/audit/tests/test_drive_phase.py:7322-7329",
+        "issue": "ARGV_PROSE_FLAGS is a hand-typed copy of audit-task.py's PROSE_FLAGS (audit-task.py:1000) and already omits --rename, --no-evidence-reason, --issue, --resolution, --repro, --expected, --actual, --override-verdict (read, and confirmed by running the lint on scratch snippets: [\"done\", \"--no-evidence-reason\", built] and [\"retarget\", \"--rename\", built] both return []). A reintroduced argv call on any of those flags, each one the verb gap-checks, passes the lint, so 'no call site can regress' holds for 8 of the 16 flags the verb checks. The comment justifies only --review-outcome.",
+        "resolution": "Derive the set from the verb: load audit-task.py by basename (_loader) and take its PROSE_FLAGS (dest -> --flag), minus one declared exemption {review_outcome} with its reason. Then a flag added to PROSE_FLAGS is linted by default."
+      },
+      {
+        "id": "P130-R36",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_drive_phase.py:7343-7366",
+        "issue": "The lint reads only 'literal flag, then non-Constant neighbour in one List/Tuple/Call'. Probed on scratch snippets, it returns [] for: a.append(\"--text\"); a.append(built) (two calls); [\"note\", \"--text=\" + built] and \"--text=%s\" % built (joined form); FLAG = \"--text\"; [FLAG, built] (flag held in a name). It also fires on a legitimate value held in a named constant ([\"--reason\", NOTE_CONST]) and on a literal concatenation (\"a\" + \"b\"), because any non-Constant counts as built. mt3 only pins the list, tuple and += shapes.",
+        "resolution": "Resolve module-level string constants before comparing; treat a BinOp/JoinedStr/Mod whose left literal starts with a prose flag plus '=' as a hit; add consecutive-append detection (an Expr call to .append with a prose-flag literal followed by a non-literal append on the same receiver); count a Name that resolves to a module constant string, and a BinOp of two literals, as literal. Add an mt3/mt4 row for each."
+      },
+      {
+        "id": "P130-R37",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_drive_phase.py:7345-7350",
+        "issue": "The helper exemption is blanket: spared.update(id(arg) for arg in node.args) also spares any Call passed as an argument of _verb_with_text, so _verb_with_text(c, s, _task_args(c, \"note\", t, \"--text\", built), \"--reason\", x) reports nothing (probed: []). The sparing exists only so the helper's own flag/text neighbours are not read, but that is already achieved by spare-ing the helper Call node itself.",
+        "resolution": "Spare only the helper call node's own positional list; do not add its argument Call nodes to `spared`, so nested argv builders are still read."
+      },
+      {
+        "id": "P130-R38",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:767-781",
+        "issue": "The helper docstring says a blank text on argv has 'nothing in it for a check to read'. A whitespace-only text such as '  ' is truthy to the verb and matches `\\A[ \\t]+` (audit-task.py:875) so it is refused on argv, exactly as '-' with whitespace-only stdin is refused (audit-task.py:1076). Also the stdin route rstrip('\\n')s (audit-task.py:1075), so built text ending in newlines is not verbatim, which the docstring's 'arrives verbatim' omits. No regression (argv behaved the same before) but the stated reason is wrong.",
+        "resolution": "Reword to say blank means empty after strip and goes as-is because the verb treats an empty value as legal and a whitespace-only one is refused on either route, and note the trailing-newline strip; or normalise whitespace-only to '' before sending."
       }
     ],
-    "outcome": "[findings: 34 - 0 high, 7 med, 27 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 38 - 0 high, 8 med, 30 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -4909,7 +4937,12 @@
       "startedAt": "2026-10-19T21:39:52Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T22:02:25Z.6f2bd5",
+        "status": "passed",
+        "at": "2026-10-19T22:02:25Z"
+      }
     },
     {
       "id": "P130.48-ywo",
