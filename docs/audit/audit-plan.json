@@ -1498,7 +1498,8 @@
       "P130.9",
       "P130.6",
       "P130.4",
-      "P130.10-ywo"
+      "P130.10-ywo",
+      "P130.29-ywo"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2836,7 +2837,8 @@
       "P125.19",
       "P125.22",
       "P125.41-0h5",
-      "P125.44-0h5"
+      "P125.44-0h5",
+      "P130.29-ywo"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -4992,7 +4994,8 @@
       "P125.142-0h5",
       "P125.144-0h5",
       "P130.6",
-      "P130.8"
+      "P130.8",
+      "P130.30-ywo"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -6222,7 +6225,8 @@
       "P125.139-0h5",
       "P125.142-0h5",
       "P125.144-0h5",
-      "P130.6"
+      "P130.6",
+      "P130.30-ywo"
     ],
     "plugins/audit/tests/test_audit_status.py": [
       "P25.2",
@@ -6432,7 +6436,8 @@
       "P130.13-ywo",
       "P130.16-ywo",
       "P130.18-ywo",
-      "P130.20-ywo"
+      "P130.20-ywo",
+      "P130.29-ywo"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -7541,7 +7546,8 @@
       "P125.49-0h5",
       "P128.45-izt",
       "P130.8",
-      "P130.24-ywo"
+      "P130.24-ywo",
+      "P130.30-ywo"
     ],
     "plugins/audit/tests/test__gate_derive.py": [
       "P79.2",
@@ -7572,7 +7578,8 @@
       "P125.49-0h5",
       "P128.44-izt",
       "P130.4",
-      "P130.8"
+      "P130.8",
+      "P130.30-ywo"
     ],
     "plugins/audit/tests/test_derive_phase_gate.py": [
       "P79.3",
@@ -9176,7 +9183,8 @@
       "P130.6",
       "P130.8",
       "P130.14-ywo",
-      "P130.24-ywo"
+      "P130.24-ywo",
+      "P130.29-ywo"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -9403,7 +9411,8 @@
       "P129.1-izt",
       "P129.7-izt",
       "P128.45-izt",
-      "P130.8"
+      "P130.8",
+      "P130.29-ywo"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -9552,7 +9561,8 @@
       "P125.110-0h5",
       "P125.88-0h5",
       "P130.5",
-      "P130.8"
+      "P130.8",
+      "P130.30-ywo"
     ],
     "plugins/audit/tests/test_integrate_task.py": [
       "P124.4",
@@ -9562,7 +9572,8 @@
       "P125.111-0h5",
       "P125.110-0h5",
       "P125.119-0h5",
-      "P125.122-0h5"
+      "P125.122-0h5",
+      "P130.30-ywo"
     ],
     "plugins/audit/scripts/governance/_runner_collects.py": [
       "P124.9",
