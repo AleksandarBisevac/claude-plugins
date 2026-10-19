@@ -1133,7 +1133,9 @@
         "P130.25-ywo",
         "P130.26-ywo",
         "P130.27-ywo",
-        "P130.28-ywo"
+        "P130.28-ywo",
+        "P130.29-ywo",
+        "P130.30-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -1554,7 +1556,7 @@
     {
       "id": "P130.14-ywo",
       "title": "For a project nested under its git root, the stamp helper, the follower recipes and the phase gate all read the member project",
-      "status": "in_progress",
+      "status": "done",
       "description": "Faults F708 and F709, the remainder of the nested-project fix. Two path bases still meet in one call. (a) The stamp helper: `take_stamp` and `red_block` in plugins/audit/scripts/governance/drive-phase.py (:4548 and :4519) call `stamp-verification.py take|red --project <tree or gitRoot> --manifest <m> --task <id>`; the task's `files` are PROJECT-relative, but `resolve_scope` (plugins/audit/scripts/governance/stamp-verification.py:377) and `_red_scope` (:3345, `expand_declared(root, task.get('files'))` with root = the checkout's top) read them against the checkout's top, so for a project under `app/` the declared-file part of a stamp digests `<top>/src/x.py` instead of `<top>/app/src/x.py`, and `red` looks for the task's test files in the wrong directory. The existing nested case sv30 in test_stamp_verification.py sidesteps this by passing `--files app/src/mine.py`. (b) The follower recipes: `follow_red_gate` (drive-phase.py:1343) runs each recipe in `tree or ctx['gitRoot']`; a recipe is printed by a gate step, which runs in the project directory, so its paths are project-relative and it must run in `member_project(ctx, tree)` - or `ctx['project']` when there is no tree. (c) The phase gate: `phase_gate` (drive-phase.py:3720) calls `run-test-gate.py ... --project-dir ctx['project']` with no `--tree`, and `red_gate_stop` / `run_signoff` call `verify-invariants.py --project ctx['project']`. Read at HEAD, run-test-gate's `tree_of` takes no `--tree` as 'measure the project itself', and `ctx['project']` is the nested directory, so this third may already be right: settle it with a case rather than a reading, and change code only if the case is red. (d) The `falsify` fallback the fault names is retired by the in-flight task that removes the falsifier; confirm no `tree or ctx['gitRoot']` root for it survives. Fix for (a): one function turns a task's project-relative entries into the checkout-relative form the stamp reads - the project's offset under its own git root (as `member_project` computes it, or from `_output.project_of_manifest(--manifest)` relative to that manifest's git top), prefixed onto each entry - and both `take --task` and `red` call it; a project that IS its git root gets byte-identical stamps. `compare` keeps reading the scope recorded inside the stamp. Then the `member_project` docstring's sentence that the stamp helper 'reads git-root-relative paths, and is handed the checkout's top' is rewritten to say what is true after the change. Acceptance: (1) in the `_nested_repo` fixture (project under `app/`), `take --project <top> --manifest <app manifest> --task <id>` for a task declaring `src/mine.py` records the digest of `app/src/mine.py`, and after an edit to that file `compare` reports it moved by its checkout-relative path; (2) `red` in the same fixture finds the task's test file under `app/` and runs; (3) for a project that is its git root, take and red produce what they produced before (the existing cases stay green unchanged); (4) `follow_red_gate` runs a recipe in the project's directory inside the member tree for a nested project, and in `ctx['project']` with no tree; (5) a nested-project case pins the argv `phase_gate` and the invariants run receive to the nested project directory; (6) no caller in drive-phase.py hands a task-declared path or a recipe to the checkout's top for a nested project (the return lists every `ctx['gitRoot']` use it kept and why).",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -1620,19 +1622,34 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b7e30997d3a1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py: new project_offset(project, manifest) (the manifest's project place under its checkout top, '' for a project that is its git root / project not a checkout top / no manifest), _checkout_entry, checkout_task (prefix files and tests.add paths), _checkout_top_above (shared with _own_checkout_rel). resolve_scope (take --task) and _red_scope (red) both call them; compare untouched (reads the stamp's recorded scope). drive-phase.py: follow_red_gate runs recipes in member_project(ctx, tree) or ctx['project'] (was tree or ctx['gitRoot']); member_project docstring rewritten to say the stamp helper is handed the checkout top and prefixes the project offset itself. Tests: test_stamp_verification.py sv35-sv38 (stage sv-nested-files; nested take digest of app/src/mine.py, compare stale with scopeDigest moved and 'moved: app/src/mine.py', nested red atHead/copied under app/ and proved, flat --task == --files twin); test_drive_phase.py np1 (follow_red_gate cwd: member/app, project dir with no tree, tree top / ctx project for a flat project) and np2 (phase_gate --project-dir = nested project with no --tree; verify-invariants --project = nested project via red_gate_stop and run_signoff). (c) settled by np2: already right at HEAD, no code change; np2 passes before the fix by design (a pin). (d) grep 'tree or ctx[\"gitRoot\"]|falsif' in drive-phase.py: no falsify root survives; the 3 remaining 'tree or gitRoot' uses are compare/red/take --project (stamp helper, checkout top by design) and take_stamp's HEAD message. Kept ctx['gitRoot'] uses and why (drive-phase.py lines after edit): 1219/1232 member_project itself; 1389 stamp compare --project (stamp scope is checkout-relative, recorded in the stamp); 1449 ci_run git/gh cwd; 1550 git push; 1910/1912 worktreeRoot and tree naming (repo-level); 1966/1973 integration-state git-path; 2037/2099/2102 shot-follow tree: paths there come from integrate-task's git-diff paths (checkout-relative) so the checkout top is the base they are digested at - NOT changed, but integrate-task.py's undeclared_paths compares those checkout-relative paths against project-relative task files, which looks like the same two-bases defect for a nested project; I only read it, did not test it, and it is outside this task's files - worth its own fault; 2185 file-by-file byte compare of git-status (checkout-relative) paths between tree and git root; 2355-2455 carry refs / remotes (repo-level git); 2509 error text; 2917/2931 audit-lock --project (repo-level lock); 2985/3032 rev-parse HEAD / merge-base; 4526/4555/4570 stamp red/take --project (checkout top by design, the helper now offsets); 4617 rev-parse. Process note: my first drive-phase.py edit was a python heredoc (gate then refused the second heredoc write to stamp-verification.py as a writer's free-file spend); I redid those edits with the Edit tool; the gate's refusal was not worked around.",
+        "descriptive": "For a project nested under its git root, a task's project-relative files are now digested, compared and proved-red at the project's place in the checkout, and follower recipes run in the project directory."
       },
       "startedAt": "2026-10-19T02:30:41Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T03:04:21Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_stamp_verification.py: sv35 sv36 sv37 sv38 (clause + detail)",
+        "plugins/audit/tests/test_drive_phase.py: np1 np2 (clause + detail)"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T03:04:16Z.2711a5",
         "status": "passed",
         "at": "2026-10-19T03:04:16Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "b7e30997d3a1",
+        "at": "2026-10-19T03:04:21Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-19T02:42:23Z",
+        "basis": "`python3 plugins/audit/tests/test_stamp_verification.py --selftest --stage sv-nested-files` in a throwaway tree at HEAD exited 1 with 3 of 4 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `sv-nested-files`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - in a project nested under its git root, take with --task (project-relative files) digests the file under the project directory, compare names it moved after an edit, and red finds the task's test file under the project; a project that is its git root stamps exactly as before (sv35 take digests app/src/mine.py, the project's file, and not the checkout top's src/mine.py: exit=0 scope=['src/mine.py'] got='sha256:6bc3bb7c9b2a2836abf5162f780c615ef4468deffc3b11e51f2dd7c184dff76b' want='sha256:1272f91758331e8efa0e24e2d9114da89a1ae1904d1830774e5dc20d81856e17' top='sha256:6bc3bb7c9b2a2836abf5162f780c615ef4468deffc3b11e51f2dd7c184dff76b') (house FAIL) and 2 more: SELFTEST FAILED: 1/4 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1660,7 +1677,19 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test_panel_server.py: while the assembled panel page carries the help drawer, the help item in commands/panel.md does not say the drawer is absent and names the control that opens it": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_panel_server.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/commands/panel.md",
+            "find": "- **Help, in a drawer (v0.31).**",
+            "replace": "- **Help, over the API only (v0.31).**"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -1680,7 +1709,12 @@
       "startedAt": "2026-10-19T02:30:43Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T03:15:04Z.aba360",
+        "status": "passed",
+        "at": "2026-10-19T03:15:04Z"
+      }
     },
     {
       "id": "P130.16-ywo",
@@ -2333,6 +2367,111 @@
       "blockedBy": [],
       "dependsOn": [
         "P130.25-ywo"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.29-ywo",
+      "title": "The documents and comments that describe `unblock` say what P130.13-ywo made it do",
+      "status": "pending",
+      "description": "P130.13-ywo changed `unblock` to clear the block on a blocked task with attempts left (the count is kept; at the ceiling it resets), but these still describe the old refusal of a task with attempts left: PLUGIN-BUILD-GUIDE.md around :4435 (a blocked task's remedy `start` while attempts are left) and :5190-5194 ('A task with attempts left is refused (`_unblock_refusal`)'), plugins/audit/reference/manifest-conventions.md:466 and plugins/audit/reference/verbs-in-full.md:65-66 ('`unblock` refuses a task with attempts left'), and the comments of plugins/audit/scripts/governance/drive-phase.py around :4134-4155 ('the line between `unblock`, which refuses a task with attempts left, and `start`...'). Verified identical in ../claude-plugins-P130.13-ywo and HEAD. Rewrite each to the new behaviour after reading audit-task.py's unblock, stating no number; keep the pointer.",
+      "files": [
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: the shipped reference/verbs-in-full.md unblock paragraph no longer says unblock refuses a task with attempts left"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "before-you-claim"
+      ],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.13-ywo",
+        "P130.14-ywo"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.30-ywo",
+      "title": "Integration compares changed paths and declared files on one base for a project nested under its git root",
+      "status": "pending",
+      "description": "F735. integrate-task.py undeclared_paths(task files, paths) compares checkout-relative git paths with project-relative `files`; for a member project every declared path reads undeclared and a checkout-root file of the same name reads covered. Rebase onto one base (the existing project-relative helper) before the comparison at integrate-task.py:485, and at the other sites F735 lists: status/audit-lookup.py:992 (declared vs _phase_diff_paths) and governance/derive-phase-gate.py:267 with _gate_derive.py:703. Acceptance: a nested-project case per site red before and green after; the full sweep is green.",
+      "files": [
+        "plugins/audit/scripts/git/integrate-task.py",
+        "plugins/audit/tests/test_integrate_task.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/tests/test_audit_lookup.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_integrate_task.py: a project nested under its git root - a declared project-relative file is not reported undeclared, and an undeclared sibling is",
+          "plugins/audit/tests/test_audit_lookup.py: the phase-diff outside-declared list is computed on one base for a nested project"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.14-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
