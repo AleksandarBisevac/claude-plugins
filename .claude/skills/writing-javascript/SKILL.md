@@ -100,10 +100,9 @@ covers its own parts and nothing about collisions between them.
   allowed was measured and is now mostly repaid — the blob downloaders, the storage guards, the
   agreement rule for a count and its noun, the day-in-milliseconds constant, the clipboard's
   two failure paths, and the heatmap calendar that existed twice under the same names since both
-  heatmaps did. **`_deps.SHARED_CONCERNS` is the register**, one row per concern with its home, a
-  needle and an allowance, and `shared_concern_violations()` fails the build when a row spreads
-  past its cap. Read it before adding a helper: a row that names your concern has already decided
-  where it goes.
+  heatmaps did. The register that listed each concern with its home and an allowance
+  (`_deps.SHARED_CONCERNS`) was retired, so nothing enforces this: search `ui/shared/` before
+  adding a helper, and run `node tools/find-shared-candidates.mjs` to scout for repeated logic.
 
   `refactoring-the-assembled-ui` has the four-step wiring; the promotion rule is one reader stays
   put, two readers move up — and a shared part may not reach back into a surface, which is what

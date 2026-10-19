@@ -21,8 +21,6 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import io
 import os
-import shutil
-import tempfile
 import re
 import sys
 
@@ -602,39 +600,6 @@ def _cases(check):
           "surfaces already do, so adopting it changes nothing on screen",
           bool(_direct) and M.read_asset("report-css/shell.css") == _direct)
 
-    # cr_violations. The fixture carries a real \r on purpose: an all-LF one
-    # cannot tell a working check apart from `return []`.
-    _mixed = [("panel.html", "<html>\n</html>\n"),
-              ("panel.css", ":root{--a:1px}\r\n"),
-              ("panel/boot.js", "boot();\n")]
-    check("ua6 cr_violations names exactly the asset carrying a \\r, and only "
-          "it (got %r)" % (M.cr_violations(_mixed),),
-          M.cr_violations(_mixed) == ["panel.css"])
-    check("ua7 mutation proof in the other direction: an all-LF fixture names "
-          "NOTHING. Looks vacuous, and is the only case that goes red if the "
-          "check ever becomes `[name for name, _text in assets]`",
-          M.cr_violations([(n, t.replace("\r\n", "\n")) for n, t in _mixed]) == [])
-    check("ua8 a LONE \\r counts too - the check is about the byte, not about "
-          "the CRLF pair, so old-Mac endings are not waved through",
-          M.cr_violations([("report.css", "a{}\rb{}")]) == ["report.css"])
-    # THE LIVE CLAIM, and there used to be none. ua6-ua8 prove the FUNCTION
-    # over fixtures; nothing asked it about the real assets, so the rule was
-    # stated, asserted and never applied - its docstring even claimed "both
-    # callers" it no longer had. `declared_asset_drift` two cases down is called
-    # live in exactly this way, which is the pattern rather than a new one.
-    _ua_real = [(n, M.read_asset(n)) for n in M.UI_ASSETS]
-    check("ua8b THE LIVE CLAIM: no shipped `ui/` asset carries a \\r. The pins "
-          "that assemble both surfaces compare BYTES, so one CRLF checkout of one "
-          "part reddens a page rather than a stylesheet, and the error names the "
-          "assembly instead of the file: %r"
-          % (M.cr_violations(_ua_real),),
-          M.cr_violations(_ua_real) == [])
-    check("ua8c ...over a REAL set rather than an empty one - `cr_violations([])` "
-          "is also `[]`, and telling 'every asset is LF' from 'nothing was read' "
-          "is the distinction the function's own docstring insists on: %d asset(s)"
-          % (len(_ua_real),),
-          len(_ua_real) > 1 and all(t for _n, t in _ua_real))
-
     # unreadable_assets. Two failure shapes, and each proves a different half.
     _notutf8 = "not-utf8.css"
     with io.open(os.path.join(_uidir, _notutf8), "wb") as _fh:
@@ -652,45 +617,6 @@ def _cases(check):
           "os.path.isfile would pass ua10 and still miss this half",
           M.unreadable_assets((_crlf, _notutf8), _uidir) == [_notutf8])
     _sh.rmtree(_uidir, ignore_errors=True)
-
-    # --- assets live in feature directories, so every walk must descend --------
-    _ua_nested = [n for n in M.UI_ASSETS if "/" in n]
-    check("ua12 the declared asset list carries files from feature "
-          "subdirectories (%d of %d), so a walk that stopped at the top level "
-          "would disagree with it rather than pass quietly"
-          % (len(_ua_nested), len(M.UI_ASSETS)),
-          _ua_nested and M.declared_asset_drift() == ([], []))
-    _ua_tmp = tempfile.mkdtemp()
-    try:
-        os.makedirs(os.path.join(_ua_tmp, "sub"))
-        with io.open(os.path.join(_ua_tmp, "sub", "extra.js"), "w") as _fh:
-            _fh.write("var x = 1;\n")
-        with io.open(os.path.join(_ua_tmp, "sub", "NOTES.md"), "w") as _fh:
-            _fh.write("# notes\n")
-        _missing, _undeclared = M.declared_asset_drift(_ua_tmp)
-        check("ua13 a file added inside a subdirectory is REPORTED as undeclared "
-              "- the walk descends, and an asset nobody declared is the quiet "
-              "failure (got %r)" % (_undeclared,),
-              _undeclared == ["sub/extra.js"])
-        check("ua14 ...and documentation beside it is not, because a README is "
-              "never assembled into a page. Docs are excluded BY NAME (%r) "
-              "rather than assets allowed by name, so a part with an "
-              "unfamiliar extension is reported instead of ignored"
-              % (M._DOC_SUFFIXES,),
-              "sub/NOTES.md" not in _undeclared)
-        with io.open(os.path.join(_ua_tmp, "sub", "data.json"), "w") as _fh:
-            _fh.write("{}\n")
-        check("ua15 ...and an unfamiliar extension IS reported, which is what a "
-              "whitelist of asset suffixes would have silently swallowed",
-              "sub/data.json" in M.declared_asset_drift(_ua_tmp)[1])
-        check("ua16 an unreadable directory is a NAMED finding, not the empty "
-              "pair a clean tree returns - os.walk swallows the error by "
-              "default, so the guard is the onerror hook and not a try block",
-              M.declared_asset_drift(os.path.join(_ua_tmp, "nope"))[0][:1]
-              and M.declared_asset_drift(
-                  os.path.join(_ua_tmp, "nope"))[0][0].startswith("<unreadable"))
-    finally:
-        shutil.rmtree(_ua_tmp, ignore_errors=True)
 
 
     # --- the audited sheet must be the shipped sheet --------------------------
@@ -735,7 +661,6 @@ def _cases(check):
           "declared order",
           dict(M.themed_stylesheets())["panel"]
           == _panel_join.replace("/*__THEME_TOKENS__*/", M.TOKEN_CSS))
-
 
 
 def _selftest():

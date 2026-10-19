@@ -67,8 +67,8 @@ grep -rn '^class \|^ *global ' plugins/audit/scripts plugins/audit/hooks --inclu
   nothing from `scripts/` at all. If a new helper does not fit a layer, that is information about
   the design, not an obstacle to route around.
 - **Section markers every 400 lines.** Past that a flat scroll stops being a map;
-  `navigability_violations()` enforces it, and `ui_navigability_violations()` does the same for
-  the front end.
+  `navigability_violations()` enforces it for `.py`; the same rule for the front-end assets is
+  author-enforced.
 
 ## DRY, and the way it fails here
 

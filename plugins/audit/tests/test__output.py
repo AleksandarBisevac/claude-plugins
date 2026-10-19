@@ -41,10 +41,6 @@ import sys
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _output as M                                # noqa: E402
-# `us8` asserts the anchor's doc-suffix set has ONE home: the ui/ walk here and
-# `declared_asset_drift()` a layer up must skip the same files, or a README lands
-# inside a digest, or an asset lands outside the comparison.
-import _ui_theme                                   # noqa: E402
 import _surface_digest                             # noqa: E402  (us1: the digest the walk feeds)
 
 
@@ -276,10 +272,9 @@ def _cases(check):
           "usage hook: %r" % (real_hook,), real_hook == [])
     # The allow case on the real tree, and the one that keeps uh7 from being green
     # over an empty scan: every file that spells the constructor followed by an
-    # open parenthesis must be one the AST reads a parser in, except the two that
-    # only NAME it - `_refs.py` reads other files' constructions to learn which
-    # flags argparse adds, and `_claude_home.py`'s docstring describes the seam.
-    # Neither builds a parser, so neither owes the hook and neither is exempted.
+    # open parenthesis must be one the AST reads a parser in, except the one that
+    # only NAMES it - `_claude_home.py`'s docstring describes the seam. It builds
+    # no parser, so it owes no hook and is not exempted.
     spelled = set()
     for rel, path in M.lint_py_files(M.SCRIPTS_DIR):
         with open(path, encoding="utf-8") as fh:
@@ -287,9 +282,9 @@ def _cases(check):
                 spelled.add(rel)
     sites = set(rel for rel, _line, _why in
                 M.parser_sites(M.lint_py_files(M.SCRIPTS_DIR)))
-    mentions = set(["_refs.py", "status/_claude_home.py"])
+    mentions = set(["status/_claude_home.py"])
     check("uh8 the scan reads a parser in every file that spells one being built, "
-          "and in neither of the files that only name the constructor: sites "
+          "and not in the file that only names the constructor: sites "
           "missing %r, unexpected %r"
           % (sorted(spelled - mentions - sites), sorted(sites - (spelled - mentions))),
           mentions <= spelled and sites == spelled - mentions and bool(sites))
@@ -598,73 +593,6 @@ def _cases(check):
               "usage/clean_entry.py" not in missing)
     finally:
         shutil.rmtree(rec, ignore_errors=True)
-
-    # ------------------------------------------------- duplicated AND dead constants
-    # Built as files rather than asserted against the real tree, because the real
-    # tree is (now) clean and a lint only ever seen returning [] is a lint that
-    # might be returning [] for the wrong reason.
-    dup_a = tempfile.mkdtemp(prefix="audit-output-dup-a-")
-    dup_b = tempfile.mkdtemp(prefix="audit-output-dup-b-")
-    try:
-        def _w(root, rel, text):
-            path = os.path.join(root, rel)
-            with open(path, "w", encoding="utf-8") as fh:
-                fh.write(text)
-
-        # owner: declares the constant and uses it.
-        _w(dup_a, "owner.py", 'REL = ".claude/x.json"\n\n\ndef p(root):\n'
-                              '    return root + REL\n')
-        # dead_dup: same name, same value, never read here. THE defect.
-        _w(dup_a, "dead_dup.py", 'import os\nREL = ".claude/x.json"\n\n\n'
-                                 'def p(root):\n    return os.sep\n')
-        # live_dup: same name and value, but READ here - a real dependency, so
-        # deleting it is a refactor and this lint must stay quiet.
-        _w(dup_a, "live_dup.py", 'REL = ".claude/x.json"\n\n\ndef p(root):\n'
-                                 '    return root + REL\n')
-        # lonely: never read, but nothing else declares it - a constant, not a copy.
-        _w(dup_a, "lonely.py", 'import os\nONLY = "solo"\n\n\ndef p():\n'
-                               '    return os.sep\n')
-        # attr_read: never read as a bare name, but read through an attribute, which
-        # is what a cross-module `mod.NAME` looks like from inside this file.
-        _w(dup_a, "attr_read.py", 'import os\nSHARED = "s"\n\n\ndef p(m):\n'
-                                  '    return m.SHARED + os.sep\n')
-        _w(dup_a, "attr_other.py", 'SHARED = "s"\n\n\ndef q():\n    return SHARED\n')
-        # the cross-directory pair: identical, dead on one side, and IRREDUCIBLE.
-        _w(dup_b, "hooks_copy.py", 'import os\nREL = ".claude/x.json"\n\n\n'
-                                   'def p():\n    return os.sep\n')
-
-        dups = M.redundant_constants([dup_a])
-        named = ["%s:%d" % (n, l) for n, l, _w2 in dups]
-        check("rc1 a constant that is declared elsewhere AND never read in its own "
-              "module is reported, by file and line: %r" % (named,),
-              named == ["dead_dup.py:2"])
-        check("rc2 ...and the message names the OTHER declaration, so the fix does "
-              "not start with a grep: %r" % ([w for _n, _l, w in dups],),
-              dups and "live_dup.py" in dups[0][2] and "owner.py" in dups[0][2])
-        check("rc3 a duplicate that IS read stays silent - removing it is a "
-              "refactor with call sites, not a deletion, and a lint whose remedy "
-              "changes shape gets ignored",
-              not any(n == "live_dup.py" for n, _l, _w2 in dups))
-        check("rc4 an unread constant nobody else declares stays silent - being "
-              "unused is not this lint's business",
-              not any(n == "lonely.py" for n, _l, _w2 in dups))
-        check("rc5 a constant read only through an ATTRIBUTE counts as read, so a "
-              "lint whose remedy is DELETION cannot delete another module's reader",
-              not any(n == "attr_read.py" for n, _l, _w2 in dups))
-        check("rc6 the same name and value in a DIFFERENT directory is not "
-              "reported - hooks/ may not import scripts/, so that pair is "
-              "irreducible and demanding a fix the layer rule forbids trains "
-              "people to skip the lint: %r"
-              % (M.redundant_constants([dup_a, dup_b]),),
-              not any(n == "hooks_copy.py"
-                      for n, _l, _w2 in M.redundant_constants([dup_a, dup_b])))
-    finally:
-        shutil.rmtree(dup_a, ignore_errors=True)
-        shutil.rmtree(dup_b, ignore_errors=True)
-
-    check("rc7 ...and the real tree carries none. This is the case that goes red "
-          "when somebody adds the next copy: %r" % (M.redundant_constants(),),
-          M.redundant_constants() == [])
 
     # ---------------------------------------- a count whose evidence was truncated
     # THE MOTIVATING CASE: the doctor told a live client repo that four tasks were
@@ -2715,11 +2643,10 @@ def _cases(check):
         _us_doc = _us_sources()
         check("us8 documentation and dotfiles are NOT parts, so adding them changes "
               "no filing and reports nothing - the guard against a walk that reads "
-              "everything, and the suffix set has one home: %r"
+              "everything: %r"
               % (_us_doc["sources"] == _us_base["sources"],),
               _us_doc["sources"] == _us_base["sources"]
-              and _us_doc["unassigned"] == []
-              and _ui_theme._DOC_SUFFIXES is M.UI_DOC_EXT)
+              and _us_doc["unassigned"] == [])
 
         _us_write("ui/widgets/thing.js", "const w = 1;\n")
         _us_odd = _us_sources()

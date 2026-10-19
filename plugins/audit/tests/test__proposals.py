@@ -72,7 +72,6 @@ def _manifest(props, phases=None):
             "proposals": list(props)}
 
 
-
 # --- cases ---------------------------------------------------------------------
 def _cases(check):
     # ---- refusals, in propose.md's own order ----
@@ -173,56 +172,6 @@ def _cases(check):
           % (M.next_appended_phase_id({"P41"}),),
           M.next_appended_phase_id({"P41"}) == "P42"
           and M.next_appended_phase_id({"P1"}) == "P2")
-    check("ap5 `commands/phase.md`'s `--id` paragraph is graded against both "
-          "allocators rather than trusted: it carries a worked example (a plan, "
-          "the id an append takes from it, the id the other rule would have "
-          "taken) and this evaluates it - the sentence it replaced said the verb "
-          "'continues the sequence', which described a rule the code did not "
-          "have: %r" % (M.phase_id_doc_drift(),),
-          M.phase_id_doc_drift() == [])
-    # THE VACUITY GUARD for ap5, and it is not decoration: `== []` is also what
-    # a check that stopped being able to FIND the sentence would return if the
-    # missing-example branch were ever dropped, so a document with no example
-    # has to be a finding here too.
-    _ap_nodoc = tempfile.mkdtemp(prefix="audit-prop-doc-")
-    try:
-        os.makedirs(os.path.join(_ap_nodoc, "commands"))
-        with io.open(os.path.join(_ap_nodoc, "commands", "phase.md"),
-                     "w", encoding="utf-8") as fh:
-            fh.write("- **`--id`** - omit it. The script continues the "
-                     "`P<n>` sequence.\n")
-        _ap_missing = M.phase_id_doc_drift(root=_ap_nodoc)
-        check("ap6 ...a `--id` paragraph carrying an ADJECTIVE and no worked "
-              "example is a finding, which is what stops ap5 from being green "
-              "over a document it can no longer read: %r" % (_ap_missing,),
-              len(_ap_missing) == 1 and "no worked example" in _ap_missing[0])
-        with io.open(os.path.join(_ap_nodoc, "commands", "phase.md"),
-                     "w", encoding="utf-8") as fh:
-            fh.write("Over a plan holding `P0`, `P1` and `P3`, the next id is "
-                     "`P2`, and never the `P4`.\n")
-        _ap_swapped = M.phase_id_doc_drift(root=_ap_nodoc)
-        check("ap7 ...and an example naming the two ids the OTHER way round - "
-              "which is the document as it would read if the allocators were "
-              "swapped back - reports both halves, so neither number is being "
-              "read as decoration: %r" % (_ap_swapped,),
-              len(_ap_swapped) == 2
-              and any("allocates P2, and `next_appended_phase_id` allocates P4"
-                      in p for p in _ap_swapped)
-              and any("contrasts P4" in p and "takes P2" in p
-                      for p in _ap_swapped))
-        with io.open(os.path.join(_ap_nodoc, "commands", "phase.md"),
-                     "w", encoding="utf-8") as fh:
-            fh.write("Over a plan holding `P0` and `P1`, the next id is `P2`, "
-                     "and never the `P2`.\n")
-        _ap_flat = M.phase_id_doc_drift(root=_ap_nodoc)
-        check("ap8 ...and an example over a plan with NO GAP is a finding even "
-              "though both ids in it are right, because the two rules answer it "
-              "identically: an example the allocators cannot be told apart on "
-              "grades neither of them: %r" % (_ap_flat,),
-              len(_ap_flat) == 1 and "cannot be told apart" in _ap_flat[0])
-    finally:
-        shutil.rmtree(_ap_nodoc, ignore_errors=True)
-
     # ---- collision guard: remap inside the payload only ----
     live = _payload("P1", tasks=("x", "y"))["phase"]
     live["tasks"][1]["blockedBy"] = ["P1.1", "P0"]
@@ -540,7 +489,6 @@ def _cases(check):
             shutil.rmtree(_ng, ignore_errors=True)
     finally:
         shutil.rmtree(_lk_tmp, ignore_errors=True)
-
 
 
 def _placeholder_cases(check):

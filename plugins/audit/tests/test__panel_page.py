@@ -1485,8 +1485,8 @@ def _cases(check):
     # that the Overview's priority sort is one subtraction of a server-computed
     # rank and holds no rule of its own. It is NOT a claim that the sort works -
     # `tools/ui-tests/phase-order.test.mjs` runs that, and the shape a second
-    # comparator would take is caught by name by `_deps.SHARED_CONCERNS`'s
-    # "phase execution order" row. Counted rather than found: `index()` reads the
+    # comparator would take is nobody's check now - the registry row that caught it
+    # by name was retired. Counted rather than found: `index()` reads the
     # first hit, and a second sort appended elsewhere would be two answers to one
     # question with this assertion still green.
     check("pri8 the Overview sorts phases by `porder` - the number "

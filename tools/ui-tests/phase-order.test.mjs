@@ -277,8 +277,8 @@ describe('the panel proofs above can fail', () => {
     // The restored copy is CORRECT today, so the differential is blind to it.
     expect(rows.slice().sort(cmp).map((r) => r.id))
       .toEqual(orderFromSortKeys(PLAN));
-    // Only the source property sees it. `_deps.SHARED_CONCERNS`' "phase
-    // execution order" row fails the build on the same shape anywhere in ui/.
+    // Only the source property sees it. The registry row that once failed the
+    // build on the same shape anywhere in ui/ was retired, so this is the one check.
     expect(text).toContain('priority');
     expect(text).toContain('null');
   });

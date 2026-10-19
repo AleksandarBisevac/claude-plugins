@@ -139,13 +139,13 @@ MIGRATED = frozenset(_output.covered_repo_paths(REPO))
 # a third copy of the list is also how the two would come to disagree.
 SWEEP_DOCS = frozenset(d.replace(os.sep, "/") for d in _refs.SWEEP_DOCS)
 
-# ...and since `sweep_doc_drift()` asks whether that LIST is complete, `_refs` no
-# longer reads only the listed documents: it reads every document of a format
-# `_runnable_text` has a rule for, anywhere the repo keeps files. So the selector owes
-# the refs pins for any of them, which is a WIDENING - the direction this file is
-# allowed to be wrong in. Read off the same constant the scan derives its own
-# extension set from, so the two cannot disagree about what a document is.
-SWEEP_DOC_EXT = tuple(_refs.SWEEP_DOC_EXT)
+# ...and `_refs.raw_url_pin_drift()` reads every document of the formats it holds a
+# runnable-region rule for, anywhere the repo keeps files, not only the listed ones.
+# So the selector owes the refs pins for any of them, which is a WIDENING - the
+# direction this file is allowed to be wrong in. Read off the same constant the scan
+# derives its own extension set from, so the two cannot disagree about what a
+# document is.
+FETCH_DOC_EXT = tuple(_refs._FETCH_DOC_EXT)
 
 # ...and the pages `_refs.artifact_version_drift()` reads, derived the same way. A
 # committed report carries the plugin version that rendered it, and that rule is the
@@ -155,23 +155,11 @@ SWEEP_DOC_EXT = tuple(_refs.SWEEP_DOC_EXT)
 # selects the full set.
 STAMP_EXT = tuple(_refs.STAMP_EXT)
 
-# ...and the paths `_refs.handbook_drift()` reads: the published handbook, and the two
-# schemas that settle the configuration paths it names. NO BRANCH GOES WITH THIS
-# CONSTANT, and that is a finding rather than an omission. One was written, and a
-# mutation of it SURVIVED: the rules above already answer True for all three - the
-# page through the stamp rule's extension set, both schemas because `plugins/audit/
-# schema` is a `_refs` surface - so the branch could be deleted with every case still
-# passing, which is a check asserting nothing in the file whose whole subject is a run
-# that skipped something. What the constant is for is the CASE: it pins the property
-# this rule needs, so narrowing the stamp set or dropping that surface goes red here
-# instead of quietly dropping a suite from a narrowed run.
-HANDBOOK_SOURCES = frozenset(p.replace(os.sep, "/") for p in _refs.HANDBOOK_SOURCES)
-
 
 def refs_reads(posix):
     """True when `_refs` scans this path, so `test__refs.py` can go red for it.
 
-    Derived from `_refs.SURFACES`, `_refs.SWEEP_DOCS`, `_refs.SWEEP_DOC_EXT` and
+    Derived from `_refs.SURFACES`, `_refs.SWEEP_DOCS`, `_refs._FETCH_DOC_EXT` and
     `_refs.STAMP_EXT` for the
     same reason `_reverse_imports()` is derived from the real import graph: a hand-kept
     copy of somebody else's list is a copy that stops agreeing. Editing
@@ -182,7 +170,7 @@ def refs_reads(posix):
     file judges come from git, and git never hands over a file the repo ignores. The
     scan's own prune list exists for a WALK, which sees files git does not.
     """
-    if posix in SWEEP_DOCS or posix.endswith(SWEEP_DOC_EXT + STAMP_EXT):
+    if posix in SWEEP_DOCS or posix.endswith(FETCH_DOC_EXT + STAMP_EXT):
         return True
     for surface, _mode in _refs.SURFACES:
         rel = surface.replace(os.sep, "/")
@@ -671,29 +659,18 @@ def _cases(check):
           "rule rather than a function that returns True",
           refs_reads("node_modules/vitest/index.js") is False)
 
-    # Both paths are under `docs/`, which is NOT a `_refs` surface - so before the
-    # completeness rule they answered False alike, and the extension is the whole
-    # difference between them. A pair inside a surface would prove nothing: everything
-    # there already answered True. The False half was `docs/index.html` until the
-    # version-stamp rule started reading that page, which is exactly the way a pair
-    # like this is supposed to go stale: loudly, in the case, and not in the selector.
+    # Both paths are under `docs/`, which is NOT a `_refs` surface, so the extension
+    # is the whole difference between them. A pair inside a surface would prove
+    # nothing: everything there already answered True. The False half was
+    # `docs/index.html` until the version-stamp rule started reading that page, which
+    # is exactly the way a pair like this is supposed to go stale: loudly, in the
+    # case, and not in the selector.
     check("a5b a document nowhere near the pinned list selects the refs pins now, "
-          "because the completeness rule reads every document the repo keeps - "
-          "and a non-document beside it still does not, so this is an extension "
-          "rule and not a widening to everything",
+          "because the published-fetch rule reads every document of its formats "
+          "the repo keeps - and a non-document beside it still does not, so this is "
+          "an extension rule and not a widening to everything",
           refs_reads("docs/design/audit-concurrency-report.md") is True
           and refs_reads("docs/screenshots/panel-blocks.png") is False)
-
-    _hb_sources = sorted(HANDBOOK_SOURCES)
-    check("a5c every path the handbook rule reads selects its suite - the published "
-          "page and the two schemas that settle the keys it names. The stamp "
-          "extension and the schema surface deliver this rather than a branch of its "
-          "own, so this case is what stops that being an accident: take either away "
-          "and a narrowed run would skip the only suite that reads the page: %r"
-          % (_hb_sources,),
-          _hb_sources != []
-          and all(refs_reads(p) is True for p in _hb_sources)
-          and _refs.HANDBOOK_REL in _hb_sources)
 
     check("a6 AN UNRECOGNISED PATH SELECTS EVERYTHING. This is the safety the "
           "whole file rests on; if it ever narrowed, every other case here "

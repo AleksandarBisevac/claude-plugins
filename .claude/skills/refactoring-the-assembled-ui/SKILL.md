@@ -103,19 +103,21 @@ What each cut had to solve, kept because the next one will meet the same shapes:
   is now `type="module"`, and the module scope does that job natively.)
 - **Byte-identity cannot see a part that nothing loads.** Both sides of `assembled == parts
   joined` are built from the same tuple, so dropping an entry shrinks both and the check stays
-  green while the feature silently stops shipping. `declared_asset_drift()` compares the declared
-  list against the DIRECTORY; the case that compares it against what the page is BUILT from is a
-  separate one, and it is the only thing that fails. Write it, and prove it red by deleting an
-  entry.
+  green while the feature silently stops shipping. Nothing compares the declared list against
+  the DIRECTORY any more (that lint was retired), so a part added under `ui/` and never declared
+  is the author's to catch; the case that compares the declared list against what the page is
+  BUILT from is a separate one, and it is the only thing that fails when a declared part is never
+  joined. Write it, and prove it red by deleting an entry.
 - **A guard that reads a part by path is a guard bound to a filing decision.**
   `tools/capture-screenshots.mjs` read `ui/panel.js` literally, with an argument at the site for
   why that could not go stale (a UI asset is not a script, so it cannot be relabelled). The
   argument was sound about relabelling and silent about the file simply ceasing to exist. It asks
   `_panel_ui.py` for the assembled page now, which was its subject all along.
-- **Keep every part under the 400-line navigability threshold, or give it two section markers.**
-  `_deps.ui_navigability_violations()` wants `max(2, ceil(lines/400))`. Cutting at author seams
-  alone left three parts over 400 with one marker each, so those needed one further cut at a
-  top-level boundary — taking the leading comment block WITH the function it introduces.
+- **Keep every part under the 400-line navigability threshold, or give it `max(2, ceil(lines/400))`
+  section markers.** Nothing enforces this for `ui/` assets - the lint that did was retired - so it
+  is the author's to keep. Cutting at author seams alone left three parts over 400 with one
+  marker each, so those needed one further cut at a top-level boundary — taking the leading
+  comment block WITH the function it introduces.
 - `node --check` per part is possible after a split, and CI does it with `find`, not a glob:
   `ui/*.js` now matches nothing at all.
 
@@ -260,25 +262,19 @@ the same feature existed twice and could not be shared.
 **Do not read a list of those pairs here.** One stood in this paragraph naming the heatmap
 calendars long after they had become one `shared/calendar.js`, and naming the blob downloaders
 after the same thing had happened to them — a list of duplications is exactly the prose that goes
-stale the moment somebody acts on it. `_deps.SHARED_CONCERNS` is the live register, one row per
-concern with its home, a needle and a cap, and `shared_concern_violations()` fails the build when
-a row spreads past that cap:
+stale the moment somebody acts on it. The register that listed each concern with its home and a
+cap (`_deps.SHARED_CONCERNS`) was retired, so nothing lists them now; read the code, and use
+`node tools/find-shared-candidates.mjs` to scout for repeated logic.
 
-```bash
-python3 -c "import sys;sys.path.insert(0,'plugins/audit/scripts');import _deps
-print('\n'.join('%-28s %s' % (c, h or '(not extracted)') for c,h,_n,_a,_w in _deps.SHARED_CONCERNS))"
-```
-
-What is worth carrying here is the SHAPE the register cannot: a duplication is dangerous when the
+What is worth carrying here is the SHAPE a register cannot: a duplication is dangerous when the
 two copies are free to disagree and nothing compares them. Both of the heatmap's pairs were that.
 The calendar's two copies happened to agree — the danger was that nothing said they had to. The
 **row builders** were worse: the branch choosing between them was wrong in both surfaces at once,
 month falling in with year and all, so Month drew Week's picture with every cell multiplied, and
 two identical implementations of a defect read exactly like a settled decision. `isDark()` is
-still a pair (`panel/core.js` and `report/page-state.js`), and it has a row now — capped at
-what exists rather than at zero, because the extraction is the change the row is waiting for.
-Its two copies are not even identical: the report guards `window.matchMedia` before calling it
-and the panel does not, which is the disagreement a register exists to surface.
+still a pair (`panel/core.js` and `report/page-state.js`), waiting for its extraction. Its two
+copies are not even identical: the report guards `window.matchMedia` before calling it and the
+panel does not, which is exactly the disagreement a duplicate hides.
 
 Rules going forward:
 
@@ -293,17 +289,17 @@ Rules going forward:
   option:
 
   1. add the part to `plugins/audit/scripts/ui/shared/`, at column 0;
-  2. list it in `_ui_theme.UI_ASSETS` (sorted) — `declared_asset_drift()` checks both ways;
+  2. list it in `_ui_theme.UI_ASSETS` (sorted) — nothing checks the list against the directory, so
+     a part left out assembles into no page;
   3. add it to **both** `_report_ui._SCRIPT_PARTS` and `_panel_ui._JS_PARTS`, before every
      surface part — a case in each assembly suite asserts that precedence, which is what
      makes "a shared part may not call a surface helper" mechanical;
   4. give it a row in `ui/shared/README.md`.
 
-  The rule is enforced, not requested: `_deps.SHARED_CONCERNS` lists each concern
-  with its home and a cap on copies outside it, and `shared_concern_violations()`
-  fails the build when a second implementation appears. Add a row when you extract
-  something; add a row with today's count when you find duplication you are not
-  extracting yet, and the cap can then only go down.
+  The rule is requested, not enforced: the registry that capped copies outside a concern's
+  home was retired, so a second implementation is found by review. When you find duplication you
+  are not extracting yet, say so where the next reader will look - and if you count copies, count
+  with a cap and never an equality, which forbids the helper that would remove them.
 
   Check the name is free on **both** surfaces first — one scope per page, and the report's
   block is a module, so a duplicate top-level declaration is a `SyntaxError`, not a shadowing

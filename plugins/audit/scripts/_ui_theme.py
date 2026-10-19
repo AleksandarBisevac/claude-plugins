@@ -23,7 +23,7 @@ than of somebody remembering.
 
 The CSS lint helpers live here too, next to the stylesheet they police — and so
 does the read that puts `scripts/ui/` in front of them (`UI_DIR`, `read_asset`,
-`cr_violations`, `unreadable_assets`). `_report_ui` and `_panel_ui` are layer-mates
+`unreadable_assets`). `_report_ui` and `_panel_ui` are layer-mates
 and cannot import each other, so this is the lowest layer both can reach:
 one io.open contract for the assets, instead of two copies kept in step by hand.
 
@@ -874,24 +874,6 @@ def list_themes(project, home=None):
 UI_DIR = _output.UI_DIR
 
 
-# Every file `scripts/ui/` holds, DECLARED once. Three suites used to carry their
-# own copy of this tuple, and splitting `report.js` into ordered parts turned all
-# three red at once — which is the cheap version of the failure. The expensive
-# version is a part nobody declares: the page would assemble without it and every
-# substring pin would go on passing against a script missing a whole feature.
-#
-# `ua_declared_assets()` compares this against the directory in BOTH directions,
-# so a new part that is not declared fails, and a declared name that no longer
-# exists fails too.
-# Documentation is excluded BY NAME rather than assets being allowed by name.
-# A whitelist makes every new kind of file default to unwatched; this way a part
-# with an unfamiliar extension is reported instead of ignored, which is the loud
-# direction.
-# From the anchor for the same reason `UI_DIR` is: the screenshot rule's walk skips
-# documentation too, and a suffix honoured by one of the two walks and not the other
-# would be a README inside a digest, or an asset outside this comparison.
-_DOC_SUFFIXES = _output.UI_DOC_EXT
-
 # THE CASCADE ORDER of the report's stylesheet parts, declared once. Two rules
 # of equal specificity are decided by which is read last, so this sequence is
 # behaviour and not filing: the shell before what sits in it, and the print
@@ -955,6 +937,13 @@ PANEL_CSS_PARTS = (
     "panel-css/proposals.css",
 )
 
+# Every file `scripts/ui/` holds, DECLARED once. Three suites used to carry their
+# own copy of this tuple, and splitting `report.js` into ordered parts turned all
+# three red at once. NOTHING COMPARES THIS WITH THE DIRECTORY ANY MORE - the lint
+# that did, in both directions, was retired - so a part added under `ui/` is
+# declared here by its author, and the failure that leaves is the quiet one: the
+# page assembles without the part and every substring pin goes on passing against
+# a script missing a whole feature. Documentation beside the parts is not an asset.
 UI_ASSETS = (
     "panel-css/app-shell.css",
     "panel-css/appearance-table.css",
@@ -1039,39 +1028,6 @@ UI_ASSETS = (
 )
 
 
-def declared_asset_drift(directory=None):
-    """(missing_from_disk, undeclared_on_disk) -- UI_ASSETS against the directory.
-
-    Both directions, because they fail differently: a declared name that is gone
-    breaks every reader at import, loudly; an UNDECLARED file on disk is the
-    quiet one -- the page assembles without it and the substring pins keep
-    passing against a script that lost a feature.
-    """
-    root = UI_DIR if directory is None else directory
-    walk_errors = []
-    try:
-        on_disk = set()
-        # `onerror` is the whole guard: os.walk swallows an unreadable directory
-        # by default, yielding nothing and raising nothing, so a missing tree
-        # would come back as "no assets" and read as agreement.
-        for base, _dirs, files in os.walk(root, onerror=walk_errors.append):
-            rel = _output.posix_rel(base, root)
-            for f in files:
-                # Assets only. A directory may also carry documentation, which
-                # is never assembled into a page and must not read as an
-                # undeclared part; the extension is what separates the two.
-                if f.startswith(".") or f.endswith(_DOC_SUFFIXES):
-                    continue
-                on_disk.add(f if rel == "." else (rel + "/" + f))
-    except OSError:
-        # Naming it beats returning the same empty pair a clean directory returns.
-        return (list(UI_ASSETS), [])
-    if walk_errors:
-        return (["<unreadable: %s>" % (walk_errors[0],)], [])
-    declared = set(n for n in UI_ASSETS if not n.endswith(_DOC_SUFFIXES))
-    return (sorted(declared - on_disk), sorted(on_disk - declared))
-
-
 def read_asset(name, directory=None):
     """One `ui/` asset, decoded as utf-8 with NO line-ending translation.
 
@@ -1087,36 +1043,14 @@ def read_asset(name, directory=None):
     pass against bytes no browser ever receives. `.gitattributes` pins
     `plugins/audit/scripts/ui/** text eol=lf` for the other half of the same
     contract: the attribute keeps CRLF from happening, this flag keeps it VISIBLE
-    when it does (see `cr_violations`).
+    when it does: the text arrives with its "\\r" still in it, where every pin that
+    compares it sees the byte. No lint checks for one any more.
 
     `directory` exists so a test can point the reader at a fixture tree; every
     caller in the tree takes the default."""
     root = UI_DIR if directory is None else directory
     with io.open(os.path.join(root, name), "r", encoding="utf-8", newline="") as fh:
         return fh.read()
-
-
-def cr_violations(assets):
-    """Given [(name, text), ...], the names whose text carries a "\\r".
-
-    `read_asset` translates nothing, so a CRLF checkout arrives here as a literal
-    "\\r" in the loaded text rather than as nothing at all — which is the whole
-    point of reading that way. A pure function of the pairs it is handed, with no
-    filesystem access, so a test can feed it fixture content without touching
-    UI_DIR.
-
-    An empty `assets` yields an empty list, and that means "nothing was checked",
-    not "every asset is LF". A caller that built the list by filtering would have to
-    say the set was empty itself.
-
-    WHO ASKS THIS, AND WHY THIS PARAGRAPH USED TO NAME CALLERS IT DID NOT HAVE.
-    It read "both callers pass a fixed literal list"; measured, this
-    function had no caller anywhere outside its own suite — the rule was stated,
-    exercised over fixtures, and never applied to a shipped asset. `ua8b` asks it
-    live over `UI_ASSETS` now, and `ua8c` asserts that set is not empty, which is
-    the distinction above made about the live call rather than left to a caller to
-    remember."""
-    return [name for name, text in assets if "\r" in text]
 
 
 def unreadable_assets(names, directory=None):

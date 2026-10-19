@@ -10,14 +10,12 @@ them was ever checked against the filesystem:
   * `validate-manifest.py` compares `fileIndex` against task `files` bidirectionally and
     never stats anything, so both halves can agree about a file that is gone;
   * `_deps.guide_enumeration()` matches by BASENAME, so `### plugins/audit/scripts/
-    _areas.py` keeps passing on the day `_areas.py` moves into a subdirectory;
-  * `_help.source_drift()` is the only `os.path.isfile` on a script path anywhere in the
-    tree, and it covers three citations.
+    _areas.py` keeps passing on the day `_areas.py` moves into a subdirectory.
 
 So a path can rot today, silently, and a restructure that moves files is exactly the
-event that would rot many at once. Same shape as `_areas.rule_drift()` and
-`_deps.map_drift()`: a document makes a claim, the code says what is true, and the two
-are compared every run instead of trusted.
+event that would rot many at once. Same shape as `_deps.map_drift()`: a document
+makes a claim, the code says what is true, and the two are compared every run
+instead of trusted.
 
 EVERY MATCH IS RETURNED, NOT ONLY THE BROKEN ONES. `referenced_paths()` is the count, and
 the count is itself a check: a regex that quietly stops matching reports "0 missing",
@@ -50,18 +48,10 @@ two are rendered from.
 
 THE SUBJECT GREW, AND IT GREW ALONG ONE LINE: what one file CLAIMS about another, checked
 against the tree. A document naming a script that is gone is the original case; a document
-whose sweep command names a retired glob, a published `curl` pinned to a moving ref, and a
-link pointing at a page nobody kept are the same shape. `doc_link_drift()` is the newest and
-the one that needed no precedent at all: nothing here had ever asked whether a document is
-*reachable*, so a page could be added, linked once, and silently orphaned by the next edit to
-whatever linked it.
-
-`handbook_drift()` is the same shape asked of a PUBLISHED page, and it is here because
-`docs/handbook.html` is the one published artifact with no generator behind it: every
-other one is compared with something that regenerates it, and this one could assert
-what the code had stopped doing and stay green. It is not a byte comparison and does
-not want to be - what it asks is whether the verbs, options and schema paths the page
-tells a reader to type are still there, and whether its own internal links land.
+whose sweep command names a retired glob and a published `curl` pinned to a moving ref are
+the same shape. The checks that once held a document graph's links and the published
+handbook against the product were retired: nothing compares those any more, so a link
+or a verb a page names is its author's to keep true.
 
 A PATH SPLIT ACROSS STRING LITERALS IS REPORTED, BECAUSE THE PER-LINE SCAN CANNOT SEE IT.
 Matching is per line, so a path assembled from two adjacent literals - or two literals
@@ -99,11 +89,9 @@ fixture path over there is built from `PLUGIN_REL`; the surface changed name
 
 import ast
 import hashlib
-import html
 import io
 import json
 import os
-import posixpath
 import re
 import subprocess
 import sys
@@ -839,90 +827,6 @@ def tool_basename_drift(repo_root=None):
             "staleFixtures": stale}
 
 
-# --- absolute paths used to REACH a file ----------------------------------------
-# The rule is narrower than "no absolute path anywhere", and the narrowness is the
-# whole design. An absolute path is legitimate as DATA - `validate_registry` is
-# handed `{"root": "/Users/me/proj"}` precisely to check that it warns, and the
-# guard suites classify bash strings full of `/tmp/...` - and it is legitimate as a
-# SYSTEM location, which is why `capture-demo-gif.py` carries a list of font paths
-# under `/usr/share/fonts`. What is never legitimate is reaching a file with one:
-# it encodes one machine's layout into a repository other people check out.
-#
-# So the check is SYNTACTIC POSITION, not the literal. A path that appears as a
-# module specifier or as the first argument of a read/write call is a reach; the
-# same string inside a list, a dict or a test fixture is not. That distinction is
-# what gives this rule zero false positives on the fixtures above, and it is also
-# its limit: a reach through a VARIABLE is invisible here, exactly as
-# `tool_basename_drift` cannot see a move. Said rather than implied.
-#
-# This repo already forbids the Python half of the problem by a stronger rule -
-# `_output.depth_sensitive_paths()` lets no `.py` under `scripts/` read `__file__`
-# outside the pinned preamble, so no module may derive its own location at all.
-# There was no equivalent for JavaScript, and that gap is what this closes.
-# The examples below deliberately write the forbidden shape as `<ABS>` rather than
-# spelling a leading slash inside quotes. This function reads TEXT, comments
-# included - as `tool_basename_drift` does and for its reason - so a comment that
-# showed the real literal would be reported by the rule it documents. That is the
-# same trap `test__refs.py` avoids by BUILDING every fixture path from
-# `M.PLUGIN_REL` instead of writing it, and it caught this file on its first run.
-_REACH_RES = (
-    # `import x from '<ABS>'`, `export … from "<ABS>"`, `import('<ABS>')`
-    re.compile(r"""\bfrom\s+(['"])(?P<p>[^'"]+)\1"""),
-    re.compile(r"""\bimport\s*\(\s*(['"])(?P<p>[^'"]+)\1"""),
-    re.compile(r"""\brequire\s*\(\s*(['"])(?P<p>[^'"]+)\1"""),
-    # Node's file API and Python's, first argument only.
-    re.compile(r"""\b(?:readFileSync|writeFileSync|readFile|writeFile|createReadStream|"""
-               r"""createWriteStream)\s*\(\s*(['"])(?P<p>[^'"]+)\1"""),
-    re.compile(r"""\b(?:io\.)?open\s*\(\s*(['"])(?P<p>[^'"]+)\1"""),
-)
-
-# A reach may be absolute only with a reason recorded here, the way EXCLUDED does
-# it. Empty today, and an entry is a decision rather than a convenience.
-REACH_ALLOWED = ()
-
-_REACH_SURFACES = ("tools", "plugins/audit/scripts", "plugins/audit/hooks",
-                   "plugins/audit/tests")
-
-
-def absolute_reach_violations(repo_root=None):
-    """{"violations": [(rel, lineno, path)], "checked": n, "files": n}.
-
-    A reach is a module specifier or the first argument of a read/write call. An
-    absolute one hard-codes one machine's layout into a checkout, so it fails here
-    unless `REACH_ALLOWED` records a reason.
-
-    `checked` counts EVERY reach found, relative ones included, and that is the
-    check on the check rather than a statistic: an empty `violations` list means one
-    thing when hundreds of reaches were examined and something entirely different
-    when the regexes matched nothing at all - which is what a typo in one of them
-    would look like, and it would look exactly like a clean tree.
-    """
-    root = repo_root if repo_root is not None else REPO_ROOT
-    allowed = set(REACH_ALLOWED)
-    violations = []
-    checked = 0
-    files = 0
-    for surface in _REACH_SURFACES:
-        for rel_file in _surface_files(root, surface, BARE):
-            path = os.path.join(root, rel_file.replace("/", os.sep))
-            try:
-                with open(path, "r", encoding="utf-8", errors="replace") as fh:
-                    lines = fh.readlines()
-            except (IOError, OSError):
-                # Naming it beats skipping it: an unreadable file is not a clean one.
-                violations.append((rel_file, 0, "<unreadable>"))
-                continue
-            files += 1
-            for lineno, line in enumerate(lines, 1):
-                for rex in _REACH_RES:
-                    for match in rex.finditer(line):
-                        spec = match.group("p")
-                        checked += 1
-                        if spec.startswith("/") and spec not in allowed:
-                            violations.append((rel_file, lineno, spec))
-    return {"violations": violations, "checked": checked, "files": files}
-
-
 # --- what a command declares vs what the README says it takes -------------------
 # The args cell ends at an UNESCAPED pipe. Half these rows carry `\\|` inside
 # them (`push [bugs\\|tasks\\|all] ...`), and a lazy `.*?` up to the first `|`
@@ -978,64 +882,6 @@ VERBATIM_RULE_DOC = "reference/manifest-conventions.md"
 VERBATIM_RULE_HEADING = "## The operator's words go in unchanged"
 
 
-# A COMMAND THAT ASKS FOR ITS OUTPUT PRINTED HAS TO SAY WHERE.
-#
-# `commands/status.md` said "Print its stdout verbatim", and a live run read that
-# as discharged: the Bash tool had run, its stdout WAS printed - to the tool
-# result - so the reply said "the report above" and the operator saw nothing. In
-# Claude Code a tool result is collapsed behind the tool call, so "above" is a
-# click away and, to the reader, the report never arrived.
-#
-# Nothing anywhere in the plugin said tool output is invisible to the user, and
-# the same phrasing sits in a dozen command docs, so the same failure was
-# available to all of them.
-#
-# WHY A PINNED SENTENCE RATHER THAN A DOZEN INDEPENDENT EDITS. Repeating a rule in
-# a dozen files is what this repository calls one copy and eleven lies.
-# `_areas.rule_drift` is the house answer to a rule that must appear in several
-# documents: one literal, a table of the documents that owe it, and a check that
-# they still carry it. This is that, for the one instruction whose failure mode is
-# silent - the operator sees nothing and the model believes it delivered.
-RENDER_TRIGGER = "verbatim"
-RENDER_POINTER = "in your own reply"
-# The docs whose OUTPUT is the deliverable. A doc that mentions `verbatim` about
-# something else - `bug.md` embedding a repro into a description, `layout.md`
-# relaying a lock refusal - owes nothing here, which is why this is a named set
-# rather than every file the word appears in.
-RENDER_DOCS = ("status.md", "doctor.md", "logs.md", "usage.md", "next.md",
-               "phase.md", "propose.md")
-
-
-def render_target_drift(repo_root=None):
-    """{"missing": [command, ...], "checked": n} -- docs that say to print output
-    without saying WHERE it has to go.
-
-    Subset, like `verbatim_rule_drift` beside it: the pointer has to be present
-    and where it sits is the author's business. A doc in the set that stopped
-    saying `verbatim` is not a finding - it has nothing left to qualify - but one
-    that cannot be READ is, because a check that quietly narrowed what it looked
-    at while keeping the claim it makes is this repository's oldest defect.
-    """
-    root = repo_root or REPO_ROOT
-    cdir = os.path.join(root, PLUGIN_REL, "commands")
-    out, checked = [], 0
-    for name in RENDER_DOCS:
-        try:
-            with open(os.path.join(cdir, name), "r",
-                      encoding="utf-8", errors="replace") as fh:
-                text = fh.read()
-        except OSError as exc:
-            out.append("%s <unreadable: %s>" % (name[:-3], exc))
-            continue
-        body = text.split("---", 2)[-1]
-        if RENDER_TRIGGER not in body:
-            continue
-        checked += 1
-        if RENDER_POINTER not in body:
-            out.append(name[:-3])
-    return {"missing": out, "checked": checked}
-
-
 def verbatim_rule_drift(repo_root=None):
     """{"missing": [command, ...], "checked": n, "ruleDoc": bool} -- docs that ask
     a human for text bound for the journal without saying it goes in unchanged.
@@ -1079,94 +925,6 @@ def verbatim_rule_drift(repo_root=None):
     except OSError:
         rule_ok = False
     return {"missing": out, "checked": checked, "ruleDoc": rule_ok}
-
-
-# --- the route a sign-off finding takes -----------------------------------------
-# WHAT WENT WRONG, AND WHY A LINT RATHER THAN A CAREFUL SENTENCE. Sign-off runs when
-# every task in the phase is `done`, and the plan gate opens a file only through a
-# task that is RUNNING - so a fix run spawned off a review finding has nothing open
-# to it whatever the fileIndex says. The route out of that is to create the task and
-# start it, and the document carried that route under a heading naming one CASE of
-# it: a finding in a file no task declares. A reader whose finding sat in a declared
-# file read the whole route as somebody else's and reached for the widening verb
-# instead, which a `done` task accepts while opening nothing - and the fix run was
-# refused on its second file.
-#
-# So two things have to stay true and neither is a matter of wording taste: the
-# route's own line may carry NO condition on which findings take it, and both
-# documents that describe sign-off have to name both steps. A condition is what the
-# reader routes around; a route missing its second step is a reader who creates the
-# task and never starts it, which fails in exactly the same place.
-# `## Phase sign-off` moved out of `reference/orchestrator.md` into its own file, split
-# off so a command that never reaches sign-off does not have to read it - this route
-# lives wherever that section now does, which is `reference/phase-signoff.md`.
-SIGNOFF_ROUTE_DOCS = ("reference/phase-signoff.md", "commands/review.md")
-SIGNOFF_ROUTE_MARK = "gets a NEW TASK"
-# The qualifier that was there, lower-cased for the comparison. It is a SUBSTRING of
-# the route line and nothing else: the paragraph below the route quotes it while
-# explaining what it cost, and a check reading the whole section would convict the
-# repaired document for saying what it repaired.
-SIGNOFF_ROUTE_CONDITION = "task declares"
-SIGNOFF_ROUTE_STEPS = ("/audit:task add", "/audit:run")
-
-
-def route_lines(text):
-    """EVERY line that states the route, in written order.
-
-    All of them rather than the first, and that is not tidiness: this document
-    states the route twice - once where a per-task review hands its findings on,
-    and once in the sign-off section itself - and a check reading only the first
-    would let the second grow the condition back unseen, which is the whole
-    defect. Located by the mark rather than by position, because both lines move
-    when the sections around them are edited.
-    """
-    return [line for line in text.splitlines() if SIGNOFF_ROUTE_MARK in line]
-
-
-def signoff_fix_route_drift(repo_root=None):
-    """{"missing": [(doc, what), ...], "checked": n} -- the two documents that
-    describe phase sign-off, against the route a review finding has to take.
-
-    Three named ways this drifts, one per finding: a document that no longer
-    states the route at all, a route line that has grown a condition on which
-    findings take it, and a document that names the create step without the start
-    step (or the other way round). `checked` is the count, and it is part of the
-    check: a reader that silently stopped opening the files would report nothing
-    missing, which reads exactly like two documents that agree.
-
-    SCOPED TO THE ROUTE LINES, deliberately. The condition it refuses is quoted
-    directly underneath by the paragraph recording what reading it that way cost,
-    and that quotation is the document working rather than drifting - so a version
-    of this check that read the whole section would convict the repair. Every
-    route line is read, not the first: `route_lines` says why.
-    """
-    root = repo_root or REPO_ROOT
-    missing, checked = [], 0
-    for rel in SIGNOFF_ROUTE_DOCS:
-        path = os.path.join(root, PLUGIN_REL, rel.replace("/", os.sep))
-        try:
-            with open(path, "r", encoding="utf-8", errors="replace") as fh:
-                text = fh.read()
-        except OSError as exc:
-            missing.append((rel, "cannot be read: %s" % (exc,)))
-            continue
-        checked += 1
-        lines = route_lines(text)
-        if not lines:
-            missing.append((rel, "does not state the route - nothing in it says a "
-                                 "review finding %s" % (SIGNOFF_ROUTE_MARK,)))
-        for line in lines:
-            if SIGNOFF_ROUTE_CONDITION in line.lower():
-                missing.append((rel, "states the route under a condition (%r) - a "
-                                     "reader whose finding does not meet it reads "
-                                     "the route as somebody else's"
-                                % (SIGNOFF_ROUTE_CONDITION,)))
-        for step in SIGNOFF_ROUTE_STEPS:
-            if step not in text:
-                missing.append((rel, "never names %s - half a route leaves the "
-                                     "reader where the whole one was needed"
-                                % (step,)))
-    return {"missing": missing, "checked": checked}
 
 
 # --- the third word, for a proof that could not be made -------------------------
@@ -1947,184 +1705,6 @@ def command_flag_drift(repo_root=None):
     return {"missing": missing, "checked": checked}
 
 
-# --- a hidden command must stay unreachable only where nothing calls it --------
-# WHAT THE FLAG BUYS AND WHAT IT COSTS. `disable-model-invocation: true` on a
-# command's frontmatter keeps its description out of every session's start-up
-# context and refuses the MODEL's own invocation of it; a human can still type
-# it. That is a real saving for a command nobody but a human ever reaches for -
-# but the same refusal falls on the model's own reach, so hiding a command the
-# pipeline invokes BY NAME - not a document merely naming it, an instruction
-# telling THIS session to run it - would refuse the pipeline's own step the day
-# it takes that path. `reference/phase-signoff.md`'s Phase sign-off does exactly
-# this for the fix loop it opens: invoke `/audit:task add`, then `/audit:run`,
-# rather than reimplementing either command's own dialogue inline.
-#
-# A FENCED CODE BLOCK IS THE LINE, drawn where the documents already draw it.
-# Every plain mention of a command name elsewhere in this tree sits in prose or
-# a single backtick - "point to /audit:init", "/audit:doctor is what says which
-# direction it broke in" - and neither is an instruction to run anything now.
-# The places that actually tell a session to invoke another command put
-# that invocation inside a fenced block, which is the shape this tree already
-# uses for "type this". So a command counts as CALLED when its `/audit:<name>`
-# spelling appears inside a fenced block somewhere under `reference/` or
-# `commands/` - the plugin's own operational surface - and not when it appears
-# in the repository's outer documentation, which shows a command as a worked
-# example for a reader rather than as a step this session takes.
-_CALLING_SUBDIRS = ("reference", "commands")
-# Named apart from the sweep-verification fence pattern further down this file: that one
-# is deliberately narrowed to bash/sh/shell/console tags, while this one has to see every
-# fence regardless of its language tag or the absence of one. Two module-level names for
-# one pattern would let either definition silently replace the other at import time, so
-# each fence rule keeps a name no other one in this file uses.
-_CMD_FENCE_RE = re.compile(r"```[a-zA-Z]*\n(.*?)```", re.S)
-_CMD_INVOKE_RE = re.compile(r"/audit:([a-z][a-z-]*)")
-_HIDE_FLAG_RE = re.compile(r"^disable-model-invocation:\s*true\s*$", re.MULTILINE)
-
-
-def called_by_name(repo_root=None):
-    """{command: [rel, ...]} - every `/audit:<command>` spelled inside a FENCED
-    CODE BLOCK somewhere under `plugins/audit/reference/` or
-    `plugins/audit/commands/`, each entry naming every calling document rather
-    than only the first.
-
-    WHAT THIS CANNOT SEE, stated rather than implied. `commands/worktree.md`
-    fences `cd <path> && claude` above `/audit:phase <phaseId>` as the exact
-    line to paste into a NEW terminal, which this counts as a call the same way
-    it counts the sign-off fix loop - the fence does not say which session runs
-    it. That over-approximates toward the safe side only: it can mark a
-    command reachable that a person alone was ever going to type, never the
-    other way around, so `command_reach_violations` below never refuses a
-    hiding this function failed to notice was needed.
-    """
-    root = repo_root or REPO_ROOT
-    out = {}
-    for sub in _CALLING_SUBDIRS:
-        d = os.path.join(root, PLUGIN_REL.replace("/", os.sep), sub)
-        try:
-            names = sorted(os.listdir(d))
-        except OSError:
-            continue
-        for name in names:
-            if not name.endswith(".md"):
-                continue
-            rel = "%s/%s/%s" % (PLUGIN_REL, sub, name)
-            try:
-                with open(os.path.join(d, name), "r",
-                          encoding="utf-8", errors="replace") as fh:
-                    text = fh.read()
-            except OSError:
-                continue
-            for block in _CMD_FENCE_RE.findall(text):
-                for match in _CMD_INVOKE_RE.finditer(block):
-                    bucket = out.setdefault(match.group(1), [])
-                    if rel not in bucket:
-                        bucket.append(rel)
-    return out
-
-
-def hidden_commands(repo_root=None):
-    """{command: rel} for every `plugins/audit/commands/*.md` carrying
-    `disable-model-invocation: true` in its frontmatter.
-
-    Read PER FILE rather than derived from a maintained list, which is the
-    whole point of doing this at all: a command opts in by carrying the line
-    itself, and nothing elsewhere has to be told that it did.
-    """
-    root = repo_root or REPO_ROOT
-    cdir = os.path.join(root, PLUGIN_REL.replace("/", os.sep), "commands")
-    out = {}
-    try:
-        names = sorted(os.listdir(cdir))
-    except OSError:
-        return out
-    for name in names:
-        if not name.endswith(".md"):
-            continue
-        try:
-            with open(os.path.join(cdir, name), "r",
-                      encoding="utf-8", errors="replace") as fh:
-                text = fh.read()
-        except OSError:
-            continue
-        parts = text.split("---", 2)
-        frontmatter = parts[1] if len(parts) > 2 else ""
-        if _HIDE_FLAG_RE.search(frontmatter):
-            out[name[:-3]] = "%s/commands/%s" % (PLUGIN_REL, name)
-    return out
-
-
-def command_reach_violations(repo_root=None):
-    """[(command, doc)] - every command HIDDEN from the model (`hidden_commands`)
-    that the pipeline still invokes by name (`called_by_name`) somewhere under
-    `reference/` or `commands/`.
-
-    ONE ROW PER CALLING DOCUMENT, not one per command: a command hidden AND
-    called from two places names both, because repairing one call site and
-    missing the other still leaves the pipeline refused the day it takes the
-    second path.
-    """
-    root = repo_root or REPO_ROOT
-    hidden = hidden_commands(root)
-    called = called_by_name(root)
-    out = []
-    for name in sorted(hidden):
-        for doc in called.get(name, ()):
-            out.append((name, doc))
-    return out
-
-
-# --- a discovery caller asks for the projection, not the whole payload ---------
-# `audit-status.py --json --discovery` enriches the payload with a `discovery`
-# block; `--section discovery` then projects that one key out instead of paying
-# for the rest of the rollup. Two command documents ask for the enrichment and
-# used to hand the whole payload to the model to pick one key back out of by
-# hand - the saving `--section` exists for and the orchestrator's own budget
-# read already takes. A caller that drops `--section discovery` while keeping
-# `--discovery` is the regression this catches: the enrichment still runs, and
-# the saving quietly stops being taken.
-_DISCOVERY_CALLERS = ("commands/init.md", "commands/task.md")
-_DISCOVERY_FLAG = "--discovery"
-_DISCOVERY_SECTION = "--section discovery"
-# The window of TEXT (not one line - the flag and the projection are written on
-# adjacent lines, joined by a backtick continuation or a shell `\`) after
-# `--discovery` that `--section discovery` may sit in, never separated by
-# unrelated prose.
-_DISCOVERY_WINDOW = 60
-
-
-def discovery_projection_drift(repo_root=None):
-    """[(doc, lineno)] - every `--discovery` invocation in a caller document with
-    no `--section discovery` within reach of it.
-
-    WHAT THIS CANNOT SEE: a caller that never mentions `--discovery` at all owes
-    nothing here, which is correct - a document not asking for the enrichment has
-    no projection to take. Restricted to `_DISCOVERY_CALLERS` rather than every
-    command, because `--discovery` appearing elsewhere (a status render, a
-    cross-reference) is not this invariant's business.
-    """
-    root = repo_root or REPO_ROOT
-    out = []
-    for rel in _DISCOVERY_CALLERS:
-        path = os.path.join(root, PLUGIN_REL.replace("/", os.sep),
-                            *rel.split("/"))
-        try:
-            with open(path, "r", encoding="utf-8", errors="replace") as fh:
-                text = fh.read()
-        except OSError as exc:
-            out.append(("%s <unreadable: %s>" % (rel, exc), 0))
-            continue
-        pos = 0
-        while True:
-            at = text.find(_DISCOVERY_FLAG, pos)
-            if at < 0:
-                break
-            window = text[at:at + _DISCOVERY_WINDOW]
-            if _DISCOVERY_SECTION not in window:
-                out.append((rel, text.count("\n", 0, at) + 1))
-            pos = at + len(_DISCOVERY_FLAG)
-    return out
-
-
 # --- a placeholder the script answers itself -------------------------------------
 # A command document that hands its script a `<manifestPath>` placeholder makes the
 # MODEL fill it in. A thin command reads no reference stating the default, so the
@@ -2247,420 +1827,6 @@ def manifest_placeholder_drift(repo_root=None, pending=None):
     return out
 
 
-# --- what the published handbook claims about the product ---------------------
-# `docs/handbook.html` is served by GitHub Pages beside `docs/index.html` and is the
-# one published page with NO GENERATOR BEHIND IT. Every other published artifact is
-# held by something: the rendered reports are compared byte for byte, the live demo is
-# proven a byte copy, the screenshots record the version they were shot at. Nothing
-# read this page at all - `artifact_version_drift()` walks past it and finds no stamp
-# to compare, which is correct and says nothing - so it could assert something the
-# code had stopped doing and stay green for ever. It already had: before it was
-# rewritten it described none of the test-evidence feature, its masthead and its
-# footer named two different and both-stale versions, and it described a command as
-# interactive when every answer is a flag.
-#
-# NOT A BYTE COMPARISON, AND THAT IS THE DECISION. A byte check needs a generator to
-# compare against, and writing one to hold a hand-written page is a bigger commitment
-# than the gap deserves. What is checkable without one is the page's STRUCTURAL
-# claims, and the page makes them explicitly: "every command, flag and default here is
-# the same wherever it is installed". So the rule asks whether the things it names are
-# still there - a verb with a command file, an option spelling the product still
-# carries, a configuration path the schemas still declare - and whether its own
-# internal links land on something.
-#
-# THE REGION IT READS IS THE TEXT A READER READS. Markup is stripped, and the
-# stylesheet and the inline diagrams are dropped before that: a CSS custom property is
-# spelled exactly like a command-line option, and a rule that read the `<style>` block
-# would report this page's own design tokens as options the plugin does not
-# accept. That is the same trap in its usual clothing, and the repair is the
-# narrowing rather than a looser needle - a pattern widened until the tokens passed
-# would stop catching an option that was really removed.
-HANDBOOK_REL = "docs/handbook.html"
-
-# Elements whose CONTENT is not prose about the product. Dropped whole, before the
-# tags come off, because their text survives tag-stripping and reads exactly like the
-# things being looked for.
-_HB_OPAQUE_RE = re.compile(r"(?is)<(style|svg|script)\b[^>]*>.*?</\1>")
-_HB_TAG_RE = re.compile(r"(?s)<[^>]*>")
-
-_HB_VERB_RE = re.compile(r"/audit:([a-z][a-z0-9-]*)")
-_HB_HREF_RE = re.compile(r'href="#([^"]*)"')
-_HB_ID_RE = re.compile(r'\sid="([^"]*)"')
-
-# A dotted path the page ANCHORS at the root of one of the schemas. The lookbehind is
-# what keeps a hyphenated filename out of it: a basename like `audit-journal.py` ends
-# in a word boundary after the hyphen, so a bare `\b` reads the tail as a two-segment
-# path and reports it against a schema it was never a claim about.
-_HB_DOTTED_RE = re.compile(
-    r"(?<![\w./$-])[a-z][A-Za-z0-9]*(?:\.[a-zA-Z][A-Za-z0-9]*)+(?![\w/-])")
-
-# The schemas that own the paths this page names, each with the words a finding uses
-# for it. Both, because the page names the configuration file's keys and the
-# manifest's in the same prose and a reader does not sort them by document.
-_HB_SCHEMAS = (("the config file", PLUGIN_REL + "/schema/audit-config.schema.json"),
-               ("the manifest", PLUGIN_REL + "/schema/audit-plan.schema.json"))
-
-# ...and every path this rule reads, as one flat set, so `tools/affected.py` can derive
-# a narrowed run's selection from the rule rather than keep a copy of it.
-#
-# NEITHER PATH IS UNDER-SELECTED TODAY, and saying so is the point of declaring them
-# rather than adding a branch. The page is reached by the extension set ANOTHER rule
-# owns (`STAMP_EXT`, the version stamp), and both schemas because `plugins/audit/schema`
-# is one of the SURFACES above. A branch was written first and a mutation of it survived
-# - it could be deleted with every case still green - so what carries the guarantee is a
-# case over this constant instead, and taking either of those two away goes red there.
-HANDBOOK_SOURCES = (HANDBOOK_REL,) + tuple(rel for _label, rel in _HB_SCHEMAS)
-
-_MIN_HANDBOOK_REASON = 80   # a reason short enough to be a label is not a reason
-
-# The two characters an option starts with, as a constant rather than as a literal
-# anywhere below. `_plugin_options()` reads every `.py` under the plugin and this file
-# is one of them, so an option spelled out here would enter the very set it is
-# excused from - the house repair of building a forbidden literal instead of writing
-# one, in the one module that is inside its own corpus.
-_OPT_PREFIX = "-" * 2
-
-# A VERB THE PAGE NAMES IN ORDER TO SAY IT DOES NOT EXIST. The handbook tells a reader
-# there is no such command and hands them the script invocation instead, which is
-# useful writing and is not a claim that the verb is there. Declared rather than
-# pattern-matched, because "there is no X" and "run X" are one sentence apart in prose
-# and no needle separates them - and checked in BOTH directions below, so the day the
-# verb IS built this row is reported rather than going on excusing it.
-HANDBOOK_ABSENT_VERBS = (
-    ("run-gate",
-     "the page says in so many words that this verb is not built, and points at "
-     "`scripts/governance/run-test-gate.py` instead. A row here rather than a "
-     "sentence in a regex: the day somebody builds the verb, this stops being a "
-     "true thing to write and the check says so"),
-)
-
-# ...and an option that belongs to the HOST rather than to this plugin. Stored
-# WITHOUT its leading dashes on purpose: the truth set below reads every `.py` under
-# `scripts/`, this file among them, so spelling the option here would put it into the
-# set and the row would clear itself.
-HANDBOOK_FOREIGN_OPTIONS = (
-    ("scope",
-     "Claude Code's own `/plugin install` takes it, and the page documents where the "
-     "enabling record is written. It is not this plugin's option to keep, so it "
-     "cannot rot with this plugin - and if a command here ever grows one by this "
-     "name, the row is reported instead of quietly covering it"),
-)
-
-
-def _page_text(page):
-    """The words a reader reads: no markup, no stylesheet, no inline diagram.
-
-    THE ORDER IS LOAD-BEARING. Opaque elements go first, then the tags, then the
-    entities - unescaping earlier would turn every `&lt;org&gt;` into something the
-    tag stripper then eats, and stripping tags earlier would leave a `style="…"`
-    attribute's design tokens in the text as if a reader had been told to type them.
-    """
-    return html.unescape(_HB_TAG_RE.sub(" ", _HB_OPAQUE_RE.sub(" ", page)))
-
-
-def _plugin_verbs(root):
-    """(the verbs `commands/` declares, problem) -- exactly one is None."""
-    cdir = os.path.join(root, PLUGIN_REL.replace("/", os.sep), "commands")
-    try:
-        names = os.listdir(cdir)
-    except OSError as exc:
-        return None, "the command directory cannot be listed: %s" % (exc,)
-    verbs = set(n[:-3] for n in names if n.endswith(".md"))
-    if not verbs:
-        return None, ("the command directory holds no `.md`, so every verb the page "
-                      "names would be reported against an empty set")
-    return verbs, None
-
-
-def _accepted_flags(source):
-    """Every `--flag` this source CARRIES AS A VALUE: its string literals, minus
-    the prose ones.
-
-    THE LINE IS CODE VERSUS PROSE, and it is drawn where the AST already draws it.
-    A comment is not in the tree at all, and a docstring is the one string
-    constant that is prose by construction — so excluding those two is exactly the
-    narrowing that was needed, and nothing more. `--include-strangers` was removed
-    properly, leaving four comments and one docstring naming it; a text scan read
-    those as the product still carrying the flag, and `docs/handbook.html`
-    advertised it through a full `verify.sh` and a full `prove-gates` sweep.
-
-    NOT `add_argument` ALONE, and that narrower rule was tried and measured wrong
-    here: `materialize-proposal.py` reads `sys.argv` by hand, so `--with-deps` and
-    `--drop-edges` are genuinely accepted and argparse never sees them. A rule that
-    convicted the handbook for naming them would be this lint over-firing on the
-    product's own options — the failure direction that gets a guard routed around.
-
-    A file that will not parse contributes nothing rather than falling back to a
-    text scan: the fallback would restore the hole this closes, and an unparseable
-    `.py` is already a finding the sweep makes elsewhere.
-    """
-    out = set()
-    try:
-        tree = ast.parse(source)
-    except SyntaxError:
-        return out
-    prose = set()
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef,
-                             ast.ClassDef)):
-            doc = node.body[0] if node.body else None
-            if isinstance(doc, ast.Expr) and isinstance(doc.value, ast.Constant) \
-                    and isinstance(doc.value.value, str):
-                prose.add(id(doc.value))
-    for node in ast.walk(tree):
-        # `ast.Constant`, never `ast.Str`: the latter is gone from 3.12 and the
-        # sweep runs on six interpreters, so the deprecated spelling would fail on
-        # the newest of them while passing the 3.8 floor.
-        if isinstance(node, ast.Constant) and isinstance(node.value, str) \
-                and id(node) not in prose:
-            out |= set(_FLAG.findall(node.value))
-        # ...and the one flag that is accepted without ever being written down:
-        # `ArgumentParser()` adds `-h/--help` itself unless told not to. Derived
-        # from the construction rather than exempted in a table, because it IS the
-        # plugin's option - a table row would say it belongs to somebody else.
-        if isinstance(node, ast.Call):
-            fn = node.func
-            built = fn.attr if isinstance(fn, ast.Attribute) else (
-                fn.id if isinstance(fn, ast.Name) else "")
-            if built == "ArgumentParser" and not any(
-                    kw.arg == "add_help"
-                    and isinstance(kw.value, ast.Constant)
-                    and kw.value.value is False for kw in node.keywords):
-                out.add("--help")
-    return out
-
-
-def _plugin_options(root):
-    """(every option spelling the plugin's own source carries, problem).
-
-    AN OPTION IS CARRIED WHEN SOMETHING ACCEPTS IT. This was a TEXT SCAN,
-    and its own docstring called that "the safe direction" on the grounds that
-    removing an option takes the declaration, the parser and the command doc with
-    it. This repository is the counter-example: a removal here is expected to leave
-    a comment saying what went and why, and `--include-strangers` was deleted
-    exactly that way - so four comments went on naming it, this function went on
-    reporting it carried, and `docs/handbook.html` advertised the flag through a
-    full `verify.sh` and a full `prove-gates` sweep until a human read the page.
-    The stated safe direction was the COMMON direction, and the guard was off for
-    precisely the removals this project performs well.
-
-    So the corpus is what ACCEPTS a flag, in the two places a flag can be accepted:
-
-      * an `add_argument("--x")` STRING LITERAL, read from the AST - the same walk
-        `_output.py`'s lints already use, and the reason a comment, a docstring or
-        an error message naming a retired flag no longer counts;
-      * a command document's `argument-hint`, which is the declaration an operator
-        types against. The BODY of a command document is prose about the command
-        and is read for nothing here, one door along from the same distinction
-        `verbatim_rule_drift` already draws two functions down.
-
-    `scripts/ui/` holds no `.py`, so this reads none of the stylesheets; the design
-    tokens that share the option spelling are not in the corpus at all.
-    """
-    found = set()
-    read = 0
-    cdir = os.path.join(root, PLUGIN_REL.replace("/", os.sep), "commands")
-    for name in sorted(os.listdir(cdir) if os.path.isdir(cdir) else []):
-        if not name.endswith(".md"):
-            continue
-        try:
-            with open(os.path.join(cdir, name), "r", encoding="utf-8") as fh:
-                head = fh.read().split("---", 2)
-            read += 1
-        except (OSError, UnicodeDecodeError):
-            continue
-        hint = re.search(r"^argument-hint:\s*(.+)$",
-                         head[1] if len(head) > 2 else "", re.MULTILINE)
-        if hint:
-            found |= set(_FLAG.findall(hint.group(1)))
-    for sub in ("scripts", "hooks"):
-        for _rel, path in _output.py_files(
-                os.path.join(root, PLUGIN_REL.replace("/", os.sep), sub)):
-            try:
-                with open(path, "r", encoding="utf-8") as fh:
-                    found |= _accepted_flags(fh.read())
-                read += 1
-            except (OSError, UnicodeDecodeError):
-                continue
-    if not read:
-        return None, ("not one command document or script could be read, so the "
-                      "options the page names would be judged against nothing")
-    return found, None
-
-
-def _schema_paths(node, doc, path="", depth=0):
-    """Every dotted property path a JSON Schema declares, `$ref`s followed.
-
-    Depth-capped rather than cycle-tracked: a schema that refers to itself is a legal
-    shape here (a phase holds tasks that hold the same sub-objects), and the paths
-    below the cap are not claims this page makes anyway.
-    """
-    out = set()
-    if depth > 12 or not isinstance(node, dict):
-        return out
-    ref = node.get("$ref")
-    if isinstance(ref, str) and ref.startswith("#/"):
-        target = doc
-        for seg in ref[2:].split("/"):
-            target = target.get(seg) if isinstance(target, dict) else None
-        return _schema_paths(target, doc, path, depth + 1)
-    props = node.get("properties")
-    if isinstance(props, dict):
-        for key, sub in props.items():
-            here = path + "." + key if path else key
-            out.add(here)
-            out |= _schema_paths(sub, doc, here, depth + 1)
-    for key in ("items", "additionalProperties", "propertyNames", "contains",
-                "if", "then", "else"):
-        if isinstance(node.get(key), dict):
-            out |= _schema_paths(node[key], doc, path, depth + 1)
-    for key in ("oneOf", "anyOf", "allOf"):
-        for sub in node.get(key) or []:
-            out |= _schema_paths(sub, doc, path, depth + 1)
-    return out
-
-
-def _declared_paths(root):
-    """({path: which schema}, problem) over both schemas the plugin publishes."""
-    known = {}
-    for label, rel in _HB_SCHEMAS:
-        try:
-            doc = _read_json(os.path.join(root, rel.replace("/", os.sep)))
-        except (OSError, UnicodeDecodeError, ValueError):
-            doc = None
-        if not isinstance(doc, dict):
-            return None, "%s schema cannot be read, so no path the page names can " \
-                         "be resolved" % (label,)
-        for path in _schema_paths(doc, doc):
-            known.setdefault(path, label)
-    if not known:
-        return None, ("neither schema declares a property, so every path the page "
-                      "names would be reported against an empty set")
-    return known, None
-
-
-def handbook_drift(repo_root=None, absent=None, foreign=None):
-    """{"findings", "counts", "problem"} -- claims the published handbook has outlived.
-
-    THE TWO DECLARED TABLES ARE PARAMETERS, for the reason `gate-parity.compare()`
-    takes its own: they are claims about the LIVE page, so a fixture judged under them
-    reports rows that have gone stale against a document they were never about - and
-    showing that each direction of a row is really checked needs one planted on
-    purpose, which in the live table would be a case editing the thing it asserts.
-
-    Four arms, and each reports the size of what it examined beside its findings. That
-    is not decoration: every one of them narrows a large page down to a small set, and
-    a narrowing that reaches zero produces the same empty finding list as a page that
-    is entirely correct. `counts` is the only thing that tells those apart, and the
-    cases hold a floor under each.
-
-    `problem` is the whole-run version of the same distinction - the page missing, or
-    a truth set that could not be built - and it is never spelled as "no findings".
-    """
-    root = repo_root if repo_root is not None else REPO_ROOT
-    try:
-        with open(os.path.join(root, HANDBOOK_REL.replace("/", os.sep)),
-                  "r", encoding="utf-8") as fh:
-            page = fh.read()
-    except (OSError, UnicodeDecodeError) as exc:
-        return {"findings": [], "counts": {},
-                "problem": "%s cannot be read, so nothing here judged it: %s"
-                           % (HANDBOOK_REL, exc)}
-    text = _page_text(page)
-    verbs, problem = _plugin_verbs(root)
-    if problem is not None:
-        return {"findings": [], "counts": {}, "problem": problem}
-    options, problem = _plugin_options(root)
-    if problem is not None:
-        return {"findings": [], "counts": {}, "problem": problem}
-    declared, problem = _declared_paths(root)
-    if problem is not None:
-        return {"findings": [], "counts": {}, "problem": problem}
-
-    out = []
-    absent = dict(HANDBOOK_ABSENT_VERBS if absent is None else absent)
-    foreign_rows = HANDBOOK_FOREIGN_OPTIONS if foreign is None else foreign
-    named_verbs = sorted(set(_HB_VERB_RE.findall(text)))
-    for verb in named_verbs:
-        if verb in absent:
-            if verb in verbs:
-                out.append(("exemption", verb,
-                            "is declared as a verb the page says does not exist, and "
-                            "it exists now - the sentence saying so has stopped "
-                            "being true"))
-            continue
-        if verb not in verbs:
-            out.append(("command", verb,
-                        "is named as a command and there is no `commands/%s.md` - "
-                        "either the verb was renamed or the page is telling a reader "
-                        "to type something that does nothing" % (verb,)))
-    for verb in sorted(absent):
-        if verb not in named_verbs:
-            out.append(("exemption", verb,
-                        "is declared as a verb the page says does not exist, and the "
-                        "page does not mention it any more - the row excuses nothing"))
-
-    foreign = dict((_OPT_PREFIX + name, why) for name, why in foreign_rows)
-    named_options = sorted(set(_FLAG.findall(text)))
-    for opt in named_options:
-        if opt in foreign:
-            if opt in options:
-                out.append(("exemption", opt,
-                            "is declared as an option belonging to the host rather "
-                            "than to this plugin, and this plugin now carries one by "
-                            "that name - the row is covering a real claim"))
-            continue
-        if opt not in options:
-            out.append(("flag", opt,
-                        "is named as something to type and no command document and "
-                        "no script under the plugin carries that spelling any more"))
-    for opt in sorted(foreign):
-        if opt not in named_options:
-            out.append(("exemption", opt,
-                        "is declared as the host's option and the page does not name "
-                        "it any more - the row excuses nothing"))
-
-    anchored = [p for p in sorted(set(_HB_DOTTED_RE.findall(text)))
-                if p.split(".")[0] in declared]
-    for path in anchored:
-        if path not in declared:
-            out.append(("key", path,
-                        "is written from the root of a document this plugin "
-                        "publishes and no schema declares it - the key was renamed, "
-                        "or the page invented a nesting"))
-
-    ids = set(_HB_ID_RE.findall(page))
-    targets = sorted(set(_HB_HREF_RE.findall(page)))
-    for target in targets:
-        if not target:
-            out.append(("anchor", "(empty)",
-                        "is a link to no fragment at all, which scrolls a reader to "
-                        "the top of the page rather than to the section named"))
-        elif target not in ids:
-            out.append(("anchor", target,
-                        "is linked and nothing on the page carries that id - the "
-                        "section was renamed or removed under its own table of "
-                        "contents"))
-
-    counts = {"commands": len(named_verbs), "flags": len(named_options),
-              "keys": len(anchored), "anchors": len(targets)}
-    for arm in sorted(counts):
-        if not counts[arm]:
-            out.append(("nothing-examined", arm,
-                        "matched nothing on the page, so this arm cleared nothing "
-                        "rather than clearing the page - either the reader stopped "
-                        "working or the page stopped saying it"))
-    return {"findings": sorted(out), "counts": counts, "problem": None}
-
-
-def reasonless_handbook_rows():
-    """Declared rows whose reason is too short to be a decision anyone can weigh."""
-    rows = ([("verb", n, w) for n, w in HANDBOOK_ABSENT_VERBS]
-            + [("option", n, w) for n, w in HANDBOOK_FOREIGN_OPTIONS])
-    return [(kind, name) for kind, name, why in rows
-            if not isinstance(why, str) or len(why.strip()) < _MIN_HANDBOOK_REASON]
-
-
 # --- the selftest sweep -------------------------------------------------------
 # `for f in plugins/audit/hooks/*.py plugins/audit/scripts/*.py` stops at the top level:
 # put a file one directory down, the glob does not match it, the loop never runs it, and
@@ -2687,13 +1853,15 @@ RETIRED_SWEEPS = ((SWEEP_FLAT, "flat sweep"),
 
 # Every document that shows a reader how to run the suites. The commit that did the
 # conversion named only half of the ones the tree carried, and pinning half would leave
-# the rest free to rot in exactly the way this constant exists to prevent;
-# `sweep_doc_drift()` below is what holds the list whole now.
+# the rest free to rot in exactly the way this constant exists to prevent. Nothing
+# holds the list whole any more - the rule that asked whether a document teaching the
+# sweep was missing from it was retired - so a document that shows how to run the
+# suites owes its entry here to whoever writes it.
 #
 # THE WORKFLOW IS NOT ONE ANY MORE. Every ci.yml job is setup plus one `tools/verify.sh
 # --only <slices>` call, so the workflow teaches no sweep: verify.sh's sweep slices do,
 # and a workflow listed here would be red for carrying no runner it has no reason to
-# carry. `sweep_doc_drift()` still reads it, and reports it the day it names one again.
+# carry.
 SWEEP_DOCS = (
     "CLAUDE.md",
     "CONTRIBUTING.md",
@@ -2849,38 +2017,12 @@ def sweep_glob_drift(repo_root=None):
     return out
 
 
-# --- is the sweep list the whole set? -----------------------------------------
-# `SWEEP_DOCS` is hand-written, and until this rule existed nothing said it was
-# COMPLETE. A new document telling a reader to run the retired glob was green twice
-# over: `sweep_glob_drift()` never opens a document that is not in the list, and
-# nothing else in the tree reads a runnable region looking for a sweep. So the weaker
-# half of the pair was not the rule but the LIST, and a list nothing checks is the
-# shape every other derived table in this file exists to avoid.
-#
-# Written while the list was still complete - measured, zero unlisted carriers - which
-# is the only cheap moment to start holding it. A completeness rule adopted after the
-# drift arrives is a backlog, not a gate.
-#
-# THE SCAN SEES ONLY FORMATS `_runnable_text` HAS A RULE FOR, and that is the guarantee
-# rather than a gap to apologise for: the extension set is DERIVED from the three format
-# constants, so the day somebody teaches `_runnable_text` a fourth format this scan
-# starts reading it without being told.
-SWEEP_DOC_EXT = _MD_EXT + _YAML_EXT + _JSON_EXT
-
-# Every shape that makes a document a sweep document, with the word it is reported
-# under. The runner belongs here for the same reason the two retired globs do, and it
-# is the half that is easy to leave out: a document teaching the sweep CORRECTLY must
-# be in the list so that `sweep_glob_drift()` keeps it correct the day the runner is
-# renamed, and one teaching a retired glob must be in the list so that the same check
-# can fail it at all. One tuple, one loop - as two `if`s they would drift apart.
-SWEEP_SHAPES = ((SWEEP_RUNNER, "sweep runner"),) + RETIRED_SWEEPS
-
 # DIRECTORIES THIS REPO DOES NOT KEEP, and the walk over what is left. Both moved to
 # `_output` when the prose-number scan needed the same answer: that scan is in the
 # anchor, this module sits above it, and a copy in the anchor would be the
 # two-prune-lists defect one layer down. The reasoning - why `.gitignore` and not a
-# hand list, why only the unambiguous half of its format, why not `git ls-files` -
-# went with the code and is not restated here.
+# hand list, why only the unambiguous half of its format, and why the prose scans ask
+# git for the tracked files first - went with the code and is not restated here.
 #
 # THE NAMES STAY, as three aliases rather than three wrappers: this module's cases
 # call them, and a wrapper would be a second place for the argument order to be
@@ -2888,214 +2030,6 @@ SWEEP_SHAPES = ((SWEEP_RUNNER, "sweep runner"),) + RETIRED_SWEEPS
 _ignored_dirs = _output._ignored_dirs
 _is_ignored = _output._is_ignored
 _iter_docs = _output.kept_files
-
-
-def sweep_doc_drift(repo_root=None):
-    """[(doc, problem), ...] — the ways `SWEEP_DOCS` stops being the whole set.
-
-    `sweep_glob_drift()` judges the documents in the list; this judges the LIST. Two
-    directions, because it has two failure modes and only one of them is obvious:
-
-      * **a document that teaches a sweep and is not listed** — the silent case, and
-        the reason this exists. Nothing else reads a runnable region for a sweep, so a
-        new guide telling a reader to run the flat glob passed both checks at once;
-      * **a listed document the walk cannot reach** — the blind case. The candidate set
-        is derived from `.gitignore`, and a derivation is only as good as its pattern:
-        the day one prunes a directory a sweep document lives in, this rule would go
-        QUIET rather than wrong, which is precisely the failure it exists to prevent.
-        Documents in this list live under `.claude/` as well as at the top level, one
-        directory away from a pruned one.
-
-    A candidate it could not read or could not parse is REPORTED, never skipped: "I
-    cannot clear this file" and "this file is clean" are different answers, and a
-    skipped file is the second one told as the first. Measured over the tree when this
-    was written: no unreadable candidate and no unparseable one, so the loud path costs
-    nothing today and is here for the day it does not.
-    """
-    root = repo_root if repo_root is not None else REPO_ROOT
-    patterns, problem = _ignored_dirs(root)
-    if problem is not None:
-        return [(".gitignore", problem)]
-    listed = set(SWEEP_DOCS)
-    seen = set()
-    out = []
-    for rel in _iter_docs(root, patterns, SWEEP_DOC_EXT):
-        if rel in listed:
-            seen.add(rel)
-            continue
-        try:
-            with open(os.path.join(root, rel.replace("/", os.sep)),
-                      "r", encoding="utf-8") as fh:
-                text = fh.read()
-        except (OSError, UnicodeDecodeError) as exc:
-            out.append((rel, "cannot be read, so it cannot be cleared of teaching a "
-                             "sweep: %s" % exc))
-            continue
-        runnable, problem = _runnable_text(rel, text)
-        if problem is not None:
-            out.append((rel, "cannot be cleared of teaching a sweep: %s" % problem))
-            continue
-        for shape, label in SWEEP_SHAPES:
-            if shape in runnable:
-                out.append((rel, "tells a reader to run the %s %r but is not in "
-                                 "SWEEP_DOCS, so nothing holds it to the rule"
-                                 % (label, shape)))
-    for rel in sorted(listed - seen):
-        out.append((rel, "is in SWEEP_DOCS but the walk cannot reach it, so the scan "
-                         "has gone blind rather than clean"))
-    return out
-
-
-# --- the document graph -------------------------------------------------------
-# NOTHING IN THIS TREE HELD A DOCUMENT'S DISCOVERABILITY, and the gap was total: no
-# rule enumerated the root-level documents, none counted them, and none asked whether
-# one is linked from anywhere at all. There was no Markdown link checker of any kind.
-# A document nobody links to is a document nobody reads, and it fails SILENTLY - every
-# gate green, the page simply never reached.
-#
-# That became load-bearing the moment the documentation was split by audience, because
-# the split's whole value is that a new reader's path to first success is SHORT, and a
-# path is a property of the link graph rather than of any one file. Written while the
-# graph was still clean - measured, nothing dangling and no unreachable root document
-# - which is the only cheap moment to start holding one, exactly as `sweep_doc_drift`
-# above says of its own list.
-#
-# Two directions, asymmetric on purpose, and what each half is ABOUT is the reason:
-#
-#   * a LINK is a claim about another file, so every one the walk can reach is
-#     resolved - in a skill, in the plugin README, anywhere. A claim is checkable
-#     wherever it is written, and the file it names either exists or does not;
-#   * REACHABILITY is a property of the PUBLISHED ROOT, so only root-level documents
-#     are required to have an inbound link. A document under `docs/` or a `SKILL.md`
-#     is reached by being named rather than by being linked, and requiring a link for
-#     each would need a blanket exemption - which is noise wearing a rule's clothes.
-#
-# Inline links only (`[text](target)`, images with them). Reference-style links and
-# autolinks are not resolved, so this UNDER-reports rather than over-reports, the same
-# limit the header of this file states about a path split across two literals. The
-# `.gitignore` caveat above applies unchanged: directories it names are pruned, an
-# ignored FILE of a scanned extension stays a candidate, and `git ls-files` may not be
-# used because these suites run over an export with no `.git` in it.
-
-# The root of the graph: where a reader arrives, so it needs no inbound link. Not an
-# exemption - an exemption is something that could be removed, and this cannot be.
-DOC_ENTRY = "README.md"
-
-# Root-level documents reached some other way, each with the reason attached rather
-# than left to a commit message. Checked in BOTH directions: an entry that has stopped
-# being a root document, or that something links to after all, is reported - otherwise
-# this becomes a place where dead exemptions accumulate and the rule quietly stops
-# covering what it claims. Same shape, and same argument, as `EXCLUDED` above.
-UNLINKED_BY_DESIGN = (
-    ("CLAUDE.md",
-     "loaded by the harness at the start of every session, so a reader never arrives "
-     "by following a link and adding one would not make it any more read"),
-)
-
-# `[text](target)`, and `![alt](src)` with it - an image whose file is gone is the same
-# defect as a link whose page is gone. The angle brackets Markdown permits around a
-# target are stripped; a title after the target is not matched, which is part of the
-# under-reporting the header states rather than a bug to fix quietly.
-_MD_LINK_RE = re.compile(r"\[[^\]]*\]\(\s*<?([^)>\s]+)>?\s*\)")
-
-
-def _doc_links(rel, text):
-    """[(written, target), ...] — the in-repo links `rel` makes, target repo-relative.
-
-    A link to another host, a `mailto:` or an anchor inside the same page is not a
-    claim about a file in this tree and is not yielded at all. A `None` target means
-    the link resolves OUTSIDE the repository, which is a finding rather than something
-    to stat: `../thing` from the root reaches the machine, and a document may not.
-    """
-    here = rel.rsplit("/", 1)[0] if "/" in rel else ""
-    out = []
-    for match in _MD_LINK_RE.finditer(text):
-        written = match.group(1)
-        if written.startswith("#") or written.startswith("//"):
-            continue
-        if "://" in written or written.startswith("mailto:"):
-            continue
-        target = written.split("#", 1)[0].split("?", 1)[0]
-        if not target:
-            continue
-        joined = posixpath.normpath(posixpath.join(here, target))
-        if joined == ".." or joined.startswith("../"):
-            out.append((written, None))
-            continue
-        out.append((written, joined))
-    return out
-
-
-def doc_link_drift(repo_root=None):
-    """[(doc, problem), ...] — the ways the document graph stops holding.
-
-    Three findings, and the middle one is the reason this exists:
-
-      * **a link that names nothing** — the loud half. A page moved or was renamed and
-        the pointer to it stayed, so a reader following it lands on a 404 while every
-        other gate is green;
-      * **a root-level document nothing links to** — the silent half, and the one a
-        documentation split creates. Adding a page adds a page whose discoverability
-        rests on somebody having remembered a link, and nothing here noticed when that
-        link went away;
-      * **an exemption that no longer describes the tree** — a declared entry that has
-        stopped being a root document, or that is linked after all. Without this the
-        table becomes the place a real orphan hides behind a stale reason.
-
-    A document it cannot read is REPORTED, never skipped: "I could not resolve this
-    file's links" and "this file's links are fine" are different answers, and skipping
-    is the second one told as the first.
-    """
-    root = repo_root if repo_root is not None else REPO_ROOT
-    patterns, problem = _ignored_dirs(root)
-    if problem is not None:
-        return [(".gitignore", problem)]
-    out = []
-    linked = {}
-    docs = _iter_docs(root, patterns, _MD_EXT)
-    for rel in docs:
-        try:
-            with open(os.path.join(root, rel.replace("/", os.sep)),
-                      "r", encoding="utf-8") as fh:
-                text = fh.read()
-        except (OSError, UnicodeDecodeError) as exc:
-            out.append((rel, "cannot be read, so the links in it cannot be resolved "
-                             "and it is unclear rather than clean: %s" % exc))
-            continue
-        for written, target in _doc_links(rel, text):
-            if target is None:
-                out.append((rel, "links to %r, which resolves outside the repository"
-                                 % (written,)))
-                continue
-            if target != rel:
-                linked.setdefault(target, set()).add(rel)
-            if not os.path.exists(os.path.join(root, target.replace("/", os.sep))):
-                out.append((rel, "links to %r, which is not in the tree - either the "
-                                 "link rotted or the file moved" % (written,)))
-    roots = [rel for rel in docs if "/" not in rel]
-    excused = dict(UNLINKED_BY_DESIGN)
-    if DOC_ENTRY not in roots:
-        out.append((DOC_ENTRY, "is the entry point reachability is measured from and "
-                               "the walk cannot see it, so every other document would "
-                               "read as unreachable at once"))
-    for rel in roots:
-        if rel == DOC_ENTRY or rel in excused:
-            continue
-        if rel not in linked:
-            out.append((rel, "is a root-level document nothing links to, so a reader "
-                             "following links never reaches it - link it from %s, or "
-                             "declare it in UNLINKED_BY_DESIGN with the reason"
-                             % (DOC_ENTRY,)))
-    for rel, _why in UNLINKED_BY_DESIGN:
-        if rel not in roots:
-            out.append((rel, "is declared UNLINKED_BY_DESIGN but is not a root-level "
-                             "document the walk reaches, so the exemption excuses "
-                             "nothing and hides the next real orphan"))
-        elif rel in linked:
-            out.append((rel, "is declared UNLINKED_BY_DESIGN but %s links to it, so "
-                             "the exemption has outlived its reason"
-                             % (", ".join(sorted(linked[rel])),)))
-    return out
 
 
 # --- published raw URLs -------------------------------------------------------
@@ -3187,9 +2121,8 @@ def raw_url_pin_drift(repo_root=None):
     elsewhere stays legal. It fires at release time, when `plugin.json` is bumped and
     the README has not been - which is the moment the pin needs a human.
 
-    A `.gitignore` it cannot read is REPORTED and the scan stops, for the reason
-    `sweep_doc_drift()` gives: answering "nothing is ignored" would read scratch copies
-    as things this repo published.
+    A `.gitignore` it cannot read is REPORTED and the scan stops: answering "nothing
+    is ignored" would read scratch copies as things this repo published.
 
     There is no CHANGELOG exemption, and that is deliberate rather than an omission: it
     quotes the dead `main` URL as history, in prose, and the fence scope already spares
@@ -3317,8 +2250,8 @@ def artifact_version_drift(repo_root=None):
 
     Four answers, and three of them are the loud ones:
 
-    - a `.gitignore` it cannot read: reported, and the scan stops, for the reason
-      `sweep_doc_drift()` gives - scratch renders would be read as published pages;
+    - a `.gitignore` it cannot read: reported, and the scan stops - scratch renders
+      would be read as published pages;
     - a `plugin.json` with no readable version: reported. The comparison has no basis,
       and a guessed version would fail every page for the wrong reason;
     - not one stamped page anywhere: reported. A rule whose candidate set narrowed to

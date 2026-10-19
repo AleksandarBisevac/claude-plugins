@@ -25,6 +25,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   passes `-f tier=release`, which adds a Windows re-sample job drawing the suites with an
   intermittent record at the counts verify.sh's `RESAMPLE` table gives them.
 - **A newer run on the same ref cancels an older one**, everywhere but `main`.
+- **The prose lints read the files git tracks.** `_output.prose_scan_set()` asks
+  `git ls-files` first, so an agent's untracked scratch document is nobody's finding, and
+  falls back to the `.gitignore` derivation where git cannot answer - an export with no
+  `.git`, or a directory inside another repository's work tree - returning a `basis` that
+  says which set a verdict was read from. `doc_prose_numbers()` takes a `repo_root`.
+- **The sweep runner binds `_output.remove_tree`** instead of keeping a copy that a lint
+  compared statement for statement with the home.
 
 ### Added
 - **A push to `main` of an already-verified commit runs only the guard.**
@@ -44,6 +51,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   prints, every per-run slice has a job outside the release tier, and a sharded slice's
   matrix runs every part on every runner. `CONTRIBUTING.md` and `PLUGIN-BUILD-GUIDE.md` point
   at `verify.sh --list` instead of listing the commands.
+- **Lints with no measured catch, with their cases and `tools/prove-gates.py` rows.** The
+  drift and violation checks `rule_drift`, `panel_route_violations`,
+  `shared_concern_violations`, `tool_navigability_violations`, `ui_navigability_violations`,
+  `tracker_dependency_violations`, `uncalled_helper_claims`, `layer_mention_drift`,
+  `agent_doc_drift`, `schema_inline_drift`, `schema_subset_drift`, `source_drift`,
+  `redundant_constants`, `phase_id_doc_drift`, `absolute_reach_violations`,
+  `command_reach_violations`, `discovery_projection_drift`, `doc_link_drift`,
+  `handbook_drift`, `render_target_drift`, `signoff_fix_route_drift`, `sweep_doc_drift`,
+  `cr_violations`, `declared_asset_drift`, `scratch_isolation`, `isolation_drift`,
+  `sweep_roots_drift`, `revisit_trigger_drift` and `removal_helper_drift` are gone, with the
+  registries and helpers only they read. The rules they held are author-enforced now and the
+  documents that cited them say so: one concern has one home under `ui/shared/`, a layer number
+  is written only in `LAYERS`, `ui/` assets of 400 lines owe a section marker per 400 lines,
+  and a file added under `ui/` is declared in `_ui_theme.UI_ASSETS` by its author.
 - **The falsifier, which 3.4.0 added.** The drive no longer applies a planned test's mutation:
   there is no falsifier stage between the green gate and the close, no `falsifier` decision
   (`retry`, `accept`, `block`) and no note recording a survivor. `audit-task.py scope` loses

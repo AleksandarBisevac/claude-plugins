@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 /**
- * Find candidate rows for `_deps.SHARED_CONCERNS` — repeated logic across the
- * `ui/` JavaScript. A SCOUT, never a gate.
+ * Find candidates for a shared helper — repeated logic across the `ui/`
+ * JavaScript. A SCOUT, never a gate.
  *
  * WHY THIS IS NOT A GATE, measured rather than assumed. A naive 20-token scan of
  * these files reports ~3,700 cross-file repeat groups. Preserving the shared
  * vocabulary and short string literals brings it to ~700, and the top hits are
  * still this codebase's own `el()` DOM idiom — which is house style, not
- * duplication. A build that failed on that is a build people learn to ignore. So
- * what gates is the named registry in `_deps.SHARED_CONCERNS`, where every row
- * carries a home and a reason; this tool only suggests rows to add to it.
+ * duplication. A build that failed on that is a build people learn to ignore. The
+ * registry that once gated a named list of concerns was retired, so the only
+ * judge of a hit is a person reading both sites.
  *
  * WHY IT IS A COMMITTED SCRIPT AND NOT `jscpd`. jscpd is the better-engineered
  * tool and would be the obvious choice for a gate. This is not a gate: it is run
- * by hand, a few times, when hunting for a row that reading has not already
- * found. A dependency that never appears in a check is weakly justified in a repo
+ * by hand, a few times, when hunting for repeated logic that reading has not
+ * already found. A dependency that never appears in a check is weakly justified in a repo
  * whose plugin ships stdlib-only with no build step — and node builtins cover it.
  *
  * WHAT IT CANNOT SEE, said rather than implied. It is a token-window heuristic
@@ -40,8 +40,8 @@ const flag = (name, fallback) => {
 const WINDOW = flag('window', 22);
 const TOP = flag('top', 12);
 
-// Relative to cwd, never absolute: `_refs.absolute_reach_violations()` forbids
-// reaching a file by absolute path, and this tool is inside the surface it scans.
+// Relative to cwd, never absolute: a tool that reaches a file by absolute path works
+// on one machine, and this tool is inside the surface it scans.
 const ROOTS = ['plugins/audit/scripts/ui/report', 'plugins/audit/scripts/ui/panel',
                'plugins/audit/scripts/ui/shared'];
 
@@ -168,6 +168,6 @@ for (const g of cross.slice(0, TOP)) {
   for (const [file, line] of g) console.log(`    ${file}:${line}`);
 }
 console.log('');
-console.log('Confirm by READING both sites before adding a row to '
-  + '_deps.SHARED_CONCERNS. This under-reports and it cannot judge; the existing '
-  + 'rows were found by reading, and this scanner only rediscovered three of them.');
+console.log('Confirm by READING both sites before extracting a shared helper. This '
+  + 'under-reports and it cannot judge; the inventory it was written against was '
+  + 'found by reading, and this scanner only rediscovered three of its rows.');

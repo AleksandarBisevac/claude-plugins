@@ -3173,13 +3173,12 @@ def _cases(check):
           M._resolve_write_expr("'a+b.py'", {}) == "a+b.py",
           repr(M._resolve_write_expr("'a+b.py'", {})))
     # THE FIXTURE CLAUSE IS BUILT, NOT WRITTEN, and so is `_payload` below.
-    # `_refs.absolute_reach_violations()` reads this file as TEXT, and a
-    # root-anchored literal sitting in the first argument of `open(` is the exact
-    # shape it exists to catch - it reported all three of these on their first run.
+    # A lint that read this file as TEXT once convicted a root-anchored literal
+    # sitting in the first argument of `open(` - it reported all three of these on
+    # their first run.
     # `test__refs.py` builds every fixture path off `M.PLUGIN_REL` for the same
     # reason. Repairing by rewording is not available here (the clause IS the
-    # subject), and widening the lint would stop it catching what it is for, so the
-    # literal is assembled instead and the assertion is unchanged.
+    # subject), so the literal is assembled instead and the assertion is unchanged.
     _tmp_root = "/tmp/"
     _s61 = "open(%r + rel, 'w').write(x)" % _tmp_root
     check("s61 ...and the fabrication cut the OTHER way too: a temp-root literal "

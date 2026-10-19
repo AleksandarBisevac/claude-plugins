@@ -284,17 +284,13 @@ elsewhere for its own git. The file is checked back afterwards like a planted on
 a suite's `git config --global` now writes there. The caller's own pairs in that protocol
 are dropped first, so the runner's set is the whole of it.
 
-AND THIS PASSAGE IS A CHECKED ONE. `gate-parity.py`'s `isolation_drift()` reads the
-runner's own constants - the families are tuples in that module, not a list restated here -
-and fails when a family it pins is named by none of the documents that describe the
-isolation: this passage, CLAUDE.md's Tests section, and the docstring beside
-`_harness.fixture_root()`. It also asks the runner about itself: a watched directory with
-no channel label beside it is dropped by `zip` and reported about by nothing, and one with
-no planted file can report a stray but never a deletion. The filtered names above are read
-off the runner's tables too, and each must appear in every one of those documents as a
-code span, itself or under a glob like `GIT_AUTHOR_*`. The surface grew more than once and
-left each document behind by a different amount, which is why there is a rule here instead
-of a fourth correction.
+AND THIS PASSAGE IS NOT CHECKED AGAINST THE RUNNER. A lint once read the runner's own
+constants and failed when a family it pins was named by none of the documents that describe
+the isolation (this passage, CLAUDE.md's Tests section, and the docstring beside
+`_harness.fixture_root()`); it was retired with the other lints whose measured catch was
+nothing. So a family added to the runner owes its mention in each of those places to
+whoever adds it, and the surface has grown more than once and left each document behind by
+a different amount - print the runner's constants rather than trusting this passage.
 
 CI RUNS EACH SWEEP SLICE AS SHARDS, not as one job: every slice is a matrix cell per part,
 `--shard I/N`, on every core of the runner (the sweep reads `CI=true`). The parts are
@@ -550,35 +546,30 @@ slice is `python3 tools/gate-parity.py --list`.
   `scripts/`, so they resolve a scripts file by basename through
   `hooks/_config.find_script()`, and `tests/test__config.py` pins that third copy
   against `_output.script_files()` by reading both rather than merging them.
-- **One concern, one home, and the registry is what enforces it.**
-  `_deps.SHARED_CONCERNS` names each shared concern, its single home under
-  `ui/shared/` (or `panel/core.js` when only one surface reads it), the text that
-  betrays a second implementation, and how many sites are allowed outside that
-  home. `shared_concern_violations()` fails the build on growth. It is a **cap,
-  never an equality** — that difference is the whole lesson of the three
-  save/discard counts retired in `9f73b22`, which required the duplication to stay
-  and so forbade the helper that would have removed it. A freed allowance is
-  reported by `shared_concern_slack()` rather than failed, so improving the code
-  can never turn this red. Comments are stripped before counting: three checks
-  here have already been tripped by prose, and a registry that counted comments
-  would punish documenting the rule.
-  A **registry rather than a similarity score, measured rather than preferred**: a
+- **One concern, one home, and nothing enforces it.** A concern shared by both
+  surfaces has a single home under `ui/shared/` (or `panel/core.js` when only one
+  surface reads it), and a second implementation of it is a defect. The registry
+  that counted copies outside a home and failed the build on growth was retired, so
+  this is author-enforced and a review is where a second copy is found. What the
+  registry taught stands: a count that bounds duplication must be a **cap, never an
+  equality** — the three save/discard counts retired in `9f73b22` required the
+  duplication to stay and so forbade the helper that would have removed it.
+  A **scout rather than a similarity gate, measured rather than preferred**: a
   normalising token scanner over the same files reported 3,732 cross-file repeat
   groups, and 725 after preserving the shared vocabulary, topped by this
   codebase's own `el()` idiom. A gate at that noise level is one people learn to
-  ignore, so similarity is at most a scout for rows to add here.
+  ignore, so `tools/find-shared-candidates.mjs` is a scout and never a gate.
 - **Never reach a file by absolute path.** A module specifier, or the first
   argument of a read/write call, must be relative — an absolute one encodes one
   machine's layout into a repository other people check out.
-  `_refs.absolute_reach_violations()` fails the build on it, and the rule is
-  deliberately about SYNTACTIC POSITION rather than about the literal: an absolute
-  path is legitimate as *data* (`validate_registry` is handed
+  Nothing fails the build on it any more - the check was retired - so it is
+  author-enforced, and the rule is about SYNTACTIC POSITION rather than about the
+  literal: an absolute path is legitimate as *data* (`validate_registry` is handed
   `{"root": "/Users/me/proj"}` precisely to check that it warns) and as a *system*
   location (the demo tool's `/usr/share/fonts` fallbacks), and neither is a reach.
-  Its stated limit is that a reach through a variable is invisible, so it
-  under-reports rather than over-reports. Python already had the stronger half of
-  this: `depth_sensitive_paths()` lets no `.py` under `scripts/` read `__file__`
-  outside the pinned preamble, so no module may derive its own location at all.
+  Python still has the stronger half of this: `depth_sensitive_paths()` lets no
+  `.py` under `scripts/` read `__file__` outside the pinned preamble, so no module
+  may derive its own location at all.
   Throwaway probes are where this rule actually gets broken, because a script in a
   scratch directory cannot reach the repo relatively — run those as
   `node --input-type=module -e '…'` from the repo root, where a relative specifier
@@ -1309,12 +1300,11 @@ the root-level documents, nothing counted them, and nothing asserted that one is
 from anywhere; there was no Markdown link checker at all. So a split that adds pages
 adds pages whose discoverability is held by a human habit — and the whole point of the
 split is that a reader's path to first success is short, which is a property of the
-link graph. `_refs.doc_link_drift()` was therefore written *with* the split rather than
-after it, while the graph was still clean, which is the only cheap moment to start
-holding one. It reports both directions: a root document nothing links to, and a link
-that points at a path which is not there. Each exemption is declared with its reason,
-and a reason that has stopped describing the tree is itself reported — the same shape
-`EXCLUDED` already uses here.
+link graph. A link check was therefore written *with* the split rather than after it,
+while the graph was still clean, reporting both directions: a root document nothing
+links to, and a link that points at a path which is not there. It was retired with the
+other lints whose measured catch was nothing, so the link graph is held by authors
+again.
 
 **Revisit trigger, on the user side:** when `QUICKSTART.md` stops being a path and
 starts being a reference — when it explains a config key, offers a second way to do a

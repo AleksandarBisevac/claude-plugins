@@ -25,9 +25,8 @@ unlinking a file needs a writable DIRECTORY and not a writable file; on windows 
 attribute is read off the file itself, `os.unlink` raises, and `shutil.rmtree` leaves
 `.git/objects/**` behind - SILENTLY, because every caller in this tree spells the call
 `ignore_errors=True`. `_output.remove_tree()` in the scripts anchor is the answer and
-its one home; `_harness.remove_tree` is bound to it, `tools/sweep-selftests.py` keeps a
-copy that `removal_helper_drift()` compares with the home statement for statement, and
-a tool that needs the same answer gets it from here rather than becoming another copy.
+its one home; `_harness.remove_tree` and the sweep runner's name are bound to it, and a
+tool that needs the same answer gets it from here rather than becoming another copy.
 
 WHY THE IMPORT IS DEFERRED, WHICH IS THE OBJECTION THIS FILE ANSWERS. `tools/` is
 outside the plugin, and importing `_harness` puts `scripts/`, `hooks/` and every
@@ -464,10 +463,9 @@ def _cases(check):
     # --- the removal, and the rule that keeps it reachable from here -----
     check("s11 `remove_tree` IS `_harness.remove_tree` IS `_output.remove_tree`, "
           "the same function object the suites under tests/ call - not a copy. "
-          "This fact has one home, `scripts/_output.py`, and one deliberate copy, "
-          "in the sweep runner, which `removal_helper_drift()` compares with it. "
-          "A binding here is how a tool gets the answer without becoming another "
-          "copy",
+          "This fact has one home, `scripts/_output.py`, which the sweep runner "
+          "binds as well. A binding here is how a tool gets the answer without "
+          "becoming another copy",
           remove_tree is _harness.remove_tree
           and remove_tree is _output.remove_tree)
 

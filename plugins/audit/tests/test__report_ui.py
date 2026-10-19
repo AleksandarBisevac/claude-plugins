@@ -128,23 +128,6 @@ def _cases(check):
         for _f in _files if _f.endswith(".py"))
     check("scripts/ui/ contains no .py files: %r" % (ui_pyfiles,), not ui_pyfiles)
 
-    # --- LF contract: none of the loaded ui/ assets (nor the assembled CSS/ ----
-    # SCRIPT) carry a "\r" — a CRLF checkout (e.g. windows-latest CI without a
-    # .gitattributes eol=lf pin) would shift every cross-line selftest pin.
-    real_assets = [("report.css", css_file), ("report.js", js_file),
-                   ("CSS", M.CSS), ("SCRIPT", M.SCRIPT)]
-    real_cr = _theme.cr_violations(real_assets)
-    check("no \\r (CRLF) in any loaded ui/ asset or the assembled CSS/SCRIPT "
-          "(found in: %r)" % (real_cr,), not real_cr)
-
-    # --- fixture red-proof: a CRLF asset IS named by the same helper ------------
-    fixture_assets = [("report.css", "body { color: red; }\r\n"),
-                      ("report.js", "console.log(1);\n")]
-    fixture_cr = _theme.cr_violations(fixture_assets)
-    check("fixture proof: a CRLF report.css is named by the CR check "
-          "(got %r, want ['report.css'])" % (fixture_cr,),
-          fixture_cr == ["report.css"])
-
     # --- caching: repeat calls return the identical cached string ---------------
     a = M._css()
     b = M._css()

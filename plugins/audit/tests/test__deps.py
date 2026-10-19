@@ -486,8 +486,8 @@ def _cases(check):
         print(_ev.follower_line(_owed["path"], _owed["recipe"], _owed["owner"]))
     check("g1 the shipped guide's module map fence matches `_deps.py --render` "
           "byte-for-byte right now - the house 'a doc block must match the code's own "
-          "statement' pattern `_areas.rule_drift()` uses, applied to this generated "
-          "block: %r" % (_map,), not _map)
+          "statement' pattern, applied to this generated block: %r" % (_map,),
+          not _map)
 
     # ---------------------------------------------- hooks_rule_drift: guide vs the rule
     # The generated map has a byte lint; the SENTENCE beside it had nothing, and that is
@@ -524,346 +524,6 @@ def _cases(check):
               [p for _, p in M.hooks_rule_drift(missing_rule_path) if "unreadable" in p])
     finally:
         shutil.rmtree(rule_tmp, ignore_errors=True)
-
-    # --------------------------- layer_mention_drift: no layer numeral in prose
-    # `_deps.py --render` prints every module's layer, so a number written beside
-    # one in a docstring or comment is a second copy of the table, and the copies
-    # went stale each time a module gained a layer of its own and everything above
-    # it moved up by one. Grading each copy against LAYERS was tried, one wording
-    # at a time, and lost to the next wording each round; refusing the numeral
-    # outright is the invariant, so a RIGHT number is refused as well as a wrong one.
-    check("lmd1 the shipped tree carries no layer numeral in a docstring or "
-          "comment: %r" % (M.layer_mention_drift()[:3],),
-          M.layer_mention_drift() == [])
-
-    lm_tmp = tempfile.mkdtemp(prefix="audit-deps-layermention-")
-    try:
-        lm_layers = (("_output",), ("_manifest_io", "_probe_mention"), ("_other",))
-
-        def _lm(body):
-            """Judge one module body against a small LAYERS naming two modules."""
-            with open(os.path.join(lm_tmp, "_probe_mention.py"), "w",
-                      encoding="utf-8") as fh:
-                fh.write(body)
-            return M.layer_mention_drift(lm_tmp, hooks_dir=os.path.join(lm_tmp, "none"),
-                                         layers=lm_layers)
-
-        right = _lm('"""Reads `_manifest_io` (layer 1) for the plan."""\n')
-        check("lmd2 a layer numeral LAYERS AGREES with is refused all the same - a "
-              "right number is the one the next move makes wrong - and the "
-              "message quotes the numeral it found: %r" % (right,),
-              len(right) == 1 and "'layer 1'" in right[0][1])
-        # Every wording the class has shipped in, each one a round that the
-        # shape-by-shape reading missed: the connectives are not enumerated by the
-        # rule, so a wording missing from this list is still refused.
-        lm_shapes = (
-            ('"""`_manifest_io` is at layer 1."""\n', "layer 1"),
-            ("# `_other` at L2 grades the config\nX = 1\n", "L2"),
-            ("# `_other` (now L2) and the rest\nX = 1\n", "L2"),
-            ('"""`_other` sits at layer 2 beside it."""\n', "layer 2"),
-            ("# reaches `_other` (L2) for the names\nX = 1\n", "L2"),
-            ("# see `_other`, L2) for it\nX = 1\n", "L2"),
-            ("# `_manifest_io.iter_tasks` (L1) reads it\nX = 1\n", "L1"),
-            ("# this file (L1) is a leaf\nX = 1\n", "L1"),
-            ('"""The two are layer-2 peers."""\n', "layer-2"),
-            ('"""A LAYER 2 module cannot import it."""\n', "LAYER 2"),
-            ("# with `_other` (2) above it\nX = 1\n", "(2)"),
-            ("import os  # noqa: E402 (the shared base, L1)\n", "L1"),
-            ("# Nothing else reads `_other`.\n# Both consumers are L7.\nX = 1\n", "L7"),
-            ("# an edge from audit-task.py, L7 -> L1\nX = 1\n", "L7"),
-            ('"""This module (layer two) may not reach it."""\n', "layer two"),
-            ('"""A Layer Three module reads it."""\n', "Layer Three"),
-            ('"""The two are layer-four peers."""\n', "layer-four"),
-            ('"""It sits at layer twenty-one."""\n', "layer twenty-one"),
-        )
-        lm_missed = [(body, want, hits) for body, want, hits in
-                     ((b, w, _lm(b)) for b, w in lm_shapes)
-                     if not [h for h in hits if repr(want) in h[1]]]
-        check("lmd3 every wording a layer numeral has shipped in is refused, and "
-              "each finding quotes the numeral - missed: %r" % (lm_missed,),
-              lm_missed == [])
-        check("lmd4 one finding per numeral, not one per block: a block carrying "
-              "three is three repairs",
-              len(_lm('"""`_other` is L2, `_manifest_io` is layer 1, and both sit '
-                      'below layer 3."""\n')) == 3)
-        check("lmd5 a sentence wrapped across two comment lines is still read",
-              len(_lm("# reaches `_other`\n# (L1) for the names\nX = 1\n")) == 1)
-        check("lmd6 a layer numeral in a string that is neither docstring nor "
-              "comment is not prose and is left alone",
-              _lm('X = "`_other` (L1)"\n') == [])
-        # THE ALLOW DIRECTION. `L<N>` is a layer only where the prose is talking
-        # about layers; a line anchor, a path, a cache level or a spec level is
-        # not one, and convicting them would get the rule routed around. The
-        # anchor case names a LAYERS module on purpose, so it passes because the
-        # `#` is read and not merely because the block lacks layer context.
-        lm_allowed = (
-            "# `_other` cites https://github.com/o/r/blob/main/x.py#L120 for it\n"
-            "X = 1\n",
-            "# the fixture sits under data/L3/ for it\nX = 1\n",
-            "# an L1 cache miss costs more than the read\nX = 1\n",
-            '"""Uses CSS Selectors L4 for the :has() pseudo-class."""\n',
-            '"""Counts `_output` (2 of them) on each side."""\n',
-            '"""A layer above it, never the same layer."""\n',
-            '"""Each layer owns its names, and a layer below is read first."""\n',
-        )
-        lm_overfired = [(b, _lm(b)) for b in lm_allowed if _lm(b)]
-        check("lmd7 a numeral that is not a layer - a URL line anchor, a path, a "
-              "cache or spec level, a count in parentheses - is left alone: %r"
-              % (lm_overfired,),
-              lm_overfired == [])
-        torn = os.path.join(lm_tmp, "_probe_mention.py")
-        with open(torn, "w", encoding="utf-8") as fh:
-            fh.write("def (:\n")
-        torn_hits = M.layer_mention_drift(lm_tmp, hooks_dir=os.path.join(lm_tmp, "none"),
-                                          layers=lm_layers)
-        check("lmd8 a file that will not parse is NAMED rather than skipped - a "
-              "scan that passes silently over a file it could not read is "
-              "claiming a clean answer about it: %r" % (torn_hits,),
-              len(torn_hits) == 1 and "could not be read" in torn_hits[0][1])
-        # An ABSOLUTE ordinal position is the table's row said in words. It is
-        # refused only where the phrase ends its clause; a restricting complement
-        # makes it relational and it stays.
-        lm_ordinal = (
-            '"""WHY THE BOTTOM LAYER. It has no peers."""\n',
-            '"""Sits at the top layer, so nothing reads it."""\n',
-            '"""HERE, AT THE BOTTOM LAYER, BECAUSE EVERY READER NEEDS IT."""\n',
-            "# `_x` is the lowest layer,\n# so the ledger reads it\nX = 1\n",
-            '"""It is in the first layer and nothing else."""\n',
-            '"""A module in the second layer; not a peer."""\n',
-            '"""It stays in the highest layer"""\n',
-            '"""Kept in the bottom layer because it is read by all."""\n',
-        )
-        lm_ord_missed = [b for b in lm_ordinal if len(_lm(b)) != 1]
-        check("lmd9 an absolute ordinal layer position - the phrase ends its clause "
-              "- is refused, in any case and across a wrapped comment: %r"
-              % (lm_ord_missed,), lm_ord_missed == [])
-        lm_relational = (
-            '"""The lowest layer both can reach."""\n',
-            '"""It is the first layer that holds the name."""\n',
-            '"""Place it in the first layer strictly above the reader."""\n',
-            '"""The highest layer the three can import from."""\n',
-            '"""The lowest layer it can occupy."""\n',
-            "# the lowest layer\n# any of them sat in\nX = 1\n",
-            '"""The highest layer `_manifest_io` can reach."""\n',
-            '"""A layer below, or its layer-mate."""\n',
-        )
-        lm_rel_over = [(b, _lm(b)) for b in lm_relational if _lm(b)]
-        check("lmd10 an ordinal layer phrase followed by a restricting complement, "
-              "or a layer below / a layer-mate, is relational and is left alone: %r"
-              % (lm_rel_over,), lm_rel_over == [])
-        # THE INVERSE. The rule refuses every ordinal phrase and allows only a closed
-        # set of relational complements, so an absolute claim followed by an ordinary
-        # word (a verb, "of the", a parenthesis) is refused as well.
-        lm_absolute = (
-            '"""The bottom layer holds only _output."""\n',
-            '"""It sits at the bottom layer of the table."""\n',
-            '"""The bottom layer is why it imports nothing."""\n',
-            '"""The bottom layer (see LAYERS) reads nothing."""\n',
-            "# the top layer\n# holds the entry points\nX = 1\n",
-            '"""The SECOND LAYER owns the names."""\n',
-        )
-        lm_abs_missed = [b for b in lm_absolute if len(_lm(b)) != 1]
-        check("lmd11 an absolute ordinal claim followed by an ordinary word is "
-              "refused: %r" % (lm_abs_missed,), lm_abs_missed == [])
-        lm_complements = (
-            '"""The first layer that holds the name."""\n',
-            '"""The first layer which both reach."""\n',
-            '"""The lowest layer it can occupy."""\n',
-            '"""The lowest layer they import from."""\n',
-            '"""The lowest layer both can reach."""\n',
-            '"""The lowest layer any of them sat in."""\n',
-            '"""The first layer every reader can reach."""\n',
-            '"""The first layer each of them can use."""\n',
-            '"""The first layer strictly above the reader."""\n',
-            '"""The first layer above `_output`."""\n',
-            '"""The top layer below the entry points."""\n',
-            '"""The highest layer the three can import from."""\n',
-            '"""The highest layer `_a`, `_b` and `_c` can all reach."""\n',
-            "# the lowest layer\n# that holds the names\nX = 1\n",
-            "# the first layer\n# #  strictly above it\nX = 1\n",
-        )
-        lm_comp_over = [(b, _lm(b)) for b in lm_complements if _lm(b)]
-        check("lmd12 each relational complement in the closed allow set stays "
-              "allowed, wrapped or not: %r" % (lm_comp_over,), lm_comp_over == [])
-        ord_hit = _lm('"""The bottom layer holds only _output."""\n')
-        num_hit = _lm('"""It sits at layer 2."""\n')
-        check("lmd13 an ordinal hit's message names a position claim and the "
-              "relational rewrite, and a numeral's message is unchanged: %r"
-              % (ord_hit,),
-              len(ord_hit) == 1 and "position" in ord_hit[0][1]
-              and "a layer above" in ord_hit[0][1]
-              and "delete the number" not in ord_hit[0][1]
-              and len(num_hit) == 1 and "delete the number" in num_hit[0][1])
-
-        # THE DOCUMENTS. The same numeral, written into markdown beside a module's
-        # name, is the same second copy of the table, and the guide carried the most
-        # of them. The rule is the one above - the numeral is refused, right or
-        # wrong - and the finding names the module it is bound to, the layer as
-        # written and the index LAYERS holds, because that triple is what a reader
-        # repairing the sentence needs and what tells a stale copy from a lucky one.
-        def _ld(text):
-            """Judge one fixture document against the small LAYERS above."""
-            doc = os.path.join(lm_tmp, "GUIDE.md")
-            with open(doc, "w", encoding="utf-8") as fh:
-                fh.write(text)
-            return M.layer_mention_drift(lm_tmp, hooks_dir=os.path.join(lm_tmp, "none"),
-                                         layers=lm_layers, doc_paths=[doc])
-
-        # The fixture's module file is reset to a clean body, so every finding
-        # below comes from the document and none from the probe module.
-        with open(os.path.join(lm_tmp, "_probe_mention.py"), "w",
-                  encoding="utf-8") as fh:
-            fh.write('"""Nothing about layers here."""\n')
-        stale = _ld("# Guide\n\nThe reader `_other` sits at layer 1, beside the plan.\n")
-        check("ldoc1 a document that binds a module name to an absolute layer number "
-              "disagreeing with _deps.LAYERS fails the lint, naming the module, the "
-              "stated layer and the real one (one finding, labelled by the document "
-              "and line, quoting `_other`, 'layer 1' and the index LAYERS holds): %r"
-              % (stale,),
-              len(stale) == 1 and stale[0][0] == "GUIDE.md:3"
-              and "`_other`" in stale[0][1] and "'layer 1'" in stale[0][1]
-              and "holds it at L2" in stale[0][1] and "disagrees" in stale[0][1]
-              and "agrees today" not in stale[0][1])
-        # THE DENY TWIN. Relational wording says what the number said and stays
-        # true when the table moves, so it must pass - a lint that refused every
-        # sentence mentioning a layer would be routed around inside a day.
-        relational = _ld("# Guide\n\n`_other` sits a layer above `_manifest_io`, and "
-                         "the map is what `_deps.py --render` prints.\n\n"
-                         "Each layer owns its names; a layer below is read first.\n")
-        check("ldoc2 a document whose layer wording is relative only - a layer above "
-              "a named module, the render command as the pointer - passes: %r"
-              % (relational,), relational == [])
-        agreeing = _ld("# Guide\n\n`_other` sits at layer 2.\n")
-        check("ldoc3 a numeral LAYERS agrees with is still refused in a document, and "
-              "the finding says it agrees today rather than calling it wrong: %r"
-              % (agreeing,),
-              len(agreeing) == 1 and "agrees today" in agreeing[0][1]
-              and "disagrees" not in agreeing[0][1]
-              and "`_other`" in agreeing[0][1])
-        # The earlier sentence names a different module on purpose: a binding that
-        # read the whole paragraph rather than the numeral's own sentence would
-        # name `_manifest_io` here.
-        headed = _ld("## 2. Files\n\n### `plugins/audit/scripts/_other.py`\n"  # refs: fixture
-                     "Grades the config for `_manifest_io`. Layer 1. `--selftest`.\n")
-        check("ldoc4 a numeral whose sentence names no module is bound to the module "
-              "its section heading names, not to one an earlier sentence named: %r"
-              % (headed,),
-              len(headed) == 1 and "`_other`" in headed[0][1]
-              and "'Layer 1'" in headed[0][1] and headed[0][0] == "GUIDE.md:4")
-        nearest = _ld("Both read `_manifest_io` (layer 0), and `_other` (L1)\n"
-                      "imports it.\n")
-        check("ldoc5 each numeral binds to the nearest module named before it in its "
-              "sentence, across a wrapped line, and each is one finding: %r"
-              % (nearest,),
-              len(nearest) == 2
-              and "`_manifest_io`" in nearest[0][1] and "'layer 0'" in nearest[0][1]
-              and "`_other`" in nearest[1][1] and "'L1'" in nearest[1][1])
-        fenced = _ld("## 1a. Module map (generated)\n\n```\nL0:\n  _output\n\n"
-                     "L2:\n  _other -> _output\n```\n")
-        check("ldoc6 a fenced block is not prose - the generated module map is the "
-              "one place the numbering is meant to be printed: %r" % (fenced,),
-              fenced == [])
-        unbound = _ld("Nothing here names a module, yet it says layer 3.\n")
-        check("ldoc7 a numeral bound to no module is refused all the same, and the "
-              "finding says it found no module: %r" % (unbound,),
-              len(unbound) == 1 and "no module" in unbound[0][1])
-        gone = M.layer_mention_drift(lm_tmp, hooks_dir=os.path.join(lm_tmp, "none"),
-                                     layers=lm_layers,
-                                     doc_paths=[os.path.join(lm_tmp, "gone.md")])
-        check("ldoc8 an unreadable document is NAMED rather than skipped: %r" % (gone,),
-              len(gone) == 1 and "could not be read" in gone[0][1])
-        # Asked of the document list itself: the real documents are clean, so a
-        # fixture call that read them anyway would still return no finding.
-        check("ldoc9 a fixture tree with no documents handed in reads none - the "
-              "derived set is the real repository's and belongs to the default call",
-              M._layer_doc_names(None, lm_tmp) == ([], None)
-              and M.layer_mention_drift(lm_tmp, hooks_dir=os.path.join(lm_tmp, "none"),
-                                        layers=lm_layers) == [])
-    finally:
-        shutil.rmtree(lm_tmp, ignore_errors=True)
-
-    # The default call reads the derived documents too: the guide is where the
-    # class lived longest, so a default that stopped reaching it has gone blind,
-    # not clean.
-    _ldoc_real = [h for h in M.layer_mention_drift() if ".md:" in h[0]]
-    _ldoc_names = M._layer_doc_names(None, None)
-    check("ldoc10 the default call reads every seed document, the guide among "
-          "them, and the shipped documents carry no layer numeral: %r"
-          % (_ldoc_real[:3] or _ldoc_names[1],),
-          _ldoc_names[1] is None
-          and all(seed in _ldoc_names[0] for seed in M._PROSE_DOCS)
-          and _ldoc_real == [])
-
-    # ------------------------------- uncalled_helper_claims: a consumer that is not
-    # `_evidence_io.in_evidence` opened "needed for the same reason: a guard that
-    # asks ... has to be able to name the record" while nothing anywhere called it.
-    # The fixtures are synthetic on purpose - the shipped tree is clean, so a case
-    # built on it could only ever assert the absence of a defect.
-    check("uh1 the shipped tree carries no docstring claiming a consumer nothing "
-          "under scripts/, hooks/ or tools/ is: %r" % (M.uncalled_helper_claims(),),
-          M.uncalled_helper_claims() == [])
-
-    uh_tmp = tempfile.mkdtemp(prefix="audit-deps-uncalled-")
-    try:
-        def _uh(body, tools=""):
-            """Judge one module, with an optional tools/ file that may name it."""
-            for stale in os.listdir(uh_tmp):
-                stale_path = os.path.join(uh_tmp, stale)
-                if os.path.isfile(stale_path):
-                    os.remove(stale_path)
-            with open(os.path.join(uh_tmp, "_probe_claim.py"), "w",
-                      encoding="utf-8") as fh:
-                fh.write(body)
-            tools_dir = os.path.join(uh_tmp, "tools")
-            if not os.path.isdir(tools_dir):
-                os.makedirs(tools_dir)
-            for stale in os.listdir(tools_dir):
-                os.remove(os.path.join(tools_dir, stale))
-            if tools:
-                with open(os.path.join(tools_dir, "caller.py"), "w",
-                          encoding="utf-8") as fh:
-                    fh.write(tools)
-            return M.uncalled_helper_claims(uh_tmp,
-                                            hooks_dir=os.path.join(uh_tmp, "none"),
-                                            tools_dir=tools_dir)
-
-        _claim = ('def in_evidence(project, path):\n'
-                  '    """True when `path` is inside the evidence dir.\n\n'
-                  '    The same shape as the journal\'s, and needed for the same\n'
-                  '    reason: a guard that asks "did a shell command write into\n'
-                  '    the record" has to be able to name the record.\n'
-                  '    """\n'
-                  '    return False\n')
-        _lonely = _uh(_claim)
-        check("uh2 THE FAULT ITSELF: a function nothing names but its own def, "
-              "whose docstring says a guard needs it, is reported with the "
-              "function and EVERY phrase it matched - a message naming one of "
-              "them sends the writer back for the rest: %r" % (_lonely,),
-              len(_lonely) == 1 and "in_evidence()" in _lonely[0][1]
-              and "'a guard that'" in _lonely[0][1]
-              and "'needed for'" in _lonely[0][1])
-        check("uh3 ...and the SAME docstring goes quiet the moment a caller "
-              "exists, which is what stops this rule being a ban on the phrase: "
-              "a claim with a consumer behind it is how most of this tree is "
-              "written",
-              _uh(_claim, tools="import x\nx.in_evidence('a', 'b')\n") == [])
-        check("uh4 ...and an uncalled helper that claims NOTHING is left alone - "
-              "a helper with no caller yet is a decision somebody may have taken, "
-              "and it is the PAIR that is the defect",
-              _uh('def spare(a):\n'
-                  '    """The membership question, answered off the path."""\n'
-                  '    return False\n') == [])
-        torn_uh = os.path.join(uh_tmp, "_probe_torn_claim.py")
-        with open(torn_uh, "w", encoding="utf-8") as fh:
-            fh.write("def (:\n")
-        _torn_hits = M.uncalled_helper_claims(
-            uh_tmp, hooks_dir=os.path.join(uh_tmp, "none"),
-            tools_dir=os.path.join(uh_tmp, "tools"))
-        check("uh5 a file that will not parse is NAMED rather than skipped, the "
-              "rule every scan here follows: %r" % (_torn_hits,),
-              any("could not be read" in why for _rel, why in _torn_hits))
-    finally:
-        shutil.rmtree(uh_tmp, ignore_errors=True)
 
     # ------------------------------------------ explorer_contract_drift
     # `/audit:init` spawns the explorer agent and parses a JSON array back; the
@@ -1723,486 +1383,6 @@ def _cases(check):
     finally:
         shutil.rmtree(nav_tmp, ignore_errors=True)
 
-    # ------------------------------------------------ ui_navigability_violations
-    check("u1 the real scripts/ui/ assets (>= %d lines) all carry one section "
-          "marker per %d lines - the four files that hold the entire report and "
-          "panel UI were unchecked by anything until now: %r"
-          % (M._NAV_MIN_LINES, M._NAV_MIN_LINES, M.ui_navigability_violations()),
-          not M.ui_navigability_violations())
-
-    ui_tmp = tempfile.mkdtemp(prefix="audit-deps-uinav-")
-    try:
-        def _write(name, body):
-            with open(os.path.join(ui_tmp, name), "w", encoding="utf-8") as fh:
-                fh.write(body)
-
-        _JS_MARK = "// --- one -------------------------------------------------\n"
-        _CSS_MARK = "/* ---- one ---------------------------------------------- */\n"
-
-        _write("bare.js", "x();\n" * (M._NAV_MIN_LINES + 10))
-        ui_hits = M.ui_navigability_violations(ui_tmp)
-        check("u2 a long .js with no section markers at all is named as a ui "
-              "navigability violation: %r" % (ui_hits,),
-              any(f == "bare.js" for f, _ in ui_hits))
-
-        # ---- mutation proof: a weakened check must MISS the u2 fixture ----
-        def _weakened_ui_navigability_violations(ui_dir):
-            return []  # the marker-count check removed entirely
-
-        weak_ui_hits = _weakened_ui_navigability_violations(ui_tmp)
-        check("u3 mutation proof: with the marker-count check removed, the SAME "
-              "markerless-file fixture u2 catches is missed entirely (red proves "
-              "u2 is testing something real): %r" % (weak_ui_hits,),
-              not any(f == "bare.js" for f, _ in weak_ui_hits))
-        check("u4 mutation proof: the real, unweakened ui_navigability_violations() "
-              "still catches it - nothing was left mutated behind",
-              any(f == "bare.js" for f, _ in M.ui_navigability_violations(ui_tmp)))
-
-        # ---- the density is what does the work, not the floor of 2 ----
-        _write("thin.css", _CSS_MARK * 2 + ("a{b:c}\n" * (M._NAV_MIN_LINES * 2 + 50)))
-        thin_hits = M.ui_navigability_violations(ui_tmp)
-        check("u5 a 900-line asset carrying exactly 2 markers is still named - a "
-              "flat 'at least 2' rule (what the .py lint asks) would pass it, so "
-              "this is the case that proves the DENSITY is doing the work: %r"
-              % (thin_hits,),
-              any(f == "thin.css" for f, _ in thin_hits))
-
-        # ---- the other direction: the rule must not fire on a well-marked file.
-        # Looks vacuous and is the only case that goes red if the density is ever
-        # tightened into something no real asset can satisfy.
-        _write("ok.css", _CSS_MARK * 2 + ("a{b:c}\n" * (M._NAV_MIN_LINES - 100)))
-        _write("short.js", "x();\n" * 100)
-        ok_hits = M.ui_navigability_violations(ui_tmp)
-        check("u6 control: a long asset with enough markers, and a short one with "
-              "none, are both left alone - the rule fires on too few markers for "
-              "the length, not on length or on markers alone: %r" % (ok_hits,),
-              not any(f in ("ok.css", "short.js") for f, _ in ok_hits))
-
-        _write("panel.html", "<div>\n" * (M._NAV_MIN_LINES + 10))
-        check("u7 an extension with no marker syntax on record (.html) is skipped "
-              "rather than guessed at",
-              not any(f == "panel.html" for f, _ in M.ui_navigability_violations(ui_tmp)))
-
-        # ---- the hole this rule keeps, pinned as a decision ----
-        # A marker is a matched LINE, so a marker-shaped line inside a template
-        # literal counts as a section marker. `tokenize` is what closed the same
-        # hole in the .py rule, and there is no stdlib tokenizer for CSS or
-        # JavaScript; the argument, and the cheap tightening that was measured
-        # and rejected, are above `_UI_MARKER_RES`.
-        #
-        # The two fixtures differ by NOTHING except those two lines inside the
-        # backticks, which is what stops this from asserting "a file passes":
-        # the same body without them IS reported, so the pass is caused by the
-        # fake markers and by nothing else.
-        #
-        # IF THIS CASE GOES RED, THE HOLE WAS CLOSED. Delete the case on purpose
-        # - do not weaken it back into green.
-        _stringy_body = "x();\n" * (M._NAV_MIN_LINES + 10)
-        _write("stringy.js", "const doc = `\n" + _JS_MARK + _JS_MARK + "`;\n"
-               + _stringy_body)
-        _write("nostring.js", _stringy_body)
-        hole_hits = M.ui_navigability_violations(ui_tmp)
-        check("u8 KNOWN BLINDNESS, pinned rather than fixed: two marker-shaped "
-              "lines inside a template literal are counted as section markers, so "
-              "stringy.js passes while nostring.js - the identical body without "
-              "them - is named. A regex cannot tell a comment from a string and "
-              "neither language has a stdlib tokenizer: %r" % (hole_hits,),
-              not any(f == "stringy.js" for f, _ in hole_hits)
-              and any(f == "nostring.js" for f, _ in hole_hits))
-    finally:
-        shutil.rmtree(ui_tmp, ignore_errors=True)
-
-    # ---- why the column-0 tightening was rejected, measured on the real asset ----
-    # Why the marker rule allows up to two leading spaces. The report's script
-    # body is wrapped, so every line in it is indented and so is every section
-    # marker; a column-0 rule would count none of them. Measured from the shipped
-    # regex against the shipped parts rather than from a literal, so the day the
-    # body stops being wrapped this reports it.
-    _js_marker_re = dict(M._UI_MARKER_RES)[".js"]
-    _report_dir = os.path.join(M._UI_DIR, "report")
-    _report_parts = sorted(n for n in os.listdir(_report_dir)
-                           if n.endswith(".js"))
-    _report_lines = []
-    for _n in _report_parts:
-        with open(os.path.join(_report_dir, _n), "r", encoding="utf-8") as fh:
-            _report_lines.extend(fh.readlines())
-    _marked = [ln for ln in _report_lines if _js_marker_re.match(ln)]
-    _at_col0 = [ln for ln in _marked if not ln.startswith(" ")]
-    check("u9 the report's script body indents every section marker, because the "
-          "whole body runs inside one wrapper: %d line(s) across %d part(s), %d "
-          "marker(s), %d of them at column 0. A column-0 rule would therefore "
-          "count none of them and fail the best-marked source in the directory, "
-          "which is why the leading-space allowance exists. If the body is ever "
-          "unwrapped and its markers reach column 0, this goes red and the "
-          "stricter rule becomes available"
-          % (len(_report_lines), len(_report_parts), len(_marked), len(_at_col0)),
-          len(_report_parts) >= 2 and len(_marked) >= 2 and not _at_col0)
-
-    # ---- the two quiet answers this function used to give ------------------
-    # The marker hole u8 pins is a DECISION - closing it costs a hand-rolled lexer
-    # for two languages. These two were never a decision: an asset nothing could
-    # read came back as an asset with nothing wrong, and a missing scripts/ui/ -
-    # the whole report and panel UI gone - printed exactly what a clean tree
-    # prints. Both are the same direction as the tokenize hole above - the one
-    # that hurts.
-    f44_tmp = tempfile.mkdtemp(prefix="audit-deps-f44-")
-    try:
-        with open(os.path.join(f44_tmp, "mojibake.js"), "wb") as fh:
-            fh.write(b"// \xff\xfe not utf-8\n" + b"x();\n" * M._NAV_MIN_LINES)
-        with open(os.path.join(f44_tmp, "fine.js"), "w", encoding="utf-8") as fh:
-            fh.write("x();\n" * 10)
-        f44_hits = M.ui_navigability_violations(f44_tmp)
-        check("u10 an asset that will not DECODE is named, never swallowed: %r"
-              % (f44_hits,),
-              any(f == "mojibake.js" and "unreadable" in w for f, w in f44_hits))
-        check("u11 ...and the readable asset beside it is not named, which is what "
-              "tells u10 apart from a rule that started reporting every file",
-              not any(f == "fine.js" for f, _ in f44_hits))
-    finally:
-        shutil.rmtree(f44_tmp, ignore_errors=True)
-
-    _f44_gone = M.ui_navigability_violations(os.path.join(f44_tmp, "vanished"))
-    check("u12 a ui_dir that cannot be LISTED returns a NAMED finding, not the "
-          "empty list a clean directory returns. `return []` there meant "
-          "'scripts/ui/ is missing' and 'every asset is navigable' printed the "
-          "same way, and the missing directory is the whole report and panel "
-          "UI: %r" % (_f44_gone,),
-          len(_f44_gone) == 1 and "unlistable" in _f44_gone[0][1])
-    check("u13 ...and the real directory still returns [] - the case that goes "
-          "red if u12's repair turned into 'always report something'",
-          M.ui_navigability_violations() == [])
-
-    # --------------------------------------------------- one concern, one home
-    _sc = M.shared_concern_violations()
-    check("sc1 no registered shared concern has spread past its allowance: %r"
-          % (_sc,), _sc == [])
-    # The check on the check. Every row's live count is computed here so an empty
-    # violation list cannot mean "the needles stopped matching". A row whose live
-    # count is 0 AND whose home is None would be a needle that found nothing
-    # anywhere, which is the shape a typo takes.
-    _live = [(c, sum(n for _f, n in M._concern_hits(M._UI_DIR, home, needle)), allowed)
-             for c, home, needle, allowed, _w in M.SHARED_CONCERNS]
-    _dead = [(c, n, a) for c, n, a in _live if a > 0 and n == 0]
-    check("sc2 ...and that verdict is over needles that still match - %r; a row "
-          "allowing copies while finding none is a needle that has stopped "
-          "working, and it would read exactly like a clean tree (dead: %r)"
-          % (_live, _dead), not _dead)
-    # A HOME used to imply an allowance of zero, and that held while every homed
-    # row was fully extracted. The table-header row broke it honestly: fourteen of
-    # fifteen sites reach the helper, and the fifteenth builds an empty <thead>
-    # and fills it on every redraw - a different job, which forcing through the
-    # helper for this lint's sake would be the tail wagging the dog. So a residual
-    # is allowed and must be DECLARED here, which is what stops "extracted, with
-    # an exception" from quietly becoming "extracted, with several".
-    _RESIDUAL = {"table header construction", "select option loop"}
-    _homed = [(c, a) for c, home, _n, a, _w in M.SHARED_CONCERNS if home is not None]
-    _undeclared = sorted(c for c, a in _homed if a > 0 and c not in _RESIDUAL)
-    _stale = sorted(c for c, a in _homed if a == 0 and c in _RESIDUAL)
-    check("sc3 an EXTRACTED concern allows nothing outside its home, unless its "
-          "residual is declared here - undeclared %r, and %r declared a residual "
-          "it no longer has" % (_undeclared, _stale),
-          not _undeclared and not _stale
-          and any(home is not None for _c, home, _n, _a, _w in M.SHARED_CONCERNS))
-    check("sc4 every row carries a reason, because a bare number in this table "
-          "is a number nobody can re-derive the intent of",
-          all(isinstance(why, str) and len(why) > 40
-              for _c, _h, _n, _a, why in M.SHARED_CONCERNS))
-    # sc2 can only vouch for a row that still ALLOWS copies: it calls a live count
-    # of 0 a dead needle, which is right for an unextracted row and wrong for an
-    # extracted one, where 0 is the goal. So an extracted row whose needle stopped
-    # matching reads exactly like a clean tree - the failure this whole registry
-    # exists to prevent, one level up.
-    #
-    # Each needle is therefore pointed at samples that MUST match and samples
-    # that must not. Hand-kept, and a row with no sample fails rather than being
-    # skipped, because a skipped row is the same silence.
-    #
-    # SEVERAL SPELLINGS PER ROW. One sample per row was the shape
-    # this table had, and it was written by copying the offending line - the same
-    # line the needle was written from - so the proof was a value compared with
-    # itself. It said the needle could fire, and could not say the needle sees the
-    # convention typed any other way. `===1?'':'s'` passed it while a panel part
-    # spelled the identical ternary with spaces, and the calendar row passed it
-    # while naming five functions that had all been renamed. So every row carries
-    # the spellings an author would produce without consulting this table:
-    # whitespace, the other quote character, a different local name, an arrow
-    # instead of a declaration.
-    _SAMPLES = {
-        "blob download": (
-            ("const u=URL.createObjectURL(b);",
-             "const u = window.URL.createObjectURL(b);",
-             "const {createObjectURL} = URL; const u = createObjectURL(b);"),
-            ("revokeObjectURL(u)", "downloadBlob(b, name)")),
-        "web storage": (
-            ("localStorage.setItem(k,v)",
-             "window.sessionStorage.getItem(k)",
-             "localStorage['audit-panel-tab']"),
-            ("storageSet(k,v)", "storageGet(k)")),
-        "pluralisation": (
-            ("' change'+(n===1?'':'s')",
-             "' change' + (n === 1 ? '' : 's')",
-             '" change" + (n !== 1 ? "s" : "")',
-             "' item'+(n>1?'s':'')"),
-            # The second miss is a REAL line from usage-view.js: the same
-            # comparison against one, branching to a sentence rather than to a
-            # suffix. It decides no plural and must not be convicted.
-            ("plural(n,'change')",
-             "(sr.binSize === 1 ? '' : ' Days are rolled up into ' + per)")),
-        # The four that made this needle a regex: a space follows the paren in
-        # `dParse(s) + 6 * DAY` too, so only what comes NEXT tells them apart.
-        "literal (s) pluralisation": (
-            ("' row(s) match everything'", "'1 task(s)'", '"1 task(s)"'),
-            ("dIso(dParse(s) + 6 * DAY)", "hcode(s).join('')", "plural(n,'row')")),
-        "clipboard copy": (
-            ("navigator.clipboard.writeText(t)",
-             "navigator . clipboard . writeText(t)",
-             "const {clipboard} = navigator; clipboard.writeText(t)"),
-            ("copyText(t)", "document.execCommand('copy')")),
-        "table header construction": (
-            ("el('thead',{},el('tr',{}))", 'el("thead", {})', "el( 'thead' )"),
-            ("tableHead(['a','b'])", "el('tbody',{})")),
-        "day <-> milliseconds": (
-            ("const d=ms/864e5;", "const d = ms / 86400000;", "const d = ms / 864E5;",
-             "const d = ms / (24 * 60 * 60 * 1000);",
-             "const ms = d * 1000 * 60 * 60 * 24;"),
-            ("const d=ms/DAY_MS;", "const h = ms / 3600000;")),
-        "save confirmation": (
-            ("toast('nothing to save - x')", 'toast("nothing to save - x")'),
-            ("confirmSave({})", "toast('saved')")),
-        "theme token walk": (
-            ("const now=tVal(name,mode),was=b(name,mode);",
-             "let cur = tVal(tok, m), base = d(tok, m);"),
-            # The second miss is a single READ of a token's value, which every
-            # renderer does; what this row is about is the pair being compared.
-            ("TMODES.forEach(mode=>{ drawCell(mode); });",
-             "const v = tVal(name, mode);")),
-        "select option loop": (
-            ("if(cur===v)o.selected=true;",
-             "if (cur === v) opt.selected = true;",
-             "o.selected=!0;"),
-            ("fillOptions(sel, pairs, cur)", "if(o.selected===true)n++;")),
-        "heatmap calendar": (
-            ("function startOf(g, d) { return d; }",
-             "function periodStart(g, iso) { return iso; }",
-             "const weekdayIndex = (iso) => 0;"),
-            ("periodStart(g, d)", "cal.startOf('week')")),
-        # The miss samples are CALLS, because every surface still calls heatRows -
-        # a needle that fired on the call would report the two readers this row
-        # exists to permit.
-        "heatmap row shapes": (
-            ("function weekdayRows(lo, hi) { return []; }",
-             "const dateRows = (s, en) => [];"),
-            ("heatRows(g, win, days, hoursOf)", "rows.push(dateRows(a, b))")),
-        "caret restore": (
-            ("n.setSelectionRange(caret,caret)",
-             "n.setSelectionRange(pos, pos)",
-             "n.setSelectionRange( p , p )"),
-            # The second miss selects a SPAN rather than restoring a point, which
-            # is the job this row must leave alone.
-            ("restoreCaret(n,caret,back)", "n.setSelectionRange(0, n.value.length)")),
-        # The miss samples are the CALL, which every surface makes and which an
-        # extraction keeps, and the report's `prefersDark` - a real neighbouring
-        # line that asks the OS and is not this concern, so a needle anchored on
-        # `prefers-color-scheme` instead would have convicted it. That spelling
-        # was measured against this tree and found the same two files; the
-        # declaration was chosen over it because a surface may legitimately grow
-        # a second OS query (a listener that repaints on an OS switch) and a row
-        # that fires on innocent code is a row someone switches off.
-        #
-        # THE EXTRACTION HAPPENED and that decision was re-opened on the way, then
-        # closed again the same way: a `prefers-color-scheme` row was written,
-        # and this comment is what withdrew it. The stated cost has not changed -
-        # a surface may still legitimately grow a second OS query - so the trigger
-        # has not fired, and a second row would have forbidden code nobody has
-        # written yet for the sake of a copy that no longer exists. The miss
-        # sample below is now `shared/theme.js`'s own line, which is excluded as
-        # the home; it stays here because what it proves is unchanged.
-        # The miss samples are a CALL, which both surfaces make and which the
-        # extraction keeps, and the panel's inline own-property read over a table
-        # this helper does not own - the repair, not the defect, and the reason
-        # `hasOwnProperty` is not the needle.
-        "own-property table read": (
-            ("const lookup=(t,k)=>Object.prototype.hasOwnProperty.call(t,k)?t[k]:undefined;",
-             "function lookup(table, key) { return table[key]; }",
-             "let ownProp = (t, k) => t[k];",
-             "const getOwn=(t,k)=>t[k];"),
-            ("orderPhaseBlocks(lookup(ORDERS, phaseOrder));",
-             "if(Object.prototype.hasOwnProperty.call(EVWORD,k))return EVWORD[k];")),
-        "which mode the page is painting": (
-            ("const isDark=()=>root.getAttribute('data-theme')==='dark';",
-             "const isDark = () => { return t ? t === 'dark' : p(); };",
-             "function isDark() { return false; }",
-             "let darkNow = () => false;"),
-            ("if (isDark()) paintTheme();",
-             "const prefersDark = () => matchMedia('(prefers-color-scheme: dark)').matches;",
-             "root.setAttribute('data-theme', isDark() ? 'light' : 'dark');")),
-        # The miss samples carry BOTH halves this needle had to separate: the
-        # repaired sort, which reads a rank the server computed, AND the innocent
-        # lookalikes it must not fire on - a form control whose value for an
-        # absent tier is an empty string, and the Overview badge that renders only
-        # when a tier is present. Neither decides an order.
-        "phase execution order": (
-            ("ordered.sort((a,b)=>(a.priority==null?1:0)-(b.priority==null?1:0))",
-             "ordered.sort((a,b)=>(a.priority === null ? 1 : 0) - 0)",
-             "const r = (p.priority || 0) - (q.priority || 0);",
-             "const r = (p.priority ?? 9) - 0;"),
-            ("prio.value=ph.priority==null?'':String(ph.priority);"
-             "ordered.sort((a,b)=>a.porder-b.porder)",
-             "p.priority!=null?el('span',{},'priority '+p.priority):null")),
-    }
-    _missing = [c for c, _h, _n, _a, _w in M.SHARED_CONCERNS if c not in _SAMPLES]
-    check("sc12 every row has a sample its needle is checked against - a row "
-          "without one would be a needle nothing proves can fire: %r" % (_missing,),
-          not _missing and len(_SAMPLES) == len(M.SHARED_CONCERNS))
-    _blind, _noisy = [], []
-    for _c, _h, _needle, _a, _w in M.SHARED_CONCERNS:
-        _hits, _misses = _SAMPLES.get(_c, ((), ()))
-        _count = M._needle_counter(_needle)
-        _blind.extend((_c, _needle, s) for s in _hits if _count(s) < 1)
-        _noisy.extend((_c, _needle, s) for s in _misses if _count(s) > 0)
-    check("sc13 ...and each needle FIRES on EVERY spelling of the convention it "
-          "names, not merely on the one it was copied from (blind: %r)"
-          % (_blind,), not _blind)
-    check("sc14 ...and does NOT fire on the repaired form, or on the calls that "
-          "merely look like it (noisy: %r)" % (_noisy,), not _noisy)
-    # sc13 is only as strong as the variety of what it is handed, and the
-    # version that let the old bug through handed it one string per row. A row
-    # whose samples are all the same spelling proves the needle can fire and
-    # nothing else, so more than one spelling is the floor - and a needle with
-    # nothing it must decline cannot be shown to be narrower than "anything".
-    _thin = sorted(c for c, (h, m) in _SAMPLES.items() if len(h) < 2 or not m)
-    check("sc15 every row is proved against more than one spelling of what it "
-          "forbids, and against something it must decline - one sample per row "
-          "is what made the pluralisation needle look proven while it could not "
-          "see a space: %r" % (_thin,), not _thin)
-    # It is a CAP, not an equality, and that is the entire difference between this
-    # registry and the three save/discard counts retired in 9f73b22: those
-    # required the duplication to stay, so removing a copy turned them red.
-    _slack_fixture = tempfile.mkdtemp(prefix="audit-deps-sc-")
-    try:
-        os.makedirs(os.path.join(_slack_fixture, "shared"))
-        with open(os.path.join(_slack_fixture, "shared", "x.js"), "w",
-                  encoding="utf-8") as fh:
-            fh.write("// nothing here\n")
-        _empty = M.shared_concern_violations(_slack_fixture)
-        check("sc5 a tree with NO copies of anything is not a violation - removing "
-              "a duplicate must never fail this lint, or it forbids its own "
-              "remedy exactly as the retired counts did (%r)" % (_empty,),
-              _empty == [])
-        _slack = M.shared_concern_slack(_slack_fixture)
-        check("sc6 ...and the freed allowance is REPORTED instead, so the table "
-              "cannot quietly become a column of numbers nobody re-derived: %r"
-              % (_slack,),
-              sorted(c for c, _n, _a in _slack)
-              == sorted(c for c, _h, _n, a, _w in M.SHARED_CONCERNS if a > 0))
-        # A comment is not an implementation. This is the false positive that
-        # would make the lint hostile: the paragraph explaining a concern would be
-        # reported as a second copy of it.
-        with open(os.path.join(_slack_fixture, "shared", "y.js"), "w",
-                  encoding="utf-8") as fh:
-            fh.write("// localStorage.getItem is what this file does NOT do\n"
-                     "/* URL.createObjectURL, also only in prose */\n"
-                     "const ok = 1;\n")
-        check("sc7 a comment naming a concern is not a copy of it - three checks "
-              "in this repo have already been tripped by prose, and a registry "
-              "that counted comments would punish documenting the rule (%r)"
-              % (M.shared_concern_violations(_slack_fixture),),
-              M.shared_concern_violations(_slack_fixture) == [])
-        # ...and the same text in CODE is caught, which is what stops sc7 from
-        # being "the lint sees nothing".
-        with open(os.path.join(_slack_fixture, "shared", "z.js"), "w",
-                  encoding="utf-8") as fh:
-            fh.write("const u = URL.createObjectURL(b);\n")
-        _caught = M.shared_concern_violations(_slack_fixture)
-        check("sc8 mutation proof: the SAME text as real code IS caught, and "
-              "named with the file and the count - %r" % (_caught,),
-              len(_caught) == 1 and _caught[0][0] == "blob download"
-              and "z.js" in _caught[0][4])
-    finally:
-        shutil.rmtree(_slack_fixture, ignore_errors=True)
-
-    # END TO END. sc13 proves the NEEDLE sees a space; this runs the LIVE
-    # lint over a tree containing the spelling that defeated it, because those are
-    # different claims and the registry only ever made the weaker one. The
-    # spelling here is the shape that sat in a panel part with this rule green
-    # over it: the identical ternary the needle was written from, typed the way an
-    # editor lays it out.
-    _f130 = tempfile.mkdtemp(prefix="audit-deps-f130-")
-    try:
-        os.makedirs(os.path.join(_f130, "panel"))
-        _f130_js = os.path.join(_f130, "panel", "hints.js")
-
-        def _f130_says(source):
-            """The concerns the lint reports over a one-file tree."""
-            with open(_f130_js, "w", encoding="utf-8") as fh:
-                fh.write(source)
-            return M.shared_concern_violations(_f130)
-
-        _spaced = _f130_says("const t = n + ' change' + (n === 1 ? '' : 's');\n")
-        check("sc16 a hand-rolled plural written WITH SPACES is caught. "
-              "The needle was the offending line with its spaces removed, so "
-              "this exact source read green for as long as it existed: %r"
-              % (_spaced,),
-              [c for c, _h, _t, _a, _w in _spaced] == ["pluralisation"]
-              and "hints.js" in _spaced[0][4])
-        _tight = _f130_says("const t = n + ' change' + (n===1?'':'s');\n")
-        check("sc17 ...and so is the spelling the needle already saw - a "
-              "widening that traded one spelling for another would leave sc16 "
-              "green and the rule no better: %r" % (_tight,),
-              [c for c, _h, _t, _a, _w in _tight] == ["pluralisation"])
-        # THE SECOND DIRECTION, and it is the case that fails if the widening
-        # became "any comparison against one": the repaired call, and a real line
-        # from usage-view.js that compares against one and branches to a SENTENCE.
-        _clean = _f130_says("const t = plural(n, 'change');\n"
-                            "const u = (sr.binSize === 1 ? '' : ' Days rolled');\n")
-        check("sc18 ...while the repaired call and the sentence that merely "
-              "compares against one are left alone - the over-firing direction, "
-              "which is how a rule gets switched off: %r" % (_clean,), _clean == [])
-    finally:
-        shutil.rmtree(_f130, ignore_errors=True)
-
-    # The comment scanner, pinned on the three constructs that actually appear in
-    # `ui/` and that broke the two-regex version. Each is a real line from the
-    # tree, reduced: a `//` comment containing `/*`, a string containing `//`, and
-    # a regex literal containing a quote. The direction of every failure here is
-    # UNDER-counting, which reads as "no duplication".
-    #
-    # EACH FIXTURE CARRIES ITS OWN LABEL TAG. One `check()` call site is one
-    # authored assertion, so `_harness.label_faults()` is right to stay quiet about
-    # a family sharing an id - but `prove-gates.py` credits a mutation to the case
-    # whose id went red, and it refuses a row naming an id that more than one case
-    # printed. A tag per fixture is what makes one construct here nameable from that
-    # table. It is a tag rather than the loop INDEX because an index renames every
-    # fixture below the one inserted, which is the silent half of the same defect:
-    # the row still resolves, to a different construct than it was written for.
-    _co = [
-        ("linecomment", "// a note about .claude/themes/*.json\nreal();\n",
-         "real();",
-         "a /* inside a LINE comment must not open a block comment - it did, and "
-         "swallowed 150 lines of appearance-view.js including a real occurrence"),
-        ("string", "const NS='http://www.w3.org/2000/svg';\nkeep();\n", "keep();",
-         "a // inside a STRING must not start a comment - which is why stripping "
-         "line comments first is not the fix either"),
-        ("regex", "const q=/[\",\\r\\n]/;\nkeep2();\n", "keep2();",
-         "a quote inside a REGEX literal must not open a string; three of these "
-         "ship in ui/ as CSV quoters"),
-        ("block", "/* block\n * spanning\n */ after();\n", "after();",
-         "and a real block comment is still removed"),
-    ]
-    for _tag, _src, _want, _why in _co:
-        check("sc9-%s comment scanner: %s" % (_tag, _why),
-              _want in M._code_only(_src))
-    check("sc10 ...and the scanner keeps line numbers, so a scout reporting a hit "
-          "sends a reader to the right line: a three-line block comment leaves "
-          "three newlines behind",
-          M._code_only("/* a\n b\n */x;\n").count("\n") == 3)
-    # The other direction: it must still REMOVE comments, or sc7 passes for the
-    # wrong reason.
-    check("sc11 a needle that appears ONLY in a comment is not counted, and the "
-          "same needle in code is - the pair is what makes sc7 mean anything",
-          "URL.createObjectURL" not in M._code_only("// URL.createObjectURL\n")
-          and "URL.createObjectURL" in M._code_only("x=URL.createObjectURL(b);\n"))
-
     # ------------------------------------------- the scanners reach a subdirectory
     # A recursive walk that is never handed a subdirectory proves nothing, so this
     # builds one. Every scanner in this module used a flat `os.listdir`, which is
@@ -2599,83 +1779,6 @@ def _cases(check):
           "in hooks/ asks `_config.tree_for` which tree the work is in: %r"
           % (M.hook_tree_violations(),), M.hook_tree_violations() == [])
 
-    # ---- the tracker connector: the core may not reach into its own doors ----
-    # `tk*`. Fixtures, because the real tree is (and must stay) clean, and a rule
-    # only ever seen returning [] is a rule that might be returning [] for the
-    # wrong reason.
-    real_doors = M._tracker_doors()
-    check("tk1 the real tree's derived doors are exactly `/audit:sync`'s own "
-          "entry points, and nothing that merely READS a declared meta.ado "
-          "(the manifest validator, the panel, the doctor) is one of them - "
-          "a derivation that swallowed those would flag core code that has "
-          "run clean for releases: %r" % (sorted(real_doors),),
-          real_doors == frozenset((
-              "ado-connect", "check-ado-item", "explain-ado-drift",
-              "fetch-ado-items", "read-ado-links", "resolve-ado-parent",
-              "resolve-ado-tracked")))
-    check("tk2 ...and the shared floor answers about a DECLARED meta.ado are "
-          "not doors - `_manifest_ado` (the validator's front door) and "
-          "`_doctor_ado` (the doctor's) stay reachable from core precisely "
-          "because reading a key must not require a working connector: %r"
-          % (sorted(real_doors),),
-          "_manifest_ado" not in real_doors and "_doctor_ado" not in real_doors
-          and "_ado_parent" not in real_doors and "_ado_tracked" not in real_doors)
-
-    tk_s = tempfile.mkdtemp(prefix="deps-tracker-s-")
-    try:
-        def _wtk(name, text):
-            with open(os.path.join(tk_s, name), "w", encoding="utf-8") as fh:
-                fh.write(text)
-
-        # A door. Being hyphenated, it can never be the target of a static
-        # `import` (`import ado-connect` is not legal Python) - `_loader` is
-        # the only way anything reaches one, which is why every case below
-        # reaches it that way rather than testing an edge that cannot exist.
-        _wtk("ado-connect.py", "def probe():\n    return True\n")
-        # The shared floor underneath it - a stand-in for `_ado_parent` /
-        # `_manifest_ado`, imported by core on purpose.
-        _wtk("_shared_floor.py", "def answer(meta):\n    return meta\n")
-        _wtk("_manifest_like.py", "import _shared_floor\nx = 1\n")
-        # A core command reaching INTO the door.
-        _wtk("audit_status_like.py",
-             'import _loader\n\n\ndef f():\n'
-             '    return _loader.load_script("ado-connect.py")\n')
-        # A second door reaching the first - not the direction this rule
-        # judges, because nothing outside the connector is doing the reaching.
-        _wtk("check-ado-item.py",
-             'import _loader\n\n\ndef f():\n'
-             '    return _loader.load_script("ado-connect.py")\n')
-
-        tk = M.tracker_dependency_violations(tk_s)
-        named_tk = sorted(n for n, _w in tk)
-        check("tk3 a core command that RUNTIME-LOADS one of the connector's "
-              "own doors is reported by name - the shape most of this tree's "
-              "real edges take, and the one an import-only scan would miss "
-              "entirely: %r" % (tk,),
-              named_tk == ["audit_status_like"]
-              and "ado-connect" in tk[0][1])
-        check("tk4 a core module reading the SHARED FLOOR underneath the "
-              "connector is not reported - the property `tk2` pins for the "
-              "real tree, reproduced here so it cannot regress unnoticed: %r"
-              % (tk,), "_manifest_like" not in named_tk)
-        check("tk5 a SECOND door reaching the first is not reported - the "
-              "connector reaching its own door is not the edge this rule "
-              "refuses, only something outside it doing so: %r" % (tk,),
-              "check-ado-item" not in named_tk)
-        check("tk6 an absent tracker set derives no violations at all, which "
-              "is the floor the task itself asked for: a tree shipping no "
-              "door reports nothing to fix rather than guessing why",
-              M.tracker_dependency_violations(
-                  os.path.join(tk_s, "no-such-dir")) == [])
-    finally:
-        shutil.rmtree(tk_s, ignore_errors=True)
-
-    check("tk7 ...and the REAL tree carries none - this is the case that goes "
-          "red the day a core command reaches into `/audit:sync`'s own door "
-          "instead of the shared floor beneath it: %r"
-          % (M.tracker_dependency_violations(),),
-          M.tracker_dependency_violations() == [])
-
     # --- dpn: the prose docs accumulate one stale number per module -----------
     _dpn = M.doc_prose_numbers()
     check("dpn0 no prose doc writes a present-tense number - they carry a line "
@@ -2699,9 +1802,11 @@ def _cases(check):
         _dpn_plain += len([_f for _f in _dfiles if _f.endswith(".md")])
     check("dpn1 dpn0 read the tree, by two measures that fail differently - %d "
           "document(s) scanned of %d candidate(s), floor %d, against %d `.md` "
-          "found under the plugin by a walk that reads no `.gitignore`"
+          "found under the plugin by a walk that reads no `.gitignore`; the set is "
+          "%s"
           % (len(_dpn_scan["paths"]), _dpn_scan["candidates"],
-             M._output.scan_floor(_dpn_scan["candidates"]), _dpn_plain),
+             M._output.scan_floor(_dpn_scan["candidates"]), _dpn_plain,
+             _dpn_scan["basis"]),
           _dpn_scan["problem"] is None
           and len(_dpn_scan["paths"])
               >= M._output.scan_floor(_dpn_scan["candidates"])
@@ -2709,9 +1814,8 @@ def _cases(check):
     # THE THREE DOCUMENTS THAT USED TO BE THE WHOLE LIST, now the seed of a
     # BLINDNESS check rather than the input. Each claims to be a definition of how
     # this repo works, so a derivation that stopped reaching one of them has gone
-    # quiet rather than clean - `_refs.sweep_doc_drift()` keeps its list for the
-    # same reason. This is the direction dpn1's floor cannot cover: the walk can
-    # lose a specific document while staying far above any count.
+    # quiet rather than clean. This is the direction dpn1's floor cannot cover: the
+    # walk can lose a specific document while staying far above any count.
     _dpn_seed = [_d for _d in M._PROSE_DOCS if _d not in _dpn_scan["paths"]]
     check("dpn2b the derived set still reaches every document that was named by "
           "hand before it - a walk that dropped one of these would report the "
@@ -2745,6 +1849,63 @@ def _cases(check):
           and not [l for l in open(M.__file__, encoding="utf-8").read().split("\n")
                    if l.startswith("def _prose_number_claim")
                    or l.startswith("def _case_claim")])
+    # THE FILE SET THE PROSE SCANS READ: what git TRACKS where git can answer, and
+    # the `.gitignore` derivation - saying so - where it cannot. An agent's
+    # untracked scratch document used to be every scan's finding, because the
+    # derivation reads whatever is on disk and not ignored; and the suites are also
+    # verified over a `git archive HEAD` export, which has no `.git` to ask. The
+    # claim is BUILT, never spelled: this file is itself read by the scan.
+    _tg_claim = "The tree carries all %s of them.\n" % (12,)
+    _tg_tmp = tempfile.mkdtemp(prefix="audit-deps-tracked-")
+    try:
+        _tg_repo = os.path.join(_tg_tmp, "repo")
+        _tg_export = os.path.join(_tg_tmp, "export")
+        for _tg_root in (_tg_repo, _tg_export):
+            os.makedirs(os.path.join(_tg_root, "sub"))
+            for _tg_name in ("tracked.md", "scratch.md", "gone.md",
+                             os.path.join("sub", "inner.md"), ".gitignore"):
+                with open(os.path.join(_tg_root, _tg_name), "w",
+                          encoding="utf-8") as fh:
+                    fh.write("ignored/\n" if _tg_name == ".gitignore"
+                             else _tg_claim)
+        _harness.git(_tg_repo, "init", "-q")
+        _harness.git(_tg_repo, "add", "tracked.md", "gone.md", ".gitignore",
+                     os.path.join("sub", "inner.md"))
+        # Tracked in the index and deleted on disk: not a document to read.
+        os.remove(os.path.join(_tg_repo, "gone.md"))
+        _tg_hits = M.doc_prose_numbers(repo_root=_tg_repo)
+        _tg_scan = _output.prose_scan_set((".md",), _tg_repo)
+        _ex_hits = M.doc_prose_numbers(repo_root=_tg_export)
+        _ex_scan = _output.prose_scan_set((".md",), _tg_export)
+        _tg_found = sorted(set(h[0] for h in _tg_hits))
+        _ex_found = sorted(set(h[0] for h in _ex_hits))
+        check("doc_prose_numbers reads only tracked files when git can answer, and "
+              "falls back to the .gitignore derivation, saying so, in an export "
+              "with no .git: the repository reports %r from the basis %r; the "
+              "export reports %r from the basis %r"
+              % (_tg_found, _tg_scan["basis"], _ex_found, _ex_scan["basis"]),
+              _tg_found == ["sub/inner.md", "tracked.md"]
+              and _tg_scan["basis"] == "the files git tracks"
+              and _ex_found == ["gone.md", "scratch.md", "sub/inner.md", "tracked.md"]
+              and ".gitignore derivation" in _ex_scan["basis"]
+              and "git could not answer" in _ex_scan["basis"])
+        # THE DIRECTION THE CASE ABOVE CANNOT SEE: a directory INSIDE a work tree is
+        # not a work tree of its own, and git's answer for it describes the OUTER
+        # repository. Taking that answer would read a scratch copy as "nothing in
+        # it is tracked" and report a clean scan over files nobody looked at.
+        with open(os.path.join(_tg_repo, "sub", ".gitignore"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("ignored/\n")
+        _tg_inner = _output.prose_scan_set((".md",), os.path.join(_tg_repo, "sub"))
+        check("dpn8 a directory inside a work tree is not answered with the outer "
+              "repository's index: the scan of it falls back to the derivation, "
+              "names why, and still reads the document under it: %r %r"
+              % (_tg_inner["basis"], _tg_inner["paths"]),
+              _tg_inner["basis"].startswith("the .gitignore derivation")
+              and "a different directory" in _tg_inner["basis"]
+              and _tg_inner["paths"] == ["inner.md"])
+    finally:
+        _harness.remove_tree(_tg_tmp)
     # POSITIVE CONTROL. dpn0 asserts an empty list, which is also what a scanner
     # that reads nothing returns; dpn1 proves the bytes arrived and this proves
     # the predicate is still wired to them. The fixture is a persistence claim
@@ -3334,270 +2495,6 @@ def _cases(check):
                             for f in _ld_files))
 
 
-    # --- the navigability walk must descend into feature directories ----------
-    import _ui_theme as _uith
-    _theme_assets = _uith.UI_ASSETS
-    _u_tmp = tempfile.mkdtemp()
-    try:
-        os.makedirs(os.path.join(_u_tmp, "feature"))
-        _long = "".join("  var x%d = %d;\n" % (_i, _i) for _i in range(900))
-        with open(os.path.join(_u_tmp, "feature", "big.js"), "w") as _fh:
-            _fh.write(_long)
-        _nested = M.ui_navigability_violations(_u_tmp)
-        check("u14 a long asset inside a feature directory is CHECKED - a flat "
-              "listing would grade the directory clean without ever opening it, "
-              "which is the shape that hides a whole surface (got %r)"
-              % (_nested,),
-              [n for n, _p in _nested] == ["feature/big.js"])
-        # Not "a declared name contains a slash" - that is a fact about a Python
-        # literal and stays true with the directory deleted. This asks the
-        # SHIPPED walk whether it visits the subdirectory, by comparing what it
-        # reaches against a deliberately flat listing of the same root.
-        _flat = [_f for _f in os.listdir(M._UI_DIR)
-                 if os.path.isfile(os.path.join(M._UI_DIR, _f))]
-        _seen = M.ui_asset_names(M._UI_DIR)
-        check("u15 the shipped walk reaches more than a flat listing of the same "
-              "directory - %d file(s) walked against %d at the top level, so it "
-              "is descending rather than agreeing by accident"
-              % (len(_seen), len(_flat)),
-              len(_seen) > len(_flat))
-    finally:
-        shutil.rmtree(_u_tmp, ignore_errors=True)
-
-    # --- tools/ is under the marker rule now, and it was under nothing -----------
-    # The largest file in this repository was a browser gate of 8451 lines, and the
-    # marker rule reached scripts/ui/, scripts/ and hooks/ but never the directory
-    # holding the machinery that proves all three. Two extensions had to join the
-    # table for that to mean anything - `.mjs`, which nothing here used, and `.py`,
-    # whose absence would have made the walk SKIP every tool silently.
-    _tn = M.tool_navigability_violations()
-    _tn_names = M.ui_asset_names(M._TOOLS_DIR)
-    _tn_graded = [n for n in _tn_names
-                  if any(n.endswith(e) for e, _r in M._UI_MARKER_RES)]
-    _tn_long = [n for n in _tn_graded
-                if sum(1 for _l in open(os.path.join(M._TOOLS_DIR, n),
-                                        encoding="utf-8", errors="replace"))
-                >= M._NAV_MIN_LINES]
-    check("tn0 every long file under tools/ carries its section markers: %r"
-          % (_tn,), _tn == [])
-    check("tn1 ...and that verdict is over real observations - %d file(s) walked, "
-          "%d gradable by extension, %d long enough to be checked. A clean list "
-          "means one thing at those numbers and something else entirely at zero, "
-          "which is what a table missing an extension would have produced"
-          % (len(_tn_names), len(_tn_graded), len(_tn_long)),
-          len(_tn_long) >= 4 and len(_tn_graded) >= 20)
-
-    _tn_tmp = tempfile.mkdtemp(prefix="audit-deps-tools-")
-    try:
-        _long_js = "".join("  const x%d = %d;\n" % (_i, _i) for _i in range(900))
-        _long_py = "".join("x%d = %d\n" % (_i, _i) for _i in range(900))
-        with open(os.path.join(_tn_tmp, "thin.mjs"), "w", encoding="utf-8") as _fh:
-            _fh.write("// --- only one -------------------------------------\n"
-                      + _long_js)
-        with open(os.path.join(_tn_tmp, "thin.py"), "w", encoding="utf-8") as _fh:
-            _fh.write("# --- only one -------------------------------------\n"
-                      + _long_py)
-        _hits = dict((n, p) for n, p in M.tool_navigability_violations(_tn_tmp))
-        check("tn2 a long `.mjs` with one marker is REPORTED - the extension the "
-              "table gained for this, and the one every tool in the split is "
-              "written in: %r" % (_hits.get("thin.mjs"),),
-              "thin.mjs" in _hits and "section marker" in _hits["thin.mjs"])
-        check("tn3 ...and a long `.py` too, which is the half that would have been "
-              "SKIPPED rather than failed: an extension with no entry in the table "
-              "is passed over, so the docstring claimed a coverage the table did "
-              "not give: %r" % (_hits.get("thin.py"),),
-              "thin.py" in _hits and "section marker" in _hits["thin.py"])
-        with open(os.path.join(_tn_tmp, "thin.mjs"), "w", encoding="utf-8") as _fh:
-            _fh.write("// --- one ------------------------------------------\n"
-                      + _long_js
-                      + "// --- two ------------------------------------------\n"
-                      + "// --- three ----------------------------------------\n")
-        _after = dict(M.tool_navigability_violations(_tn_tmp))
-        check("tn4 THE PAIR: the same file with enough markers is not reported, "
-              "while its `.py` neighbour still is - so tn2 is reading the count "
-              "rather than the extension: %r" % (sorted(_after),),
-              "thin.mjs" not in _after and "thin.py" in _after)
-    finally:
-        shutil.rmtree(_tn_tmp, ignore_errors=True)
-
-    check("tn5 widening the table did not change scripts/ui/, which holds neither "
-          "extension: %r" % (M.ui_navigability_violations(),),
-          M.ui_navigability_violations() == [])
-
-    # --- panel routes and the controls that reach them --------------------------
-    # THE JOIN NOTHING CHECKED. The route table is Python and the controls are
-    # JavaScript, so every half of `POST /api/gate-events/prune` was tested and the
-    # pairing was tested by nothing - the endpoint answered with a real verdict for
-    # a release while no control on the page named it. `pr1` is the live-tree claim
-    # and the rest are fixtures, because the failure modes worth pinning (a route
-    # named only in a comment, a dispatcher renamed, a declared reader that stopped
-    # reading) must not wait for the tree to grow one.
-    check("pr1 every route this panel serves is reached by a control in "
-          "scripts/ui/panel/, or by a row naming who else reads it: %r"
-          % (M.panel_route_violations(),),
-          M.panel_route_violations() == [])
-    _pr_live = M.panel_routes()
-    _pr_calls = M.panel_route_callers()
-    check("pr2 ...and that verdict is over real observations - %d route(s) read "
-          "off the dispatchers and %d request path(s) named by the controls. A "
-          "clean list means one thing at those numbers and something else "
-          "entirely at zero, which is what a renamed dispatcher would produce"
-          % (len(_pr_live), len(_pr_calls)),
-          len(_pr_live) >= 15 and len(_pr_calls) >= 10
-          and "POST /api/gate-events/prune" in _pr_live
-          and "/api/gate-events/prune" in _pr_calls)
-    check("pr3 the prune endpoint is reached from the Plan gate card and nowhere "
-          "else - the control this whole check exists for, named by the file "
-          "that draws the rows it prunes: %r"
-          % (_pr_calls.get("/api/gate-events/prune"),),
-          _pr_calls.get("/api/gate-events/prune") == ["overview.js"])
-
-    _pr_tmp = tempfile.mkdtemp(prefix="audit-deps-routes-")
-    try:
-        _pr_head = ("def _make_handler(project, token):\n"
-                    "    class Handler(object):\n"
-                    "        def _helper(self):\n"
-                    "            path = self.path\n"
-                    # THE DECOY, and it is the reason this reads the AST rather
-                    # than grepping: a `path ==` comparison OUTSIDE the three
-                    # dispatchers is not a route, and no line-based scan can tell
-                    # the two apart.
-                    "            if path == \"/api/decoy\":\n"
-                    "                return 1\n"
-                    "        def do_GET(self):\n"
-                    "            path = self.path.split(\"?\", 1)[0]\n"
-                    "            if path == \"/\":\n"
-                    "                return\n"
-                    "            if path == \"/favicon.ico\":\n"
-                    "                return\n"
-                    "            if path == \"/api/thing\":\n"
-                    "                return\n")
-        _pr_tail = ("        def do_POST(self):\n"
-                    "            path = self.path.split(\"?\", 1)[0]\n"
-                    "            if path == \"/api/act\":\n"
-                    "                return\n"
-                    "    return Handler\n")
-        _pr_clean = os.path.join(_pr_tmp, "srv_clean.py")
-        _pr_orphan = os.path.join(_pr_tmp, "srv_orphan.py")
-        _pr_renamed = os.path.join(_pr_tmp, "srv_renamed.py")
-        with open(_pr_clean, "w", encoding="utf-8") as _fh:
-            _fh.write(_pr_head + _pr_tail)
-        with open(_pr_orphan, "w", encoding="utf-8") as _fh:
-            _fh.write(_pr_head + "            if path == \"/api/orphan\":\n"
-                                 "                return\n" + _pr_tail)
-        with open(_pr_renamed, "w", encoding="utf-8") as _fh:
-            _fh.write("def _make_handler(project, token):\n"
-                      "    class Handler(object):\n"
-                      "        def do_ANYTHING(self):\n"
-                      "            path = self.path\n"
-                      "            if path == \"/api/thing\":\n"
-                      "                return\n"
-                      "    return Handler\n")
-        _pr_js = os.path.join(_pr_tmp, "ui")
-        os.makedirs(_pr_js)
-        with open(os.path.join(_pr_js, "core.js"), "w", encoding="utf-8") as _fh:
-            # The commented-out CALL is the shape that matters: a control
-            # removed in a hurry leaves its own line behind, quotes and all, so
-            # the mention is a string literal in every way except that nothing
-            # runs it. `_code_only` is what tells those apart.
-            _fh.write("// const dead=api('GET','/api/orphan');  // the control\n"
-                      "// this replaced - left here while the endpoint stays.\n"
-                      "const a=api('GET','/api/thing');\n"
-                      "const b=api('POST','/api/act?force=1');\n")
-
-        check("pr4 a fixture whose every route is called reports nothing - and "
-              "the two the BROWSER asks for itself (the document, the tab icon) "
-              "are skipped structurally, because nothing on a page fetches the "
-              "page: %r" % (M.panel_route_violations(_pr_clean, _pr_js, (), ()),),
-              M.panel_route_violations(_pr_clean, _pr_js, (), ()) == [])
-        _pr_seen = M.panel_routes(_pr_orphan)
-        check("pr5 the table is read from the three dispatchers, so a `path ==` "
-              "comparison in a helper on the same class is NOT a route - the one "
-              "discrimination no grep over this file can make: %r" % (_pr_seen,),
-              _pr_seen == ["GET /", "GET /api/orphan", "GET /api/thing",
-                           "GET /favicon.ico", "POST /api/act"])
-        _pr_bad = M.panel_route_violations(_pr_orphan, _pr_js, (), ())
-        check("pr6 THE PAIR to pr4: one route added to the same fixture, named "
-              "in the controls only by a COMMENT, is reported - and it is the "
-              "only finding, so the comment is what was not counted rather than "
-              "the whole file: %r" % (_pr_bad,),
-              [r[0] for r in _pr_bad] == ["GET /api/orphan"]
-              and "no control" in _pr_bad[0][1])
-        _pr_call = M.panel_route_callers(_pr_js)
-        check("pr7 a caller that appends a query string still names its route - "
-              "without cutting at the `?` every such control in the tree would "
-              "read as calling nothing: %r" % (sorted(_pr_call),),
-              _pr_call.get("/api/act") == ["core.js"]
-              and _pr_call.get("/api/thing") == ["core.js"]
-              and "/api/orphan" not in _pr_call)
-        _pr_gone = M.panel_route_violations(_pr_renamed, _pr_js, (), ())
-        check("pr8 a renamed dispatcher empties the route table, and an empty "
-              "table is REPORTED rather than printed as a clean panel - the one "
-              "failure that would otherwise turn this whole lint into a no-op "
-              "while every case above went on passing: %r" % (_pr_gone,),
-              len(_pr_gone) == 1 and "no route found" in _pr_gone[0][1]
-              and "do_GET" in _pr_gone[0][1])
-
-        _pr_rot = M.panel_route_violations(_pr_clean, _pr_js, (
-            ("GET /api/thing", "LICENSE",
-             "a reader that names a real route, in a file of this repo that has "
-             "never mentioned it - which is what a row looks like once the "
-             "caller it points at has been rewritten."),
-            ("GET /api/vanished", "README.md",
-             "a row naming a route the fixture server does not serve, which is "
-             "what is left behind when an endpoint is deleted and the "
-             "declaration that described it is not."),
-            ("POST /api/act", "README.md", "too short to disagree with")), ())
-        # COUNTED per (route, problem) rather than keyed by route: the short
-        # reason and the file check both fire on the same row, and a dict would
-        # keep whichever landed last and hide the other.
-        _pr_says = [(r, p) for r, p in _pr_rot]
-        check("pr9 a declaration that has stopped being true is a finding in "
-              "both directions - a reader that no longer names its route, and a "
-              "row naming a route nothing serves - because a row nobody checks "
-              "reads exactly like a check: %r" % (_pr_says,),
-              any(r == "GET /api/thing" and "no longer names it" in p
-                  for r, p in _pr_says)
-              and any(r == "GET /api/vanished" and "no such route" in p
-                      for r, p in _pr_says))
-        check("pr10 ...and a reason too short to be one is refused, so this "
-              "table cannot become a column of labels: %r" % (_pr_says,),
-              any(r == "POST /api/act" and "is a label" in p
-                  for r, p in _pr_says))
-
-        # THE UNREACHED TABLE'S OWN REASON, ASKED OF THE CODE IT EXPLAINS. Every
-        # other row in this lint is verified against the tree; this one was
-        # asked only whether the route still exists and whether the sentence is
-        # long enough - both of which a REPAIRED defect passes. So a row saying
-        # no control has ever needed to ask went on saying it after a control
-        # was written, assembled into the page and pinned by a case, and the
-        # table that "can only shrink" had no way to shrink.
-        _pr_fixed = M.panel_route_violations(_pr_clean, _pr_js, (), (
-            ("GET /api/thing",
-             "a row recording that nothing calls this route, over a fixture "
-             "whose controls call it - which is what a row becomes on the day "
-             "the defect it records is repaired by somebody writing the "
-             "control."),))
-        check("pr11 an unreached row whose route a control DOES name is "
-              "reported, naming the control: the row's reason is contradicted "
-              "by the code it explains, and nothing else in this lint was "
-              "asking that question: %r" % (_pr_fixed,),
-              [r for r, _p in _pr_fixed] == ["GET /api/thing"]
-              and "core.js" in _pr_fixed[0][1]
-              and "contradicted" in _pr_fixed[0][1])
-        _pr_still = M.panel_route_violations(_pr_orphan, _pr_js, (), (
-            ("GET /api/orphan",
-             "a row recording a route that really is called by nothing here, "
-             "which is what this table is for - an open defect stated out loud "
-             "rather than a gap left for a reader to find."),))
-        check("pr12 SECOND DIRECTION: a row over a route the controls still do "
-              "not name reports NOTHING, so pr11 is about the contradiction and "
-              "not about the table having rows at all: %r" % (_pr_still,),
-              _pr_still == [])
-    finally:
-        shutil.rmtree(_pr_tmp, ignore_errors=True)
-
-
     # --- the scan memo: it must be USED, must not LIE, and must not be POISONED ---
     # A scan parses every `.py` under `scripts/` and grows the wrapper map to a
     # fixpoint, and the lints each ask for the whole graph because each judges the
@@ -3918,9 +2815,8 @@ def _cases(check):
     # --- the declared table, in both directions ------------------------------
     # A row is a decision with a reason, and the reason is CHECKED rather than
     # read: it must name the modules it excuses, it must be long enough to be an
-    # argument, and its readers must still be exactly the ones that disagree.
-    # `pr9`/`pr10` ask the same of `PANEL_ROUTE_READERS`, for the same failure -
-    # a row nobody checks reads exactly like a check.
+    # argument, and its readers must still be exactly the ones that disagree. A row
+    # nobody checks reads exactly like a check.
     _ck_rows = _ck_tree((
         ("_ado_parent.py",
          'def inventory(ado):\n'
@@ -4012,9 +2908,7 @@ def _cases(check):
         _ck_nothing = M.config_read_violations(
             _ck_empty, os.path.join(_ck_empty, "no-hooks-here"), ())
         check("ck14 a tree this rule finds no configuration read in is reported "
-              "as blind rather than as clean - the same distinction "
-              "`shared_concern_violations` draws for a directory it could not "
-              "list: %r" % (_ck_nothing,),
+              "as blind rather than as clean: %r" % (_ck_nothing,),
               len(_ck_nothing) == 1 and _ck_nothing[0][0] == "<tree>"
               and "blind, not clean" in _ck_nothing[0][1])
         _ck_torn = M.config_read_violations(

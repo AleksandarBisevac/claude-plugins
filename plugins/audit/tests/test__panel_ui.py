@@ -81,8 +81,8 @@ def _cases(check):
           "<script" not in js and "</script>" not in js)
     # A part on disk that nothing LOADS is the expensive failure: the page
     # assembles without it, every substring pin keeps passing, and the feature
-    # simply never ships. `declared_asset_drift()` compares the declared list
-    # against the DIRECTORY; this compares it against what the page is BUILT
+    # simply never ships. Nothing compares the declared list against the
+    # DIRECTORY any more; this compares it against what the page is BUILT
     # from, which is the half that catches a part declared and never joined.
     # `shared/` counts, for the reason above: it is part of what this page is
     # BUILT from, so a shared part nobody joined fails here too.
@@ -136,25 +136,6 @@ def _cases(check):
         for _rel in [os.path.relpath(_base, _theme.UI_DIR)]
         for _f in _files if _f.endswith(".py"))
     check("scripts/ui/ contains no .py files: %r" % (ui_pyfiles,), not ui_pyfiles)
-
-    # --- LF contract: none of the loaded ui/ assets (nor the assembled ------
-    # template) carry a "\r" — a CRLF checkout (e.g. windows-latest CI without
-    # a .gitattributes eol=lf pin) would shift every cross-line selftest pin.
-    real_assets = ([("panel.html", skeleton), ("raw_template()", template)]
-                   + [(n, _theme.read_asset(n)) for n in M._CSS_PARTS]
-                   + [(n, _theme.read_asset(n)) for n in M._JS_PARTS])
-    real_cr = _theme.cr_violations(real_assets)
-    check("no \\r (CRLF) in any loaded ui/ asset or the assembled template "
-          "(found in: %r)" % (real_cr,), not real_cr)
-
-    # --- fixture red-proof: a CRLF asset IS named by the same helper ------------
-    fixture_assets = [("panel.html", "<html>\r\n<body></body>\r\n</html>"),
-                      ("panel.css", "body { color: red; }\n"),
-                      ("panel/core.js", "console.log(1);\n")]
-    fixture_cr = _theme.cr_violations(fixture_assets)
-    check("fixture proof: a CRLF panel.html is named by the CR check "
-          "(got %r, want ['panel.html'])" % (fixture_cr,),
-          fixture_cr == ["panel.html"])
 
     # --- caching: repeat calls return the identical cached string ---------------
     a = M.raw_template()

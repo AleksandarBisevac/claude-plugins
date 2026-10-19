@@ -373,9 +373,9 @@ def remove_tree(path):
     nothing is left there afterwards, an already-absent path among them.
 
     THE ONE HOME OF THIS FACT. `tests/_harness.py` binds its `remove_tree` to
-    this function and `tools/_suite.py` re-exports that binding; the sweep runner
-    and a repository hook keep copies because they may not import what they
-    run, and each compares its copy against this body statement for statement.
+    this function, `tools/_suite.py` re-exports that binding and the sweep runner
+    binds it too; a repository hook keeps a copy because it may not import what
+    it runs, and compares its copy against this body statement for statement.
 
     WHY NOT A PLAIN RMTREE. Git writes its loose objects READ-ONLY - measurably,
     in every `git init` plus commit a fixture builds. POSIX unlinks a file
@@ -586,7 +586,6 @@ def py_files(directory):
     return found
 
 
-
 def lint_py_files(directory):
     """`py_files` minus another suite's transient fixture.
 
@@ -635,13 +634,14 @@ def lint_py_files(directory):
 # glob metacharacter names a directory. A pattern and a bare file path are the rest
 # of gitignore, and reading them would be implementing it. The consequence is
 # stated rather than hidden - an ignored FILE of a scanned extension stays a
-# candidate, which is why the generated report has a row of its own in
-# `PROSE_SCAN_EXEMPT`, and why an untracked scratch file of a scanned extension is
-# scanned like any other. Being scanned by default is the property; the way to opt
-# out is a row somebody wrote.
+# candidate of THIS walk, which is why the generated report has a row of its own in
+# `PROSE_SCAN_EXEMPT`.
 #
-# `git ls-files` would answer "tracked" outright and may not be used: these suites
-# are verified over a `git archive HEAD` export, which has no `.git` at all.
+# THE PROSE SCANS DO NOT START FROM THIS WALK ANY MORE: `prose_scan_set()` asks git
+# for the TRACKED files first, so an agent's untracked scratch file is nobody's
+# finding, and falls back to this derivation only where git cannot answer - these
+# suites are also verified over a `git archive HEAD` export, which has no `.git` at
+# all. The fallback says so in the set it returns.
 _IGNORE_GLOB_CHARS = "*?[]!"
 
 
@@ -678,8 +678,9 @@ def _ignored_files(root):
 
     The other half of `_ignored_dirs()`, and deliberately not merged with it: a rule
     whose subject is "what this repo keeps as source" wants ignored files SCANNED -
-    an untracked scratch file of a scanned extension is scanned like any other, and
-    the way to opt out is a row somebody wrote. A rule whose subject is a COMMITTED
+    where git cannot say what is tracked, a scratch file of a scanned extension is
+    scanned like any other, and the way to opt out is a row somebody wrote. A rule
+    whose subject is a COMMITTED
     artifact wants them gone, because a scratch render is not a published page and a
     finding about one depends on what somebody last rendered here rather than on the
     commit.
@@ -758,6 +759,63 @@ def kept_files(root, patterns, exts, drop=None):
     return sorted(out)
 
 
+# The variables that point git at a repository other than the one `-C` names. A
+# suite run from inside a hook or a scoped commit inherits some of them, and
+# `ls-files` would then list THAT index while the scan reads this directory.
+_GIT_REPO_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
+                  "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES")
+
+
+def _git_out(root, args):
+    """`(returncode, stdout bytes, stderr text)` of `git -C root <args>`, or
+    `(None, b"", reason)` when git could not be started at all."""
+    import subprocess
+    env = dict((k, v) for k, v in os.environ.items() if k not in _GIT_REPO_VARS)
+    try:
+        done = subprocess.run(["git", "-C", root] + list(args),
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              env=env, check=False)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, b"", "git could not be started: %s" % (exc,)
+    return done.returncode, done.stdout, done.stderr.decode("utf-8", "replace")
+
+
+def tracked_files(root, exts):
+    """`(paths, why)` - the files of `exts` git tracks under `root`, sorted, as
+    `(list, None)`; or `(None, why)` when git cannot answer for this root.
+
+    Exactly one of the two is None, the contract `_ignored_dirs()` follows, so a
+    caller cannot read "git could not say" as "nothing is tracked". Git cannot
+    answer when it is absent, when `root` is no work tree (a `git archive HEAD`
+    export, which these suites are also verified over), or when the work tree
+    git finds belongs to a DIFFERENT repository than `root` - a scratch copy
+    sitting inside some other checkout would otherwise be answered with that
+    checkout's index.
+
+    A path in the index that is not a file on disk is dropped: an uncommitted
+    deletion is not a file to read.
+    """
+    code, said, err = _git_out(root, ["rev-parse", "--show-toplevel"])
+    if code is None:
+        return None, err
+    if code != 0:
+        return None, "%s is not a git work tree (%s)" % (
+            root, (err.strip().splitlines() or ["no reason given"])[0])
+    top = said.decode("utf-8", "replace").strip()
+    if os.path.normcase(os.path.realpath(top)) != os.path.normcase(os.path.realpath(root)):
+        return None, ("git's work tree for %s is %s, a different directory, so its "
+                      "index says nothing about this one" % (root, top))
+    code, said, err = _git_out(root, ["ls-files", "-z"])
+    if code is None:
+        return None, err
+    if code != 0:
+        return None, "git ls-files failed: %s" % (
+            (err.strip().splitlines() or ["no reason given"])[0],)
+    names = [n for n in said.decode("utf-8", "replace").split("\0") if n]
+    return sorted(n for n in names if n.endswith(exts)
+                  and os.path.isfile(os.path.join(root, n))), None
+
+
 # --- which files a surface's pictures are OF ------------------------------------
 # ONE walk for the question "which parts of `scripts/ui/` does a surface assemble
 # into its page", asked by whoever must report a part no surface claims. It is not
@@ -777,9 +835,7 @@ UI_DIR = os.path.join(SCRIPTS_DIR, "ui")
 UI_SURFACES = ("panel", "report")
 
 # Documentation is excluded BY SUFFIX rather than assets admitted by one: a part
-# wearing an unfamiliar extension must be reported, not silently unwatched. Read by
-# `_ui_theme` too, which is the point - a doc suffix the digest honoured and
-# `declared_asset_drift()` did not would be the same drift one directory over.
+# wearing an unfamiliar extension must be reported, not silently unwatched.
 UI_DOC_EXT = (".md", ".txt")
 
 # `shared/` ships in EVERY surface: `_report_ui._SCRIPT_PARTS` and
@@ -1222,8 +1278,7 @@ def depth_sensitive_paths(script_dir=None):
     `hooks/` IS NOT SCANNED. Hooks may not import `scripts/` (`_deps` r5/r6), so
     the anchors are out of their reach by design and `hooks/_config.find_script()`
     has to derive the directory from its own `__file__`. Reporting that would be
-    demanding a fix the layer rule forbids — the same reason `redundant_constants`
-    stops at a directory boundary.
+    demanding a fix the layer rule forbids.
 
     `_output.py` is exempt for the two reasons `_PREAMBLE_EXEMPT` records: it holds
     `PATH_PREAMBLE` as a string, and it is the file the anchors are defined in.
@@ -1795,106 +1850,6 @@ def house_style_violations(dirs=None):
                                     "file does not parse: %s" % exc))
                 continue
             violations.extend(_house_style_violations_in_tree(tree, name))
-    return violations
-
-
-def _module_string_constants(tree):
-    """`{NAME: (value, line)}` for MODULE-LEVEL `NAME = "literal"` assignments.
-
-    Module level only — `tree.body`, not `ast.walk`. A same-named local inside a
-    function is a different name with a different lifetime, and folding the two
-    together would report a constant as duplicated by a variable that shadows it
-    for three lines.
-    """
-    found = {}
-    for node in tree.body:
-        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
-            continue
-        target, value = node.targets[0], node.value
-        if isinstance(target, ast.Name) and isinstance(value, ast.Constant) \
-                and isinstance(value.value, str):
-            found[target.id] = (value.value, node.lineno)
-    return found
-
-
-def _names_read(tree):
-    """Every name this module reads, as a bare name OR through an attribute.
-
-    The attribute half matters: a constant nothing in its own file reads may still
-    be another module's `panel_server.CONFIG_REL`, and deleting it would break a
-    reader this file cannot see. Collecting `node.attr` across the tree is coarse —
-    an unrelated `x.CONFIG_REL` counts — but it errs toward silence, which is the
-    right direction for a lint whose remedy is DELETION.
-    """
-    read = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-            read.add(node.id)
-        elif isinstance(node, ast.Attribute):
-            read.add(node.attr)
-    return read
-
-
-def redundant_constants(dirs=None):
-    """(filename, line, what) for a constant that is BOTH duplicated and dead.
-
-    `panel-server.py` declared `CONFIG_REL = ".claude/audit.config.json"` and never
-    read it, while importing `_panel_state`, which declares the same name with the
-    same value and actually uses it. Nothing was broken and nothing would ever have
-    gone red — the copy simply sat there being a second place the fact could drift
-    from, and a reader grepping for the name found two answers.
-
-    Both halves of the test are load-bearing, and the rule is narrow ON PURPOSE:
-
-    - **duplicated** — a lone constant is a constant, not a defect.
-    - **never read in its own module** — a duplicate that IS read is a real
-      dependency, and removing it is a refactor with call sites to move. That is a
-      different job, and a lint whose fix is sometimes "delete" and sometimes
-      "restructure" gets ignored. When this fires, deletion is always correct.
-    - **same directory only** — `hooks/` may not import `scripts/`, so
-      `hooks/_config.CONFIG_REL` and `_panel_state.CONFIG_REL` are an IRREDUCIBLE
-      pair. Reporting them would be demanding a fix the layer rule forbids, and a
-      lint that cries about something nobody may fix teaches people to skip it.
-      That pair is held true by `_usage_core`'s pricing cases instead — read, not
-      merged.
-
-    Scanned per directory through `py_files`, so a file one level down counts.
-
-    `tests/` is NOT scanned, unlike the two dialect lints above, and the asymmetry is
-    the point: this lint's whole remedy is DELETION, and two test files legitimately
-    declaring the same fixture string are two independent fixtures, not one fact with
-    two homes. Widening it here would produce a stream of reports whose correct answer
-    is "no", which is how a lint stops being read.
-    """
-    dirs = dirs if dirs is not None else (SCRIPTS_DIR, HOOKS_DIR)
-    violations = []
-    for d in dirs:
-        declared = {}
-        unread = {}
-        for name, path in lint_py_files(d):
-            try:
-                with open(path, "r", encoding="utf-8") as fh:
-                    tree = ast.parse(fh.read(), filename=name)
-            except (OSError, SyntaxError):
-                # house_style_violations already reports an unparseable file by
-                # name; saying it twice adds noise, not information.
-                continue
-            consts = _module_string_constants(tree)
-            read = _names_read(tree)
-            unread[name] = set(n for n in consts if n not in read)
-            for const_name, (value, line) in consts.items():
-                declared.setdefault((const_name, value), []).append((name, line))
-        for (const_name, value), sites in sorted(declared.items()):
-            if len(sites) < 2:
-                continue
-            others = [n for n, _ in sites]
-            for name, line in sites:
-                if const_name not in unread.get(name, ()):
-                    continue
-                elsewhere = ", ".join(n for n in others if n != name)
-                violations.append((name, line,
-                                   "%s = %r is never read here and is already "
-                                   "declared in %s" % (const_name, value, elsewhere)))
     return violations
 
 
@@ -3916,13 +3871,22 @@ def prose_scan_exemption(rel, table=PROSE_SCAN_EXEMPT):
 
 
 def prose_scan_set(exts, repo_root=None, table=PROSE_SCAN_EXEMPT):
-    """`{"paths", "candidates", "exempted", "problem"}` - what a scan sharing
-    this walk reads.
+    """`{"paths", "candidates", "exempted", "problem", "basis"}` - what a scan
+    sharing this walk reads.
 
-    `problem` is a string or None, and it is the loud half. A tree whose
-    `.gitignore` cannot be read yields no paths, and "read no files" must not print
-    the way "found no claims" prints - which is the whole reason this returns the
-    candidate count alongside the paths rather than just the paths.
+    `basis` says where the candidate set came from, in words a message can carry:
+    the files git TRACKS when git can answer for the root, so an agent's untracked
+    scratch file is nobody's finding; otherwise the `.gitignore` derivation, with
+    the reason git could not answer. A scan that fell back is a wider scan - it
+    reads whatever of the scanned extensions is on disk and not ignored - and the
+    only way a reader can tell the two verdicts apart is that the set says which
+    one it is.
+
+    `problem` is a string or None, and it is the loud half. A tree git cannot
+    answer for whose `.gitignore` cannot be read either yields no paths, and
+    "read no files" must not print the way "found no claims" prints - which is the
+    whole reason this returns the candidate count alongside the paths rather than
+    just the paths.
 
     `table` is the exemption rows candidates are judged against, defaulting to
     this module's own `PROSE_SCAN_EXEMPT`. THE WALK IS SHARED, THE EXEMPTIONS
@@ -3931,17 +3895,25 @@ def prose_scan_set(exts, repo_root=None, table=PROSE_SCAN_EXEMPT):
     rather than inheriting another scan's.
     """
     root = repo_root if repo_root is not None else REPO_ROOT
-    patterns, problem = _ignored_dirs(root)
-    if problem is not None:
-        return {"paths": [], "candidates": 0, "exempted": [],
-                "problem": ".gitignore is %s" % problem}
-    candidates = kept_files(root, patterns, tuple(exts))
+    candidates, why = tracked_files(root, tuple(exts))
+    if candidates is not None:
+        basis = "the files git tracks"
+    else:
+        patterns, problem = _ignored_dirs(root)
+        if problem is not None:
+            return {"paths": [], "candidates": 0, "exempted": [],
+                    "problem": ".gitignore is %s" % problem,
+                    "basis": "nothing - git could not answer (%s) and the "
+                             ".gitignore derivation failed" % (why,)}
+        candidates = kept_files(root, patterns, tuple(exts))
+        basis = ("the .gitignore derivation - git could not answer (%s), so files "
+                 "git does not track are read too" % (why,))
     exempted = [rel for rel in candidates
                 if prose_scan_exemption(rel, table) is not None]
     skip = set(exempted)
     return {"paths": [rel for rel in candidates if rel not in skip],
             "candidates": len(candidates), "exempted": exempted,
-            "problem": None}
+            "problem": None, "basis": basis}
 
 
 # Two terms, one absolute and one derived: an absolute floor answers

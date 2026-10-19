@@ -1444,9 +1444,12 @@ scanned set was a hand-written pair — `.py` under `hooks/` and `scripts/`, plu
 documents — so a claim in `tools/`, in `tests/`, in `scripts/ui/*/README.md` or in the plugin's
 own product documents was written where nothing read it, and that is where the claims had gone:
 a part count per assembled surface, a suite size per boundary docstring, a file count in the
-prover. It is now every `.py` and every `.md` this repo keeps, walked off `.gitignore` because
-these suites are verified over a `git archive HEAD` export with no `.git` in it, and a file
-added to the repo is scanned by default. Excluding one is a row in
+prover. It is now every `.py` and every `.md` git TRACKS, so an agent's untracked scratch file is
+nobody's finding and a file added to the repo is scanned by default. Where git cannot answer
+- these suites are also verified over a `git archive HEAD` export with no `.git` in it, and a
+directory inside someone else's work tree is no work tree of its own - the set is walked off
+`.gitignore` instead, and `prose_scan_set()` returns a `basis` that says which one a verdict
+came from. Excluding one is a row in
 `_output.PROSE_SCAN_EXEMPT` carrying a reason a reader can disagree with — released history,
 a dated design record, a generated document, and the two suites that hold this scanner's own
 fixtures. A case checks each row's premise rather than its presence: the path exists, or
@@ -1591,17 +1594,13 @@ out from under the code it documents. The hooks rule has **no allow-list** — i
 this module's first run found it (`hooks/_config.py` reached `_manifest_io` by putting `scripts/`
 at the front of `sys.path`), and it was fixed rather than kept, so `hooks_rule_drift()` now fails
 the build on any document that states the rule and then carves an exception out of it.
-`layer_mention_drift()` closes the third leak in that seam: a layer NUMBER lives in `LAYERS`
-and in what `python3 plugins/audit/scripts/_deps.py --render` prints, and nowhere else. Prose
-is where the copies rotted — one module given a layer of its own moved everything above it up
-by one, and every sentence that had written a number went stale at once. Grading those copies
-against the table was tried, one wording at a time, and lost to the next wording each round;
-so the rule now refuses the numeral itself, right or wrong, in every docstring and comment under
-`scripts/` and `hooks/`: the word spelling anywhere, the `L<N>` spelling where the prose is
-talking about layers, and a number alone in parentheses after a module `LAYERS` holds. A line
-anchor in a URL, a path, a cache or spec level stays legal, and both directions are rows in
-`tools/prove-gates.py`. The repair keeps the module's name and the reasoning and drops the
-number — "one layer above `_x`" says what the number said and stays true when the table moves.
+A layer NUMBER lives in `LAYERS` and in what `python3 plugins/audit/scripts/_deps.py --render`
+prints, and nowhere else. Prose is where the copies rotted - one module given a layer of its own
+moved everything above it up by one, and every sentence that had written a number went stale at
+once - and nothing checks that any more: the lint that refused the numeral in a docstring or
+comment was retired, so the rule is author-enforced. The repair keeps the module's name and the
+reasoning and drops the number - "one layer above `_x`" says what the number said and stays true
+when the table moves.
 `doc_prose_numbers()` runs `_output`'s prose-number rule over every `.md` this repo keeps — the
 derived set described under `_output.py` above, product documents included — and it **delegates**
 to `_output._prose_number_claim` rather than restating the shapes, because a second copy of the
@@ -1609,11 +1608,10 @@ pattern would be precisely the defect both scanners exist to catch; a case asser
 second definition. `_PROSE_DOCS` survives as the three documents that were once the whole list,
 and it is now a BLINDNESS check: each claims to be a definition of how this repo works, so a
 derivation that stopped reaching one has gone quiet rather than clean — which is the direction a
-floor derived from the walk itself cannot see. `navigability_violations()` and `ui_navigability_violations()` both **name** an
-asset they could not read and a directory they could not list, rather than skipping it: the
-`.py` side had already reported a file it could not *tokenize* while quietly swallowing one it
-could not *open*, and the `ui/` side returned an empty list for a missing `scripts/ui/` — the whole
-report and panel UI gone, printing exactly what a clean tree prints. `--selftest`.
+floor derived from the walk itself cannot see. `navigability_violations()` **names** a file it
+could not read rather than skipping it: it had already reported a file it could not *tokenize*
+while quietly swallowing one it could not *open*. The same rule for the assets under
+`scripts/ui/` (one section marker per 400 lines) was retired and is author-enforced. `--selftest`.
 `state_write_violations()` holds the rule that a state file is replaced only through a sanctioned
 writer: every `os.replace`/`os.rename` under `scripts/` and `hooks/` — through `os.`, a module
 alias, or a name imported from `os` — must sit in a function `STATE_WRITERS` names, and each row
@@ -1647,20 +1645,8 @@ this guide writes the flat glob as prose stay legal. That sentence said "the rec
 form" for a while after the runner replaced it, and named a count that had since grown: two
 rotted claims about one rule, in the file that documents it.
 
-`sweep_doc_drift()` is the other half of the same rule, and it judges the LIST rather than the
-documents in it. `SWEEP_DOCS` is hand-written, so until this existed a new document telling a
-reader to run the retired glob was green twice over — never opened by the check, and read by
-nothing else. It walks every document of a format `_runnable_text` has a rule for and reports
-one that teaches a sweep without being listed. Its candidate set is DERIVED from `.gitignore`
-rather than hand-pruned: `.claude/worktrees/` holds whole checkouts of this repo, so a scan
-that walked them would report every sweep document once per recent agent — a finding count
-that depends on nothing in the commit. A derivation is only as good as its pattern, so the
-rule also reports the blind direction, a listed document the walk can no longer reach. This
-file is an anchored surface itself, and its own fixture paths are BUILT rather than spelled
-for that reason.
-
-That walk is now the only one: `raw_url_pin_drift()`, which holds a published `curl` to a
-TAG rather than to a moving ref, had a prune list of its own — a handful of directory names
+`raw_url_pin_drift()`, which holds a published `curl` to a
+TAG rather than to a moving ref, once had a prune list of its own — a handful of directory names
 — and it was wrong in both directions at once. It reached whatever the browser tool had last
 left in the tree, so its candidate set moved with what had lately run on the machine rather
 than with the commit, and it pruned `.claude/` wholesale, which held the repo's own tracked
@@ -1671,24 +1657,6 @@ quoting a dead URL as history, and a case now pins that it is the scope and not 
 The remaining edge is stated rather than papered over — `.gitignore` is read for DIRECTORIES,
 so a file it ignores of a scanned format stays a candidate, and for this rule that is the
 rendered report, which is generated and can carry a fence.
-
-`doc_link_drift()` rides the same walk and asks the question nothing here asked at all:
-**is a document reachable?** No rule enumerated the root-level documents, none counted them,
-and none checked that one is linked from anywhere — there was no Markdown link checker in the
-tree. A document nobody links to is a document nobody reads, and it fails with every gate
-green. That became load-bearing when the documentation was split by audience, because the
-split's whole value is that a new reader's path to first success is short, and a path is a
-property of the link GRAPH rather than of any one file. Two directions, asymmetric on purpose:
-every inline link the walk can reach is resolved against the directory of the document that
-wrote it — a claim about a file is checkable wherever it is written — while only *root-level*
-documents are required to have an inbound link, because reachability is a property of the
-published root and demanding one for every `SKILL.md` would need a blanket exemption. The
-entry point is a constant rather than an exemption, and `UNLINKED_BY_DESIGN` is checked in
-both directions like every other declared exclusion here: an entry that has stopped being a
-root document, or that something links to after all, is a finding rather than a row that
-quietly excuses nothing. Reference-style links and autolinks are not resolved, so it
-under-reports rather than over-reports — the same limit this module's header states about a
-path split across two literals.
 
 `tool_basename_drift()` covers the shape none of the above can see. `tools/` never spells a
 route: it says `resolveScript('panel-server.py')`, so there is no `scripts/…py` on the line for
@@ -1770,38 +1738,6 @@ finding and not silence: absence is not agreement, so the rule is red until a ca
 one, and the repair is the capture rather than a default filled in here. The digest comparison
 runs **after** the version comparison, because both repairs are the same command and one finding
 per picture is what a reader can act on.
-
-`handbook_drift()` asks it of the one published page with **no generator behind it**.
-`docs/handbook.html` is served by GitHub Pages beside the live demo and nothing read it: the
-rendered reports are compared byte for byte, `docs/index.html` is proven a byte copy, every
-screenshot records the version it was shot at, and the handbook walked past
-`artifact_version_drift()` carrying no stamp to compare — correctly, and saying nothing. So it
-could assert something the code had stopped doing and stay green for ever, and it had: before it
-was rewritten it described none of the test-evidence feature, its masthead and its footer named
-two different and both-stale versions, and it described a command as interactive when every
-answer is a flag.
-
-**Deliberately not a byte comparison**, which is the decision rather than a shortcut: a byte
-check needs a generator to compare against, and writing one to hold a hand-written page is a
-bigger commitment than the gap deserves. What is checkable without one is the page's
-**structural** claims, and the page makes them out loud — "every command, flag and default here
-is the same wherever it is installed". Four arms, each reporting the size of what it examined
-beside its findings: a verb that has a command file, an option spelling the product still
-carries, a dotted path written from the root of a document this plugin publishes that a schema
-still declares, and an internal link that lands on an `id`. The counts are not decoration —
-every arm narrows a long page down to a small set, and a narrowing that reaches zero produces
-the same empty finding list as a page that is entirely correct.
-
-**The region it reads is the text a reader reads**, and that narrowing is the whole reason the
-rule is quiet enough to keep. A CSS custom property is spelled exactly like a command-line
-option, so a reader over the whole file would report this page's own design tokens as options
-the plugin does not accept; the stylesheet, the inline diagrams and the inline scripts are
-dropped whole, then the tags, then the entities are resolved. The repair for that class is the
-narrowing and never a looser needle — a pattern widened until the tokens passed would stop
-catching an option that was really removed. The one place a page may name something the product
-does not carry is `HANDBOOK_ABSENT_VERBS` / `HANDBOOK_FOREIGN_OPTIONS`, each row carrying a
-reason and checked in **both** directions: a row for a verb that has since been built, or for
-something the page no longer names, is reported exactly as a violation is.
 
 `manifest_placeholder_drift()` asks whether a command file still hands a script the
 `<manifestPath>` placeholder after that script learned to find the manifest itself.

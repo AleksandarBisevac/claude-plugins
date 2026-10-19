@@ -15,8 +15,8 @@ phrased this way because the previous phrasing — "anything both surfaces need 
 in the shared layer, once" — was in force while fifteen rules were retyped, for a
 reason worth recording: **it named a directory that did not exist.** Complying
 meant inventing this folder, registering it in `_ui_theme.UI_ASSETS`, threading it
-into two `_PARTS` tuples in two modules and satisfying
-`declared_asset_drift()`. Retyping ten lines was one edit. A rule that makes the
+into two `_PARTS` tuples in two modules and keeping the declared list
+whole by hand. Retyping ten lines was one edit. A rule that makes the
 wrong thing cheaper loses, however plainly it is written.
 
 **Business-agnostic only.** Primitives, formatting, platform adapters. A rule

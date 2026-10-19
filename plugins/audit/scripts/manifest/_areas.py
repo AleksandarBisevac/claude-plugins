@@ -39,16 +39,14 @@ Paths are PROJECT-DIR-RELATIVE, the same as `task.files` and the `fileIndex` key
 (so they carry the `meta.gitRoot` prefix when the workspace sits in a subdirectory).
 An absolute root would not survive a second clone; the validator says so.
 
-**AND IT HOLDS THE ORCHESTRATOR'S CLAIMS TO THE CODE** — `rule_drift` at the
-bottom, plus the section-scoped `claim_drift`/`anchor_coverage` beside it. That
-is a second subject in one module and it is here on purpose rather than in a new
-file: `rule_drift` was already here, because the reviewSkill resolution is
-implemented here and the rule had to be pinned next to the thing that executes
-it, and the anchors are the same mechanism widened — a document makes a claim,
-the code says what is true, the two are compared every run. A separate module
-would put the mechanism one import away from its one working example and owe the
-build guide a section for the privilege. Print what is covered rather than
-trusting a sentence about it:
+**AND IT HOLDS THE ORCHESTRATOR'S CLAIMS TO THE CODE** — the section-scoped
+`claim_drift`/`anchor_coverage` at the bottom. That is a second subject in one
+module and it is here on purpose rather than in a new file: the reviewSkill
+resolution is implemented here and the claims about it had to be pinned next to
+the thing that executes it — a document makes a claim, the code says what is
+true, the two are compared every run. A separate module would put the mechanism
+one import away from the code it reads and owe the build guide a section for the
+privilege. Print what is covered rather than trusting a sentence about it:
 
     python3 plugins/audit/scripts/manifest/_areas.py --coverage
 
@@ -504,27 +502,12 @@ def missing_roots(manifest, project):
 # the prose in reference/ and commands/. Two statements of one rule is the drift this
 # repository has already shipped once (`exemptGlobs` and `tddReminder.testGlobs`
 # disagreeing about what a test file is), and prose drift is worse than code drift
-# because nothing runs it. So the sentence is pinned: every file that states the rule
-# must state THIS, and `tests/test__areas.py` reads them to check.
+# because nothing runs it. So the sentence is written once, here, and the documents
+# that state it are no longer compared with it - the check that did was retired, so
+# the four files that quote it owe it to whoever edits them.
 REVIEW_RULE = ("phase.reviewSkill ?? meta.areas[tag].reviewSkill "
                "?? meta.reviewSkill")
 SKILLS_RULE = "then task.skills, deduped, area first"
-# where the rule is stated -> which halves of it that file must carry
-# A phase run stopped after wave 1 of eight and nothing could tell: the
-# obligation to continue was prose nothing read. `_status_facts.unfinished_runs`
-# now answers the same question from the lock and the ready list, so this row is
-# what keeps the sentence and the fact from drifting apart - the document may not
-# stop stating a rule the code has started grading.
-CONTINUATION_RULE = ("A phase run is not finished while its lock is held and a "
-                     "task is ready")
-
-_RULE_DOCS = {
-    os.path.join("reference", "orchestrator.md"): (REVIEW_RULE, SKILLS_RULE,
-                                                   CONTINUATION_RULE),
-    os.path.join("reference", "manifest-conventions.md"): (REVIEW_RULE, SKILLS_RULE),
-    os.path.join("commands", "review.md"): (REVIEW_RULE,),
-    "README.md": (REVIEW_RULE, SKILLS_RULE),
-}
 
 
 def _plain(text):
@@ -533,40 +516,9 @@ def _plain(text):
     return " ".join(re.sub(r"[*`]", "", text).split())
 
 
-def rule_drift(plugin_root=None):
-    """[(file, missing-rule), ...] for every doc that states the rule differently.
-
-    Also catches the PREVIOUS wording — `phase.reviewSkill ?? meta.reviewSkill`,
-    true until v0.28 — surviving somewhere as a two-level rule that quietly omits
-    the area. That is the specific way this drifts: an area is added to one file
-    and the other three keep describing the old lookup.
-    """
-    root = plugin_root or _output.PLUGIN_ROOT
-    out = []
-    for rel, rules in sorted(_RULE_DOCS.items()):
-        path = os.path.join(root, rel)
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                text = _plain(fh.read())
-        except Exception as exc:
-            out.append((rel, "unreadable: %s" % exc))
-            continue
-        for rule in rules:
-            if rule not in text:
-                out.append((rel, rule))
-        # What sits immediately LEFT of the final `?? meta.reviewSkill`. In the
-        # three-level rule that is the area; in the pre-v0.28 two-level one it is
-        # the phase, and that is the whole difference between them.
-        for left in re.findall(r"([A-Za-z.\[\]]*)\s*\?\? meta\.reviewSkill", text):
-            if left != "meta.areas[tag].reviewSkill":
-                out.append((rel, "states a lookup without the area: %r ?? "
-                                 "meta.reviewSkill" % left))
-    return out
-
-
 # --- the orchestrator's claims, anchored per SECTION --------------------------
-# `rule_drift` above was, measured, the ONLY thing in this repository holding
-# any sentence of `reference/orchestrator.md` — a document that governs every
+# One whole-document sentence check was, measured, the ONLY thing in this repository
+# holding any sentence of `reference/orchestrator.md` — a document that governs every
 # `/audit:*` run. Each of its `##` sections was deleted in turn and the whole gate
 # set run: not one deletion was noticed, not by the selftest sweep and not by
 # `tools/gate-parity.py`. The one anchored sentence survived every deletion only
@@ -912,8 +864,8 @@ UNANCHORED_SECTIONS = {
         "DOCUMENTATION OF THE PHASE VERBS. add, retarget, priority, signoff, "
         "settle and cancel are audit-task.py and set-priority.py calls whose "
         "refusals their suites hold, and the one worked example a reader could "
-        "copy - the next phase id - is graded in commands/phase.md by "
-        "_proposals.phase_id_doc_drift. Anchoring the rest needs rows per verb."),
+        "copy - the next phase id - is graded by nothing now that its check "
+        "was retired. Anchoring the rest needs rows per verb."),
 }
 # The document each declaration above belongs to, when it is not `_ORCHESTRATOR`.
 # A declaration is stale against ITS document only, so a section of one file is

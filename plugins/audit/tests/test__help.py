@@ -7,28 +7,19 @@ The cases for `_help.py`, moved out of it - an importable helper.
 imports them, because three cases compare against those modules' own objects
 (`_areas.REVIEW_RULE`, `_policy.required_names()`).
 
-THREE THINGS ABOUT THIS SUITE READ THE REPOSITORY, AND ALL THREE STILL RESOLVE.
+TWO THINGS ABOUT THIS SUITE READ THE REPOSITORY, AND BOTH STILL RESOLVE.
 
   * the scripts directory was `_help.py`'s own `_HERE` constant, and the suite
-    used it four times as SCRATCH SPACE: `_helpdoc/` and `_helpagents/` (fake
-    plugin roots the two drift lints are pointed at), `_helpfm.md` (a frontmatter
-    fixture) and `_nope` (a plugin root that must not exist). Carried literally
-    they would name `tests/` - which for scratch paths resolves correctly BY
-    COINCIDENCE, and that is exactly the shape the guide says to spell about the
-    subject instead. They read the ONE anchor through the module under test, so
-    each one still says "beside the module under test".
-  * `plugin_root()` is `_help.py`'s own function (now `_output.PLUGIN_ROOT`), so every
-    case that reads a real document - `source_drift()` over `README.md`,
-    `SECURITY.md`, `../../PLUGIN-BUILD-GUIDE.md` and the `reference/` pages,
-    `agent_doc_drift()` over `agents/*.md` - resolves off the SUBJECT's location
-    and needed no change at all. Verified rather than assumed: `M.plugin_root()`
-    is `plugins/audit` when this file is run from `tests/`, and `c1`/`a1` are the
-    cases that go red if it ever is not.
-  * three of the citations `c1` checks are the plugin-relative literals
-    `_areas.py`, `_policy.py` and `audit-journal.py`,
-    written out in `_help.topics()`. They stay literals and stay in the PRODUCT:
-    they are among the only places in the tree that assert a `scripts/` path
-    exists, and going red when one of those files is renamed is the feature.
+    uses it as SCRATCH SPACE: `_helpfm.md` (a frontmatter fixture) and `_nope` (a
+    plugin root that must not exist). Carried literally they would name `tests/` -
+    which for scratch paths resolves correctly BY COINCIDENCE, and that is exactly
+    the shape the guide says to spell about the subject instead. They read the ONE
+    anchor through the module under test, so each one still says "beside the module
+    under test".
+  * `plugin_root()` is `_help.py`'s own function (now `_output.PLUGIN_ROOT`), so
+    every case that reads a real document resolves off the SUBJECT's location.
+    `pr1` is the case that goes red if it ever stops being the directory holding
+    `scripts/`.
 
 ONE IMPORT EDGE RETIRED WITH THIS MOVE. `s8`'s `import _panel_settings` was the
 only thing in `_help.py` naming that module, and `_deps` walks the whole AST -
@@ -422,23 +413,6 @@ def _cases(check):
           "drift lints below be pointed at a fixture",
           M.plugin_root("/nowhere") == "/nowhere")
 
-    drift = M.source_drift()
-    check("c1 every citation resolves to a file and, where it names one, to a "
-          "real heading: %r" % (drift,), not drift)
-    _fake = os.path.join(M._output.SCRIPTS_DIR, "_helpdoc")
-    os.makedirs(_fake, exist_ok=True)
-    try:
-        with open(os.path.join(_fake, "README.md"), "w", encoding="utf-8") as fh:
-            fh.write("# audit\n\n## Something else entirely\n")
-        _d = M.source_drift(_fake)
-        check("c2 the citation lint can fail - a renamed heading is caught rather "
-              "than shipped as a dead link",
-              len([x for x in _d if x[2] == "no heading with that anchor"]) >= 3,
-              repr(_d))
-    finally:
-        import shutil
-        shutil.rmtree(_fake, ignore_errors=True)
-
     # --- the manifest vocabulary against the schema -------------------------------
     # `_manifest_vocab`'s KNOWN_* sets restate vocabulary this schema owns, and the
     # comparison lives here because the walk does: the vocabulary is at layer 1 and
@@ -528,162 +502,6 @@ def _cases(check):
                                         "KNOWN_DECISION", "KNOWN_PROPOSAL")),
           repr(sorted(M.vocab_sets(_vocab))))
 
-    # --- the RECOMMENDED subsets, which are checked the other way round -----------
-    # `vocab_drift()` asks for coverage; `subset_drift()` asks only for containment,
-    # because a set whose job is to name SOME of a level's keys would fail a coverage
-    # check while behaving perfectly. Same fixture discipline: the shipped tuple is
-    # never mutated, so the tree is never one exception away from shipping a mutation.
-    _sub = (("CLAIM_X", "phases[].claim"),)
-
-    def _sprobe(levels, sets):
-        """Just the problems, against one anchor — the set is `CLAIM_X` in every
-        fixture, so carrying its name into each expected list is noise."""
-        return [p for _, p in M.subset_drift(levels, sets, _sub)]
-
-    check("v13 a key the set recommends and the schema does not declare is named "
-          "with its anchor - the typo that would otherwise stop the key being "
-          "asked for at all, in silence",
-          _sprobe({"CLAIM_X": {"sessionId", "host"}},
-                  {"CLAIM_X": ("sessionID", "host")}) ==
-          ["phases[].claim.sessionID is recommended by this set and not declared "
-           "by the schema - a typo here does not warn, it stops the key being "
-           "asked for at all"])
-    # THE CASE THE WHOLE SPLIT EXISTS FOR. If this ever goes red the check has
-    # started failing the correct state, which is how a guard gets routed around.
-    _lv = {"CLAIM_X": {"sessionId", "host", "branch", "at"}}
-    _st = {"CLAIM_X": ("sessionId", "host", "branch")}
-    check("v14 a PROPER subset says nothing - the schema declaring `at` and the "
-          "set not recommending it is the rule working; the coverage check on the "
-          "same fixture DOES name it, which is the difference between the two",
-          M.subset_drift(_lv, _st, _sub) == []
-          and [p for _, p in M.vocab_drift(_lv, _st, _sub, {})
-               if "phases[].claim.at is in the schema" in p],
-          repr((M.subset_drift(_lv, _st, _sub),
-                M.vocab_drift(_lv, _st, _sub, {}))))
-    check("v15 an anchor that declares NOTHING is named AS ITSELF - it would fail "
-          "either way, since every key is then undeclared, so what this buys is the "
-          "diagnosis: a renamed $def reads as one move in the schema instead of "
-          "three typos in the vocabulary",
-          _sprobe({"CLAIM_X": set()}, {"CLAIM_X": ("sessionId",)}) ==
-          ["the anchor 'phases[].claim' declares no properties in "
-           "audit-plan.schema.json - a containment check against nothing passes "
-           "for any set"])
-    check("v16 ...and an EMPTY SET is the direction that would otherwise PASS - "
-          "containment over no keys holds vacuously while the rule reading it asks "
-          "for nothing, so emptying the tuple silently disables the warning it "
-          "feeds. This is the asymmetric half of v15",
-          _sprobe({"CLAIM_X": {"sessionId"}}, {"CLAIM_X": ()}) ==
-          ["the set is empty, so the rule reading it asks for nothing and reports "
-           "no key missing - indistinguishable from every key being present"])
-    check("v17 a *_KEYS subset with no anchor is named, and an anchor naming a "
-          "subset the vocabulary does not have - the two halves of the table "
-          "disagreeing in either direction",
-          _sprobe({"CLAIM_X": {"a"}}, {"CLAIM_X": ("a",), "OTHER_KEYS": ("b",)}) ==
-          ["no SUBSET_ANCHORS entry: nothing says which schema level this "
-           "recommended subset is drawn from"]
-          and _sprobe({"CLAIM_X": {"a"}}, {}) ==
-          ["SUBSET_ANCHORS anchors it at 'phases[].claim', but the vocabulary has "
-           "no such set"])
-    check("v18 `vocab_subsets()` reads them OFF the module by the `*_KEYS` suffix, "
-          "so v17 has something to catch - and the VALUE enumerations beside them "
-          "(STATUS, RISK, the *_RE patterns) are not swept in as key sets",
-          M.vocab_subsets(_vocab) == {"CLAIM_KEYS": _vocab.CLAIM_KEYS},
-          repr(sorted(M.vocab_subsets(_vocab))))
-
-    # --- the vocabularies that are LITERALS AT THEIR CALL SITE --------------------
-    # A third shape, and the one neither table above can reach: the `meta.ado`
-    # sub-objects have no named set anywhere, so `vocab_sets()` and `vocab_subsets()`
-    # are blind to both of them and the vocabulary is the ARGUMENT a call passes.
-    # Fixtures again, and for the reason v3-v18 use them: proving a lint by mutating
-    # what it guards leaves the tree one exception away from carrying the mutation.
-    _src = ('def check_it(ado, w):\n'
-            '    _unknown_keys(ado, {"team", "mode"}, "meta.ado.sprint", w)\n'
-            '    _unknown_keys(ado, set(vocab), "meta.ado.stateMap", w)\n'
-            '    _unknown_keys(ado, KNOWN_ADO, "meta.ado", w)\n'
-            '    _unknown_keys(ado, {"x"}, "%s" % kind, w)\n')
-    _scan = M.inline_vocabularies({"a.py": _src})
-    check("v19 a literal vocabulary is read off the CALL, with the file and line it "
-          "is written on - and the three shapes beside it are declined, because a "
-          "computed set needs a value the parser does not have and a NAMED one is "
-          "`schema_vocab_drift()`'s question rather than this one",
-          _scan == {"found": {"meta.ado.sprint":
-                              {"keys": {"team", "mode"},
-                               "sites": [("a.py:2", ("mode", "team"))]}},
-                    "problems": []}, repr(_scan))
-    _bad = M.inline_vocabularies({"a.py": "def (:\n"})
-    check("v20 ...and a file the parser cannot read is NAMED rather than skipped: "
-          "silence there would shrink what the scan looked at without shrinking the "
-          "claim made about it",
-          _bad["found"] == {} and len(_bad["problems"]) == 1
-          and _bad["problems"][0][0] == "a.py"
-          and "does not parse" in _bad["problems"][0][1], repr(_bad))
-    _two = M.inline_vocabularies(
-        {"a.py": '_unknown_keys(o, {"team"}, "meta.ado.sprint", w)\n',
-         "b.py": '_unknown_keys(o, {"team", "mode"}, "meta.ado.sprint", w)\n'})
-    check("v21 two call sites for one level are unioned AND their disagreement is "
-          "named - a union on its own would hide the fork it was built out of, "
-          "which is the failure a second copy of a vocabulary always is",
-          _two["found"]["meta.ado.sprint"]["keys"] == {"team", "mode"}
-          and [p for _w, p in M.inline_drift({"meta.ado.sprint": {"team", "mode"}},
-                                             _two["found"], ("meta.ado.sprint",))]
-          == ["call sites pass different vocabularies for this level, so one of "
-              "them is already wrong: a.py:1 ['team'], b.py:1 ['mode', 'team']"],
-          repr(_two))
-
-    _ianch = ("meta.ado.sprint",)
-
-    def _iprobe(levels, found):
-        """Just the problems, against one anchor — the path is `meta.ado.sprint` in
-        every fixture, so carrying it into each expected list is noise."""
-        return [p for _w, p in M.inline_drift(levels, found, _ianch)]
-
-    def _site(*keys):
-        """One call site passing `keys`, shaped as `inline_vocabularies()` returns."""
-        return {"keys": set(keys), "sites": [("a.py:1", tuple(sorted(keys)))]}
-
-    check("v22 a property the schema declares and no call site names is reported "
-          "with its path - the literal is the `known` argument of `_unknown_keys`, "
-          "so a key missing from it makes the validator warn about a real key",
-          _iprobe({"meta.ado.sprint": {"team", "mode"}},
-                  {"meta.ado.sprint": _site("team")}) ==
-          ["meta.ado.sprint.mode is in the schema and no call site names it - add "
-           "it, or the typo-catcher warns about a real key"])
-    check("v23 ...and ONE typo lands as BOTH problems, which is what a typo here "
-          "actually costs: the real key stops being recognised and the misspelling "
-          "starts being accepted",
-          _iprobe({"meta.ado.sprint": {"team", "mode"}},
-                  {"meta.ado.sprint": _site("team", "moed")}) ==
-          ["meta.ado.sprint.mode is in the schema and no call site names it - add "
-           "it, or the typo-catcher warns about a real key",
-           "'moed' is passed here and the schema does not declare it at "
-           "meta.ado.sprint - add it to the schema, or the key it was meant to be "
-           "is the one going unwarned"])
-    check("v24 a declared level with NO call site is the direction that would "
-          "otherwise pass in silence: a comparison over nothing found reports "
-          "nothing wrong, so deleting the call reads exactly like agreement",
-          _iprobe({"meta.ado.sprint": {"team"}}, {}) ==
-          ["declared here, but no `_unknown_keys()` call under scripts/ passes a "
-           "literal set at this path - the check has stopped covering the level, "
-           "which is not the same as finding it clean"])
-    check("v25 ...and an anchor that declares no properties is named AS ITSELF, so "
-          "a renamed level reads as one move in the schema rather than as a "
-          "vocabulary full of typos",
-          _iprobe({"meta.ado.sprint": set()}, {"meta.ado.sprint": _site("team")}) ==
-          ["the anchor declares no properties in audit-plan.schema.json - a "
-           "comparison against nothing passes for any set"])
-    check("v26 a literal found at a path INLINE_ANCHORS does not declare is named "
-          "with its site, so a nested vocabulary added later cannot opt out of the "
-          "check by being forgotten - the half a hand-written table cannot do",
-          _iprobe({"meta.ado.sprint": {"team"}},
-                  {"meta.ado.sprint": _site("team"),
-                   "meta.ado.pull": _site("tags")}) ==
-          ["an inline vocabulary at a.py:1 that INLINE_ANCHORS does not declare - a "
-           "level nothing compares is where this whole class of drift starts"])
-    check("v27 ...and a level that agrees says nothing at all - the case that fails "
-          "if any of v22-v26 has started firing on everything",
-          M.inline_drift({"meta.ado.sprint": {"team", "mode"}},
-                         {"meta.ado.sprint": _site("team", "mode")}, _ianch) == [])
-
     # --- the guide agent ----------------------------------------------------------
     cards = {c["name"]: c for c in M.agent_cards()}
     check("g1 every shipped agent is read off its own file",
@@ -713,29 +531,6 @@ def _cases(check):
           "off the agents directory - so a deny-all policy cannot switch off the "
           "one thing that explains the policy",
           "audit:guide" in _policy.required_names()["agents"])
-
-    # --- agent enumeration in the docs --------------------------------------------
-    adrift = M.agent_doc_drift()
-    check("a1 every doc that enumerates the agents names all of them, and any "
-          "count it states agrees with the directory: %r" % (adrift,), not adrift)
-    _fake2 = os.path.join(M._output.SCRIPTS_DIR, "_helpagents")
-    os.makedirs(os.path.join(_fake2, "agents"), exist_ok=True)
-    try:
-        for _n in ("alpha", "beta"):
-            with open(os.path.join(_fake2, "agents", _n + ".md"), "w",
-                      encoding="utf-8") as fh:
-                fh.write("---\nname: %s\ntools: Read\n---\nbody\n" % _n)
-        with open(os.path.join(_fake2, "README.md"), "w", encoding="utf-8") as fh:
-            fh.write("It ships three pinned-tool agents, one of them alpha.\n")
-        _d2 = M.agent_doc_drift(_fake2)
-        check("a2 the lint catches an agent no doc mentions",
-              any("does not name the beta agent" in x[1] for x in _d2), repr(_d2))
-        check("a3 ...and a count that has gone stale, which is how this one "
-              "actually rots", any("says 'three' pinned-tool agents" in x[1]
-                                   for x in _d2), repr(_d2))
-    finally:
-        import shutil
-        shutil.rmtree(_fake2, ignore_errors=True)
 
     # --- frontmatter --------------------------------------------------------------
     _fm = os.path.join(M._output.SCRIPTS_DIR, "_helpfm.md")

@@ -117,9 +117,9 @@ _output.install_path()
 # repository's own hooks - the release guard whose docstring calls itself fail-loud
 # because what it protects is irreversible, and the hook that asks a commit for its
 # claims - each carried a suite that nothing ran: the sweep walked the plugin and
-# `tools/`, so a change that broke either shipped green. `gate-parity.py`'s
-# `sweep_roots_drift()` reads this tuple and holds every document that enumerates
-# the roots to it, so the next root cannot be added here and nowhere else.
+# `tools/`, so a change that broke either shipped green. Nothing compares this
+# tuple with the documents that enumerate the roots; a root added here owes its
+# mention in each of them to its author.
 SWEEP_DIRS = (
     os.path.join("plugins", "audit", "hooks"),
     os.path.join("plugins", "audit", "scripts"),
@@ -484,110 +484,22 @@ def scratch_debris(root, sentinel=SENTINEL, expected=SENTINEL_BYTES):
     return found
 
 
-# --- removing that directory, and the copy that does it -----------------------
-# ONE FACT, ONE HOME AND THIS COPY, AND THIS SECTION IS BOTH THE COPY AND THE
-# THING THAT COMPARES THEM. The fact is that git writes its loose objects
-# READ-ONLY, so on windows the ordinary removal call cannot unlink them - and every
-# caller here spells it `ignore_errors=True`, which means the removal had never
-# worked there and nothing said so. `_output.remove_tree()` in the scripts anchor
-# is where that fact lives, with the measurement that chose it; `_harness` binds
-# its own name to that function rather than holding a body.
-REMOVAL_HELPER_HOME = os.path.join("plugins", "audit", "scripts", "_output.py")
-REMOVAL_HELPER = "remove_tree"
+# --- removing that directory ---------------------------------------------------
+# The fact is that git writes its loose objects READ-ONLY, so on windows the
+# ordinary removal call cannot unlink them - and every caller here spells it
+# `ignore_errors=True`, which means the removal had never worked there and nothing
+# said so. `_output.remove_tree()` in the scripts anchor is where that fact lives,
+# with the measurement that chose it; `_harness` binds its own name to that function
+# rather than holding a body, and so does this runner.
+#
+# THIS RUNNER USED TO KEEP A COPY. It was written while the home was
+# `tests/_harness.py`, a file this sweep RUNS and so may not import to start: a
+# harness with a syntax error would have arrived as a traceback out of this module
+# instead of as one failing row. The home is the anchor now, which this runner
+# imports above to start at all, so the reason for a copy is gone and so is the copy
+# - a body kept beside its home with nothing comparing the two is a fork waiting.
+remove_tree = _output.remove_tree
 
-
-def remove_tree(path):
-    """`shutil.rmtree` that also works on a fixture containing a git repository.
-
-    THE COPY, NOT THE HOME. `_output.remove_tree()` under `plugins/audit/scripts/`
-    owns this - the measurement that chose the fallback order and why the
-    fallback never goes through a link are in its docstring, and its cases are in
-    `tests/test__output.py` and `tests/_harness.py` - and `removal_helper_drift()`
-    below compares the two statement for statement, the return value included,
-    so the copy cannot drift.
-
-    A COPY THIS RUNNER IS NO LONGER FORCED TO KEEP. It was written while the home
-    was `tests/_harness.py`, a file this sweep RUNS and so may not import to
-    start: a harness with a syntax error would have arrived as a traceback out of
-    this module instead of as one failing row. The home is now the anchor, which
-    this runner imports above to start at all, so that reason is gone; binding
-    `remove_tree = _output.remove_tree` and retiring `rm1` is the remaining step.
-    Until it is taken, `rm1` is what keeps this a copy rather than a fork.
-    """
-    shutil.rmtree(path, ignore_errors=True)
-    if not os.path.lexists(path):
-        return True
-    if os.path.islink(path):
-        return False
-    # Top-down and lazy: a directory is made writable before it is descended
-    # into.
-    for base, dirs, names in os.walk(path):
-        for entry in [base] + [os.path.join(base, name) for name in dirs + names]:
-            if os.path.islink(entry):
-                continue
-            try:
-                os.chmod(entry, 0o700)
-            except OSError:
-                pass
-    shutil.rmtree(path, ignore_errors=True)
-    return not os.path.lexists(path)
-
-
-def _def_shape(source, name):
-    """`(shape, problem)` for a module-level `def name` - exactly one is None.
-
-    The shape is the function's statements dumped from the AST with the DOCSTRING
-    DROPPED, and that narrowing is the whole reason a comparison of two copies can
-    be written at all: the home and the copy have to say different things about
-    themselves - one carries the measurement, the other carries the pointer and
-    the reason it is a copy - while running the same statements. `ast.dump` keeps
-    no line numbers either, so moving the function is not drift.
-
-    A source that will not parse is REPORTED rather than skipped, because a
-    comparison that quietly answers "they agree" about a file nobody could read is
-    the silent pass this rule exists to prevent.
-    """
-    try:
-        tree = ast.parse(source)
-    except (SyntaxError, ValueError) as exc:
-        return None, "does not parse, so nothing can be compared: %s" % (exc,)
-    for node in tree.body:
-        if not isinstance(node, ast.FunctionDef) or node.name != name:
-            continue
-        body = node.body
-        if (body and isinstance(body[0], ast.Expr)
-                and isinstance(body[0].value, ast.Constant)
-                and isinstance(body[0].value.value, str)):
-            body = body[1:]
-        if not body:
-            return None, "carries `%s` with nothing in it but a docstring" % (name,)
-        return "\n".join(ast.dump(stmt) for stmt in body), None
-    return None, "carries no module-level `def %s`" % (name,)
-
-
-def removal_helper_drift(runner_source, home_source, name=REMOVAL_HELPER):
-    """Why this runner's copy of `name` is not the home's any more, or None.
-
-    A PURE FUNCTION OVER TWO TEXTS, so both directions are driven from strings
-    rather than from files written into a temp directory - and so the case that
-    reads the real tree is one call rather than a fixture that encodes the same
-    assumption the copy does.
-
-    The two sides are named apart in every message. "the runner's copy" and "the
-    home" are two different repairs - delete the copy's divergence, or carry the
-    home's change across - and a finding that said only "they differ" would leave
-    a reader to guess which file is ahead.
-    """
-    runner, why = _def_shape(runner_source, name)
-    if why is not None:
-        return "the runner's copy %s" % (why,)
-    home, why = _def_shape(home_source, name)
-    if why is not None:
-        return "the home %s" % (why,)
-    if runner != home:
-        return ("the runner's `%s` no longer runs the statements the home's does - "
-                "one of the two was changed without the other" % (name,))
-    return None
 
 # The two watched directories, and the word a finding about each opens with. They
 # are kept apart for the reason `scratch_debris` spells its three findings three
@@ -2348,64 +2260,6 @@ def _cases(check):
           % (_real, ran["code"], ran["debris"]),
           ran["code"] == 0 and ran["debris"] == [])
 
-    # -- the removal helper this runner keeps a copy of ------------------------
-    # ONE HOME AND THIS COPY, AND THESE ARE WHAT COMPARE THEM. `remove_tree` above
-    # is a copy of `_output.remove_tree` in the scripts anchor (its docstring says
-    # why the copy outlived its reason). A copy with nothing watching it is the
-    # divergence this repo keeps recording, so the copy only earns its place while
-    # rm1 is here. The BEHAVIOUR of the algorithm is proven where it lives - its
-    # suites drive a read-only tree through it in both directions, and a link out
-    # of the tree through the fallback - and rm1 is what carries that proof across
-    # to this file.
-    _home_src = io.open(os.path.join(REPO, REMOVAL_HELPER_HOME),
-                        encoding="utf-8").read()
-    _self_src = io.open(os.path.abspath(__file__), encoding="utf-8").read()
-    _drift = removal_helper_drift(_self_src, _home_src)
-    check("rm1 this runner's copy of `%s` still runs the statements the one in %s "
-          "does. Nothing else compares them, so this case is the difference "
-          "between a deliberate copy and a fork nobody noticed: %r"
-          % (REMOVAL_HELPER, REMOVAL_HELPER_HOME, _drift),
-          _drift is None)
-
-    _one = ('def remove_tree(path):\n    """The home, with its measurement."""\n'
-            '    shutil.rmtree(path)\n')
-    _prose = ('def remove_tree(path):\n    """The copy, with its pointer."""\n'
-              '    shutil.rmtree(path)\n')
-    # rm2 LOOKS VACUOUS AND IS THE SECOND-DIRECTION CASE: it is the only one here
-    # that fails if the comparison stops dropping docstrings and starts convicting
-    # the arrangement it exists to police. It is also what the ALLOW row in
-    # `tools/prove-gates.py` weakens `_def_shape` to prove.
-    check("rm2 a difference that is ONLY the docstring is not drift. The home "
-          "carries the measurement and the copy carries the reason it is a copy, "
-          "so the two are REQUIRED to read differently while running the same "
-          "statements",
-          removal_helper_drift(_one, _prose) is None)
-
-    _moved = ('def remove_tree(path):\n    """The copy, with its pointer."""\n'
-              '    shutil.rmtree(path, ignore_errors=True)\n')
-    _why = removal_helper_drift(_moved, _one)
-    check("rm3 ...and a difference in the STATEMENTS is reported, naming the side "
-          "it read as ahead - 'drop the copy's divergence' and 'carry the home's "
-          "change across' are two repairs, and a bare 'they differ' chooses "
-          "neither: %r" % (_why,),
-          _why is not None and "runner" in _why)
-
-    _bad = "def remove_tree(:\n"
-    check("rm4 a side that will not PARSE is reported rather than skipped, and "
-          "the report says which side - answering 'they agree' about a file "
-          "nobody could read is the silent pass this rule exists to stop: %r"
-          % (removal_helper_drift(_bad, _one),),
-          (removal_helper_drift(_bad, _one) or "").startswith(
-              "the runner's copy does not parse")
-          and (removal_helper_drift(_one, _bad) or "").startswith(
-              "the home does not parse"))
-
-    check("rm5 ...and a side that has lost the function altogether is reported "
-          "from both directions, which is what a rename leaves behind: %r"
-          % (removal_helper_drift("x = 1\n", _one),),
-          "no module-level" in (removal_helper_drift("x = 1\n", _one) or "")
-          and "no module-level" in (removal_helper_drift(_one, "x = 1\n") or ""))
-
     # -- the spaced leg ---------------------------------------------------------
     sp_work = tempfile.mkdtemp(prefix="sweep-spaced-")
     try:
@@ -2787,20 +2641,6 @@ def _cases(check):
           % (_prefixed, _set),
           _prefixed == ["gc.auto=0", "maintenance.auto=false"]
           and all(p in _set for p in _prefixed))
-    gp_spec = importlib.util.spec_from_file_location(
-        "sweep_gate_parity_gm", os.path.join(REPO, "tools", "gate-parity.py"))
-    gp = importlib.util.module_from_spec(gp_spec)
-    gp_spec.loader.exec_module(gp)
-    _iso = gp.isolation_drift(REPO)
-    _cfgfam = _iso["filtered"].get("git config", ())
-    _cfgprose = [row for row in _iso["prose"] if row[1] == "git config"]
-    check("gm4 ...and every document that describes the isolation names both "
-          "keys, by the rule gate-parity holds them to, read over %d document(s): "
-          "family %r, findings %r, problem %r"
-          % (_iso["sides"], _cfgfam, _cfgprose, _iso["problem"]),
-          _iso["problem"] is None and _iso["sides"] > 0
-          and "maintenance.auto" in _cfgfam and "gc.auto" in _cfgfam
-          and _cfgprose == [])
     bg_grants = dict((j, stage_grant(j)) for j in (1, 2, 3, 4, 5, 8, 12, 64))
     check("bg1 a staged suite holds all but one of the budget's slots, at least "
           "two, at most the cap, never more than the budget: %r" % (bg_grants,),

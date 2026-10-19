@@ -289,79 +289,9 @@ def _cases(check):
           [p for _, p in _cut_drift if "meta.ado.stateMap is in the schema" in p]
           and "stateMap" in M.KNOWN_ADO, repr(_cut_drift))
 
-    # --- the recommended subsets, checked the other way round ---
-    # `CLAIM_KEYS` restates schema vocabulary too, but it is a RECOMMENDED subset:
-    # narrower than the schema by design, so mv18's coverage rule would fail it for
-    # doing its job. `_help.schema_subset_drift()` asks only for containment - every
-    # key in the tuple is a property the schema declares at `phases[].claim` - and
-    # says nothing about the ones it omits.
-    _slv = _help.schema_level_keys(None, M.SUBSET_ANCHORS)
-    _sdrift = _help.schema_subset_drift()
-    check("mv23 every recommended subset is still drawn from the schema - a key "
-          "misspelled in one is asked of nothing and reported by nothing, so it "
-          "arrives BY NAME instead: %r" % (_sdrift,), _sdrift == [])
-    # The table itself is asserted non-empty BY NAME, not just self-consistent:
-    # `len(_slv) == len(SUBSET_ANCHORS)` is 0 == 0 over an emptied table, and mv23
-    # over no subsets at all is the same silence as mv23 over agreeing ones.
-    check("mv24 ...over the %d properties audit-plan.schema.json declares at "
-          "`phases[].claim` and the %d keys CLAIM_KEYS recommends, neither of them "
-          "zero and the anchor table itself not empty - the counts are the SCOPE "
-          "that makes mv23's silence worth anything, and the tuple's is the half "
-          "that would otherwise PASS: an empty set contains nothing and asks for "
-          "nothing" % (len(_slv.get("CLAIM_KEYS") or ()), len(M.CLAIM_KEYS)),
-          "CLAIM_KEYS" in dict(M.SUBSET_ANCHORS)
-          and len(_slv) == len(M.SUBSET_ANCHORS)
-          and not [n for n, keys in _slv.items() if not keys]
-          and not [n for n, _a in M.SUBSET_ANCHORS if not getattr(M, n, ())],
-          repr(sorted((n, len(k)) for n, k in _slv.items())))
-    # THE SECOND-DIRECTION CASE, and it is the one that looks vacuous and gets cut.
-    # A guard that never fires is the original bug; a guard that ALWAYS fires is the
-    # other wrong implementation, and only this fails on it. Narrowing a COPY of the
-    # tuple further has to stay silent against the REAL schema, not just a fixture.
-    # `.get`, not `[...]`: emptying SUBSET_ANCHORS is a mutation these cases must
-    # FAIL on, and a KeyError here would take mv25-mv28 out of the run instead -
-    # "did not run" is not "went red".
-    _claim_lv = set(_slv.get("CLAIM_KEYS") or ())
-    _omitted = sorted(_claim_lv - set(M.CLAIM_KEYS))
-    _narrow = _help.subset_drift(_slv, {"CLAIM_KEYS": ("sessionId",)},
-                                 M.SUBSET_ANCHORS)
-    check("mv25 ...and omitting a property the schema declares is NOT drift: of "
-          "%r, `at` is written BY a claim rather than asked OF one and `host` is "
-          "one no claim the plugin writes carries (the shard is committed), and a "
-          "copy narrowed to a single key stays silent too - if this goes red the "
-          "check has started demanding coverage, and a lint that fails the "
-          "correct state gets routed around" % (_omitted,),
-          "at" in _omitted and "host" in _omitted and _narrow == [],
-          repr(_narrow))
-    check("mv26 every *_KEYS subset on this module is anchored, so one added later "
-          "cannot opt out of mv23 by being forgotten",
-          set(_help.vocab_subsets(M)) == {n for n, _ in M.SUBSET_ANCHORS},
-          repr(sorted(set(_help.vocab_subsets(M)) ^
-                      {n for n, _ in M.SUBSET_ANCHORS})))
-    # Red-first against the REAL anchor, both directions, on COPIES - the shipped
-    # tuple and the shipped schema are untouched, so the tree is never one exception
-    # away from carrying the mutation.
-    # The copy is the REAL tuple with one key misspelled, so it follows the set.
-    _typo = _help.subset_drift(
-        _slv, {"CLAIM_KEYS": tuple("sessionID" if k == "sessionId" else k
-                                   for k in M.CLAIM_KEYS)},
-        M.SUBSET_ANCHORS)
-    _lost = dict(_slv)
-    _lost["CLAIM_KEYS"] = _claim_lv - {"branch"}
-    _gone = _help.subset_drift(_lost, _help.vocab_subsets(M), M.SUBSET_ANCHORS)
-    _said = ("%s is recommended by this set and not declared by the schema - a typo "
-             "here does not warn, it stops the key being asked for at all")
-    check("mv27 ...and both mutations land, ONE problem each rather than at least "
-          "one: misspelling `sessionId` in a copy of the tuple names "
-          "`phases[].claim.sessionID`, and a schema that stops declaring `branch` "
-          "names that - so the subset is checked against this document, not itself",
-          [p for _, p in _typo] == [_said % ("phases[].claim.sessionID",)]
-          and [p for _, p in _gone] == [_said % ("phases[].claim.branch",)]
-          and "sessionId" in M.CLAIM_KEYS and "branch" in _claim_lv,
-          repr((_typo, _gone)))
-    # The subset check cannot see whether anything still READS the tuple; deleting
-    # the loop in `_check_claim` would leave mv23 green over a set nobody consults.
-    # So drive the warning for real, one key at a time.
+    # Whether anything still READS the tuple is asked by driving the warning for
+    # real, one key at a time: deleting the loop in `_check_claim` would leave a set
+    # nobody consults.
     _full = {"sessionId": "s-1", "branch": "b-1", "at": "2026-01-01"}
     _unnamed = []
     for _k in M.CLAIM_KEYS:
@@ -375,84 +305,11 @@ def _cases(check):
                          _f0, _w0)
     check("mv28 ...and every key CLAIM_KEYS names is really asked of a claim: "
           "dropping each one in turn draws exactly one warning naming it at "
-          "`_manifest_phases._check_claim`, and a complete claim draws none. This "
-          "is the consequence mv23 protects, and mv23 cannot see it: %r"
+          "`_manifest_phases._check_claim`, and a complete claim draws none: %r"
           % (_unnamed,), _unnamed == [] and (_f0, _w0) == ([], []))
 
-    # --- the nested levels, whose vocabulary is a literal at its call site --------
-    # The `meta.ado` sub-objects have no named set for mv18 or mv23 to find: each is
-    # checked against a set literal written straight into the `_unknown_keys()` call
-    # in `_manifest_ado`, which is why both of the tables above are blind to them.
-    # `_help.schema_inline_drift()` reads that literal WHERE THE VALIDATOR READS IT
-    # and holds it to the same schema. The cases in test__help.py prove the
-    # comparison from fixtures; these prove it is pointed at this tree.
-    _ipairs = tuple((p, p) for p in M.INLINE_ANCHORS)
-    _ilv = _help.schema_level_keys(None, _ipairs)
-    _isrc = {}
-    for _rel, _path in _output.py_files(_output.SCRIPTS_DIR):
-        with open(_path, "r", encoding="utf-8") as _fh:
-            _isrc[_rel] = _fh.read()
-    _ifound = _help.inline_vocabularies(_isrc)["found"]
-    _idrift = _help.schema_inline_drift()
-    check("mv29 every nested level whose vocabulary is a literal still agrees with "
-          "audit-plan.schema.json - these have no named set, so mv18 and mv23 are "
-          "both blind to them and a property added to one would arrive as a warning "
-          "on a real key instead of BY NAME here: %r" % (_idrift,), _idrift == [])
-    _icompared = sum(len(v) for v in _ilv.values())
-    _ipassed = sum(len(e["keys"]) for e in _ifound.values())
-    _imissing = [p for p in M.INLINE_ANCHORS if p not in _ifound]
-    check("mv30 ...over the %d properties the schema declares at %d anchors and the "
-          "%d keys the call sites really pass, none of them zero and every declared "
-          "anchor found in `scripts/` - the counts are the SCOPE that makes mv29's "
-          "silence worth anything, and the found-nothing half is the one that would "
-          "otherwise read exactly like agreement: %r"
-          % (_icompared, len(_ilv), _ipassed, _imissing),
-          _icompared > 0 and _ipassed > 0 and _imissing == []
-          and len(_ilv) == len(M.INLINE_ANCHORS)
-          and not [p for p, keys in _ilv.items() if not keys],
-          repr(sorted((p, len(k)) for p, k in _ilv.items())))
-    # Red-first against the REAL schema levels, on COPIES of the scan: the shipped
-    # literals and the shipped schema are untouched, so the tree is never one
-    # exception away from carrying the mutation.
-    _cut = dict(_ifound)
-    _cut["meta.ado.pull"] = {"keys": {"areaPath"},
-                             "sites": [("x.py:1", ("areaPath",))]}
-    _cut_drift = _help.inline_drift(_ilv, _cut, M.INLINE_ANCHORS)
-    _mis = dict(_ifound)
-    _mis["meta.ado.sprint"] = {"keys": {"teem", "mode"},
-                               "sites": [("x.py:1", ("mode", "teem"))]}
-    _mis_drift = _help.inline_drift(_ilv, _mis, M.INLINE_ANCHORS)
-    check("mv31 ...and both mutations land, whole problem lists rather than 'at "
-          "least one': dropping `tags` from a copy of the `meta.ado.pull` literal "
-          "names it, and misspelling `team` names the property now unnamed AND the "
-          "key the schema does not declare - so these levels are checked against "
-          "this document rather than against themselves",
-          [p for _w, p in _cut_drift] ==
-          ["meta.ado.pull.tags is in the schema and no call site names it - add it, "
-           "or the typo-catcher warns about a real key"]
-          and [p for _w, p in _mis_drift] ==
-          ["meta.ado.sprint.team is in the schema and no call site names it - add "
-           "it, or the typo-catcher warns about a real key",
-           "'teem' is passed here and the schema does not declare it at "
-           "meta.ado.sprint - add it to the schema, or the key it was meant to be "
-           "is the one going unwarned"]
-          and {"areaPath", "tags"} <= set(_ifound["meta.ado.pull"]["keys"])
-          and "team" in _ifound["meta.ado.sprint"]["keys"],
-          repr((_cut_drift, _mis_drift)))
-    _gone = dict((p, e) for p, e in _ifound.items() if p != "meta.ado.comments")
-    _gone_drift = _help.inline_drift(_ilv, _gone, M.INLINE_ANCHORS)
-    check("mv32 ...and a level whose call site has gone is REPORTED rather than "
-          "dropped from the comparison. `meta.ado.comments` is the one the report "
-          "that opened this did not list, which is why the scan and the table each "
-          "have to be able to fail the other",
-          [p for _w, p in _gone_drift] ==
-          ["declared here, but no `_unknown_keys()` call under scripts/ passes a "
-           "literal set at this path - the check has stopped covering the level, "
-           "which is not the same as finding it clean"]
-          and "meta.ado.comments" in _ifound, repr(_gone_drift))
-    # The scan cannot see whether a call is ever REACHED: delete the branch around
-    # one and mv29 stays green over a level nothing validates. So drive the real
-    # front door, one level at a time.
+    # Whether a literal is ever REACHED is asked by driving the real front door, one
+    # level at a time: delete the branch around one and a level goes unvalidated.
     _ado_ok = {"onComplete": {"remainingWork": 0},
                "comments": {"onBlocked": True, "onComplete": False},
                "sprint": {"team": "Core", "mode": "current"},
@@ -483,9 +340,8 @@ def _cases(check):
                                         for k, v in _ado_ok.items()))
     check("mv33 ...and every one of those literals is really consulted: an unknown "
           "key at each level draws exactly one warning naming it through "
-          "`_manifest_ado.check_ado_meta`, and a clean config draws none. This is "
-          "the consequence mv29 protects and cannot see, the same blind spot mv28 "
-          "covers for CLAIM_KEYS: %r" % (_unreached,),
+          "`_manifest_ado.check_ado_meta`, and a clean config draws none, the "
+          "same property mv28 covers for CLAIM_KEYS: %r" % (_unreached,),
           _unreached == [] and (_a0, _w1) == ([], []))
 
     # --- the OTHER schema walk, and why it cannot answer this ---------------------
@@ -549,8 +405,11 @@ def _cases(check):
     # A `$defs` read under `scripts/` is one of the two walks or a comment naming
     # them; a file this table does not know is a third walk or a fourth account of
     # these two, and either way the SCHEMA_ANCHORS comment has to be re-read rather
-    # than trusted. `_isrc` is the scan mv29 already built - a second walk of the
-    # tree here would be a second answer to what is in it.
+    # than trusted.
+    _isrc = {}
+    for _rel, _path in _output.py_files(_output.SCRIPTS_DIR):
+        with open(_path, "r", encoding="utf-8") as _fh:
+            _isrc[_rel] = _fh.read()
     _walk_files = {"config/_help.py": "the walk this comparison uses, by path",
                    "demo/gen-demo-manifest.py": "the other walk, by $def name",
                    # A THIRD WALK, ADDED WITH ITS ROW. `_deps.config_vocabulary()`

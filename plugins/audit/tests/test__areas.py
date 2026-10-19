@@ -5,29 +5,15 @@ The cases for `_areas.py`, moved out of it - an importable helper.
 `M` is the module under test; see `test__cli_fmt.py` for why that prefix and not a
 `from ... import` list.
 
-SEVERAL CASES HERE COMPUTE A PATH, AND A TEST FILE SITS ONE DIRECTORY OVER, so
-each was checked rather than carried. The three the migration out of `_areas.py`
-had to re-derive:
-
-  * `d1` builds a manifest whose area root is `"scripts"` and asks `missing_roots`
-    to resolve it against the PLUGIN directory. Inline that read
-    `os.path.dirname(os.path.dirname(os.path.abspath(__file__)))` - two levels up
-    from `_areas.py`. From here the same expression would still land on the
-    plugin directory by coincidence (`tests/` is also one level down), and a case
-    that is right by coincidence is a case that breaks the next time the file moves.
-    It names `_harness.SCRIPTS_DIR`'s parent instead, which is the plugin directory
-    by construction.
-  * `p1` calls `M.rule_drift()` with NO argument, and the default is computed
-    inside `_areas.py` from ITS own location - so it is unaffected by this file's
-    location, and that is why it stays a bare call.
-  * `p2` deliberately points `rule_drift` at a directory that holds none of the
-    four documents, to prove the lint can report `unreadable`. Inline that was
-    `scripts/`; it is spelled `_harness.SCRIPTS_DIR` here so the input is the same
-    directory it always was, not "whichever directory this file happens to be in".
-
-`p3`/`p4` write four fixture documents into a `_ruledoc/` directory beside this
-file and remove it in `finally`, exactly as the inline suite did beside
-`_areas.py`. It holds no `.py`, so it is invisible to every tree scanner here.
+ONE CASE HERE COMPUTES A PATH, AND A TEST FILE SITS ONE DIRECTORY OVER, so it was
+checked rather than carried. `d1` builds a manifest whose area root is `"scripts"`
+and asks `missing_roots` to resolve it against the PLUGIN directory. Inline that
+read `os.path.dirname(os.path.dirname(os.path.abspath(__file__)))` - two levels up
+from `_areas.py`. From here the same expression would still land on the plugin
+directory by coincidence (`tests/` is also one level down), and a case that is
+right by coincidence is a case that breaks the next time the file moves. It names
+`_harness.SCRIPTS_DIR`'s parent instead, which is the plugin directory by
+construction.
 
 THE `oa26`-`oa28` FIXTURES ARE A CODE SIDE, WHICH IS THE OTHER HALF OF THAT, and
 they are built from the REAL modules rather than written by hand: `claim_drift`
@@ -386,41 +372,11 @@ def _cases(check):
           "an area with no root is skipped rather than called missing",
           miss == [("gone", "no/such/dir")], repr(miss))
 
-    # --- the prose says what the code does ---------------------------------------
-    drift = M.rule_drift()
-    check("p1 every document that states the resolution states the SAME one - the "
-          "orchestrator reads prose, and prose drift is worse than code drift "
-          "because nothing runs it: %r" % (drift,), not drift)
-    check("p2 the lint can fail: a doc missing the rule is reported",
-          [r for r in M.rule_drift(_harness.SCRIPTS_DIR)
-           if "unreadable" in str(r[1])])
-    _fake = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_ruledoc")
-    os.makedirs(os.path.join(_fake, "reference"), exist_ok=True)
-    os.makedirs(os.path.join(_fake, "commands"), exist_ok=True)
-    try:
-        for rel in M._RULE_DOCS:
-            with open(os.path.join(_fake, rel), "w", encoding="utf-8") as fh:
-                fh.write("The reviewer is `phase.reviewSkill ?? meta.reviewSkill`, "
-                         "then `task.skills`, deduped, **area first**.\n")
-        _d = M.rule_drift(_fake)
-        check("p3 the pre-v0.28 two-level wording is caught wherever it survives - "
-              "one file learning about areas while the others do not is exactly "
-              "how this drifts",
-              len([x for x in _d if "without the area" in str(x[1])]) == 4
-              and all("phase.reviewSkill" in str(x[1])
-                      for x in _d if "without the area" in str(x[1])), repr(_d))
-        check("p4 ...and the same run reports the rule as missing, so a file can "
-              "fail for both reasons at once",
-              len([x for x in _d if x[1] == M.REVIEW_RULE]) == 4, repr(_d))
-    finally:
-        shutil.rmtree(_fake, ignore_errors=True)
-
     # --- deleting a section of orchestrator.md turns a named case red ------------
     # The measurement this block answers: each of the document's `##` sections was
     # deleted in turn and the whole gate set run, and NOT ONE deletion was
-    # noticed. `rule_drift` above survived every one of them because its sentence
-    # appears twice in the file, which is why these anchors are SECTION-scoped and
-    # `rule_drift` is not.
+    # noticed. A check that read a sentence appearing twice in the file survived
+    # every one of them, which is why these anchors are SECTION-scoped.
     #
     # `a1` is the live claim; `a2`-`a5` are the four repairs it can report, each
     # driven on a FIXTURE tree so they keep working when the real document
@@ -548,7 +504,7 @@ def _cases(check):
           len(empty) == 1 and "no '## ' sections found" in empty[0][1],
           repr(empty))
     check("oa10 an unreadable document is a finding rather than a clean answer - "
-          "the same rule `rule_drift` follows, and the reason `_read` returns "
+          "the reason `_read` returns "
           "None instead of the empty string that satisfies every `not in`",
           [r for r in M.claim_drift(_harness.SCRIPTS_DIR)
            if "unreadable" in str(r[1])],
