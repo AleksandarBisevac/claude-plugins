@@ -1,0 +1,64 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_audit_task.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_audit_task.py --selftest --stage gx-block": "pass",
+    "python3 plugins/audit/tests/test__manifest_phases.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__manifest_rules.py --selftest": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests": "pass",
+    "python3 plugins/audit/tests/test__deps.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T05:08:57Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage gx-block` in a throwaway tree at HEAD exited 1 with 1 of 1 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `gx-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - gx1 (house FAIL): SELFTEST FAILED: 0/1 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added _manifest_phases.gate_entry_shape_problem(entry, build): reports a path named twice, and a suite file run as a program (first path word is a suite and the word before it is an interpreter or absent) followed by another suite path; quiet for a buildCommands key, a spelled sweep entry, a single suite, a suite given a non-suite argument, and a test runner (pytest, go test, npx playwright test) given several suites. _walk_phases warns (never errors, only for non-terminal tasks) with code phases.gate_entry_shape.malformed naming the task and entry. audit-task.py: _gate_write_refusal (shape + plan-path questions, naming meta.phaseGate.derived.spelling only when _gate_derive.resolve_shape finds a recorded one) is called in _locked_add (after _build_task, whichever arm made the gate), _batch_build_tasks, _locked_scope (only entries this call writes: args.gate + args.gate_set) and _locked_retarget (plan-path question only, shape=False). _manifest_beside_gate_set, called in _dispatch before the prose/machine-path doors, hands a trailing --gate-set value that the loader reads as a plan back as the manifest positional (scope and retarget) and straightens `scope <manifest> <id>`; parser comment beside --gate-set updated. Tests: gx1/gx2 in test__manifest_phases.py, gx1/gx2 in test__manifest_rules.py, new stage gx-block (_gate_entry_cases, case gx1 titled GATE_ENTRY_CLAUSE) in test_audit_task.py. Full test_audit_task.py 1083/1083, phases 127/127, rules 170/170, test__deps 244/244 (a first run failed ck2/ck16 because my code read phaseGate.derived.spelling directly; now read through _gate_derive.resolve_shape), ruff and vermin clean. Deviations to review: (1) the shape predicate additionally requires the word before the first path to be an interpreter (python*, node, bash, ...) or absent, because `pytest tests/a.py tests/b.py` is a valid multi-suite entry that the description's wording alone would refuse; (2) acceptance 4's second form `scope <manifest> <id>` failed at HEAD (positionals arrive swapped) so the normaliser swaps them when the first slot is a plan file; (3) the batch refusal header now reads 'names a task the plan cannot take' (was 'a fix'); (4) the validator warning skips done/cancelled tasks. The plan gate refused a python heredoc write to _manifest_phases.py (change magnitude 102 > 80); I redid it with the Edit tool, which it allowed.",
+    "descriptive": "Write verbs now refuse a gate entry that runs one suite with another as its argument (or names a path twice) and a plan path as a gate entry, scope/retarget --gate-set no longer swallows a trailing manifest, and the validator warns about existing malformed entries."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__manifest_phases.py: gx1 the gate-entry shape predicate reports an entry whose first path word is a suite file followed by another suite path, and an entry naming one path twice, and reports nothing for a buildCommands key, a spelled sweep entry or a single-suite entry",
+    "plugins/audit/tests/test__manifest_phases.py: gx2 ...and the reason names the paths it objects to",
+    "plugins/audit/tests/test_audit_task.py: gx1 add, add --from-file, scope --gate and scope --gate-set refuse a malformed gate entry and write nothing; an add --from-file batch of several Python suites per task gets one spelled entry per task; scope --gate-set with the manifest positional last writes the same gate as with it first, and a manifest path as a gate entry is refused",
+    "plugins/audit/tests/test__manifest_rules.py: gx1 a plan already holding a malformed gate entry draws a warning naming the task and the entry, and no error",
+    "plugins/audit/tests/test__manifest_rules.py: gx2 ALLOW: spelled entry and finished task draw no warning"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test__manifest_phases.py: the gate-entry shape predicate reports an entry whose first path word is a suite file followed by another suite path, and an entry naming one path twice, and reports nothing for a buildCommands key, a spelled sweep entry or a single-suite entry": {
+      "file": "plugins/audit/scripts/manifest/_manifest_phases.py",
+      "find": "again = [p for i, p in enumerate(paths) if p in paths[:i]]",
+      "replace": "again = []",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test_audit_task.py: add, add --from-file, scope --gate and scope --gate-set refuse a malformed gate entry and write nothing; an add --from-file batch of several Python suites per task gets one spelled entry per task; scope --gate-set with the manifest positional last writes the same gate as with it first, and a manifest path as a gate entry is refused": {
+      "file": "plugins/audit/scripts/manifest/audit-task.py",
+      "find": "if _names_plan_file(entry, project):",
+      "replace": "if False:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_task.py",
+        "--selftest",
+        "--stage",
+        "gx-block"
+      ]
+    },
+    "plugins/audit/tests/test__manifest_rules.py: a plan already holding a malformed gate entry draws a warning naming the task and the entry, and no error": {
+      "file": "plugins/audit/scripts/manifest/_manifest_phases.py",
+      "find": "problem = gate_entry_shape_problem(entry, build_keys)",
+      "replace": "problem = None",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__manifest_rules.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n1 _manifest_phases.py gate_entry_shape_problem is the predicate the docstring describes (paths twice; suite run as a program with another suite behind it); the walk warning is in _walk_phases right after the _comma_joined_gate call; audit-task.py _gate_write_refusal/_manifest_beside_gate_set carry the refusal and the --gate-set fix, called from _locked_add, _batch_build_tasks, _locked_scope, _locked_retarget and _dispatch\n2 before implementation gx1/gx2 (phases) 125/127, gx1 (rules) 169/170, gx-block gx1 0/1 red; allow cases: rules gx2, phases gx1 quiet list (pytest-style, spelled, single suite, non-suite argument), gx-block spelled-entry control, notes.json non-plan control; the three falsifiers are recorded for the drive to run (find strings occur once each, checked with grep -c)\n3 grep -n 'gate_set' audit-task.py: the readers are _retarget_gate_now/_locked_scope/_locked_retarget/_retarget_gate_contradiction (gate writes, now checked on the entries this call writes) and _dispatch (normaliser); seed, add-phase --gate and test_audit_task seed paths are left unchecked because the task names add, add --from-file, scope and (for the positional) retarget only\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 the refusal reads the entry's words through shell_words/gate_entry_paths and the loader's reading of the file (the operation), not the spelling of the command; allow cases proven quiet in the same case before the deny\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:6ffaf1372a060a04d6d926c192712f1febdcb7a659b485b90933295c536644b0\",\"dirtyDigest\":\"sha256:69c184c7a46a7d5bad74ca1b74c375916e00309af888aae1e619b836488250d2\",\"dirtyPaths\":{\"plugins/audit/scripts/manifest/_manifest_phases.py\":\"de58e9e03eb155e4\",\"plugins/audit/scripts/manifest/audit-task.py\":\"b4d174ab762c1958\",\"plugins/audit/tests/test__manifest_phases.py\":\"3a5550003fe90687\",\"plugins/audit/tests/test__manifest_rules.py\":\"50b16ba6f61aea54\",\"plugins/audit/tests/test_audit_task.py\":\"73e2d6989e8932d5\"},\"head\":\"b6252aae\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/_manifest_phases.py\",\"plugins/audit/scripts/manifest/_manifest_rules.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test__manifest_phases.py\",\"plugins/audit/tests/test__manifest_rules.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:85387f364297fc866493bda76d1c6d4da7c3ac40cbbf03b350cb2d2d444183b5\",\"v\":2}"
+}

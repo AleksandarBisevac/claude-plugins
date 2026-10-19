@@ -1954,7 +1954,7 @@
     {
       "id": "P130.18-ywo",
       "title": "A gate entry is checked for shape where it is written, and --gate-set leaves a trailing manifest positional alone",
-      "status": "in_progress",
+      "status": "blocked",
       "description": "Faults F720 and F721. (a) `add --from-file` minted tasks of this phase with gate entries such as `python3 plugins/audit/tests/test__config.py plugins/audit/tests/test_commit_task_work.py`, which run the first suite with the second as its argument, and one entry naming the same suite twice. Read at HEAD, that derivation came from the installed 3.4.0 copy, whose `_task_gate_setup` read a sibling's shape before the recorded spelling; HEAD resolves through `_gate_derive.resolve_shape` (plugins/audit/scripts/manifest/audit-task.py:2698, spelling first) and, for the same tasks, gives `python3 tools/sweep-selftests.py <suites>`. What HEAD still lacks is the other half the fault asks: nothing checks a gate entry's shape where it is written, so a hand-written or sibling-derived entry of that shape is accepted by `add`, `add --from-file`, `scope --gate` and `scope --gate-set`, and the validator says nothing. Fix: one predicate, in the lowest module both audit-task.py and the validator reach (`_manifest_phases.py`, beside `gate_entry_paths` and `is_suite_path`; layer_violations() decides), reports an entry that is not a `meta.buildCommands` key whose first path-shaped word is itself a suite file and that names a further suite path, and an entry naming one path twice. The write verbs refuse such an entry, naming it and naming `meta.phaseGate.derived.spelling` when the plan records one; `_manifest_rules.py` reports it on an existing plan as a WARNING, never an error, because COMPATIBILITY.md promises validation stays additive. (b) `scope <id> --gate-set a b c docs/audit/audit-plan.json` writes the manifest path as a fourth gate entry, because `--gate-set` is declared with `nargs='*'` (audit-task.py:13854) and swallows the positional after it; passing the manifest first works. Fix: when the manifest positional is absent and the last `--gate-set` value names an existing file the manifest loader reads as a plan, that value is the manifest, not a gate entry - `retarget` shares the flag and the fix; and a gate entry naming an existing JSON manifest file is refused at write time in any position. The parser's comment beside `--gate-set` says both. Acceptance: (1) an `add --from-file` batch whose tasks each name several Python suites in tests.add and no gate, on a plan that records the spelling and holds siblings with `python3 tools/sweep-selftests.py ...` entries, gives each task one spelled entry naming all its suites; (2) `add`, `add --from-file`, `scope --gate` and `scope --gate-set` refuse `python3 a/test_x.py a/test_y.py` and an entry naming one suite twice, writing nothing; (3) validate-manifest reports such an entry already in a plan as a warning and exits as it did before; (4) `scope <id> --gate-set a b <manifest>` and `scope <manifest> <id> --gate-set a b` write the same gate, `[a, b]`; (5) a gate entry that is a manifest path is refused in either order.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1995,17 +1995,23 @@
       "dependsOn": [
         "P130.6"
       ],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-19T04:55:13Z",
+      "startedAt": "2026-10-19T05:42:26Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T05:55:33Z.6c52c7",
+        "status": "failed",
+        "at": "2026-10-19T05:55:33Z"
+      },
+      "blockedReason": "Waits on P130.26-ywo. The only red is test_drive_phase.py case sc4 (F733), which now fails run alone on an idle machine in this task's tree (372/373), not only under sweep load, so every gate stays red until P130.26-ywo lands; the task's own work is green (test__refs 286/286, its suites pass)."
     },
     {
       "id": "P130.19-ywo",
@@ -2235,7 +2241,12 @@
       "startedAt": "2026-10-19T04:55:15Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T05:30:44Z.53629a",
+        "status": "failed",
+        "at": "2026-10-19T05:30:44Z"
+      }
     },
     {
       "id": "P130.23-ywo",
@@ -2346,7 +2357,12 @@
       "startedAt": "2026-10-19T04:55:17Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T05:41:28Z.21bec2",
+        "status": "failed",
+        "at": "2026-10-19T05:41:28Z"
+      }
     },
     {
       "id": "P130.25-ywo",

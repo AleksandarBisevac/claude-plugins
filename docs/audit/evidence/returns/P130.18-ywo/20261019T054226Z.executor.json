@@ -1,0 +1,59 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_audit_task.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__manifest_phases.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__manifest_rules.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T05:44:35Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage gx-block` in a throwaway tree at HEAD exited 1 with 1 of 1 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `gx-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - gx1 (house FAIL): SELFTEST FAILED: 0/1 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Attempt 1's work kept. Only change this attempt: in plugins/audit/tests/test_audit_task.py (gate-entry fixtures, ~18533-18584) the fixture suite paths plugins/audit/tests/test_{x,y,a,b,old}.py became backend/tests/test_{x,y,a,b,old}.py, the unanchored spelling that other fixtures in the file already use (e.g. backend/tests/test_old.py near line 11489); test__refs reads only plugins/audit/-anchored paths as references, so c5 no longer sees them. The predicate keys on the suite filename pattern, not the directory, so the cases assert the same thing. Exit codes, run one at a time: test__refs.py --selftest 0 (286/286, c5 passes), test_audit_task.py --selftest 0 (1083/1083), test__manifest_phases.py --selftest 0 (127/127), test__manifest_rules.py --selftest 0 (170/170).",
+    "descriptive": "Gate-entry fixture paths no longer read as references to real scripts, so test__refs c5 is green again with the task's behaviour unchanged."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__manifest_phases.py: the gate-entry shape predicate reports an entry whose first path word is a suite file followed by another suite path, and an entry naming one path twice, and reports nothing for a buildCommands key, a spelled sweep entry or a single-suite entry (case gx1 in test__manifest_phases.py; gx2 is a companion case)",
+    "plugins/audit/tests/test_audit_task.py: add, add --from-file, scope --gate and scope --gate-set refuse a malformed gate entry and write nothing; an add --from-file batch of several Python suites per task gets one spelled entry per task; scope --gate-set with the manifest positional last writes the same gate as with it first, and a manifest path as a gate entry is refused (case gx1, stage gx-block, in test_audit_task.py)",
+    "plugins/audit/tests/test__manifest_rules.py: a plan already holding a malformed gate entry draws a warning naming the task and the entry, and no error (case gx1 in test__manifest_rules.py; gx2 is the allow companion)"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test__manifest_phases.py: the gate-entry shape predicate reports an entry whose first path word is a suite file followed by another suite path, and an entry naming one path twice, and reports nothing for a buildCommands key, a spelled sweep entry or a single-suite entry": {
+      "file": "plugins/audit/scripts/manifest/_manifest_phases.py",
+      "find": "again = [p for i, p in enumerate(paths) if p in paths[:i]]",
+      "replace": "again = []",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test_audit_task.py: add, add --from-file, scope --gate and scope --gate-set refuse a malformed gate entry and write nothing; an add --from-file batch of several Python suites per task gets one spelled entry per task; scope --gate-set with the manifest positional last writes the same gate as with it first, and a manifest path as a gate entry is refused": {
+      "file": "plugins/audit/scripts/manifest/audit-task.py",
+      "find": "if _names_plan_file(entry, project):",
+      "replace": "if False:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_task.py",
+        "--selftest",
+        "--stage",
+        "gx-block"
+      ]
+    },
+    "plugins/audit/tests/test__manifest_rules.py: a plan already holding a malformed gate entry draws a warning naming the task and the entry, and no error": {
+      "file": "plugins/audit/scripts/manifest/_manifest_phases.py",
+      "find": "problem = gate_entry_shape_problem(entry, build_keys)",
+      "replace": "problem = None",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__manifest_rules.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n1 n/a - no behaviour claimed; only fixture literals respelled\n2 test__refs c5 was red on the attempt-1 literals (10 hits at test_audit_task.py 18533-18584) and is green after the respelling (286/286, exit 0); gx-block cases unchanged and green inside test_audit_task.py 1083/1083\n3 grep of plugins/audit/tests/test_ in lines 18520-18700 after the edit: no remaining plugins/audit/-anchored fixture suite paths; the 7 respelled lines now use backend/tests/\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:f317d70332087854847a3a179a6ad121fca3ca05fc1f58170d64aed5e60f2c1f\",\"dirtyDigest\":\"sha256:69c184c7a46a7d5bad74ca1b74c375916e00309af888aae1e619b836488250d2\",\"dirtyPaths\":{\"plugins/audit/scripts/manifest/_manifest_phases.py\":\"de58e9e03eb155e4\",\"plugins/audit/scripts/manifest/audit-task.py\":\"b4d174ab762c1958\",\"plugins/audit/tests/test__manifest_phases.py\":\"3a5550003fe90687\",\"plugins/audit/tests/test__manifest_rules.py\":\"50b16ba6f61aea54\",\"plugins/audit/tests/test_audit_task.py\":\"ee361e976f954658\"},\"head\":\"b6252aae\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/_manifest_phases.py\",\"plugins/audit/scripts/manifest/_manifest_rules.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test__manifest_phases.py\",\"plugins/audit/tests/test__manifest_rules.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:374c0b0250262b1f124f56a7aff720110b6c6ca641e3b973ec956913adc70b53\",\"v\":2}"
+}

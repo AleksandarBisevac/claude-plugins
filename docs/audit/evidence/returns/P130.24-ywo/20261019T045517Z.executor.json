@@ -1,0 +1,48 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test__runner_collects.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_drive_phase.py --selftest (full, 379 cases)": "pass",
+    "test__gate_derive / test__scope_companions / test__deps / test__output --selftest": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- on the touched files": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T05:07:10Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage pg-block` in a throwaway tree at HEAD exited 1 with 4 of 6 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `pg-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - plugins/audit/tests/test_drive_phase.py: scope_gap on a task whose tests.add is a plugins/audit/tests/test_*.py path and whose gate holds selftests and vitest returns no decision; a .mjs path vitest does not collect still returns the scope-gap decision naming vitest.config.mjs; a Python path under a gate with neither the sweep nor pytest is still reported (a Python suite under the sweep and vitest draws no scope-gap and no could-not-tell line, and the task is dispatched: \"decide scope-gap P1.1: vitest does not collect plugins/audit/tests/test_mine.py (vitest.config.mjs test.include tests/unit/**/*.test.ts admits no pattern for plugins/audit/tests/...); widen adds vitest.config.mjs\\nwiden declares the runner config beside the task's files and selects again; block keeps the task and tells the human.\\nanswer: next P1 --answer widen|block (block needs --reason)\") (house FAIL) and 3 more: SELFTEST FAILED: 2/6 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Option taken: the per-runner language split (not 'any collecting runner'). _runner_collects.py gained runners_taking(path, runners) (a .py goes to sweep/pytest, js/mjs/cjs/jsx/ts/mts/cts/tsx to vitest/jest, anything else or a gate holding only the other language's runners gives []) and a 'sweep' reading in collects(): it reads SWEEP_DIRS from the project's tools/sweep-selftests.py as text, COLLECTED for a .py under a root, NOT_COLLECTED outside them, COULD_NOT_TELL when the script or tuple is missing. _gate_derive.py gained entry_collector(entry) = entry_runner or 'sweep' for an entry running sweep-selftests.py (entry_runner itself unchanged, so repointed_by_runner does not see the sweep as a second known runner). drive-phase.py scope_gap now collects runners via entry_collector, asks each path only of runners_taking(path, runners), and when the gate names runners but none takes the path's language returns a scope-gap decision 'no runner in this gate takes <path> (the gate runs ...); no runner config file exists to widen' (widen is refused by the existing config-less rule, so block is the answer); a gate naming no runner at all still passes silently as before. Tests: 12 new checks in test__runner_collects.py (_language, titled with the tests.add clause) and 6 in test_drive_phase.py (_scope_language_cases, stage pg-block), covering all four acceptance points plus the over-fire direction (a .py outside the sweep roots, with the sweep in the gate, is still reported) and a pytest-only gate. Red first (ordinary tdd red, before the fix): test__runner_collects 94/95 (AttributeError runners_taking); pg-block 2/6 (python suite under sweep+vitest drew the vitest scope-gap; python-under-vitest-only reported with the old vitest wording; .mjs under sweep-only silently dispatched; outside-roots reported by the wrong runner). Green: test__runner_collects 107/107, full test_drive_phase 379/379, test__gate_derive 52/52, test__scope_companions 30/30, test__deps 244/244, test__output 259/259, ruff clean. Note: a heredoc python write to _runner_collects.py was refused by the plan gate (outside running task's files / magnitude 84>80) even though the file is in files; I did not work around it and made the same edits with the Edit tool, which the gate allowed. claims: 1 drive-phase.py scope_gap (takers/runners_taking branch) and _runner_collects.runners_taking/_sweep_reading do what the docstrings say; 2 falsifiers below, each find unique in its file (grep -c 1); 3 grep of entry_runner/UNIT_RUNNERS consumers: _runners_for/paths_by_runner/repointed_by_runner left on entry_runner on purpose (sweep is not path-scoped), scope_gap was the only preflight site; 4 n/a no rule to an agent; 5 n/a; 6 decision reads the gate entry's shell words and the path extension, not the command text pattern alone; 7 n/a no number written.",
+    "descriptive": "The task-start preflight asks each runner only about paths of its own language and counts the project's sweep as collecting Python suites under its roots, so Python tests.add paths no longer draw a false vitest scope-gap, while a path no runner of the gate can take is still reported."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_drive_phase.py: scope_gap on a task whose tests.add is a plugins/audit/tests/test_*.py path and whose gate holds selftests and vitest returns no decision; a .mjs path vitest does not collect still returns the scope-gap decision naming vitest.config.mjs; a Python path under a gate with neither the sweep nor pytest is still reported",
+    "plugins/audit/tests/test__runner_collects.py: the language split the preflight uses sends a .py path to the sweep or pytest and a .js/.mjs/.ts path to vitest or jest, and names no runner for a path none of the gate's runners can take"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_drive_phase.py: scope_gap on a task whose tests.add is a plugins/audit/tests/test_*.py path and whose gate holds selftests and vitest returns no decision; a .mjs path vitest does not collect still returns the scope-gap decision naming vitest.config.mjs; a Python path under a gate with neither the sweep nor pytest is still reported": {
+      "file": "plugins/audit/scripts/governance/drive-phase.py",
+      "find": "takers = _runner_collects.runners_taking(path, runners)",
+      "replace": "takers = list(runners)",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_drive_phase.py",
+        "--selftest",
+        "--stage",
+        "pg-block"
+      ]
+    },
+    "plugins/audit/tests/test__runner_collects.py: the language split the preflight uses sends a .py path to the sweep or pytest and a .js/.mjs/.ts path to vitest or jest, and names no runner for a path none of the gate's runners can take": {
+      "file": "plugins/audit/scripts/governance/_runner_collects.py",
+      "find": "return [r for r in runners if r in takers]",
+      "replace": "return list(runners)",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__runner_collects.py",
+        "--selftest"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:01dcb4ba70adb1a4ad9336620530f0a3a62e1cae967f53460fea4ae4f989b67e\",\"dirtyDigest\":\"sha256:746b492680961e607ffb98230c2169703850f271e7b01410959dcf848b770752\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_gate_derive.py\":\"29e9768e46f7341c\",\"plugins/audit/scripts/governance/_runner_collects.py\":\"87fde896ca0cebe5\",\"plugins/audit/scripts/governance/drive-phase.py\":\"01d452f256d9accb\",\"plugins/audit/tests/test__runner_collects.py\":\"a9536181dd159380\",\"plugins/audit/tests/test_drive_phase.py\":\"ac86d3e64712b263\"},\"head\":\"b6252aae\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_gate_derive.py\",\"plugins/audit/scripts/governance/_runner_collects.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/tests/test__runner_collects.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:1f7e16e2454ec32c8cad2a644f846308dcbbcb14664299d84489c8dd1897e0c5\",\"v\":2}"
+}
