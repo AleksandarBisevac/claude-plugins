@@ -869,8 +869,9 @@ def list_themes(project, home=None):
 # Nothing here knows which surface is asking. The asset NAMES stay with the surface
 # that owns them; what lives here is the contract every read of them obeys.
 # Read from the anchor rather than joined here. The anchor's own walk needs the
-# same directory (`ui_surface_digests()`, in the anchor, for the screenshot rule),
-# and two joins of one path is how a restructure moves one of them.
+# same directory (`ui_surface_sources()`, in the anchor, which names the parts a
+# surface is assembled from; `_surface_digest.py` asks it which parts no surface
+# claims), and two joins of one path is how a restructure moves one of them.
 UI_DIR = _output.UI_DIR
 
 

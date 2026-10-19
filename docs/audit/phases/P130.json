@@ -1873,7 +1873,12 @@
       "startedAt": "2026-10-19T03:27:44Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T04:32:21Z.1b9bbe",
+        "status": "passed",
+        "at": "2026-10-19T04:32:21Z"
+      }
     },
     {
       "id": "P130.18-ywo",
@@ -1956,7 +1961,19 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test__ui_theme.py: every backticked function call named in the comments of .gitattributes, and the one beside UI_DIR in _ui_theme.py, is a function defined under plugins/audit/scripts or tools": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__ui_theme.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/_ui_theme.py",
+            "find": "(`ui_surface_sources()`",
+            "replace": "(`ui_surface_digests()`"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -1976,7 +1993,12 @@
       "startedAt": "2026-10-19T03:27:46Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T04:43:04Z.3dd18b",
+        "status": "passed",
+        "at": "2026-10-19T04:43:04Z"
+      }
     },
     {
       "id": "P130.20-ywo",

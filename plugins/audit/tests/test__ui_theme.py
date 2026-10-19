@@ -25,6 +25,7 @@ import re
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402  (REPO_ROOT, SCRIPTS_DIR)
 from _output import safe_stdio                     # noqa: E402
 import _ui_theme as M                              # noqa: E402
 import _manifest_vocab as _vocab                   # noqa: E402  (the words a label owes)
@@ -662,6 +663,42 @@ def _cases(check):
           dict(M.themed_stylesheets())["panel"]
           == _panel_join.replace("/*__THEME_TOKENS__*/", M.TOKEN_CSS))
 
+
+    # --- a comment that names a function is a claim that the function exists ---
+    # Two comments kept describing a digest that had moved to another module, and
+    # nothing read them. The names are taken off the comments themselves - the
+    # `.gitattributes` ones and the block above `UI_DIR` - and each must be a `def`
+    # somewhere under `scripts/` or `tools/`. The `UI_DIR` block must yield at
+    # least one name, or an extractor that matched nothing would read as all clear.
+    _root = _output.REPO_ROOT
+    _defined = set()
+    for _top in (os.path.join(_output.SCRIPTS_DIR), os.path.join(_root, "tools")):
+        for _dir, _dirs, _files in os.walk(_top):
+            for _f in _files:
+                if _f.endswith(".py"):
+                    with io.open(os.path.join(_dir, _f), encoding="utf-8") as _fh:
+                        _defined.update(re.findall(r"^\s*def (\w+)\(", _fh.read(), re.M))
+    _call = re.compile(r"`([A-Za-z_]\w*)\([^`]*\)`")
+    with io.open(os.path.join(_root, ".gitattributes"), encoding="utf-8") as _fh:
+        _attr_lines = [_l for _l in _fh.read().splitlines() if _l.startswith("#")]
+    with io.open(M.__file__.replace(".pyc", ".py"), encoding="utf-8") as _fh:
+        _theme_lines = _fh.read().splitlines()
+    _at = _theme_lines.index("UI_DIR = _output.UI_DIR")
+    _beside = []
+    while _at > 0 and _theme_lines[_at - 1].startswith("#"):
+        _at -= 1
+        _beside.insert(0, _theme_lines[_at])
+    _named = sorted(set(_call.findall("\n".join(_attr_lines))
+                        + _call.findall("\n".join(_beside))))
+    _missing = [_n for _n in _named if _n not in _defined]
+    _ok = (len(_beside) > 0 and bool(_call.findall("\n".join(_beside)))
+           and not _missing)
+    _title = ("every backticked function call named in the comments of .gitattributes, "
+              "and the one beside UI_DIR in _ui_theme.py, is a function defined under "
+              "plugins/audit/scripts or tools")
+    # The title is the clause verbatim when green; a red one says what it found.
+    check(_title if _ok else "%s (read %d comment lines above UI_DIR, %d names; "
+          "no definition for %r)" % (_title, len(_beside), len(_named), _missing), _ok)
 
 def _selftest():
     return _harness.run(_cases)
