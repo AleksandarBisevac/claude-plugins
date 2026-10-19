@@ -3974,7 +3974,8 @@
       "P130.5",
       "P130.8",
       "P130.11-ywo",
-      "P130.14-ywo"
+      "P130.14-ywo",
+      "P130.33-ywo"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -5032,7 +5033,8 @@
       "P130.6",
       "P130.8",
       "P130.30-ywo",
-      "P130.40-ywo"
+      "P130.40-ywo",
+      "P130.33-ywo"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -6280,7 +6282,8 @@
       "P125.144-0h5",
       "P130.6",
       "P130.30-ywo",
-      "P130.40-ywo"
+      "P130.40-ywo",
+      "P130.33-ywo"
     ],
     "plugins/audit/tests/test_audit_status.py": [
       "P25.2",
@@ -7154,7 +7157,8 @@
       "P125.136-0h5",
       "P128.38",
       "P130.11-ywo",
-      "P130.14-ywo"
+      "P130.14-ywo",
+      "P130.33-ywo"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
@@ -8763,14 +8767,16 @@
       "P123.65-64p",
       "P125.48-0h5",
       "P125.80-0h5",
-      "P130.8"
+      "P130.8",
+      "P130.33-ywo"
     ],
     "plugins/audit/tests/test__runner_output.py": [
       "P102.3",
       "P102.4",
       "P102.12-ptn",
       "P125.48-0h5",
-      "P125.80-0h5"
+      "P125.80-0h5",
+      "P130.33-ywo"
     ],
     "plugins/audit/scripts/manifest/migrate-json-encoding.py": [
       "P102.10",
