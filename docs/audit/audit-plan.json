@@ -3686,7 +3686,8 @@
       "P125.118-0h5",
       "P130.8",
       "P130.4",
-      "P130.43-ywo"
+      "P130.43-ywo",
+      "P130.46-ywo"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -3819,7 +3820,8 @@
       "P125.118-0h5",
       "P130.4",
       "P130.8",
-      "P130.43-ywo"
+      "P130.43-ywo",
+      "P130.46-ywo"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
       "P42.6",
@@ -4402,7 +4404,8 @@
       "P130.20-ywo",
       "P130.31-ywo",
       "P130.40-ywo",
-      "P130.41-ywo"
+      "P130.41-ywo",
+      "P130.46-ywo"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -6120,7 +6123,8 @@
       "P123.58-64p",
       "P125.34-0h5",
       "P125.118-0h5",
-      "P130.43-ywo"
+      "P130.43-ywo",
+      "P130.46-ywo"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
@@ -6506,7 +6510,8 @@
       "P130.36-ywo",
       "P130.40-ywo",
       "P130.41-ywo",
-      "P130.42-ywo"
+      "P130.42-ywo",
+      "P130.46-ywo"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -6666,7 +6671,8 @@
       "P130.10-ywo",
       "P130.25-ywo",
       "P130.28-ywo",
-      "P130.43-ywo"
+      "P130.43-ywo",
+      "P130.46-ywo"
     ],
     "plugins/audit/tests/test_detect_plan_skip.py": [
       "P72.1",
@@ -9282,7 +9288,8 @@
       "P130.38-ywo",
       "P130.43-ywo",
       "P130.44-ywo",
-      "P130.45-ywo"
+      "P130.45-ywo",
+      "P130.46-ywo"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -9404,7 +9411,8 @@
       "P130.38-ywo",
       "P130.39-ywo",
       "P130.43-ywo",
-      "P130.44-ywo"
+      "P130.44-ywo",
+      "P130.46-ywo"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6",
