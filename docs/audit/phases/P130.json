@@ -3283,7 +3283,20 @@
           "interactive",
           "vitest"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "tools/ui-tests/gate-card-wait.test.mjs: a hand-written poll-dependent wait with another number in a scratch copy of capture-screenshots.mjs is refused, and every real call site is a helper call or an allow-listed entry with a reason": {
+            "command": [
+              "npx",
+              "vitest",
+              "run",
+              "tools/ui-tests/gate-card-wait.test.mjs"
+            ],
+            "file": "tools/capture-screenshots.mjs",
+            "find": "await sleepPollWindow(page, 'combo(b): ledger write with the menu open');",
+            "replace": "await page.waitForTimeout(7123);"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -3305,7 +3318,18 @@
       "startedAt": "2026-10-19T11:43:37Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T11:59:42Z.191e3b",
+        "status": "passed",
+        "at": "2026-10-19T11:59:42Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-19T11:59:45Z",
+          "text": "falsifier could-not-run for `tools/ui-tests/gate-card-wait.test.mjs: a hand-written poll-dependent wait with another number in a scratch copy of capture-screenshots.mjs is refused, and every real call site is a helper call or an allow-listed entry with a reason`: mutation at tools/capture-screenshots.mjs:4956 (the command exited 1 on the unmutated copy, so a red under the mutant would prove nothing - vitest.config.mjs (1:471) \u001b[33m[UNRESOLVED_IMPORT] \u001b[0mCould not resolve 'vitest/config' in vitest.c [... 1020 chars elided; failure lines among them: ⎯⎯⎯⎯⎯⎯⎯ Startup Error ⎯⎯⎯⎯⎯⎯⎯⎯ | Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'vitest' imported from /private/var/folders/rb/... ...] nal/modules/esm/loader:701:17)\n    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)\n    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33) {\n  code: 'ERR_MODULE_NOT_FOUND'\n})"
+        }
+      ]
     },
     {
       "id": "P130.33-ywo",
@@ -3389,7 +3413,19 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test_guard_secrets_read.py: in a bound task worktree whose shard copy still reads the task pending, a Bash heredoc write and an Edit of the same declared file get the same verdict, and so do an undeclared file and a file only a stale sibling declares": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_guard_secrets_read.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/hooks/_config.py",
+            "find": "    if binding[\"bound\"]:\n        return binding[\"files\"]\n    return in_progress_task_map(tree, manifest_rel)",
+            "replace": "    if binding[\"bound\"]:\n        return in_progress_task_map(tree, manifest_rel)\n    return in_progress_task_map(tree, manifest_rel)"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -3413,7 +3449,12 @@
       "startedAt": "2026-10-19T11:43:39Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T12:10:32Z.cd887c",
+        "status": "passed",
+        "at": "2026-10-19T12:10:32Z"
+      }
     },
     {
       "id": "P130.35-ywo",

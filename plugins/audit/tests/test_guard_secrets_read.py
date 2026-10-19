@@ -2011,12 +2011,112 @@ def _template_cases(check):
           "missing: %r" % (missing,))
 
 
+def _bound_worktree_cases(check):
+    """A task worktree's shell write and its Edit read one coverage.
+
+    The fixture is the state `manage-worktrees.py task-add` leaves: the worktree
+    was cut while its task was still pending, so ITS copy of the shard says
+    pending for the bound task and in_progress for a sibling that has since
+    stopped, while the phase tree's plan - the one the binding reads - says the
+    reverse. A reader that opens the worktree's own copy sees the wrong task
+    running, in both directions."""
+    root = os.path.realpath(_harness.fixture_root("gsr-bound-wt-"))
+    main = os.path.join(root, "main")
+    wt = os.path.join(root, "main-P1.1")
+    rel = os.path.join("docs", "audit", "audit-plan.json")
+    os.makedirs(os.path.join(main, "src"))
+    os.makedirs(os.path.join(main, "docs", "audit"))
+
+    def plan(bound_status, sibling_status):
+        return {"meta": {"version": 3, "developmentBranch": "main"},
+                "phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                            "tasks": [
+                                {"id": "P1.1", "title": "bound",
+                                 "status": bound_status,
+                                 "files": ["src/app.ts", "src/lib.ts"]},
+                                {"id": "P1.2", "title": "sibling",
+                                 "status": sibling_status,
+                                 "files": ["src/stale.ts"]}]}]}
+
+    def put(path, body):
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(body, fh, indent=2)
+
+    with open(os.path.join(main, ".gitignore"), "w", encoding="utf-8") as fh:
+        fh.write(".claude/\n")
+    put(os.path.join(main, rel), plan("pending", "in_progress"))
+    flags = _harness.WORKTREE_PAIR_GIT
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "init"],
+                 ["worktree", "add", "-q", wt, "-b", "chore/p1-1"]):
+        _harness.git(main, *argv, prefix=flags, timeout=30)
+    admin = _harness.git(wt, "rev-parse", "--git-dir", prefix=flags,
+                         timeout=30).strip()
+    admin = admin if os.path.isabs(admin) else os.path.join(wt, admin)
+    put(os.path.join(admin, "audit-worktree.json"),
+        {"createdBy": "audit", "phaseId": "P1", "taskId": "P1.1", "base": "x",
+         "phaseTree": main, "at": "t"})
+    put(os.path.join(main, rel), plan("in_progress", "pending"))
+
+    rp = _loader.load(os.path.join(_harness.HOOKS_DIR, "require-plan.py"),
+                      modname="require_plan_for_bound_worktree")
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    held = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = main
+    try:
+        def edit(sid, name):
+            _spend_slot(main, cfg, sid)
+            ok, got = _harness.attempt(rp.decide, {
+                "tool_name": "Edit", "session_id": sid, "cwd": main,
+                "hook_event_name": "PreToolUse",
+                "tool_input": {"file_path": os.path.join(wt, "src", name),
+                               "old_string": "export const a = 1;\n",
+                               "new_string": "x\n" * 500}},
+                cfg=cfg, event="PreToolUse")
+            return got if ok else ("raised", str(got))
+
+        def shell(sid, name, spend=True):
+            if spend:
+                _spend_slot(main, cfg, sid)
+            ok, got = _harness.attempt(M.decide, {
+                "tool_name": "Bash", "session_id": sid, "cwd": wt,
+                "tool_input": {"command": "cat > src/%s <<'EOF'\nx\nEOF"
+                               % name}}, cfg=cfg)
+            return got if ok else ("raised", str(got))
+
+        probes = [("app.ts", "allow"), ("undeclared.ts", "block"),
+                  ("stale.ts", "block")]
+        got = [(name, want, edit("bw-e-" + name, name)[0],
+                shell("bw-s-" + name, name)[0]) for name, want in probes]
+        check("bw1 in a bound task worktree whose shard copy still reads the "
+              "task pending, a Bash heredoc write and an Edit of the same "
+              "declared file get the same verdict, and so do an undeclared "
+              "file and a file only a stale sibling declares",
+              all(e == s == want for _n, want, e, s in got), repr(got))
+
+        # The slot is the symptom the field report named, so it is asserted as
+        # the symptom: a fresh session writing two declared files takes no free
+        # file for either, because neither is uncovered.
+        first = shell("bw-fresh", "app.ts", spend=False)
+        second = shell("bw-fresh", "lib.ts", spend=False)
+        check("bw2 a second heredoc write to a declared file in a bound "
+              "worktree is allowed, the first having spent no free file",
+              first[0] == "allow" and second[0] == "allow"
+              and _slot_file(Path(main), cfg, "bw-fresh") == [],
+              repr((first, second, _slot_file(Path(main), cfg, "bw-fresh"))))
+    finally:
+        if held is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held
+
+
 def _cases(check):
     """Exercise the decision core with fictional secret paths (never real files)."""
     _harness.stage(check, "gs-live", _refresh_cases)
     _harness.stage(check, "ts", _slot_cases)
     _harness.stage(check, "sj", _journal_cases)
     _harness.stage(check, "tt", _two_tree_cases)
+    _harness.stage(check, "bw", _bound_worktree_cases)
     _harness.stage(check, "sb", _subshell_cases)
     _harness.stage(check, "ww", _wrapped_write_cases)
     _harness.stage(check, "sc", _slash_copy_cases)

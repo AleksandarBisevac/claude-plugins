@@ -2579,6 +2579,48 @@ def _cases(check):
               "that names the task and the tree: %r" % (_got,),
               _got.get("bound") is True and "T9" in (_got.get("error") or "")
               and _ptree in (_got.get("error") or ""))
+        # task_covered_files: the one coverage reader both gate arms ask.
+        _cv_phase = os.path.join(_tb, "phase-cover")
+        os.makedirs(_cv_phase)
+        with open(os.path.join(_cv_phase, "p.json"), "w") as fh:
+            json.dump({"meta": {"version": 2}, "fileIndex": {},
+                       "phases": [{"id": "P1", "status": "in_progress", "tasks": [
+                           {"id": "T1", "status": "in_progress",
+                            "files": ["src/mine.ts"]},
+                           {"id": "T2", "status": "in_progress",
+                            "files": ["src/theirs.ts"]}]}]}, fh)
+        _cv_wt = _tb_tree("wt-cover", {"createdBy": "audit", "taskId": "T1",
+                                       "phaseTree": _cv_phase})
+        with open(os.path.join(_cv_wt, "p.json"), "w") as fh:
+            json.dump({"meta": {"version": 2}, "fileIndex": {},
+                       "phases": [{"id": "P1", "status": "in_progress", "tasks": [
+                           {"id": "T1", "status": "pending",
+                            "files": ["src/mine.ts"]},
+                           {"id": "T2", "status": "in_progress",
+                            "files": ["src/stale.ts"]}]}]}, fh)
+        check("tb11 a bound tree's coverage is the bound task's files out of "
+              "the PHASE tree's plan - not the worktree's own copy, where that "
+              "task is pending and a stopped sibling still runs: %r"
+              % (sorted(M.task_covered_files(_cv_wt, "p.json")),),
+              sorted(M.task_covered_files(_cv_wt, "p.json")) == ["src/mine.ts"])
+        check("tb12 a tree whose binding cannot be proved covers nothing, "
+              "although its own copy of the plan runs a task",
+              M.task_covered_files(_tb_tree("wt-broken", {
+                  "createdBy": "audit", "taskId": "T9",
+                  "phaseTree": _cv_phase}), "p.json") == {})
+        check("tb13 an ordinary tree's coverage is its running tasks' files, "
+              "exactly in_progress_task_map's answer",
+              M.task_covered_files(_cv_phase, "p.json")
+              == M.in_progress_task_map(_cv_phase, "p.json")
+              and sorted(M.task_covered_files(_cv_phase, "p.json"))
+              == ["src/mine.ts", "src/theirs.ts"])
+        check("tb14 the output reader follows the same rule: a broken binding "
+              "and an unbound tree",
+              M.task_covered_outputs(_tb_tree("wt-broken2", {
+                  "createdBy": "audit", "taskId": "T9",
+                  "phaseTree": _cv_phase}), "p.json") == []
+              and M.task_covered_outputs(_cv_phase, "p.json")
+              == M.in_progress_outputs(_cv_phase, "p.json"))
     finally:
         _harness.remove_tree(_tb)
 

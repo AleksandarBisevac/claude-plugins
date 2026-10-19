@@ -1,0 +1,33 @@
+{
+  "gates": {
+    "npx vitest run tools/ui-tests/gate-card-wait.test.mjs": "pass",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T11:47:06Z",
+    "basis": "`npx vitest run tools/ui-tests/gate-card-wait.test.mjs` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion; failing without an assertion: a hand-written poll-dependent wait with another number in a scratch copy of capture-screenshots.mjs is refused, and every real call site is a helper call or an allow-listed entry with a reason (TypeError: Cannot read properties of undefined (reading 'some')): Tests  1 failed | 1 passed (2); no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'POLL_WAIT_ALLOWED': TypeError: Cannot read properties of undefined (reading 'some'); run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/ui-tests/gate-card-wait.test.mjs gains a structural scan (comment/string-blanking tokenizer, bracket matcher, helper-body exclusion for waitForPoll/sleepPollWindow). A wait primitive (waitForFunction/waitForTimeout/setTimeout) is poll-dependent when its call text names RUNSTATUS/pollRunStatus or carries a number >= the poll interval read from the assembled panel (pollIntervalOf). Each such site outside the two helpers must match an entry of the new export POLL_WAIT_ALLOWED in tools/capture-screenshots.mjs (find snippet, expected site count, reason); stale, mis-counted and reasonless entries fail. The case also writes hand-written waits with another number (waitForTimeout, waitForFunction timeout, setTimeout, and a sub-interval wait naming RUNSTATUS) into scratch copies under a tmp dir (not the tree) and requires each refused, requires a 250 ms settle wait not refused, and checks both helpers still have call sites. 8 allow-list entries cover 12 real sites, each with a reason. No wait call in capture-screenshots.mjs changed. test__refs --selftest 286/286 pass; vitest file 2/2 pass.",
+    "descriptive": "A new hand-written poll-dependent wait in capture-screenshots.mjs now fails a unit test unless it goes through waitForPoll/sleepPollWindow or is allow-listed with a reason."
+  },
+  "testsAdded": [
+    "tools/ui-tests/gate-card-wait.test.mjs: a hand-written poll-dependent wait with another number in a scratch copy of capture-screenshots.mjs is refused, and every real call site is a helper call or an allow-listed entry with a reason"
+  ],
+  "falsifiers": {
+    "tools/ui-tests/gate-card-wait.test.mjs: a hand-written poll-dependent wait with another number in a scratch copy of capture-screenshots.mjs is refused, and every real call site is a helper call or an allow-listed entry with a reason": {
+      "file": "tools/capture-screenshots.mjs",
+      "find": "await sleepPollWindow(page, 'combo(b): ledger write with the menu open');",
+      "replace": "await page.waitForTimeout(7123);",
+      "command": [
+        "npx",
+        "vitest",
+        "run",
+        "tools/ui-tests/gate-card-wait.test.mjs"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:a002168252e5c66bcc7c622e6acc4ee926851e17ea308aed5a0c6e9a670f8faf\",\"dirtyDigest\":\"sha256:9b14b4d3fc81d0e189aa1d5b43bfbb271d88b821e4db2ed2d300098c43767bed\",\"dirtyPaths\":{\"tools/capture-screenshots.mjs\":\"fe3c42b4d5c7ffb4\",\"tools/ui-tests/gate-card-wait.test.mjs\":\"229cdb12786c7ffd\"},\"head\":\"23ff1ddb\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/capture-screenshots.mjs\",\"tools/ui-tests/gate-card-wait.test.mjs\"],\"scopeDigest\":\"sha256:a8d50ea76ed54843bf24935a9c5578355fbcfb14930fb4ce2fc4792c6abdf21d\",\"v\":2}"
+}

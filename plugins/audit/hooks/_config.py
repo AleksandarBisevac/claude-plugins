@@ -1183,6 +1183,44 @@ def task_binding(tree, manifest_rel):
             "files": files, "outputs": outputs}
 
 
+def task_covered_files(tree, manifest_rel, binding=None):
+    """rel -> [{"taskId", ...}]: the files the work running in `tree` covers - the
+    ONE reader the Edit arm (require-plan) and the shell-write arm
+    (guard-secrets-read) both ask.
+
+    A task tree is read through `task_binding` first, so its coverage is the
+    bound task's files out of the PHASE tree's plan; reading the worktree's own
+    copy of the shard instead sees the bound task still pending (nothing covered)
+    and a long-stopped sibling still running (its files covered) - and two arms
+    that read it differently disagree about the same file. A binding that cannot
+    be proved covers NOTHING: the arms refuse on its `error` themselves, and an
+    empty map is the loud direction for a caller that does not look.
+
+    `binding` is the answer `task_binding` already gave this caller, passed back
+    so the marker is not read twice in one decision."""
+    if binding is None:
+        binding = task_binding(tree, manifest_rel)
+    if binding.get("error"):
+        return {}
+    if binding["bound"]:
+        return binding["files"]
+    return in_progress_task_map(tree, manifest_rel)
+
+
+def task_covered_outputs(tree, manifest_rel, binding=None):
+    """`[(pattern, taskId)]` - `task_covered_files`'s other half, for the same
+    tree and by the same rule: the bound task's honoured output patterns out of
+    the phase tree's plan, nothing for a binding that cannot be proved, and the
+    running tasks' patterns in an ordinary tree."""
+    if binding is None:
+        binding = task_binding(tree, manifest_rel)
+    if binding.get("error"):
+        return []
+    if binding["bound"]:
+        return binding["outputs"]
+    return in_progress_outputs(tree, manifest_rel)
+
+
 def _declared_task_ids(root, manifest_rel):
     """[{"taskId", "status"}] for every task of the plan in `root`."""
     manifest = _load_manifest_assembled(Path(root) / manifest_rel)

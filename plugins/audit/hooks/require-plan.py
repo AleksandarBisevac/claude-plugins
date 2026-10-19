@@ -887,8 +887,12 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     #     such a task covers belongs to that worktree, so an edit here is
     #     refused naming it.
     if binding["bound"]:
-        if _config.covering_key(binding["files"], rel) is not None \
-                or _config.covering_output(binding["outputs"], rel) is not None:
+        if _config.covering_key(
+                _config.task_covered_files(root, manifest_rel, binding),
+                rel) is not None \
+                or _config.covering_output(
+                    _config.task_covered_outputs(root, manifest_rel, binding),
+                    rel) is not None:
             return ("allow", "covered by the bound task %s: %s"
                     % (binding["taskId"], rel))
         owners, covers = _split_declared([
@@ -923,7 +927,7 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     #    one-per-session-per-area heads-up rides additionalContext. Advisory
     #    only: the verdict never hardens past "warn", and no gate event is
     #    written — this is coordination, not a gate verdict.
-    tmap = _config.in_progress_task_map(root, manifest_rel)
+    tmap = _config.task_covered_files(root, manifest_rel, binding)
     covering = _config.covering_key(tmap, rel)
     if covering is not None:
         if commit_state:
@@ -945,7 +949,7 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     #     AFTER the `files` clause and never instead of it. `files` is the
     #     enumerated scope a review reads; a pattern is the looser statement, so
     #     the exact answer is asked first and this one only runs when it missed.
-    outputs = _config.in_progress_outputs(root, manifest_rel)
+    outputs = _config.task_covered_outputs(root, manifest_rel, binding)
     produced = _config.covering_output(outputs, rel)
     if produced is not None:
         return ("allow", "declared output of in_progress task %s (%s): %s"

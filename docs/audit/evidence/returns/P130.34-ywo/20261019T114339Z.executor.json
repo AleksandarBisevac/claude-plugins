@@ -1,0 +1,44 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_guard_secrets_read.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__config.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_require_plan.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_guard_bash_writes.py --selftest": "pass",
+    "python3 tools/bench-hooks.py --gate": "pass",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass",
+    "ruff check plugins/audit/hooks plugins/audit/tests": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/hooks plugins/audit/tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T11:48:37Z",
+    "basis": "`python3 plugins/audit/tests/test_guard_secrets_read.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 707 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bw1 (house FAIL), bw2 (house FAIL): SELFTEST FAILED: 705/707 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added _config.task_covered_files and task_covered_outputs (task_binding first; broken binding covers nothing; bound tree reads the phase tree's plan restricted to the bound task; ordinary tree falls through to in_progress_task_map / in_progress_outputs). guard-secrets-read._ungoverned_write_target now calls task_covered_files instead of in_progress_files (nothing else about reading the command changed). require-plan steps 2c, 3 and 3b call the same two functions with the binding it already read, so the Edit and Bash arms share one reader. Tests: new stage _bound_worktree_cases in test_guard_secrets_read.py builds a real bound worktree whose shard copy has the bound task pending and a stale sibling in_progress (bw1 parity for declared / undeclared / stale-sibling-only file, plus explicit expected verdicts; bw2 two heredoc writes by a fresh session to two declared files allowed and no free file spent); tb11-tb14 in test__config.py cover the reader directly. test_guard_secrets_read 707/707, test__config 351/351, test_require_plan 236/236, test_guard_bash_writes 237/237, test__refs 286/286, bench-hooks --gate exit 0, ruff clean, vermin clean. NOT run: the full sweep (orchestrator). Note: a Bash heredoc write to _config.py was refused by the plan gate (change magnitude 82 > 80, 'outside the running task files'), which is the very symptom this task fixes seen on my own edit; I stopped using Bash for writes and made all edits with the Edit tool, which the gate allowed. guard-bash-writes.py:2045 (the post-hoc Stop/Post reporter) still calls in_progress_files on the worktree's own copy - outside this task's files and not the Bash-write PreToolUse path; left alone, a candidate follow-up.",
+    "descriptive": "A task worktree's shell write and its Edit now read the same coverage, so declared files are allowed on the first and second heredoc write and a stale sibling's file is refused on both."
+  },
+  "testsAdded": [
+    "bw1 in a bound task worktree whose shard copy still reads the task pending, a Bash heredoc write and an Edit of the same declared file get the same verdict, and so do an undeclared file and a file only a stale sibling declares (carries tests.add entry of test_guard_secrets_read.py)",
+    "bw2 a second heredoc write to a declared file in a bound worktree is allowed, the first having spent no free file",
+    "tb11 a bound tree's coverage is the bound task's files out of the PHASE tree's plan",
+    "tb12 a tree whose binding cannot be proved covers nothing",
+    "tb13 an ordinary tree's coverage is its running tasks' files",
+    "tb14 the output reader follows the same rule"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_guard_secrets_read.py: in a bound task worktree whose shard copy still reads the task pending, a Bash heredoc write and an Edit of the same declared file get the same verdict, and so do an undeclared file and a file only a stale sibling declares": {
+      "file": "plugins/audit/hooks/_config.py",
+      "find": "    if binding[\"bound\"]:\n        return binding[\"files\"]\n    return in_progress_task_map(tree, manifest_rel)",
+      "replace": "    if binding[\"bound\"]:\n        return in_progress_task_map(tree, manifest_rel)\n    return in_progress_task_map(tree, manifest_rel)",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims: (1) task_covered_files is the single coverage reader for both arms - basis: grep shows guard-secrets-read.py and require-plan.py (2c, 3, 3b) call it and none still calls in_progress_files / in_progress_task_map there; (2) parity red-first - bw1/bw2 failed 705/707 before the edit, 707/707 after; (3) guard-bash-writes.py:2045 still reads in_progress_files and is deliberately untouched (out of scope).",
+  "stamp": "audit-stamp: {\"content\":\"sha256:3a6390da5259afe4de588e15d34bdea0eabb94da4349479068ea0e9cc88f6bb8\",\"dirtyDigest\":\"sha256:ced385d2fac6e37ce6386a9e55ae25bdf3f2951068da97333b79ba67a0e99944\",\"dirtyPaths\":{\"plugins/audit/hooks/_config.py\":\"ce1c22838e1b4d64\",\"plugins/audit/hooks/guard-secrets-read.py\":\"330625c94f11530d\",\"plugins/audit/hooks/require-plan.py\":\"f1f76fc747bb5be4\",\"plugins/audit/tests/test__config.py\":\"aeba5a211ec64c17\",\"plugins/audit/tests/test_guard_secrets_read.py\":\"708eae1e82245bf6\"},\"head\":\"23ff1ddb\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/guard-secrets-read.py\",\"plugins/audit/hooks/require-plan.py\",\"plugins/audit/tests/test__config.py\",\"plugins/audit/tests/test_guard_secrets_read.py\"],\"scopeDigest\":\"sha256:74dedb67a581e6249fc8bbdb240ad35c74ab7d6f9ba74495e7add55d40658140\",\"v\":2}"
+}

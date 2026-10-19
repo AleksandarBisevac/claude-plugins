@@ -2341,8 +2341,9 @@ def _ungoverned_write_target(targets, root, cfg, cwd, place=None):
             continue
         key = str(tree["root"])
         if key not in in_prog:
-            in_prog[key] = _config.in_progress_files(tree["root"], manifest_rel)
-        if _config.covering_key(dict.fromkeys(in_prog[key]), rel) is not None:
+            in_prog[key] = _config.task_covered_files(tree["root"],
+                                                      manifest_rel)
+        if _config.covering_key(in_prog[key], rel) is not None:
             continue
         shown = (rel if not tree["moved"] else
                  "%s (in the linked worktree %s)" % (rel, key))
