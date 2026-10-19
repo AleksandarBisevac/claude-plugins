@@ -1,0 +1,46 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_audit_task.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass",
+    "ruff check (two files)": "pass",
+    "vermin -t=3.8- (two files)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T10:48:10Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 1088 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bcm3 (house FAIL), bcm3b (house FAIL), bcm4 (house FAIL): SELFTEST FAILED: 1085/1088 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-task.py: _gate_holders now appends _plan_gate_holders(meta, key), which names meta.fullGate, meta.phaseGate.always and meta.phaseGate.exclude when each list holds the key; the refusal text names them and says a meta.* list is edited in the plan's meta. test_audit_task.py: new stage bcp-block (_bcm_plan_holder_cases) with bcm3 (fullGate and always refused, exit 2, bytes and journal unchanged), bcm3b (exclude refused), bcm4 (unnamed key still removed, the two named stay). Selftest 1088/1088; test__refs 286/286. commands/task.md not touched (outside files).",
+    "descriptive": "build-command --remove no longer leaves a dangling reference in meta.fullGate or meta.phaseGate.always/exclude."
+  },
+  "testsAdded": [
+    "bcm3 build-command --remove refuses a key named by meta.fullGate, and one named by meta.phaseGate.always, and writes nothing",
+    "bcm4 build-command --remove still removes a key no gate, fullGate or phaseGate.always names",
+    "bcm3b ...and one named by meta.phaseGate.exclude (extra, not a tests.add entry)"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_audit_task.py: build-command --remove refuses a key named by meta.fullGate, and one named by meta.phaseGate.always, and writes nothing": {
+      "file": "plugins/audit/scripts/manifest/audit-task.py",
+      "find": "    return held + _plan_gate_holders(assembled.get(\"meta\"), key)",
+      "replace": "    return held",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_task.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test_audit_task.py: build-command --remove still removes a key no gate, fullGate or phaseGate.always names": {
+      "file": "plugins/audit/scripts/manifest/audit-task.py",
+      "find": "if isinstance(entries, list) and key in entries]",
+      "replace": "if isinstance(entries, list)]",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_task.py",
+        "--selftest"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:c0f9e7ff60c5fc4a484eff4c5c693e1e35cc6e9dd4a786df7e381111f310e801\",\"dirtyDigest\":\"sha256:2cbf3d54d3186e62fc6b3acb37fd46c8c846e1924873e4a2f97f2fe6767ee4a7\",\"dirtyPaths\":{\"plugins/audit/scripts/manifest/audit-task.py\":\"949f512998256544\",\"plugins/audit/tests/test_audit_task.py\":\"d7c47944e5b563b5\"},\"head\":\"7273a6ca\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:d6c3ca7eeb6ec47d260264582f094155b96db53c7d975e4e976eb4a9a94fb4e5\",\"v\":2}"
+}
