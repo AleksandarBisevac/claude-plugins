@@ -3089,7 +3089,29 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test_audit_task.py: build-command --remove refuses a key named by meta.fullGate, and one named by meta.phaseGate.always, and writes nothing": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_audit_task.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/manifest/audit-task.py",
+            "find": "    return held + _plan_gate_holders(assembled.get(\"meta\"), key)",
+            "replace": "    return held"
+          },
+          "plugins/audit/tests/test_audit_task.py: build-command --remove still removes a key no gate, fullGate or phaseGate.always names": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_audit_task.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/manifest/audit-task.py",
+            "find": "if isinstance(entries, list) and key in entries]",
+            "replace": "if isinstance(entries, list)]"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -3113,7 +3135,12 @@
       "startedAt": "2026-10-19T10:40:08Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T11:15:08Z.c4dd64",
+        "status": "passed",
+        "at": "2026-10-19T11:15:08Z"
+      }
     },
     {
       "id": "P130.32-ywo",

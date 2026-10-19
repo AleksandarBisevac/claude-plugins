@@ -13457,7 +13457,8 @@ def cmd_build_command(args, out):
 def _gate_holders(assembled, key):
     """The gate entries that name `key`, as `P2 (testGate)` / `P2.3
     (tests.gate)`, in plan order: every phase and every task, whatever its
-    status, since a finished task's gate is re-read against the plan too."""
+    status, since a finished task's gate is re-read against the plan too -
+    then the plan-level lists `_plan_gate_holders` reads."""
     held = []
     for phase in assembled.get("phases") or []:
         if not isinstance(phase, dict):
@@ -13469,7 +13470,22 @@ def _gate_holders(assembled, key):
             gate = tests.get("gate") if isinstance(tests, dict) else None
             if isinstance(gate, list) and key in gate:
                 held.append("%s (tests.gate)" % (task.get("id"),))
-    return held
+    return held + _plan_gate_holders(assembled.get("meta"), key)
+
+
+def _plan_gate_holders(meta, key):
+    """The plan-level lists that name `key`, as `meta.fullGate` /
+    `meta.phaseGate.always` / `meta.phaseGate.exclude`: they name
+    `meta.buildCommands` keys beside a phase's and a task's gate, and the
+    validator warns on an entry naming a key the plan no longer holds."""
+    meta = meta if isinstance(meta, dict) else {}
+    phase_gate = meta.get("phaseGate")
+    phase_gate = phase_gate if isinstance(phase_gate, dict) else {}
+    lists = (("meta.fullGate", meta.get("fullGate")),
+             ("meta.phaseGate.always", phase_gate.get("always")),
+             ("meta.phaseGate.exclude", phase_gate.get("exclude")))
+    return [name for name, entries in lists
+            if isinstance(entries, list) and key in entries]
 
 
 def _build_command_refusal(args, build, key, assembled):
@@ -13485,7 +13501,8 @@ def _build_command_refusal(args, build, key, assembled):
             return ("build-command: %r is named by %s -- a gate entry that "
                     "names no key runs as a literal shell command, so dropping "
                     "it would change what that gate runs. Re-point or drop the "
-                    "entry first (`scope --gate-drop`, `retarget --gate-drop`)"
+                    "entry first (`scope --gate-drop`, `retarget --gate-drop`; "
+                    "a meta.* list is edited in the plan's meta)"
                     % (key, ", ".join(held)))
         return None
     if key in build and not args.replace:

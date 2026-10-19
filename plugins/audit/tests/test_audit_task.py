@@ -18401,6 +18401,12 @@ BCM_ADD_CLAUSE = (
 BCM_DOCS_CLAUSE = (
     "the build-command verb is in the usage block and in VERB_FLAGS with "
     "exactly the flags commands/task.md documents")
+BCM_PLAN_HOLDER_CLAUSE = (
+    "build-command --remove refuses a key named by meta.fullGate, and one "
+    "named by meta.phaseGate.always, and writes nothing")
+BCM_UNNAMED_CLAUSE = (
+    "build-command --remove still removes a key no gate, fullGate or "
+    "phaseGate.always names")
 
 
 def _bcm_fixture(base_manifest):
@@ -18579,6 +18585,88 @@ def _build_command_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _bcm_plan_holder_cases(check):
+    """`build-command --remove` against the two plan-level lists that name
+    `meta.buildCommands` keys beside a phase's `testGate` and a task's
+    `tests.gate`: `meta.fullGate` and `meta.phaseGate.always`."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, _run_on_stdin, base_manifest, mk, _mk_empty, _task_in, _pin, _unpin,
+     _PD_SHA, _pd_fixture, _pd_repo, _git) = _at_kit(tmp)
+    try:
+        def raw(path):
+            with open(path, "rb") as fh:
+                return fh.read()
+
+        def build(mpath):
+            return dict((_mio.load_manifest(mpath).get("meta") or {})
+                        .get("buildCommands") or {})
+
+        def rows(project):
+            jmod = _panel_write._journalmod()
+            return [r for r in (jmod.read_all(project) if jmod else [])
+                    if r.get("action") == "buildcommand.change"]
+
+        def holder_plan():
+            """`full` is named by nothing but `meta.fullGate`, `every` by
+            nothing but `meta.phaseGate.always`, `spare` by nothing."""
+            fx = base_manifest()
+            fx["meta"]["buildCommands"] = {"full": "true", "every": "true",
+                                           "spare": "true"}
+            fx["meta"]["fullGate"] = ["full"]
+            fx["meta"]["phaseGate"] = {"always": ["every"]}
+            return fx
+
+        proj, mpath = mk("bcm-holders", holder_plan())
+        before = raw(mpath)
+        base_findings = M._validator().validate(_mio.load_manifest(mpath))[0]
+        full_code, full_txt = run(["build-command", "full", "--remove",
+                                   "--project-dir", proj])
+        every_code, every_txt = run(["build-command", "every", "--remove",
+                                     "--project-dir", proj])
+        refused_clean = (raw(mpath) == before and rows(proj) == []
+                         and sorted(build(mpath)) == ["every", "full", "spare"])
+        check(
+            "bcm3 " + BCM_PLAN_HOLDER_CLAUSE,
+            base_findings == []
+            and full_code == 2 and "meta.fullGate" in full_txt
+            and "meta.phaseGate.always" not in full_txt
+            and every_code == 2 and "meta.phaseGate.always" in every_txt
+            and "meta.fullGate" not in every_txt
+            and refused_clean,
+            "base findings %r; full %r; every %r; clean %r"
+            % (base_findings, (full_code, full_txt[-200:]),
+               (every_code, every_txt[-200:]), refused_clean))
+
+        xproj, xmpath = mk("bcm-exclude", dict(holder_plan(), meta=dict(
+            holder_plan()["meta"], phaseGate={"always": ["every"],
+                                              "exclude": ["spare"]})))
+        xbefore = raw(xmpath)
+        x_code, x_txt = run(["build-command", "spare", "--remove",
+                             "--project-dir", xproj])
+        check("bcm3b ...and one named by meta.phaseGate.exclude: %r"
+              % ((x_code, x_txt[-200:]),),
+              x_code == 2 and "meta.phaseGate.exclude" in x_txt
+              and raw(xmpath) == xbefore and rows(xproj) == [])
+
+        # THE SECOND-DIRECTION CASE: a refusal that fires on every plan with
+        # a fullGate or an always list would pass bcm3 alone, so the key
+        # neither list names must still go, and the two named ones stay.
+        ok_code, ok_txt = run(["build-command", "spare", "--remove",
+                               "--project-dir", proj])
+        after = build(mpath)
+        ok_rows = rows(proj)
+        check(
+            "bcm4 " + BCM_UNNAMED_CLAUSE,
+            ok_code == 0 and sorted(after) == ["every", "full"]
+            and len(ok_rows) == 1
+            and (ok_rows[0].get("details") or {}).get("field")
+            == "meta.buildCommands.spare",
+            "remove %r; left %r; rows %r"
+            % ((ok_code, ok_txt[-200:]), sorted(after), len(ok_rows)))
+    finally:
+        _harness.remove_tree(tmp)
+
+
 RETIRED_FLAG_CLAUSE = ("scope --falsifiers is a usage error and writes "
                        "nothing")
 _RF_ENTRY = "tests/t.py: x"
@@ -18646,6 +18734,7 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("bx-block", "_batch_fix_cases"),
           ("rl-block", "_record_listing_cases"),
           ("bcm-block", "_build_command_cases"),
+          ("bcp-block", "_bcm_plan_holder_cases"),
           ("xf-block", "_crossfile_cases"),
           ("rf-block", "_retired_flag_cases"))
 
