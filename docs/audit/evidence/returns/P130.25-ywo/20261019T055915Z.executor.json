@@ -1,0 +1,35 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_detect_plan_skip.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_commit_task_work.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass",
+    "ruff check plugins/audit/hooks plugins/audit/tests/test_detect_plan_skip.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T06:01:07Z",
+    "basis": "`python3 plugins/audit/tests/test_detect_plan_skip.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 46 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - arming the plan-first bypass writes a `ts` equal to the value _config.local_stamp() returns (local_stamp patched to a sentinel), red with the inline strftime restored ({'ts': '2026-10-19T08:01:04+0200', 'armedAtEpoch': 1792389664}) (house FAIL): SELFTEST FAILED: 45/46 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "detect-plan-skip.py _arm_bypass now sets ts = _config.local_stamp() (no strftime left in the file; docstring says ts is local_stamp's). test_commit_task_work.py: ctw29 label restored to 'ctw29 SECOND-DIRECTION CASE' (one-line diff). test_detect_plan_skip.py: new case patching _config.local_stamp to a sentinel and reading the plan-bypass-<session>.json file. Selftests: detect_plan_skip 46/46, commit_task_work 126/126, test__refs 286/286; ruff clean. The sc4 case in test_drive_phase.py was not touched or run.",
+    "descriptive": "The bypass file's ts now comes from the one owner of the local-offset stamp, and the ctw29 case label has its space back."
+  },
+  "testsAdded": [
+    "arming the plan-first bypass writes a `ts` equal to the value _config.local_stamp() returns (local_stamp patched to a sentinel), red with the inline strftime restored (no case-id prefix; the tests.add clause is the title, in plugins/audit/tests/test_detect_plan_skip.py)"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_detect_plan_skip.py: arming the plan-first bypass writes a `ts` equal to the value _config.local_stamp() returns (local_stamp patched to a sentinel), red with the inline strftime restored": {
+      "file": "plugins/audit/hooks/detect-plan-skip.py",
+      "find": "    ts = _config.local_stamp()\n",
+      "replace": "    ts = time.strftime(\"%Y-%m-%dT%H:%M:%S%z\", time.localtime())\n",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_detect_plan_skip.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n1 detect-plan-skip.py _arm_bypass: `ts = _config.local_stamp()`; docstring sentence says ts is local_stamp's\n2 new case red before fix (45/46, FAIL shows real stamp not sentinel) -> fix -> 46/46; falsifier restores the inline strftime\n3 grep -n strftime plugins/audit/hooks/detect-plan-skip.py: 0 hits after the fix; other inline copies of the spelling were not swept (out of task scope)\n4 n/a \u2014 no rule to an agent\n5 n/a \u2014 no property recorded\n6 n/a \u2014 no guard\n7 n/a \u2014 no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:8d62f916b1a40126dcf5b31795df047566b119f6ba1ae24d3f448ccd236fd010\",\"dirtyDigest\":\"sha256:5ca4af2bacace4a2cd1de078aa869166ff30dba29154f1e978d92792999e790f\",\"dirtyPaths\":{\"plugins/audit/hooks/detect-plan-skip.py\":\"102dc8d2ebf68043\",\"plugins/audit/tests/test_commit_task_work.py\":\"f23c577aadad7c01\",\"plugins/audit/tests/test_detect_plan_skip.py\":\"0f52abd35a9e4b93\"},\"head\":\"078998fa\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/hooks/detect-plan-skip.py\",\"plugins/audit/tests/test_commit_task_work.py\",\"plugins/audit/tests/test_detect_plan_skip.py\"],\"scopeDigest\":\"sha256:8cdabbf6d9d93c9753444be2df7e6f9dab60ba276f2357fd65b07ecb336c8cbc\",\"v\":2}"
+}

@@ -1,0 +1,39 @@
+{
+  "gates": {
+    "own-tests: python3 plugins/audit/tests/test_audit_task.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass",
+    "ruff check (audit-task.py, test_audit_task.py)": "pass",
+    "vermin -t=3.8- (manifest dir, test_audit_task.py)": "pass",
+    "test__output / test__deps / test__help / test_drive_phase selftests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T06:11:06Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage at5-block` in a throwaway tree at HEAD exited 1 with 3 of 90 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pd3 (house FAIL), pd14 (house FAIL), pd15 (house FAIL): SELFTEST FAILED: 87/90 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-task.py: main() refuses a `done` call whose --technical ends the argv or precedes another --flag with `REFUSED: --technical needs a value` on stderr, exit 2, before argparse's usage block; _dispatch refuses a done --technical value that is the manifest positional or an existing .json path (cwd- or project-relative) with a REFUSED line naming --technical on stderr, exit 2, nothing written, ahead of the prose/machine-path checks; cmd_done's own refusals (not a directory, needs a task id, every _done_flags_refusal) now go through _refuse_on_stderr as `REFUSED: ...` on stderr (kept on out under --json so the json_refusal object still carries the text). test_audit_task.py: new cases pd14 and pd15 in _close_cases (in-process, stderr captured with redirect_stderr); pd3 and the existing refusal cases ia2, nc2, fc9 now read REFUSED from stderr via a module-level _stderr_of helper. Full test_audit_task.py selftest 1084/1084; test__refs 286/286; test__output 259/259; test__deps 244/244; test__help 93/93; test_drive_phase 373/373 (sc4 passed here).",
+    "descriptive": "done now refuses a valueless or manifest-path --technical with a REFUSED line on stderr and writes nothing; all of done's own refusals use REFUSED on stderr."
+  },
+  "testsAdded": [
+    "pd14 done with a valueless --technical exits non-zero with a REFUSED line on stderr and writes nothing",
+    "pd15 done whose --technical value is the manifest path is refused and the positional is kept"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_audit_task.py: done with a valueless --technical exits non-zero with a REFUSED line on stderr and writes nothing; done whose --technical value is the manifest path is refused and the positional is kept": {
+      "file": "plugins/audit/scripts/manifest/audit-task.py",
+      "find": "if verb == \"done\" and _bare_technical(argv):",
+      "replace": "if False and verb == \"done\" and _bare_technical(argv):",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_task.py",
+        "--selftest",
+        "--stage",
+        "at5-block"
+      ]
+    }
+  },
+  "claims": "claims: (1) --technical manifest-path refusal: evidenced by pd15 asserting exit 2, REFUSED-first stderr naming --technical, byte-identical manifest for absolute and relative paths, plus an allow twin where the manifest is the positional and --technical carries text and still writes. (2) valueless refusal: pd14 covers trailing and before-another-flag forms. (3) The tests.add entry joins two clauses so it owns one falsifier; it mutates the valueless arm (pd14). The manifest-path arm (pd15) has no falsifier: mutating `if args.command == \"done\" and _technical_is_manifest(args):` to `if False and ...` turns it red (observed as the pre-fix red of pd15). (4) Scope limit: only `done`; --technical on other verbs and the `--technical=` form are unchanged. (5) Refusals inside _locked_done (already `[audit-task] REFUSED:` on stdout) were not moved to stderr.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:653af698f972343389289739ef530ff22c71dca214ddb23d2fee212fb8312eea\",\"dirtyDigest\":\"sha256:2cbf3d54d3186e62fc6b3acb37fd46c8c846e1924873e4a2f97f2fe6767ee4a7\",\"dirtyPaths\":{\"plugins/audit/scripts/manifest/audit-task.py\":\"ee134f1e8e786759\",\"plugins/audit/tests/test_audit_task.py\":\"920cf60f643180ab\"},\"head\":\"078998fa\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:45523b5ad961ae6d1bcf69aa70a1e04a45770cb728775628f17d9c131b6f1fc8\",\"v\":2}"
+}
