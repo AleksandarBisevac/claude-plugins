@@ -764,6 +764,74 @@ FOLLOWER_MARK = "FOLLOWER-OWED"
 _FOLLOWER_LINE = re.compile(r"^\s*%s (.*?)\s*$" % (FOLLOWER_MARK,), re.M)
 
 
+# --- a red read against its base ---------------------------------------------
+# The key a row carries `run-test-gate.base_red`'s reading under, and the fields
+# that cross: the reading is the gate's, this is only what a committed row keeps.
+BASE_RED_KEY = "baseRed"
+_BASE_RED_WORDS = ("run", "head", "task", "verdict")
+
+
+def same_head(one, other):
+    """Two spellings of one commit: a short and a full sha agree on a prefix
+    of at least seven characters, which is as short as git abbreviates."""
+    one, other = str(one or "").strip(), str(other or "").strip()
+    return (len(one) >= 7 and len(other) >= 7
+            and (one.startswith(other) or other.startswith(one)))
+
+
+# The digest `_tree_stamp.dirty_digest` writes for a status holding no dirty
+# line: its one spelling, `_journal_io.canonical`, of an empty list. Spelled
+# here because the two modules are layer-mates; a case pins it to the value
+# the producer writes, with and without a recorder exclusion.
+CLEAN_DIRTY_DIGEST = "sha256:" + hashlib.sha256(
+    _journal_io.canonical([]).encode("utf-8")).hexdigest()
+
+
+def tested_tree_clean(state):
+    """Whether a row's `testedState` says the tree it tested WAS its HEAD
+    commit: git described no dirty path before the run, after whatever
+    recorder exclusion the row was taken with. A row with no digest is not
+    clean - nothing says what its tree held."""
+    return (isinstance(state, dict)
+            and state.get("dirtyDigest") == CLEAN_DIRTY_DIGEST)
+
+
+def base_run(rows, head, exclude_tasks=(), names=None):
+    """The newest recorded run that tested commit `head` itself, or None when
+    the ledger holds none.
+
+    A RUN AT THAT HEAD IS NOT ENOUGH: a task gate runs on HEAD plus the task's
+    uncommitted work, so its red may be that work's. Only a row whose tested
+    tree was clean (`tested_tree_clean`) measured the commit. The runs of
+    every task in `exclude_tasks` are passed over too - a task's own run is
+    not independent evidence about its base - and, when `names` is given, so
+    is a run that ran no step of those names."""
+    wanted = None if names is None else set(names)
+    skip = set(str(t) for t in exclude_tasks or ())
+    return newest_row([
+        row for row in rows or [] if isinstance(row, dict)
+        and same_head((row.get("testedState") or {}).get("head"), head)
+        and tested_tree_clean(row.get("testedState"))
+        and str(row.get("taskId") or "") not in skip
+        and (wanted is None or any(isinstance(st, dict) and st.get("name") in wanted
+                                   for st in row.get("steps") or []))])
+
+
+def _base_red(project, found):
+    """`found` as a row keeps it: words as strings, suite paths bounded and
+    redacted as `failingSuites` is, sentences redacted as a basis is."""
+    out = dict((k, str(found[k])) for k in _BASE_RED_WORDS
+               if found.get(k) is not None)
+    for key in ("atBase", "introduced"):
+        out[key] = [repo_relative_or_token(project, str(p))
+                    for p in (found.get(key) or [])[:MAX_PATHS]]
+    out["unknown"] = [redacted_text(project, str(t))
+                      for t in (found.get("unknown") or [])[:MAX_PATHS]]
+    if found.get("basis") is not None:
+        out["basis"] = redacted_text(project, str(found["basis"]))
+    return out
+
+
 def follower_line(path, recipe, owner, needs_browser=False):
     """The one line a step prints for a follower it owes."""
     record = {"path": path, "recipe": recipe, "owner": owner}
@@ -932,6 +1000,12 @@ def row_for(project, result, scope, ids, identity, published=None):
                               for f in owed]
     if result.get("followersUnread"):
         row["followersUnread"] = int(result["followersUnread"])
+    # A RED READ AGAINST THE RUN RECORDED AT ITS BASE (`run-test-gate.base_red`):
+    # which base run, and which suites it charges to the base and which to the
+    # work. Suite paths are bounded and redacted as `failingSuites` is, the
+    # sentences as a basis is; written only when a red was read that way.
+    if isinstance(result.get(BASE_RED_KEY), dict):
+        row[BASE_RED_KEY] = _base_red(project, result[BASE_RED_KEY])
     # THE MUTES THAT EXCUSED A FAILING STEP. The step itself keeps its exit and
     # its failing names, so without this a `passed` beside a red step would be
     # a verdict the row cannot be read back for. Allow-listed to the suite,

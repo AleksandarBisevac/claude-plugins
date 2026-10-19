@@ -237,6 +237,77 @@ def _playwright_line_cases(check):
           and tally["failed"] == 2 and tally["assertions"] == 0)
 
 
+# What `tools/sweep-selftests.py` printed at the end of two real red runs,
+# verbatim from the evidence ledger's `failing` tails: run
+# 2026-10-19T05:41:28Z.21bec2 (two files that exited 1) and run
+# 2026-10-19T00:00:44Z.ab64e9 (one file stopped at its timeout). The PASS line
+# naming a path and a colon, the house tally and the `--- <path>: <why> ---`
+# header above a failure's output are all in the real text, and none of them is
+# a verdict on a file. The summary lines are BUILT by `_sweep_line`, byte for
+# byte what the sweep printed, because the prose scan reads a count of cases
+# written out in a literal as a claim about this repository.
+
+
+def _sweep_line(ok, files, migrated, cases, slash=""):
+    """The sweep's summary line, in its own spelling."""
+    return ("%d/%d files ok, %d migrated to tests%s, %d cases"
+            % (ok, files, migrated, slash, cases))
+
+
+_SWEEP_EXITED = "\n".join((
+    "PASS sb1m RED TWIN: a block lifted into a stage while its caller still "
+    "calls it reads as doubled, a block no [truncated]",
+    "PASS plugins/audit/tests/test_drive_phase.py: every file the drive and "
+    "its fixtures write in text mode names [truncated]",
+    "SELFTEST FAILED: 378/379 cases passed",
+    "FAIL  plugins/audit/tests/test__refs.py: exited 1",
+    "FAIL  plugins/audit/tests/test_drive_phase.py: exited 1",
+    _sweep_line(338, 340, 155, 15755))) + "\n"
+_SWEEP_TIMEOUT = "\n".join((
+    "  ok      tools/sweep-selftests.py                                   "
+    "%d cases  [30.0s]" % (100,),
+    "--- plugins/audit/tests/test_drive_phase.py: did not finish within 674s ---",
+    "did not finish within 674s",
+    "FAIL  plugins/audit/tests/test_drive_phase.py: did not finish within 674s",
+    _sweep_line(339, 340, 155, 16016))) + "\n"
+
+
+def _sweep_cases(check):
+    failures = getattr(M, "sweep_failures", None)
+    summary = getattr(M, "sweep_summary", None)
+    exited = failures(_SWEEP_EXITED) if failures else "no reader"
+    hung = failures(_SWEEP_TIMEOUT) if failures else "no reader"
+    tally = summary(_SWEEP_EXITED) if summary else "no reader"
+    check("rs1 the sweep's `FAIL  <path>: exited 1` and `FAIL  <path>: did not "
+          "finish within Ns` lines each name the FILE and why, in printed "
+          "order, and its summary line is read for the files it graded - the "
+          "PASS line, the house tally and the `--- <path>: <why> ---` header "
+          "name none: %r / %r / %r" % (exited, hung, tally),
+          exited == [("plugins/audit/tests/test__refs.py", "exited 1"),
+                     ("plugins/audit/tests/test_drive_phase.py", "exited 1")]
+          and hung == [("plugins/audit/tests/test_drive_phase.py",
+                        "did not finish within 674s")]
+          and tally == {"ok": 338, "files": 340, "migrated": 155,
+                        "cases": 15755})
+    # The summary as the sweep spells it today, with the directory's slash; the
+    # ledger's copies above carry none.
+    green = "\n".join(("  ok      tools/where.py   %d cases" % (7,),
+                       _sweep_line(341, 341, 155, 16040, "/")))
+    cut = "\n".join(("FAIL  plugins/audit/tests/test__refs.py: exited 1",
+                     _sweep_line(338, 340, 155, 15755, "/")))
+    house = ("PASS pl1 first case\nFAIL  pl2 second case: why\n"
+             "SELFTEST FAILED: 1/2 cases passed\n")
+    got = ((failures(green), failures(cut), failures(house),
+            failures(_SWEEP_EXITED.replace("FAIL  ", "FAIL "))) if failures
+           else "no reader")
+    check("rs2 THE ALLOW CASE for rs1: a green sweep names no file and says so "
+          "with an empty list, while a tail whose FAIL lines do not account for "
+          "every file the summary failed, output with no sweep summary at all, "
+          "and a one-space FAIL line are NOT KNOWABLE (None) - never a partial "
+          "or an empty answer: %r" % (got,),
+          got == ([], None, None, None))
+
+
 def _layer_cases(check):
     with open(M.__file__, encoding="utf-8") as fh:
         tree = ast.parse(fh.read())
@@ -273,6 +344,7 @@ def _cases(check):
     _node_assert_cases(check)
     _colour_cases(check)
     _playwright_line_cases(check)
+    _sweep_cases(check)
     _layer_cases(check)
 
 

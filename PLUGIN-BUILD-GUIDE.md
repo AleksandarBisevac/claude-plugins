@@ -4348,7 +4348,11 @@ with its recorded reason and the rule for it; a decision pending about another t
 phase's drive stops it too, naming the phase drive that answers it. The `dt` cases drive it.
 
 **One task at a time, in id order.** `next_task` takes the task in progress, else the first
-ready one. A recorded gate run while sibling executors edit the same tree measures their
+ready one - a ready task whose `tests.add` names a suite the newest run that tested HEAD itself
+names as failing goes ahead of the rest (`_wave.base_red_first`), since every other task's gate
+inherits that red until it lands. That run is `_evidence_io.base_run`'s: its tested tree was
+clean (`tested_tree_clean`), so a task gate red on its own uncommitted work is not one, and it is
+no ready task's own run (`red_at_base`); with none recorded nothing is reordered. `bb3` drives it. A recorded gate run while sibling executors edit the same tree measures their
 unfinished work, so the driver never has two tasks between dispatch and gate at once.
 
 **What the driver keeps.** `stateDir/drive/<phaseId>.json` holds what no verb records: which
@@ -4679,6 +4683,15 @@ and an entry point may not import another, so they moved here rather than being 
 limits and that module sits above this one. It reaches nothing but `_output`. Its cases
 are in `plugins/audit/tests/test__runner_output.py`, and `run-test-gate.py`'s names are this
 module's objects.
+
+**The selftest sweep is read for files, not checks.** `sweep_summary` and `sweep_failures` read
+`tools/sweep-selftests.py`'s `FAIL  <path>: <why>` lines and its `files ok` summary, and
+`failing_suites` asks them before any summary reader, so a red sweep step records the files it
+failed as `failingSuites` - every one of them, a file under `tools/` or `hooks/` included, since
+the suite-path and vendor filters are not asked of a file the sweep ran as a suite (`bz4`).
+`sweep_failures` answers `None` - not a shorter list - when the FAIL
+lines do not account for every file the summary failed. The sweep is not in `_SUMMARY_READERS`:
+its case total is the suites' own claims added up, not a count of checks this module saw run.
 
 **It also holds what `red` reads** — `TALLY_READERS`, `CASE_READERS`, `read_tally` and
 `failing_cases`, the narrower question of whether a NAMED case failed an ASSERTION. The house

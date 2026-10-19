@@ -594,6 +594,9 @@ SLICE_RULE = ("dispatch the slices together in one message; each files its own "
 # the intent of the slice that answered worst stands for the phase.
 INTENT_WORST_FIRST = ("diverges", "cannot-tell", "matches")
 _RUN_ID = re.compile(r"evidence: recorded (\S+)")
+# The most a gate-red decision says about the task's base, in bytes: the task
+# to run first leads, so a clip keeps the suggestion and cuts the suite list.
+BASE_CLAUSE_BYTES = 100
 # close-phase's lines for a landing whose `mergedAt` stamp it did not commit:
 # skipped, opening with the path the stamp sits in, or a commit that failed.
 _STAMP_LEFT = re.compile(r"the stamp is not committed here: (\S+)")
@@ -831,17 +834,79 @@ def _tasks(phase):
     return [t for t in phase.get("tasks") or [] if isinstance(t, dict) and t.get("id")]
 
 
-def next_task(manifest, phase):
+def next_task(manifest, phase, red_at_base=None):
     """`(task, how)`: the task the drive is on - the first in progress in id
-    order - else the first ready one, which the drive starts. One at a time: a
-    recorded gate must not run while another executor edits the tree."""
+    order - else the first ready one, which the drive starts, a task fixing a
+    suite in `red_at_base` ahead of the rest (`_wave.base_red_first`). One at
+    a time: a recorded gate must not run while another executor edits the
+    tree."""
     tasks = _tasks(phase)
     running = [t for t in tasks if t.get("status") == "in_progress"]
     if running:
         return running[0], "running"
     ready = set(_status_facts.ready_tasks(manifest))
-    waiting = [t for t in tasks if t["id"] in ready]
+    waiting = _wave.base_red_first([t for t in tasks if t["id"] in ready],
+                                   red_at_base)
     return (waiting[0], "ready") if waiting else (None, None)
+
+
+def red_at_base(ctx, task_ids=()):
+    """`(suites, run_id)` - the suites the newest run that tested HEAD itself
+    names as failing, which every task started from HEAD inherits.
+
+    The run is `_evidence_io.base_run`'s: on a clean tree at HEAD, so a task
+    gate red on its own uncommitted work never reorders anybody, and by no
+    task in `task_ids` - the ones being ordered, none of which may vouch for
+    itself. `([], None)` when no such run is recorded or the ledger cannot be
+    read, so nothing is reordered on a reading nobody took."""
+    head = git_head(ctx)
+    if not head:
+        return [], None
+    try:
+        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+    except Exception:                                          # noqa: BLE001
+        return [], None
+    base = _evio.base_run(rows, head, task_ids)
+    if base is None:
+        return [], None
+    return _evio.named_failing_suites(base.get("steps")), base.get("runId")
+
+
+def base_red_why(ctx, text, manifest, phase, task):
+    """The clause a gate-red decision adds about the task's base, off the row
+    the gate run says it recorded: the base run and what it charges to the
+    base, and the ready task that fixes a suite red there, to run first. ""
+    when the row carries no base reading. Clipped, because the decision is
+    printed whole into the main loop; the gate's own output and the row hold
+    the reading unclipped."""
+    found = _RUN_ID.search(text or "")
+    if not found:
+        return ""
+    try:
+        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+    except Exception:                                          # noqa: BLE001
+        return ""
+    reading = (_evio.row_by_run(rows, found.group(1)) or {}).get(_evio.BASE_RED_KEY)
+    if not isinstance(reading, dict):
+        return ""
+    if not reading.get("run"):
+        return ("; could not read the ledger"
+                if reading.get("verdict") == "unreadable"
+                else "; no base run recorded")
+    clause = ""
+    if reading.get("atBase"):
+        clause = "; red at base too: %s - run %s" % (
+            ", ".join(reading["atBase"]), reading["run"])
+    if reading.get("introduced"):
+        clause += "; red the task introduced: %s" % (
+            ", ".join(reading["introduced"]),)
+    ready = set(_status_facts.ready_tasks(manifest))
+    fixers = [t["id"] for t in _tasks(phase) if t["id"] in ready
+              and t["id"] != task["id"]
+              and _wave.fixes_red_at_base(t, reading.get("atBase"))]
+    if fixers:
+        clause = "; run %s first%s" % (", ".join(fixers), clause)
+    return _clip(clause, BASE_CLAUSE_BYTES)
 
 
 def filed(ctx, task, role):
@@ -1702,7 +1767,8 @@ def advance(ctx, state, manifest, phase, task, tree=None):
         if code == 1:
             said = [ln for ln in (out + err).splitlines() if "GATE" in ln]
             return decision(ctx, state, "gate-red", task,
-                            (said[0].strip() if said else "exit 1")[:80])
+                            (said[0].strip() if said else "exit 1")[:80]
+                            + base_red_why(ctx, out + err, manifest, phase, task))
         if code != 0:
             return relay_refusal(ctx, "run-test-gate.py", code, out + err)
         _mark(state, "gated", task)
@@ -2654,7 +2720,8 @@ def wave_step(ctx, state, manifest, phase, width, basis):
             return NO_WAVE
         ready = set(_status_facts.ready_tasks(manifest))
         picked = _wave.select(sorted((t for t in _tasks(phase) if t["id"] in ready),
-                                     key=lambda t: _id_key(t["id"])), width)["wave"]
+                                     key=lambda t: _id_key(t["id"])), width,
+                              red_at_base=red_at_base(ctx, sorted(ready))[0])["wave"]
         if len(picked) < 2:
             return NO_WAVE
         by_id = _mio.tasks_by_id(manifest)
@@ -4397,7 +4464,9 @@ def drive_phase(ctx, state, phase):
                 continue
             if said is not NO_WAVE:
                 return _as_result(said)
-        task, how = next_task(manifest, phase)
+        idle = not any(t.get("status") == "in_progress" for t in _tasks(phase))
+        task, how = next_task(manifest, phase, red_at_base(
+            ctx, sorted(_status_facts.ready_tasks(manifest)))[0] if idle else None)
         if task is None:
             if all(t.get("status") in _mio.TERMINAL for t in _tasks(phase)):
                 return _as_result(sign_off(ctx, state, manifest, phase))

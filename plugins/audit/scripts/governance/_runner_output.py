@@ -261,6 +261,54 @@ def _jest_blocks(text):
 _VITEST_FAIL_LINE = re.compile(r"^[ \t]*FAIL[ \t]+(\S+)", re.M)
 
 
+# --- which files the selftest sweep failed ------------------------------------
+# `tools/sweep-selftests.py` grades FILES, not checks: one `FAIL  <path>: <why>`
+# line per red file - two spaces, which is how it is told from a house case's
+# one-space `FAIL <id> <title>` - and one summary line,
+# `<ok>/<files> files ok, <n> migrated to tests/, <cases> cases`. It is not in
+# `_SUMMARY_READERS`: its `cases` total is the house suites' own claims added
+# up, not a count of checks this module watched execute. The directory's slash
+# is optional because the ledger's copies of the line carry none.
+SWEEP_RUNNER = "the sweep"
+_SWEEP_SUMMARY = re.compile(
+    r"^(\d+)/(\d+) files ok, (\d+) migrated to tests/?, (\d+) cases[ \t]*$", re.M)
+_SWEEP_FAIL = re.compile(r"^FAIL  (\S(?:.*?\S)?): (\S.*?)[ \t]*$", re.M)
+
+
+def sweep_summary(text):
+    """`{"ok", "files", "migrated", "cases"}` off the sweep's LAST summary line,
+    or None when the output carries none - one run prints one, and a log holding
+    several is read for the run that ended it."""
+    found = _SWEEP_SUMMARY.findall(plain_text(text))
+    if not found:
+        return None
+    ok, files, migrated, cases = (int(n) for n in found[-1])
+    return {"ok": ok, "files": files, "migrated": migrated, "cases": cases}
+
+
+def sweep_failures(text):
+    """`[(path, why), ...]` - every file the sweep printed a `FAIL` line for,
+    in printed order, or None when that is not knowable from `text`.
+
+    None, NEVER A PARTIAL LIST, for output with no sweep summary (it is not the
+    sweep's) and for FAIL lines that do not account for every file the summary
+    says failed - a cut tail, or lines this reader cannot see - because a list
+    one file short would charge that file to nobody. `[]` is the sweep's own
+    word that every file it graded was ok.
+    """
+    body = plain_text(text)
+    summary = sweep_summary(body)
+    if summary is None:
+        return None
+    named = []
+    for path, why in _SWEEP_FAIL.findall(body):
+        if (path, why) not in named:
+            named.append((path, why))
+    if len(named) != summary["files"] - summary["ok"]:
+        return None
+    return named
+
+
 # --- which case failed an assertion: the tally and cases `red` reads -------
 # `red` needs a COUNT and a NAME: at least one test collected, and at least one
 # named case failing an ASSERTION. A non-zero exit alone is not that - a compile

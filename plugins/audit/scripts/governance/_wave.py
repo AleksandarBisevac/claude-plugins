@@ -106,7 +106,42 @@ def _valid_width(width):
     return isinstance(width, int) and not isinstance(width, bool) and width >= 1
 
 
-def select(tasks, width):
+# --- a task that fixes the base's red goes first ---------------------------------
+def _added_suite(entry):
+    """The suite path a `tests.add` entry names - the text before its first
+    `: `, the separator a plan writes between the path and the clause."""
+    return _bare(str(entry).split(": ", 1)[0].strip())
+
+
+def _same_suite(one, other):
+    """Two spellings of one suite path: equal, or one a `/`-bounded suffix of
+    the other, because a runner may print a path relative to its own directory
+    while the plan writes it from the project root."""
+    return bool(one) and bool(other) and (
+        one == other or one.endswith("/" + other) or other.endswith("/" + one))
+
+
+def fixes_red_at_base(task, red_at_base):
+    """Whether the task's `tests.add` names a suite in `red_at_base` - the
+    suites a recorded run at the tasks' base commit names as failing. That a
+    task adds a case to the suite is the signal; the caller supplies the base
+    run's reading, so a suite no run recorded red never promotes anything."""
+    tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
+    named = [_added_suite(e) for e in (tests.get("add") or [])
+             if isinstance(e, str)]
+    return any(_same_suite(n, _bare(r)) for n in named
+               for r in red_at_base or [] if isinstance(r, str))
+
+
+def base_red_first(tasks, red_at_base):
+    """`tasks` with every task that `fixes_red_at_base` moved ahead of the
+    rest, each group keeping the caller's order. With nothing red at base the
+    order is the caller's, unchanged."""
+    first = [t for t in tasks if fixes_red_at_base(t, red_at_base)]
+    return first + [t for t in tasks if not fixes_red_at_base(t, red_at_base)]
+
+
+def select(tasks, width, red_at_base=None):
     """`{"wave": [ids], "deferred": [{"id", "reason", "with"}]}`.
 
     `tasks` are the READY tasks in the order the caller wants them run (id
@@ -116,14 +151,18 @@ def select(tasks, width):
     says why - `width`, `overlap` (with whom) or `undeclared` - so nothing is
     left out silently. `width` must be an integer of at least 1: 'auto' is
     resolved by the caller, and a 0 would otherwise read as 'run nothing,
-    successfully'."""
+    successfully'.
+
+    `red_at_base` is the suites a recorded run at the base commit names as
+    failing; a task fixing one of them is taken first (`base_red_first`),
+    because until it lands every other task's gate is red on that suite too."""
     if not _valid_width(width):
         raise ValueError("wave width must be an integer of at least 1, got %r"
                          % (width,))
     wave, deferred = [], []
     chosen = []
     closed = False
-    for task in tasks:
+    for task in base_red_first(list(tasks), red_at_base):
         tid = task.get("id")
         files = _declared(task)
         if closed:

@@ -3687,9 +3687,9 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-19T15:52:17Z.5b4ce8",
+        "runId": "2026-10-19T16:28:53Z.360c4c",
         "status": "passed",
-        "at": "2026-10-19T15:52:17Z"
+        "at": "2026-10-19T16:28:53Z"
       },
       "notes": [
         {
@@ -3699,6 +3699,14 @@
         {
           "at": "2026-10-19T15:54:20Z",
           "text": "falsifier could-not-run for `plugins/audit/tests/test_run_test_gate.py: a task run red only on a suite its base run is also red on names the base run and says red at base too, a suite red only in the task run is charged to the task, and with no base run the verdict says none was recorded` accepted at the close: The falsifier's mutation broke the build rather than failing the test, so it proves nothing either way; red-first was proved by the helper on this attempt, the task's change is present in the tree the gate measured (ten files modified), and the stage is retired at HEAD by P130.6-ywo. (mutation at plugins/audit/scripts/governance/run-test-gate.py:592; the mutation broke the build rather than failing the test - PASS ct4 pytest is read decorated AND bare -- `-q` drops the `=` rule entirely -- and both of its zero shapes are POSITIVE zeros: `no tests ran` collected nothing, and `1 error` is a test that never started, which is the exact distinction that separates a positive zero from `None`: (3, 0, 0))"
+        },
+        {
+          "at": "2026-10-19T16:30:01Z",
+          "text": "falsifier could-not-run for `plugins/audit/tests/test_run_test_gate.py: a task run red only on a suite its base run is also red on names the base run and says red at base too, a suite red only in the task run is charged to the task, and with no base run the verdict says none was recorded`: mutation at plugins/audit/scripts/governance/run-test-gate.py:592 (the mutation broke the build rather than failing the test - PASS ct4 pytest is read decorated AND bare -- `-q` drops the `=` rule entirely -- and both of its zero shapes are POSITIVE zeros: `no tests ran` collected nothing, and `1 error` is a test that never started, which is the exact distinction that separates a positive zero from `None`: (3, 0, 0))"
+        },
+        {
+          "at": "2026-10-19T16:31:03Z",
+          "text": "falsifier could-not-run for `plugins/audit/tests/test_run_test_gate.py: a task run red only on a suite its base run is also red on names the base run and says red at base too, a suite red only in the task run is charged to the task, and with no base run the verdict says none was recorded` accepted at the close: The falsifier's declared mutation still breaks the build rather than failing a test (same as attempt 2); red-first was proved by the helper on this attempt, the executor's seven scratch mutations m1-m7 each turned their own cases red, the change is in the measured tree, and the stage is retired at HEAD by P130.6-ywo. (mutation at plugins/audit/scripts/governance/run-test-gate.py:592; the mutation broke the build rather than failing the test - PASS ct4 pytest is read decorated AND bare -- `-q` drops the `=` rule entirely -- and both of its zero shapes are POSITIVE zeros: `no tests ran` collected nothing, and `1 error` is a test that never started, which is the exact distinction that separates a positive zero from `None`: (3, 0, 0))"
         }
       ]
     },

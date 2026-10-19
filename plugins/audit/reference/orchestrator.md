@@ -23,8 +23,8 @@ sign-off** are in `reference/execute-task.md` and `reference/phase-signoff.md`.
   before commit (asked then, or pre-given per phase for named task ids) and never on `haiku`;
   every manifest write is re-validated; the manifest is the single source of truth.
 - **A phase run:** the step driver's lock → phase branch off `developmentBranch` → Execute each
-  ready task, one at a time in id order → Phase sign-off (review? → test gate → runtime boot?) →
-  merge back (ff, else confirmed `--no-ff`) → release lock.
+  ready task, one at a time in id order (a fix for a suite red at HEAD first) → Phase sign-off
+  (review? → test gate → runtime boot?) → merge back (ff, else confirmed `--no-ff`) → release lock.
 - **On trouble:** unmet blockers → skip; gates red → retry to `maxAttempts` → `blocked`; gates
   can't run (infra) → don't burn an attempt, human action item; interrupted → `/audit:resume`.
   **A `rerun` answer measures:** the step driver marks it for that start and gives the next
@@ -275,7 +275,8 @@ field lives on the **index stub** only; a copy in a shard body is ignored, and t
 it was.
 
 **Concurrency is `executor.waveWidth`, and only the driver decides it.** Absent means 1: one task at
-a time, in id order, in the phase tree. Above 1 the driver picks the ready tasks whose `files` are
+a time, in id order, in the phase tree; at any width a ready task whose `tests.add` names a suite
+red at HEAD goes first. Above 1 the driver picks the ready tasks whose `files` are
 disjoint and whose `dependsOn` are satisfied, gives each a worktree of its own (the `tree:` and
 `base:` lines of its brief), prints one `dispatch` naming them all, and integrates each green
 tree into the phase tree serially. You dispatch only what `next` printed;
@@ -782,7 +783,7 @@ dated table - the basis a context boundary is worth paying attention to in the f
 - Print the plan the real run would follow and STOP:
   - the resolved **gitRoot** and **developmentBranch**, and the **phase branch name** that would be created;
   - the phase's tasks (`audit-status.py --phase <phaseId>`), the first READY one in id order being
-    the one the drive starts - it runs one task at a time, so there are no parallel groups to print;
+    the one the drive starts (a fix for a suite red at HEAD first) - it runs one task at a time, so there are no parallel groups to print;
   - any task that is NOT ready and why (unmet `blockedBy`/`dependsOn`);
   - the **eventual merge target** (`<developmentBranch>`) and whether a fast-forward is currently possible
     (`git -C <gitRoot> merge-base --is-ancestor` check — informational only);

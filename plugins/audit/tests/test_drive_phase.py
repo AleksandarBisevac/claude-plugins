@@ -62,6 +62,7 @@ from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402  (script_path, load_script)
 import _manifest_io as _mio                        # noqa: E402  (load_manifest, tasks_by_id)
 import _evidence_io as _evio                       # noqa: E402  (read_rows, project_config_for)
+import _tree_stamp                                 # noqa: E402  (the dirty digest a row records)
 import _filed_returns as _fr                       # noqa: E402  (return_path)
 
 DRIVER = "drive-phase.py"
@@ -6930,6 +6931,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("cl-block", "_carry_local_cases"),
           ("sl-block", "_slice_cases"),
           ("np-block", "_nested_project_cases"),
+          ("bb-block", "_base_red_drive_cases"),
           ("sb-block", "_stage_cases"))
 
 
@@ -7938,6 +7940,82 @@ def _slice_cases(check):
           again == 0 and instruction("\n".join(said)) == TRIAGE
           and "slice 1 finding" in "\n".join(said) + json.dumps(
               _phase_of(mpath).get("review")))
+
+
+def _base_red_drive_cases(check):
+    """The drive's two readers of a red the base carries: the serial pick puts
+    the task fixing that suite first, and a gate-red decision names the base
+    run and that task. Pure: the ledger read is the one seam replaced."""
+    M, why = _load("drive_phase_base_red")
+    if M is None:
+        check("bb1 the driver loads", False, why)
+        return
+    suite = "tests/test_s.py"
+    phase = {"id": PHASE, "status": "in_progress", "tasks": [
+        {"id": "P1.1", "status": "pending", "files": ["a.py"]},
+        {"id": "P1.2", "status": "pending", "files": ["b.py"]},
+        {"id": "P1.3", "status": "pending", "files": ["c.py"],
+         "tests": {"add": ["%s: the case that fixes it" % (suite,)]}}]}
+    manifest = {"meta": {}, "phases": [phase]}
+    picks = [M.next_task(manifest, phase, red)[0]["id"]
+             for red in (None, [], [suite], ["tests/test_other.py"])]
+    check("bb1 the serial pick takes the ready task fixing a suite red at base "
+          "first, and id order otherwise - also when the red suite is one no "
+          "task names: %r" % (picks,),
+          picks == ["P1.1", "P1.1", "P1.3", "P1.1"])
+
+    rows = [{"runId": "r-task", "ts": "2026-10-19T06:00:00Z", "taskId": "P1.1",
+             _evio.BASE_RED_KEY: {"run": "r-base", "atBase": [suite],
+                                  "introduced": [], "verdict": "base-only"}},
+            {"runId": "r-none", "ts": "2026-10-19T06:10:00Z", "taskId": "P1.1",
+             _evio.BASE_RED_KEY: {"run": None, "verdict": "no-base"}},
+            {"runId": "r-plain", "ts": "2026-10-19T06:20:00Z", "taskId": "P1.1"},
+            {"runId": "r-unread", "ts": "2026-10-19T06:30:00Z", "taskId": "P1.1",
+             _evio.BASE_RED_KEY: {"run": None, "verdict": "unreadable",
+                                  "basis": "could not read the ledger (denied)"}}]
+    head = "b6252aae"
+    clean = _tree_stamp.dirty_digest([])[0]
+    dirty = _tree_stamp.dirty_digest([" M a.py"])[0]
+
+    def _at_head(run_id, ts, task_id, digest):
+        return {"runId": run_id, "ts": ts, "taskId": task_id,
+                "testedState": {"head": head, "dirtyDigest": digest},
+                "steps": [{"name": "unit", "exit": 1, "failingSuites": [suite],
+                           "failingSuitesBasis": "the 1 suite file(s) pytest %s, "
+                           "read from its lines" % (_evio.NAMED_FAILING,)}]}
+    # Each ledger the HEAD reading is asked of: a dirty-tree red by another
+    # task; a clean red by a task being ordered; a clean red by a third task.
+    ledgers = ([_at_head("h-dirty", "2026-10-19T07:00:00Z", "P1.9", dirty)],
+               [_at_head("h-own", "2026-10-19T07:00:00Z", "P1.3", clean)],
+               [_at_head("h-clean", "2026-10-19T06:00:00Z", "P1.9", clean),
+                _at_head("h-dirty", "2026-10-19T07:00:00Z", "P1.9", dirty)])
+    real, real_head = M._evio.read_rows, M.git_head
+    M.git_head = lambda _ctx: head
+    try:
+        ctx = {"project": "unused", "config": {}}
+        M._evio.read_rows = lambda _p, _c=None: {"rows": rows}
+        said = [M.base_red_why(ctx, "evidence: recorded %s\n" % (run,), manifest,
+                               phase, phase["tasks"][0])
+                for run in ("r-task", "r-none", "r-plain", "r-unread")]
+        at_head = []
+        for ledger in ledgers:
+            M._evio.read_rows = lambda _p, _c=None, _l=ledger: {"rows": _l}
+            at_head.append(M.red_at_base(ctx, ["P1.1", "P1.2", "P1.3"]))
+    finally:
+        M._evio.read_rows, M.git_head = real, real_head
+    check("bb3 the HEAD reading the pick orders by takes only a run on a clean "
+          "tree at HEAD, never a candidate task's own run: %r" % (at_head,),
+          at_head == [([], None), ([], None), ([suite], "h-clean")])
+    check("bb4 a gate-red decision over a ledger that would not read says it "
+          "could not read the ledger, not that no base run was recorded: %r"
+          % (said[3:],),
+          said[3:] == ["; could not read the ledger"])
+    check("bb2 a gate-red decision over a red the base carries names the base run "
+          "and the ready task to run first, says when no base run was recorded, "
+          "and adds nothing for a row with no base reading: %r" % (said,),
+          said[0].startswith("; run P1.3 first; red at base too: %s" % (suite,))
+          and "r-base" in said[0]
+          and said[1] == "; no base run recorded" and said[2] == "")
 
 
 def _stage_cases(check):

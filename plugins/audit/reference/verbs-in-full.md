@@ -1518,7 +1518,8 @@ tokens are no more decidable than one when a rule has a carve-out nobody remembe
 `$ARGUMENTS` = the phase id (plus optional `--dry-run`, `--confirm-high-risk`).
 
 **If `--dry-run` is present:** a read-only preview, then STOP. It prints the phase's tasks with
-`audit-status.py --phase <phaseId>` (the drive starts the first READY task in id order and runs
+`audit-status.py --phase <phaseId>` (the drive starts the first READY task in id order, unless a
+ready task fixes a suite red at HEAD, and runs
 one task at a time, so there are no parallel groups to print), the branch and merge target, and
 **what happens after the merge**. On a phase not yet started, `close-phase.py --dry-run` exits 1
 saying no branch is recorded and the composed name is not a branch here: that reads as *not
@@ -1586,8 +1587,9 @@ high-risk task in the phase goes back to asking. Relay the refusal and ask per t
 re-run the run command without the flag and treat that as the same thing.
 
 Otherwise the step driver runs it: `drive-phase.py next <phaseId>`, run again after each
-instruction it prints. It takes the phase lock, then works one task at a time in id order - a
-recorded gate must not run while another executor edits the tree - each through its executor's
+instruction it prints. It takes the phase lock, then works one task at a time in id order, a
+ready task whose `tests.add` names a suite red at HEAD first - a recorded gate must not run while
+another executor edits the tree - each through its executor's
 dispatch, its recorded gate, its reviewer where `review.perTask` asks for one, its commit and its
 close, and then signs the phase off. **A wave finishing is not a stopping point.** A run that
 committed one wave and reported "next up is the next wave" left the command undischarged and sat

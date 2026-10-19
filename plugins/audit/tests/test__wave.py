@@ -76,6 +76,35 @@ def _select_cases(check):
           "nothing, successfully': %r" % (refused,), all(refused))
 
 
+def _fixer(tid, suite, *files):
+    """A ready task whose `tests.add` names `suite`, as a plan writes the entry."""
+    return dict(_t(tid, *files), tests={"add": ["%s: the case that fixes it"
+                                                % (suite,)]})
+
+
+def _base_red_cases(check):
+    suite = "tests/test_s.py"
+    ready = [_t("P1.1", "src/a.py"), _t("P1.2", "src/b.py"),
+             _fixer("P1.3", suite, "src/c.py")]
+    first = M.select(ready, 1, red_at_base=[suite])
+    wide = M.select(ready, 3, red_at_base=[suite])
+    plain_one, plain_wide = M.select(ready, 1), M.select(ready, 3)
+    # The over-fire twin: a suite red at base that NO ready task names must
+    # leave the order exactly as it was - a selector that promoted every task
+    # carrying a tests.add, or the last one, would move P1.3 here too.
+    other = M.select(ready, 1, red_at_base=["tests/test_t.py"])
+    empty = M.select(ready, 1, red_at_base=[])
+    check("ws9 a ready task whose tests.add names a suite red at base is "
+          "selected first, and selection is unchanged when no suite is red at "
+          "base: %r" % ((first, wide, other, empty),),
+          first["wave"] == ["P1.3"]
+          and [d["id"] for d in first["deferred"]] == ["P1.1", "P1.2"]
+          and wide["wave"] == ["P1.3", "P1.1", "P1.2"]
+          and plain_one["wave"] == ["P1.1"]
+          and plain_wide["wave"] == ["P1.1", "P1.2", "P1.3"]
+          and other == plain_one and empty == plain_one)
+
+
 def _overlap_cases(check):
     a, b = _t("P1.1", "src/app.py"), _t("P1.2", "src", "docs/x.md")
     hit = M.overlap(a, b)
@@ -121,6 +150,7 @@ def _overlap_cases(check):
 
 def _cases(check):
     _harness.stage(check, "ws", _select_cases)
+    _harness.stage(check, "wb", _base_red_cases)
     _harness.stage(check, "wo", _overlap_cases)
 
 

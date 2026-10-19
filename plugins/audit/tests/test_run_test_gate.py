@@ -10331,6 +10331,190 @@ def _follower_cases(check):
         _harness.remove_tree(repo)
 
 
+def _pytest_red(*suites):
+    """pytest's own output for one failing test in each of `suites`."""
+    return ("".join("FAILED %s::test_x - assert 0\n" % (s,) for s in suites)
+            + "%d failed, 4 passed in 0.02s\n" % (len(suites),))
+
+
+def _base_red_cases(check):
+    """A task gate red on a suite its base is red on too: the verdict says so
+    and names the base run, a suite red only in the task's run is charged to
+    the task, no recorded base run is said rather than assumed - and the red
+    still binds as red, so commit-task-work refuses each of them."""
+    import _verdict_binding as _vb
+    import _journal_io as _jio
+    repo = _mini_repo("rtg-basered-")
+    head, gate = "b6252aae", [("unit", "pytest -q")]
+    ids = {"taskId": "P1.1", "phaseId": "P1"}
+
+    def _res(text):
+        return M.run_gate(repo, gate,
+                          runner=lambda _p, _c, _t=None: (1, text, {}))
+
+    # A base run is one whose tested tree WAS the base commit: the producer's own
+    # digest of an empty status, and of a status holding one edited file.
+    clean_digest, clean_basis = _tree_stamp.dirty_digest([])
+    dirty_digest, dirty_basis = _tree_stamp.dirty_digest([" M a.py"])
+
+    def _row(res, task_id, run_id, ts, at=head, clean=True):
+        row = _ev_io.row_for(repo, res, "task",
+                             {"taskId": task_id, "phaseId": "P1"},
+                             {"runId": run_id, "ts": ts})
+        row["testedState"] = dict(
+            row.get("testedState") or {}, head=at,
+            dirtyDigest=clean_digest if clean else dirty_digest,
+            dirtyBasis=clean_basis if clean else dirty_basis)
+        return row
+
+    def _verdict(res, rows):
+        found = M.base_red(res["steps"], head, "P1.1", rows)
+        lines = []
+        M.render(dict(res, baseRed=found), out=lines.append)
+        return found, "\n".join(lines)
+
+    def _refused(res, found, run_id):
+        row = _row(dict(res, baseRed=found), "P1.1", run_id,
+                   "2026-10-19T06:00:00Z")
+        text = json.dumps(row) + "\n"
+        answer = _vb.binding(repo, ids, ["unit"], "task", [],
+                             os.path.join(repo, "audit-plan.json"), "record it",
+                             "no gate", config=_jio.load_config(repo),
+                             texts=[("ledger.jsonl", text)])
+        return (row.get("status"), answer["state"], answer.get("arm"),
+                (row.get("baseRed") or {}).get("run"))
+
+    suite_s, suite_t = "tests/test_s.py", "tests/test_t.py"
+    try:
+        base = _row(_res(_pytest_red(suite_s)), "P1.0", "r-base",
+                    "2026-10-19T05:00:00Z")
+        # Two decoys the lookup must pass over: a run red on S at ANOTHER head,
+        # and the task's own earlier attempt at this head - neither is the base.
+        elsewhere = _row(_res(_pytest_red(suite_s, suite_t)), "P1.0",
+                         "r-elsewhere", "2026-10-19T05:30:00Z", at="d83608a5")
+        mine = _row(_res(_pytest_red(suite_s)), "P1.1", "r-mine",
+                    "2026-10-19T05:40:00Z")
+        # A third decoy, NEWER than the base: another task's red on S at this
+        # head, on a tree carrying that task's own work - not the base commit.
+        dirty_other = _row(_res(_pytest_red(suite_s)), "P1.5", "r-dirty",
+                           "2026-10-19T05:50:00Z", clean=False)
+        rows = [base, elsewhere, mine, dirty_other]
+
+        only_s = _res(_pytest_red(suite_s))
+        one, one_text = _verdict(only_s, rows)
+        both = _res(_pytest_red(suite_s, suite_t))
+        two, two_text = _verdict(both, rows)
+        none, none_text = _verdict(only_s, [elsewhere, mine])
+        dirty_only, dirty_text = _verdict(only_s, [elsewhere, mine, dirty_other])
+        # The empty-status digest the clean test reads must be the one the
+        # producer writes, including when every dirty line is a recorder write.
+        clean_spellings = (
+            _ev_io.tested_tree_clean({"dirtyDigest": clean_digest}),
+            _ev_io.tested_tree_clean({"dirtyDigest": _tree_stamp.dirty_digest(
+                [" M docs/audit/x.jsonl"], excluded=["docs/audit"])[0]}),
+            _ev_io.tested_tree_clean({"dirtyDigest": dirty_digest}),
+            _ev_io.tested_tree_clean({}))
+        # THE SWEEP NAMES FILES THAT ARE NOT UNDER tests/: a FAIL line for a
+        # file under tools/ or hooks/ is the sweep's verdict on a file it ran
+        # as a suite, so it must be carried, never dropped under a basis that
+        # says "named as failing".
+        odd = ("tools/sweep-selftests.py", "plugins/audit/hooks/require-plan.py")
+        odd_text = ("FAIL  %s: exited 1\nFAIL  %s: exited 1\nFAIL  %s: exited 1\n"
+                    "%s/%s files ok, %s migrated to tests, %s cases\n"
+                    % (odd[0], odd[1], suite_s, "6", "9", "0", "120"))
+        odd_suites = M.failing_suites(odd_text)
+        # A LEDGER THAT WILL NOT READ is said as that, never as "no base run".
+        def _unreadable():
+            raise OSError("ledger.jsonl: permission denied")
+        unread = M.base_reading(only_s, "P1.1", _unreadable)
+        unread_lines = M.base_red_lines(unread)
+        refusals = [_refused(only_s, one, "r-one"), _refused(both, two, "r-two"),
+                    _refused(only_s, none, "r-none")]
+        # THE REAL PAIR, through the sweep runner: run 05:30:44Z.53629a was red
+        # on one file and 05:41:28Z.21bec2, at the same head, on that file and
+        # one more - each tail verbatim from the evidence ledger.
+        sweep = [("selftests", "python3 tools/sweep-selftests.py")]
+        refs, drive = ("plugins/audit/tests/test__refs.py",
+                       "plugins/audit/tests/test_drive_phase.py")
+        tail = ("PASS plugins/audit/tests/test_drive_phase.py: every file the "
+                "drive and its fixtures write in text mode names [truncated]\n"
+                "SELFTEST FAILED: %s/%s cases passed\n%s"
+                "%s/340 files ok, 155 migrated to tests, %s cases\n")
+        at_base = tail % ("372", "373", "FAIL  %s: exited 1\n" % (drive,),
+                          "339", "16030")
+        at_task = tail % ("378", "379", "FAIL  %s: exited 1\nFAIL  %s: exited 1\n"
+                          % (refs, drive), "338", "15755")
+
+        def _sweep_res(text):
+            return M.run_gate(repo, sweep,
+                              runner=lambda _p, _c, _t=None: (1, text, {}))
+        swept = _sweep_res(at_task)
+        sweep_base = _row(_sweep_res(at_base), "P130.22-ywo",
+                          "2026-10-19T05:30:44Z.53629a", "2026-10-19T05:30:44Z")
+        replay = M.base_red(swept["steps"], head, "P130.24-ywo", [sweep_base])
+        step_suites = (swept["steps"][0].get("failingSuites"),
+                       swept["steps"][0].get("failingSuitesBasis"))
+    finally:
+        _harness.remove_tree(repo)
+    check("bz2 a sweep step records the files the sweep's FAIL lines name as "
+          "its failingSuites, so the real pair of runs reads the file red at "
+          "both as red at base too and the other as the task's: %r / %r"
+          % (step_suites, replay),
+          step_suites[0] == [refs, drive]
+          and _ev_io.NAMED_FAILING in (step_suites[1] or "")
+          and "sweep" in (step_suites[1] or "")
+          and replay.get("run") == "2026-10-19T05:30:44Z.53629a"
+          and replay.get("atBase") == [drive]
+          and replay.get("introduced") == [refs]
+          and replay.get("verdict") == "introduced")
+    check("bz1 a task run red only on a suite its base run is also red on names "
+          "the base run and says red at base too, a suite red only in the task "
+          "run is charged to the task, and with no base run the verdict says "
+          "none was recorded: %r"
+          % ((one, one_text, two, two_text, none, none_text, refusals),),
+          one.get("run") == "r-base" and one.get("atBase") == [suite_s]
+          and one.get("introduced") == [] and one.get("verdict") == "base-only"
+          and "red at base too" in one_text and "r-base" in one_text
+          and "red only where the base is red" in one_text
+          and two.get("run") == "r-base" and two.get("atBase") == [suite_s]
+          and two.get("introduced") == [suite_t]
+          and two.get("verdict") == "introduced"
+          and "red the task introduced" in two_text
+          and suite_t in two_text.split("red the task introduced", 1)[1]
+          and none.get("run") is None and none.get("verdict") == "no-base"
+          and "no run of this gate is recorded at base %s" % (head,) in none_text
+          and "red at base too" not in none_text
+          and refusals == [("failed", "refused", _vb.ARM_RED, "r-base"),
+                           ("failed", "refused", _vb.ARM_RED, "r-base"),
+                           ("failed", "refused", _vb.ARM_RED, None)])
+    # The over-fire direction is bz1 itself: a clean test that refused every
+    # row would turn `one` into no-base. This case is the under-fire one.
+    check("bz3 another task's red on a suite, recorded at the base head on a "
+          "tree carrying its own work, is not a base run: alone it leaves the "
+          "verdict no-base, and beside a clean base run it is passed over; the "
+          "clean test agrees with the digest the recorder writes: %r"
+          % ((dirty_only, dirty_text, one.get("run"), clean_spellings),),
+          dirty_only.get("run") is None and dirty_only.get("verdict") == "no-base"
+          and "red at base too" not in dirty_text
+          and one.get("run") == "r-base"
+          and clean_spellings == (True, True, False, False))
+    check("bz4 a sweep step carries every file its FAIL lines name, a file "
+          "under tools/ or hooks/ included, under a basis that says so: %r"
+          % (odd_suites,),
+          odd_suites[0] == [odd[0], odd[1], suite_s]
+          and _ev_io.NAMED_FAILING in (odd_suites[1] or "")
+          and "3 suite file(s)" in (odd_suites[1] or ""))
+    check("bz5 a ledger that cannot be read is reported as that, with the "
+          "reason, and never as no base run recorded: %r / %r"
+          % (unread, unread_lines),
+          unread.get("verdict") == "unreadable" and unread.get("run") is None
+          and "could not read the ledger" in (unread.get("basis") or "")
+          and "permission denied" in (unread.get("basis") or "")
+          and not any("no run of this gate is recorded" in ln
+                      for ln in unread_lines)
+          and any("could not read the ledger" in ln for ln in unread_lines))
+
+
 def _write(path, text):
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
@@ -10340,6 +10524,7 @@ def _selftest():
     def body(check):
         _shared_facts_cases(check)
         _harness.stage(check, "fo-block", _follower_cases)
+        _harness.stage(check, "br-block", _base_red_cases)
         _cases(check)
         _harness.stage(check, "tr-block", _tree_cases)
         _harness.stage(check, "wt-block", _wave_tree_cases)

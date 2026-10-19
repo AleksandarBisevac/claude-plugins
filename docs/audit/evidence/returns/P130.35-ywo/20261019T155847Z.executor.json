@@ -1,0 +1,63 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_run_test_gate.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__evidence_io.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__runner_output.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__wave.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_drive_phase.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T16:17:26Z",
+    "basis": "`python3 plugins/audit/tests/test_run_test_gate.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module 'rtg' has no attribute 'base_red'\" (read as python), and the task introduces 'base_red': absent from HEAD's plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/scripts/governance/_evidence_io.py, plugins/audit/scripts/governance/drive-phase.py, plugins/audit/scripts/governance/_wave.py, PLUGIN-BUILD-GUIDE.md, plugins/audit/reference/orchestrator.md, plugins/audit/reference/verbs-in-full.md, plugins/audit/scripts/governance/_runner_output.py and present in the working tree's plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/scripts/governance/_evidence_io.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Attempt 3, same project tree, attempts 1-2's work kept and fixed. (1) HIGH, base run must be the base commit: _evidence_io.py adds CLEAN_DIRTY_DIGEST (the digest _tree_stamp.dirty_digest writes for an empty status: sha256 over _journal_io.canonical([]), spelled here because the two modules share layer 4) and tested_tree_clean(state) (dirtyDigest equals it; a row with no digest is not clean). base_run(rows, head, exclude_tasks=(), names=None) now keeps only rows at that head whose tested tree was clean, passing over every task in exclude_tasks. Ledger survey before choosing the test: the 905 rows hold no dirty path list, only dirtyDigest + a count in dirtyBasis, and every '0 dirty path(s)' row carries sha256:4f53cd..., the empty-list digest; gate rows digest the whole status (no recorder exclusion), take-stamps digest after one, and both give that value for an empty kept list - case bz3 pins both spellings against _tree_stamp.dirty_digest directly. run-test-gate.base_red passes [task_id]; its no-base basis now says 'no run of this gate is recorded at base H on a clean tree'. (2) MEDIUM, sweep paths: failing_suites skips the _is_suite_path/_VENDOR_DIRS filters when the reader is the sweep (each FAIL line is its verdict on a file it ran as a suite), so a FAIL under tools/ or hooks/ is carried; the docstring says so. (3) LOW: drive-phase red_at_base(ctx, task_ids=()) goes through the same base_run (clean tree), and both callers (wave_step, the serial pick in drive_phase) pass the sorted ready ids being ordered, so no candidate's own run reorders it. (4) LOW: run-test-gate.base_reading(res, task_id, read_rows) does the ledger read main() used to inline; an OSError/ValueError gives verdict 'unreadable', basis 'could not read the ledger (<reason>), so no base run was looked up'; drive-phase base_red_why prints '; could not read the ledger' for that verdict, '; no base run recorded' only for no-base. PLUGIN-BUILD-GUIDE.md: the next_task paragraph names base_run/tested_tree_clean/red_at_base and bb3; the _runner_output paragraph says every sweep FAIL file is kept (bz4). New cases: test_run_test_gate.py bz3 (another task's dirty-tree red on S at head H: alone -> no-base and no 'red at base too'; newer than a clean base run -> passed over, run stays r-base; clean test == (True, True, False, False) over the empty digest, a recorder-excluded status, a dirty digest and no digest), bz4 (sweep FAIL lines for tools/sweep-selftests.py, plugins/audit/hooks/require-plan.py and tests/test_s.py -> all three, 'the 3 suite file(s) the sweep named as failing'), bz5 (unreadable ledger -> verdict unreadable, the reason in the basis, no 'no run of this gate is recorded' line); bz1/bz2 fixtures now build clean base rows and a newer dirty decoy. test_drive_phase.py bb3 (dirty-tree red by another task -> ([], None); clean red by a candidate task -> ([], None); clean red by a third task beside a newer dirty one -> ([suite], 'h-clean')), bb4 (unreadable reading -> '; could not read the ledger'). Red first, on the tree before the fix: test_drive_phase.py --stage bb-block 1/2, bb-block raised TypeError red_at_base() takes 1 positional argument; test_run_test_gate.py exit 1 548/549, br-block raised AttributeError no tested_tree_clean (a missing-symbol red only). Mutation proofs, each in a scratch copy of plugins/ (scratchpad mut_a3.py, anchor asserted applied once, PYTHONDONTWRITEBYTECODE=1): m1 clean filter removed -> bz1, bz3 FAIL (549/552); m2 tested_tree_clean always False (over-fire) -> bz1, bz2, bz3 FAIL (548/552); m3 sweep filtered again -> bz4 FAIL (550/552, re-run after the fixture paths changed); m4 unreadable update dropped -> bz5 FAIL (550/552); m5 red_at_base without task_ids -> bb3 FAIL 3/4; m6 clean filter removed -> bb3 FAIL 3/4; m7 unreadable branch removed -> bb4 FAIL 3/4. Every scratch copy also printed 'fo-block RAISED ... FileNotFoundError', mutated or not; the shared tree is green on fo-block, so that comes from the copy and is not a mutation result. REAL-LEDGER REPLAY (scratchpad replay3.py: failingSuites re-derived from each step's verbatim tail, base_red against rows recorded before the run): 05:30:44Z.53629a (P130.22-ywo @b6252aae) -> no-base, its only earlier row at that head 05:19:59Z.7b9766 was dirty (10 dirty paths); 05:41:28Z.21bec2 (P130.24-ywo @b6252aae) -> no-base, earlier rows 7b9766 (10 dirty) and 53629a (12 dirty); 05:55:33Z.6c52c7 (P130.18-ywo @b6252aae) -> no-base, earlier 7b9766, 53629a, 21bec2 (10 dirty) all dirty; 08:09:16Z.f47752 (P130.22-ywo @d83608a5) -> no-base, no earlier row at that head. Attempt 2's 'red at base too' readings for the first three came from dirty-tree task runs, which is the HIGH finding; with no clean base run recorded, no-base is the honest answer. Suites, one at a time, final tree: test__evidence_io.py exit 0 308/308 (16:06:59Z); test__runner_output.py exit 0 19/19; test__wave.py exit 0 15/15; test_drive_phase.py WHOLE exit 0 385/385 (16:07:24-16:09:50Z); test__refs.py first exit 1 285/286, c5 flagged my bz4 fixture's made-up path plugins/audit/hooks/guard-x.py, so the fixture now uses tools/sweep-selftests.py and plugins/audit/hooks/require-plan.py (both real, both _is_suite_path False), re-run exit 0 286/286 (16:10:35Z); test_run_test_gate.py exit 0 553/553 (16:10:44-16:11:16Z). Also: ruff check plugins/audit tools exit 0; vermin on the five changed .py exit 0; test__output.py exit 0 259/259; test__deps.py exit 0 244/244. Full sweep NOT run (runsGate own-tests). Gaps: bb1-bb4 (test_drive_phase.py) and rs1/rs2 (test__runner_output.py) sit in files no tests.add entry names; bz2-bz5 carry their own titles, bound to entry 0 by id through casesAdded. No tool call was refused.",
+    "descriptive": "A task gate's red is read as red at base only against a run that tested the base commit on a clean tree, by another task; the sweep's FAIL files under tools/ and hooks/ are kept; an unreadable ledger is said as that."
+  },
+  "testsAdded": [
+    "test_run_test_gate.py bz3 a dirty-tree red at the base head by another task is not a base run",
+    "test_run_test_gate.py bz4 a sweep step carries every FAIL file, tools/ and hooks/ included",
+    "test_run_test_gate.py bz5 an unreadable ledger is reported as that, never as no base run",
+    "test_drive_phase.py bb3 the HEAD reading takes only a clean-tree run by no candidate task",
+    "test_drive_phase.py bb4 a gate-red decision over an unreadable ledger says so"
+  ],
+  "casesAdded": [
+    [
+      "bz1",
+      "bz2",
+      "bz3",
+      "bz4",
+      "bz5"
+    ],
+    [
+      "ws9"
+    ]
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_run_test_gate.py: a task run red only on a suite its base run is also red on names the base run and says red at base too, a suite red only in the task run is charged to the task, and with no base run the verdict says none was recorded": {
+      "file": "plugins/audit/scripts/governance/run-test-gate.py",
+      "find": "        out[\"verdict\"] = \"base-only\"",
+      "replace": "        out[\"verdict\"] = \"not-knowable\"",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test__wave.py: a ready task whose tests.add names a suite red at base is selected first, and selection is unchanged when no suite is red at base": {
+      "file": "plugins/audit/scripts/governance/_wave.py",
+      "find": "    first = [t for t in tasks if fixes_red_at_base(t, red_at_base)]",
+      "replace": "    first = []",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__wave.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n1 _evidence_io.py tested_tree_clean/base_run are the clean filter the docstrings describe; run-test-gate.py failing_suites' `name == _ro.SWEEP_RUNNER or` arm is the unfiltered sweep the docstring and guide name; base_reading is the unreadable verdict; drive-phase red_at_base passes task_ids to base_run\n2 m1-m7 in scratch copies, each anchor asserted applied: m1 -> bz1,bz3 red; m2 (over-fire, clean never) -> bz1,bz2,bz3 red; m3 -> bz4 red; m4 -> bz5 red; m5,m6 -> bb3 red; m7 -> bb4 red; the shared tree was never mutated\n3 grep base_run/red_at_base/same_head over plugins/audit: callers run-test-gate.base_red and drive-phase.red_at_base, both now clean-only; grep 'red at base|base run' over the guide and reference: one hit, PLUGIN-BUILD-GUIDE.md next_task paragraph, amended\n4 n/a - no rule addressed to an agent added\n5 n/a - no property recorded; the replay is a reading of a fixed ledger, not a timing\n6 n/a - no guard\n7 n/a - no number written into prose; the guide's case ids are pointers",
+  "stamp": "audit-stamp: {\"content\":\"sha256:3c320bdcc53e9401ec987b3a0f328eaa875bcad58addd408587c4893a1d2c7ef\",\"dirtyDigest\":\"sha256:7e09ae06d1de1ec30a17ebc134ab897a7883f783c6745e8b8fab95f48de09e22\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"ea3ec7be36a5fdfe\",\"plugins/audit/reference/orchestrator.md\":\"f8e9b4411becba5d\",\"plugins/audit/reference/verbs-in-full.md\":\"044c9714e5bba124\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"067c0210f4a49ca3\",\"plugins/audit/scripts/governance/_runner_output.py\":\"8e25356b787ffff1\",\"plugins/audit/scripts/governance/_wave.py\":\"593f7950811db502\",\"plugins/audit/scripts/governance/drive-phase.py\":\"b896c7d30705e5b8\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"a1112b3fef73c530\",\"plugins/audit/tests/test__runner_output.py\":\"753b5e6369dd4c9f\",\"plugins/audit/tests/test__wave.py\":\"c9ef98280db4586f\",\"plugins/audit/tests/test_drive_phase.py\":\"6a7ad80453995577\",\"plugins/audit/tests/test_run_test_gate.py\":\"a905635331aba3de\"},\"head\":\"1fed28ed\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/_runner_output.py\",\"plugins/audit/scripts/governance/_wave.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/tests/test__runner_output.py\",\"plugins/audit/tests/test__wave.py\",\"plugins/audit/tests/test_drive_phase.py\",\"plugins/audit/tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:35f700925f0bcc068cc1897e940eacc7a8c2f800833ecd07d49bf48b24b7ae88\",\"v\":2}"
+}

@@ -545,6 +545,142 @@ def unattributable_failure(failed, ran_total, before, owns, named):
                     % (basis, _output.some_of(blamed, budget=SAMPLE_BUDGET)))
 
 
+# --- a red the base commit already carried ------------------------------------
+# A TASK GATE RUNS ON ITS BASE PLUS ITS OWN WORK, so a suite the base already
+# fails is red in every task gate started from that base, whatever each task
+# did. The answer here is what the VERDICT SAYS about such a red, never whether
+# it is one: the run keeps its `failed` status, `commit-task-work` still refuses
+# it through `_verdict_binding`'s red arm, and only the owner's override passes
+# it. The base is read from the ledger, never assumed: with no run recorded at
+# the base commit the verdict says so and charges nothing either way.
+BASE_RED_AT = "red at base too"
+BASE_RED_ONLY = "red only where the base is red"
+BASE_RED_INTRODUCED = "red the task introduced"
+
+
+def _base_step(base, step):
+    """`base`'s step answering for `step`: the same name and, where both carry
+    the command verbatim, the same command - a renamed command is another
+    check, whatever its key."""
+    for st in base.get("steps") or []:
+        if not isinstance(st, dict) or st.get("name") != step.get("name"):
+            continue
+        if st.get("command") and step.get("command") \
+                and str(st["command"]) != str(step["command"]):
+            continue
+        return st
+    return None
+
+
+def _charge_step(step, base_step):
+    """`(at_base, introduced, unknown)` for one red step against its base step.
+
+    A suite counts as red at base only when BOTH runs' runners named it; a step
+    whose runner named no suite is compared as a whole - introduced when the
+    base step was green, NOT KNOWABLE when the base step was red too, because
+    neither run says whether the same thing failed."""
+    named = _ev.named_failing_suites([step])
+    base_red = base_step is not None and _ev._counts_as_failed(base_step)
+    if base_step is None:
+        return [], [], ["%s (the base run has no such step)" % (step["name"],)]
+    if not base_red:
+        return [], (named or [step["name"]]), []
+    if not named:
+        return [], [], ["%s (red at base too, and neither run named its failing "
+                        "suites)" % (step["name"],)]
+    at_base = _ev.named_failing_suites([base_step])
+    return ([s for s in named if s in at_base],
+            [s for s in named if s not in at_base], [])
+
+
+def base_red(steps, head, task_id, rows):
+    """`{"run", "head", "task", "atBase", "introduced", "unknown", "verdict",
+    "basis"}` - this run's red steps read against the newest run recorded at
+    its base commit `head` (`_evidence_io.base_run`: a run on a clean tree at
+    that commit, never one of `task_id`'s own).
+
+    `verdict` is `base-only` when every red suite is red at base too,
+    `introduced` when any red is the task's own, `not-knowable` when some red
+    cannot be compared, and `no-base` when no such run is recorded at `head` -
+    or `head` itself is unknown. None when nothing in `steps` is red.
+    `base_reading` adds the one more word, `unreadable`."""
+    red = [st for st in steps or [] if isinstance(st, dict)
+           and _ev._counts_as_failed(st)]
+    if not red:
+        return None
+    out = {"run": None, "head": head, "task": None, "atBase": [],
+           "introduced": [], "unknown": [], "verdict": "no-base"}
+    if not head:
+        out["basis"] = ("git named no HEAD for this run, so no run at its base "
+                        "commit can be looked up")
+        return out
+    base = _ev.base_run(rows, head, [task_id], [st.get("name") for st in red])
+    if base is None:
+        out["basis"] = ("no run of this gate is recorded at base %s on a clean "
+                        "tree, so whether the base is red too is not known"
+                        % (head,))
+        return out
+    out["run"], out["task"] = base.get("runId"), base.get("taskId")
+    for step in red:
+        at, mine, unknown = _charge_step(step, _base_step(base, step))
+        out["atBase"] += [s for s in at if s not in out["atBase"]]
+        out["introduced"] += [s for s in mine if s not in out["introduced"]]
+        out["unknown"] += unknown
+    if out["introduced"]:
+        out["verdict"] = "introduced"
+    elif out["unknown"]:
+        out["verdict"] = "not-knowable"
+    else:
+        out["verdict"] = "base-only"
+    out["basis"] = ("read against run %s%s at base %s, recorded %s"
+                    % (base.get("runId"),
+                       " (task %s)" % (base["taskId"],) if base.get("taskId")
+                       else " (scope %s)" % (base.get("scope"),),
+                       head, base.get("ts")))
+    return out
+
+
+def base_reading(res, task_id, read_rows):
+    """`base_red` for a gate result `res`, the ledger's rows read by
+    `read_rows()`. A ledger that raises is said as that - verdict
+    `unreadable`, the reason in the basis - and never as a base run that was
+    not recorded, which is a claim about rows nobody read."""
+    try:
+        rows, why = read_rows(), None
+    except (OSError, ValueError) as exc:
+        rows, why = [], "%s" % (exc,)
+    found = base_red(res.get("steps"), (res.get("testedState") or {}).get("head"),
+                     task_id, rows)
+    if found is not None and why is not None:
+        found.update(verdict="unreadable", basis=(
+            "could not read the ledger (%s), so no base run was looked up"
+            % (why,)))
+    return found
+
+
+def base_red_lines(found):
+    """The lines a red verdict carries about its base, from `base_red`."""
+    if not isinstance(found, dict):
+        return []
+    if found.get("run") is None:
+        return ["  base: %s" % (found.get("basis"),)]
+    lines = []
+    if found.get("atBase"):
+        lines.append("  %s: %s - run %s" % (
+            BASE_RED_AT, ", ".join(found["atBase"]), found["run"]))
+    if found.get("introduced"):
+        lines.append("  %s: %s" % (BASE_RED_INTRODUCED,
+                                   ", ".join(found["introduced"])))
+    for item in found.get("unknown") or []:
+        lines.append("  not comparable with the base: %s" % (item,))
+    if found.get("verdict") == "base-only":
+        lines.append("  verdict: %s - this run is still red and binds as red; "
+                     "land the task that fixes the base first, or the owner "
+                     "commits over it with a reason" % (BASE_RED_ONLY,))
+    lines.append("  basis: %s" % (found.get("basis"),))
+    return lines
+
+
 # --- what state was actually tested -------------------------------------------
 # THE THREE IDENTITY FIELDS LIVE IN `_tree_stamp`, NOT HERE. They were written for
 # this file and they are still what this file records; what changed is that the
@@ -880,6 +1016,15 @@ def _suite_candidates(body):
     is muted, and a blamed file `failing_suites` drops as a non-suite or a
     vendored path is still a failure no mute names.
     """
+    # THE SWEEP FIRST: its summary is the last line of its own run, so it is the
+    # outermost runner, and a red file's output it reprints in full above that
+    # line may carry another runner's summary that is not the step's.
+    swept = _ro.sweep_failures(body)
+    if swept is not None:
+        return (_ro.SWEEP_RUNNER, [path for path, _why in swept],
+                "its FAIL <path>: <why> line(s)")
+    if _ro.sweep_summary(body) is not None:
+        return _ro.SWEEP_RUNNER, None, None
     name, _joined, _words = summary_reader(body)
     if name == "jest":
         return name, [header.group(1)
@@ -916,11 +1061,15 @@ def failing_suites(text):
     (`_suite_candidates`): jest's `FAIL <path>` header (`_JEST_SUITE_HEADER`,
     `FAIL` only - a `PASS` header is not a failure), vitest's
     `FAIL <file> > ...` line, pytest's path before `::` on a `FAILED`/`ERROR`
-    line, and the file half of each test in playwright's `failed` block. Read off `summary_reader`'s own name, the
+    line, the file half of each test in playwright's `failed` block, and the
+    selftest sweep's `FAIL  <path>: <why>` lines (`_ro.sweep_failures`, asked
+    first). Read off `summary_reader`'s own name, the
     same runner identity `failing_lines` uses, so the two can never disagree
     about which runner this output is.
 
-    EVERY PATH IS ASKED TWO MORE QUESTIONS before it counts: `_is_suite_path`
+    EVERY PATH BUT THE SWEEP'S IS ASKED TWO MORE QUESTIONS before it counts
+    (each sweep FAIL line names a file the sweep ran as a suite, so all of
+    them are kept): `_is_suite_path`
     (a runner can print a source file it merely PROCESSED, and that is not a
     suite), and `_VENDOR_DIRS` (a dependency nobody's task declares is not
     evidence about anybody's work, and jest especially prints its whole
@@ -937,16 +1086,25 @@ def failing_suites(text):
     """
     body = text or ""
     name, raw, source = _suite_candidates(body)
+    if raw is None and name == _ro.SWEEP_RUNNER:
+        return None, ("the sweep's FAIL lines do not account for every file its "
+                      "summary line failed, so which files failed is not "
+                      "knowable from this output")
     if raw is None and name is not None:
         return None, ("%s's failure lines name no file, only the check that "
                       "failed" % (name,))
     if raw is None:
         return None, ("no runner this gate can count recognised, so no suite "
                       "file could be named")
+    # THE SWEEP'S FAIL LINE IS ITS VERDICT ON A FILE IT RAN AS A SUITE, so the
+    # question the two filters answer - did the runner merely print a file it
+    # processed - does not arise, and a red file under tools/ or hooks/ would
+    # vanish under a basis still saying "named as failing" if they were asked.
     kept = _distinct(
         p for p in raw
-        if _is_suite_path(p)
-        and not any(seg in _VENDOR_DIRS for seg in _segments(p)))
+        if name == _ro.SWEEP_RUNNER
+        or (_is_suite_path(p)
+            and not any(seg in _VENDOR_DIRS for seg in _segments(p))))
     if not kept:
         return None, "%s named no path this gate reads as a suite file" % (name,)
     if len(kept) > _ev.MAX_PATHS:
@@ -3976,6 +4134,8 @@ def _render_verdict(res, out):
     excused = res.get("notAttributable")
     if res["failed"] and not excused:
         out("GATE RED: %s" % ", ".join(res["failed"]))
+        for line in base_red_lines(res.get(_ev.BASE_RED_KEY)):
+            out(line)
         code = E_FAIL
     # THE NO-VERDICT WORDS HAD NO ARM HERE AT ALL, and that was worth finding
     # before the count vocabulary widened to add these two members: with
@@ -5319,6 +5479,15 @@ def main(argv, out=print):
     # compares so a `meta.buildCommands` edit after a green is a changed gate.
     if affected_info is not None:
         res["affected"] = affected_info
+    # A TASK RUN'S RED, READ AGAINST ITS BASE - measured runs only: a repeated
+    # verdict already carries the reading its source run made. Advisory, so a
+    # ledger that will not read is said in the basis rather than raised.
+    if args.task is not None and res.get("failed") \
+            and res.get(_ev.VERDICT_SOURCE) != _ev.REUSED:
+        found = base_reading(res, args.task,
+                             lambda: _ev.read_rows(project)["rows"])
+        if found is not None:
+            res[_ev.BASE_RED_KEY] = found
     res[_ev.GATE_DIGEST_KEY] = _ev.gate_digest(
         [name for name, _command in (declared_commands or [])],
         (manifest.get("meta") or {}).get("buildCommands"))
