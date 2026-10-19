@@ -9290,7 +9290,8 @@
       "P130.44-ywo",
       "P130.45-ywo",
       "P130.46-ywo",
-      "P130.47-ywo"
+      "P130.47-ywo",
+      "P130.48-ywo"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -9414,7 +9415,8 @@
       "P130.43-ywo",
       "P130.44-ywo",
       "P130.46-ywo",
-      "P130.47-ywo"
+      "P130.47-ywo",
+      "P130.48-ywo"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6",
