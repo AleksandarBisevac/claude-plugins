@@ -1280,7 +1280,8 @@
         "P130.42-ywo",
         "P130.44-ywo",
         "P130.45-ywo",
-        "P130.46-ywo"
+        "P130.46-ywo",
+        "P130.47-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -4764,6 +4765,55 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.47-ywo",
+      "title": "The drive hands machine-written text to a verb on stdin, so a verb's shell-damage check never judges text no shell touched",
+      "status": "pending",
+      "description": "F743. audit-task.py (around :1273) reads argv prose values for the marks a shell leaves (a run of spaces, whitespace before punctuation) and refuses them - right for a human-typed line, wrong for text a script built. The installed 3.4.0 drive deadlocked on this (a falsifier run's output passed as `note --text <argv>` was refused every call). HEAD has no falsifier stage, but drive-phase.py still passes machine text through argv: widen_task (around :1386) `note --text`, and any other `_verb_or_stop(..., '--text'|'--reason'|'--description', <built string>)` call - find them all (grep the drive and every script that shells out to audit-task.py). Fix: every such call passes the value as `-` and the text on stdin, through one helper in the drive (e.g. `_verb_with_text(ctx, verb_args, flag, text)`), so no call site can regress; add a lint case (in test_drive_phase.py, reading drive-phase.py's AST) that fails when a `_verb_or_stop` call carries a non-literal value after `--text`/`--reason`/`--description`. Acceptance: (1) a widen whose note text holds a run of spaces and a backtick succeeds and the note is written verbatim; (2) the lint case is red on a reintroduced argv call in a scratch copy; (3) full sweep green.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: a scope widening whose note text holds a run of spaces and a backtick is written verbatim, and no verb call in drive-phase.py passes a built string as an argv prose value"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.44-ywo",
+        "P130.46-ywo"
+      ],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,
