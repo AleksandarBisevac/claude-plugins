@@ -72,6 +72,15 @@ _SCRIPT = os.path.abspath(__file__)
 _STAGE_PREFIX = "audit-task-stages-"
 
 
+def _stderr_of(call, *args):
+    """(what `call(*args)` returned, what it wrote to stderr): `done` refuses on
+    stderr, which the suites' `run` helpers (they collect `out`) do not hand back."""
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        result = call(*args)
+    return result, err.getvalue()
+
+
 # --- cases --------------------------------------------------------------------
 # Letters taken in this file (NEW file -- fresh letter space): a (add + phase
 # resolution), i (reserved/parked ids), t (template fields), s (skills
@@ -6628,6 +6637,15 @@ def _close_cases(check):
         # subjects - rebuilt afterwards out of `git log`. `start` gave the
         # promotion a verb (the `pr` group above) and left the close a hand edit,
         # which is the half that still has to be true a month later.
+        def pe_run(argv):
+            """(code, stdout, stderr) of one in-process call: `done`'s
+            refusals are on stderr, which `run` does not hand back."""
+            lines = []
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                code = M.main(argv, out=lines.append)
+            return code, "\n".join(lines), err.getvalue()
+
         projpd, mppd = mk("dn-close", pd_fixture())
         codepd, txtpd = run(["done", "P2.4", "--project-dir", projpd,
                              "--commit", _PD_SHA,
@@ -6666,7 +6684,7 @@ def _close_cases(check):
         projns, mpns = mk("dn-nosha", pd_fixture())
         with open(mpns, "rb") as _fh:
             _pd_ns_before = _fh.read()
-        _pd_nosha = run(["done", "P2.4", "--project-dir", projns])
+        _pd_nosha = pe_run(["done", "P2.4", "--project-dir", projns])
         _pd_head = run(["done", "P2.4", "--project-dir", projns,
                         "--commit", "HEAD"])
         _pd_branch = run(["done", "P2.4", "--project-dir", projns,
@@ -6676,8 +6694,9 @@ def _close_cases(check):
         check("pd3 a close with NO --commit is refused, and the manifest is byte "
               "identical: a done task carrying no SHA is the state /audit:doctor "
               "already reports, and `done` is terminal here so nothing in this "
-              "file could correct it afterwards: %r" % (_pd_nosha[1][:120],),
-              _pd_nosha[0] == 2 and "needs --commit" in _pd_nosha[1]
+              "file could correct it afterwards: %r" % (_pd_nosha[2][:120],),
+              _pd_nosha[0] == 2 and _pd_nosha[2].startswith("REFUSED")
+              and "needs --commit" in _pd_nosha[2]
               and _pd_ns_after == _pd_ns_before)
         check("pd4 ...and a NAME is refused before git is asked at all. `HEAD` "
               "and a branch both RESOLVE, so a check that only asked git would "
@@ -6974,6 +6993,57 @@ def _close_cases(check):
               and "already invalid -- nothing written" in txtbd2
               and "rolled back" not in txtbd2
               and open(mpbd2, "rb").read() == _pd_bd_before)
+
+        # ---- (pe) `done`'s refusals land on STDERR, REFUSED-first -------------
+        # A flag left without its value used to die inside argparse (a usage
+        # block, no REFUSED line), and a value that was the manifest's own path
+        # was written as the outcome with the positional swallowed.
+        proje, mpe = mk("dn-technical", pd_fixture())
+        with open(mpe, "rb") as _fh:
+            _pe_before = _fh.read()
+        _pe_trail = pe_run(["done", "P2.4", "--project-dir", proje,
+                            "--commit", _PD_SHA, "--technical"])
+        _pe_flag = pe_run(["done", "P2.4", "--project-dir", proje,
+                           "--commit", _PD_SHA, "--technical", "--descriptive",
+                           "x"])
+        with open(mpe, "rb") as _fh:
+            _pe_after = _fh.read()
+        check("pd14 done with a valueless --technical exits non-zero with a "
+              "REFUSED line on stderr and writes nothing: %r"
+              % ((_pe_trail[0], _pe_trail[2][:120], _pe_flag[0],
+                  _pe_flag[2][:120]),),
+              _pe_trail[0] == 2 and _pe_flag[0] == 2
+              and _pe_trail[2].startswith("REFUSED")
+              and _pe_flag[2].startswith("REFUSED")
+              and "--technical" in _pe_trail[2].splitlines()[0]
+              and "--technical" in _pe_flag[2].splitlines()[0]
+              and "usage:" not in _pe_trail[2] and "usage:" not in _pe_flag[2]
+              and _pe_after == _pe_before)
+
+        _pe_mp = pe_run(["done", "P2.4", "--project-dir", proje,
+                         "--commit", _PD_SHA, "--technical", mpe]
+                        + _NOT_ASKED)
+        _pe_rel = pe_run(["done", "P2.4", "--project-dir", proje,
+                          "--commit", _PD_SHA, "--technical",
+                          os.path.relpath(mpe, proje)] + _NOT_ASKED)
+        with open(mpe, "rb") as _fh:
+            _pe_after2 = _fh.read()
+        # The positional spelling: the manifest named AFTER the id, with the
+        # flag carrying text, still closes and still writes that text.
+        _pe_pos = pe_run(["done", "P2.4", mpe, "--project-dir", proje,
+                          "--commit", _PD_SHA, "--technical",
+                          "one module rewritten"] + _NOT_ASKED)
+        check("pd15 done whose --technical value is the manifest path is "
+              "refused and the positional is kept: %r"
+              % ((_pe_mp[0], _pe_mp[2][:140], _pe_rel[0], _pe_pos[0]),),
+              _pe_mp[0] == 2 and _pe_rel[0] == 2
+              and _pe_mp[2].startswith("REFUSED")
+              and "--technical" in _pe_mp[2].splitlines()[0]
+              and _pe_rel[2].startswith("REFUSED")
+              and _pe_after2 == _pe_before
+              and _pe_pos[0] == 0
+              and (task_in(mpe, "P2.4").get("outcome") or {}).get("technical")
+              == "one module rewritten")
 
         # ---- (rd) a close does not stand over a verdict that no longer holds ----
         # THE PROBE SEQUENCE: a gate run recorded red for the task, then `done`.
@@ -9615,19 +9685,23 @@ def _record_cases(check):
         projia2, mpia2 = mk("ia-no-basis", pd_fixture())
         with open(mpia2, "rb") as _fh:
             _ia_before = _fh.read()
-        _ia_nob = run(["done", "P2.4", "--commit", _PD_SHA, "--intent", "not-asked",
-                       "--project-dir", projia2])
-        _ia_orphan = run(["done", "P2.4", "--commit", _PD_SHA,
-                          "--intent-basis", "a reason with no answer",
-                          "--project-dir", projia2])
+        _ia_nob, _ia_nob_err = _stderr_of(run, [
+            "done", "P2.4", "--commit", _PD_SHA, "--intent", "not-asked",
+            "--project-dir", projia2])
+        _ia_orphan, _ia_orphan_err = _stderr_of(run, [
+            "done", "P2.4", "--commit", _PD_SHA,
+            "--intent-basis", "a reason with no answer",
+            "--project-dir", projia2])
         with open(mpia2, "rb") as _fh:
             _ia_after = _fh.read()
         check("ia2 `not-asked` with no basis is refused, and so is a basis with no "
               "answer beside it - a skip nobody can explain reads exactly like a "
               "reviewer call that never came back; nothing written: %r"
-              % ((_ia_nob[0], _ia_orphan[0], _ia_nob[1][:100]),),
-              _ia_nob[0] == 2 and "--intent-basis" in _ia_nob[1]
-              and _ia_orphan[0] == 2 and "--intent" in _ia_orphan[1]
+              % ((_ia_nob[0], _ia_orphan[0], _ia_nob_err[:100]),),
+              _ia_nob[0] == 2 and _ia_nob_err.startswith("REFUSED")
+              and "--intent-basis" in _ia_nob_err
+              and _ia_orphan[0] == 2 and _ia_orphan_err.startswith("REFUSED")
+              and "--intent" in _ia_orphan_err
               and _ia_after == _ia_before)
         # THE READER. Nothing read `intentCheck` at all, so an absent answer was
         # invisible everywhere a phase is judged. Sign-off is where the answer is
@@ -9716,20 +9790,25 @@ def _record_cases(check):
         projnc2, mpnc2 = mk("nc-refusals", pd_fixture())
         with open(mpnc2, "rb") as _fh:
             _nc_before = _fh.read()
-        _nc_noreason = run(["done", "P2.4", "--no-change", "--project-dir", projnc2])
-        _nc_both = run(["done", "P2.4", "--no-change", "--reason", "r",
-                        "--commit", _PD_SHA, "--project-dir", projnc2])
-        _nc_stray = run(["done", "P2.4", "--commit", _PD_SHA, "--reason", "r",
-                         "--project-dir", projnc2])
+        _nc_noreason, _nc_noreason_err = _stderr_of(run, [
+            "done", "P2.4", "--no-change", "--project-dir", projnc2])
+        _nc_both, _nc_both_err = _stderr_of(run, [
+            "done", "P2.4", "--no-change", "--reason", "r",
+            "--commit", _PD_SHA, "--project-dir", projnc2])
+        _nc_stray, _nc_stray_err = _stderr_of(run, [
+            "done", "P2.4", "--commit", _PD_SHA, "--reason", "r",
+            "--project-dir", projnc2])
         with open(mpnc2, "rb") as _fh:
             _nc_after = _fh.read()
         check("nc2 `--no-change` with no reason, `--no-change` beside a commit, and a "
               "`--reason` on a close that is not a no-change close are each refused, "
               "and nothing is written: %r"
               % ((_nc_noreason[0], _nc_both[0], _nc_stray[0]),),
-              _nc_noreason[0] == 2 and "--reason" in _nc_noreason[1]
-              and _nc_both[0] == 2 and "--no-change" in _nc_both[1]
-              and _nc_stray[0] == 2 and "--no-change" in _nc_stray[1]
+              _nc_noreason[0] == 2 and "--reason" in _nc_noreason_err
+              and _nc_both[0] == 2 and "--no-change" in _nc_both_err
+              and _nc_stray[0] == 2 and "--no-change" in _nc_stray_err
+              and all(e.startswith("REFUSED") for e in
+                      (_nc_noreason_err, _nc_both_err, _nc_stray_err))
               and _nc_after == _nc_before)
         projnc3, mpnc3 = mk("nc-nogit", pd_fixture())
         code, txt = run(["done", "P2.4", "--no-change", "--reason", "nothing to do",
@@ -13520,11 +13599,13 @@ def _return_cases(check):
     file_return(proj, "executor", _fr_executor())
     file_return(proj, "reviewer", _fr_reviewer())
     before = read(mpath)
-    r14 = close(proj, "--from-return", "--descriptive", "typed instead")
+    r14, r14_err = _stderr_of(close, proj, "--from-return", "--descriptive",
+                              "typed instead")
     check("fc9 `--from-return` beside a typed --descriptive is refused, "
           "nothing written - one close takes its account from one place: %r"
-          % ((r14[0], r14[1][:120]),),
-          r14[0] == M.E_USAGE and "--from-return" in r14[1]
+          % ((r14[0], r14_err[:120]),),
+          r14[0] == M.E_USAGE and r14_err.startswith("REFUSED")
+          and "--from-return" in r14_err
           and read(mpath) == before)
 
     # ---- (fm) a close writes no machine path into the shard ----------------

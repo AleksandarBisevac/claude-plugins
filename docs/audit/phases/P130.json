@@ -2117,7 +2117,21 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test_audit_task.py: done with a valueless --technical exits non-zero with a REFUSED line on stderr and writes nothing; done whose --technical value is the manifest path is refused and the positional is kept": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_audit_task.py",
+              "--selftest",
+              "--stage",
+              "at5-block"
+            ],
+            "file": "plugins/audit/scripts/manifest/audit-task.py",
+            "find": "if verb == \"done\" and _bare_technical(argv):",
+            "replace": "if False and verb == \"done\" and _bare_technical(argv):"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -2141,9 +2155,9 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-19T06:22:09Z.d0447e",
-        "status": "failed",
-        "at": "2026-10-19T06:22:09Z"
+        "runId": "2026-10-19T06:54:59Z.cdf598",
+        "status": "passed",
+        "at": "2026-10-19T06:54:59Z"
       }
     },
     {

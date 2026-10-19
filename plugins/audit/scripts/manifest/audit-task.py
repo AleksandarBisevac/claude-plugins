@@ -9908,18 +9908,70 @@ def _start_flags_refusal(args):
     return None
 
 
+def _refuse_on_stderr(args, out, text):
+    """Say a refusal the way a caller reading the exit code and stderr finds it:
+    `REFUSED: <reason>` on stderr.
+
+    UNDER `--json` IT STAYS ON `out`, because `main` buffers that stream and turns
+    a refusal printed there into the one `{ok: false, refused}` object a JSON
+    caller parses; a line on stderr would reach that caller as an empty `refused`.
+    """
+    if getattr(args, "as_json", False):
+        out(text)
+        return
+    body = text[len("[audit-task] "):] if text.startswith("[audit-task] ") else text
+    if not body.startswith("REFUSED"):
+        body = "REFUSED: " + body
+    sys.stderr.write(body + "\n")
+
+
+def _technical_is_manifest(args):
+    """Is the `--technical` value a file the verb would read as the manifest?
+
+    `done <id> --technical docs/audit/audit-plan.json` is the shape of a caller
+    who meant the path as the positional manifest and let the flag take it:
+    argparse hands the path to the flag, the positional stays empty, and the path
+    is recorded as the close's account. An existing `.json` path with no
+    whitespace in it is not an account of anything, so it is refused by name; text
+    that merely mentions one stays legal.
+    """
+    value = (args.technical or "").strip()
+    if not value or value == "-" or re.search(r"\s", value):
+        return False
+    if args.manifest and os.path.abspath(args.manifest) == os.path.abspath(value):
+        return True
+    if not value.lower().endswith(".json"):
+        return False
+    roots = [os.getcwd()] + ([args.project_dir] if args.project_dir else [])
+    return any(os.path.isfile(os.path.join(root, value)) for root in roots)
+
+
+def _bare_technical(argv):
+    """Does `--technical` end the call, or sit directly before another flag?
+
+    Argparse refuses that with its usage block, which names no flag-level reason
+    and carries no REFUSED line, so the door asks first. A lone `-` is a value
+    (stdin), and only a `--long` flag counts as the next flag.
+    """
+    for i, arg in enumerate(argv):
+        if arg == "--technical" and (i + 1 == len(argv)
+                                     or argv[i + 1].startswith("--")):
+            return True
+    return False
+
+
 def cmd_done(args, out):
     project = _resolve_project(args)
     if not os.path.isdir(project):
-        out("[audit-task] not a directory: %s" % project)
+        _refuse_on_stderr(args, out, "[audit-task] not a directory: %s" % project)
         return E_USAGE
     tid = (args.title or "").strip()          # positional: the id to close
     if not tid:
-        out("[audit-task] done needs a task id")
+        _refuse_on_stderr(args, out, "[audit-task] done needs a task id")
         return E_USAGE
     refusal = _done_flags_refusal(args)
     if refusal:
-        out(refusal)
+        _refuse_on_stderr(args, out, refusal)
         return E_USAGE
     return _under_lock(args, project, out,
                        lambda config, mpath: _locked_done(
@@ -14506,6 +14558,14 @@ def main(argv, out=print):
     # The parser has no REMAINDER, no subparsers and no positional inside a
     # mutually exclusive group, which is all this call rules out. `supplied_flags`
     # makes the same call, so the flag census reads the same parse.
+    if verb == "done" and _bare_technical(argv):
+        text = ("REFUSED: --technical needs a value -- the account of what was "
+                "done, or `-` to read it from stdin; nothing written")
+        if "--json" in argv:
+            out(json_refusal(E_USAGE, [text]))
+        else:
+            sys.stderr.write(text + "\n")
+        return E_USAGE
     try:
         args = p.parse_intermixed_args(argv)
     except SystemExit as exc:
@@ -14563,6 +14623,16 @@ def _dispatch(args, argv, out):
         # manifest - moved BEFORE the prose checks, which would otherwise grade
         # a manifest path as a title and refuse it as a machine path.
         _manifest_from_positional(args)
+    if args.command == "done" and _technical_is_manifest(args):
+        # BEFORE THE PROSE CHECKS: an absolute manifest path would otherwise be
+        # refused there as a machine path, which says nothing of the swallowed
+        # positional.
+        _refuse_on_stderr(args, out, "[audit-task] REFUSED: --technical took %s, "
+                          "which is a manifest path and not an account of the "
+                          "close -- name the manifest as the positional (after "
+                          "the task id) and give --technical its text; nothing "
+                          "written" % (args.technical,))
+        return E_USAGE
     stop = resolve_briefs(args, out)
     if stop is None:
         stop = resolve_verbatim_values(args, out)
