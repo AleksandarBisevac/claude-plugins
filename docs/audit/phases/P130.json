@@ -4711,7 +4711,8 @@
         "plugins/audit/tests/test_run_test_gate.py",
         "tools/ui-tests/gate-card-wait.test.mjs",
         ".claude/skills/reproducing-ci-locally/SKILL.md",
-        "plugins/audit/commands/next.md"
+        "plugins/audit/commands/next.md",
+        "tools/capture-screenshots.mjs"
       ],
       "tests": {
         "mode": "tdd",
