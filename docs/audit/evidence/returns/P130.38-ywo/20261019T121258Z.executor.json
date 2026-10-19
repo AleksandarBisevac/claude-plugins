@@ -1,0 +1,48 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_drive_phase.py --selftest": "pass (380/380 in the task tree)",
+    "python3 plugins/audit/tests/test__runner_collects.py --selftest": "pass (107/107)",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass (286/286 after the fixture-literal fix; 285/286 before, c5)",
+    "python3 plugins/audit/tests/test__gate_derive.py --selftest": "pass (52/52)",
+    "python3 plugins/audit/tests/test__deps.py --selftest": "pass (244/244)",
+    "python3 plugins/audit/tests/test__output.py --selftest": "pass (259/259)"
+  },
+  "redFirst": {
+    "at": "2026-10-19T12:42:22Z",
+    "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD: the run timed out after 39 s and its process group was torn down; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Applied the saved patch P130.24-ywo.patch in the task tree with git apply -3 (clean on all five files; git diff --stat shows _gate_derive.py, _runner_collects.py, drive-phase.py, test__runner_collects.py, test_drive_phase.py, 245 insertions / 8 deletions; I ran git restore --staged . afterwards to leave the index as it was). Option taken: scope_gap asks each runner only about paths of its language via _runner_collects.runners_taking (LANGUAGE_RUNNERS: .py -> sweep, pytest; js/mjs/cjs/jsx/ts/mts/cts/tsx -> vitest, jest), and the sweep (entry_collector in _gate_derive recognises tools/sweep-selftests.py) is asked via a new _sweep_reading that reads SWEEP_DIRS from the project's sweep script; it is NOT the 'count any collecting runner' alternative. A path no runner of the gate can take (e.g. python under a vitest-only gate, .mjs under a sweep-only gate) returns a scope-gap decision saying so, with config None (no widen file), so nothing is silently passed. Also did the owed fixture-literal fix: in test__runner_collects.py and test_drive_phase.py the fixture sweep root and paths now read backend/tests/test_x.py and backend/tests/test_mine.py (unanchored), so test__refs c5 is green. Runs from the task tree one at a time, all exit 0: test_drive_phase 380/380, test__runner_collects 107/107, test__refs 286/286, plus test__gate_derive, test__deps, test__output green.",
+    "descriptive": "The task-start preflight no longer stops a task whose Python suite the project's sweep runs just because vitest is also in the gate, and still reports a path no runner of the gate can take."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_drive_phase.py: scope_gap on a task whose tests.add is a plugins/audit/tests/test_*.py path and whose gate holds selftests and vitest returns no decision; a .mjs path vitest does not collect still returns the scope-gap decision naming vitest.config.mjs; a Python path under a gate with neither the sweep nor pytest is still reported -- case ids: _scope_language_cases (stage pg-block), six checks each titled with that clause plus a parenthesised detail",
+    "plugins/audit/tests/test__runner_collects.py: the language split the preflight uses sends a .py path to the sweep or pytest and a .js/.mjs/.ts path to vitest or jest, and names no runner for a path none of the gate's runners can take -- case ids: _language, checks each titled with that clause plus a parenthesised detail"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_drive_phase.py: scope_gap on a task whose tests.add is a plugins/audit/tests/test_*.py path and whose gate holds selftests and vitest returns no decision; a .mjs path vitest does not collect still returns the scope-gap decision naming vitest.config.mjs; a Python path under a gate with neither the sweep nor pytest is still reported": {
+      "file": "plugins/audit/scripts/governance/drive-phase.py",
+      "find": "takers = _runner_collects.runners_taking(path, runners)",
+      "replace": "takers = list(runners)",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_drive_phase.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test__runner_collects.py: the language split the preflight uses sends a .py path to the sweep or pytest and a .js/.mjs/.ts path to vitest or jest, and names no runner for a path none of the gate's runners can take": {
+      "file": "plugins/audit/scripts/governance/_runner_collects.py",
+      "find": "return [r for r in runners if r in takers]",
+      "replace": "return list(runners)",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__runner_collects.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n1 _runner_collects.py runners_taking (LANGUAGE_RUNNERS) is the language split; drive-phase.py scope_gap calls it before collects(); _gate_derive.entry_collector maps the sweep entry\n2 implementation reverted to HEAD in scratch copy -> test_drive_phase 376/380 (4 new cases red), test__runner_collects AttributeError; falsifiers (takers = list(runners); return list(runners)) -> 377/380 and 98/107 red; allow cases (.mjs under vitest, python under pytest) are in the suite\n3 n/a \u2014 not a fix of a reported defect beyond the described F731; the fixture-literal class (anchored plugins/audit/tests paths in fixtures) grepped in both test files: 7 hits, all replaced with backend/tests\n4 n/a \u2014 no rule to an agent\n5 n/a \u2014 no property recorded\n6 n/a \u2014 no guard reading a command\n7 n/a \u2014 no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:2b4af88aa8fdd8ff93916c6c126bb56b2c3d0cd190f27fa4fe2dc3441fb53cbe\",\"dirtyDigest\":\"sha256:746b492680961e607ffb98230c2169703850f271e7b01410959dcf848b770752\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_gate_derive.py\":\"29e9768e46f7341c\",\"plugins/audit/scripts/governance/_runner_collects.py\":\"87fde896ca0cebe5\",\"plugins/audit/scripts/governance/drive-phase.py\":\"d417208e90b69f6d\",\"plugins/audit/tests/test__runner_collects.py\":\"8a9c22494c6f6c0c\",\"plugins/audit/tests/test_drive_phase.py\":\"77c68c0ee2dd9a9f\"},\"head\":\"ca7b79f6\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_gate_derive.py\",\"plugins/audit/scripts/governance/_runner_collects.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/tests/test__runner_collects.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:df368022d1fed459c1f009f5c694498e363dde0c0c15ee99078692b7b97ccccf\",\"v\":2}"
+}

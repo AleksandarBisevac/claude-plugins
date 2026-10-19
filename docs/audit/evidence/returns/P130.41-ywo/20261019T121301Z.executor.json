@@ -1,0 +1,26 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_audit_task.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__manifest_phases.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__manifest_rules.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task (expectRedFirst false): the work is a saved patch ported with a 3-way apply; the cases lock behaviour the patch carries, no red was owed",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Ported P130.18-ywo.patch (base b6252aae) into the task tree with git apply -3. Clean: _manifest_phases.py, test__manifest_phases.py, test_audit_task.py. Two conflicts, both resolved keeping both sides: (1) audit-task.py main(): kept the later `done`/_technical_is_manifest refusal block AND the patch's `_manifest_beside_gate_set(args)` call after it; (2) test__manifest_rules.py: kept the later _cases_directory_entries and _cases_derived_gate_entries calls AND the patch's _cases_gate_entry_shape call plus its _GX_* fixtures and gx1/gx2 cases. No conflict markers remain. git diff HEAD --stat shows five files, 456 insertions, 3 deletions (_manifest_phases.py, audit-task.py, test__manifest_phases.py, test__manifest_rules.py, test_audit_task.py). gate_entry_shape_problem is defined at _manifest_phases.py:1172, used by audit-task.py:1452 and by _manifest_phases.py:1641 (the validate warning). The patch carries no change to scripts/manifest/_manifest_rules.py; the existing-plan warning is raised from _manifest_phases through the rules path, and gx1 in test__manifest_rules.py passes against it. Fixture literals in test_audit_task.py are unanchored (backend/tests/test_a.py ...). Selftests run one at a time from the task tree, all exit 0: test__manifest_phases 127/127, test__manifest_rules 175/175, test__refs 286/286, test_audit_task 1089/1089. The files are left staged/unstaged as git apply -3 left them; nothing committed.",
+    "descriptive": "P130.18-ywo's gate-entry shape check (predicate, write-verb refusals, --gate-set manifest-last fix, validator warning) is now in the branch tree with its cases, merged over P130.20/.28/.31."
+  },
+  "testsAdded": [
+    "gx1 (plugins/audit/tests/test__manifest_phases.py) the gate-entry shape predicate reports an entry whose first path word is a suite file followed by another suite path, and an entry naming one path twice, and reports nothing for a buildCommands key, a spelled sweep entry or a single-suite entry",
+    "gx1 (plugins/audit/tests/test_audit_task.py) add, add --from-file, scope --gate and scope --gate-set refuse a malformed gate entry and write nothing; an add --from-file batch of several Python suites per task gets one spelled entry per task; scope --gate-set with the manifest positional last writes the same gate as with it first, and a manifest path as a gate entry is refused",
+    "gx1 (plugins/audit/tests/test__manifest_rules.py) a plan already holding a malformed gate entry draws a warning naming the task and the entry, and no error",
+    "gx2 (test__manifest_phases.py, supporting: reason names the paths)",
+    "gx2 (test__manifest_rules.py, supporting ALLOW case: spelled entry and finished task draw no warning)"
+  ],
+  "claims": "claims:\n1 _manifest_phases.py:1172 gate_entry_shape_problem is the predicate; audit-task.py:1452 and _manifest_phases.py:1641 call it; selftests above pass\n2 n/a \u2014 regression port of a saved patch; no mutation run in this task, the patch's cases were green after the merge (test_audit_task 1089/1089, phases 127/127, rules 175/175)\n3 n/a \u2014 not a fix of a reported defect by me; both conflicts resolved keeping both sides, no markers left (grep for conflict markers over both files: 0 hits)\n4 n/a \u2014 no rule to an agent\n5 n/a \u2014 no property recorded\n6 n/a \u2014 no guard written here\n7 n/a \u2014 no number written in prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:23e682fd5972d5e2544e4eea3202b7228396724073e499a901f9694f93b580ff\",\"dirtyDigest\":\"sha256:ee0eb4c9971ced3a749279d3a0c29be7ea202ecd49c37a4911b734afb6bb3a45\",\"dirtyPaths\":{\"plugins/audit/scripts/manifest/audit-task.py\":\"aaec998fa64dea77\",\"plugins/audit/tests/test__manifest_rules.py\":\"0fc7937317d50cf4\"},\"head\":\"ca7b79f6\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/_manifest_phases.py\",\"plugins/audit/scripts/manifest/_manifest_rules.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test__manifest_phases.py\",\"plugins/audit/tests/test__manifest_rules.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:7df5250e6d6bde4a68e9e5e63d419fe45cb49729787d05f40ae77eba7e56e734\",\"v\":2}"
+}

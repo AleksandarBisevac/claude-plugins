@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": ".claude/skills/reproducing-ci-locally/SKILL.md:28-30",
+   "issue": "The added paragraph says the `sed -n '/jobs:/,$p'` / `grep run:` read 'yields only `sh tools/verify.sh --only <slices>` calls' and that 'every CI job is setup plus one such call'. The read also yields non-verify.sh run steps: .github/workflows/ci.yml:115 (the `verified` job's ci-verified.py call, a gh/python step with no verify.sh) and the pip install / setup run steps at :226, :246, :271, :293. The sentence is a claim about the workflow that the workflow does not bear out literally.",
+   "resolution": "Reword to 'the gate itself is in `sh tools/verify.sh --only <slices>` calls; the other run steps are setup and the verified-run guard', keeping the pointer to `sh tools/verify.sh --list`."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause (1): ci.yml:40-43 and CHANGELOG now say a running main run is never cancelled and a queued one is replaced; the return names the option taken (reword). Matches the concurrency block (cancel-in-progress false on main). Clause (2): gate-parity.py _if_tier reduces the `if:` to whole `&&` terms; only !cancelled(), needs.verified.outputs.run=='' and, for release, inputs.tier=='release' are accepted, any other term yields an 'unproved' tier and a problems row naming the job saying its condition cannot be proved to run on every run. A job with no verify.sh call (the push-only `verified` guard) hits `continue` before the check and stays outside. All real ci.yml conditions (lines 101, 145-306) are of these shapes. Clause (3): ci-verified.py VOUCHING_EVENTS/_can_vouch accepts only workflow_dispatch and push; decide() appends a why naming the event; ask_github skips the jobs fetch for a non-vouching run (cv18 asserts the jobs path of the pull_request run is not asked and the push run's is). Clause (4): grep -n 'ci.yml' on both files returns nothing; the slices named, `e2e` (verify.sh:418, its 'the TDD nudge, through the launcher' step at :534) and `manifests` (:591, scale_demo_valid at :726), exist in verify.sh. Clause (5): SKILL.md names `sh tools/verify.sh --list`. The executor's claim (7 files, option reword, cv18/sv12) describes the diff; only the SKILL.md sentence overstates the workflow slightly (finding 1).",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "The filed redFirst status is could-not-prove: the throwaway-tree run of `ci-verified.py --selftest && gate-parity.py --selftest` at HEAD exited 1 with 'SELFTEST FAILED: 12/13 cases passed' and a TypeError '_run() got an unexpected keyword argument event' - the fixture helper's new keyword, not an assertion of cv18 or sv12 - so no task case was seen failing an assertion, and the missing-symbol names (_if_tier, VOUCHING_EVENTS ...) were not the error printed. That holds. The executor's falsifiers (disable the event test -> 17/18 red; disable `if other` in _if_tier -> 69/70 red) are in the return but are mutation claims I did not re-run; they do not upgrade the word.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "The task's tests.gate selects `python3 tools/sweep-selftests.py`, the whole project, among other whole-project gates (validate, plugin-validate, status --gate, report render, ruff/vermin, shots, interactive), so no gate entry resolves to a bounded test set the question can be asked of."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

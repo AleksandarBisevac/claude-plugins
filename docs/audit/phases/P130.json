@@ -1229,7 +1229,8 @@
         "P130.40-ywo",
         "P130.41-ywo",
         "P130.42-ywo",
-        "P130.43-ywo"
+        "P130.43-ywo",
+        "P130.44-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -3275,7 +3276,7 @@
     {
       "id": "P130.32-ywo",
       "title": "Every poll-dependent wait in capture-screenshots.mjs is proven to route through waitForPoll or sleepPollWindow",
-      "status": "in_progress",
+      "status": "done",
       "description": "F736 item 2 (P130.17-ywo review low). gate-card-wait.test.mjs:58-62 pins the wait function and greps the old 6500 literal only. Add a structural check over tools/capture-screenshots.mjs: every waitForFunction/waitForTimeout/setTimeout call site touching the poll is a call of waitForPoll/sleepPollWindow, or sits on an explicit allow-list carrying a reason per entry. Prove it red by adding a hand-written wait with another number in a scratch copy (not in the tree).",
       "files": [
         "tools/ui-tests/gate-card-wait.test.mjs",
@@ -3325,14 +3326,16 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ca7b79f60686",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/ui-tests/gate-card-wait.test.mjs gains a structural scan (comment/string-blanking tokenizer, bracket matcher, helper-body exclusion for waitForPoll/sleepPollWindow). A wait primitive (waitForFunction/waitForTimeout/setTimeout) is poll-dependent when its call text names RUNSTATUS/pollRunStatus or carries a number >= the poll interval read from the assembled panel (pollIntervalOf). Each such site outside the two helpers must match an entry of the new export POLL_WAIT_ALLOWED in tools/capture-screenshots.mjs (find snippet, expected site count, reason); stale, mis-counted and reasonless entries fail. The case also writes hand-written waits with another number (waitForTimeout, waitForFunction timeout, setTimeout, and a sub-interval wait naming RUNSTATUS) into scratch copies under a tmp dir (not the tree) and requires each refused, requires a 250 ms settle wait not refused, and checks both helpers still have call sites. 8 allow-list entries cover 12 real sites, each with a reason. No wait call in capture-screenshots.mjs changed. test__refs --selftest 286/286 pass; vitest file 2/2 pass.",
+        "descriptive": "A new hand-written poll-dependent wait in capture-screenshots.mjs now fails a unit test unless it goes through waitForPoll/sleepPollWindow or is allow-listed with a reason."
       },
       "startedAt": "2026-10-19T11:43:37Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T12:12:54Z",
+      "verifiedBy": [
+        "tools/ui-tests/gate-card-wait.test.mjs: a hand-written poll-dependent wait with another number in a scratch copy of capture-screenshots.mjs is refused, and every real call site is a helper call or an allow-listed entry with a reason"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T11:59:42Z.191e3b",
@@ -3348,7 +3351,19 @@
           "at": "2026-10-19T12:11:16Z",
           "text": "falsifier could-not-run for `tools/ui-tests/gate-card-wait.test.mjs: a hand-written poll-dependent wait with another number in a scratch copy of capture-screenshots.mjs is refused, and every real call site is a helper call or an allow-listed entry with a reason` accepted at the close: The falsifier could not run because its throwaway copy has no node_modules (ERR_MODULE_NOT_FOUND: vitest), not because the work is missing: the task's change is in its worktree (tools/capture-screenshots.mjs, tools/ui-tests/gate-card-wait.test.mjs modified) and the gate measured there green. The stage is retired at HEAD by P130.6-ywo. (mutation at tools/capture-screenshots.mjs:4956; the command exited 1 on the unmutated copy, so a red under the mutant would prove nothing - vitest.config.mjs (1:471) \u001b[33m[UNRESOLVED_IMPORT] \u001b[0mCould not resolve 'vitest/config' in vitest.c [... 1020 chars elided; failure lines among them: ⎯⎯⎯⎯⎯⎯⎯ Startup Error ⎯⎯⎯⎯⎯⎯⎯⎯ | Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'vitest' imported from /private/var/folders/rb/... ...] nal/modules/esm/loader:701:17)\n    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)\n    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33) {\n  code: 'ERR_MODULE_NOT_FOUND'\n})"
         }
-      ]
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ca7b79f60686",
+        "at": "2026-10-19T12:12:54Z",
+        "return": "docs/audit/evidence/returns/P130.32-ywo/20261019T114337Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-19T11:47:06Z",
+        "basis": "`npx vitest run tools/ui-tests/gate-card-wait.test.mjs` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion; failing without an assertion: a hand-written poll-dependent wait with another number in a scratch copy of capture-screenshots.mjs is refused, and every real call site is a helper call or an allow-listed entry with a reason (TypeError: Cannot read properties of undefined (reading 'some')): Tests  1 failed | 1 passed (2); no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'POLL_WAIT_ALLOWED': TypeError: Cannot read properties of undefined (reading 'some'); run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
+      }
     },
     {
       "id": "P130.33-ywo",
@@ -3607,7 +3622,7 @@
     {
       "id": "P130.37-ywo",
       "title": "The CI description says what main-run concurrency does, and the slice check and the CI verifier read every shape of the field they judge",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fault F730 (the P130.2 review, filed at docs/audit/evidence/returns/P130.2/20261017T230831Z.reviewer.json). Five defects in or beside P130.2's work. (1) .github/workflows/ci.yml:39-44 says a run on main 'is the record of what landed and is never cancelled'; `cancel-in-progress: false` protects only a RUNNING run, and GitHub still replaces a PENDING run when a newer one queues in the group `ci-refs/heads/main`. CHANGELOG.md:27 ('everywhere but `main`') carries the same implication. Fix: reword both to say a running main run is never cancelled and a queued one can be replaced - or key the concurrency group on the SHA on main so main runs never share a group, which makes the sentence true as written; the return names which was taken. (2) tools/gate-parity.py:1579: `slice_drift` classifies a job as release-tier only when its `if:` matches `_RELEASE_TIER_IF` and every other job as per-run, so a job with `if: ${{ false }}` or a push-only condition still counts as running its slices on every run, and `slice_drift` and `shard_matrix_drift` (:1609-1642) return []. Fix: a job `if:` counts as per-run only when it reduces to the verified-run guard the workflow puts on its jobs, optionally with the release-tier term; any other condition is a `problems` row naming the job and saying its condition cannot be proved to run on every run. A job that runs no `tools/verify.sh --only` call, such as the push-only `verified` guard job (ci.yml:97-99), carries no slice and stays outside this judgement. (3) tools/ci-verified.py:128-141: `decide()` matches a listed run on head_sha, path, status and jobs, never on its `event`, and `ask_github` (:153-170) does not keep it; a pull_request run's head_sha is the PR head while its checkout is the merge commit, so a PR run can vouch for a main SHA reached by fast-forward. Fix: accept only `workflow_dispatch` and `push` runs, append a `why` line naming the refused run's event, and fetch the jobs only of runs that can be accepted; the docstring's 'exactly this commit' then holds for every run it accepts. (4) Stale mentions: tools/check-git-pipeline.py:11,29,38,226 and plugins/audit/tests/test_gen_demo_manifest.py:729,800 say ci.yml carries the launcher steps and the scale-demo step; P130.2 moved them into tools/verify.sh's e2e and manifests slices. Fix: name the verify.sh slice that runs each (read it off `sh tools/verify.sh --list`, never retype it from memory). (5) Pre-existing: .claude/skills/reproducing-ci-locally/SKILL.md:20-23 derives the local commands from `sed -n '/jobs:/,$p' .github/workflows/ci.yml`, which for this repo yields only `sh tools/verify.sh --only ...` calls; add a pointer to `sh tools/verify.sh --list` as the way to see the gate in this repo. Acceptance: (1) the ci.yml comment and the CHANGELOG line state only what the concurrency block does, for a running and for a queued main run; (2) gate-parity's new sv cases with `if: ${{ false }}` and with a push-only condition on a per-run job each report that job, and sv0 (the allow case) stays green; (3) ci-verified's new cv case with a green pull_request run on the asking SHA, same workflow path, all jobs success, refuses and its `why` names the event, and cv1 (a green workflow_dispatch run) still verifies; (4) `grep -n 'ci.yml' tools/check-git-pipeline.py plugins/audit/tests/test_gen_demo_manifest.py` finds no sentence claiming ci.yml runs a step verify.sh now runs; (5) the skill names `sh tools/verify.sh --list`; (6) each new case is red with its fix reverted (the return shows the red run). REPLACES P130.22-ywo, cancelled because its gate could not go green while test_drive_phase case sc4 was red at the base (F733); its finished work is saved as a patch: <outside-repo> (git apply --check passed on the phase head). Apply it, verify every suite the task names, prove the tests.add cases red by reverting the implementation half in a scratch copy, then submit. Do not redo the work.",
       "files": [
         ".github/workflows/ci.yml",
@@ -3635,7 +3650,29 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "tools/ci-verified.py: (inline --selftest, `_cases`) a green pull_request run on the asking SHA and workflow path, every job success, refuses and names its event in why; a green workflow_dispatch run and a green push run on the same SHA still verify": {
+            "command": [
+              "python3",
+              "tools/ci-verified.py",
+              "--selftest"
+            ],
+            "file": "tools/ci-verified.py",
+            "find": "return run.get(\"event\") in VOUCHING_EVENTS",
+            "replace": "return True"
+          },
+          "tools/gate-parity.py: (inline --selftest, the sv cases) a per-run job carrying `if: ${{ false }}` and one carrying a push-only condition are each reported by slice_drift naming the job, while the verified-run guard alone and with the release-tier term report nothing": {
+            "command": [
+              "python3",
+              "tools/gate-parity.py",
+              "--selftest"
+            ],
+            "file": "tools/gate-parity.py",
+            "find": "    if other:\n        return None, (",
+            "replace": "    if False:\n        return None, ("
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -3649,21 +3686,27 @@
         "P130.2",
         "P130.26-ywo"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T12:12:56Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T12:57:41Z.15767d",
+        "status": "passed",
+        "at": "2026-10-19T12:57:41Z"
+      }
     },
     {
       "id": "P130.38-ywo",
       "title": "The task-start scope preflight asks a runner only about the paths it can collect, and a Python suite counts as collected by the sweep",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fault F731. scope_gap (plugins/audit/scripts/governance/drive-phase.py:1073-1115) keeps, from a task's gate entries, only those whose entry_runner is in _gate_derive.UNIT_RUNNERS, then declares a scope-gap when none of those runners collects a tests.add path. The Python suites here are collected by tools/sweep-selftests.py behind the `selftests` entry, whose entry_runner is None, so it is never asked; with `vitest` also in the gate, every Python test path draws NOT_COLLECTED from vitest and a scope-gap decision whose only remedies are widen (adds vitest.config.mjs, which the task never edits) or block. Seen on P130.4 (test__config.py) and P130.7 (test__deps.py). Fix: read how _gate_derive already splits paths by language (_runners_for, _gate_derive.py:312) and have scope_gap ask a runner only about paths that runner can take, treating plugins/audit/tests/*.py (and the project's own Python suite location) as collected by the sweep when the gate holds `selftests`; the alternative of counting any collecting runner is acceptable only if it reuses that same split, and the return names which was taken. A path no runner of the gate can take at all must still be reported rather than silently passed. Acceptance: (1) a Python tests.add path under a gate holding `selftests` and `vitest` draws no scope-gap decision and no could-not-tell line; (2) a .mjs/.js tests.add path vitest does not collect still draws the scope-gap decision with its widen remedy; (3) a Python path under a gate holding neither the sweep nor pytest is still reported; (4) each new case is red with the fix reverted (the return shows the red run). REPLACES P130.24-ywo, cancelled because its gate could not go green while test_drive_phase case sc4 was red at the base (F733); its finished work is saved as a patch: <outside-repo> (git apply --check passed on the phase head). Apply it, verify every suite the task names, prove the tests.add cases red by reverting the implementation half in a scratch copy, then submit. Do not redo the work. Also owed: test__refs c5 reads fixture literals as references to missing scripts (plugins/audit/tests/test__runner_collects.py ~:366-368 and test_drive_phase.py ~:6768-6787); spell them unanchored (e.g. backend/tests/...).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -3689,7 +3732,29 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test__runner_collects.py: the language split the preflight uses sends a .py path to the sweep or pytest and a .js/.mjs/.ts path to vitest or jest, and names no runner for a path none of the gate's runners can take": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__runner_collects.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/governance/_runner_collects.py",
+            "find": "return [r for r in runners if r in takers]",
+            "replace": "return list(runners)"
+          },
+          "plugins/audit/tests/test_drive_phase.py: scope_gap on a task whose tests.add is a plugins/audit/tests/test_*.py path and whose gate holds selftests and vitest returns no decision; a .mjs path vitest does not collect still returns the scope-gap decision naming vitest.config.mjs; a Python path under a gate with neither the sweep nor pytest is still reported": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_drive_phase.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/governance/drive-phase.py",
+            "find": "takers = _runner_collects.runners_taking(path, runners)",
+            "replace": "takers = list(runners)"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -3703,16 +3768,22 @@
         "P130.14-ywo",
         "P130.26-ywo"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T12:12:58Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T13:16:45Z.24042b",
+        "status": "passed",
+        "at": "2026-10-19T13:16:45Z"
+      }
     },
     {
       "id": "P130.39-ywo",
@@ -3862,7 +3933,7 @@
     {
       "id": "P130.41-ywo",
       "title": "P130.18-ywo's gate-entry shape check is in the branch: its work, recorded done, was never committed",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P130.18-ywo is recorded done at 45eb29ca, but that commit carries only plan and evidence files: after the task was restarted with start, the work already in its tree was snapshotted as pre-existing, so the close committed nothing of it. The work is saved as a patch: <outside-repo> (base b6252aae; it conflicts with later commits P130.20-ywo, P130.31-ywo and P130.28-ywo in audit-task.py, test__manifest_rules.py and test_audit_task.py - port it with a 3-way apply against that base, keeping every later change). The task is P130.18-ywo's own description, which follows: Faults F720 and F721. (a) `add --from-file` minted tasks of this phase with gate entries such as `python3 plugins/audit/tests/test__config.py plugins/audit/tests/test_commit_task_work.py`, which run the first suite with the second as its argument, and one entry naming the same suite twice. Read at HEAD, that derivation came from the installed 3.4.0 copy, whose `_task_gate_setup` read a sibling's shape before the recorded spelling; HEAD resolves through `_gate_derive.resolve_shape` (plugins/audit/scripts/manifest/audit-task.py:2698, spelling first) and, for the same tasks, gives `python3 tools/sweep-selftests.py <suites>`. What HEAD still lacks is the other half the fault asks: nothing checks a gate entry's shape where it is written, so a hand-written or sibling-derived entry of that shape is accepted by `add`, `add --from-file`, `scope --gate` and `scope --gate-set`, and the validator says nothing. Fix: one predicate, in the lowest module both audit-task.py and the validator reach (`_manifest_phases.py`, beside `gate_entry_paths` and `is_suite_path`; layer_violations() decides), reports an entry that is not a `meta.buildCommands` key whose first path-shaped word is itself a suite file and that names a further suite path, and an entry naming one path twice. The write verbs refuse such an entry, naming it and naming `meta.phaseGate.derived.spelling` when the plan records one; `_manifest_rules.py` reports it on an existing plan as a WARNING, never an error, because COMPATIBILITY.md promises validation stays additive. (b) `scope <id> --gate-set a b c docs/audit/audit-plan.json` writes the manifest path as a fourth gate entry, because `--gate-set` is declared with `nargs='*'` (audit-task.py:13854) and swallows the positional after it; passing the manifest first works. Fix: when the manifest positional is absent and the last `--gate-set` value names an existing file the manifest loader reads as a plan, that value is the manifest, not a gate entry - `retarget` shares the flag and the fix; and a gate entry naming an existing JSON manifest file is refused at write time in any position. The parser's comment beside `--gate-set` says both. Acceptance: (1) an `add --from-file` batch whose tasks each name several Python suites in tests.add and no gate, on a plan that records the spelling and holds siblings with `python3 tools/sweep-selftests.py ...` entries, gives each task one spelled entry naming all its suites; (2) `add`, `add --from-file`, `scope --gate` and `scope --gate-set` refuse `python3 a/test_x.py a/test_y.py` and an entry naming one suite twice, writing nothing; (3) validate-manifest reports such an entry already in a plan as a warning and exits as it did before; (4) `scope <id> --gate-set a b <manifest>` and `scope <manifest> <id> --gate-set a b` write the same gate, `[a, b]`; (5) a gate entry that is a manifest path is refused in either order.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -3904,16 +3975,22 @@
         "P130.31-ywo",
         "P130.28-ywo"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T12:13:01Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T13:40:06Z.276641",
+        "status": "passed",
+        "at": "2026-10-19T13:40:06Z"
+      }
     },
     {
       "id": "P130.42-ywo",
@@ -4011,6 +4088,57 @@
       "blockedBy": [],
       "dependsOn": [
         "P130.35-ywo"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.44-ywo",
+      "title": "The scope-gap preflight never stops on a suite the gate runs, nor on a gate entry it cannot read",
+      "status": "pending",
+      "description": "Review of P130.38-ywo (docs/audit/evidence/returns/P130.38-ywo/20261019T121258Z.reviewer.json, read it). (1) med: `_runner_collects._sweep_reading` (plugins/audit/scripts/governance/_runner_collects.py around :130-141) answers NOT_COLLECTED for a .py path lacking a SWEEP_DIRS prefix, so a bare basename the sweep runs (test_audit_task.py) draws a false scope-gap; resolve a bare basename against the sweep roots (exists under one of them -> collected). (2) med: the 'no runner takes this path' stop in drive-phase.py `scope_gap` (around :1089-1102) treats the runners entry_collector knows (vitest, jest, pytest, sweep) as the gate's whole set; a gate with an entry it cannot classify (`node --test x.test.mjs`, `python3 -m unittest ...`) stops loudly although that entry may run the suite - when any gate entry is unclassified, the answer for a path no KNOWN runner takes is COULD_NOT_TELL (one printed line, the start goes on), never the scope-gap stop. (3) low: `_sweep_roots` (around :121-127) joins every quoted string on a line with '/', so a compact tuple or a trailing comment yields a wrong root silently; read SWEEP_DIRS with ast (literal_eval of the assigned tuple), refusing loudly when it is not a literal. Acceptance: (1) a bare basename under a sweep root draws no scope-gap; (2) a gate with an unclassified entry plus a path no known runner takes prints could-not-tell and starts; (3) a compact multi-root tuple and a commented one both read right; (4) the four stops P130.38 added for real misroutes still fire; (5) full sweep green.",
+      "files": [
+        "plugins/audit/scripts/governance/_runner_collects.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test__runner_collects.py",
+        "plugins/audit/tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__runner_collects.py: a bare basename present under a sweep root is collected by the sweep, and a compact or commented SWEEP_DIRS tuple reads its roots right",
+          "plugins/audit/tests/test_drive_phase.py: a gate holding an entry no known runner classifies answers could-not-tell for a path no known runner takes, and the task starts"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.38-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,

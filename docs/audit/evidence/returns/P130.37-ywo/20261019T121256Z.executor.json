@@ -1,0 +1,50 @@
+{
+  "gates": {
+    "python3 tools/ci-verified.py --selftest": "pass (18/18)",
+    "python3 tools/gate-parity.py --selftest": "pass (70/70)",
+    "python3 tools/gate-parity.py": "pass (exit 0)",
+    "python3 tools/check-git-pipeline.py --selftest": "pass (21/21)",
+    "python3 plugins/audit/tests/test_gen_demo_manifest.py --selftest": "pass (131/131)",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass (286/286)",
+    "ruff check tools plugins/audit/tests/test_gen_demo_manifest.py": "pass",
+    "vermin -t=3.8- (ci-verified.py, gate-parity.py)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T12:17:29Z",
+    "basis": "`sh -c python3 tools/ci-verified.py --selftest && python3 tools/gate-parity.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 12/13 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_GUARD_TERMS': TypeError: _run() got an unexpected keyword argument 'event'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_RELEASE_TERM': TypeError: _run() got an unexpected keyword argument 'event'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_if_tier': TypeError: _run() got an unexpected keyword argument 'event'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'VOUCHING_EVENTS': TypeError: _run() got an unexpected keyword argument 'event'; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_can_vouch': TypeError: _run() got an unexpected keyword argument 'event'; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Applied the P130.22-ywo patch (7 files). (1) ci.yml comment and CHANGELOG reworded (option taken: reword, not SHA-keyed group): a running main run is never cancelled, a queued one is replaced when a newer push queues behind it. (2) gate-parity _if_tier: a job if: is per-run only when it reduces to the guard terms (!cancelled(), needs.verified.outputs.run=='') optionally with inputs.tier=='release'; anything else is a problems row naming the job; guard-only jobs without a verify.sh call stay outside. New case sv12 (false, push-only, guard alone, guard+release term). (3) ci-verified: VOUCHING_EVENTS = workflow_dispatch/push; decide() refuses other events with a why naming the event; ask_github fetches jobs only for acceptable runs. New case cv18; cv1 style dispatch acceptance still green. (4) check-git-pipeline.py and test_gen_demo_manifest.py now name verify.sh's e2e and manifests slices; grep for ci.yml in both files returns nothing. (5) reproducing-ci-locally SKILL.md names sh tools/verify.sh --list. All named suites pass from the task tree; real gate-parity.py run exits 0.",
+    "descriptive": "CI concurrency wording is true, the slice check cannot be fooled by a never-true or push-only job condition, and ci-verified no longer lets a pull_request run vouch for a SHA."
+  },
+  "testsAdded": [
+    "tools/ci-verified.py: cv18 a green pull_request run on the asking SHA and workflow path, every job success, refuses and names its event in why; a green workflow_dispatch run and a green push run on the same SHA still verify",
+    "tools/gate-parity.py: sv12 a per-run job carrying `if: ${{ false }}` and one carrying a push-only condition are each reported by slice_drift naming the job, while the verified-run guard alone and with the release-tier term report nothing"
+  ],
+  "falsifiers": {
+    "tools/ci-verified.py: (inline --selftest, `_cases`) a green pull_request run on the asking SHA and workflow path, every job success, refuses and names its event in why; a green workflow_dispatch run and a green push run on the same SHA still verify": {
+      "file": "tools/ci-verified.py",
+      "find": "return run.get(\"event\") in VOUCHING_EVENTS",
+      "replace": "return True",
+      "command": [
+        "python3",
+        "tools/ci-verified.py",
+        "--selftest"
+      ]
+    },
+    "tools/gate-parity.py: (inline --selftest, the sv cases) a per-run job carrying `if: ${{ false }}` and one carrying a push-only condition are each reported by slice_drift naming the job, while the verified-run guard alone and with the release-tier term report nothing": {
+      "file": "tools/gate-parity.py",
+      "find": "    if other:\n        return None, (",
+      "replace": "    if False:\n        return None, (",
+      "command": [
+        "python3",
+        "tools/gate-parity.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n1 ci.yml concurrency comment (lines ~40-43) and CHANGELOG line say only what cancel-in-progress does for running vs queued main runs; ci-verified.py _can_vouch/decide implement the event sentence; gate-parity.py _if_tier implements the if: sentence\n2 cv18: _can_vouch->True gives 17/18 red; sv12: _if_tier 'if other' disabled gives 69/70 red; over-fire direction covered inside sv12 (guard alone and guard+release term must report nothing), restored/never applied in the task tree (scratch export only)\n3 n/a - patch of a prior executor's finished work, not a new class sweep; grep -n 'ci.yml' tools/check-git-pipeline.py plugins/audit/tests/test_gen_demo_manifest.py returns no sentence claiming ci.yml runs a step verify.sh now runs\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 _if_tier reads the reduced boolean terms of the condition, not its spelling; allow cases (guard alone, guard+release) proven quiet in sv12\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:fe0cd3f5efc60c5d92ab4abb4ffc782e4644a003cc29ffa32c32b6176ebba38c\",\"dirtyDigest\":\"sha256:5894ce127330c8c43776fddcd57d5548ee7039fa928f768965e48b3fd257f70c\",\"dirtyPaths\":{},\"head\":\"ca7b79f6\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".claude/skills/reproducing-ci-locally/SKILL.md\",\".github/workflows/ci.yml\",\"CHANGELOG.md\",\"plugins/audit/tests/test_gen_demo_manifest.py\",\"tools/check-git-pipeline.py\",\"tools/ci-verified.py\",\"tools/gate-parity.py\"],\"scopeDigest\":\"sha256:6ecf72ff25dbbc18affcfbe3198006cba3693267bf979710dc65d432f4ae89aa\",\"v\":2}"
+}
