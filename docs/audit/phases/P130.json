@@ -4892,7 +4892,7 @@
     {
       "id": "P130.47-ywo",
       "title": "The drive hands machine-written text to a verb on stdin, so a verb's shell-damage check never judges text no shell touched",
-      "status": "in_progress",
+      "status": "done",
       "description": "F743. audit-task.py (around :1273) reads argv prose values for the marks a shell leaves (a run of spaces, whitespace before punctuation) and refuses them - right for a human-typed line, wrong for text a script built. The installed 3.4.0 drive deadlocked on this (a falsifier run's output passed as `note --text <argv>` was refused every call). HEAD has no falsifier stage, but drive-phase.py still passes machine text through argv: widen_task (around :1386) `note --text`, and any other `_verb_or_stop(..., '--text'|'--reason'|'--description', <built string>)` call - find them all (grep the drive and every script that shells out to audit-task.py). Fix: every such call passes the value as `-` and the text on stdin, through one helper in the drive (e.g. `_verb_with_text(ctx, verb_args, flag, text)`), so no call site can regress; add a lint case (in test_drive_phase.py, reading drive-phase.py's AST) that fails when a `_verb_or_stop` call carries a non-literal value after `--text`/`--reason`/`--description`. Acceptance: (1) a widen whose note text holds a run of spaces and a backtick succeeds and the note is written verbatim; (2) the lint case is red on a reintroduced argv call in a scratch copy; (3) full sweep green.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -4929,25 +4929,42 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fdd0e5cdea3d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added _verb_with_text(ctx, script, args, flag, text) to plugins/audit/scripts/governance/drive-phase.py: sends `flag -` and the text on stdin (a blank text goes on argv as-is, since a verb refuses an empty stdin). Routed every built-string prose value through it: widen_task `note --text` (the F743 call; scope and note are now two separate calls), the CI-red bug-add `--description`, apply_answer `block --reason` and `done --no-change --reason`, close_task `done --intent-basis`, and the sign-off `--summary`. Left on argv on purpose: `--review-outcome` (a hex head prefix, and stdin carries one flag per call, signoff already uses it for --summary), `--accept-open ID=text` (not a PROSE_FLAGS flag, no shell-gap check), `bug-add` positional title (a positional cannot be `-`; it is a fixed template over branch/sha/run id). Tests in plugins/audit/tests/test_drive_phase.py: new stage `mt-block` (_machine_text_cases) with argv_prose_violations(source), an AST lint over List/Tuple/Call-positional neighbours (exempting calls to the helper), cases mt1 (widen_task with a basis holding two spaces and backticks writes the note verbatim; refused with exit 2 at HEAD, the F743 failure), mt2 (shipped driver has no violations and >=5 helper calls), mt3 (scratch copy with a reintroduced argv call in list, tuple and `+=` forms is reported once each), mt4 (allow direction: literal value, helper call and non-prose flag not reported). Red at HEAD: mt1, mt2, mt3 FAIL (2/5 passed) with the test file in place and drive-phase.py unmodified; green after: 5/5 in the mt-block stage, 396/396 for the whole file. OUTSIDE THE TASK'S FILES, NOT EDITED: plugins/audit/scripts/governance/full-gate.py:397-400 passes a built string (_described(...)) as `bug-add --description` in argv through _run_verb (:454, list-form subprocess with no stdin, so no shell touches it but the verb's shell-gap check still reads it); it needs the same stdin route. plugins/audit/scripts/governance/run-test-gate.py:4795 only prints an audit-task.py command for a human to run, not a call. No other script under plugins/audit/scripts shells out to audit-task.py with a prose flag (grep of audit-task.py / bug-add / note / block call forms). No falsifier supplied: the falsifier stage is retired at HEAD. The lint is also not exempt-able by name: the helper's flag and text are separate parameters, so its own call sites read as separate neighbours only when passed positionally and are spared by callee name.",
+        "descriptive": "The drive now sends every text it builds to a verb on stdin through one helper, and a lint fails if an argv call carrying a built string after a prose flag comes back."
       },
       "startedAt": "2026-10-19T21:39:52Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T22:04:55Z",
+      "verifiedBy": [
+        "mt1 a scope widening whose note text holds a run of spaces and a backtick is written verbatim, and no verb call in drive-phase.py passes a built string as an argv prose value",
+        "mt2",
+        "mt3",
+        "mt4"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T22:02:25Z.6f2bd5",
         "status": "passed",
         "at": "2026-10-19T22:02:25Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "fdd0e5cdea3d",
+        "at": "2026-10-19T22:04:55Z",
+        "return": "docs/audit/evidence/returns/P130.47-ywo/20261019T213952Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-19T21:51:02Z",
+        "basis": "`python3 plugins/audit/tests/test_drive_phase.py --selftest --stage mt-block` in a throwaway tree at HEAD exited 1 with 3 of 5 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `mt-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - mt1 (house FAIL), mt2 (house FAIL), mt3 (house FAIL): SELFTEST FAILED: 2/5 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P130.48-ywo",
       "title": "Only a gate entry that can run tests makes the scope-gap preflight answer could-not-tell",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Review of P130.44-ywo (docs/audit/evidence/returns/P130.44-ywo/20261019T191422Z.reviewer.json). In drive-phase.py scope_gap (around :1152-1173) every gate entry `_gate_derive.entry_collector` cannot classify counts as 'unclassified', and any unclassified entry turns 'no known runner takes this path' into could-not-tell; this repo's buildCommands (validate, plugin-validate, gate, report, lint, shots, interactive) are all unclassified, so the misroute stop can never fire here. Fix: an unclassified entry counts only when it can run tests - it names a suite path (`_manifest_phases.is_suite_path` over its words) or a known test-runner token (`-m unittest`, `-m pytest`, `node --test`, mocha, tap, ava, jasmine, karma; one module-level table) - so lint/validate/report entries are ignored. Acceptance: (1) a gate of the sweep plus lint/validate entries keeps the stop for a path no known runner takes (case for the realistic shape); (2) a gate holding `node --test x.test.mjs` or `python3 -m unittest ...` still answers could-not-tell; (3) the P130.44 cases uc1-uc4 stay green; (4) full sweep green.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -4981,22 +4998,23 @@
       "dependsOn": [
         "P130.44-ywo"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T22:04:56Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.49-ywo",
       "title": "A bound case id is graded only against the suite that holds it, and the commit refusals of P130.46 name the right verb and fail loudly",
       "status": "pending",
-      "description": "F745. (a) `_filed_returns.case_binding_gaps` (plugins/audit/scripts/manifest/_filed_returns.py ~:460, message ~:483) checks every bound id against the labels printed by the one `--` command the submit ran, so ids bound to cases in other suites read 'which the suite did not print' although they exist and pass (P130.46-ywo: kr1, kr2 in test_drive_phase.py; lo-ce4, lo-ce5, nn3 in test_audit_task.py, while the command ran test_commit_task_work.py). Grade an id only against the suite its tests.add entry names; an entry whose suite the submit did not run is 'not checked' with that reason, never 'not printed'. (b1) commit-task-work.py ~:923 -> `_scoped_commit` advice ~:1162-1173 names `--no-change` and 'bring it into <tree> first'; when the attempt's work is already in an earlier commit since start, name `audit-task.py done <id> --commit <sha>` instead. (b2) audit-task.py `_attempt_commits` returns None when `git log` fails (~:6136-6139) and the caller (~:6309) refuses only on `[]`, so a failed git log falls through to the narrower question - refuse loudly naming the git failure (guard path, fail-loud). (b3) drive-phase.py `kept_tree_stop` (~:2773) gets a direct case; kr1 must not accept a None sha. (c) plugins/audit/scripts/governance/full-gate.py (~:397-400, via _run_verb ~:454) passes a built string (`_described(...)`) as `bug-add --description` on argv, which audit-task.py's shell-damage check judges - send it on stdin the way drive-phase.py `_verb_with_text` (P130.47-ywo) does. Acceptance: (1) a submit whose command ran suite A, binding ids in suites A and B, grades A's ids and reports B's as not checked; (2) the earlier-commit case names done --commit; (3) a failing git log refuses; (4) kept_tree_stop has a case; (5) full sweep green.",
+      "description": "F745. (a) `_filed_returns.case_binding_gaps` (plugins/audit/scripts/manifest/_filed_returns.py ~:460, message ~:483) checks every bound id against the labels printed by the one `--` command the submit ran, so ids bound to cases in other suites read 'which the suite did not print' although they exist and pass (P130.46-ywo: kr1, kr2 in test_drive_phase.py; lo-ce4, lo-ce5, nn3 in test_audit_task.py, while the command ran test_commit_task_work.py). Grade an id only against the suite its tests.add entry names; an entry whose suite the submit did not run is 'not checked' with that reason, never 'not printed'. (b1) commit-task-work.py ~:923 -> `_scoped_commit` advice ~:1162-1173 names `--no-change` and 'bring it into <tree> first'; when the attempt's work is already in an earlier commit since start, name `audit-task.py done <id> --commit <sha>` instead. (b2) audit-task.py `_attempt_commits` returns None when `git log` fails (~:6136-6139) and the caller (~:6309) refuses only on `[]`, so a failed git log falls through to the narrower question - refuse loudly naming the git failure (guard path, fail-loud). (b3) drive-phase.py `kept_tree_stop` (~:2773) gets a direct case; kr1 must not accept a None sha. (c) plugins/audit/scripts/governance/full-gate.py (~:397-400, via _run_verb ~:454) passes a built string (`_described(...)`) as `bug-add --description` on argv, which audit-task.py's shell-damage check judges - send it on stdin the way drive-phase.py `_verb_with_text` (P130.47-ywo) does. (d) From the P130.47-ywo review (docs/audit/evidence/returns/P130.47-ywo/20261019T213952Z.reviewer.json): MED - the lint `argv_prose_violations` in plugins/audit/tests/test_drive_phase.py (~:7322-7329) carries a hand-typed copy of audit-task.py PROSE_FLAGS (~:1000) that already omits --rename, --no-evidence-reason, --issue, --resolution, --repro, --expected, --actual, --override-verdict - read the set from audit-task.py itself; LOW - the lint misses two-call appends, joined `--text=` forms and a flag held in a name, and the helper exemption spares any Call nested inside a _verb_with_text argument - read the flag/value pairing over the whole argv expression; LOW - `_verb_with_text`'s docstring says a blank text on argv has nothing for a check to read, but a whitespace-only text is refused on argv too - send whitespace-only text on stdin as well, or refuse it in the helper with a sentence. Acceptance: (1) a submit whose command ran suite A, binding ids in suites A and B, grades A's ids and reports B's as not checked; (2) the earlier-commit case names done --commit; (3) a failing git log refuses; (4) kept_tree_stop has a case; (5) full sweep green.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
         "plugins/audit/tests/test__filed_returns.py",
