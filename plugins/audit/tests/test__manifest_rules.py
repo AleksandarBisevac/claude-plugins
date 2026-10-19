@@ -57,6 +57,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import datetime
 import json
+import re
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -1138,6 +1139,16 @@ def _cases_falsifier(record):
                               "FALSIFIER_FIELDS") if hasattr(M, name)]
     record("fz3 the rules module holds none of the falsifier readings (%r still "
            "defined)" % (gone,), gone == [])
+    props = schema.get("$defs", {}).get("falsifier", {}).get("properties", {})
+    descs = dict((k, v.get("description", "")) for k, v in props.items())
+    lacking = sorted(k for k, d in descs.items()
+                     if not re.search(r"\bretired\b", d, re.I))
+    naming = sorted(k for k, d in descs.items() if "FALSIFIER_TIMEOUT" in d)
+    record("fz4 every property description under the schema's $defs/falsifier "
+           "says retired and none names FALSIFIER_TIMEOUT (properties %s; "
+           "without the word: %r; naming the constant: %r)"
+           % (sorted(descs), lacking, naming),
+           descs != {} and lacking == [] and naming == [])
 
 
 def _cases_schema_input(record):

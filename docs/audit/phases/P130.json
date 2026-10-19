@@ -2095,7 +2095,7 @@
     {
       "id": "P130.20-ywo",
       "title": "done refuses a missing or swallowed --technical value with a REFUSED line on stderr and a non-zero exit",
-      "status": "in_progress",
+      "status": "done",
       "description": "F724. audit-task.py done: a trailing `--technical` with no value exits 2 with an argparse usage error and no REFUSED line; `--technical docs/audit/audit-plan.json` exits 0 and records the manifest path as outcome.technical, swallowing the positional (same class as the --gate-set positional swallow); done's own refusals go to stdout without a REFUSED: prefix. Fix: a value for --technical that is the manifest path (or any existing .json path the verb would read as its manifest) is refused naming the flag; a flag given without a value is refused with `REFUSED: --technical needs a value` on stderr, exit 2; done's refusals print on stderr with the REFUSED: prefix the other verbs use. Acceptance: (1) `done <id> --technical` exits non-zero, stderr starts with REFUSED and names --technical, nothing written; (2) `done <id> --technical <manifest>` is refused and the manifest stays the positional; (3) an existing done refusal case now finds REFUSED: on stderr; (4) an ordinary done with --technical \"text\" still writes it.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -2145,19 +2145,34 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "414a476165ec",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: main() refuses a `done` call whose --technical ends the argv or precedes another --flag with `REFUSED: --technical needs a value` on stderr, exit 2, before argparse's usage block; _dispatch refuses a done --technical value that is the manifest positional or an existing .json path (cwd- or project-relative) with a REFUSED line naming --technical on stderr, exit 2, nothing written, ahead of the prose/machine-path checks; cmd_done's own refusals (not a directory, needs a task id, every _done_flags_refusal) now go through _refuse_on_stderr as `REFUSED: ...` on stderr (kept on out under --json so the json_refusal object still carries the text). test_audit_task.py: new cases pd14 and pd15 in _close_cases (in-process, stderr captured with redirect_stderr); pd3 and the existing refusal cases ia2, nc2, fc9 now read REFUSED from stderr via a module-level _stderr_of helper. Full test_audit_task.py selftest 1084/1084; test__refs 286/286; test__output 259/259; test__deps 244/244; test__help 93/93; test_drive_phase 373/373 (sc4 passed here).",
+        "descriptive": "done now refuses a valueless or manifest-path --technical with a REFUSED line on stderr and writes nothing; all of done's own refusals use REFUSED on stderr."
       },
       "startedAt": "2026-10-19T05:59:11Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T06:55:16Z",
+      "verifiedBy": [
+        "pd14 done with a valueless --technical exits non-zero with a REFUSED line on stderr and writes nothing",
+        "pd15 done whose --technical value is the manifest path is refused and the positional is kept"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T06:54:59Z.cdf598",
         "status": "passed",
         "at": "2026-10-19T06:54:59Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "414a476165ec",
+        "at": "2026-10-19T06:55:16Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-19T06:11:06Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage at5-block` in a throwaway tree at HEAD exited 1 with 3 of 90 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pd3 (house FAIL), pd14 (house FAIL), pd15 (house FAIL): SELFTEST FAILED: 87/90 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2185,7 +2200,19 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test__manifest_rules.py: every property description under the schema's $defs/falsifier says retired and none names FALSIFIER_TIMEOUT": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__manifest_rules.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/schema/audit-plan.schema.json",
+            "find": "Retired and read by nothing: the file a mutation was once written against",
+            "replace": "The file a mutation edits"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -2208,9 +2235,9 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-19T06:32:52Z.62ebfa",
-        "status": "failed",
-        "at": "2026-10-19T06:32:52Z"
+        "runId": "2026-10-19T07:06:28Z.1aea22",
+        "status": "passed",
+        "at": "2026-10-19T07:06:28Z"
       }
     },
     {
