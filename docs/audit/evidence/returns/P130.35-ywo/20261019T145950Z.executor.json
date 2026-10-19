@@ -1,0 +1,49 @@
+{
+  "gates": {
+    "own-tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T15:21:47Z",
+    "basis": "`python3 -c import sys; sys.path.insert(0, 'plugins/audit/tests'); import _harness, test_run_test_gate as A, test__wave as B; raise SystemExit(_harness.run(lambda c: (_harness.stage(c, 'bz0', A._base_red_cases), _harness.stage(c, 'wb0', B._base_red_cases))))` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 0/2 cases passed; HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 0/1 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(a) run-test-gate.py: new section 'a red the base commit already carried' - base_red(steps, head, task_id, rows) reads each red step (_evidence_io._counts_as_failed) against the newest ledger run at the same testedState.head that is not the task's own (_evidence_io.base_run); suites both runners named are atBase, suites only the task run names (or a step green at base) are introduced, a step whose runner named no suite but is red at base too is 'unknown' (verdict not-knowable); no run at head -> verdict no-base with the basis 'no run of this gate is recorded at base <head>, so whether the base is red too is not known'. base_red_lines prints, under GATE RED (no new banner): '  red at base too: <suites> - run <id>', '  red the task introduced: <suites>', and for base-only '  verdict: red only where the base is red - this run is still red and binds as red; ...'. main computes it for task-scope measured red runs only and carries it on res; the run's status, failed list and exit code are unchanged. _evidence_io.py: BASE_RED_KEY 'baseRed' carried on the row (bounded, redacted), same_head(), base_run(rows, head, task_id=None, names=None). (b) _wave.py: fixes_red_at_base(task, red), base_red_first(tasks, red), select(tasks, width, red_at_base=None) orders a task whose tests.add path names a red-at-base suite first. drive-phase.py: red_at_base(ctx) = named failing suites of the newest run recorded at HEAD; next_task(manifest, phase, red_at_base=None) and wave_step use it; the gate-red decision's why gains base_red_why(): '; run <fixer> first; red at base too: <suites> - run <id>' or '; no base run recorded', clipped to BASE_CLAUSE_BYTES=100 to keep the decision inside the drive's printed bound (dd1). Docs (outside declared files, plan gate allowed each Edit): PLUGIN-BUILD-GUIDE.md next_task paragraph, reference/orchestrator.md waveWidth paragraph and dry-run bullet, reference/verbs-in-full.md dry-run sentence. Tests: test_run_test_gate.py bz1 (br-block), test__wave.py ws9 (wb stage), plus test_drive_phase.py bb1/bb2 (bb-block) for the drive wiring. Runs: own-tests command exit 0 (2/2); test_run_test_gate.py --selftest 549/549 exit 0; test__wave.py 15/15; test__evidence_io.py 308/308 exit 0; test_drive_phase.py stages bb, dd, dd3, sb all pass (full file run before the clip fix was 379/381 on dd1/dd3 - the line bound - fixed by the clip, those stages re-run green; the full file was not re-run whole); test__output.py 259/259; test__deps.py 244/244; test__refs.py 286/286 exit 0 (first run 285/286: c5 flagged fixture paths under plugins/audit/tests/ that do not exist - renamed to tests/test_s.py); ruff and vermin clean on the changed files; tools/measure-context.py --gate OK, orchestrator.md 61878/62000 (+120 bytes over HEAD 61758). Full sweep NOT run (runsGate own-tests). GAP for the real-world case: replayed over the real ledger, runs 05:41:28Z.21bec2 and 05:55:33Z.6c52c7 read as verdict not-knowable against base run 05:30:44Z.53629a / 05:41:28Z.21bec2, and 08:09:16Z.f47752 as no-base at d83608a5 - the house sweep's 'FAIL  <path>: exited 1' line is read by no runner reader (suiteReader none, no failingSuites), so a suite-level 'red at base too' needs a sweep reader in _runner_output.py (not in this task's files). Also left: orchestrator.md:26 and verbs-in-full.md:1589 still summarise the cadence as 'one at a time in id order'. _wave._added_suite parses the tests.add path itself because _manifest_phases.tests_add_path sits in the same layer (sideways import refused by the layer rule).",
+    "descriptive": "A task gate red only where its base run is red now says so and names the base run, a red the task introduced is charged to it, no base run is said rather than assumed, the red still refuses a commit, and the drive starts a task fixing a suite red at HEAD first."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_run_test_gate.py::bz1",
+    "plugins/audit/tests/test__wave.py::ws9",
+    "plugins/audit/tests/test_drive_phase.py::bb1",
+    "plugins/audit/tests/test_drive_phase.py::bb2"
+  ],
+  "casesAdded": [
+    "bz1",
+    "ws9"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_run_test_gate.py: a task run red only on a suite its base run is also red on names the base run and says red at base too, a suite red only in the task run is charged to the task, and with no base run the verdict says none was recorded": {
+      "file": "plugins/audit/scripts/governance/run-test-gate.py",
+      "find": "            [s for s in named if s not in at_base], [])",
+      "replace": "            [], [])",
+      "command": [
+        "python3",
+        "-c",
+        "import sys; sys.path.insert(0, 'plugins/audit/tests'); import _harness, test_run_test_gate as A; raise SystemExit(_harness.run(lambda c: _harness.stage(c, 'bz0', A._base_red_cases)))"
+      ]
+    },
+    "plugins/audit/tests/test__wave.py: a ready task whose tests.add names a suite red at base is selected first, and selection is unchanged when no suite is red at base": {
+      "file": "plugins/audit/scripts/governance/_wave.py",
+      "find": "    for task in base_red_first(list(tasks), red_at_base):",
+      "replace": "    for task in list(tasks):",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__wave.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n1 run-test-gate.py base_red/_charge_step/base_red_lines print 'red at base too' / 'red the task introduced' / 'no run of this gate is recorded at base'; GATE RED arm calls base_red_lines; main sets res[BASE_RED_KEY] only for task-scope measured reds and leaves status/exit unchanged; _wave.select calls base_red_first; drive-phase next_task/wave_step pass red_at_base(ctx); docs edited to say a fix for a suite red at HEAD goes first\n2 bz1 and ws9 seen failing before implementation (AttributeError base_red; TypeError red_at_base) then green; ws9 carries the over-fire twin (red suite no task names -> order unchanged); bz1 carries decoys (red run at another head, the task's own earlier attempt) the lookup must pass over; falsifiers declared for the drive to run - no in-tree mutation made\n3 grep 'in id order' over reference/, PLUGIN-BUILD-GUIDE.md: 6 hits - PLUGIN-BUILD-GUIDE.md:4350, orchestrator.md:278 and :784, verbs-in-full.md:1521 fixed; orchestrator.md:26 and verbs-in-full.md:1589 left (cadence summaries, still one at a time); a sweep-output suite reader left as a gap (not in files)\n4 n/a - no rule addressed to an agent added; commit refusal is _verdict_binding's ARM_RED, asserted in bz1\n5 n/a - no property recorded; measure-context figure measured once after the edit (61878/62000)\n6 n/a - no guard\n7 BASE_CLAUSE_BYTES=100 is a constant in code, not a prose count; no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:b34955cec8b5666c04f82735f19c35757052b29fdd810a9db89d948587cf59a0\",\"dirtyDigest\":\"sha256:4c364ace87a8ac7c0fa5921b2bceba72e28a020152743dca0400c9466715dcde\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"2c4ef62234e2112f\",\"plugins/audit/reference/orchestrator.md\":\"ae01b180e54bbaf8\",\"plugins/audit/reference/verbs-in-full.md\":\"a28bb1e0cf5921ac\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"12576f4886c9cdfe\",\"plugins/audit/scripts/governance/_wave.py\":\"593f7950811db502\",\"plugins/audit/scripts/governance/drive-phase.py\":\"fe8302c551c8439c\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"ad902efea3c09444\",\"plugins/audit/tests/test__wave.py\":\"c9ef98280db4586f\",\"plugins/audit/tests/test_drive_phase.py\":\"9ad040c9d426ee85\",\"plugins/audit/tests/test_run_test_gate.py\":\"f3250dc1e5b5aba6\"},\"head\":\"7826f59b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/_wave.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/tests/test__wave.py\",\"plugins/audit/tests/test_drive_phase.py\",\"plugins/audit/tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:c300753266ee23a24508f9a5e51901b3102676e3e51b87e49af4508e1416aa3e\",\"v\":2}"
+}

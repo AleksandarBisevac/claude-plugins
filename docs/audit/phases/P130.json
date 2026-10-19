@@ -3417,7 +3417,7 @@
     {
       "id": "P130.33-ywo",
       "title": "A declared test is bound to the case that carries it by id, and the brief asks for exactly that",
-      "status": "in_progress",
+      "status": "done",
       "description": "F737. `_filed_returns.tests_add_gaps` (plugins/audit/scripts/manifest/_filed_returns.py around :412) takes a tests.add clause as the text after the first ':' and `title_names_clause` (around :372) matches a filed title only as `<clause>` or `<one case-id token> <clause>` with an optional ` (detail)`. Three returns this phase drew false 'no filed counterpart' lines for three different reasons (a file-name token before the id; ids only; a clause opening with a parenthetical no title carries). The brief contradicts itself: agents/audit-executor.md (around :26) says title the case with the clause verbatim, its return shape (around :104) asks for a test name/id. The gap list is handed to the reviewer as a drive fact, so a false gap can become a false finding. Fix: bind structurally - the executor returns, per tests.add entry (by index), the case id it added; the drive checks that id against the labels the suite printed (case ids as `_harness.case_id` reads them); free-text matching goes. Make the brief and the return shape say one thing. Acceptance: (1) a return naming the right case id per entry draws no gap whatever the title wording; (2) a return naming an id the suite did not print draws a gap naming the entry and the id; (3) a return with no binding for an entry draws a gap; (4) the reviewer brief carries only real gaps; (5) audit-executor.md and execute-task.md state the one rule.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -3478,14 +3478,16 @@
       ],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7826f59be30b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Attempt 2. Attempt 1's changes were already in the task tree; applied quality-gates-internal/plans/2026-10-17-redesign-implementation/patches/P130.33-outofscope.patch with git apply -3 (exit 0, fell back to direct application), then git restore --staged; git diff --stat shows 13 files: attempt 1's ten plus audit-lookup.py, _runner_output.py (printed_labels) and stamp-verification.py (payload.printed). Suites run one at a time from the tree, each exit 0: test_drive_phase 381/381, test__filed_returns 107/107, test_audit_lookup 110/110, test_stamp_verification 300/300, test__runner_output 17/17, test__deps 244/244, test__output 259/259, test__refs 286/286; ruff check plugins/audit tools exit 0. Binding rule unchanged from attempt 1: casesAdded[i] (id or list of ids) binds tests.add[i], checked against the printed labels; missing binding or unprinted id draws a gap naming the entry and the id; titles are free. The reviewer brief (audit-lookup.py) now uses the same rule, so no AttributeError.",
+        "descriptive": "A tests.add entry is bound to the case id that carries it, checked against the suite's printed labels, end to end through the drive, stamp and reviewer brief."
       },
       "startedAt": "2026-10-19T14:29:02Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T14:59:49Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__filed_returns.py: a return binding each tests.add entry to a printed case id draws no gap regardless of the title wording, while an unprinted id or a missing binding draws a gap naming the entry"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T14:59:47Z.fe3f85",
@@ -3497,7 +3499,19 @@
           "at": "2026-10-19T14:48:58Z",
           "text": "files widened by plugins/audit/reference/phase-signoff.md: widened by the integration answer"
         }
-      ]
+      ],
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "7826f59be30b",
+        "at": "2026-10-19T14:59:49Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-19T14:36:55Z",
+        "basis": "`python3 plugins/audit/tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_filed_returns' has no attribute 'case_binding_gaps'\" (read as python), and the task introduces 'case_binding_gaps': absent from HEAD's plugins/audit/scripts/manifest/_filed_returns.py, plugins/audit/agents/audit-executor.md, plugins/audit/reference/execute-task.md, plugins/audit/scripts/governance/drive-phase.py, plugins/audit/scripts/status/audit-lookup.py, plugins/audit/scripts/governance/_runner_output.py, plugins/audit/scripts/governance/stamp-verification.py and present in the working tree's plugins/audit/scripts/manifest/_filed_returns.py, plugins/audit/agents/audit-executor.md, plugins/audit/scripts/governance/drive-phase.py, plugins/audit/scripts/status/audit-lookup.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
     },
     {
       "id": "P130.34-ywo",
@@ -3592,7 +3606,7 @@
     {
       "id": "P130.35-ywo",
       "title": "A task gate that is red only where its base is red says so, and a task that fixes a base red is selected first",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F739. When the base commit a task started from already fails a suite, every task gate in the phase is red on that suite although the tasks' own work is green; the drive cannot tell the two apart, and its wave selection (lowest ready ids first) does not run the task that fixes the base red first. Seen in this phase: one test case failing at the base made three consecutive task gates red. (a) In run-test-gate.py's verdict: when a failing suite is also failing in a recorded run of the same gate at the task's base commit (the evidence ledger, `_evidence_io`, holds rows keyed by tested head), the step reports it as `red at base too` with that run's id, and the task verdict distinguishes 'red only where the base is red' from 'red the task introduced'. It is still not green: commit-task-work still refuses it unless the owner overrides - the change is in what the verdict SAYS and in the drive's decision line, which names the base run and suggests running the fixing task first. No base run recorded: say that, never assume. (b) In the wave selector (find it: `_wave.select` / `_status_facts.ready_tasks`): a ready task whose description or bug link declares it fixes a suite that is red at base (simplest honest signal: its tests.add names that suite AND the base run records that suite failing) is ordered first. Acceptance: (1) fixture: base run red on suite S, task run red on S only -> verdict names the base run and 'red at base too'; (2) task run red on S and T, base red on S only -> T is charged to the task; (3) no base run -> the verdict says none was recorded; (4) commit-task-work still refuses all three; (5) wave selection puts the S-fixing task first when S is red at base, and is unchanged otherwise; (6) the full sweep is green.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -3601,7 +3615,12 @@
         "plugins/audit/scripts/governance/_wave.py",
         "plugins/audit/tests/test_run_test_gate.py",
         "plugins/audit/tests/test_drive_phase.py",
-        "plugins/audit/tests/test__wave.py"
+        "plugins/audit/tests/test__wave.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/scripts/governance/_runner_output.py",
+        "plugins/audit/tests/test__runner_output.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -3634,16 +3653,17 @@
         "P130.26-ywo",
         "P130.38-ywo"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T14:59:50Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.36-ywo",
