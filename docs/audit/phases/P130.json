@@ -1523,7 +1523,33 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test_audit_task.py: unblock of a task blocked with no attempts spent puts it back to pending with blockedReason removed, attempts, notes and movedFrom unchanged, and one task.unblock journal row carrying the reason; the same for a task blocked with attempts below the ceiling": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_audit_task.py",
+              "--selftest",
+              "--stage",
+              "ub-block"
+            ],
+            "file": "plugins/audit/scripts/manifest/audit-task.py",
+            "find": "    if status == \"blocked\":\n        return None\n    attempts = _mio.recorded_attempt(node) or 0",
+            "replace": "    attempts = _mio.recorded_attempt(node) or 0"
+          },
+          "plugins/audit/tests/test_audit_task.py: unblock still resets the count of a blocked task at the ceiling, and still refuses a pending task, an in_progress task with attempts left, a done task and a phase id, writing nothing": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_audit_task.py",
+              "--selftest",
+              "--stage",
+              "ub-block"
+            ],
+            "file": "plugins/audit/scripts/manifest/audit-task.py",
+            "find": "    reset = spent >= _attempt_ceiling(node)",
+            "replace": "    reset = False"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -1548,9 +1574,9 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-19T02:53:33Z.44bbc8",
-        "status": "failed",
-        "at": "2026-10-19T02:53:33Z"
+        "runId": "2026-10-19T03:27:33Z.f99e53",
+        "status": "passed",
+        "at": "2026-10-19T03:27:33Z"
       }
     },
     {
@@ -1655,7 +1681,7 @@
     {
       "id": "P130.15-ywo",
       "title": "commands/panel.md describes the help drawer the panel ships instead of saying there is none",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fault F710. plugins/audit/commands/panel.md, the 'Help, over the API only' item (:112-119, the sentence at :116), says 'There is **no drawer for it yet**; say so rather than sending someone clicking for an ⓘ that is not there.' The drawer ships: plugins/audit/scripts/ui/panel/help-drawer.js builds it (`openHelp`, `openHelpIndex`), and the ⓘ hint in hints.js opens it beside a field. The command file is read by the model, so it instructs the model to tell users something false. Fix: rewrite the item to describe the drawer as it ships - what opens it, what it shows (field descriptions extracted from the schemas, the concept pages) - and keep the pointer to the `audit:guide` subagent for a question the schema does not answer; retitle the item so it no longer says 'over the API only'. The same file holds other 'no … yet' sentences (the Areas item says there is no form for `meta.areas`): check each against the shipped panel and fix any that is stale in this task, naming the ones that are still true in the return. Acceptance: (1) commands/panel.md says nowhere that the help drawer is absent; (2) the help item names how the drawer opens, and that naming matches the panel's code; (3) every remaining 'no … yet' sentence in the file was checked against the panel, and the return lists the verdict for each; (4) the new case is red on the current file and green after the edit.",
       "files": [
         "plugins/audit/commands/panel.md",
@@ -1701,19 +1727,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fe986c4742c8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "commands/panel.md: the 'Help, over the API only (v0.31)' item is now 'Help, in a drawer (v0.31)': the header Help button (panel.html id=helpbtn, wired in help-drawer.js:379 to openHelpIndex) opens the index; the ⓘ beside a field (hints.js: a real button with a ref calls openHelp(ref)) opens it on the field; ref-less ⓘ are tooltip-only (hints.js comment); drawer shows schema description, type/enum/default, the concept pages (four topics: gate-tiers, areas, policy, journal, verified via _help.payload()), the audit:guide card; GET /api/help kept as the same answers; audit:guide pointer kept. test_panel_server.py: added import re, _command_item, _help_item_cases (first in _selftest body); the case judges the item against M.UI_HTML (drawer symbols and the helpbtn label derived from the page) and requires no 'no drawer'/'yet' absence phrasing, no 'over the API only', the ⓘ glyph and the **Help** label. Verdicts on the file's remaining 'no ... yet' sentences: (a) Areas item line 109 'no form for it yet' STILL TRUE - grep of panel.html and ui/panel/*.js finds no /api/areas call or meta.areas control, and write-confirmation.js:219 says meta.areas has no control on the form; left unchanged. (b) line 180 'nothing has run yet' is the panel's own empty-state wording, not a claim about a missing feature; left. No other 'yet' in the file (grep -n yet panel.md).",
+        "descriptive": "The panel command file no longer tells the model the help drawer does not exist; it says what opens it, and a selftest case keeps it that way."
       },
       "startedAt": "2026-10-19T02:30:43Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T03:16:28Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_panel_server.py: while the assembled panel page carries the help drawer, the help item in commands/panel.md does not say the drawer is absent and names the control that opens it"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T03:15:04Z.aba360",
         "status": "passed",
         "at": "2026-10-19T03:15:04Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "fe986c4742c8",
+        "at": "2026-10-19T03:16:28Z",
+        "return": "docs/audit/evidence/returns/P130.15-ywo/20261019T023043Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-19T02:35:43Z",
+        "basis": "`python3 plugins/audit/tests/test_panel_server.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 104 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - while the assembled panel page carries the help drawer, the help item in commands/panel.md does not say the drawer is absent and names the control that opens it (item found True, button label 'Help', page carries drawer True) (house FAIL): SELFTEST FAILED: 103/104 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {

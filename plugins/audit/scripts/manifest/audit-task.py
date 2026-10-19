@@ -7327,11 +7327,19 @@ def _locked_block(args, project, config, mpath, tid, reason, out):
     return 0
 
 
-# `unblock`: the way past a task whose attempts are spent. `start` refuses one past
-# `maxAttempts`, `--force` included, because the ceiling is what makes a human look
-# at a task that keeps failing; and the reset that followed the human's look was a
-# hand edit of `attempts`. So the reset is this verb: it takes the human's reason,
-# records it on a row, and touches the count and the block, nothing else.
+# `unblock`: the way back for a task that is stopped without being run. It has two
+# arms, told apart by the attempts spent against the ceiling:
+#   - attempts at the ceiling: `start` refuses the task, `--force` included, because
+#     the ceiling is what makes a human look at a task that keeps failing; and the
+#     reset that followed the human's look was a hand edit of `attempts`. The verb
+#     resets the count, and clears the block when there is one.
+#   - a BLOCKED task with attempts left (held on purpose, or blocked before the
+#     ceiling): `start` would run it, and no other verb clears a block without
+#     running the task, so the verb clears the block (status pending, no
+#     `blockedReason`) and leaves `attempts` as recorded.
+# Either way it takes the human's reason, records it on a row, and touches the
+# count and the block, nothing else. A pending or running task with attempts left
+# has neither a block nor a spent count, and is refused.
 def cmd_unblock(args, out):
     project = _resolve_project(args)
     if not os.path.isdir(project):
@@ -7354,20 +7362,22 @@ def cmd_unblock(args, out):
 
 
 def _unblock_refusal(node, tid):
-    """Why `node` has nothing to unblock, or None: it is terminal, or attempts
-    are left. A task blocked with attempts left is not this verb's - `start`
-    runs it and clears the block - so the count of a task blocked for another
-    reason is never reset by it."""
+    """Why `node` has nothing to unblock, or None: it is terminal, or it is not
+    blocked and has attempts left. A BLOCKED task is always this verb's - at the
+    ceiling it has a count to reset, below it only the block to clear. A pending
+    or running task with attempts left has neither, and `start` is the verb that
+    takes it."""
     status = node.get("status")
     if status in _mio.TERMINAL:
         return ("%s is already %s -- terminal work is not unblocked; the "
                 "follow-up is a new task (/audit:task add)" % (tid, status))
+    if status == "blocked":
+        return None
     attempts = _mio.recorded_attempt(node) or 0
     if attempts < _attempt_ceiling(node):
         return ("%s is %s with %s of %s attempt(s) spent -- `start %s` still "
-                "runs it%s, so there is no spent count to reset"
-                % (tid, status, attempts, _attempt_ceiling(node), tid,
-                   " and clears its block" if status == "blocked" else ""))
+                "runs it, so there is no spent count to reset"
+                % (tid, status, attempts, _attempt_ceiling(node), tid))
     return None
 
 
@@ -7384,9 +7394,13 @@ def _locked_unblock(args, project, config, mpath, tid, reason, out):
         return E_USAGE
     status = node.get("status")
     phase_id = phase.get("id")
-    changes = [{"id": tid, "field": "attempts", "from": node.get("attempts"),
-                "to": 0}]
-    node["attempts"] = 0
+    spent = _mio.recorded_attempt(node) or 0
+    reset = spent >= _attempt_ceiling(node)
+    changes = []
+    if reset:
+        changes.append({"id": tid, "field": "attempts",
+                        "from": node.get("attempts"), "to": 0})
+        node["attempts"] = 0
     if status == "blocked":
         changes += [{"id": tid, "field": "status", "from": status,
                      "to": "pending"},
@@ -7409,13 +7423,16 @@ def _locked_unblock(args, project, config, mpath, tid, reason, out):
     if args.as_json:
         out(_json_tail({"ok": True, "id": tid, "phase": phase_id,
                         "status": node.get("status"), "was": status,
-                        "attempts": 0, "reason": reason, "changes": changes,
+                        "attempts": 0 if reset else spent, "reason": reason,
+                        "changes": changes,
                         "adoEchoOwed": linked and status == "blocked",
                         "written": written},
                        args, jres, warnings, written_manifest, index_note))
         return 0
-    out("[audit-task] %s unblocked in %s -- %s, attempts reset to 0: %s"
-        % (tid, phase_id, node.get("status"), reason))
+    out("[audit-task] %s unblocked in %s -- %s, %s: %s"
+        % (tid, phase_id, node.get("status"),
+           "attempts reset to 0" if reset
+           else "attempts kept at %s" % (spent,), reason))
     if linked and status == "blocked":
         out("  ADO: this plan links a board, and a task leaving blocked owes the "
             "ADO echo - this verb does not send it")

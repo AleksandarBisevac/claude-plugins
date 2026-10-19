@@ -15472,24 +15472,32 @@ def _unblock_cases(check):
             tk("P1.1", "blocked", 3, blockedReason="attempts exhausted"),
             tk("P1.2", "pending", 0), tk("P1.3", "done", 1, commit="a" * 40),
             tk("P1.4", "in_progress", 3),
-            tk("P1.5", "blocked", 1, blockedReason="waiting on the API")])
+            tk("P1.5", "blocked", 1, blockedReason="waiting on the API",
+               notes=[{"at": "2026-01-02T00:00:00Z", "text": "kept"}]),
+            tk("P1.6", "in_progress", 1),
+            tk("P1.8", "blocked", 3, blockedReason="attempts exhausted"),
+            tk("P1.7", "blocked", 0, blockedReason="held on purpose",
+               notes=[{"at": "2026-01-03T00:00:00Z", "text": "held"}],
+               movedFrom={"id": "P0.9", "phase": "P0",
+                          "at": "2026-01-01T00:00:00Z"})])
         refused_start = verb(proj, "start", "P1.1", "--force", "--reason", "x")
         before = read(mpath)
         nr = verb(proj, "unblock", "P1.1")
         fresh = verb(proj, "unblock", "P1.2", "--reason", "r")
         closed = verb(proj, "unblock", "P1.3", "--reason", "r")
         whole = verb(proj, "unblock", "P1", "--reason", "r")
-        waiting = verb(proj, "unblock", "P1.5", "--reason", "r")
-        check("ub1 `unblock` with no reason, of a task with attempts left, of "
-              "one blocked for another reason with attempts left (its count is "
-              "not this verb's to reset), of a done task and of a phase id is "
+        running = verb(proj, "unblock", "P1.6", "--reason", "r")
+        closed = verb(proj, "unblock", "P1.3", "--reason", "r")
+        whole = verb(proj, "unblock", "P1", "--reason", "r")
+        check("ub1 `unblock` with no reason, of a pending task, of a running "
+              "task with attempts left, of a done task and of a phase id is "
               "refused, and nothing is written: %r"
-              % ([(r[0], r[1][-90:]) for r in (nr, fresh, waiting, closed,
+              % ([(r[0], r[1][-90:]) for r in (nr, fresh, running, closed,
                                                 whole)],),
-              [r[0] for r in (nr, fresh, waiting, closed, whole)]
+              [r[0] for r in (nr, fresh, running, closed, whole)]
               == [M.E_USAGE] * 5
               and "--reason" in nr[1] and "start P1.2" in fresh[1]
-              and "start P1.5" in waiting[1] and read(mpath) == before)
+              and "start P1.6" in running[1] and read(mpath) == before)
         code, text = verb(proj, "unblock", "P1.1", "--reason",
                           "the human read the red and says try again")
         t1 = task(mpath, "P1.1")
@@ -15521,6 +15529,50 @@ def _unblock_cases(check):
               "`--reason` its one flag: %r" % (M.VERB_FLAGS.get("unblock"),),
               "audit-task.py unblock <taskId> --reason" in doc
               and M.VERB_FLAGS.get("unblock") == ("reason",))
+        before_held = dict((t, task(mpath, t)) for t in ("P1.5", "P1.7"))
+        held = verb(proj, "unblock", "P1.7", "--reason", "release the hold")
+        waiting = verb(proj, "unblock", "P1.5", "--reason", "the API is back")
+        after_held = dict((t, task(mpath, t)) for t in ("P1.5", "P1.7"))
+        urows = dict(((r.get("details") or {}).get("taskId"),
+                      (r.get("details") or {}).get("reason"))
+                     for r in _journal_io.read_all(proj)
+                     if r.get("action") == "task.unblock")
+
+        def kept(tid):
+            was, now = before_held[tid], after_held[tid]
+            return (now.get("status") == "pending"
+                    and "blockedReason" not in now
+                    and now.get("attempts") == was.get("attempts")
+                    and now.get("notes") == was.get("notes")
+                    and now.get("movedFrom") == was.get("movedFrom"))
+        check("ub5 unblock of a task blocked with no attempts spent puts it "
+              "back to pending with blockedReason removed, attempts, notes and "
+              "movedFrom unchanged, and one task.unblock journal row carrying "
+              "the reason; the same for a task blocked with attempts below the "
+              "ceiling [%r]"
+              % ((held[0], waiting[0], after_held["P1.7"].get("attempts"),
+                  after_held["P1.5"].get("attempts"), urows),),
+              held[0] == 0 and waiting[0] == 0 and kept("P1.7")
+              and kept("P1.5")
+              and before_held["P1.7"].get("movedFrom")
+              and before_held["P1.5"].get("attempts") == 1
+              and urows.get("P1.7") == "release the hold"
+              and urows.get("P1.5") == "the API is back")
+        reset = verb(proj, "unblock", "P1.8", "--reason", "try again")
+        t8 = task(mpath, "P1.8")
+        steady = read(mpath)
+        again = [verb(proj, "unblock", tid, "--reason", "r")
+                 for tid in ("P1.2", "P1.6", "P1.3", "P1")]
+        check("ub6 unblock still resets the count of a blocked task at the "
+              "ceiling, and still refuses a pending task, an in_progress task "
+              "with attempts left, a done task and a phase id, writing nothing "
+              "[%r]"
+              % ((reset[0], t8.get("status"), t8.get("attempts"),
+                  [r[0] for r in again]),),
+              reset[0] == 0 and t8.get("status") == "pending"
+              and t8.get("attempts") == 0 and "blockedReason" not in t8
+              and [r[0] for r in again] == [M.E_USAGE] * 4
+              and read(mpath) == steady)
     finally:
         _harness.remove_tree(root)
 
