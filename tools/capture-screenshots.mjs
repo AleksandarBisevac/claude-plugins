@@ -284,6 +284,109 @@ function py(args, env = {}) {
   }
 }
 
+// --- the panel's poll window ---------------------------------------------------
+
+/**
+ * Slack added to one poll interval to make the window a disk write has to reach
+ * the screen in: the poll's own request, the server reading the plan, and the
+ * repaint. An append that lands just after a poll has only this slack left, which
+ * is how the hand-written wait missed once. The value is the one those waits
+ * carried; every wait now prints how much of its window it used, and a raise
+ * belongs on those measured elapsed times rather than on a guess.
+ */
+export const POLL_MARGIN_MS = 1500;
+
+/**
+ * The interval the assembled panel polls run-status at, read off its script.
+ *
+ * Exactly one `setInterval(pollRunStatus, N)` must be present. Zero means the poll
+ * moved or was renamed and a window computed from nothing would be a guess; two
+ * means there is no single interval to wait one of. Both throw, naming the count.
+ * @param {string} script the assembled panel script text
+ * @returns {number} milliseconds
+ */
+export function pollIntervalOf(script) {
+  const found = [...script.matchAll(/setInterval\(\s*pollRunStatus\s*,\s*(\d+)\s*\)/g)];
+  if (found.length !== 1) {
+    throw new Error(`the assembled panel declares ${found.length} `
+      + `setInterval(pollRunStatus, N) calls, and the poll-window wait needs exactly `
+      + `one interval to derive from`);
+  }
+  return Number(found[0][1]);
+}
+
+/**
+ * How long a write may take to reach the screen: one poll interval plus the margin.
+ * @param {number} intervalMs the panel's poll interval
+ * @returns {number} milliseconds
+ */
+export function pollWindowMs(intervalMs) {
+  return intervalMs + POLL_MARGIN_MS;
+}
+
+/**
+ * The panel's script exactly as the page receives it, asked of Python.
+ *
+ * The one place this tool asks `_panel_ui.py` for the page: it carries its own path
+ * preamble, so putting the directory it lives in on sys.path is enough for it to
+ * find the anchor and assemble.
+ * @returns {string}
+ */
+function assembledPanelScript() {
+  const panelUiDir = path.dirname(resolveScript('_panel_ui.py'));
+  return py(['-c', 'import sys; sys.path.insert(0, sys.argv[1]); import _panel_ui; '
+                 + 'sys.stdout.write(_panel_ui.raw_template())', panelUiDir]);
+}
+
+/** Memoised: the assembled panel does not change while this process runs. */
+let pollWindowMemo = null;
+
+/**
+ * The poll window of the panel in this checkout, derived from its assembled script.
+ * @returns {number} milliseconds
+ */
+function panelPollWindowMs() {
+  if (pollWindowMemo === null) {
+    pollWindowMemo = pollWindowMs(pollIntervalOf(assembledPanelScript()));
+  }
+  return pollWindowMemo;
+}
+
+/** The window as seconds, for a failure message. */
+const pollWindowText = () => `${panelPollWindowMs() / 1000}s`;
+
+/**
+ * Wait for `predicate` to hold in the page within the panel's poll window, and say
+ * how much of the window it took.
+ * @param {import('playwright').Page} page
+ * @param {string} label what is being waited for, for the elapsed-time line
+ * @param {Function} predicate run in the page
+ * @param {*} arg its argument
+ * @returns {Promise<boolean>} whether it held within the window
+ */
+async function waitForPoll(page, label, predicate, arg) {
+  const windowMs = panelPollWindowMs();
+  const t0 = Date.now();
+  const held = await page.waitForFunction(predicate, arg, { timeout: windowMs })
+    .then(() => true, () => false);
+  note(`poll-window ${label}: ${held ? 'satisfied' : 'MISSED'} after `
+     + `${Date.now() - t0} ms of a ${windowMs} ms window`);
+  return held;
+}
+
+/**
+ * Sit out one whole poll window, for a step whose claim is that nothing happened.
+ * @param {import('playwright').Page} page
+ * @param {string} label
+ * @returns {Promise<void>}
+ */
+async function sleepPollWindow(page, label) {
+  const windowMs = panelPollWindowMs();
+  const t0 = Date.now();
+  await page.waitForTimeout(windowMs);
+  note(`poll-window ${label}: waited ${Date.now() - t0} ms of a ${windowMs} ms window`);
+}
+
 /**
  * Which local port is serving which directory — filled by serveDir, read by the
  * shutter.
@@ -2785,9 +2888,7 @@ function assertNoHandAssignedPolledState() {
   // directory under scripts/ is spelled here either; `_panel_ui.py` carries its
   // own path preamble, so putting the directory it lives in on sys.path is enough
   // for it to find the anchor and assemble.
-  const panelUiDir = path.dirname(resolveScript('_panel_ui.py'));
-  const src = py(['-c', 'import sys; sys.path.insert(0, sys.argv[1]); import _panel_ui; '
-                      + 'sys.stdout.write(_panel_ui.raw_template())', panelUiDir]);
+  const src = assembledPanelScript();
   const at = src.indexOf('async function pollRunStatus');
   if (at < 0) {
     fail('panel: pollRunStatus is gone from the assembled panel page — the '
@@ -4453,7 +4554,7 @@ async function assertFilterPersistence(page, browser, panelUrl) {
 /* ---- v0.34 C5 (lv): live data — an out-of-band write reaches the screen -----
  *
  * The write goes to the SHARD file on disk (writeFileSync, no panel API), and
- * the panel has ≤6.5s — one 5s poll plus margin — to show it without a reload.
+ * the panel has one poll window (see pollWindowMs) to show it without a reload.
  * Filters survive because renderUsage/renderOver re-render through the same
  * UF/COMPF state they always had; a dirty form is left alone and says why.
  */
@@ -4494,17 +4595,17 @@ async function assertLiveData(page, project) {
   const body = JSON.parse(readFileSync(shardPath, 'utf8'));
   body.title = mark1;
   writeFileSync(shardPath, JSON.stringify(body, null, 2));
-  const sawIt = await page.waitForFunction((m) =>
+  const sawIt = await waitForPoll(page, 'live: shard write on Overview and Composition', (m) =>
     [...document.querySelectorAll('#over .ptitle')].some((n) => n.textContent === m)
     && [...document.querySelectorAll('#comp tr.phase strong')]
       .some((n) => n.textContent === m),
-  mark1, { timeout: 6500 }).then(() => true, () => false);
+  mark1);
   const kept = await page.evaluate(() => ({
     author: UF.author, compQ: COMPF.q,
     chip: !!document.querySelector('#usage [data-uchip=author]') }));
   if (!sawIt) {
     fail(`live: a title written straight to ${stub.shard} never reached `
-       + `Overview/Composition within 6.5s — the fingerprint hand-off is not `
+       + `Overview/Composition within ${pollWindowText()} — the fingerprint hand-off is not `
        + `refreshing from disk`);
   } else if (kept.author !== who || kept.compQ !== pid || !kept.chip) {
     fail(`live: the refresh reached the screen but ate the filters — author=`
@@ -4512,7 +4613,7 @@ async function assertLiveData(page, project) {
        + `chip=${kept.chip}`);
   } else {
     note(`live: an out-of-band shard write reached Overview and Composition `
-       + `in under 6.5s, filters intact`);
+       + `in under ${pollWindowText()}, filters intact`);
   }
 
   // The dirty leg: typed work survives the next refresh, with the notice up.
@@ -4523,9 +4624,9 @@ async function assertLiveData(page, project) {
   const mark2 = 'LIVE-PROBE-TITLE-TWO';
   body.title = mark2;
   writeFileSync(shardPath, JSON.stringify(body, null, 2));
-  const sawOver = await page.waitForFunction((m) =>
+  const sawOver = await waitForPoll(page, 'live: second write with a dirty form', (m) =>
     [...document.querySelectorAll('#over .ptitle')].some((n) => n.textContent === m),
-  mark2, { timeout: 6500 }).then(() => true, () => false);
+  mark2);
   const dirty = await page.evaluate(() => ({
     value: (document.querySelector('#comp tr.task:not([data-frozen]) .tmodel input') || {}).value,
     stale: !!document.querySelector('#comp [data-stale=comp]'),
@@ -4820,7 +4921,7 @@ async function assertComboOverlay(page, project) {
     fail(`combo(b): no ledger file under ${led} to move the stamp with`);
   } else {
     appendFileSync(path.join(led, files[files.length - 1]), '\n');   // blank line: skipped by the reader
-    await page.waitForTimeout(6500);   // > one 5s poll
+    await sleepPollWindow(page, 'combo(b): ledger write with the menu open');
     const held = await page.evaluate((sel) => ({
       open: !![...document.querySelectorAll('.combo-menu')].find((m) => !m.classList.contains('hidden')),
       focused: document.activeElement === document.querySelector(sel) }), REV);
@@ -4833,7 +4934,7 @@ async function assertComboOverlay(page, project) {
     } else {
       // ...and the deferred refresh must land once the reader lets go.
       await page.evaluate(() => document.activeElement && document.activeElement.blur());
-      await page.waitForTimeout(6500);
+      await sleepPollWindow(page, 'combo(b): deferred refresh after blur');
       const landed = !(await handle.evaluate((n) => document.contains(n)));
       if (!landed) {
         fail('combo(b): the deferred refresh never landed after the input was blurred '
@@ -5210,14 +5311,14 @@ async function assertGateCard(page, project) {
     JSON.stringify({ ts: '2026-08-13T00:00:00Z', event: 'deny', file: marker,
                      mode: 'deny', reason: 'browser-check probe' }) + '\n',
     { flag: 'a' });
-  const sawEvent = await page.waitForFunction((m) =>
+  const sawEvent = await waitForPoll(page, 'gate card: feed line', (m) =>
     [...document.querySelectorAll('#gatecard td')].some((n) => n.textContent === m),
-  marker, { timeout: 6500 }).then(() => true, () => false);
+  marker);
   if (!sawEvent) {
     fail('gate card: an event appended to plan-gate-events.jsonl never reached '
-       + 'the Overview table within 6.5s — the gate block is not repainting');
+       + `the Overview table within ${pollWindowText()} — the gate block is not repainting`);
   } else {
-    note('gate card: a fresh feed line reached the events table in under 6.5s');
+    note(`gate card: a fresh feed line reached the events table in under ${pollWindowText()}`);
   }
 
   // The bypass indicator follows a live slot, and leaves with it.
@@ -5225,15 +5326,15 @@ async function assertGateCard(page, project) {
   mkdirSync(path.dirname(slot), { recursive: true });
   writeFileSync(slot, JSON.stringify({ ts: 't', reason: 'browser-check',
     armedAtEpoch: Math.floor(Date.now() / 1000) }));
-  const sawArmed = await page.waitForFunction(() =>
+  const sawArmed = await waitForPoll(page, 'gate card: bypass indicator on', () =>
     !!document.querySelector('#gatecard [data-bypass-armed]'),
-  null, { timeout: 6500 }).then(() => true, () => false);
+  null);
   rmSync(slot, { force: true });
-  const armedGone = await page.waitForFunction(() =>
+  const armedGone = await waitForPoll(page, 'gate card: bypass indicator off', () =>
     !document.querySelector('#gatecard [data-bypass-armed]'),
-  null, { timeout: 6500 }).then(() => true, () => false);
+  null);
   if (!sawArmed) {
-    fail('gate card: an armed bypass slot never lit the indicator within 6.5s');
+    fail(`gate card: an armed bypass slot never lit the indicator within ${pollWindowText()}`);
   } else if (!armedGone) {
     fail('gate card: the indicator stayed lit after the slot was removed');
   } else {
@@ -7985,10 +8086,10 @@ async function main() {
                 : gateReason(r.event, ...(r.fills || [])),
               sessionId: 'sess-demo' })).join('\n') + '\n');
         await page.evaluate(() => pollRunStatus());
-        const landed = await page.waitForFunction((n) => {
+        const landed = await waitForPoll(page, 'gate shot: seeded feed lines', (n) => {
           const c = document.getElementById('gatecard');
           return !!c && c.querySelectorAll('tbody tr').length === n;
-        }, seeded.length, { timeout: 6500 }).then(() => true, () => false);
+        }, seeded.length);
         const shown = await page.evaluate(() => {
           const c = document.getElementById('gatecard');
           return c ? { rows: c.querySelectorAll('tbody tr').length,

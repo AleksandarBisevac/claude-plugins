@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "tools/ui-tests/gate-card-wait.test.mjs:58-62",
+   "issue": "The test pins the wait function (pollIntervalOf/pollWindowMs) and greps capture-screenshots.mjs for the 6500 / 6.5s literals, but nothing proves each of the eight converted sites routes through waitForPoll/sleepPollWindow. A future hand-written wait with a different number (say 7000) or a waitForFunction with an inline timeout passes both the function cases and the literal grep, so the interval and a wait can still diverge at a call site.",
+   "resolution": "Extend the source check to count `waitForFunction(` calls carrying a numeric `timeout:` in the poll-window sites, or assert that every `waitForTimeout(` argument in the assertLiveData/assertComboOverlay/assertGateCard bodies is the computed window. Alternatively, file it as a known limit in the test header's WHAT THIS CANNOT SEE block."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task: 'one exported function returns the poll-window wait from the panel's poll interval as the assembled panel declares it (read off the page's script, never retyped) plus a margin the function documents, and every one of those waits uses it'. Diff: capture-screenshots.mjs:287-388 exports POLL_MARGIN_MS (documented), pollIntervalOf(script) (regex on the assembled panel script, throws unless exactly one setInterval(pollRunStatus,N), compared with run-status.js:214 which declares 5000), pollWindowMs(interval), and the memoised panelPollWindowMs() fed by assembledPanelScript() via _panel_ui.raw_template(). All eight literal waits (live x2, combo(b) x2, gate card x3, gate shot x1) are converted, and the grep for 6500 and 6.5 in the file finds none. Acceptance (2): each wait prints 'poll-window <label>: satisfied|MISSED after N ms of a M ms window'. Acceptance (3): the vitest case is red if the interval and the function diverge, since a moved interval moves the wait and a zero or two-declaration script throws. Acceptance (4): the executor handed the repeated-measurement command and correctly left running it to the orchestrator, whose reported measurement is 39 poll-window lines satisfied, 0 MISSED, max 5012 ms of a 6500 ms window, on an idle machine. That leaves about 1.5 s of margin, so keeping the margin at the old 1500 ms is consistent with the task's 'if the measurement shows misses beyond that bound' clause. No parallel-sweep spread was reported, so the loaded-machine margin is unmeasured. The executor's outcome describes the diff accurately: the shared assembledPanelScript helper replaces the inline py call in assertNoHandAssignedPolledState, STALL_POLL_MS/PROBE_MS are unrelated, and the main guard at :8973 makes the import from vitest side-effect free. The one-case test title is the tests.add clause verbatim.",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "Echoing the executor's word. Its basis is `npx vitest run tools/ui-tests/gate-card-wait.test.mjs` in a throwaway tree at HEAD, exit 1, 'TypeError: pollIntervalOf is not a function'. That is a missing-symbol failure naming the task's new symbol, with no assertion reached, so it is could-not-prove and not proved. The claims block adds mutation reds (window const 6500 gave 'expected 6500 to be 13845'; margin 0 red; hand timeout reinserted red), but those are claimed, not a recorded red-first run, so I did not upgrade the word. I did not re-run the test.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate holds whole-project commands (python3 tools/sweep-selftests.py, npx vitest run, ruff/vermin over whole trees, node tools/capture-screenshots.mjs --check, the manifest validators), none selecting a bounded set of existing tests, so the question has no bound. I read the diff and the one new test file in the task tree."
+ },
+ "verdict": "clean",
+ "tasks": []
+}
