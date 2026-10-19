@@ -1,0 +1,30 @@
+{
+  "findings": [
+    {
+      "id": 1,
+      "severity": "low",
+      "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1114-1135",
+      "issue": "_PLAIN_INTERPRETER_FLAGS is Python's flag set but _runs_first_path_as_program applies it to every name in _SCRIPT_RUNNER (bash, sh, ruby, perl, node...). Probed on the tree: `bash -s a/test_x.sh a/test_y.sh` is refused with 'runs a/test_x.sh as a program and hands it a/test_y.sh as arguments'. For bash, -s reads the script from stdin, so the first path is not the program and the sentence is false. This breaks the task's 'every refusal sentence must stay true'. It is contrived and only reachable through -s (-E on perl and -O on bash take an argument word, so they fall out as unread).",
+      "resolution": "Key the plain-flag table by interpreter, python-only for python*/py, and leave any option before the first path unread for the other runners. Or drop the letters whose meaning differs per interpreter (at least s, E, x, t) from the shared set."
+    },
+    {
+      "id": 2,
+      "severity": "low",
+      "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1197-1200",
+      "issue": "The unbalanced-quote fallback in gate_entry_commands separates commands on bare operators only. It does not drop redirection targets, which the docstring says it does for the main path. `python3 a/test_x.py > a/test_y.py \"x` (unbalanced) would count a/test_y.py as an argument and refuse with a sentence that is false of it. The entry is broken shell anyway, so this is low.",
+      "resolution": "In the fallback, skip the word after any token matching _is_redirection, or return no commands at all (read nothing) when the entry cannot be delimited."
+    }
+  ],
+  "preExisting": [],
+  "intent": {
+    "answer": "matches",
+    "note": "Description (1) 'evaluate each simple command separately (shlex punctuation mode, no regex)': gate_entry_commands at _manifest_phases.py:1066-1111 uses shlex.shlex(punctuation_chars=True) and splits on list operators. Probe: `python3 a/test_x.py && python3 a/test_y.py` returns None, and `python3 a/test_x.py 2>&1 && python3 a/test_y.py` returns None. (2) 'twice counts only suite paths, compared without ::node only when no suffix differs': _command_shape_problem:1156-1160 compares suite words as written, so node ids of one file are quiet, `t1 t1` is caught, and `--in p.json --out p.json` is quiet. (3) 'warn for every task, finished included': the warning loop is dedented out of the `status not in TERMINAL` block (:1743-1760). Per the dogfood plan the validator emits no such warning today. (4) interpreter options: -u, -uB, -X dev and -Xdev are caught, and -m, -c and node --test are conservatively unread. The F720/F721 shapes (`python3 a b`, a repeated suite) are still refused; the 129-case phases selftest includes the earlier gx cases. Acceptance (3), prove-gates rows, is vacuous: tools/prove-gates.py has no row for this predicate, as the executor said. Acceptance (4), the full sweep, was not run by the executor (own-tests mode). The filed claims block says NAME=value before the interpreter hides the shape, but `FOO=1 python3 a/test_x.py a/test_y.py` is caught on this tree (the claim names a miss that does not exist; harmless but inaccurate). The outcome otherwise describes the diff. The two declared tests show 'no filed counterpart' only because the filed names carry a 'gx3 (file):' prefix: the known false gap F737.",
+    "missing": [],
+    "redFirst": "proved",
+    "redFirstBasis": "The executor filed could-not-prove, because the runner located no case in the declared files (F737). I settled it myself. I copied the tree's plugins/ to <outside-repo>, purged __pycache__, and put back HEAD's plugins/audit/scripts/manifest/_manifest_phases.py via `git -C <tree> show HEAD:...`, HEAD being a7d72ddb. `python3 plugins/audit/tests/test__manifest_phases.py --selftest` exited 1: 'FAIL gx3 a chained entry of two single-suite commands...' (quiet group: && , ||, newline, node ids, in-place tool and the redirect entry each drew a false sentence; caught group: -u, -X dev, -uB, -Xdev returned None) and 'FAIL gx4' (the sentence named test_ok.py), 127/129 passed. `python3 plugins/audit/tests/test__manifest_rules.py --selftest` exited 1: 'FAIL gx3 a finished task holding a malformed gate entry draws the warning too (({done: [], cancelled: []}, []))', 175/176 passed. Both failures are assertion failures of the task's own cases against the old implementation, not import errors.",
+    "inheritedTests": "not-asked",
+    "inheritedTestsBasis": "The task's tests.gate entry `selftests` is `python3 tools/sweep-selftests.py`, which runs the whole project and not a bounded file set. So no per-file selection can be read, and the question is not-asked."
+  },
+  "verdict": "findings",
+  "tasks": []
+}

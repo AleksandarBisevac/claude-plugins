@@ -1100,14 +1100,23 @@ def _cases_gate_entry_shape(record):
            len(named) == 1 and f_bad == f_ok == f_none,
            ([str(x) for x in w_bad], f_bad, f_ok))
     # The over-fire direction: a warning raised on every gate would pass gx1;
-    # the spelled entry beside it names the same suites and must stay quiet,
-    # and so must a finished task, whose gate nobody can still correct.
-    _f_done, w_done = M.validate(_gx_plan([_GX_BAD], status="done"))
+    # the spelled entry beside it names the same suites and must stay quiet.
     record("gx2 ALLOW: a spelled sweep entry naming the same two suites draws "
-           "no such warning, and neither does a finished task holding the "
-           "malformed one: %r" % ([str(x) for x in w_ok],),
-           not any(_GX_SPELLED in str(x) for x in w_ok)
-           and not any(_GX_BAD in str(x) for x in w_done))
+           "no such warning: %r" % ([str(x) for x in w_ok],),
+           not any(_GX_SPELLED in str(x) for x in w_ok))
+    # A finished task's gate is a record, and the record is where the shape did
+    # its harm, so it warns too; `done` and `cancelled` are both settled states.
+    held = {}
+    for status in ("done", "cancelled"):
+        _f, w_settled = M.validate(_gx_plan([_GX_BAD], status=status))
+        held[status] = [str(x) for x in w_settled
+                        if "P0.1" in str(x) and _GX_BAD in str(x)]
+    _f_done, w_done_ok = M.validate(_gx_plan([_GX_SPELLED], status="done"))
+    record("gx3 a finished task holding a malformed gate entry draws the "
+           "warning too",
+           all(len(v) == 1 for v in held.values())
+           and not any(_GX_SPELLED in str(x) for x in w_done_ok),
+           (held, [str(x) for x in w_done_ok]))
 
 
 # --- tests.falsifiers: kept in the schema, read by nothing -------------------

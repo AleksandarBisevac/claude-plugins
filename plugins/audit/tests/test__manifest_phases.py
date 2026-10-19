@@ -1293,6 +1293,43 @@ def _cases(check):
           and "test__config.py" in _gx_bad[1]
           and "a/test_x.py" in _gx_bad[2])
 
+    # What the predicate must leave alone, each one an entry an author can write
+    # correctly and was refused with a sentence that was not true of it, and the
+    # one shape an interpreter option must not hide. The last group is the
+    # OTHER direction: a check that went quiet on everything would pass the
+    # first group, so the same entries with a real fault stay refused.
+    _gx3_quiet = [(e, _gx_ask(e)) for e in (
+        "python3 a/test_x.py && python3 a/test_y.py",
+        "python3 a/test_x.py; python3 a/test_y.py | tee out.txt",
+        "python3 a/test_x.py || python3 a/test_y.py",
+        "python3 a/test_x.py\npython3 a/test_y.py",
+        "pytest a/test_x.py::t1 a/test_x.py::t2",
+        "pytest a/test_x.py a/test_x.py::t2",
+        "python3 tools/r.py --in docs/p.json --out docs/p.json",
+        "python3 a/test_x.py > a/test_y.py",
+        "python3 -m pytest a/test_x.py a/test_y.py",
+        "node --test a/x.test.mjs a/y.test.mjs")]
+    _gx3_caught = [(e, _gx_ask(e)) for e in (
+        "python3 -u a/test_x.py a/test_y.py",
+        "python3 -X dev a/test_x.py a/test_y.py",
+        "python3 -uB a/test_x.py a/test_y.py",
+        "python3 -Xdev a/test_x.py a/test_y.py",
+        "python3 a/test_ok.py && python3 a/test_x.py a/test_y.py",
+        "python3 a/test_x.py && python3 a/test_y.py a/test_y.py",
+        "pytest a/test_x.py::t1 a/test_x.py::t1")]
+    check("gx3 a chained entry of two single-suite commands, two node ids of "
+          "one file, and a tool given one path as input and output draw no "
+          "shape problem, while an interpreter option before a suite list "
+          "still does",
+          all(r is None for _e, r in _gx3_quiet)
+          and all(isinstance(r, str) and r for _e, r in _gx3_caught),
+          ([(e, r) for e, r in _gx3_quiet if r is not None],
+           [(e, r) for e, r in _gx3_caught if not r]))
+    check("gx4 ...and the sentence of a chained entry names only the command at "
+          "fault: %r" % (_gx3_caught[4][1],),
+          "test_y.py" in _gx3_caught[4][1] and "test_ok.py" not in _gx3_caught[4][1]
+          and "a/test_x.py" in _gx3_caught[4][1])
+
     # --- what an open finding is -------------------------------------------
     _of_ph = {"review": {"findings": [
         {"id": "fa", "status": "fixed"},

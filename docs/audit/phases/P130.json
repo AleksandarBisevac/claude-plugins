@@ -232,9 +232,23 @@
         "file": "plugins/audit/scripts/manifest/audit-task.py; plugins/audit/tests/test__manifest_rules.py (index state in claude-plugins-P130.41-ywo)",
         "issue": "git ls-files -u in the task tree still lists stage 1/2/3 entries for both conflicted files (status UU), although the working-tree text has no conflict markers. A plain commit or commit-by-path refuses unmerged paths until they are re-added.",
         "resolution": "Run git add on those two paths before the close commits (resolution is already correct in the working tree), and check git ls-files -u prints nothing."
+      },
+      {
+        "id": "P130-R31",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1114-1135",
+        "issue": "_PLAIN_INTERPRETER_FLAGS is Python's flag set but _runs_first_path_as_program applies it to every name in _SCRIPT_RUNNER (bash, sh, ruby, perl, node...). Probed on the tree: `bash -s a/test_x.sh a/test_y.sh` is refused with 'runs a/test_x.sh as a program and hands it a/test_y.sh as arguments'. For bash, -s reads the script from stdin, so the first path is not the program and the sentence is false. This breaks the task's 'every refusal sentence must stay true'. It is contrived and only reachable through -s (-E on perl and -O on bash take an argument word, so they fall out as unread).",
+        "resolution": "Key the plain-flag table by interpreter, python-only for python*/py, and leave any option before the first path unread for the other runners. Or drop the letters whose meaning differs per interpreter (at least s, E, x, t) from the shared set."
+      },
+      {
+        "id": "P130-R32",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1197-1200",
+        "issue": "The unbalanced-quote fallback in gate_entry_commands separates commands on bare operators only. It does not drop redirection targets, which the docstring says it does for the main path. `python3 a/test_x.py > a/test_y.py \"x` (unbalanced) would count a/test_y.py as an argument and refuse with a sentence that is false of it. The entry is broken shell anyway, so this is low.",
+        "resolution": "In the fallback, skip the word after any token matching _is_redirection, or return no commands at all (read nothing) when the entry cannot be delimited."
       }
     ],
-    "outcome": "[findings: 30 - 0 high, 6 med, 24 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 32 - 0 high, 6 med, 26 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -4109,7 +4123,29 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test__manifest_phases.py: a chained entry of two single-suite commands, two node ids of one file, and a tool given one path as input and output draw no shape problem, while an interpreter option before a suite list still does": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__manifest_phases.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/manifest/_manifest_phases.py",
+            "find": "        elif _is_list_operator(token):",
+            "replace": "        elif False and _is_list_operator(token):"
+          },
+          "plugins/audit/tests/test__manifest_rules.py: a finished task holding a malformed gate entry draws the warning too": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__manifest_rules.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/manifest/_manifest_phases.py",
+            "find": "            for entry in task_gate:\n                problem = gate_entry_shape_problem(entry, build_keys)",
+            "replace": "            for entry in (task_gate if task.get(\"status\") not in TERMINAL else ()):\n                problem = gate_entry_shape_problem(entry, build_keys)"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -4134,7 +4170,12 @@
       "startedAt": "2026-10-19T13:44:58Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T14:26:19Z.50bbcb",
+        "status": "passed",
+        "at": "2026-10-19T14:26:19Z"
+      }
     },
     {
       "id": "P130.43-ywo",

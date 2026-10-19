@@ -1169,19 +1169,144 @@ def _is_script_runner(word):
     return bool(_SCRIPT_RUNNER.match(base.lower().replace(".exe", "")))
 
 
+# The words that join or open simple commands; a redirection operator is the
+# other half of what the punctuation reader yields and takes the word after it.
+_LIST_PUNCT = frozenset("();&|")
+
+
+def _is_list_operator(token):
+    return bool(token) and all(c in _LIST_PUNCT for c in token)
+
+
+def _is_redirection(token):
+    return bool(token) and any(c in "<>" for c in token) \
+        and all(c in "<>&|" for c in token)
+
+
+def gate_entry_commands(entry):
+    """`[[word, ...], ...]`: the simple commands of a gate entry, each a list of
+    the values a POSIX shell reads its words as.
+
+    `shell_words` answers "which words" for a whole entry and splits nothing, so
+    it cannot say where one command ends. The shape check needs that: `python3
+    a/test_x.py && python3 a/test_y.py` is two commands that each run one
+    suite, and reading it as one hands the second suite to the first as an
+    "argument". The split is shlex's own punctuation reader (no regex over
+    shell syntax): `&&`, `||`, `;`, `|`, `&` and parentheses end a command
+    wherever they stand outside quotes, and a redirection drops the word it
+    names, which is a file written to and no part of any command's arguments.
+    Backslashes stay ordinary characters, as in `shell_words`, so a Windows
+    path keeps its separators.
+
+    An entry the reader cannot delimit (an unbalanced quote) falls back to the
+    whitespace split with only the bare operators separating commands.
+    """
+    if not isinstance(entry, str):
+        return []
+    tokens = []
+    try:
+        for line in entry.splitlines():
+            lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+            lexer.whitespace_split = True
+            lexer.escape = ""
+            tokens.extend(list(lexer))
+            tokens.append(";")
+    except ValueError:
+        tokens = [t if t not in ("&&", "||", "|", "&", ";") else ";"
+                  for t in entry.split()]
+    commands, current, skip = [], [], False
+    for token in tokens:
+        if skip:
+            skip = False
+        elif _is_list_operator(token):
+            if current:
+                commands.append(current)
+            current = []
+        elif _is_redirection(token):
+            skip = True
+        else:
+            current.append(token)
+    if current:
+        commands.append(current)
+    return commands
+
+
+# Interpreter flags that change nothing about WHICH file is run: a bundle of
+# letter flags (`-u`, `-uB`) and the two that take a separate argument. Every
+# other option (`-m`, `-c`, node's `--test`) can make the next word something
+# other than the program, so an entry using one is not read.
+_PLAIN_INTERPRETER_FLAGS = re.compile(r"^-[uBEsSIOvqbdRxt]+$")
+_ARGUMENT_FLAGS = ("-X", "-W")
+
+
+def _only_plain_options(words):
+    """Whether `words` are all options that leave the next word the program."""
+    i = 0
+    while i < len(words):
+        word = words[i]
+        if _PLAIN_INTERPRETER_FLAGS.match(word):
+            i += 1
+        elif word in _ARGUMENT_FLAGS and i + 1 < len(words):
+            i += 2
+        elif word[:2] in _ARGUMENT_FLAGS and len(word) > 2:
+            i += 1
+        else:
+            return False
+    return True
+
+
+def _runs_first_path_as_program(before):
+    """Whether the words in front of a command's first path make that path the
+    program: nothing at all, or an interpreter followed only by plain options."""
+    return not before or any(
+        _is_script_runner(word) and _only_plain_options(before[i + 1:])
+        for i, word in enumerate(before))
+
+
+def _command_shape_problem(words):
+    """The shape problem of ONE simple command's words, or None."""
+    found = [(i, value, shell_word_path(value)) for i, value in enumerate(words)]
+    found = [(i, value, path) for i, value, path in found if path]
+    if not found:
+        return None
+    # Only a suite can be run twice: a tool given one path as its input and its
+    # output (`--in p.json --out p.json`) names it twice and means it. A node id
+    # makes a different word of the same file, so the words are compared as
+    # written and `a_test.py::one a_test.py::two` repeats nothing.
+    suites = [value for _i, value, path in found if is_suite_path(path)]
+    again = [v for k, v in enumerate(suites) if v in suites[:k]]
+    if again:
+        return "names %s more than once" % ", ".join(
+            repr(v) for v in sorted(set(again)))
+    first_i, _first_value, first = found[0]
+    if is_suite_path(first) and _runs_first_path_as_program(words[:first_i]):
+        extra = [path for _i, _v, path in found[1:] if is_suite_path(path)]
+        if extra:
+            return ("runs %r as a program and hands it %s as arguments, so %s"
+                    % (first, ", ".join(repr(p) for p in extra),
+                       "they never run as suites" if len(extra) > 1
+                       else "it never runs as a suite"))
+    return None
+
+
 def gate_entry_shape_problem(entry, build=None):
     """Why `entry` is not a gate entry that runs what it names, or None.
 
-    Two shapes are reported, each a gate that passes while a suite never ran:
+    Each SIMPLE COMMAND of the entry is read on its own (`gate_entry_commands`),
+    because `a && b` runs two programs and what one is handed says nothing about
+    the other. Two shapes are reported, each a gate that passes while a suite
+    never ran:
 
-      * a path named TWICE -- the same suite listed again runs it again or, as
-        an argument, asks it for itself; either way one of the two words is
-        not doing what the entry's author meant;
+      * a suite named TWICE in one command -- the same word again runs it again
+        or, as an argument, asks it for itself. Only suites count, and two node
+        ids of one file are two different words;
       * a suite file run as a PROGRAM with another suite behind it
         (`python3 a/test_x.py a/test_y.py`): the second is only the first's
         argument, so it never ran as a suite. "Run as a program" is read from
-        the word in front of the first path -- an interpreter, or nothing at
-        all -- because a test runner given two suites runs both.
+        the words in front of the first path -- nothing, or an interpreter and
+        its plain options (`python3 -u`, `-X dev`) -- because a test runner
+        given two suites runs both, and an option that may change what is run
+        (`-m`, `--test`) is left unread.
 
     `build` is `meta.buildCommands` (or any container of its keys): an entry
     that IS a key is resolved through the plan whole and is not read here.
@@ -1194,28 +1319,10 @@ def gate_entry_shape_problem(entry, build=None):
     """
     if not isinstance(entry, str) or (build and entry in build):
         return None
-    paths, previous, first_before = [], None, None
-    for _raw, value in shell_words(entry):
-        path = shell_word_path(value)
-        if path:
-            if not paths:
-                first_before = previous
-            paths.append(path)
-        previous = value
-    if not paths:
-        return None
-    again = [p for i, p in enumerate(paths) if p in paths[:i]]
-    if again:
-        return "names %s more than once" % ", ".join(
-            repr(p) for p in sorted(set(again)))
-    if is_suite_path(paths[0]) and (first_before is None
-                                    or _is_script_runner(first_before)):
-        extra = [p for p in paths[1:] if is_suite_path(p)]
-        if extra:
-            return ("runs %r as a program and hands it %s as arguments, so %s"
-                    % (paths[0], ", ".join(repr(p) for p in extra),
-                       "they never run as suites" if len(extra) > 1
-                       else "it never runs as a suite"))
+    for words in gate_entry_commands(entry):
+        problem = _command_shape_problem(words)
+        if problem:
+            return problem
     return None
 
 
@@ -1633,20 +1740,22 @@ def _walk_phases(phases, build_keys=()):
             if task.get("status") not in TERMINAL:
                 w.extend(_comma_joined_gate(task_gate, build_keys, twhere,
                                             "tests.gate"))
-                # A WARNING, AND ONLY FOR A TASK STILL TO RUN: the verbs refuse
-                # the shape when it is written now, but a plan written before
-                # that holds some, and validation stays additive -- a finished
-                # task's gate is a record, not something left to correct.
-                for entry in task_gate:
-                    problem = gate_entry_shape_problem(entry, build_keys)
-                    if problem:
-                        w.append(_output.finding(
-                            "phases.gate_entry_shape.malformed",
-                            "%s: tests.gate entry %r %s - write one entry "
-                            "naming every suite behind the plan's runner "
-                            "(`meta.phaseGate.derived.spelling` when it records "
-                            "one), or one entry per suite"
-                            % (twhere, entry, problem)))
+            # A WARNING, FOR EVERY TASK INCLUDING A FINISHED ONE: the verbs
+            # refuse the shape when it is written now, but a plan written before
+            # that holds some, and validation stays additive. A finished task's
+            # gate is a record that cannot be corrected, but it is exactly the
+            # record that says a suite ran when it may not have, and a warning
+            # costs the operator one line.
+            for entry in task_gate:
+                problem = gate_entry_shape_problem(entry, build_keys)
+                if problem:
+                    w.append(_output.finding(
+                        "phases.gate_entry_shape.malformed",
+                        "%s: tests.gate entry %r %s - write one entry "
+                        "naming every suite behind the plan's runner "
+                        "(`meta.phaseGate.derived.spelling` when it records "
+                        "one), or one entry per suite"
+                        % (twhere, entry, problem)))
             gate_basis = (tests.get("gateBasis")
                           if isinstance(tests, dict) else None)
             if phase_gate and task_gate == phase_gate \
