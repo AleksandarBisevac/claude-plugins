@@ -1,0 +1,58 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_run_test_gate.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_drive_phase.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__wave.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__runner_output.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__evidence_io.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T15:40:50Z",
+    "basis": "`python3 plugins/audit/tests/test_run_test_gate.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module 'rtg' has no attribute 'base_red'\" (read as python), and the task introduces 'base_red': absent from HEAD's plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/scripts/governance/_evidence_io.py, plugins/audit/scripts/governance/drive-phase.py, plugins/audit/scripts/governance/_wave.py, PLUGIN-BUILD-GUIDE.md, plugins/audit/reference/orchestrator.md, plugins/audit/reference/verbs-in-full.md, plugins/audit/scripts/governance/_runner_output.py and present in the working tree's plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/scripts/governance/_evidence_io.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Attempt 2, same project tree as attempt 1 (no tree: line), attempt 1's uncommitted work present (git diff --stat). (1) _runner_output.py: new section 'which files the selftest sweep failed' - SWEEP_RUNNER='the sweep', sweep_summary(text) reads the LAST `<ok>/<files> files ok, <n> migrated to tests/?, <cases> cases` line (slash optional: the ledger's copies carry none), sweep_failures(text) returns [(path, why)] for every two-space `FAIL  <path>: <why>` line, [] on a green sweep, and None when there is no sweep summary or the FAIL lines do not account for files-ok (never a partial list). Not added to _SUMMARY_READERS (its case total is the suites' own claims, not a count this module watched; suiteReader and ran are unchanged). run-test-gate.py: _suite_candidates asks the sweep reader FIRST (the sweep's summary is the outermost runner's last line; a red child's reprinted output may carry another runner's summary), so failing_suites gives 'the N suite file(s) the sweep named as failing, read from its FAIL <path>: <why> line(s)' (carries _evidence_io.NAMED_FAILING), and a sweep summary with unaccounted FAIL lines gets its own not-knowable basis; failing_suites docstring and PLUGIN-BUILD-GUIDE.md's _runner_output section say so. Cases: test__runner_output.py rs1 (verbatim ledger tails of runs 05:41:28Z.21bec2 and 00:00:44Z.ab64e9: exited 1 x2, did not finish within 674s, summary read) and rs2 (allow case: green -> [], cut tail / no summary / one-space FAIL -> None); test_run_test_gate.py bz2 (the real 05:30:44Z.53629a -> 05:41:28Z.21bec2 pair through run_gate: failingSuites recorded, base_red atBase test_drive_phase.py, introduced test__refs.py). Red first on the tree before the reader: rs1, rs2, bz2 FAIL (bz2 read verdict not-knowable, the real gap), 1/4 passed, exit 1; green after: 4/4 exit 0. Mutations in a scratch copy of plugins/: count check dropped -> rs2 red; one-space FAIL admitted -> rs2 red; slash required -> rs1 red; restored -> 2/2. Summary-line fixtures are built by _sweep_line because _output.prose_number_claims (pn0) flagged the written-out counts; test__output.py 259/259 after. (2) REPLAY over the real ledger (scratchpad replay.py: each step's failingSuites re-derived from its stored verbatim `failing` tail by the current failing_suites, base_red run against rows recorded before the run): 05:30:44Z.53629a (P130.22-ywo @b6252aae) -> base run 2026-10-19T05:19:59Z.7b9766 (P130.18-ywo), red at base too: plugins/audit/tests/test_drive_phase.py, verdict base-only; 05:41:28Z.21bec2 (P130.24-ywo @b6252aae) -> base run 05:30:44Z.53629a, red at base too: test_drive_phase.py, red the task introduced: plugins/audit/tests/test__refs.py, verdict introduced; 05:55:33Z.6c52c7 (P130.18-ywo @b6252aae) -> base run 05:41:28Z.21bec2 (P130.24-ywo), red at base too: test_drive_phase.py, verdict base-only; 08:09:16Z.f47752 (P130.22-ywo @d83608a5) -> no-base: no run of this gate is recorded at base d83608a5 before it (the ledger holds no earlier row at that head), so the verdict says so. (3) orchestrator.md:26 now 'one at a time in id order (a fix for a suite red at HEAD first)', verbs-in-full.md:1590 now 'one task at a time in id order, a ready task whose tests.add names a suite red at HEAD first'; tools/measure-context.py --gate exit 0, orchestrator.md 61916/62000. Grep 'id order' over reference/commands/agents/skills/guide: orchestrator.md:278, :785, verbs-in-full.md:1521 and PLUGIN-BUILD-GUIDE.md:4350 already amended by attempt 1; commands/next.md:2 '(phase order, then task-id order)' LEFT - /audit:next and its file are outside this task's files. (4) one at a time, each exit code: test_drive_phase.py WHOLE exit 0 383/383 (15:31:09-15:33:35Z); test_run_test_gate.py exit 0 550/550; test__wave.py exit 0 15/15; test__runner_output.py exit 0 19/19 (re-run after the fixture rebuild); test__evidence_io.py exit 0 308/308; test__refs.py exit 0 286/286. Also: test__output.py 259/259 exit 0, test__deps.py 244/244 exit 0, ruff check plugins/audit tools exit 0, vermin on the four changed .py exit 0. Full sweep NOT run (runsGate own-tests). Edits to the doc files and the two python files after the first Edit were made through python in Bash on files in this task's scope (no tool was refused). Gap: rs1/rs2 sit in test__runner_output.py, which no tests.add entry names.",
+    "descriptive": "The selftest sweep's FAIL lines are now read as failing suites, so a task gate red only where its base is red names the base run on the real ledger runs instead of reading not-knowable."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test_run_test_gate.py::bz1",
+    "plugins/audit/tests/test_run_test_gate.py::bz2",
+    "plugins/audit/tests/test__wave.py::ws9",
+    "plugins/audit/tests/test__runner_output.py::rs1",
+    "plugins/audit/tests/test__runner_output.py::rs2"
+  ],
+  "casesAdded": [
+    [
+      "bz1",
+      "bz2"
+    ],
+    "ws9"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_run_test_gate.py: a task run red only on a suite its base run is also red on names the base run and says red at base too, a suite red only in the task run is charged to the task, and with no base run the verdict says none was recorded": {
+      "file": "plugins/audit/scripts/governance/run-test-gate.py",
+      "find": "return ([s for s in named if s in at_base],",
+      "replace": "return ([],",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test__wave.py: a ready task whose tests.add names a suite red at base is selected first, and selection is unchanged when no suite is red at base": {
+      "file": "plugins/audit/scripts/governance/_wave.py",
+      "find": "for task in base_red_first(list(tasks), red_at_base):",
+      "replace": "for task in list(tasks):",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__wave.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n1 _runner_output.py sweep_failures/sweep_summary are what the guide paragraph and failing_suites docstring describe; run-test-gate.py _suite_candidates asks _ro.sweep_failures before summary_reader; orchestrator.md:26 and verbs-in-full.md:1590 describe _wave.base_red_first as wired by drive-phase next_task\n2 count check dropped -> rs2 red; one-space FAIL admitted -> rs2 red (over-fire direction); slash required -> rs1 red; restored 2/2 (scratch copy, pycache purged); falsifiers proved in a scratch copy: run-test-gate atBase -> [] gives bz1+bz2 red (0/2), _wave ordering removed gives ws9 red (14/15)\n3 grep 'id order' over plugins/audit/{reference,commands,agents,skills} and PLUGIN-BUILD-GUIDE.md: 7 hits - orchestrator.md:26 and verbs-in-full.md:1590 fixed here; orchestrator.md:278, :785, verbs-in-full.md:1521, PLUGIN-BUILD-GUIDE.md:4350 already amended by attempt 1; commands/next.md:2 left, because /audit:next and that file are outside this task's files\n4 n/a - no new rule to an agent; the doc lines describe the drive's order, which drive-phase.py next_task enforces\n5 n/a - no property recorded; the replay is a reading of committed rows, deterministic\n6 n/a - no guard\n7 run ids, counts and byte figures appear only in this return, each beside the command that printed it; fixtures build their counts through _sweep_line",
+  "stamp": "audit-stamp: {\"content\":\"sha256:400ade46f1995cf261f689cc650d090c0a8cdf9d7de8dbf913838f682d2f2b4d\",\"dirtyDigest\":\"sha256:7e09ae06d1de1ec30a17ebc134ab897a7883f783c6745e8b8fab95f48de09e22\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"c0c32b3e41e40b0d\",\"plugins/audit/reference/orchestrator.md\":\"f8e9b4411becba5d\",\"plugins/audit/reference/verbs-in-full.md\":\"044c9714e5bba124\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"12576f4886c9cdfe\",\"plugins/audit/scripts/governance/_runner_output.py\":\"8e25356b787ffff1\",\"plugins/audit/scripts/governance/_wave.py\":\"593f7950811db502\",\"plugins/audit/scripts/governance/drive-phase.py\":\"fe8302c551c8439c\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"1fbf1146d5c04c61\",\"plugins/audit/tests/test__runner_output.py\":\"753b5e6369dd4c9f\",\"plugins/audit/tests/test__wave.py\":\"c9ef98280db4586f\",\"plugins/audit/tests/test_drive_phase.py\":\"9ad040c9d426ee85\",\"plugins/audit/tests/test_run_test_gate.py\":\"063138fedab65473\"},\"head\":\"4d8fa882\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/_runner_output.py\",\"plugins/audit/scripts/governance/_wave.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/tests/test__runner_output.py\",\"plugins/audit/tests/test__wave.py\",\"plugins/audit/tests/test_drive_phase.py\",\"plugins/audit/tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:8445cb3dca75af4581cbff319b8b24b432614996b97b648ab1ffc9142c0e58e2\",\"v\":2}"
+}

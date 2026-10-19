@@ -3606,7 +3606,7 @@
     {
       "id": "P130.35-ywo",
       "title": "A task gate that is red only where its base is red says so, and a task that fixes a base red is selected first",
-      "status": "in_progress",
+      "status": "blocked",
       "description": "F739. When the base commit a task started from already fails a suite, every task gate in the phase is red on that suite although the tasks' own work is green; the drive cannot tell the two apart, and its wave selection (lowest ready ids first) does not run the task that fixes the base red first. Seen in this phase: one test case failing at the base made three consecutive task gates red. (a) In run-test-gate.py's verdict: when a failing suite is also failing in a recorded run of the same gate at the task's base commit (the evidence ledger, `_evidence_io`, holds rows keyed by tested head), the step reports it as `red at base too` with that run's id, and the task verdict distinguishes 'red only where the base is red' from 'red the task introduced'. It is still not green: commit-task-work still refuses it unless the owner overrides - the change is in what the verdict SAYS and in the drive's decision line, which names the base run and suggests running the fixing task first. No base run recorded: say that, never assume. (b) In the wave selector (find it: `_wave.select` / `_status_facts.ready_tasks`): a ready task whose description or bug link declares it fixes a suite that is red at base (simplest honest signal: its tests.add names that suite AND the base run records that suite failing) is ordered first. Acceptance: (1) fixture: base run red on suite S, task run red on S only -> verdict names the base run and 'red at base too'; (2) task run red on S and T, base red on S only -> T is charged to the task; (3) no base run -> the verdict says none was recorded; (4) commit-task-work still refuses all three; (5) wave selection puts the S-fixing task first when S is red at base, and is unchanged otherwise; (6) the full sweep is green.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -3639,7 +3639,29 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test__wave.py: a ready task whose tests.add names a suite red at base is selected first, and selection is unchanged when no suite is red at base": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__wave.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/governance/_wave.py",
+            "find": "for task in base_red_first(list(tasks), red_at_base):",
+            "replace": "for task in list(tasks):"
+          },
+          "plugins/audit/tests/test_run_test_gate.py: a task run red only on a suite its base run is also red on names the base run and says red at base too, a suite red only in the task run is charged to the task, and with no base run the verdict says none was recorded": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_run_test_gate.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/governance/run-test-gate.py",
+            "find": "return ([s for s in named if s in at_base],",
+            "replace": "return ([],"
+          }
+        }
       },
       "model": "opus",
       "skills": [
@@ -3653,17 +3675,33 @@
         "P130.26-ywo",
         "P130.38-ywo"
       ],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-19T14:59:50Z",
+      "startedAt": "2026-10-19T15:23:47Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T15:52:17Z.5b4ce8",
+        "status": "passed",
+        "at": "2026-10-19T15:52:17Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-19T15:53:25Z",
+          "text": "falsifier could-not-run for `plugins/audit/tests/test_run_test_gate.py: a task run red only on a suite its base run is also red on names the base run and says red at base too, a suite red only in the task run is charged to the task, and with no base run the verdict says none was recorded`: mutation at plugins/audit/scripts/governance/run-test-gate.py:592 (the mutation broke the build rather than failing the test - PASS ct4 pytest is read decorated AND bare -- `-q` drops the `=` rule entirely -- and both of its zero shapes are POSITIVE zeros: `no tests ran` collected nothing, and `1 error` is a test that never started, which is the exact distinction that separates a positive zero from `None`: (3, 0, 0))"
+        },
+        {
+          "at": "2026-10-19T15:54:20Z",
+          "text": "falsifier could-not-run for `plugins/audit/tests/test_run_test_gate.py: a task run red only on a suite its base run is also red on names the base run and says red at base too, a suite red only in the task run is charged to the task, and with no base run the verdict says none was recorded` accepted at the close: The falsifier's mutation broke the build rather than failing the test, so it proves nothing either way; red-first was proved by the helper on this attempt, the task's change is present in the tree the gate measured (ten files modified), and the stage is retired at HEAD by P130.6-ywo. (mutation at plugins/audit/scripts/governance/run-test-gate.py:592; the mutation broke the build rather than failing the test - PASS ct4 pytest is read decorated AND bare -- `-q` drops the `=` rule entirely -- and both of its zero shapes are POSITIVE zeros: `no tests ran` collected nothing, and `1 error` is a test that never started, which is the exact distinction that separates a positive zero from `None`: (3, 0, 0))"
+        }
+      ],
+      "blockedReason": "Not confirmed: an adversarial pre-commit review found (high) any run at the same head counts as the base run, including other tasks' runs on dirty trees, so a red a sibling task introduced is labelled red at base too; (medium) the sweep reader's paths are filtered by is_suite_path, so a red under tools/ or hooks/ is dropped while the list reads complete. Restarting it in place to fix both."
     },
     {
       "id": "P130.36-ywo",
