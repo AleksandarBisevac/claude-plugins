@@ -417,6 +417,10 @@ export const POLL_WAIT_ALLOWED = [
     reason: 'the Overview first paint on a cold load; twenty seconds is a load bound, not a poll wait' },
   { find: "classList.contains('hidden')", sites: 2,
     reason: 'a tab\'s first paint on a cold load; twenty seconds is a load bound, not a poll wait' },
+  { find: 'timeout: PANEL_BOOT_MS', sites: 1,
+    reason: 'the Guards tab first paint after boot, a load bound named by PANEL_BOOT_MS; nothing in it is timed by the run-status poll' },
+  { find: 'timeout: TAB_WIRED_MS', sites: 1,
+    reason: 'a tab button\'s click handler being wired after it appeared, a load bound named by TAB_WIRED_MS; the run-status poll does not touch it' },
 ];
 
 /**

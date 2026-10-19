@@ -891,9 +891,13 @@ def base_red_why(ctx, text, manifest, phase, task):
     if not isinstance(reading, dict):
         return ""
     if not reading.get("run"):
-        return ("; could not read the ledger"
-                if reading.get("verdict") == "unreadable"
-                else "; no base run recorded")
+        if reading.get("verdict") == "unreadable":
+            return "; could not read the ledger"
+        # A reading that carries a `head` key holding nothing is a run git
+        # named no HEAD for; a row from before the key has no answer either way.
+        if "head" in reading and not reading["head"]:
+            return "; git named no HEAD for that run"
+        return "; no base run recorded"
     clause = ""
     if reading.get("atBase"):
         clause = "; red at base too: %s - run %s" % (

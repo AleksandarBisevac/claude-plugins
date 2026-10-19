@@ -1,5 +1,5 @@
 ---
-description: 'Audit pipeline: execute the next ready task (phase order, then task-id order), then report what is ready next. --dry-run previews without mutating.'
+description: 'Audit pipeline: execute the next ready task (phase order, then task-id order; a ready task fixing a suite red at base goes first), then report what is ready next. --dry-run previews without mutating.'
 argument-hint: '[--dry-run]'
 allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 ---

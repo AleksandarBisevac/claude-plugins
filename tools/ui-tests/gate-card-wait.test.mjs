@@ -91,12 +91,21 @@ function blank(src) {
       out += src.slice(i, stop).replace(/[^\n]/g, ' ');
       i = stop;
     } else if (c === '"' || c === "'" || c === '`') {
+      const start = i;
       out += c;
       i += 1;
       while (i < src.length && src[i] !== c) {
         if (src[i] === '\\') { out += ' '; i += 1; }
         out += src[i] === '\n' ? '\n' : ' ';
         i += 1;
+      }
+      // This tokenizer knows no regex literals, so a quote inside one opens a
+      // "string" that swallows what follows; reaching the end of the file inside
+      // it is the one desync it can see, and it is refused rather than scanned.
+      if (i >= src.length) {
+        throw new Error('blank(): the string opened at line '
+          + (src.slice(0, start).split('\n').length)
+          + ' is not closed before the end of the file, so the rest was not scanned');
       }
       out += c;
       i += 1;
@@ -133,16 +142,57 @@ function bodyOf(blanked, name) {
   return [open, closeOf(blanked, open)];
 }
 
-// A wait is poll-dependent when it names the poll's state (RUNSTATUS, pollRunStatus)
-// or carries a number of milliseconds at least the poll interval: no step that only
-// waits for the page to settle sits that long, so a wait that long is waiting on
-// something timed by the poll. WHAT THIS CANNOT SEE: a poll-dependent wait that is
-// shorter than the interval and names nothing of the poll - that one is a wrong
-// wait whatever it is called, and the interval it would have to undercut is the one
-// the panel declares.
-function pollDependent(text, intervalMs) {
+// The text of the duration a wait primitive's call carries, or null when it names
+// none: waitForTimeout(ms) and setTimeout(fn, ms) take it as an argument,
+// waitForFunction as the `timeout` of its options. `call` is blanked source.
+function durationOf(call) {
+  const prim = call.match(/^\w+/)[0];
+  if (prim === 'waitForFunction') {
+    const m = call.match(/\btimeout\b\s*(?::\s*([^,}]*[^,}\s]))?\s*[,}]/);
+    return m ? (m[1] || 'timeout') : null;
+  }
+  const args = [];
+  let depth = 0;
+  let from = call.indexOf('(') + 1;
+  for (let i = from; i < call.length; i += 1) {
+    if ('([{'.includes(call[i])) depth += 1;
+    else if (')]}'.includes(call[i])) {
+      if (depth === 0) { args.push(call.slice(from, i)); break; }
+      depth -= 1;
+    } else if (call[i] === ',' && depth === 0) { args.push(call.slice(from, i)); from = i + 1; }
+  }
+  const at = prim === 'setTimeout' ? 1 : 0;
+  return args.length > at ? args[at].trim() : null;
+}
+
+// A wait is poll-dependent when it names the poll's state (RUNSTATUS, pollRunStatus),
+// carries a number of milliseconds at least the poll interval, or carries a duration
+// that is not a numeric literal at all: a computed duration can reach any size, and a
+// wait that cannot be shown shorter than the interval is treated as timed by the poll
+// until the allow-list says otherwise. A wait that only lets the page settle is the
+// literal case below the interval. WHAT THIS CANNOT SEE: a poll-dependent wait that
+// is a literal shorter than the interval and names nothing of the poll - that one is
+// a wrong wait whatever it is called, and the interval it would have to undercut is
+// the one the panel declares; and a primitive with no duration of its own (the
+// default timeout), which is read as not computed.
+function pollDependent(text, intervalMs, blanked, constants) {
   if (/\b(?:RUNSTATUS|pollRunStatus)\b/.test(text)) return true;
-  return (text.match(/\b\d{4,}\b/g) || []).some((n) => Number(n) >= intervalMs);
+  if ((text.match(/\b\d{4,}\b/g) || []).some((n) => Number(n) >= intervalMs)) return true;
+  const duration = durationOf(blanked === undefined ? text : blanked);
+  if (duration === null) return false;
+  // A name the file declares once as `const NAME = <digits>;` is that literal.
+  const value = /^\d+$/.test(duration) ? duration : constants.get(duration);
+  return value === undefined || Number(value) >= intervalMs;
+}
+
+// The `const NAME = <digits>;` declarations of blanked source, name to digits; a
+// name declared twice is dropped, since which value a use meant is then unknown.
+function numericConstants(blanked) {
+  const seen = new Map();
+  for (const m of blanked.matchAll(/\b(?:const|let)\s+(\w+)\s*=\s*(\d+)\s*;/g)) {
+    seen.set(m[1], seen.has(m[1]) ? null : m[2]);
+  }
+  return new Map([...seen].filter(([, v]) => v !== null));
 }
 
 // Every call site of a wait primitive that depends on the poll, as {offset, line,
@@ -150,6 +200,7 @@ function pollDependent(text, intervalMs) {
 // meant to live and are left out.
 function waitSites(src, intervalMs) {
   const blanked = blank(src);
+  const constants = numericConstants(blanked);
   const inside = HELPERS.map((h) => bodyOf(blanked, h));
   const call = new RegExp('\\b(?:' + PRIMITIVES.join('|') + ')\\s*\\(', 'g');
   return [...blanked.matchAll(call)]
@@ -158,8 +209,9 @@ function waitSites(src, intervalMs) {
       offset: m.index,
       line: blanked.slice(0, m.index).split('\n').length,
       text: src.slice(m.index, closeOf(blanked, blanked.indexOf('(', m.index))),
+      blanked: blanked.slice(m.index, closeOf(blanked, blanked.indexOf('(', m.index))),
     }))
-    .filter((s) => pollDependent(s.text, intervalMs));
+    .filter((s) => pollDependent(s.text, intervalMs, s.blanked, constants));
 }
 
 // What is wrong with `src` as a place for waits: the poll-dependent sites that are
@@ -176,6 +228,39 @@ function waitFindings(src, allowed, intervalMs) {
     unreasoned: allowed.filter((a) => typeof a.reason !== 'string' || a.reason.trim() === ''),
   };
 }
+
+describe('the scanner reads every wait duration, and refuses a source it cannot tokenise', () => {
+  it('a wait whose duration is computed is reported as poll-dependent, and a source ending inside a string makes the scanner throw', () => {
+    const real = readFileSync(CAPTURE, 'utf8');
+    const interval = pollIntervalOf(assemblePanelBody());
+    // Each wait is a duration the scan cannot read as a number below the interval,
+    // in every primitive's own position for it.
+    for (const wait of [
+      'await page.waitForTimeout(window.margin * 2);',
+      'await page.waitForTimeout(pollWindowOf(page));' /* a call that is not one of the two helpers */,
+      'await page.waitForFunction(() => true, null, { timeout: budget });',
+      'await page.waitForFunction(() => true, null, { timeout });',
+      'await new Promise((r) => setTimeout(r, budget + 1));',
+    ]) {
+      const bad = waitFindings(real + '\nasync function handWritten(page) { ' + wait + ' }\n', ALLOWED, interval);
+      expect(bad.unlisted.map((s) => s.text), wait).toHaveLength(1);
+    }
+    // The other direction: a numeric literal below the interval is a settle, not a
+    // computed duration, in each position, so a scan that flagged every wait fails.
+    for (const wait of [
+      'await page.waitForTimeout(250);',
+      'await page.waitForFunction(() => true, null, { timeout: 250 });',
+      'await new Promise((r) => setTimeout(r, 250));',
+    ]) {
+      const ok = waitFindings(real + '\nasync function s(page) { ' + wait + ' }\n', ALLOWED, interval);
+      expect(ok.unlisted, wait).toHaveLength(0);
+    }
+    // A source that ends inside a string is not scanned past that point silently.
+    expect(() => blank('const a = 1;\nconst b = "never closed;\n')).toThrow(/line 2/);
+    expect(() => blank("const t = `never closed\nmore")).toThrow(/line 1/);
+    expect(blank('const ok = "closed";').length).toBe('const ok = "closed";'.length);
+  });
+});
 
 describe('every poll-dependent wait routes through the helper', () => {
   it('a hand-written poll-dependent wait with another number in a scratch copy of capture-screenshots.mjs is refused, and every real call site is a helper call or an allow-listed entry with a reason', () => {

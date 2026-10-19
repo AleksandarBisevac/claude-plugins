@@ -644,13 +644,24 @@ def base_reading(res, task_id, read_rows):
     """`base_red` for a gate result `res`, the ledger's rows read by
     `read_rows()`. A ledger that raises is said as that - verdict
     `unreadable`, the reason in the basis - and never as a base run that was
-    not recorded, which is a claim about rows nobody read."""
+    not recorded, which is a claim about rows nobody read.
+
+    The reading is advisory, so ANY error - from the ledger or from the
+    comparison over what it returned - becomes an `unreadable` reading naming
+    the error's type and text, and never a crash of a gate run whose own
+    verdict is already decided (SECURITY.md's fail-open table)."""
+    head = (res.get("testedState") or {}).get("head")
     try:
         rows, why = read_rows(), None
-    except (OSError, ValueError) as exc:
-        rows, why = [], "%s" % (exc,)
-    found = base_red(res.get("steps"), (res.get("testedState") or {}).get("head"),
-                     task_id, rows)
+    except Exception as exc:                                   # noqa: BLE001
+        rows, why = [], "%s: %s" % (type(exc).__name__, exc)
+    try:
+        found = base_red(res.get("steps"), head, task_id, rows)
+    except Exception as exc:                                   # noqa: BLE001
+        return {"run": None, "head": head, "task": None, "atBase": [],
+                "introduced": [], "unknown": [], "verdict": "unreadable",
+                "basis": "could not read the base (%s: %s), so no base run "
+                         "was looked up" % (type(exc).__name__, exc)}
     if found is not None and why is not None:
         found.update(verdict="unreadable", basis=(
             "could not read the ledger (%s), so no base run was looked up"

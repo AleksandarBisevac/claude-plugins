@@ -10575,6 +10575,35 @@ def _base_red_cases(check):
           and not any("no run of this gate is recorded" in ln
                       for ln in unread_lines)
           and any("could not read the ledger" in ln for ln in unread_lines))
+    # AN ERROR THE READER WAS NOT EXPECTED TO RAISE (anything but OSError and
+    # ValueError) must still leave the gate's verdict alone: the reading is
+    # advisory, so it is said as unreadable with the error named.
+    def _odd_reader():
+        raise KeyError("rows")
+    headed = dict(only_s, testedState={"head": head})
+    before = json.dumps(headed, sort_keys=True)
+
+    def _reading(read_rows):
+        # A crash is carried as a value, so the case below fails on it rather
+        # than the whole block dying before the case is built.
+        try:
+            return M.base_reading(headed, "P1.1", read_rows)
+        except Exception as exc:                               # noqa: BLE001
+            return {"crashed": "%s: %s" % (type(exc).__name__, exc)}
+    odd_read = _reading(_odd_reader)
+    # And an error from the comparison itself, over rows that are not a list.
+    odd_rows = _reading(lambda: 5)
+    check("bz6 an unexpected error inside the base reading leaves the gate "
+          "verdict unchanged and reports the base as could-not-read with the "
+          "error named: %r / %r" % (odd_read, odd_rows),
+          json.dumps(headed, sort_keys=True) == before
+          and odd_read.get("verdict") == "unreadable"
+          and odd_read.get("run") is None
+          and "could not read" in (odd_read.get("basis") or "")
+          and "KeyError" in (odd_read.get("basis") or "")
+          and odd_rows.get("verdict") == "unreadable"
+          and odd_rows.get("run") is None
+          and "TypeError" in (odd_rows.get("basis") or ""))
 
 
 def _write(path, text):

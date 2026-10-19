@@ -4756,7 +4756,12 @@
       "startedAt": "2026-10-19T21:11:23Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T21:39:49Z.b6ede4",
+        "status": "passed",
+        "at": "2026-10-19T21:39:49Z"
+      }
     },
     {
       "id": "P130.46-ywo",
