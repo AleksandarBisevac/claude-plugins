@@ -1,0 +1,34 @@
+{
+  "gates": {
+    "own-tests: python3 plugins/audit/tests/test_drive_phase.py --selftest (whole file, alone)": "pass",
+    "ruff check plugins/audit/tests/test_drive_phase.py": "pass",
+    "vermin -t=3.8- on the file": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression mode, expectRedFirst false. The red was nonetheless watched in a scratch copy under the scratchpad: with time.sleep(1.2) after the pin and the old pin, sc4 FAILED (started 08:43:49, restarted 08:43:51, i.e. the pin never reached the stamp); with the fix and the same sleep inside sc4 itself, sc4 and sc4b PASS (6/6); with only the time.time half of the pin removed, sc4 and sc4b FAIL (4/6).",
+    "at": "2026-10-19 scratch runs, 08:43-08:55 local"
+  },
+  "outcome": {
+    "technical": "Root cause differs from the task text: the start verb is a child process (audit-task.py start), and its stamp is _utc_stamp.utc_stamp = time.strftime(.., time.gmtime(time.time())) - an argument-less gmtime() is no longer what it asks, so _pinned_clock's sitecustomize (which patched only gmtime(None)) pinned nothing and sc4's started==pin held only when the first drive call finished within the pin's second. Fix in plugins/audit/tests/test_drive_phase.py: (1) the sitecustomize now also replaces time.time with a wrapper that returns the pinned second only when its caller frame is _utc_stamp.utc_stamp (file basename and function name checked), every other time.time caller (locks, deadlines) keeps the real clock; (2) the sc4 sequence is extracted to _scope_retry_run(M, prefix, delay) + _scope_retry_ok(state) (delay = sleep after the pin, before the first drive call); sc4 runs it with delay 0, new case sc4b runs it with delay 1.2 and additionally requires restarted == pin+1 (the same-second collision resolved by next_start_at); (3) al-block: its re-run of ASCII_BLOCK (fm-block) used run_stage's default constant 280; it now passes max(1, _harness.stage_timeout() - STAGE_TIMEOUT_MARGIN), i.e. derived from SWEEP_FILE_TIMEOUT like the other blocks and under the outer block budget. Measured: fm-block under the ASCII env alone 25s, al-block alone 69s. Evidence: single-shot six parallel copies of the whole file in scratch dirs (each full tree copy): all six exit 0, 374/374, sc4 and sc4b PASS in each, no DID NOT REPORT (each ~947s wall under that load); whole file alone in the project tree: ALL PASS 374/374, 2:29 wall; falsifier (remove the time.time pin line) in scratch: sc4b FAIL, 5/6 on sc-block. Not run: the full tools/sweep-selftests.py and other gate commands (own-tests only).",
+    "descriptive": "sc4's same-second start precondition now holds by construction (the pin reaches the stamp the start verb really reads), proven with a 1.2s delay, and al-block's inner budget is derived from the sweep's file timeout."
+  },
+  "testsAdded": [
+    "sc4b sc4 holds its same-second precondition when the first in-process drive call takes longer than a second"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_drive_phase.py: sc4 holds its same-second precondition when the first in-process drive call takes longer than a second": {
+      "file": "plugins/audit/tests/test_drive_phase.py",
+      "find": "    \"_time.time = _pinned_time\\n\")",
+      "replace": "    \"\")",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_drive_phase.py",
+        "--selftest",
+        "--stage",
+        "sc-block"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:fae8c9295a6d3dedba9c82e75bbdfa9f590d3669538f56112144b48da96b8f06\",\"dirtyDigest\":\"sha256:c77cb05772f2f258100317a5cbbd99801348c0f6b2a677e2a211847f1a6a9c32\",\"dirtyPaths\":{\"plugins/audit/tests/test_drive_phase.py\":\"c6ef8fdfa9ebca5d\"},\"head\":\"500f8295\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:5e0bcff72c8e246ebd2d0ebdfd7fdf988474e6d688a3a4d635320535527203b6\",\"v\":2}"
+}

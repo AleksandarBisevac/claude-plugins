@@ -2622,10 +2622,12 @@
     {
       "id": "P130.26-ywo",
       "title": "The same-second start case pins the clock the in-process drive reads, so load cannot move its start into the next second",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F733. plugins/audit/tests/test_drive_phase.py case sc4 (around :5888-5921) takes `pin = int(time.time())` and pins it with `_pinned_clock` (around :213), which patches time.gmtime() only in child Python processes; `_next` (around :2243) calls M.main in-process, so the task's start stamp follows the real clock. Under load the first `_next` takes over a second, `started` becomes pin+1 and the case's same-second precondition is gone (reproduced: six parallel --selftest runs failed sc4 six times). Fix: make the pinned second reach the in-process call too (patch the module's clock for the in-process path, or write startedAt in the fixture), so the case states its precondition instead of hoping for it. Also measure al-block under the same load: it timed out at its 280s budget in the same runs; if its budget is the cause, derive it from SWEEP_FILE_TIMEOUT/SWEEP_STAGE_GRANT the way the other blocks do. Acceptance: (1) with a deliberate time.sleep(1.2) inserted after the pin in a scratch copy, sc4 still passes after the fix and fails before it; (2) six parallel --selftest runs of the file pass sc4; (3) al-block's budget is either unchanged with a measurement showing it fits, or derived; (4) the suite passes alone.",
       "files": [
-        "plugins/audit/tests/test_drive_phase.py"
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/_utc_stamp.py",
+        "plugins/audit/tests/test__utc_stamp.py"
       ],
       "tests": {
         "mode": "regression",
@@ -2643,7 +2645,21 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test_drive_phase.py: sc4 holds its same-second precondition when the first in-process drive call takes longer than a second": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_drive_phase.py",
+              "--selftest",
+              "--stage",
+              "sc-block"
+            ],
+            "file": "plugins/audit/tests/test_drive_phase.py",
+            "find": "    \"_time.time = _pinned_time\\n\")",
+            "replace": "    \"\")"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -2653,16 +2669,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T08:42:18Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T09:22:31Z.b01dc1",
+        "status": "passed",
+        "at": "2026-10-19T09:22:31Z"
+      }
     },
     {
       "id": "P130.27-ywo",
