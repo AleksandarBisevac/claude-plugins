@@ -1162,9 +1162,7 @@
         "P130.19-ywo",
         "P130.20-ywo",
         "P130.21-ywo",
-        "P130.22-ywo",
         "P130.23-ywo",
-        "P130.24-ywo",
         "P130.25-ywo",
         "P130.26-ywo",
         "P130.27-ywo",
@@ -1176,7 +1174,9 @@
         "P130.33-ywo",
         "P130.34-ywo",
         "P130.35-ywo",
-        "P130.36-ywo"
+        "P130.36-ywo",
+        "P130.37-ywo",
+        "P130.38-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -2362,7 +2362,7 @@
     {
       "id": "P130.22-ywo",
       "title": "The CI description says what main-run concurrency does, and the slice check and the CI verifier read every shape of the field they judge",
-      "status": "in_progress",
+      "status": "cancelled",
       "description": "Fault F730 (the P130.2 review, filed at docs/audit/evidence/returns/P130.2/20261017T230831Z.reviewer.json). Five defects in or beside P130.2's work. (1) .github/workflows/ci.yml:39-44 says a run on main 'is the record of what landed and is never cancelled'; `cancel-in-progress: false` protects only a RUNNING run, and GitHub still replaces a PENDING run when a newer one queues in the group `ci-refs/heads/main`. CHANGELOG.md:27 ('everywhere but `main`') carries the same implication. Fix: reword both to say a running main run is never cancelled and a queued one can be replaced - or key the concurrency group on the SHA on main so main runs never share a group, which makes the sentence true as written; the return names which was taken. (2) tools/gate-parity.py:1579: `slice_drift` classifies a job as release-tier only when its `if:` matches `_RELEASE_TIER_IF` and every other job as per-run, so a job with `if: ${{ false }}` or a push-only condition still counts as running its slices on every run, and `slice_drift` and `shard_matrix_drift` (:1609-1642) return []. Fix: a job `if:` counts as per-run only when it reduces to the verified-run guard the workflow puts on its jobs, optionally with the release-tier term; any other condition is a `problems` row naming the job and saying its condition cannot be proved to run on every run. A job that runs no `tools/verify.sh --only` call, such as the push-only `verified` guard job (ci.yml:97-99), carries no slice and stays outside this judgement. (3) tools/ci-verified.py:128-141: `decide()` matches a listed run on head_sha, path, status and jobs, never on its `event`, and `ask_github` (:153-170) does not keep it; a pull_request run's head_sha is the PR head while its checkout is the merge commit, so a PR run can vouch for a main SHA reached by fast-forward. Fix: accept only `workflow_dispatch` and `push` runs, append a `why` line naming the refused run's event, and fetch the jobs only of runs that can be accepted; the docstring's 'exactly this commit' then holds for every run it accepts. (4) Stale mentions: tools/check-git-pipeline.py:11,29,38,226 and plugins/audit/tests/test_gen_demo_manifest.py:729,800 say ci.yml carries the launcher steps and the scale-demo step; P130.2 moved them into tools/verify.sh's e2e and manifests slices. Fix: name the verify.sh slice that runs each (read it off `sh tools/verify.sh --list`, never retype it from memory). (5) Pre-existing: .claude/skills/reproducing-ci-locally/SKILL.md:20-23 derives the local commands from `sed -n '/jobs:/,$p' .github/workflows/ci.yml`, which for this repo yields only `sh tools/verify.sh --only ...` calls; add a pointer to `sh tools/verify.sh --list` as the way to see the gate in this repo. Acceptance: (1) the ci.yml comment and the CHANGELOG line state only what the concurrency block does, for a running and for a queued main run; (2) gate-parity's new sv cases with `if: ${{ false }}` and with a push-only condition on a per-run job each report that job, and sv0 (the allow case) stays green; (3) ci-verified's new cv case with a green pull_request run on the asking SHA, same workflow path, all jobs success, refuses and its `why` names the event, and cv1 (a green workflow_dispatch run) still verifies; (4) `grep -n 'ci.yml' tools/check-git-pipeline.py plugins/audit/tests/test_gen_demo_manifest.py` finds no sentence claiming ci.yml runs a step verify.sh now runs; (5) the skill names `sh tools/verify.sh --list`; (6) each new case is red with its fix reverted (the return shows the red run).",
       "files": [
         ".github/workflows/ci.yml",
@@ -2408,16 +2408,16 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: Cancelled to re-add behind P130.26-ywo: its gate cannot go green while test_drive_phase.py case sc4 (F733) is red at the base (three consecutive reds on sc4 alone), and an attempted task cannot gain a dependency; the finished work is saved as a patch in quality-gates-internal/plans/2026-10-17-redesign-implementation/patches/P130.22-ywo.patch."
       },
       "startedAt": "2026-10-19T06:44:05Z",
-      "completedAt": null,
+      "completedAt": "2026-10-19T08:40:48Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-19T05:30:44Z.53629a",
+        "runId": "2026-10-19T08:39:26Z.8c2e73",
         "status": "failed",
-        "at": "2026-10-19T05:30:44Z"
+        "at": "2026-10-19T08:39:26Z"
       }
     },
     {
@@ -2464,7 +2464,8 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [
-        "P130.4"
+        "P130.4",
+        "P130.26-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -2480,7 +2481,7 @@
     {
       "id": "P130.24-ywo",
       "title": "The task-start scope preflight asks a runner only about the paths it can collect, and a Python suite counts as collected by the sweep",
-      "status": "in_progress",
+      "status": "cancelled",
       "description": "Fault F731. scope_gap (plugins/audit/scripts/governance/drive-phase.py:1073-1115) keeps, from a task's gate entries, only those whose entry_runner is in _gate_derive.UNIT_RUNNERS, then declares a scope-gap when none of those runners collects a tests.add path. The Python suites here are collected by tools/sweep-selftests.py behind the `selftests` entry, whose entry_runner is None, so it is never asked; with `vitest` also in the gate, every Python test path draws NOT_COLLECTED from vitest and a scope-gap decision whose only remedies are widen (adds vitest.config.mjs, which the task never edits) or block. Seen on P130.4 (test__config.py) and P130.7 (test__deps.py). Fix: read how _gate_derive already splits paths by language (_runners_for, _gate_derive.py:312) and have scope_gap ask a runner only about paths that runner can take, treating plugins/audit/tests/*.py (and the project's own Python suite location) as collected by the sweep when the gate holds `selftests`; the alternative of counting any collecting runner is acceptable only if it reuses that same split, and the return names which was taken. A path no runner of the gate can take at all must still be reported rather than silently passed. Acceptance: (1) a Python tests.add path under a gate holding `selftests` and `vitest` draws no scope-gap decision and no could-not-tell line; (2) a .mjs/.js tests.add path vitest does not collect still draws the scope-gap decision with its widen remedy; (3) a Python path under a gate holding neither the sweep nor pytest is still reported; (4) each new case is red with the fix reverted (the return shows the red run).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2524,10 +2525,10 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: Cancelled to re-add behind P130.26-ywo: its gate cannot go green while test_drive_phase.py case sc4 (F733) is red at the base (three consecutive reds on sc4 alone), and an attempted task cannot gain a dependency; the finished work is saved as a patch in quality-gates-internal/plans/2026-10-17-redesign-implementation/patches/P130.24-ywo.patch."
       },
       "startedAt": "2026-10-19T06:44:05Z",
-      "completedAt": null,
+      "completedAt": "2026-10-19T08:40:49Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
@@ -2700,7 +2701,8 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [
-        "P130.7"
+        "P130.7",
+        "P130.26-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -2756,7 +2758,8 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [
-        "P130.25-ywo"
+        "P130.25-ywo",
+        "P130.26-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -2808,7 +2811,8 @@
       "blockedBy": [],
       "dependsOn": [
         "P130.13-ywo",
-        "P130.14-ywo"
+        "P130.14-ywo",
+        "P130.26-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -2861,7 +2865,8 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [
-        "P130.14-ywo"
+        "P130.14-ywo",
+        "P130.26-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -2911,7 +2916,8 @@
       "blockedBy": [],
       "dependsOn": [
         "P130.18-ywo",
-        "P130.20-ywo"
+        "P130.20-ywo",
+        "P130.26-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -2959,7 +2965,9 @@
       ],
       "risk": "low",
       "blockedBy": [],
-      "dependsOn": [],
+      "dependsOn": [
+        "P130.26-ywo"
+      ],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,
@@ -3064,7 +3072,8 @@
       "blockedBy": [],
       "dependsOn": [
         "P130.23-ywo",
-        "P130.27-ywo"
+        "P130.27-ywo",
+        "P130.26-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -3120,7 +3129,7 @@
       "blockedBy": [],
       "dependsOn": [
         "P130.26-ywo",
-        "P130.24-ywo"
+        "P130.38-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -3172,7 +3181,118 @@
       "blockedBy": [],
       "dependsOn": [
         "P130.29-ywo",
-        "P130.31-ywo"
+        "P130.31-ywo",
+        "P130.26-ywo"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.37-ywo",
+      "title": "The CI description says what main-run concurrency does, and the slice check and the CI verifier read every shape of the field they judge",
+      "status": "pending",
+      "description": "Fault F730 (the P130.2 review, filed at docs/audit/evidence/returns/P130.2/20261017T230831Z.reviewer.json). Five defects in or beside P130.2's work. (1) .github/workflows/ci.yml:39-44 says a run on main 'is the record of what landed and is never cancelled'; `cancel-in-progress: false` protects only a RUNNING run, and GitHub still replaces a PENDING run when a newer one queues in the group `ci-refs/heads/main`. CHANGELOG.md:27 ('everywhere but `main`') carries the same implication. Fix: reword both to say a running main run is never cancelled and a queued one can be replaced - or key the concurrency group on the SHA on main so main runs never share a group, which makes the sentence true as written; the return names which was taken. (2) tools/gate-parity.py:1579: `slice_drift` classifies a job as release-tier only when its `if:` matches `_RELEASE_TIER_IF` and every other job as per-run, so a job with `if: ${{ false }}` or a push-only condition still counts as running its slices on every run, and `slice_drift` and `shard_matrix_drift` (:1609-1642) return []. Fix: a job `if:` counts as per-run only when it reduces to the verified-run guard the workflow puts on its jobs, optionally with the release-tier term; any other condition is a `problems` row naming the job and saying its condition cannot be proved to run on every run. A job that runs no `tools/verify.sh --only` call, such as the push-only `verified` guard job (ci.yml:97-99), carries no slice and stays outside this judgement. (3) tools/ci-verified.py:128-141: `decide()` matches a listed run on head_sha, path, status and jobs, never on its `event`, and `ask_github` (:153-170) does not keep it; a pull_request run's head_sha is the PR head while its checkout is the merge commit, so a PR run can vouch for a main SHA reached by fast-forward. Fix: accept only `workflow_dispatch` and `push` runs, append a `why` line naming the refused run's event, and fetch the jobs only of runs that can be accepted; the docstring's 'exactly this commit' then holds for every run it accepts. (4) Stale mentions: tools/check-git-pipeline.py:11,29,38,226 and plugins/audit/tests/test_gen_demo_manifest.py:729,800 say ci.yml carries the launcher steps and the scale-demo step; P130.2 moved them into tools/verify.sh's e2e and manifests slices. Fix: name the verify.sh slice that runs each (read it off `sh tools/verify.sh --list`, never retype it from memory). (5) Pre-existing: .claude/skills/reproducing-ci-locally/SKILL.md:20-23 derives the local commands from `sed -n '/jobs:/,$p' .github/workflows/ci.yml`, which for this repo yields only `sh tools/verify.sh --only ...` calls; add a pointer to `sh tools/verify.sh --list` as the way to see the gate in this repo. Acceptance: (1) the ci.yml comment and the CHANGELOG line state only what the concurrency block does, for a running and for a queued main run; (2) gate-parity's new sv cases with `if: ${{ false }}` and with a push-only condition on a per-run job each report that job, and sv0 (the allow case) stays green; (3) ci-verified's new cv case with a green pull_request run on the asking SHA, same workflow path, all jobs success, refuses and its `why` names the event, and cv1 (a green workflow_dispatch run) still verifies; (4) `grep -n 'ci.yml' tools/check-git-pipeline.py plugins/audit/tests/test_gen_demo_manifest.py` finds no sentence claiming ci.yml runs a step verify.sh now runs; (5) the skill names `sh tools/verify.sh --list`; (6) each new case is red with its fix reverted (the return shows the red run). REPLACES P130.22-ywo, cancelled because its gate could not go green while test_drive_phase case sc4 was red at the base (F733); its finished work is saved as a patch: <outside-repo> (git apply --check passed on the phase head). Apply it, verify every suite the task names, prove the tests.add cases red by reverting the implementation half in a scratch copy, then submit. Do not redo the work.",
+      "files": [
+        ".github/workflows/ci.yml",
+        "CHANGELOG.md",
+        "tools/gate-parity.py",
+        "tools/ci-verified.py",
+        "tools/check-git-pipeline.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        ".claude/skills/reproducing-ci-locally/SKILL.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ci-verified.py: (inline --selftest, `_cases`) a green pull_request run on the asking SHA and workflow path, every job success, refuses and names its event in why; a green workflow_dispatch run and a green push run on the same SHA still verify",
+          "tools/gate-parity.py: (inline --selftest, the sv cases) a per-run job carrying `if: ${{ false }}` and one carrying a push-only condition are each reported by slice_drift naming the job, while the verified-run guard alone and with the release-tier term report nothing"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.2",
+        "P130.26-ywo"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.38-ywo",
+      "title": "The task-start scope preflight asks a runner only about the paths it can collect, and a Python suite counts as collected by the sweep",
+      "status": "pending",
+      "description": "Fault F731. scope_gap (plugins/audit/scripts/governance/drive-phase.py:1073-1115) keeps, from a task's gate entries, only those whose entry_runner is in _gate_derive.UNIT_RUNNERS, then declares a scope-gap when none of those runners collects a tests.add path. The Python suites here are collected by tools/sweep-selftests.py behind the `selftests` entry, whose entry_runner is None, so it is never asked; with `vitest` also in the gate, every Python test path draws NOT_COLLECTED from vitest and a scope-gap decision whose only remedies are widen (adds vitest.config.mjs, which the task never edits) or block. Seen on P130.4 (test__config.py) and P130.7 (test__deps.py). Fix: read how _gate_derive already splits paths by language (_runners_for, _gate_derive.py:312) and have scope_gap ask a runner only about paths that runner can take, treating plugins/audit/tests/*.py (and the project's own Python suite location) as collected by the sweep when the gate holds `selftests`; the alternative of counting any collecting runner is acceptable only if it reuses that same split, and the return names which was taken. A path no runner of the gate can take at all must still be reported rather than silently passed. Acceptance: (1) a Python tests.add path under a gate holding `selftests` and `vitest` draws no scope-gap decision and no could-not-tell line; (2) a .mjs/.js tests.add path vitest does not collect still draws the scope-gap decision with its widen remedy; (3) a Python path under a gate holding neither the sweep nor pytest is still reported; (4) each new case is red with the fix reverted (the return shows the red run). REPLACES P130.24-ywo, cancelled because its gate could not go green while test_drive_phase case sc4 was red at the base (F733); its finished work is saved as a patch: <outside-repo> (git apply --check passed on the phase head). Apply it, verify every suite the task names, prove the tests.add cases red by reverting the implementation half in a scratch copy, then submit. Do not redo the work. Also owed: test__refs c5 reads fixture literals as references to missing scripts (plugins/audit/tests/test__runner_collects.py ~:366-368 and test_drive_phase.py ~:6768-6787); spell them unanchored (e.g. backend/tests/...).",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/scripts/governance/_runner_collects.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test__runner_collects.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_drive_phase.py: scope_gap on a task whose tests.add is a plugins/audit/tests/test_*.py path and whose gate holds selftests and vitest returns no decision; a .mjs path vitest does not collect still returns the scope-gap decision naming vitest.config.mjs; a Python path under a gate with neither the sweep nor pytest is still reported",
+          "plugins/audit/tests/test__runner_collects.py: the language split the preflight uses sends a .py path to the sweep or pytest and a .js/.mjs/.ts path to vitest or jest, and names no runner for a path none of the gate's runners can take"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.14-ywo",
+        "P130.26-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,

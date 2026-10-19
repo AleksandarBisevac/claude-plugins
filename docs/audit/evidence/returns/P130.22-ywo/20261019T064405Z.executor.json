@@ -1,0 +1,47 @@
+{
+  "gates": {
+    "gate-parity selftest (python3 tools/gate-parity.py --selftest, in the task tree)": "pass",
+    "ci-verified selftest (python3 tools/ci-verified.py --selftest, in the task tree)": "pass",
+    "check-git-pipeline selftest (python3 tools/check-git-pipeline.py --selftest, in the task tree)": "pass",
+    "test_gen_demo_manifest selftest (python3 plugins/audit/tests/test_gen_demo_manifest.py --selftest, in the task tree)": "pass",
+    "test__refs selftest (python3 plugins/audit/tests/test__refs.py --selftest, in the task tree)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T07:56:24Z",
+    "basis": "`sh -c python3 tools/ci-verified.py --selftest && python3 tools/gate-parity.py --selftest` in a throwaway tree at HEAD: inline suite tools/gate-parity.py (its test file is its implementation file): none of its 0 changed hunk(s) lies inside a test definition (a def named test*/selftest*/*cases, or a Test* class), so no copy holding the new cases without the fix can be laid over HEAD; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Work from attempt 1 was complete in <outside-repo> and was not redone; this run only re-verified it there. (1) ci.yml concurrency comment and CHANGELOG line reworded (reword option, group not re-keyed): a running main run is never cancelled, a queued one is replaced by a newer push. (2) gate-parity.py _if_tier reduces a job's if: to && terms and accepts only !cancelled(), needs.verified.outputs.run=='' and the release-tier term; any other condition is a problems row naming the job and its slices are not counted per-run; jobs without a verify.sh --only call are not judged; case sv12 (sv0 allow case still green). (3) ci-verified.py VOUCHING_EVENTS = workflow_dispatch, push; decide() refuses other events with a why naming the event; ask_github fetches jobs only for runs that can be accepted; case cv18 (cv1 still verifies). (4) check-git-pipeline.py and test_gen_demo_manifest.py now name verify.sh's e2e and manifests slices. (5) reproducing-ci-locally SKILL.md names sh tools/verify.sh --list. Commands re-run, all exit 0: gate-parity --selftest 70/70, ci-verified --selftest 18/18, check-git-pipeline --selftest 21/21, test_gen_demo_manifest --selftest 131/131, test__refs --selftest 286/286. test_drive_phase sc4 is a known base red owned by another task and was not run or touched.",
+    "descriptive": "CI's main-concurrency wording is true, the slice check refuses a job whose if: it cannot prove runs every time, and ci-verified no longer lets a pull_request run vouch for a main SHA."
+  },
+  "testsAdded": [
+    "sv12 (tools/gate-parity.py: (inline --selftest, the sv cases) a per-run job carrying `if: ${{ false }}` and one carrying a push-only condition are each reported by slice_drift naming the job, while the verified-run guard alone and with the release-tier term report nothing)",
+    "cv18 (tools/ci-verified.py: (inline --selftest, `_cases`) a green pull_request run on the asking SHA and workflow path, every job success, refuses and names its event in why; a green workflow_dispatch run and a green push run on the same SHA still verify)"
+  ],
+  "falsifiers": {
+    "tools/ci-verified.py: (inline --selftest, `_cases`) a green pull_request run on the asking SHA and workflow path, every job success, refuses and names its event in why; a green workflow_dispatch run and a green push run on the same SHA still verify": {
+      "file": "tools/ci-verified.py",
+      "find": "    return run.get(\"event\") in VOUCHING_EVENTS",
+      "replace": "    return True",
+      "command": [
+        "python3",
+        "tools/ci-verified.py",
+        "--selftest"
+      ]
+    },
+    "tools/gate-parity.py: (inline --selftest, the sv cases) a per-run job carrying `if: ${{ false }}` and one carrying a push-only condition are each reported by slice_drift naming the job, while the verified-run guard alone and with the release-tier term report nothing": {
+      "file": "tools/gate-parity.py",
+      "find": "    if other:\n        return None, (",
+      "replace": "    if False and other:\n        return None, (",
+      "command": [
+        "python3",
+        "tools/gate-parity.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n1 ci.yml:40-43 and CHANGELOG.md:27-29 say a running main run is never cancelled and a queued one is replaced (GitHub's documented behaviour, not re-measured here); gate-parity.py _if_tier rejects other conditions; ci-verified.py _can_vouch/decide refuses other events\n2 red before the fix was watched in attempt 1 (sv12 69/70, cv18 17/18); this run re-ran the five selftests green in the task tree (exit 0 each); falsifiers for both cases are in the return and the drive runs them; allow cases sv0, the guard-only and release-tier assertions in sv12, and cv1 plus the dispatch/push assertions in cv18\n3 n/a - this run changed nothing; attempt 1 grep of ci.yml in check-git-pipeline.py and test_gen_demo_manifest.py found 0 hits after its edit\n4 n/a - no rule addressed to an agent added or changed in this run\n5 n/a - no property recorded\n6 the slice check reads the parsed if: expression's && terms, not its spelling; allow case (guard alone, guard plus release term, absent if) quiet in sv12/sv0\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:e7e22e0d9cc3600ef34b54f8ffc2ee3a1086c821555f4dc0769bc401244b2884\",\"dirtyDigest\":\"sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"dirtyPaths\":{},\"head\":\"d83608a5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".claude/skills/reproducing-ci-locally/SKILL.md\",\".github/workflows/ci.yml\",\"CHANGELOG.md\",\"plugins/audit/tests/test_gen_demo_manifest.py\",\"tools/check-git-pipeline.py\",\"tools/ci-verified.py\",\"tools/gate-parity.py\"],\"scopeDigest\":\"sha256:f26ffd704e6da4f7ee65e53dde78081228a71879c55e74fceded2f0f5470d986\",\"v\":2}"
+}
