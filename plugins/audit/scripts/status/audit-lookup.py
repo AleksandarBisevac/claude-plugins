@@ -876,21 +876,47 @@ def executor_submit_lines(manifest, phase, task, ctx):
             + note)
 
 
+def _top(ctx):
+    """The checkout's top for the brief's git root - where every diff below
+    runs, so its pathspecs and its output share one base with the pair. The
+    configured root is not always that top (a member project with no
+    `gitRoot` set); when git cannot say, the configured root is kept and the
+    git call that follows reports why it failed."""
+    return hooks_config().checkout_top(ctx["gitRoot"]) or ctx["gitRoot"]
+
+
+def _git_specs(ctx, files, top):
+    """`files` as pathspecs read from `top` - each declared entry
+    `_config.plan_to_git` places inside the checkout, its `:line` suffix
+    dropped; an entry outside the checkout has no change git could list."""
+    hc = hooks_config()
+    specs = [hc.plan_to_git(_vocab._strip_line_suffix(f), top, ctx["project"])
+             for f in files or [] if isinstance(f, str)]
+    return [s for s in specs if s is not None]
+
+
 def _diff_lines(ctx, files, tree=None, base=None):
     """The change to `files`, read from git, or why it is not: the phase
     tree's against HEAD, or - for a wave member, whose bytes are in its own
-    tree until the driver integrates them - `tree`'s against `base`."""
-    paths = [_vocab._strip_line_suffix(f) for f in files or []
-             if isinstance(f, str)]
-    where, against = (tree, base) if tree else (ctx["gitRoot"], "HEAD")
+    tree until the driver integrates them - `tree`'s against `base`. `tree`
+    is a checkout of the same repository, so the offset from its top to the
+    project is the phase tree's and one set of pathspecs serves both."""
+    hc = hooks_config()
+    top = _top(ctx)
+    paths = _git_specs(ctx, files, top)
+    where, against = (tree, base) if tree else (top, "HEAD")
     command = "git %sdiff %s -- %s" % ("-C %s " % (tree,) if tree else "",
                                        against, " ".join(paths))
+    if not paths:
+        return ["`%s`: no declared file lies inside the checkout, so there is "
+                "no change git could list." % (command,)]
     try:
         done = subprocess.run(["git", "-C", where, "diff", against, "--"]
                               + paths, stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, timeout=60)
+        # `--full-name` prints from the checkout's top, as `diff` reads.
         untracked = subprocess.run(
-            ["git", "-C", where, "ls-files", "--others",
+            ["git", "-C", where, "ls-files", "--others", "--full-name",
              "--exclude-standard", "--"] + paths,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
     except (OSError, subprocess.SubprocessError) as exc:
@@ -902,7 +928,9 @@ def _diff_lines(ctx, files, tree=None, base=None):
     lines = ["`%s`:" % (command,), "```diff",
              done.stdout.decode("utf-8", "replace").rstrip("\n") or "(empty)",
              "```"]
-    new = untracked.stdout.decode("utf-8", "replace").split()
+    new = [hc.git_to_plan(p, top, ctx["project"])
+           for p in untracked.stdout.decode("utf-8", "replace").splitlines()
+           if p]
     if new:
         lines.append("Untracked declared files, which the diff above does not "
                      "show - read them whole: %s" % (", ".join(new),))
@@ -910,9 +938,20 @@ def _diff_lines(ctx, files, tree=None, base=None):
 
 
 # Process bookkeeping, never code the reviewer judges: every diff this module
-# computes for a phase brief leaves it out, the same magic pathspec `_diff_lines`
-# itself does not need because a task-mode brief never spans more than one task.
-DOCS_AUDIT_EXCLUDE = ":(exclude)docs/audit"
+# computes for a phase brief leaves the project's docs/audit out, which
+# `_diff_lines` itself does not need because a task-mode brief never spans more
+# than one task.
+DOCS_AUDIT = "docs/audit"
+
+
+def _docs_audit_exclude(ctx, top):
+    """The exclusion pathspec for the project's docs/audit, spelled from
+    `top` - none when the checkout does not hold it, since a diff there
+    cannot list it."""
+    spec = hooks_config().plan_to_git(DOCS_AUDIT, top, ctx["project"])
+    return [] if spec is None else [":(exclude)%s" % (spec,)]
+
+
 # git's own hash for the empty tree, the same on every repository - the `against`
 # side for a commit with no parent (a fixture's own root commit).
 _EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
@@ -926,20 +965,24 @@ def _task_commit_diff_lines(ctx, commit, files):
     listed task's own diff, in order, equals one `git diff <base> <head>`
     over the union of their files - `commit`'s parent (or the empty tree for
     a root commit) against `commit` is the same comparison `git show` makes."""
-    paths = [_vocab._strip_line_suffix(f) for f in files or []
-             if isinstance(f, str)]
+    top = _top(ctx)
+    paths = _git_specs(ctx, files, top)
     command = ("git show %s -- %s" % (commit, " ".join(paths)) if paths
               else "git show %s" % (commit,))
+    if not paths and any(isinstance(f, str) for f in files or []):
+        # An empty pathspec would widen the diff to the whole commit.
+        return ["diff (%s): no declared file lies inside the checkout, so the "
+                "commit holds no change to them." % (command,)]
     parent = "%s^" % (commit,)
     has_parent = subprocess.run(
-        ["git", "-C", ctx["gitRoot"], "rev-parse", "--verify", "--quiet",
+        ["git", "-C", top, "rev-parse", "--verify", "--quiet",
          parent], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         timeout=60).returncode == 0
     against = parent if has_parent else _EMPTY_TREE_SHA
     try:
         done = subprocess.run(
-            ["git", "-C", ctx["gitRoot"], "diff", against, commit, "--"]
-            + paths + [DOCS_AUDIT_EXCLUDE],
+            ["git", "-C", top, "diff", against, commit, "--"]
+            + paths + _docs_audit_exclude(ctx, top),
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
     except (OSError, subprocess.SubprocessError) as exc:
         return ["`%s` could not be run here (%s); run it yourself." % (command, exc)]
@@ -955,12 +998,14 @@ def _task_commit_diff_lines(ctx, commit, files):
 def _phase_diff_paths(ctx, base, head):
     """Every path `git diff <base> <head>` names, docs/audit excluded - or
     `(None, why)` when it could not be read."""
+    top = _top(ctx)
+    exclude = _docs_audit_exclude(ctx, top)
     command = "git diff --name-only %s %s -- %s" % (base, head,
-                                                     DOCS_AUDIT_EXCLUDE)
+                                                     " ".join(exclude))
     try:
         done = subprocess.run(
-            ["git", "-C", ctx["gitRoot"], "diff", "--name-only", base, head,
-             "--", DOCS_AUDIT_EXCLUDE],
+            ["git", "-C", top, "diff", "--name-only", base, head,
+             "--"] + exclude,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
     except (OSError, subprocess.SubprocessError) as exc:
         return None, "`%s` could not be run here (%s)." % (command, exc)
@@ -971,7 +1016,8 @@ def _phase_diff_paths(ctx, base, head):
     # git names these from the checkout's top, a task declares its files from
     # the project: one base, or a nested project's declared file reads as an
     # outside path and a checkout-root file of the same name reads as covered.
-    return [_evio.project_spelling(p, ctx["gitRoot"], ctx["project"])
+    hc = hooks_config()
+    return [hc.git_to_plan(p, top, ctx["project"])
             for p in done.stdout.decode("utf-8", "replace").splitlines()
             if p], None
 
@@ -1211,8 +1257,9 @@ def existing_test_lines(ctx, phase, head):
         return ["Not computed: the head could not be read."]
     command = "git diff --no-renames --diff-filter=M --name-only %s %s" % (
         base, head)
+    top = _top(ctx)
     try:
-        done = subprocess.run(["git", "-C", ctx["gitRoot"], "-c",
+        done = subprocess.run(["git", "-C", top, "-c",
                                "core.quotepath=off", "diff", "--no-renames",
                                "--diff-filter=M", "--name-only", base, head],
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -1223,8 +1270,10 @@ def existing_test_lines(ctx, phase, head):
         return ["Not computed: `%s` exited %d (%s)." % (
             command, done.returncode,
             _excerpt.excerpt(done.stderr.decode("utf-8", "replace")))]
-    paths = [p for p in done.stdout.decode("utf-8", "replace").splitlines()
-             if _fr.is_test_path(p)]
+    hc = hooks_config()
+    paths = [hc.git_to_plan(p, top, ctx["project"])
+             for p in done.stdout.decode("utf-8", "replace").splitlines() if p]
+    paths = [p for p in paths if _fr.is_test_path(p)]
     return (["`%s`, test paths only; a test file the phase added is not listed. "
              "Read each change against the task whose diff holds it:" % (command,)]
             + (["- %s" % (p,) for p in paths] or ["None."]))

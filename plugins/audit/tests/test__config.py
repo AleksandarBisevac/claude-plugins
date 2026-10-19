@@ -2911,9 +2911,119 @@ def _shared_payload_cases(check):
           and deny["hookSpecificOutput"]["permissionDecisionReason"] == "r")
 
 
+GIT_PATH_PAIR_CLAUSE = ("git_to_plan/plan_to_git over member project, "
+                        "gitRoot-below-project, same dir, outside path, "
+                        "path == offset, symlinked project")
+
+
+def _git_path_pair_cases(check):
+    """The one door between git's spelling of a path and the plan's.
+
+    Real directories, because the pair resolves both ends before comparing them
+    and a symlinked project is one of the topologies it must survive. No git is
+    run here: the pair is arithmetic over two resolved directories, and the
+    sites' own suites drive it through a real `git init`.
+    """
+    root = Path(_harness.fixture_root("cfg-gitpath-"))
+    repo = root / "repo"                          # a checkout holding a member
+    member = repo / "member"                      # project at `member/`
+    proj = root / "proj"                          # a project whose checkout is
+    below = proj / "test"                         # `test/` below it
+    same = root / "same"                          # project == checkout
+    for d in (member / "src", below / "src", same / "a"):
+        d.mkdir(parents=True)
+    g2p, p2g = M.git_to_plan, M.plan_to_git
+
+    def label(n, which):
+        return "gp%d %s (%s)" % (n, GIT_PATH_PAIR_CLAUSE, which)
+
+    got1 = (g2p("member/src/a.py", str(repo), str(member)),
+            p2g("src/a.py", str(repo), str(member)),
+            p2g("src/", str(repo), str(member)),
+            g2p("member/src/", str(repo), str(member)))
+    check(label(1, "member project: a checkout path loses the member prefix "
+                   "and a plan entry gains it, a directory keeps its slash: %r"
+                % (got1,)),
+          got1 == ("src/a.py", "member/src/a.py", "member/src/", "src/"))
+
+    got2 = (g2p("src/a.py", str(below), str(proj)),
+            p2g("test/src/a.py", str(below), str(proj)),
+            p2g("README.md", str(below), str(proj)))
+    check(label(2, "gitRoot below the project: a checkout path gains the test/ "
+                   "prefix, a plan entry loses it, and an entry outside the "
+                   "checkout has no pathspec: %r" % (got2,)),
+          got2 == ("test/src/a.py", "src/a.py", None))
+
+    got3 = (g2p("a/b.py", str(same), str(same)),
+            p2g("a/b.py", str(same), str(same)))
+    check(label(3, "the same directory is the identity both ways: %r" % (got3,)),
+          got3 == ("a/b.py", "a/b.py"))
+
+    got4 = (g2p("other.py", str(repo), str(member)),
+            p2g("../other.py", str(same), str(same)))
+    check(label(4, "a checkout path outside the project is spelled with ../ so "
+                   "it cannot equal the declared entry `other.py`, and a plan "
+                   "entry outside the checkout has no pathspec: %r" % (got4,)),
+          got4 == ("../other.py", None))
+
+    got5 = (g2p("member", str(repo), str(member)),
+            g2p("memberX/a.py", str(repo), str(member)),
+            p2g(".", str(repo), str(member)),
+            p2g("test", str(below), str(proj)))
+    check(label(5, "a path equal to the offset is the project itself, a sibling "
+                   "sharing the offset as a string prefix stays outside, and the "
+                   "project entry is the offset: %r" % (got5,)),
+          got5 == (".", "../memberX/a.py", "member", "."))
+
+    link_proj, link_repo = root / "link-member", root / "link-repo"
+    try:
+        os.symlink(str(member), str(link_proj), target_is_directory=True)
+        os.symlink(str(repo), str(link_repo), target_is_directory=True)
+        refused = None
+    except (OSError, NotImplementedError, AttributeError) as exc:
+        refused = "%s: %s" % (type(exc).__name__, exc)
+    if refused is not None:
+        _harness.skip(check, "gp6", "os.symlink is refused here (%s)" % (refused,),
+                      True)
+    else:
+        got6 = (g2p("member/src/a.py", str(repo), str(link_proj)),
+                p2g("src/a.py", str(repo), str(link_proj)),
+                g2p("member/src/a.py", str(link_repo), str(member)),
+                p2g("src/a.py", str(link_repo), str(link_proj)))
+        check(label(6, "a symlinked project or checkout spells the same as the "
+                       "real one: %r" % (got6,)),
+              got6 == ("src/a.py", "member/src/a.py", "src/a.py",
+                       "member/src/a.py"))
+
+    got7 = (g2p("src/a.py", str(repo), str(member), cwd=str(member)),
+            p2g("src/a.py", str(repo), str(member), cwd=str(member)),
+            g2p("../other.py", str(repo), str(member), cwd=str(member)))
+    check(label(7, "a listing git ran from the project (ls-files, ls-tree, "
+                   "--relative) says so through cwd, and its output is read from "
+                   "there rather than from the checkout's top: %r" % (got7,)),
+          got7 == ("src/a.py", "src/a.py", "../other.py"))
+
+    escaped = "member/caf\\303\\251 x.py"
+    got8 = g2p(escaped, str(repo), str(member))
+    check(label(8, "a path git quoted keeps its backslash escapes byte for "
+                   "byte, so a porcelain line rebased through the pair still "
+                   "reads back as the same file: %r" % (got8,)),
+          got8 == "caf\\303\\251 x.py")
+
+    _harness.git(None, "init", "-q", str(repo), prefix=("git",))
+    tops = (M.checkout_top(str(member)), M.checkout_top(str(repo)),
+            M.checkout_top(str(root / "no-such-dir")))
+    check(label(9, "checkout_top answers git's own top for a member directory "
+                   "and for the checkout itself, and None for a directory git "
+                   "cannot be run in: %r" % (tops,)),
+          tops[0] == os.path.realpath(str(repo)) == tops[1]
+          and tops[2] is None)
+
+
 def _all_cases(check):
     _cases(check)
     _shared_payload_cases(check)
+    _git_path_pair_cases(check)
 
 
 def _selftest():

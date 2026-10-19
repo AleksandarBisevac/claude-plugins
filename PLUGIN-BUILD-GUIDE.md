@@ -349,7 +349,7 @@ L4:
   _ado_drift -> _manifest_io, _manifest_vocab, _output, _usage_core
   _config_rules -> _loader, _output, _policy
   _doctor_report -> _loader, _output
-  _evidence_io -> _journal_io, _locks, _machine_paths, _manifest_io, _manifest_vocab, _output, _usage_core, _utc_stamp, _worktrees
+  _evidence_io -> _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_vocab, _output, _usage_core, _utc_stamp, _worktrees
   _gate_feed -> _journal_io, _loader, _output, _usage_core
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
   _id_shape -> _branch, _manifest_io, _manifest_vocab, _output
@@ -363,7 +363,7 @@ L4:
   _report_ui -> _output, _ui_theme
   _scope_companions -> _output, _runner_collects
   _status_facts -> _areas, _filed_returns, _manifest_io, _manifest_vocab, _output, _priority, _usage_core
-  _tree_stamp -> _journal_io, _manifest_vocab, _output
+  _tree_stamp -> _journal_io, _loader, _manifest_vocab, _output
   _usage_coverage -> _manifest_io, _output, _usage_core
   _usage_economics -> _fmt, _manifest_io, _output, _usage_core
   _usage_routing -> _manifest_io, _output, _usage_core
@@ -392,7 +392,7 @@ L6:
   _doctor_policy -> _branch, _doctor_report, _manifest_io, _output, _worktrees
   _doctor_setup -> _claude_home, _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
   _doctor_trail -> _doctor_report, _evidence_io, _fmt, _journal_io, _manifest_io, _manifest_vocab, _output, _worktrees
-  _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _locks, _manifest_crossrefs, _manifest_io, _manifest_rules, _output, _status_facts, _task_outputs, usage_ledger
+  _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _loader, _locks, _manifest_crossrefs, _manifest_io, _manifest_rules, _manifest_vocab, _output, _task_outputs, usage_ledger
   _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _manifest_vocab, _output, _panel_paths, _priority, _status_facts, _worktrees
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _config_rules, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
@@ -433,7 +433,7 @@ L9:
   commit-audit-state -> _claude_home, _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
   commit-manifest-index -> _claude_home, _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
   commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
-  derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _utc_stamp
+  derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _invariants, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _utc_stamp
   drive-phase -> _areas, _claude_home, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _output, _runner_collects, _scope_companions, _status_facts, _tree_stamp, _verdict_binding, _wave
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
@@ -441,7 +441,7 @@ L9:
   gen-demo-manifest -> _claude_home, _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
   gen-demo-usage -> _claude_home, _demo_cast, _loader, _output
   import-evidence -> _claude_home, _evidence_io, _journal_io, _loader, _manifest_io, _output, _panel_write
-  integrate-task -> _claude_home, _evidence_io, _invariants, _journal_io, _manifest_io, _output, _task_outputs, _wave, _worktrees
+  integrate-task -> _claude_home, _evidence_io, _invariants, _journal_io, _loader, _manifest_io, _output, _task_outputs, _wave, _worktrees
   manage-worktrees -> _branch, _claude_home, _manifest_io, _output, _utc_stamp, _worktrees
   materialize-proposal -> _claude_home, _manifest_io, _output, _proposals, _warning_groups
   merge-manifest -> _claude_home, _id_refs, _id_shape, _locks, _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output

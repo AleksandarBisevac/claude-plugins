@@ -5367,6 +5367,7 @@ def _cases(check):
     _harness.stage(check, "ow0 the --own block", _own_cases)
     _harness.stage(check, "dgv0 the derived-gate block", _derived_gate_cases)
     _harness.stage(check, "lv0 the killed-process liveness block", _liveness_cases)
+    _harness.stage(check, "ng0 the nested-project block", _nested_gate_cases)
 
     if SENDS_REAL_SIGNALS:
         _harness.stage(check, "is0 the real-interrupt block", _interrupt_cases)
@@ -5386,6 +5387,67 @@ def _cases(check):
                 "events, so there would be no interrupted run to look at"
                 % (_asserts,),
                 console_events() and signal.SIGINT not in console_events())
+
+
+NESTED_GATE_CLAUSE = ("nested project - a gate rewriting a declared file is "
+                      "owned and refused; dirt outside the declared files is "
+                      "foreign")
+
+
+def _nested_gate_cases(check):
+    """A real `git init` with the project at `member/`: `git status` names the
+    checkout's paths, the work declares the project's."""
+    root = os.path.realpath(_harness.fixture_root("run-test-gate-member-"))
+    proj = os.path.join(root, "member")
+    os.makedirs(os.path.join(proj, "src"))
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+    with open(os.path.join(proj, "src", "mine.ts"), "w") as fh:
+        fh.write("mine\n")
+    for arg in (["add", "-A"],
+                ["-c", "user.email=fixture@example.com", "-c", "user.name=Fixture",
+                 "-c", "commit.gpgsign=false", "commit", "-qm", "fixture"]):
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+
+    def _rewrites_own_subject(project, _command, _timeout=None):
+        with open(os.path.join(project, "src", "mine.ts"), "w") as fh:
+            fh.write("rewritten by the gate\n")
+        return 0, "Tests:       2 passed, 2 total\n", {}
+
+    res = M.run_gate(proj, [("test", "npx jest")], runner=_rewrites_own_subject,
+                     owns=["src/mine.ts"])
+    lines = []
+    code = M.render(res, out=lines.append)
+    check("ng1 %s (the gate's rewrite of the declared file is owned, so the run "
+          "refuses: %r)" % (NESTED_GATE_CLAUSE,
+                            (res["treeMutatedOwned"], res["treeMutatedForeign"],
+                             code)),
+          code == M.E_FAIL and res["treeMutatedForeign"] == []
+          and len(res["treeMutatedOwned"]) == 1
+          and "GATE MUTATED THE TREE" in "\n".join(lines))
+
+    os.makedirs(os.path.join(proj, "other"))
+    with open(os.path.join(proj, "other", "sib.ts"), "w") as fh:
+        fh.write("a sibling's\n")
+    before = _tree_stamp.porcelain(proj)
+    foreign, basis = M.dirty_outside(before, ["src/mine.ts"])
+    check("ng2 %s (dirt at run start: the declared file is the work's own and "
+          "the sibling's file is foreign: %r)"
+          % (NESTED_GATE_CLAUSE, (foreign, basis)),
+          foreign is not None and len(foreign) == 1
+          and foreign[0].endswith("other/sib.ts"))
+
+    # A member tree's own records, git-root-relative, against the listing its
+    # tree prints from the project's directory.
+    os.makedirs(os.path.join(proj, "docs", "audit"))
+    with open(os.path.join(proj, "docs", "audit", "audit-plan.json"), "w") as fh:
+        fh.write("{}\n")
+    changed, why = M.task_changed_paths(
+        proj, ["src/mine.ts"], True,
+        records=["member/docs/audit/audit-plan.json", "member/other"])
+    check("ng3 %s (a member tree's changed paths leave its git-root-relative "
+          "records out and keep the declared work: %r)"
+          % (NESTED_GATE_CLAUSE, (changed, why)),
+          why is None and changed == ["src/mine.ts"])
 
 
 def _no_verdict_cases(check):

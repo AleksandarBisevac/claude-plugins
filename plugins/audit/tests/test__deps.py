@@ -3629,8 +3629,145 @@ def _cases(check):
             shutil.rmtree(_dir, ignore_errors=True)
 
 
+GIT_PATH_BASE_CLAUSE = ("git_path_base_violations names "
+                        "audit-lookup.py:_phase_diff_paths when reverted to dev "
+                        "HEAD in a scratch copy; an empty exempt reason and a "
+                        "stale exempt row are reported")
+
+# `_phase_diff_paths` as it stood at dev HEAD `46e9e2ec`: the checkout's paths
+# handed back unrebased, with a project-relative exclusion run from the
+# checkout's top. Kept as text so the case needs no history in the clone.
+_PHASE_DIFF_AT_46E9E2EC = '''def _phase_diff_paths(ctx, base, head):
+    """Every path `git diff <base> <head>` names, docs/audit excluded - or
+    `(None, why)` when it could not be read."""
+    command = "git diff --name-only %s %s -- %s" % (base, head,
+                                                     DOCS_AUDIT_EXCLUDE)
+    try:
+        done = subprocess.run(
+            ["git", "-C", ctx["gitRoot"], "diff", "--name-only", base, head,
+             "--", DOCS_AUDIT_EXCLUDE],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, "`%s` could not be run here (%s)." % (command, exc)
+    if done.returncode != 0:
+        return None, "`%s` exited %d (%s)." % (
+            command, done.returncode,
+            _excerpt.excerpt(done.stderr.decode("utf-8", "replace")))
+    return [p for p in done.stdout.decode("utf-8", "replace").splitlines()
+            if p], None
+'''
+
+
+def _with_function_replaced(source, name, replacement):
+    """`source` with the top-level def `name` swapped for `replacement`."""
+    tree = ast.parse(source)
+    node = [n for n in tree.body
+            if isinstance(n, ast.FunctionDef) and n.name == name][0]
+    lines = source.splitlines(True)
+    return "".join(lines[:node.lineno - 1] + [replacement]
+                   + lines[node.end_lineno:])
+
+
+def _named_sites(found):
+    return sorted(what.split(" ", 1)[0] for _rel, what in found)
+
+
+def _git_path_base_cases(check):
+    import shutil
+    import tempfile
+
+    real = M.git_path_base_violations()
+    check("gb1 %s (the real scripts/ and hooks/ have no listing call outside "
+          "the pair or the table: %r)" % (GIT_PATH_BASE_CLAUSE, real),
+          real == [])
+
+    lookup = os.path.join(M._output.SCRIPTS_DIR, "status", "audit-lookup.py")
+    with open(lookup, "r", encoding="utf-8") as fh:
+        current = fh.read()
+    scratch = tempfile.mkdtemp(prefix="deps-gitbase-")
+    try:
+        sdir, hdir = os.path.join(scratch, "s"), os.path.join(scratch, "h")
+        os.makedirs(sdir)
+        os.makedirs(hdir)
+        target = os.path.join(sdir, "audit-lookup.py")
+
+        def scan_with(text, exempt=None):
+            with open(target, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            return M.git_path_base_violations(
+                script_dir=sdir, hooks_dir=hdir,
+                exempt=exempt if exempt is not None else M.GIT_PATH_BASE_EXEMPT)
+
+        # The twin of gb2: the copy as it stands is quiet, so gb2's red is the
+        # revert's and not something else in the file. Stale rows for files
+        # outside the copy are not read: the table is filtered to this file.
+        own = tuple(r for r in M.GIT_PATH_BASE_EXEMPT if r[0] == "audit-lookup.py")
+        quiet = scan_with(current, own)
+        reverted = scan_with(_with_function_replaced(
+            current, "_phase_diff_paths", _PHASE_DIFF_AT_46E9E2EC), own)
+        check("gb2 %s (the copy as it stands names nothing, and with "
+              "_phase_diff_paths reverted it names exactly that function: "
+              "%r -> %r)"
+              % (GIT_PATH_BASE_CLAUSE, quiet, _named_sites(reverted)),
+              quiet == []
+              and _named_sites(reverted) == ["audit-lookup.py:_phase_diff_paths"])
+
+        probe = ("import subprocess\n\n"
+                 "def listed(root):\n"
+                 "    return subprocess.run(['git', '-C', root, 'status', "
+                 "'--porcelain'])\n\n"
+                 "def rebased(root, project):\n"
+                 "    out = subprocess.run(['git', 'ls-files'], cwd=project)\n"
+                 "    return _config.git_to_plan(out, root, project, cwd=project)\n\n"
+                 "def quiet(root):\n"
+                 "    return subprocess.run(['git', '-C', root, 'rev-parse', "
+                 "'HEAD'])\n")
+        bare = scan_with(probe, ())
+        excused = scan_with(probe, (("audit-lookup.py", "listed",
+                                     "single base, never meets a plan entry"),))
+        check("gb3 %s (a listing call is named unless its function calls the "
+              "pair or has a row with a reason, and a call listing no path is "
+              "never named: %r / %r)"
+              % (GIT_PATH_BASE_CLAUSE, _named_sites(bare), excused),
+              _named_sites(bare) == ["audit-lookup.py:listed"] and excused == [])
+
+        empty = scan_with(probe, (("audit-lookup.py", "listed", "  "),))
+        check("gb4 %s (an empty exempt reason does not excuse the call and is "
+              "itself reported: %r)" % (GIT_PATH_BASE_CLAUSE, empty),
+              len(empty) == 2
+              and _named_sites(empty) == ["audit-lookup.py:listed"] * 2
+              and sum("carries no reason" in what for _rel, what in empty) == 1)
+
+        stale = scan_with(probe, (
+            ("audit-lookup.py", "listed", "single base"),
+            ("audit-lookup.py", "gone", "a function that no longer exists"),
+            ("audit-lookup.py", "quiet", "a function making no listing call"),
+            ("nowhere.py", "f", "a file the walk never reads")))
+        check("gb5 %s (a row naming a function that no longer exists, one "
+              "that makes no listing call, and one for an absent file are each "
+              "reported as stale: %r)"
+              % (GIT_PATH_BASE_CLAUSE, _named_sites(stale)),
+              _named_sites(stale) == ["audit-lookup.py:gone",
+                                      "audit-lookup.py:quiet", "nowhere.py:f"]
+              and all("stale" in what for _rel, what in stale))
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+    rows = M.GIT_PATH_BASE_EXEMPT
+    check("gb6 %s (every row of GIT_PATH_BASE_EXEMPT is (basename, function, "
+          "reason) with a reason that is not blank: %r)"
+          % (GIT_PATH_BASE_CLAUSE, [r[:2] for r in rows if not r[2].strip()]),
+          rows and all(len(r) == 3 and all(isinstance(x, str) for x in r)
+                       and r[2].strip() for r in rows))
+
+
+def _all_cases(check):
+    _cases(check)
+    _git_path_base_cases(check)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    return _harness.run(_all_cases)
 
 
 if __name__ == "__main__":

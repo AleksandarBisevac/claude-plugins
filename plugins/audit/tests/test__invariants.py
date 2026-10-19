@@ -2370,12 +2370,64 @@ def _scrubbed_baseline_cases(check):
         _harness.remove_tree(home)
 
 
+NESTED_SCOPE_CLAUSE = ("nested project - commit-scope reports no breach for a "
+                       "declared file")
+
+
+def _nested_scope_cases(check):
+    """A real `git init` with the project at `member/`, `meta.gitRoot` naming
+    the checkout's top: `git show --name-only` prints the checkout's paths and
+    each task declares the project's."""
+    root = os.path.realpath(_harness.fixture_root("invariants-member-"))
+    proj = os.path.join(root, "member")
+    os.makedirs(os.path.join(proj, "src"))
+    os.makedirs(os.path.join(proj, "docs", "audit"))
+    ident = ("git", "-c", "user.email=fixture@example.com", "-c",
+             "user.name=Fixture", "-c", "commit.gpgsign=false")
+
+    def git(*argv):
+        return _harness.git(root, *argv, prefix=ident).strip()
+
+    git("init", "-q")
+    _write(os.path.join(proj, "src", "a.py"), "a = 1\n")
+    _write(os.path.join(proj, "other.py"), "o = 1\n")
+    git("add", "-A")
+    git("commit", "-qm", "base")
+    _write(os.path.join(proj, "src", "a.py"), "a = 2\n")
+    git("add", "-A")
+    git("commit", "-qm", "the task")
+    declared_only = git("rev-parse", "HEAD")
+    _write(os.path.join(proj, "src", "a.py"), "a = 3\n")
+    _write(os.path.join(proj, "other.py"), "o = 2\n")
+    git("add", "-A")
+    git("commit", "-qm", "the task, and a stray")
+    with_stray = git("rev-parse", "HEAD")
+    manifest_path = os.path.join(proj, "docs", "audit", "audit-plan.json")
+
+    def scope(sha):
+        task = dict(_task("P1.1", "src/a.py"), status="done", commit=sha)
+        manifest = {"meta": {"version": 2, "gitRoot": ".."},
+                    "phases": [_phase("P1", [task])]}
+        answer = M.check_phase(manifest, "P1", manifest_path, root, proj)
+        return _check(answer, "commit-scope")
+
+    clean, stray = scope(declared_only), scope(with_stray)
+    check("ns1 %s (a commit staging only the declared file: %r)"
+          % (NESTED_SCOPE_CLAUSE, clean["breaches"]),
+          clean["breaches"] == [] and not clean["gaps"])
+    # The twin: an allow-list that admitted every path would pass ns1.
+    check("ns2 %s (...while a commit also staging an undeclared project file "
+          "is one breach naming it: %r)" % (NESTED_SCOPE_CLAUSE, stray["breaches"]),
+          len(stray["breaches"]) == 1 and "member/other.py" in stray["breaches"][0])
+
+
 def _selftest():
     def body(check):
         _scrubbed_baseline_cases(check)
         _cases(check)
         _harness.stage(check, "ln-block", _landing_cases)
         _harness.stage(check, "rp-block", _record_rel_cases)
+        _harness.stage(check, "ns-block", _nested_scope_cases)
     return _harness.run(body)
 
 

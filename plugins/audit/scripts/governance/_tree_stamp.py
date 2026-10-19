@@ -88,6 +88,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _journal_io  # noqa: E402  (the ONE canonical spelling and file digest)
+import _loader  # noqa: E402  (load_hooks_config: the one door between git's path base and the plan's)
 import _manifest_vocab as _vocab  # noqa: E402  (one reading of a `files` entry's line suffix)
 
 
@@ -117,6 +118,12 @@ def porcelain(project):
     matching limit for an already-dirty TRACKED file further down -- and the
     limit is pinned by a case of its own, so nobody can read the flag as having
     repaired what it did not touch.
+
+    EVERY PATH IS IN PLAN SPELLING. Git prints status from the checkout's top,
+    and every reader of these lines compares them with the project's spelling -
+    the declared files, the recorder's exclusions, a runner's own output. So
+    each line's path is rebased once here through `_config.git_to_plan`, and a
+    project that is its own checkout keeps git's lines unchanged.
     """
     try:
         out = subprocess.run(["git", "-C", project, "status", "--porcelain",
@@ -127,8 +134,25 @@ def porcelain(project):
         return None
     if out.returncode != 0:
         return None
-    return set(ln for ln in out.stdout.decode("utf-8", "replace").splitlines()
-               if ln.strip())
+    lines = set(ln for ln in out.stdout.decode("utf-8", "replace").splitlines()
+                if ln.strip())
+    hc = _loader.load_hooks_config(modname="audit__config")
+    top = hc.checkout_top(project)
+    if top is None:
+        return None
+    if top == os.path.realpath(os.path.abspath(project)):
+        return lines
+    return set(_plan_line(hc, ln, top, project) for ln in lines)
+
+
+def _plan_line(hc, line, top, project):
+    """One porcelain line with each path it names rebased to plan spelling -
+    a rename's two halves each, a quoted path inside its quotes."""
+    def spelled(part):
+        if len(part) > 1 and part.startswith('"') and part.endswith('"'):
+            return '"%s"' % (hc.git_to_plan(part[1:-1], top, project),)
+        return hc.git_to_plan(part, top, project)
+    return line[:3] + " -> ".join(spelled(p) for p in line[3:].split(" -> "))
 
 
 # --- what state was actually tested -------------------------------------------
@@ -203,7 +227,9 @@ def _files_under(project, directory):
                                    "--exclude-standard", "--", directory))
     if fields is None:
         return None
-    return sorted(set(f.replace("\\", "/") for f in fields))
+    hc = _loader.load_hooks_config(modname="audit__config")
+    return sorted(set(hc.git_to_plan(f, project, project, cwd=project)
+                      .replace("\\", "/") for f in fields))
 
 
 def scope_digest(project, owns, excluded=None):
@@ -454,9 +480,16 @@ def _content_reading(project, excluded):
     if index is None or differing is None:
         return None, ("git would not list this tree, so its content is not "
                       "established and nothing measured on it can be repeated")
+    # Both listings print from their cwd, the project - said so to the pair.
+    hc = _loader.load_hooks_config(modname="audit__config")
+
+    def spelled(path):
+        return hc.git_to_plan(path, project, project, cwd=project)
+    differing = [spelled(p) for p in differing]
     tracked = []
     for entry in index:
         head, sep, path = entry.partition("\t")
+        path = spelled(path) if sep else path
         if not sep:
             # REFUSED, NOT SKIPPED. Every `ls-files -s` entry carries a tab, so
             # one that does not means this output is not the output being read -

@@ -18726,6 +18726,57 @@ _GX_TWICE = "python3 backend/tests/test_x.py backend/tests/test_x.py"
 _GX_PLAN = "docs/audit/audit-plan.json"
 
 
+NESTED_MOVES_CLAUSE = ("nested project - _no_change_moves and _held_dirt still "
+                       "find a declared file's change through plan_to_git")
+
+
+def _nested_no_change_cases(check):
+    """A real `git init` with the project at `member/`: the declared entries are
+    the project's, and git is asked from the checkout's top."""
+    root = os.path.realpath(_harness.fixture_root("audit-task-member-"))
+    proj = os.path.join(root, "member")
+    os.makedirs(os.path.join(proj, "src"))
+    ident = ("git", "-c", "user.email=fixture@example.com", "-c",
+             "user.name=Fixture", "-c", "commit.gpgsign=false")
+
+    def git(*argv):
+        return _harness.git(root, *argv, prefix=ident).strip()
+
+    def write(text):
+        with open(os.path.join(proj, "src", "a.py"), "w") as fh:
+            fh.write(text)
+
+    write("a = 1\n")
+    git("init", "-q")
+    git("add", "-A")
+    git("commit", "-qm", "base")
+    start = git("rev-parse", "HEAD")
+    write("a = 2\n")
+    git("add", "-A")
+    git("commit", "-qm", "work")
+    work = git("rev-parse", "--short=7", "HEAD")
+    task = {"id": "P1.1", "files": ["src/a.py"], "status": "in_progress",
+            "attempts": 1}
+    phase = {"id": "P1", "tasks": [task]}
+    moved, notes = M._no_change_moves(proj, root, phase, task, start_head=start)
+    check("nn1 %s (a commit since the start touching the declared file is "
+          "found: %r)" % (NESTED_MOVES_CLAUSE, (moved, notes)),
+          notes == [] and len(moved) == 1 and work in moved[0]
+          and "src/a.py" in moved[0])
+
+    write("a = 3\n")
+    other = {"id": "P1.2", "files": ["src/a.py"], "status": "blocked",
+             "attempts": 1}
+    plan = {"phases": [{"id": "P1", "tasks": [task, other]}]}
+    moved2, _n2 = M._no_change_moves(proj, root, phase, task, start_head=start)
+    held = M._held_dirt(proj, root, plan, task)
+    check("nn2 %s (an uncommitted change to the declared file is found, and "
+          "another attempted task declaring it holds it: %r)"
+          % (NESTED_MOVES_CLAUSE, (moved2, held)),
+          any("uncommitted" in m for m in moved2)
+          and [(h[1], h[2]) for h in held] == [("P1.2", "blocked")])
+
+
 def _gate_entry_cases(check):
     """The shape of a gate entry is asked where it is WRITTEN: four verbs
     refuse the entry that runs one suite with another as its argument, `add
@@ -18877,6 +18928,7 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("fr-block", "_return_cases"), ("fb-block", "_batch_cases"),
           ("hd-block", "_held_cases"), ("ub-block", "_unblock_cases"),
           ("ncm-block", "_no_change_moved_cases"),
+          ("ncn-block", "_nested_no_change_cases"),
           ("lo-block", "_leftover_cases"),
           ("io-block", "_index_only_cases"),
           ("fd-block", "_finding_disposition_cases"),

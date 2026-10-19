@@ -2682,8 +2682,68 @@ def _tree_files(root):
     return out
 
 
+NESTED_SHELL_CLAUSE = ("nested project - a shell write to a project file is "
+                       "attributed under its project-relative name and its "
+                       "window test reads the real file")
+
+
+def _member_cases(check):
+    """A real `git init` with the project at `member/` and no `gitRoot` set:
+    `git status` prints the checkout's paths, and every rel this hook keeps is
+    the project's."""
+    tmp = Path(os.path.realpath(_harness.fixture_root("bash-writes-member-")))
+    repo, sd = tmp / "repo", tmp / "state"
+    proj = repo / "member"
+    (proj / "src").mkdir(parents=True)
+    (proj / "docs" / "audit").mkdir(parents=True)
+    (proj / "docs" / "audit" / "audit-plan.json").write_text(
+        json.dumps({"meta": {"version": 2}, "phases": []}), encoding="utf-8")
+    sd.mkdir()
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    prev_env = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(proj)
+
+    def bash(sid):
+        return {"tool_name": "Bash", "tool_input": {"command": "make build"},
+                "session_id": sid, "cwd": str(proj)}
+
+    try:
+        _harness.git(str(repo), "init", "-q", prefix=("git",), timeout=10)
+        M.decide(bash("hm-a"), cfg=cfg, state_dir=sd)            # the baseline
+        (proj / "src" / "shellmade.ts").write_text("export const x=1\n",
+                                                   encoding="utf-8")
+        verdict, detail = M.decide(bash("hm-a"), cfg=cfg, state_dir=sd)
+        check("hm1 %s (the write is reported as src/shellmade.ts and never "
+              "under the checkout's member/ spelling: %r)"
+              % (NESTED_SHELL_CLAUSE, (verdict, detail)),
+              verdict == "warn" and "src/shellmade.ts" in detail
+              and "member/src/shellmade.ts" not in detail)
+
+        M.decide(bash("hm-b"), cfg=cfg, state_dir=sd)            # the baseline
+        old = proj / "src" / "peer.ts"
+        old.write_text("x\n", encoding="utf-8")
+        os.utime(str(old), (time.time() - 600, time.time() - 600))
+        call = bash("hm-b")
+        _config.record_call_start(proj, cfg, call, now=time.time() - 5)
+        verdict2, detail2 = M.decide(call, cfg=cfg, state_dir=sd)
+        # Read at the checkout's spelling the window test finds no file, cannot
+        # tell, and keeps the finding - the silent half is the real file's.
+        check("hm2 %s (a file that changed long before the call began is read "
+              "where it is, so it is not blamed on the call: %r)"
+              % (NESTED_SHELL_CLAUSE, (verdict2, detail2)),
+              verdict2 == "silent")
+    finally:
+        if prev_env is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = prev_env
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _member_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

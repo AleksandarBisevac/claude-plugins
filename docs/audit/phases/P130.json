@@ -4144,7 +4144,124 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test__config.py: git_to_plan/plan_to_git over member project, gitRoot-below-project, same dir, outside path, path == offset, symlinked project": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__config.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/hooks/_config.py",
+            "find": "return _keep_dir_slash(posixpath.relpath(whole, _posix_dir(project)), text)",
+            "replace": "return _keep_dir_slash(posixpath.relpath(whole, base), text)"
+          },
+          "plugins/audit/tests/test__deps.py: git_path_base_violations names audit-lookup.py:_phase_diff_paths when reverted to dev HEAD in a scratch copy; an empty exempt reason and a stale exempt row are reported": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__deps.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/_deps.py",
+            "find": "def git_path_base_violations(script_dir=None, hooks_dir=None, exempt=None):",
+            "replace": "def git_path_base_violations(script_dir=None, hooks_dir=None, exempt=None):\n    return []"
+          },
+          "plugins/audit/tests/test__invariants.py: nested project - commit-scope reports no breach for a declared file": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__invariants.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/governance/_invariants.py",
+            "find": "            rel = hc.plan_to_git(_vocab._strip_line_suffix(name), git_root,\n                                 project)",
+            "replace": "            rel = _vocab._strip_line_suffix(name)"
+          },
+          "plugins/audit/tests/test__tree_stamp.py: nested project - recorder rows leave dirty_digest unchanged": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__tree_stamp.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/governance/_tree_stamp.py",
+            "find": "    if top == os.path.realpath(os.path.abspath(project)):\n        return lines",
+            "replace": "    if True:\n        return lines"
+          },
+          "plugins/audit/tests/test_audit_lookup.py: nested project - phase diff excludes member/docs/audit; task-commit diff and _diff_lines are non-empty for a declared changed file": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_audit_lookup.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/status/audit-lookup.py",
+            "find": "    spec = hooks_config().plan_to_git(DOCS_AUDIT, top, ctx[\"project\"])",
+            "replace": "    spec = DOCS_AUDIT"
+          },
+          "plugins/audit/tests/test_audit_task.py: nested project - _no_change_moves and _held_dirt still find a declared file's change through plan_to_git": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_audit_task.py",
+              "--selftest",
+              "--stage",
+              "ncn-block"
+            ],
+            "file": "plugins/audit/scripts/manifest/audit-task.py",
+            "find": "    rels = [hc.plan_to_git(entry, git_root, project)",
+            "replace": "    rels = [entry"
+          },
+          "plugins/audit/tests/test_close_phase.py: nested project - uncommitted_declared names the declared file in plan spelling": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_close_phase.py",
+              "--selftest",
+              "--stage",
+              "nu-block"
+            ],
+            "file": "plugins/audit/scripts/git/close-phase.py",
+            "find": "        found.append(hc.git_to_plan(entry[3:], git_root, project))",
+            "replace": "        found.append(entry[3:])"
+          },
+          "plugins/audit/tests/test_derive_phase_gate.py: nested project - changedSince is spelled as the plan spells it": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_derive_phase_gate.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/governance/derive-phase-gate.py",
+            "find": "        where = _invariants.git_root_for(manifest, project)",
+            "replace": "        where = project"
+          },
+          "plugins/audit/tests/test_guard_bash_writes.py: nested project - a shell write to a project file is attributed under its project-relative name and its window test reads the real file": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_guard_bash_writes.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/hooks/guard-bash-writes.py",
+            "find": "    dirty = [_config.git_to_plan(p, top, root) for p in dirty]",
+            "replace": "    dirty = list(dirty)"
+          },
+          "plugins/audit/tests/test_integrate_task.py: nested project and gitRoot-below-project - a declared change is not undeclared": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_integrate_task.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/git/integrate-task.py",
+            "find": "        return hc.git_to_plan(path, git_root, project)",
+            "replace": "        return path"
+          },
+          "plugins/audit/tests/test_run_test_gate.py: nested project - a gate rewriting a declared file is owned and refused; dirt outside the declared files is foreign": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_run_test_gate.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/scripts/governance/_tree_stamp.py",
+            "find": "    if top == os.path.realpath(os.path.abspath(project)):\n        return lines",
+            "replace": "    if True:\n        return lines",
+            "timeout": 1800
+          }
+        }
       },
       "model": "opus",
       "skills": [
@@ -4162,21 +4279,21 @@
         "P130.35-ywo",
         "P130.39-ywo"
       ],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-19T16:55:27Z",
+      "startedAt": "2026-10-19T18:39:04Z",
       "completedAt": null,
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-19T18:26:53Z.4265d9",
-        "status": "failed",
-        "at": "2026-10-19T18:26:53Z"
+        "runId": "2026-10-19T19:01:14Z.980661",
+        "status": "passed",
+        "at": "2026-10-19T19:01:14Z"
       }
     },
     {

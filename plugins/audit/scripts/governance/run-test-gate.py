@@ -2518,9 +2518,9 @@ def task_changed_paths(tree, declared, own_tree, records=()):
     there: it is the plan's bytes, not the task's work.
 
     `records` are git-root-relative (`member_records`) and the listed paths are
-    `tree`-relative, so each path is asked about with `tree`'s own prefix in its
-    checkout (`git rev-parse --show-prefix`) in front of it - the same answer
-    whether `tree` is the checkout's root or the project's directory inside it."""
+    `tree`-relative, so each path is spelled from `tree`'s checkout top through
+    `_config.plan_to_git` before it is asked about - the same answer whether
+    `tree` is the checkout's root or the project's directory inside it."""
     diff = _git_text(tree, ["diff", "--relative", "--name-status", "-z", "-M",
                             "HEAD"])
     others = _git_text(tree, ["ls-files", "-z", "--others", "--exclude-standard"])
@@ -2533,13 +2533,15 @@ def task_changed_paths(tree, declared, own_tree, records=()):
         return [p for p in paths if p in keep], None
     if not records:
         return paths, None
-    prefix = _git_text(tree, ["rev-parse", "--show-prefix"])
-    if prefix is None:
+    hc = _loader.load_hooks_config(modname="audit__config")
+    top = hc.checkout_top(tree)
+    if top is None:
         return None, ("git could not say where this tree sits in its checkout, "
                       "so its records could not be told from its changes")
-    prefix = prefix.strip()
+    # `tree` stands in the project's place: the listing is spelled from it.
     return [p for p in paths
-            if not _invariants.is_record_path(prefix + p, records)], None
+            if not _invariants.is_record_path(hc.plan_to_git(p, top, tree),
+                                              records)], None
 
 
 def _affected_facts(tree, meta, changed):
@@ -2564,7 +2566,11 @@ def _affected_facts(tree, meta, changed):
             run(command, AFFECTED_LISTING_TIMEOUT_SECONDS)), command=command)
     listed = _git_text(tree, ["ls-files", "-z", "--cached", "--others",
                               "--exclude-standard"])
-    files = [p for p in (listed or "").split("\0") if p]
+    # Printed from its cwd, `tree`, which stands where the project does - the
+    # spelling `changed` and the plan's suites carry; said so to the pair.
+    hc = _loader.load_hooks_config(modname="audit__config")
+    files = [hc.git_to_plan(p, tree, tree, cwd=tree)
+             for p in (listed or "").split("\0") if p]
     facts["suites"] = [p for p in files if _phases.is_suite_path(p)]
     if any(p.endswith(".py") for p in changed) and listed is not None:
         sources = {}

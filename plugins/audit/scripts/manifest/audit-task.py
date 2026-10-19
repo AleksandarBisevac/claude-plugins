@@ -600,8 +600,12 @@ def _never_existed(entry, project, git_root):
     full = os.path.join(project, stripped)
     if os.path.exists(full):
         return False
+    spec = _loader.load_hooks_config(modname="audit__config").plan_to_git(
+        stripped, git_root, project)
+    if spec is None:
+        return False                    # outside the checkout: history not asked
     code, sha = _git_answer(git_root, "log", "--all", "-n1", "--format=%H",
-                            "--", ":(literal)" + _output.posix_rel(full, git_root))
+                            "--", ":(literal)" + spec)
     return code == 0 and not sha
 
 
@@ -3426,7 +3430,10 @@ def _tracked_files(project):
     except OSError:
         done = None
     if done is not None and done.returncode == 0 and done.stdout:
-        return [p for p in done.stdout.decode("utf-8", "replace").split("\0") if p]
+        # `ls-files` prints from its cwd, the project: said so to the pair.
+        hc = _loader.load_hooks_config(modname="audit__config")
+        return [hc.git_to_plan(p, project, project, cwd=project)
+                for p in done.stdout.decode("utf-8", "replace").split("\0") if p]
     walked, top = [], project.rstrip(os.sep)
     for base, dirs, names in os.walk(project):
         dirs[:] = sorted(d for d in dirs
@@ -6077,10 +6084,11 @@ def _no_change_moves(project, git_root, phase, task, plan=None, start_head=None)
     before the start and dated after it - and a commit another task of the
     plan records as its own is then left out: it is that task's work."""
     notes, files = [], []
+    hc = _loader.load_hooks_config(modname="audit__config")
     for entry in sorted(set(_vocab._strip_line_suffix(f).strip()
                             for f in (task.get("files") or [])
                             if isinstance(f, str) and f.strip())):
-        rel = _invariants._rel(os.path.join(project, entry), git_root)
+        rel = hc.plan_to_git(entry, git_root, project)
         if rel is None:
             notes.append("  %s lies outside the git root %s, so whether it "
                          "changed is NOT ASKED" % (entry, git_root))
@@ -6150,7 +6158,8 @@ def _bookkeeping_rels(project, config, mpath, raw_index, git_root):
 def _declared_rels(project, git_root, task):
     """The task's `files`, line suffix dropped, relative to the git root; the
     entries outside it are not returned (`_no_change_moves` names those)."""
-    rels = [_invariants._rel(os.path.join(project, entry), git_root)
+    hc = _loader.load_hooks_config(modname="audit__config")
+    rels = [hc.plan_to_git(entry, git_root, project)
             for entry in sorted(set(_vocab._strip_line_suffix(f).strip()
                                     for f in (task.get("files") or [])
                                     if isinstance(f, str) and f.strip()))]

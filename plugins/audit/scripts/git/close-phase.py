@@ -1925,12 +1925,10 @@ def tip_scope(git_root, project, branch, files):
     EVERY FAILURE REMOVES THE SCRATCH AND ANSWERS None, a write that raised
     included: a half-written copy is not the tip, and a directory left behind is
     a leak into the operator's temp."""
-    prefix = os.path.relpath(project, git_root).replace(os.sep, "/")
-    prefix = "" if prefix == "." else prefix + "/"
     scratch = tempfile.mkdtemp(prefix="close-phase-tip-")
     try:
-        if _write_tip(git_root, branch, prefix, _tree_stamp.declared_scope(files),
-                      scratch):
+        if _write_tip(git_root, project, branch,
+                      _tree_stamp.declared_scope(files), scratch):
             return scratch
     except Exception:
         pass
@@ -1938,10 +1936,14 @@ def tip_scope(git_root, project, branch, files):
     return None
 
 
-def _write_tip(git_root, branch, prefix, declared, scratch):
+def _write_tip(git_root, project, branch, declared, scratch):
     """True once the `declared` files at `branch`'s tip are written into
     `scratch` as a checkout writes them and added to a repository there; False
-    when any of it could not be.
+    when any of it could not be. `scratch` takes the project's layout: each
+    entry is listed at the tip as `_config.plan_to_git` spells it from the
+    checkout's top, and each listed path is written back where
+    `_config.git_to_plan` puts it - an entry the checkout does not hold lists
+    nothing, which the digest reads as absent at the tip.
 
     CHECKED OUT, NOT CAT-FILED. The recorder hashed the working tree, whose
     bytes are the blob after the repository's eol, text and smudge rules - a
@@ -1950,9 +1952,13 @@ def _write_tip(git_root, branch, prefix, declared, scratch):
     digest over the blobs would refuse every green it ever recorded. So the
     tip is checked out for real, into a work tree of its own (`_check_out`),
     and the scratch repository is written from that."""
+    hc = _loader.load_hooks_config(modname="audit__config")
     paths = []
     for rel in declared:
-        listed = _tip_paths(git_root, branch, prefix + rel.rstrip("/"))
+        spec = hc.plan_to_git(rel.rstrip("/"), git_root, project)
+        if spec is None:
+            continue
+        listed = _tip_paths(git_root, branch, spec)
         if listed is None:
             return False
         paths.extend(listed)
@@ -1971,7 +1977,12 @@ def _write_tip(git_root, branch, prefix, declared, scratch):
                 # tip is not established, which the digest must not read as
                 # absent.
                 return False
-            target = os.path.join(scratch, path[len(prefix):])
+            spelled = hc.git_to_plan(path, git_root, project)
+            if spelled == ".." or spelled.startswith("../"):
+                # An entry climbing out of the project has no place in a
+                # scratch laid out as the project: not established.
+                return False
+            target = os.path.join(scratch, *spelled.split("/"))
             os.makedirs(os.path.dirname(target), exist_ok=True)
             with open(target, "wb") as fh:
                 fh.write(raw)
@@ -2218,16 +2229,22 @@ def uncommitted_declared(git_root, project, phase_tree, files):
     carries, in the worktree that holds the branch; [] when none do, when no
     worktree holds it, or when git could not say - the clause this feeds is a
     remedy, and the refusal it rides on stands either way."""
-    tree = _phase_project(git_root, project, phase_tree)
-    declared = _tree_stamp.declared_scope(files)
-    if not tree or not declared:
+    if not phase_tree or phase_tree.get("prunable") or not phase_tree.get("path"):
         return []
-    code, out = _git_bytes(tree, ["status", "--porcelain", "-z",
-                                  "--untracked-files=all", "--"] + declared)
+    # Asked from the worktree's TOP, which holds the checkout's layout: the
+    # pathspecs and the paths git prints are spelled from there, and the pair
+    # reads both against the phase checkout's offset, which a worktree shares.
+    hc = _loader.load_hooks_config(modname="audit__config")
+    specs = [s for s in (hc.plan_to_git(rel, git_root, project)
+                         for rel in _tree_stamp.declared_scope(files))
+             if s is not None]
+    if not specs:
+        return []
+    code, out = _git_bytes(phase_tree["path"],
+                           ["status", "--porcelain", "-z",
+                            "--untracked-files=all", "--"] + specs)
     if code != 0:
         return []
-    prefix = os.path.relpath(project, git_root).replace(os.sep, "/")
-    prefix = "" if prefix == "." else prefix + "/"
     found, skip = [], False
     for entry in out.decode("utf-8", "replace").split("\0"):
         if skip or len(entry) < 4:
@@ -2235,8 +2252,7 @@ def uncommitted_declared(git_root, project, phase_tree, files):
             continue
         # A rename's entry is followed by its source path, which is not one.
         skip = any(c in "RC" for c in entry[:2])
-        path = entry[3:]
-        found.append(path[len(prefix):] if path.startswith(prefix) else path)
+        found.append(hc.git_to_plan(entry[3:], git_root, project))
     return sorted(set(found))
 
 

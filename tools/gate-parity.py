@@ -1075,6 +1075,11 @@ AUDITED_EXEMPTIONS = {
     # their `ts` text instead of the moment reader, and a row whose site no
     # longer does; whether its reason is true it does not judge.
     "TS_ORDER_SITES": ("live", "ts_order_violations"),
+    # `git_path_base_violations` reports a git listing site that neither routes
+    # through the path pair nor has a row here, a row whose function no longer makes
+    # a listing call, and a row with a blank reason; whether a reason is true it does
+    # not judge.
+    "GIT_PATH_BASE_EXEMPT": ("live", "git_path_base_violations"),
     # ...and the two whose instrument is a CASE rather than a function. This tree's
     # suites lint other files' source, so an auditor living in one is not a lesser
     # auditor - `r2` is the strongest row in this table, refusing a NEW debt and a

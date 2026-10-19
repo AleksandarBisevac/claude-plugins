@@ -5097,6 +5097,65 @@ def _sl_repo(root, dirty=False):
     return git, mpath
 
 
+NESTED_DIRTY_CLAUSE = ("nested project - uncommitted_declared names the "
+                       "declared file in plan spelling")
+
+
+def _nested_uncommitted_cases(check):
+    """Both topologies, each a real checkout with a linked worktree holding the
+    phase branch: a member project at `member/`, and `meta.gitRoot` below the
+    project at `test/`."""
+    root = os.path.realpath(_harness.fixture_root("closephase-nested-"))
+    ident = ("git", "-c", "user.email=fixture@example.com", "-c",
+             "user.name=Fixture", "-c", "commit.gpgsign=false")
+
+    def world(top, rel, branch):
+        os.makedirs(os.path.join(top, os.path.dirname(rel)))
+        with open(os.path.join(top, rel), "w") as fh:
+            fh.write("v1\n")
+        _harness.git(None, "init", "-q", top, prefix=ident)
+        for argv in (("add", "-A"), ("commit", "-qm", "base"),
+                     ("branch", branch)):
+            _harness.git(top, *argv, prefix=ident)
+        tree = top + "-wt"
+        _harness.git(top, "worktree", "add", "-q", tree, branch, prefix=ident)
+        with open(os.path.join(tree, rel), "w") as fh:
+            fh.write("v2 in the phase tree\n")
+        return tree
+
+    repo = os.path.join(root, "repo")
+    member_tree = world(repo, "member/src/a.py", "audit/p1-member")
+    got_member = M.uncommitted_declared(repo, os.path.join(repo, "member"),
+                                        {"path": member_tree},
+                                        ["src/a.py", "src/b.py"])
+    check("nu1 %s (a member project: %r)" % (NESTED_DIRTY_CLAUSE, got_member),
+          got_member == ["src/a.py"])
+
+    outer = os.path.join(root, "outer")
+    below = os.path.join(outer, "test")
+    os.makedirs(outer)
+    below_tree = world(below, "src/a.py", "audit/p1-below")
+    got_below = M.uncommitted_declared(below, outer, {"path": below_tree},
+                                       ["test/src/a.py"])
+    check("nu2 %s (meta.gitRoot below the project: the file carries the test/ "
+          "prefix the plan spells: %r)" % (NESTED_DIRTY_CLAUSE, got_below),
+          got_below == ["test/src/a.py"])
+
+    _harness.git(below_tree, "commit", "-qam", "tip", prefix=ident)
+    scratch = M.tip_scope(below, outer, "audit/p1-below", ["test/src/a.py"])
+    try:
+        text = None
+        if scratch:
+            with open(os.path.join(scratch, "test", "src", "a.py")) as fh:
+                text = fh.read()
+    finally:
+        if scratch:
+            _output.remove_tree(scratch)
+    check("nu3 %s (the tip writer lays the branch tip's declared file out in "
+          "plan spelling too: %r)" % (NESTED_DIRTY_CLAUSE, text),
+          text == "v2 in the phase tree\n")
+
+
 def _sl_on_main(git):
     """Whether the phase's work reached `main` - asked of `main` itself, since a
     landing deletes the branch it merged."""
@@ -5178,7 +5237,8 @@ STAGES = (("tk-block", "_takeover_cases"), ("lk-block", "_lock_cases"),
           ("bd-block", "_backfill_direction_cases"),
           ("rc-block", "_recovery_cases"),
           ("lt-block", "_landing_commit_cases"),
-          ("cl-block", "_crlf_trail_cases"), ("sl-block", "_success_line_cases"))
+          ("cl-block", "_crlf_trail_cases"), ("sl-block", "_success_line_cases"),
+          ("nu-block", "_nested_uncommitted_cases"))
 
 
 if __name__ == "__main__":

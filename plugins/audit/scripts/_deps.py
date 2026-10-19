@@ -1837,6 +1837,294 @@ def hook_tree_violations(hooks_dir=None):
     return violations
 
 
+# --- one door between git's path base and the plan's ---------------------------
+# The two functions `_config` defines for turning git's spelling of a path into
+# the plan's and back. A function that calls either - or calls a function of its
+# own file that does - has passed its paths through the door.
+GIT_PATH_PAIR = frozenset(("git_to_plan", "plan_to_git"))
+# Words that make a git argv print paths. Sets, never a list or tuple literal:
+# this module is inside the walk it describes, and a tuple holding a listing verb
+# would be a finding in the lint's own table.
+_GIT_PATH_VERBS = frozenset(("diff", "show", "log"))
+_GIT_NAME_FLAGS = frozenset(("--name-only", "--name-status"))
+
+# Functions whose git paths never meet a plan entry, each with the reason. Keyed
+# (basename, function); a row is checked both ways - its reason must not be
+# blank, and it must name a function that still makes a listing call.
+_RECORD_PATHS = ("record paths - the manifest, its shards, the journal and the "
+                 "evidence - made relative to the git root and compared with "
+                 "git's listing in that one spelling")
+_SCOPED_COMMIT = ("the commit machinery stages, snapshots and restores by "
+                  "checkout-relative paths; the callers holding plan entries "
+                  "build those paths through plan_to_git before handing them in")
+_SAME_CHECKOUT = ("paths a tree lists are read back as bytes from that same "
+                  "checkout's top or compared with integration records written "
+                  "in its spelling; the one comparison with a plan entry, "
+                  "undeclared_paths, rebases through git_to_plan")
+_DOCTOR = ("a doctor check names repository files in its finding; nothing it "
+           "lists is compared with a plan entry")
+GIT_PATH_BASE_EXEMPT = (
+    ("_output.py", "tracked_files",
+     "this repository's own lint over its own tree: a repository-relative "
+     "listing compared with repository-relative paths, no plan entry"),
+    ("_worktrees.py", "dirtiness",
+     "whether a worktree holds dirt before it is removed: the lines are counted "
+     "and quoted back, never compared with a plan entry"),
+    ("close-phase.py", "_link_texts",
+     "the symbolic-link entries of one scratch work tree, asked by the paths "
+     "that same tree was checked out with"),
+    ("close-phase.py", "_tip_paths",
+     "lists a checkout-relative pathspec its callers built - _write_tip through "
+     "plan_to_git, tip_texts from an absolute record directory - and hands "
+     "git's spelling back to them"),
+    ("close-phase.py", "pending_beyond_stamp", _RECORD_PATHS),
+    ("close-phase.py", "verdict_commit", _RECORD_PATHS),
+    ("integrate-task.py", "_untracked", _SAME_CHECKOUT),
+    ("integrate-task.py", "changed_since", _SAME_CHECKOUT),
+    ("integrate-task.py", "dirty_paths", _SAME_CHECKOUT),
+    ("integrate-task.py", "refresh_records", _RECORD_PATHS),
+    ("integrate-task.py", "reproduced", _SAME_CHECKOUT),
+    ("integrate-task.py", "task_changes", _SAME_CHECKOUT),
+    ("manage-worktrees.py", "_included_files",
+     "a worktree's own file list, used inside that worktree"),
+    ("_invariants.py", "_committed_run_ids", _RECORD_PATHS),
+    ("_invariants.py", "audit_state_scope", _RECORD_PATHS),
+    ("_invariants.py", "index_scope", _RECORD_PATHS),
+    ("_journal_io.py", "_git_anchor_finding", _RECORD_PATHS),
+    ("_journal_io.py", "_git_status_sets", _RECORD_PATHS),
+    ("_journal_io.py", "tracked_but_gone", _RECORD_PATHS),
+    ("_scoped_commit.py", "classify", _SCOPED_COMMIT),
+    ("_scoped_commit.py", "commit_from_index", _SCOPED_COMMIT),
+    ("_scoped_commit.py", "foreign_staged", _SCOPED_COMMIT),
+    ("_scoped_commit.py", "in_head", _SCOPED_COMMIT),
+    ("_scoped_commit.py", "restore", _SCOPED_COMMIT),
+    ("_scoped_commit.py", "snapshot", _SCOPED_COMMIT),
+    ("_scoped_commit.py", "stage", _SCOPED_COMMIT),
+    ("_scoped_commit.py", "stage_and_commit", _SCOPED_COMMIT),
+    ("_scoped_commit.py", "status_paths", _SCOPED_COMMIT),
+    ("audit-journal.py", "cmd_archive",
+     "journal files named inside their own directory, which git runs in"),
+    ("commit-manifest-index.py", "_changed_shards", _RECORD_PATHS),
+    ("drive-phase.py", "carry_commit", _SAME_CHECKOUT),
+    ("drive-phase.py", "restore_carry", _SAME_CHECKOUT),
+    ("drive-phase.py", "tree_holds_only_integrated", _SAME_CHECKOUT),
+    ("stamp-verification.py", "_at_head",
+     "reads HEAD's tree by checkout-relative paths into a throwaway checkout "
+     "of the same layout"),
+    ("stamp-verification.py", "_npmrc_state",
+     "reads HEAD's tree by checkout-relative paths into a throwaway checkout "
+     "of the same layout"),
+    ("stamp-verification.py", "dependency_plan",
+     "reads HEAD's tree by checkout-relative paths into a throwaway checkout "
+     "of the same layout"),
+    ("stamp-verification.py", "head_tree",
+     "reads HEAD's tree by checkout-relative paths into a throwaway checkout "
+     "of the same layout"),
+    ("_filed_returns.py", "ref_phase_returns", _RECORD_PATHS),
+    ("_merge_install.py", "replay_merges",
+     "a merge's files replayed by checkout-relative path into the same "
+     "repository"),
+    ("_doctor_completions.py", "check_completions", _DOCTOR),
+    ("_doctor_hygiene.py", "check_local_artifacts", _DOCTOR),
+    ("_doctor_setup.py", "check_worktree_env", _DOCTOR),
+    ("_doctor_setup.py", "plugin_integrity", _DOCTOR),
+    ("_doctor_trail.py", "tracked_among", _DOCTOR),
+    ("_live_copy.py", "_readiness_moved", _RECORD_PATHS),
+    ("guard-bash-writes.py", "slot_write_magnitude",
+     "measures one file by the pathspec its caller built through plan_to_git, "
+     "run from the same checkout top"),
+)
+
+
+def _argv_words(node):
+    """The string literals of one argv-shaped expression, in order: a call's
+    positional arguments or a list/tuple's elements, read through `+`
+    concatenation and `*` unpacking."""
+    if isinstance(node, ast.Call):
+        parts = list(node.args)
+    elif isinstance(node, (ast.List, ast.Tuple)):
+        parts = list(node.elts)
+    else:
+        return []
+    out = []
+    while parts:
+        part = parts.pop(0)
+        if isinstance(part, ast.Starred):
+            parts.insert(0, part.value)
+        elif isinstance(part, ast.BinOp) and isinstance(part.op, ast.Add):
+            parts[0:0] = [part.left, part.right]
+        elif isinstance(part, (ast.List, ast.Tuple)):
+            parts[0:0] = list(part.elts)
+        elif isinstance(part, ast.Constant) and isinstance(part.value, str):
+            out.append(part.value)
+    return out
+
+
+def _git_listing_form(words):
+    """The path-listing form an argv's words spell, or None."""
+    if "status" in words and any(w.startswith("--porcelain") for w in words):
+        return "status --porcelain"
+    if "diff-tree" in words:
+        return "diff-tree"
+    if "ls-files" in words:
+        return "ls-files"
+    if "ls-tree" in words and "--name-only" in words:
+        return "ls-tree --name-only"
+    verbs = [i for i, w in enumerate(words) if w in _GIT_PATH_VERBS]
+    if not verbs:
+        return None
+    named = [w for w in words if w in _GIT_NAME_FLAGS]
+    if named:
+        return "%s %s" % (words[verbs[0]], named[0])
+    if "--" in words[verbs[0] + 1:]:
+        return "%s -- <pathspec>" % (words[verbs[0]],)
+    return None
+
+
+def _call_name(call):
+    fn = call.func
+    if isinstance(fn, ast.Name):
+        return fn.id
+    if isinstance(fn, ast.Attribute):
+        return fn.attr
+    return None
+
+
+def _function_scopes(tree):
+    """{name: node} for every function at any depth, plus `<module>` - the
+    innermost def owns a node, as `_own_calls` reads it."""
+    scopes = {"<module>": tree}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            scopes.setdefault(node.name, node)
+    return scopes
+
+
+def _own_nodes(scope):
+    """Every node under `scope`, not descending into a nested def or lambda."""
+    out, stack = [], list(ast.iter_child_nodes(scope))
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda,
+                             ast.ClassDef)):
+            continue
+        out.append(node)
+        stack.extend(ast.iter_child_nodes(node))
+    return out
+
+
+def _git_path_scan(tree):
+    """({function: listing form}, {functions that reach the pair}) for one file.
+    A function reaches the pair by calling it or by calling a function of this
+    file that does (a fixpoint); a nested def or lambda is its own scope, and a
+    function credits the pair called anywhere inside it, nested defs included,
+    since a closure rebasing the outer listing's output is the outer's door."""
+    scopes = _function_scopes(tree)
+    listing, reach, calls = {}, set(), {}
+    for name, scope in scopes.items():
+        own = _own_nodes(scope)
+        for node in own:
+            if isinstance(node, (ast.Call, ast.List, ast.Tuple)):
+                form = _git_listing_form(_argv_words(node))
+                if form and name not in listing:
+                    listing[name] = form
+        inner = own if name == "<module>" else list(ast.walk(scope))
+        names = set(_call_name(n) for n in inner if isinstance(n, ast.Call))
+        calls[name] = names
+        if names & GIT_PATH_PAIR:
+            reach.add(name)
+    changed = True
+    while changed:
+        changed = False
+        for name, names in calls.items():
+            if name not in reach and any(c in reach for c in names
+                                         if c in scopes and c != name):
+                reach.add(name)
+                changed = True
+    return listing, reach
+
+
+def git_path_base_violations(script_dir=None, hooks_dir=None, exempt=None):
+    """(file, what) for every git path-listing call whose function does not pass
+    its paths through `_config.git_to_plan` / `_config.plan_to_git`.
+
+    WHY A LINT AND NOT A SENTENCE. Git spells a path from the checkout's top in
+    `status --porcelain`, `diff`/`show`/`log --name-only|--name-status` and
+    `diff-tree`, from its cwd in `ls-files` and `ls-tree`, and reads a pathspec
+    from its cwd; a task's `files` are spelled from the project. Sites comparing
+    the two did their own arithmetic, right for one topology each, and were
+    patched one at a time, round after round, while the next site waited.
+    One door is a convention; this is what names the function that skips it.
+
+    WHAT IS READ. Every `.py` under `scripts/` and `hooks/`, by the shared walk.
+    A listing call is any call or list/tuple literal whose string words spell one
+    of the forms `_git_listing_form` knows: `status --porcelain*`, a `diff`,
+    `show` or `log` with `--name-only`/`--name-status` or a `--` pathspec after
+    the verb, `diff-tree`, `ls-files`, or `ls-tree --name-only`. Its function is
+    named `<basename>:<function>` unless the function reaches the pair (directly,
+    or through a function of its own file) or `GIT_PATH_BASE_EXEMPT` - `exempt`
+    in a fixture - holds a row for it with a reason. `_config.py` defines the
+    pair and is read like any other file.
+
+    THE TABLE IS CHECKED BOTH WAYS. A blank reason excuses nothing and is a
+    finding; a row naming a file the walk did not read, a function that no
+    longer exists, or one that no longer makes a listing call is stale, because
+    a stale row excuses whatever lands under that name next.
+
+    WHAT IT CANNOT SEE. An argv assembled from variables holding the verb and the
+    flag as separate statements (`argv.append("--name-only")`) carries no literal
+    sequence and passes; so does a listing whose output is rebased by a function
+    in ANOTHER file - a door across modules is not read, and a cross-file
+    fixpoint would need the import graph's names resolved to functions. A
+    function that calls the pair on one listing and not on a second passes: the
+    unit is the function, not the value.
+    """
+    script_dir = script_dir if script_dir is not None else _output.SCRIPTS_DIR
+    hooks_dir = hooks_dir if hooks_dir is not None else _output.HOOKS_DIR
+    rows = GIT_PATH_BASE_EXEMPT if exempt is None else exempt
+    table = dict(((f, fn), why) for f, fn, why in rows)
+    violations, seen = [], {}
+    for label, directory in (("scripts", script_dir), ("hooks", hooks_dir)):
+        if not os.path.isdir(directory):
+            continue
+        for rel, path in _output.lint_py_files(directory):
+            shown = "%s/%s" % (label, rel.replace(os.sep, "/"))
+            base = os.path.basename(rel)
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    tree = ast.parse(fh.read(), filename=rel)
+            except (OSError, SyntaxError):
+                violations.append((shown, "%s:<module> does not parse; its git "
+                                          "listing calls cannot be read" % base))
+                continue
+            listing, reach = _git_path_scan(tree)
+            seen[base] = (shown, listing)
+            for name in sorted(listing):
+                if name in reach:
+                    continue
+                why = table.get((base, name))
+                if why is not None and why.strip():
+                    continue
+                violations.append((shown, "%s:%s runs `git %s` and never passes "
+                                          "its paths through _config.git_to_plan "
+                                          "or plan_to_git - route them through "
+                                          "the pair, or give the function a row "
+                                          "in GIT_PATH_BASE_EXEMPT with its "
+                                          "reason" % (base, name, listing[name])))
+    for (base, name), why in sorted(table.items()):
+        shown, listing = seen.get(base, (base, {}))
+        site = "%s:%s" % (base, name)
+        if not why.strip():
+            violations.append((shown, "%s GIT_PATH_BASE_EXEMPT row carries no "
+                                      "reason, so it excuses nothing" % site))
+        elif base not in seen:
+            violations.append((shown, "%s GIT_PATH_BASE_EXEMPT row is stale: the "
+                                      "walk read no file of that name" % site))
+        elif name not in listing:
+            violations.append((shown, "%s GIT_PATH_BASE_EXEMPT row is stale: no "
+                                      "such function makes a listing call any "
+                                      "more" % site))
+    return violations
 
 
 # --- one JSON encoding ----------------------------------------------------------

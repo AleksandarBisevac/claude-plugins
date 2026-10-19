@@ -1,0 +1,252 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test__tree_stamp.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__config.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__deps.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_audit_lookup.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_integrate_task.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_derive_phase_gate.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_run_test_gate.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__invariants.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_audit_task.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_close_phase.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_guard_bash_writes.py --selftest": "pass",
+    "python3 tools/bench-hooks.py --gate": "pass",
+    "python3 tools/prove-gates.py --selftest": "pass",
+    "ruff check plugins/audit tools && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests": "pass",
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/gate-parity.py --selftest": "pass",
+    "python3 tools/gate-parity.py": "pass"
+  },
+  "outcome": {
+    "technical": "PAIR: hooks/_config.py gains git_to_plan(path, git_root, project, cwd=None), plan_to_git(entry, git_root, project, cwd=None) and checkout_top(directory). Both resolve the two directories once (realpath) and then do posixpath string arithmetic only, so quoted porcelain escapes survive and Windows backslashes are never read as separators; cwd names a listing git ran from elsewhere (ls-files/ls-tree/--relative); cwd == project is an O(1) identity. ROUTED: audit-lookup (_phase_diff_paths, _docs_audit_exclude replaces the literal DOCS_AUDIT_EXCLUDE, _task_commit_diff_lines, _diff_lines incl. wave tree via --full-name, existing_test_lines; all run from checkout_top so a member project with no gitRoot works), integrate-task undeclared_paths (fixes the gitRoot-below topology project_spelling got wrong), derive-phase-gate changedSince (runs in _invariants.git_root_for with --relative + cwd, drops paths outside the project), _tree_stamp.porcelain rebases every line to plan spelling once (fixes run-test-gate _declared_by/classify_mutations/dirty_outside/_named_by_run and dirty_digest exclusion together; same-dir topology returns git's lines unchanged), _tree_stamp _files_under/_content_reading, run-test-gate task_changed_paths (show-prefix arithmetic replaced) and _affected_facts, _invariants commit_scope (plan_to_git with project; new project= kwarg, walked back from git_root_rel for legacy callers; _strip_git_root alias and _status_facts import removed from _invariants), audit-task _no_change_moves/_declared_rels/_never_existed/_tracked_files, close-phase uncommitted_declared (asked from the worktree top) and the tip writer (_write_tip takes project; prefix arithmetic gone), _evidence_io suite_listing, hooks/guard-bash-writes.py dirty paths and the two reverse spellings (slot magnitude, journal origin) - the checkout top is asked once per session and cached in the state file key checkoutTop; no command-reading code changed. DELETED: _evidence_io.project_spelling. LINT: _deps.git_path_base_violations(script_dir, hooks_dir, exempt) + GIT_PATH_BASE_EXEMPT (single-base rows with reasons; blank reason and stale rows reported); prove-gates rows red gb2, gb4 and allow gb1, gb3; PLUGIN-BUILD-GUIDE module map regenerated with _deps.py --write-map. BLOCKED (plan gate refused, verbatim): (1) deleting _status_facts._strip_git_root needs plugins/audit/scripts/status/audit-status.py:126 (alias line) - '[require-plan] plugins/audit/scripts/status/audit-status.py is outside task P130.40-ywo, the task this worktree is bound to (plan: .): it is declared by P3.2, ... P130.8, a different task. Only that task's files are open here.'; submodule_conflicts' callers (audit-status.py:2169, _doctor_setup.py:1104) and test_audit_status.py sm4 pass a relative gitRoot string, so moving it to the pair needs those files too; _strip_git_root is left in place with only submodule_conflicts using it. (2) tools/gate-parity.py needs the row  \"GIT_PATH_BASE_EXEMPT\": (\"live\", \"git_path_base_violations\") in AUDITED_EXEMPTIONS (its ea1/ea4-ea7 cases are red without it) - '[require-plan] tools/gate-parity.py is outside task P130.40-ywo, the task this worktree is bound to (plan: .): it is declared by P19.2, ... P130.37-ywo, a different task. Only that task's files are open here.' Also: a heredoc python write to audit-lookup.py was refused by the shell arm ('[plan gate] A source-file write from a heredoc fed to an interpreter's stdin ... This path is outside the running task's `files`'), the F738 shape; the same edits were made with Edit, which the gate allowed. RUNS: every touched suite alone, all exit 0 (test__config 361/361, test__deps 250/250, test__evidence_io 308/308, test__status_facts 178/178, test_audit_lookup 115/115, test_integrate_task 34/34, test_derive_phase_gate 35/35, test__tree_stamp 60/60, test__invariants 136/136, test_guard_bash_writes 239/239, test_run_test_gate 556/556, test_close_phase 272/272, test_audit_task 1091/1091, test_commit_task_work 126/126); bench-hooks --gate exit 0; ruff exit 0; vermin exit 0; prove-gates --selftest 41/41; full sweep exit 1, 339/340 files ok, the one red is tools/gate-parity.py (blocked item 2, caused by this change, file outside scope). prove-gates --only git_path_base could not run (redfirst: REFUSED (DIRTY) on an uncommitted _deps.py), so the four rows were proven in whole-tree scratch copies: baseline 250/250, gb2 red 246/250, gb4 red 249/250, allow gb1 red 245/250, allow gb3 red 247/250. Every falsifier below was applied in a scratch copy and killed its suite (exit 1 each).\n\nATTEMPT 2: registered GIT_PATH_BASE_EXEMPT in tools/gate-parity.py AUDITED_EXEMPTIONS as ('live', 'git_path_base_violations'). Runs in the task tree: gate-parity --selftest exit 0 (70/70); gate-parity plain exit 0; test__deps.py --selftest exit 0 (250/250); full sweep exit 0, 340/340 files ok, 16522 cases. The attempt-1 note on _status_facts._strip_git_root (left in place, audit-status.py out of scope) stands.",
+    "descriptive": "Git path output and plan paths now meet through one function pair in hooks/_config.py, every site of the class routes through it, and a _deps lint names any listing call that does not; two edits outside scope (audit-status.py alias, gate-parity.py row) are blocked and reported."
+  },
+  "testsAdded": [
+    "gp1",
+    "gp2",
+    "gp3",
+    "gp4",
+    "gp5",
+    "gp6",
+    "gp7",
+    "gp8",
+    "gp9",
+    "gb1",
+    "gb2",
+    "gb3",
+    "gb4",
+    "gb5",
+    "gb6",
+    "nl3",
+    "nl4",
+    "nl5",
+    "nl6",
+    "nl7",
+    "n3",
+    "n4",
+    "n2",
+    "n3",
+    "ng1",
+    "ng2",
+    "ng3",
+    "tsn1",
+    "tsn2",
+    "ns1",
+    "ns2",
+    "nn1",
+    "nn2",
+    "nu1",
+    "nu2",
+    "nu3",
+    "hm1",
+    "hm2"
+  ],
+  "casesAdded": [
+    [
+      "gp1",
+      "gp2",
+      "gp3",
+      "gp4",
+      "gp5",
+      "gp6",
+      "gp7",
+      "gp8",
+      "gp9"
+    ],
+    [
+      "gb1",
+      "gb2",
+      "gb3",
+      "gb4",
+      "gb5",
+      "gb6"
+    ],
+    [
+      "nl3",
+      "nl4",
+      "nl5",
+      "nl6",
+      "nl7"
+    ],
+    [
+      "n3",
+      "n4"
+    ],
+    [
+      "n2",
+      "n3"
+    ],
+    [
+      "ng1",
+      "ng2",
+      "ng3"
+    ],
+    [
+      "tsn1",
+      "tsn2"
+    ],
+    [
+      "ns1",
+      "ns2"
+    ],
+    [
+      "nn1",
+      "nn2"
+    ],
+    [
+      "nu1",
+      "nu2",
+      "nu3"
+    ],
+    [
+      "hm1",
+      "hm2"
+    ]
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test__config.py: git_to_plan/plan_to_git over member project, gitRoot-below-project, same dir, outside path, path == offset, symlinked project": {
+      "file": "plugins/audit/hooks/_config.py",
+      "find": "return _keep_dir_slash(posixpath.relpath(whole, _posix_dir(project)), text)",
+      "replace": "return _keep_dir_slash(posixpath.relpath(whole, base), text)",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__config.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test__deps.py: git_path_base_violations names audit-lookup.py:_phase_diff_paths when reverted to dev HEAD in a scratch copy; an empty exempt reason and a stale exempt row are reported": {
+      "file": "plugins/audit/scripts/_deps.py",
+      "find": "def git_path_base_violations(script_dir=None, hooks_dir=None, exempt=None):",
+      "replace": "def git_path_base_violations(script_dir=None, hooks_dir=None, exempt=None):\n    return []",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__deps.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test_audit_lookup.py: nested project - phase diff excludes member/docs/audit; task-commit diff and _diff_lines are non-empty for a declared changed file": {
+      "file": "plugins/audit/scripts/status/audit-lookup.py",
+      "find": "    spec = hooks_config().plan_to_git(DOCS_AUDIT, top, ctx[\"project\"])",
+      "replace": "    spec = DOCS_AUDIT",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test_integrate_task.py: nested project and gitRoot-below-project - a declared change is not undeclared": {
+      "file": "plugins/audit/scripts/git/integrate-task.py",
+      "find": "        return hc.git_to_plan(path, git_root, project)",
+      "replace": "        return path",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_integrate_task.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test_derive_phase_gate.py: nested project - changedSince is spelled as the plan spells it": {
+      "file": "plugins/audit/scripts/governance/derive-phase-gate.py",
+      "find": "        where = _invariants.git_root_for(manifest, project)",
+      "replace": "        where = project",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_derive_phase_gate.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test_run_test_gate.py: nested project - a gate rewriting a declared file is owned and refused; dirt outside the declared files is foreign": {
+      "file": "plugins/audit/scripts/governance/_tree_stamp.py",
+      "find": "    if top == os.path.realpath(os.path.abspath(project)):\n        return lines",
+      "replace": "    if True:\n        return lines",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "--selftest"
+      ],
+      "timeout": 1800
+    },
+    "plugins/audit/tests/test__tree_stamp.py: nested project - recorder rows leave dirty_digest unchanged": {
+      "file": "plugins/audit/scripts/governance/_tree_stamp.py",
+      "find": "    if top == os.path.realpath(os.path.abspath(project)):\n        return lines",
+      "replace": "    if True:\n        return lines",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__tree_stamp.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test__invariants.py: nested project - commit-scope reports no breach for a declared file": {
+      "file": "plugins/audit/scripts/governance/_invariants.py",
+      "find": "            rel = hc.plan_to_git(_vocab._strip_line_suffix(name), git_root,\n                                 project)",
+      "replace": "            rel = _vocab._strip_line_suffix(name)",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__invariants.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test_audit_task.py: nested project - _no_change_moves and _held_dirt still find a declared file's change through plan_to_git": {
+      "file": "plugins/audit/scripts/manifest/audit-task.py",
+      "find": "    rels = [hc.plan_to_git(entry, git_root, project)",
+      "replace": "    rels = [entry",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_task.py",
+        "--selftest",
+        "--stage",
+        "ncn-block"
+      ]
+    },
+    "plugins/audit/tests/test_close_phase.py: nested project - uncommitted_declared names the declared file in plan spelling": {
+      "file": "plugins/audit/scripts/git/close-phase.py",
+      "find": "        found.append(hc.git_to_plan(entry[3:], git_root, project))",
+      "replace": "        found.append(entry[3:])",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_close_phase.py",
+        "--selftest",
+        "--stage",
+        "nu-block"
+      ]
+    },
+    "plugins/audit/tests/test_guard_bash_writes.py: nested project - a shell write to a project file is attributed under its project-relative name and its window test reads the real file": {
+      "file": "plugins/audit/hooks/guard-bash-writes.py",
+      "find": "    dirty = [_config.git_to_plan(p, top, root) for p in dirty]",
+      "replace": "    dirty = list(dirty)",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "--selftest"
+      ]
+    }
+  },
+  "claims": "claims:\n1 _config.py git_to_plan/plan_to_git/checkout_top implement the pair the docstrings describe; _tree_stamp.porcelain docstring EVERY PATH IS IN PLAN SPELLING matches _plan_line; _deps.git_path_base_violations WHAT IT CANNOT SEE lists the cross-file door and argv built by append\n2 lint: crippled -> gb2 red 246/250, blank reason honoured -> gb4 red 249/250, pair credit dropped -> gb1 red 245/250, table ignored -> gb3 red 247/250, each in a scratch copy, baseline 250/250; every falsifier killed its suite in a scratch copy (exit 1)\n3 class sweep by the lint itself: every listing call in scripts/ and hooks/ is routed or carries a GIT_PATH_BASE_EXEMPT row; left: _status_facts._strip_git_root (submodule_conflicts) because audit-status.py is outside scope and refused; _invariants._rel(join(project, entry), git_root) in commit-task-work.py:517 and _scoped_commit.py:716/793 is the same arithmetic outside this task's files and outside what the lint can see (no listing call)\n4 the one-door rule is enforced by _deps.git_path_base_violations, named in the comment above GIT_PATH_PAIR in _deps.py and in the pair's own section comment in _config.py\n5 n/a - no property recorded\n6 guard-bash-writes: only the path conversion changed (git_to_plan/plan_to_git with a cached checkout top); the decision still reads the dirty file set; allow case hm2 (old file outside the window stays silent) and all 237 prior cases green\n7 no number written into prose; the docstring count was replaced by 'round after round'\n3b gate-parity: grep -n 'GIT_PATH_BASE_EXEMPT' tools/gate-parity.py now 1 hit in AUDITED_EXEMPTIONS naming its instrument; other exemption tables the lint reaches were already classified (selftest ea1/ea4-ea7 green).",
+  "redFirst": {
+    "at": "2026-10-19T18:50:08Z",
+    "basis": "`python3 plugins/audit/tests/test__tree_stamp.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 60 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tsn1 (house FAIL): SELFTEST FAILED: 59/60 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:75ff63d02d41cfed64134dff46b76f92084f49d1206c5bb98b4c1117b01e83db\",\"dirtyDigest\":\"sha256:60345ac54ff64c581269bf1fad3246ac9afece3ea62156a0e1c97b89aa265288\",\"dirtyPaths\":null,\"head\":\"4765b8b9\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/guard-bash-writes.py\",\"plugins/audit/scripts/_deps.py\",\"plugins/audit/scripts/git/close-phase.py\",\"plugins/audit/scripts/git/integrate-task.py\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/_invariants.py\",\"plugins/audit/scripts/governance/_tree_stamp.py\",\"plugins/audit/scripts/governance/derive-phase-gate.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/scripts/status/_status_facts.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/tests/test__config.py\",\"plugins/audit/tests/test__deps.py\",\"plugins/audit/tests/test__evidence_io.py\",\"plugins/audit/tests/test__invariants.py\",\"plugins/audit/tests/test__status_facts.py\",\"plugins/audit/tests/test__tree_stamp.py\",\"plugins/audit/tests/test_audit_lookup.py\",\"plugins/audit/tests/test_audit_task.py\",\"plugins/audit/tests/test_close_phase.py\",\"plugins/audit/tests/test_derive_phase_gate.py\",\"plugins/audit/tests/test_guard_bash_writes.py\",\"plugins/audit/tests/test_integrate_task.py\",\"plugins/audit/tests/test_run_test_gate.py\",\"tools/gate-parity.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:a1170ed9ed7458b33618d251e69ed4856a1062f5c0b6bfde8c531cd2a1be2ac2\",\"v\":2}"
+}

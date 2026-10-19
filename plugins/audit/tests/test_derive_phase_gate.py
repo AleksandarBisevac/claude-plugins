@@ -618,6 +618,43 @@ def _nested_changed_cases(check):
     check("n1 changedSince for a nested project is spelled from the project "
           "(%r %r)" % (facts.get("changedSince"), lines),
           facts.get("changedSince") == ["tests/x.test.ts"])
+    # The same member project with `meta.gitRoot` naming the checkout's top: git
+    # runs there, its paths come back through the pair, and the checkout-root
+    # file - outside the project, so no suite the gate runs from it - is not
+    # learned as changed.
+    facts_m, lines_m = M._gather_facts(
+        {"meta": {"version": 2, "gitRoot": ".."}, "phases": [phase]},
+        phase, proj, lambda _l: None)
+    check("n2 %s (a member project whose meta.gitRoot is the checkout's top: "
+          "%r %r)" % (CHANGED_CLAUSE, facts_m.get("changedSince"), lines_m),
+          facts_m.get("changedSince") == ["tests/x.test.ts"])
+
+    # `meta.gitRoot` BELOW the project: the project is no checkout at all, so git
+    # must run in the checkout and its paths gain the checkout's directory.
+    below_proj = os.path.join(root, "outer")
+    below = os.path.join(below_proj, "test")
+    os.makedirs(os.path.join(below, "tests"))
+    _git(below, "init", "-q")
+    _git(below, "config", "user.email", "t@example.com")
+    _git(below, "config", "user.name", "T")
+    _write_script(below, "README.md", "hello\n")
+    _git(below, "add", "-A")
+    _git(below, "commit", "-q", "-m", "init")
+    below_base = _harness.git(below, "rev-parse", "HEAD", prefix=("git",)).strip()
+    _write_script(below, os.path.join("tests", "y.test.ts"), "// a suite\n")
+    _git(below, "add", "-A")
+    _git(below, "commit", "-q", "-m", "work")
+    below_phase = {"id": "P1", "baseRef": below_base, "tasks": []}
+    facts_b, lines_b = M._gather_facts(
+        {"meta": {"version": 2, "gitRoot": "test"}, "phases": [below_phase]},
+        below_phase, below_proj, lambda _l: None)
+    check("n3 %s (meta.gitRoot below the project: the changed suite carries the "
+          "test/ prefix the plan spells: %r %r)"
+          % (CHANGED_CLAUSE, facts_b.get("changedSince"), lines_b),
+          facts_b.get("changedSince") == ["test/tests/y.test.ts"])
+
+
+CHANGED_CLAUSE = "nested project - changedSince is spelled as the plan spells it"
 
 
 # --- this repository's own recorded listing ------------------------------------

@@ -593,6 +593,102 @@ def git_root_rel(cfg):
     return "" if gr in ("", ".") else gr
 
 
+# --- the two path bases: git's spelling and the plan's ------------------------
+# Git spells a path from the CHECKOUT'S TOP in `status --porcelain`, in
+# `diff`/`show`/`log --name-only|--name-status` and in `diff-tree`; it spells one
+# from its CWD in `ls-files`, `ls-tree` and under `--relative`, and it reads a
+# pathspec from its cwd. A task's `files` are spelled from the PROJECT. The three
+# coincide only when the project is its own checkout, so two topologies make them
+# differ: a member project (the project directory under its checkout, offset
+# `member`) and `meta.gitRoot` below the project (offset `..`, where the plan
+# spelling carries the checkout's directory as a prefix). Every site once did its
+# own arithmetic, or none, and each was right for one topology. These two
+# functions are the only door between the bases; `_deps.git_path_base_violations`
+# names a path-listing git call in a function that does not pass through it.
+#
+# HERE AND NOT UNDER `scripts/`: hooks may import nothing from `scripts/`, and
+# `guard-bash-writes` needs the pair, while `scripts/` reach this module through
+# `_loader.load_hooks_config()`, which sits low enough in `_deps.LAYERS` that every
+# module needing the pair can load it.
+
+def checkout_top(directory):
+    """git's own top for `directory`, resolved, or None when git cannot say.
+
+    The pair reads a checkout-relative path from the checkout's top, and a
+    configured git root is not always that top: a member project with no
+    `gitRoot` set runs git from the project, whose top is above it. One process,
+    so a caller asks once per run rather than once per path."""
+    got = _git_rev_parse(directory, ["--show-toplevel"])
+    return _resolved(got[0]) if got else None
+
+
+def _resolved(path):
+    return os.path.realpath(os.path.abspath(str(path)))
+
+
+def _posix_dir(directory):
+    """`directory`, resolved, as an absolute POSIX string - a Windows drive
+    becomes its first segment (`/C:/...`), so two drives never share a prefix.
+
+    The disk is asked here and only here; everything the pair does after is
+    `posixpath` over strings. That keeps a path git printed byte for byte as
+    git printed it - a quoted porcelain path carries backslash escapes, and an
+    `os.path` join on Windows would read each one as a separator."""
+    import posixpath
+    text = _resolved(directory).replace(os.sep, "/")
+    return posixpath.normpath("/" + text.lstrip("/"))
+
+
+def _keep_dir_slash(spelled, original):
+    if spelled not in (".", "..") and original.endswith("/") \
+            and not spelled.endswith("/"):
+        return spelled + "/"
+    return spelled
+
+
+def git_to_plan(path, git_root, project, cwd=None):
+    """One path git printed, spelled the way the plan spells it.
+
+    `path` is read from the checkout's top - what `status --porcelain`, `diff`,
+    `show`, `log --name-only|--name-status` and `diff-tree` print. A listing that
+    git ran from somewhere else (`ls-files`, `ls-tree`, `--relative`) prints from
+    its cwd, and the caller says so by passing that directory as `cwd`; reading
+    such output from the top is the error this pair exists to end.
+
+    Both directories are resolved first, so a symlinked project or checkout spells
+    the same as the real one. A path outside the project comes back spelled with
+    `../` - on another Windows drive, climbing past that drive's root - which no
+    declared entry can equal. A trailing slash (git's untracked directory) is
+    kept, and nothing inside the path is rewritten: git prints `/` on every
+    platform.
+    """
+    import posixpath
+    text = str(path)
+    if cwd is not None and str(cwd) == str(project):
+        # A listing run from the project itself already speaks its spelling;
+        # said through the pair so the base is named, without touching the disk
+        # once per path of a whole-tree listing.
+        return text
+    base = _posix_dir(cwd if cwd is not None else git_root)
+    whole = posixpath.normpath(posixpath.join(base, text))
+    return _keep_dir_slash(posixpath.relpath(whole, _posix_dir(project)), text)
+
+
+def plan_to_git(entry, git_root, project, cwd=None):
+    """One declared `files` entry as a pathspec git reads from `cwd` (by default
+    the checkout's top), or None when the entry lies outside that directory -
+    a pathspec that climbs out is an error to git, and an entry the checkout does
+    not hold has no change to list. The project entry `.` is the offset itself."""
+    import posixpath
+    base = _posix_dir(cwd if cwd is not None else git_root)
+    norm = str(entry).replace("\\", "/")
+    whole = posixpath.normpath(posixpath.join(_posix_dir(project), norm))
+    rel = posixpath.relpath(whole, base)
+    if rel == ".." or rel.startswith("../"):
+        return None
+    return _keep_dir_slash(rel, norm)
+
+
 # --- the tree question, which is not the config question ----------------------
 # `repo_root()` above answers WHERE THE CONFIG LIVES, and CLAUDE_PROJECT_DIR wins
 # there deliberately: the config belongs to the project, and a worktree should not

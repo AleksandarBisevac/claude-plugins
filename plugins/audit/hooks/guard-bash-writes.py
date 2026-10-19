@@ -16,7 +16,8 @@ Two branches by tool_name:
       created). Otherwise diff `git status --porcelain` (run in the configured
       `gitRoot`, so it works when the git repo lives in a subdirectory) against
       the session's last-seen dirty set. Dirty paths are translated back to project-relative
-      (gitRoot-prefixed) to match task files and exempt globs. NEW dirty files
+      through `_config.git_to_plan`, from the checkout's top `_checkout_top` asks
+      git for once per session, to match task files and exempt globs. NEW dirty files
       that are SOURCE files, not exempt, not the manifest/lock, not tool-edited,
       not claimed by another session, and not covered by an in_progress task →
       inject a NON-blocking additionalContext warning (once per file per
@@ -921,7 +922,8 @@ def default_state():
     therefore the exact key set `_save_state` writes, every time."""
     return {"toolEdited": [], "seenDirty": [], "warned": [], "baselined": False,
             "gitTimeout": False, "otherTrees": [], "bgLaunches": [],
-            "agents": {}, "agentSeq": 0, "agentsAt": {}, "outOfScope": []}
+            "agents": {}, "agentSeq": 0, "agentsAt": {}, "outOfScope": [],
+            "checkoutTop": {}}
 
 
 def _state_file(state_dir, session_id):
@@ -953,7 +955,10 @@ def _load_state(state_dir, session_id):
                     # Absent in a slot an older copy wrote: nothing was refused
                     # out of scope yet. `_config.out_of_scope_record` reads this
                     # key for the task commit's attempt check.
-                    "outOfScope": list(data.get("outOfScope") or [])}
+                    "outOfScope": list(data.get("outOfScope") or []),
+                    # Absent in a slot an older copy wrote: the checkout's top
+                    # has not been asked yet, and `_checkout_top` asks it once.
+                    "checkoutTop": dict(data.get("checkoutTop") or {})}
     except Exception:
         pass
     return default_state()
@@ -1490,6 +1495,25 @@ def _git_dirty(root):
         return (None, "git-error")
 
 
+def _checkout_top(state, git_root):
+    """The checkout's top for `git_root`, asked of git once per session and kept
+    in the session's state, so a pass pays a process only the first time. The
+    layout of a checkout does not change under a running session.
+
+    When git names no top - a fixture handing `decide` its dirt with no
+    repository behind it - the configured root stands in for the top, which is
+    the reading the configured root always carried before the pair existed."""
+    key = str(git_root)
+    cached = state.get("checkoutTop") or {}
+    if cached.get("for") == key and cached.get("top"):
+        return cached["top"]
+    top = _config.checkout_top(git_root)
+    if top is None:
+        return key
+    state["checkoutTop"] = {"for": key, "top": top}
+    return top
+
+
 # --- the free file, measured once it has landed ---------------------------------
 def _git_out(git_root, argv):
     """git's stdout as text, or None when it did not answer. Bytes decoded as
@@ -1852,9 +1876,10 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
             _save_state(sd, session_id, state)
             return ("warn", TIMEOUT_TEMPLATE % _GIT_TIMEOUT_SECONDS)
         return ("silent", "git unusable (%s)" % (reason or "no-repo"))
-    prefix = _config.git_root_rel(cfg)
-    if prefix:
-        dirty = [prefix + "/" + p for p in dirty]
+    # git prints status from the checkout's top; every rel this state keeps is
+    # the project's. One rebase, through the pair, for both topologies.
+    top = _checkout_top(state, _config.git_root_dir(root, cfg))
+    dirty = [_config.git_to_plan(p, top, root) for p in dirty]
 
     # A2 (v0.36): the FIRST Bash pass of a session cannot know which dirty paths
     # existed before its command ran — PostToolUse only ever sees the after-state.
@@ -2055,10 +2080,11 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
         if slot is None:
             slot = _config.trivial_slot(sd, _config.slot_key(data))
         if is_source and rel in slot:
-            size = slot_write_magnitude(
-                _config.git_root_dir(root, cfg),
-                rel[len(prefix) + 1:] if prefix else rel,
-                os.path.join(str(root), rel))
+            git_rel = _config.plan_to_git(rel, top, root)
+            size = (slot_write_magnitude(top, git_rel, os.path.join(str(root), rel))
+                    if git_rel is not None else
+                    (None, "the file lies outside the checkout, so git cannot "
+                           "measure it"))
             threshold = int(cfg.get("trivialLineThreshold")
                             or _config.DEFAULTS["trivialLineThreshold"])
             if size[0] is None or size[0] > threshold:
@@ -2108,11 +2134,11 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
     if journalled:
         state["warned"].extend(journalled)
         merged, own, tampered = [], [], []
-        git_root = _config.git_root_dir(root, cfg)
         for rel in journalled:
-            git_rel = rel[len(prefix) + 1:] if prefix else rel
-            origin = journal_origin(git_root, git_rel, os.path.join(
-                str(root), rel), since, now)
+            git_rel = _config.plan_to_git(rel, top, root)
+            origin = (journal_origin(top, git_rel, os.path.join(str(root), rel),
+                                     since, now)
+                      if git_rel is not None else None)
             if origin and origin[0] == "merge":
                 merged.append("%s (the version at %s)" % (rel, origin[1]))
             elif origin and origin[0] == "plugin":

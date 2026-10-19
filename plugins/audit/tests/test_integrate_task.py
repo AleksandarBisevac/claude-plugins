@@ -497,7 +497,35 @@ def _record_set_cases(check):
           and "docs/audit/audit-plan.json" in got)
 
 
+TOPOLOGY_CLAUSE = ("nested project and gitRoot-below-project - a declared "
+                   "change is not undeclared")
+
+
+def _topology_cases(check):
+    """`undeclared_paths` over both topologies, with real directories because
+    the comparison resolves the checkout and the project before rebasing."""
+    root = os.path.realpath(_harness.fixture_root("itp-"))
+    repo, member = os.path.join(root, "repo"), os.path.join(root, "repo", "member")
+    proj, below = os.path.join(root, "proj"), os.path.join(root, "proj", "test")
+    for d in (member, below):
+        os.makedirs(d)
+    got_member = M.undeclared_paths(
+        ["src/a.py", "other.py"],
+        ["member/src/a.py", "member/other.py", "other.py"], repo, member)
+    check("n3 %s (a member project: the declared changes are covered and the "
+          "checkout-root file sharing a declared name is not: %r)"
+          % (TOPOLOGY_CLAUSE, got_member),
+          got_member == ["other.py"])
+    got_below = M.undeclared_paths(["test/src/a.py"], ["src/a.py", "src/b.py"],
+                                   below, proj)
+    check("n4 %s (gitRoot below the project: the declared change, which git "
+          "names without the test/ prefix, is covered and its sibling is not: "
+          "%r)" % (TOPOLOGY_CLAUSE, got_below),
+          got_below == ["src/b.py"])
+
+
 def _cases(check):
+    _harness.stage(check, "itp", _topology_cases)
     _harness.stage(check, "itk", _record_set_cases)
     _harness.stage(check, "itc", _conflict_cases)
     _harness.stage(check, "ito", _clean_overlap_cases)

@@ -1957,6 +1957,79 @@ def _nested_scope_cases(check):
           sorted(flat_out) == ["- proj/src/a.py", "- proj/src/extra.py"])
 
 
+NESTED_MEMBER_CLAUSE = ("nested project - phase diff excludes member/docs/audit; "
+                        "task-commit diff and _diff_lines are non-empty for a "
+                        "declared changed file")
+
+
+def _nested_member_cases(check):
+    """A real `git init` with the project at `member/`: every diff this module
+    computes for a brief is run from the checkout's top, so its pathspecs and
+    its exclusion must be spelled from there and its paths read back."""
+    root = os.path.realpath(_harness.fixture_root("audit-lookup-member-"))
+    repo = os.path.join(root, "repo")
+    proj = os.path.join(repo, "member")
+
+    def put(top, rel, text):
+        path = os.path.join(top, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+
+    def git(cwd, *argv):
+        return _harness.git(cwd, *argv, prefix=_NESTED_GIT, timeout=30).strip()
+
+    def label(n, which):
+        return "nl%d %s (%s)" % (n, NESTED_MEMBER_CLAUSE, which)
+
+    put(repo, "member/src/a.py", "a = 1\n")
+    put(repo, "member/docs/audit/journal.jsonl", "{}\n")
+    git(repo, "init", "-q")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "base")
+    base = git(repo, "rev-parse", "HEAD")
+    put(repo, "member/src/a.py", "a = 2\n")
+    put(repo, "member/docs/audit/journal.jsonl", "{}\n{}\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "work")
+    head = git(repo, "rev-parse", "HEAD")
+    ctx = {"project": proj, "gitRoot": repo}
+
+    paths, why = M._phase_diff_paths(ctx, base, head)
+    check(label(3, "the phase diff names the declared file in plan spelling "
+                   "and leaves the member's docs/audit out: %r" % ((paths, why),)),
+          why is None and paths == ["src/a.py"])
+    # A member project whose config names no gitRoot hands the project itself
+    # over as the git root; git still prints from the checkout's top.
+    unset = M._phase_diff_paths({"project": proj, "gitRoot": proj}, base, head)
+    check(label(7, "the same phase diff when the configured git root is the "
+                   "project itself rather than the checkout's top: %r" % (unset,)),
+          unset == (["src/a.py"], None))
+
+    task_diff = M._task_commit_diff_lines(ctx, head, ["src/a.py"])
+    check(label(4, "the task-commit diff of a declared changed file carries its "
+                   "change: %r" % (task_diff,)),
+          "(empty)" not in task_diff and "+a = 2" in "\n".join(task_diff))
+
+    put(repo, "member/src/a.py", "a = 3\n")
+    put(repo, "member/src/new.py", "n = 1\n")
+    lines = M._diff_lines(ctx, ["src/a.py", "src/new.py"])
+    text = "\n".join(lines)
+    check(label(5, "_diff_lines against HEAD carries the declared change and "
+                   "names the untracked declared file in plan spelling: %r"
+                % (lines,)),
+          "(empty)" not in lines and "+a = 3" in text
+          and lines[-1].endswith(": src/new.py"))
+
+    tree = os.path.join(root, "wave-tree")
+    git(repo, "worktree", "add", "-q", "--detach", tree, head)
+    put(tree, "member/src/a.py", "a = 4\n")
+    wave = M._diff_lines(ctx, ["src/a.py"], tree, head)
+    check(label(6, "_diff_lines in a wave member's tree carries the declared "
+                   "change: %r" % (wave,)),
+          "(empty)" not in wave and "+a = 4" in "\n".join(wave))
+
+
 def _selftest():
     def body(check):
         # Each block staged, so one that raises still lets the other run.
@@ -1964,6 +2037,7 @@ def _selftest():
         _harness.stage(check, "sl-block", _success_line_cases)
         _harness.stage(check, "bf-block", _brief_cases)
         _harness.stage(check, "nl-block", _nested_scope_cases)
+        _harness.stage(check, "nm-block", _nested_member_cases)
     return _harness.run(body)
 
 

@@ -128,10 +128,11 @@ import _gate_derive                  # noqa: E402  (derive(): the one PURE
 #                                       per-arm attribution renderers read is
 #                                       computed -- this file never recomputes
 #                                       it)
+import _invariants                   # noqa: E402  (git_root_for: where git runs)
 import _loader                       # noqa: E402  (load_hooks_config: the plan
-#                                       gate's own exempt-glob answer, asked
-#                                       through the one door scripts/ has into
-#                                       hooks/)
+#                                       gate's own exempt-glob answer and the
+#                                       git-path pair, asked through the one
+#                                       door scripts/ has into hooks/)
 import _manifest_io as _mio          # noqa: E402  (dual-format loader; index
 #                                       lock write target resolution)
 import _machine_paths                # noqa: E402  (executed_value_refusal: a
@@ -262,16 +263,22 @@ def _gather_facts(manifest, phase, project, out):
         lines.append("importers: skipped - meta.phaseGate.derived.listing "
                      "carries no usable related/all pair")
 
+    hooks_config = _loader.load_hooks_config()
     base_ref = phase.get("baseRef") if isinstance(phase, dict) else None
     if isinstance(base_ref, str) and base_ref.strip():
-        # `--relative`: git names a diff's paths from the checkout's top, while
-        # every suite this gate learns is run, and every touched path declared,
-        # from the project - the two differ for a project nested under its git
-        # root, and a changed suite spelled from the top names no file there.
+        # Git runs where the plan says the checkout is - the project itself is
+        # no checkout when `meta.gitRoot` lies below it - and `--relative`
+        # prints from there, which `cwd` tells the pair. Every suite this gate
+        # learns is run, and every touched path declared, from the project, so
+        # a path the pair spells outside it names no suite and is not learned.
+        where = _invariants.git_root_for(manifest, project)
         diff_cmd = "git diff --name-only --relative %s...HEAD" % shlex.quote(base_ref)
-        diff_res = _spawn(diff_cmd, project, GIT_TIMEOUT_SECONDS)
+        diff_res = _spawn(diff_cmd, where, GIT_TIMEOUT_SECONDS)
         if diff_res["exit"] == 0:
-            facts["changedSince"] = _gate_derive.output_lines(diff_res["output"])
+            spelled = [hooks_config.git_to_plan(p, where, project, cwd=where)
+                       for p in _gate_derive.output_lines(diff_res["output"])]
+            facts["changedSince"] = [p for p in spelled
+                                     if p != ".." and not p.startswith("../")]
         else:
             lines.append("changed: skipped - %r exited %r"
                          % (diff_cmd, diff_res["exit"]))
@@ -287,7 +294,6 @@ def _gather_facts(manifest, phase, project, out):
         _evidence_io.named_failing_suites(red_row.get("steps"))
         if red_row else [])
 
-    hooks_config = _loader.load_hooks_config()
     hcfg = hooks_config.load(project)
     globs = hcfg.get("exemptGlobs") or hooks_config.DEFAULTS.get("exemptGlobs") or []
     facts["exempt"] = dict((p, hooks_config.matches_exempt(p, globs))

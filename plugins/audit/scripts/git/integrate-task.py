@@ -93,6 +93,7 @@ import _claude_home  # noqa: E402  (a usage error names this copy and a newer in
 import _evidence_io  # noqa: E402  (the follower protocol and its owners)
 import _invariants  # noqa: E402  (the git root, and the one record-path definition)
 import _journal_io  # noqa: E402,F401  (not read here: test_integrate_task.py finds the journal through it)
+import _loader  # noqa: E402  (load_hooks_config: the one door between git's path base and the plan's)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader)
 import _task_outputs  # noqa: E402  (the ONE rule for what a declared entry covers)
 import _wave  # noqa: E402  (which path classes a text merge cannot be trusted with)
@@ -257,10 +258,12 @@ def undeclared_paths(declared, paths, git_root=None, project=None):
     `paths` are the checkout's (git names them from its top) and `declared` the
     project's, so with a `git_root` and a `project` each path is compared as the
     project spells it; without them the two already share a base."""
+    hc = _loader.load_hooks_config(modname="audit__config")
+
     def spelled(path):
         if git_root is None or project is None:
             return path
-        return _evidence_io.project_spelling(path, git_root, project)
+        return hc.git_to_plan(path, git_root, project)
     return sorted(p for p in paths
                   if not any(_task_outputs.covers(d, spelled(p)) for d in declared))
 

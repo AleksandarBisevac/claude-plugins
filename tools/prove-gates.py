@@ -518,6 +518,20 @@ TABLE = (
   "            elif project_only and name in reads and name not in places:",
   "            elif False:",
   DEP, "ht7"),
+ # The one-door rule for git's path base, crippled. A listing call that skips
+ # the pair reads exactly like a tree where every call passes through it, and
+ # `gb2` is the reverted site the lint must name.
+ ("git_path_base_violations", S + "_deps.py", "replace",
+  "def git_path_base_violations(script_dir=None, hooks_dir=None, exempt=None):",
+  "def git_path_base_violations(script_dir=None, hooks_dir=None, exempt=None):\n"
+  "    return []",
+  DEP, "gb2"),
+ # ...and its table, honouring a blank reason: a row with nothing to say would
+ # then excuse the call it names.
+ ("git_path_base_violations", S + "_deps.py", "replace",
+  "                if why is not None and why.strip():",
+  "                if why is not None:",
+  DEP, "gb4"),
  # The whole mechanism, crippled the same way. A comment or a document citing
  # the private register is a claim nobody can check on the far side of it, and
  # a version reporting nothing reads exactly like a tree with no citations left
@@ -1066,6 +1080,18 @@ TABLE = (
 # rules have, and a row here proves that assertion is sensitive in BOTH directions
 # instead of only the one it was written for.
 ALLOW = (
+ # The one-door rule for git's path base, widened past the door: a function
+ # that rebases its listing through the pair would be convicted anyway, and
+ # `gb1` reads the whole tree, where every routed site is such a function.
+ ("git_path_base_violations", S + "_deps.py", "replace",
+  "                if name in reach:\n                    continue\n",
+  "", DEP, "gb1"),
+ # ...and its table ignored: a single-base site the table names with its reason
+ # would be convicted, and `gb3`'s excused fixture is one.
+ ("git_path_base_violations", S + "_deps.py", "replace",
+  "                if why is not None and why.strip():\n"
+  "                    continue\n",
+  "", DEP, "gb3"),
  # `_output.py` is exempt from this rule BY NAME, and `pp10`'s fixture is the
  # ordinary compliant file. Counting one preamble too many is the smallest
  # plausible off-by-one, and it convicts every correctly-bootstrapped file.

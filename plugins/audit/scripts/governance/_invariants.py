@@ -98,7 +98,8 @@ import _locks  # noqa: E402  (the index lock the baseline write is taken under)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR shards)
 import _manifest_rules as _rules  # noqa: E402  (the validator this re-runs on old states)
 import _manifest_crossrefs as _crossrefs  # noqa: E402  (FILEINDEX_PAIRING: the one finding a task commit cannot carry)
-import _status_facts  # noqa: E402  (gitRoot-relative file paths, already one implementation)
+import _loader  # noqa: E402  (load_hooks_config: the one door between git's path base and the plan's)
+import _manifest_vocab as _vocab  # noqa: E402  (one reading of a `files` entry's line suffix)
 import _task_outputs  # noqa: E402  (`covers`: the one rule for whether a declared path holds a file)
 import usage_ledger  # noqa: E402  (which model actually ran a task)
 
@@ -107,11 +108,6 @@ import usage_ledger  # noqa: E402  (which model actually ran a task)
 # and a second answer to "what does it mean when git could not be asked" - which
 # is the answer this whole module is built around.
 _git = _commit_trail._git
-
-# Project-relative file -> git-root-relative, and the `:line` suffix dropped. Same
-# reason: `task.files` are written with the `meta.gitRoot` prefix, `git show
-# --name-only` prints without it, and one transform between them is one rule.
-_strip_git_root = _status_facts._strip_git_root
 
 CLEAN = "clean"
 BREACH = "breach"
@@ -447,10 +443,27 @@ def _commit_bug_links(git_root, sha, parent, index_rel, phase_file_rel):
                                json_at(git_root, sha, phase_file_rel))
 
 
+def _project_of(git_root, git_root_rel):
+    """The project directory `git_root` sits at `git_root_rel` below, or None
+    when the relative path climbs (`..`) and so cannot be walked back."""
+    rel = str(git_root_rel or ".").replace("\\", "/").strip("/")
+    parts = [p for p in rel.split("/") if p not in ("", ".")]
+    if ".." in parts:
+        return None
+    return os.path.normpath(os.path.join(git_root, *([".."] * len(parts)))) \
+        if parts else git_root
+
+
 def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
-                 journal_rel, evidence_rel=None):
+                 journal_rel, evidence_rel=None, project=None):
     """A task commit staged that task's files, its phase's manifest file, the two
     records beside it.
+
+    `files` are the project's spelling and `git show --name-only` prints the
+    checkout's, so each declared entry becomes a pathspec through
+    `_config.plan_to_git` from `project`; a caller that does not pass the
+    project has it walked back from `git_root_rel`, which a climbing relative
+    path (a member project's `..`) cannot be - that caller is told so as a gap.
 
     THE EVIDENCE DIRECTORY IS ALLOWED FOR THE JOURNAL'S REASON, one noun over. A
     task commit stages it so that the record of what ran reaches git with the
@@ -480,6 +493,14 @@ def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
     ok, why = _git_available(git_root)
     if not ok:
         return result("commit-scope", COMMIT_SCOPE_BASIS, [], [why], 0)
+    project = project if project is not None else _project_of(git_root,
+                                                              git_root_rel)
+    if project is None:
+        return result("commit-scope", COMMIT_SCOPE_BASIS, [], [
+            "meta.gitRoot %r climbs out of the project, so the project's "
+            "directory cannot be walked back from the checkout and no declared "
+            "file can be spelled the way git prints it" % (git_root_rel,)], 0)
+    hc = _loader.load_hooks_config(modname="audit__config")
 
     examined = 0
     for task in tasks:
@@ -506,7 +527,10 @@ def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
         examined += 1
         allowed = []
         for name in (task.get("files") or []):
-            rel = _strip_git_root(name, git_root_rel)
+            if not isinstance(name, str) or not _vocab._strip_line_suffix(name):
+                continue
+            rel = hc.plan_to_git(_vocab._strip_line_suffix(name), git_root,
+                                 project)
             if rel:
                 allowed.append(rel)
         staged = [ln.strip().replace("\\", "/")
@@ -1994,7 +2018,7 @@ def check_phase(manifest, phase_id, manifest_path, git_root, project,
 
     checks = [
         commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
-                     journal_rel, evidence_rel),
+                     journal_rel, evidence_rel, project=project),
         # THE SAME `evidence_rel`, resolved once above and handed to both. Two
         # resolutions of "where does this manifest keep its evidence" is how one
         # check comes to allow a directory the other reports.

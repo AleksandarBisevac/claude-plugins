@@ -654,6 +654,47 @@ def _cases(check):
     _harness.stage(check, "tsr", _render_cases)
     _harness.stage(check, "tss", _scope_cases)
     _harness.stage(check, "tsd", _recorder_dirty_cases)
+    _harness.stage(check, "tsn", _nested_recorder_cases)
+
+
+NESTED_RECORDER_CLAUSE = ("nested project - recorder rows leave dirty_digest "
+                          "unchanged")
+
+
+def _nested_recorder_cases(check):
+    """The project at `member/` of a real checkout: `git status` prints the
+    checkout's paths and the recorder's exclusions are the project's."""
+    root = os.path.realpath(_harness.fixture_root("tree-stamp-member-"))
+    _harness.git(None, "init", "-q", root, prefix=("git",))
+    proj = os.path.join(root, "member")
+    os.makedirs(os.path.join(proj, "src"))
+    os.makedirs(os.path.join(proj, "records"))
+    _write(os.path.join(proj, "src", "mine.py"), "v = 1\n")
+    _write(os.path.join(proj, "records", "runs.jsonl"), "one row\n")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "seed")
+    owns, excluded = ["src/mine.py"], ["records"]
+
+    stamp, _state = M.take(proj, owns, excluded=excluded)
+    _write(os.path.join(proj, "records", "runs.jsonl"), "one row\ntwo\n")
+    _write(os.path.join(proj, "records", "x.executor.json"), "{}\n")
+    quiet = M.compare(stamp, proj, excluded=excluded)
+    check("tsn1 %s (a ledger row appended and a return filed under the "
+          "member's recorder prefix move no field: %r / %r)"
+          % (NESTED_RECORDER_CLAUSE, quiet["verdict"], _states(quiet)),
+          quiet["verdict"] == M.CURRENT
+          and _states(quiet)["dirtyDigest"] == M.AGREES)
+
+    # The over-fire twin: an exclusion that swallowed the member's every line
+    # would pass tsn1 and must fail here.
+    stamp2, _s2 = M.take(proj, owns, excluded=excluded)
+    _write(os.path.join(proj, "src", "theirs.py"), "w = 1\n")
+    moved = M.compare(stamp2, proj, excluded=excluded)
+    check("tsn2 %s (...while a real write outside the recorder still moves the "
+          "dirty digest: %r / %r)"
+          % (NESTED_RECORDER_CLAUSE, moved["verdict"], _states(moved)),
+          moved["verdict"] == M.STALE
+          and _states(moved)["dirtyDigest"] == M.MOVED)
 
 
 def _recorder_dirty_cases(check):
