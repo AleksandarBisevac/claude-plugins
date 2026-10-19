@@ -183,9 +183,23 @@
         "file": "CLAUDE.md:285",
         "issue": "'`gate-parity.py` is why that cannot come back.' now follows directly after the rewritten isolation paragraph (CLAUDE.md:279-283), which says that paragraph is NOT checked and is owed by whoever adds a family. 'that' now reads as the unchecked isolation-doc drift, which the next sentence does not guard; the sentence it protects (gate-set descriptions drifting) is two lines down.",
         "resolution": "Make the antecedent explicit, e.g. '`gate-parity.py` is why the drift between the gate-set descriptions cannot come back.'"
+      },
+      {
+        "id": "P130-R24",
+        "severity": "low",
+        "file": "tools/ui-tests/gate-card-wait.test.mjs:132-136",
+        "issue": "pollDependent() flags a wait only when its call text names RUNSTATUS/pollRunStatus or carries a literal of 4+ digits >= the poll interval. A hand-written wait whose duration is a computed or named value (panelPollWindowMs(), POLL_MARGIN_MS + n, a const like PANEL_BOOT_MS/TAB_WIRED_MS at capture-screenshots.mjs:670,678) is invisible to the scan, so a hand-rolled copy of the helper's window outside waitForPoll/sleepPollWindow passes. The test's own WHAT THIS CANNOT SEE names only the sub-interval literal case.",
+        "resolution": "Add panelPollWindowMs|pollWindowText|POLL_MARGIN_MS|pollIntervalOf to the names pollDependent() treats as poll-dependent (they are the helpers' own window), and add one scratch-copy mutation using panelPollWindowMs() in a bare page.waitForTimeout; or extend the cannot-see note to say computed durations are unpoliced."
+      },
+      {
+        "id": "P130-R25",
+        "severity": "low",
+        "file": "tools/ui-tests/gate-card-wait.test.mjs:77-106",
+        "issue": "blank() is a hand-rolled tokenizer with no regex-literal and no nested-template (`${ '...' }`) handling. An unbalanced quote inside a future regex literal would desync it and blank the rest of the file, silently dropping every later wait from waitSites(); the real-file assertions would stay green because stale/broad only look at allow-listed finds and unlisted would be empty. Today's file has no such regex (grep over the file finds none), so this is latent.",
+        "resolution": "Cross-check the scan: assert that the count of primitive-call matches in the blanked text equals the count from a plain regexp over the unblanked text minus those inside comments, or fail when blank() ends with a different line count/bracket balance than the source. One assertion makes a desync red rather than silent."
       }
     ],
-    "outcome": "[findings: 23 - 0 high, 4 med, 19 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 25 - 0 high, 4 med, 21 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -3329,6 +3343,10 @@
         {
           "at": "2026-10-19T11:59:45Z",
           "text": "falsifier could-not-run for `tools/ui-tests/gate-card-wait.test.mjs: a hand-written poll-dependent wait with another number in a scratch copy of capture-screenshots.mjs is refused, and every real call site is a helper call or an allow-listed entry with a reason`: mutation at tools/capture-screenshots.mjs:4956 (the command exited 1 on the unmutated copy, so a red under the mutant would prove nothing - vitest.config.mjs (1:471) \u001b[33m[UNRESOLVED_IMPORT] \u001b[0mCould not resolve 'vitest/config' in vitest.c [... 1020 chars elided; failure lines among them: ⎯⎯⎯⎯⎯⎯⎯ Startup Error ⎯⎯⎯⎯⎯⎯⎯⎯ | Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'vitest' imported from /private/var/folders/rb/... ...] nal/modules/esm/loader:701:17)\n    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)\n    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33) {\n  code: 'ERR_MODULE_NOT_FOUND'\n})"
+        },
+        {
+          "at": "2026-10-19T12:11:16Z",
+          "text": "falsifier could-not-run for `tools/ui-tests/gate-card-wait.test.mjs: a hand-written poll-dependent wait with another number in a scratch copy of capture-screenshots.mjs is refused, and every real call site is a helper call or an allow-listed entry with a reason` accepted at the close: The falsifier could not run because its throwaway copy has no node_modules (ERR_MODULE_NOT_FOUND: vitest), not because the work is missing: the task's change is in its worktree (tools/capture-screenshots.mjs, tools/ui-tests/gate-card-wait.test.mjs modified) and the gate measured there green. The stage is retired at HEAD by P130.6-ywo. (mutation at tools/capture-screenshots.mjs:4956; the command exited 1 on the unmutated copy, so a red under the mutant would prove nothing - vitest.config.mjs (1:471) \u001b[33m[UNRESOLVED_IMPORT] \u001b[0mCould not resolve 'vitest/config' in vitest.c [... 1020 chars elided; failure lines among them: ⎯⎯⎯⎯⎯⎯⎯ Startup Error ⎯⎯⎯⎯⎯⎯⎯⎯ | Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'vitest' imported from /private/var/folders/rb/... ...] nal/modules/esm/loader:701:17)\n    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)\n    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33) {\n  code: 'ERR_MODULE_NOT_FOUND'\n})"
         }
       ]
     },

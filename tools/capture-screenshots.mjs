@@ -388,6 +388,38 @@ async function sleepPollWindow(page, label) {
 }
 
 /**
+ * The poll-dependent waits that are NOT a call of waitForPoll or sleepPollWindow, each
+ * with the reason it does not wait on the panel's run-status poll.
+ *
+ * A wait counts as poll-dependent when its call names the poll's state or carries a
+ * number of milliseconds at least the poll interval; one of those outside the two
+ * helpers must be named here (`find`, a snippet of the call; `sites`, how many calls
+ * it excuses, one unless said). tools/ui-tests/gate-card-wait.test.mjs reads this
+ * list against this file, and fails an entry that matches a different number of
+ * calls than it says, so a stale entry cannot outlive its wait and a broad one cannot
+ * quietly excuse a later one.
+ * @type {Array<{find: string, sites?: number, reason: string}>}
+ */
+export const POLL_WAIT_ALLOWED = [
+  { find: 'getAnimations().every', sites: 1,
+    reason: 'bounds a screenshot settle on the page\'s own CSS animations; an infinite one times out by design, and no poll is involved' },
+  { find: '!!(RUNSTATUS', sites: 1,
+    reason: 'runs after the step called pollRunStatus() itself, so it waits for that one call to land, not for the timer' },
+  { find: '!((RUNSTATUS || {})', sites: 1,
+    reason: 'runs after the step called pollRunStatus() itself, so it waits for that one call to land, not for the timer' },
+  { find: '{ timeout: 6000 }', sites: 1,
+    reason: 'waits for the toast to leave, which its own timer ends; the run-status poll does not touch it' },
+  { find: 'waitForTimeout(5600)', sites: 2,
+    reason: 'sits out the settings success card\'s own deadline (a timer on the card), not the run-status poll' },
+  { find: "querySelector('#guards')?.children.length > 0", sites: 2,
+    reason: 'the Guards tab first paint, drawn from the config fetch; ten seconds is a load bound, not a poll wait' },
+  { find: "querySelector('#over');", sites: 2,
+    reason: 'the Overview first paint on a cold load; twenty seconds is a load bound, not a poll wait' },
+  { find: "classList.contains('hidden')", sites: 2,
+    reason: 'a tab\'s first paint on a cold load; twenty seconds is a load bound, not a poll wait' },
+];
+
+/**
  * Which local port is serving which directory — filled by serveDir, read by the
  * shutter.
  *
