@@ -6723,8 +6723,19 @@ def _close_cases(check):
               _pd_bogus[0] == 2 and _pd_gt_after == _pd_gt_before
               and "0" * 12 in _pd_bogus[1]
               and _pd_head_sha != "" and len(_pd_head_sha) == 40)
+        # The close names a commit carrying the task's declared file: a close
+        # whose attempt touched none of it is refused on its own rule
+        # (`lo-ce4`), which is not the question this pair asks.
+        _pd_work = os.path.join(projgt, "src", "fresh.ts")
+        if not os.path.isdir(os.path.dirname(_pd_work)):
+            os.makedirs(os.path.dirname(_pd_work))
+        with open(_pd_work, "w") as _fh:
+            _fh.write("the task's work\n")
+        git(projgt, "add", "--", "src/fresh.ts")
+        git(projgt, "commit", "-qm", "the work of P2.4")
+        _pd_work_sha = _harness.git(projgt, "rev-parse", "HEAD").strip()
         _pd_real = run(["done", "P2.4", "--project-dir", projgt, "--json",
-                        "--commit", _pd_head_sha] + _NOT_ASKED)
+                        "--commit", _pd_work_sha] + _NOT_ASKED)
         _pd_real_json = {}
         try:
             _pd_real_json = json.loads(_pd_real[1])
@@ -6736,7 +6747,7 @@ def _close_cases(check):
               "every SHA would be routed around inside the day: %r"
               % ((_pd_real[0], _pd_real_json.get("commitVerified")),),
               _pd_real[0] == 0 and _pd_real_json.get("commitVerified") is True
-              and (task_in(mpgt, "P2.4") or {}).get("commit") == _pd_head_sha)
+              and (task_in(mpgt, "P2.4") or {}).get("commit") == _pd_work_sha)
         # THE UNASKED QUESTION, which is `_commit_trail.is_shallow`'s rule read
         # forward: with no repository to ask, `rev-parse` failing says the
         # question was never put. Refusing here would refuse honest closes on
@@ -7920,6 +7931,18 @@ def _close_cases(check):
         _tw_silent = []
         for _label, _argv in _tw_argv:
             _tw_tree, _tw_proj = _tw_pairs.get(_label, (tw_all_tree, tw_all))
+            if _label == "done":
+                # The close names a commit of the attempt that carries P2.3's
+                # declared file, made after `start` above: one on the start's
+                # own HEAD carries no work and is refused on its own rule
+                # (`lo-ce4`), which is not what this row asks.
+                os.makedirs(os.path.join(_tw_tree, "src"), exist_ok=True)
+                with open(os.path.join(_tw_tree, "src", "a.ts"), "w") as _fh:
+                    _fh.write("the work of P2.3\n")
+                _git_q(_tw_tree, ["add", "--", "src/a.ts"])
+                _git_q(_tw_tree, ["commit", "-qm", "the work of P2.3"])
+                _tw_work = _harness.git(_tw_tree, "rev-parse", "HEAD").strip()
+                _argv = [_tw_work if a == _tw_sha else a for a in _argv]
             try:
                 _pin(_tw_tree, _tw_proj)
                 _codev, _txtv = (run_on_stdin(_argv, _fr_executor())
@@ -16024,6 +16047,57 @@ def _close_evidence_cases(check, project, task, write, close, read, git):
           "`not-attempted` red-first beside a real change is no refusal: %r"
           % ((code, text[-500:]),), code == 0)
 
+    _since_start_cases(check, project, task, write, close, read, commit)
+
+
+def _backdate_base(proj):
+    """Rewrite the fixture's base commit to 2025-12-01, before the `startedAt`
+    every task here carries, so the declared file's only change PREDATES the
+    attempt. Its own identity, because the sweep hands a suite none; the
+    dates go through the environment because git takes a committer date from
+    nowhere else, and are put back however the call ends."""
+    dates = ("GIT_AUTHOR_DATE", "GIT_COMMITTER_DATE")
+    held = dict((k, os.environ.get(k)) for k in dates)
+    os.environ.update(dict((k, "2025-12-01T00:00:00Z") for k in dates))
+    try:
+        _harness.git(None, "commit", "-q", "--amend", "--no-edit",
+                     prefix=("git", "-C", proj, "-c", "user.name=t",
+                             "-c", "user.email=t@t"))
+    finally:
+        for key, value in held.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def _since_start_cases(check, project, task, write, close, read, commit):
+    """`done --commit` with no filed return still asks whether the attempt
+    touched its declared files: a task whose every commit since its start
+    leaves them alone has no work to stand on, whatever red-first says."""
+    proj, mpath = project("ce-unmoved", [task("P1.1", ["src/a.ts"])])
+    _backdate_base(proj)
+    write(proj, "src/b.ts", "not this task's file\n")
+    commit(proj, "touches no declared file, since the start")
+    before = read(mpath)
+    code, text = close(proj)
+    check("lo-ce4 done --commit is refused when no commit since the task's "
+          "start touches a declared non-record file: %r" % ((code, text[-700:]),),
+          code == M.E_USAGE and "src/a.ts" in text and "--no-change" in text
+          and read(mpath) == before)
+
+    # SECOND-DIRECTION CASE, for a refusal that reads all of history or no
+    # dates at all: the same backdated base, with a commit since the start
+    # that touches the declared file, closes.
+    proj, mpath = project("ce-moved", [task("P1.1", ["src/a.ts"])])
+    _backdate_base(proj)
+    write(proj, "src/a.ts", "the work\n")
+    commit(proj, "the work, since the start")
+    code, text = close(proj)
+    check("lo-ce5 ALLOW: a commit since the start touching the declared file "
+          "closes over the same backdated base: %r" % ((code, text[-500:]),),
+          code == 0)
+
 
 def _attempt_cases(check, project, task, write, close, start, read, git,
                    backdate):
@@ -18775,6 +18849,16 @@ def _nested_no_change_cases(check):
           % (NESTED_MOVES_CLAUSE, (moved2, held)),
           any("uncommitted" in m for m in moved2)
           and [(h[1], h[2]) for h in held] == [("P1.2", "blocked")])
+
+    # `git log --name-only` prints from the checkout's top, so the path comes
+    # back as `member/src/a.py` unless it goes through the pair; a substring
+    # test against `src/a.py` cannot tell the two spellings apart, equality can.
+    touched = M._attempt_commits(proj, root, phase, task, ["member/src/a.py"],
+                                 start_head=start)
+    check("nn3 %s (an attempt's commits come back in the plan's own spelling, "
+          "equal to the declared entry and not the checkout-top path: %r)"
+          % (NESTED_MOVES_CLAUSE, touched),
+          touched is not None and [p for p, _c in touched] == ["src/a.py"])
 
 
 def _gate_entry_cases(check):

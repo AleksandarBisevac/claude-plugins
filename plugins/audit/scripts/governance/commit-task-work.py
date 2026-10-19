@@ -281,8 +281,8 @@ VERIFY_COMMAND = _vb.VERIFY_COMMAND
 # --- what this commit may carry -----------------------------------------------
 def stage_targets(manifest, phase, task, manifest_path, project, git_root,
                   config=None):
-    """The allow-list, resolved: `{"paths", "declared", "kinds", "ignored",
-    "ignoredRecords", "skipped", "indexRel"}`.
+    """The allow-list, resolved: `{"paths", "declared", "work", "kinds",
+    "ignored", "ignoredRecords", "skipped", "indexRel"}`.
 
     `paths` are git-root-relative and are the ONLY thing anything downstream may
     stage or commit; `declared` is the subset that came from the task's own
@@ -291,7 +291,12 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
     `paths`, which is how each is staged; `ignored` and `ignoredRecords` hold the
     declared paths and the record paths git ignores, kept out of `paths` because
     nothing may stage them and apart from each other because their repairs
-    differ; `skipped` carries one sentence per entry that could not be reached;
+    differ; `work` is every declared entry inside the git root that is not a
+    record, git-root-relative, whatever git makes of it - a declared file not
+    written yet is the task's work as much as one already changed, so the
+    question of whether a commit carries the work is asked of this list and not
+    of `declared`, which holds only what git could stage now; `skipped`
+    carries one sentence per entry that could not be reached;
     `indexRel` is the manifest index, carried so the refusal can name it as the
     specific mistake it is rather than as one more stray path.
 
@@ -411,7 +416,8 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
         if mine:
             declared.append(rel)
 
-    return {"paths": paths, "declared": declared,
+    work = [rel for rel, _name, _on_disk, mine in candidates if mine]
+    return {"paths": paths, "declared": declared, "work": work,
             "kinds": dict((rel, kinds[rel]) for rel in paths),
             "ignored": ignored, "ignoredRecords": ignored_records,
             "skipped": skipped, "indexRel": index_rel, "records": records,
@@ -830,6 +836,20 @@ def commit_work(manifest, phase, task, manifest_path, project, git_root,
     return code, answer
 
 
+def declared_names(task, project, git_root, declared_rels):
+    """The task's `files` entries, in the plan's own spelling, whose path is
+    one of `declared_rels` - the declared work a commit is asked to carry, with
+    the record entries a task may also declare left out."""
+    names = []
+    for entry in task.get("files") or []:
+        name = _vocab._strip_line_suffix(str(entry)).strip()
+        rel = _invariants._rel(os.path.join(project, name), git_root) \
+            if name else None
+        if rel is not None and rel in declared_rels and name not in names:
+            names.append(name)
+    return names
+
+
 def _commit_work(manifest, phase, task, manifest_path, project, git_root,
                  subject, config, override):
     targets = stage_targets(manifest, phase, task, manifest_path, project,
@@ -881,8 +901,10 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
 
     # WHAT THE CLOSE STANDS ON, still before staging: the records alone are
     # pending often enough - the filed return itself is one - so a commit of
-    # them over a return that attempted nothing, or over a `tests.add` file
-    # never written, would read as the task's finished work.
+    # them with no declared file changed, or over a `tests.add` file never
+    # written, would read as the task's finished work, whatever the return
+    # calls its red-first. A task whose answer was that nothing needed to
+    # change closes through `done --no-change`, which never comes here.
     journal_rows = filing_rows(project, config)
     executor, why, unchecked = executor_return(manifest_path, project, task,
                                                journal_rows)
@@ -890,10 +912,18 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
         return E_FAIL, _scoped_commit.answer(skipped, refused=why)
     if unchecked:
         skipped = skipped + ["the executor's filed return: %s" % (unchecked,)]
+    # KEYED ON WHAT THE TASK DECLARES, not on what git could stage: a task
+    # whose work is a NEW file declares a path that a tree which never ran it
+    # does not hold, so `declared` is empty there and a refusal asked of it
+    # would let records alone through. Only a task whose every declared entry
+    # is a record has no work whose change could be asked for, so for it the
+    # question stays the `not-attempted` one rather than refusing it always.
     changed = any(_scoped_commit.under_any(p, targets["declared"])
                   for p in pending)
-    refusal = _scoped_commit.close_evidence_refusal(task, project, executor,
-                                                    changed)
+    refusal = _scoped_commit.close_evidence_refusal(
+        task, project, executor, changed,
+        declared=declared_names(task, project, git_root, targets["work"]),
+        tree=project, any_red_first=bool(targets["work"]))
     if refusal:
         return E_FAIL, _scoped_commit.answer(
             skipped, refused="%s. Nothing was staged" % (refusal,))

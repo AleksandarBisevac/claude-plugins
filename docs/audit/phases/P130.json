@@ -4630,7 +4630,7 @@
     {
       "id": "P130.44-ywo",
       "title": "The scope-gap preflight never stops on a suite the gate runs, nor on a gate entry it cannot read",
-      "status": "in_progress",
+      "status": "done",
       "description": "Review of P130.38-ywo (docs/audit/evidence/returns/P130.38-ywo/20261019T121258Z.reviewer.json, read it). (1) med: `_runner_collects._sweep_reading` (plugins/audit/scripts/governance/_runner_collects.py around :130-141) answers NOT_COLLECTED for a .py path lacking a SWEEP_DIRS prefix, so a bare basename the sweep runs (test_audit_task.py) draws a false scope-gap; resolve a bare basename against the sweep roots (exists under one of them -> collected). (2) med: the 'no runner takes this path' stop in drive-phase.py `scope_gap` (around :1089-1102) treats the runners entry_collector knows (vitest, jest, pytest, sweep) as the gate's whole set; a gate with an entry it cannot classify (`node --test x.test.mjs`, `python3 -m unittest ...`) stops loudly although that entry may run the suite - when any gate entry is unclassified, the answer for a path no KNOWN runner takes is COULD_NOT_TELL (one printed line, the start goes on), never the scope-gap stop. (3) low: `_sweep_roots` (around :121-127) joins every quoted string on a line with '/', so a compact tuple or a trailing comment yields a wrong root silently; read SWEEP_DIRS with ast (literal_eval of the assigned tuple), refusing loudly when it is not a literal. Acceptance: (1) a bare basename under a sweep root draws no scope-gap; (2) a gate with an unclassified entry plus a path no known runner takes prints could-not-tell and starts; (3) a compact multi-root tuple and a commented one both read right; (4) the four stops P130.38 added for real misroutes still fire; (5) full sweep green.",
       "files": [
         "plugins/audit/scripts/governance/_runner_collects.py",
@@ -4669,19 +4669,34 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8b38e70bc006",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_runner_collects.py: SWEEP_DIRS is now read with ast (a tuple/list of strings or os.path.join of strings; any other expression, an unparsable source, no assignment or an empty tuple is a loud COULD_NOT_TELL naming why, never a partial list). A bare .py basename is resolved against the sweep roots via _output.py_files: found under a root -> COLLECTED; absent from every root but a file at the project root -> NOT_COLLECTED; found nowhere -> COULD_NOT_TELL (a suite the task is about to write, or one living in some other directory, is not a definite no). A path with a directory keeps the prefix judgement, so the P130.38 misroute stops are unchanged. drive-phase.py scope_gap: gate entries entry_collector returns None for are collected as unclassified; when the no-known-runner-takes-this-path branch is reached with any unclassified entry it prints one could-not-tell line and continues (task starts) instead of the scope-gap decision. Tests: 11 cases sb1-sb11 in test__runner_collects.py (118/118), 4 cases uc1-uc4 in test_drive_phase.py (389/389); both suites red on pre-fix code (6 and 2 FAILs seen before implementing). Verified the real tools/sweep-selftests.py reads as its five roots and test_audit_task.py draws COLLECTED. Trade-off for the owner: literal reading of 'any gate entry unclassified' means a gate that also holds lint/validate entries (entry_collector None) answers could-not-tell where it used to stop with 'no runner takes this path'; the other three stops (a known runner's definite NOT_COLLECTED) are untouched. The full sweep was not run by me (own-tests only).",
+        "descriptive": "The scope preflight no longer stops falsely on a bare-basename sweep suite or a gate with an entry it cannot classify, and SWEEP_DIRS is read as code."
       },
       "startedAt": "2026-10-19T19:14:22Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T19:44:52Z",
+      "verifiedBy": [
+        "test__runner_collects.py sb1-sb11",
+        "test_drive_phase.py uc1-uc4"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T19:43:23Z.2108ff",
         "status": "passed",
         "at": "2026-10-19T19:43:23Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "8b38e70bc006",
+        "at": "2026-10-19T19:44:52Z",
+        "return": "docs/audit/evidence/returns/P130.44-ywo/20261019T191422Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-19T19:31:43Z",
+        "basis": "`python3 tools/sweep-selftests.py plugins/audit/tests/test__runner_collects.py plugins/audit/tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out after 71 s and its process group was torn down; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -4743,7 +4758,7 @@
     {
       "id": "P130.46-ywo",
       "title": "A task commit carries the task's change, and a restarted task with a kept worktree is never run in the phase tree",
-      "status": "pending",
+      "status": "in_progress",
       "description": "REPLACES P130.43-ywo. Its finished work is saved as a patch: <outside-repo> (git apply --check passed on the phase head) - apply it in your tree, then fix the pre-commit review's findings: (1) MEDIUM: commit-task-work.py (~:400) moves a declared file that is neither on disk nor tracked to `skipped`, and (~:917) passes any_red_first=bool(targets['declared']), so a task whose declared files are all NEW (the F741 shape: the work is a new file in a kept tree) still gets an empty commit under could-not-prove - key the refusal on 'the task declares any non-record file', not on 'a declared file resolved'; case for it. (2) LOW-MEDIUM: audit-task.py `done --commit` (~:6254) calls close_evidence_refusal without the new rule - refuse when no commit since the task's start touches a declared non-record file (keeps pd5b/tw5/lo4/lo6, whose change sits in an earlier commit since start); case for it. (3) LOW: drive-phase.py (~:2718) checks only that the kept-tree directory exists; require its marker (as manage-worktrees adoption does) and stop naming the tree when the marker is missing rather than making a fresh tree and orphaning the old one. (4) LOW: add direct cases in test__scoped_commit.py for the new parameters. The original task follows: F741. P130.18-ywo was recorded done at a commit holding only plan and evidence files: after a manual `start`, drive-phase `wave_step` (around :2644) ran it serially in the PHASE tree because a task was in_progress, while its work sat in the kept worktree (`close_wave` records it in keptTrees, read only when a new wave opens); the gate measured the phase tree (scopeDigest of the unchanged declared files), went green, and the close committed nothing of the task. The only no-change refusal, `_scoped_commit.close_evidence_refusal` (around :1121, called from commit-task-work.py around :893), refuses only when red-first is `not-attempted`; `could-not-prove` passes. Fix: (1) commit-task-work refuses a task commit whose staged change holds no file outside docs/audit and the run records, unless the task is closed with an explicit no-change verb, naming the declared files and the tree the gate measured; (2) when the task being advanced has a kept worktree that holds changes, the drive integrates it or runs it in that worktree - never dispatches or gates it in the phase tree; (3) a falsifier that could not run because its find-text is absent from the measured tree stops the close with that sentence instead of writing a note (the stage is retired at HEAD - if so, put the absent-text check on the red-first record instead: a recorded red whose cases do not exist in the committed tree refuses). Acceptance: (1) a fixture where the task tree holds the change and the phase tree does not: the drive does not commit an empty task and names the kept tree; (2) commit-task-work refuses a commit whose diff is plan files only, with the declared files named; (3) an honest no-change close still works through its verb; (4) the full sweep is green.",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
@@ -4753,7 +4768,8 @@
         "plugins/audit/tests/test__scoped_commit.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/tests/test_commit_task_work.py",
-        "plugins/audit/tests/test_drive_phase.py"
+        "plugins/audit/tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -4785,16 +4801,28 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T20:36:01Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T21:03:34Z.e488e8",
+        "status": "passed",
+        "at": "2026-10-19T21:03:34Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-19T20:19:36Z",
+          "text": "files widened by PLUGIN-BUILD-GUIDE.md: owed by _deps.map_drift on run 2026-10-19T20:19:34Z.038d34"
+        }
+      ]
     },
     {
       "id": "P130.47-ywo",

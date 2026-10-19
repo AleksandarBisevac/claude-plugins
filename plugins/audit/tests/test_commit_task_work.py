@@ -1678,7 +1678,11 @@ def _gate_identity_cases(check, repos):
             ".gitignore")
     os.makedirs(os.path.join(fx["root"], "hollow"))
     _write(os.path.join(fx["root"], "hollow", "only.log"), "ignored\n")
-    _set_task(fx, files=["hollow"])
+    # Beside a declared file that carries a change: a commit of records alone
+    # is refused on its own rule (`ctw-ro3`), and this case asks only whether
+    # the hollow directory is a defined entry of the digest the gate binds.
+    _set_task(fx, files=["hollow", OWNED])
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # the task's own work\n")
     _gate(fx)
     code, text = _run(fx)
     check("ctw79 a declared directory git lists no file under is a DEFINED "
@@ -2324,6 +2328,118 @@ def _close_evidence_cases(check, repos):
           code == 0 and OWNED in carried and CE_TEST in carried)
 
 
+RECORDS_ONLY_CLAUSE = ("a task commit whose staged change holds only plan and "
+                       "record files is refused, naming the declared files, "
+                       "while an explicit no-change close still records")
+ALL_NEW_CLAUSE = ("a task whose declared files are all new and absent from the "
+                  "commit tree is refused under could-not-prove too")
+# A declared file no fixture commit has ever held: the task's work is a NEW
+# file, which a tree that never ran the task does not have.
+FRESH = "src/fresh.py"
+
+
+def _file_started_return(fx, status):
+    """File an executor return for the task's REAL start, with red-first
+    `status` - the start `audit-task.py start` recorded, not a made-up one, so
+    the close verb that follows reads the same attempt."""
+    import _filed_returns
+    task = [t for t in _mio.read_json(fx["shard"])["tasks"]
+            if t.get("id") == TASK][0]
+    body = {"gates": {}, "outcome": {"technical": "t", "descriptive": "d"},
+            "testsAdded": [], "stamp": "audit-stamp: v2 x",
+            "redFirst": {"status": status, "basis": "the helper could not run"}}
+    path = _filed_returns.return_path(
+        os.path.join(fx["root"], "docs", "audit", "evidence"), task, "executor")
+    _filed_returns.file_once(path, json.dumps(body) + "\n")
+
+
+def _done_no_change(fx, reason):
+    """`(code, text)` of `/audit:task done --no-change` on the fixture task."""
+    lines = []
+    held = sys.stderr
+    sys.stderr = io.StringIO()
+    try:
+        code = AT.main(["done", TASK, "--no-change", "--reason", reason,
+                        "--project-dir", fx["root"]], out=lines.append)
+    finally:
+        sys.stderr = held
+    return code, "\n".join(str(x) for x in lines)
+
+
+@_own_repos
+def _records_only_cases(check, repos):
+    """A task commit standing for work refuses a change that is plan and record
+    files only, whatever the red-first word says - the shape a task run in a
+    tree that never held its work leaves - and names the no-change verb, which
+    still closes a task whose answer really was that nothing needed to change."""
+    fx = repos.make()
+    _restartable(fx)
+    scode, said = _start(fx)
+    _file_started_return(fx, "could-not-prove")
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    refused = (code, text, _head(fx), _staged(fx))
+    dcode, dtext = _done_no_change(fx, "the declared file already does this")
+    _manifest, _phase, task = _phase_and_task(fx)
+    no_change = (task.get("outcome") or {}).get("noChange") or {}
+    check("ctw-ro1 %s: %r" % (RECORDS_ONLY_CLAUSE, (
+              scode, said[-200:], refused[0], refused[1][:600], dcode,
+              dtext[-300:], task.get("status"), no_change)),
+          scode == 0 and refused[0] == 1 and OWNED in refused[1]
+          and "--no-change" in refused[1] and fx["root"] in refused[1]
+          and refused[2] == before and refused[3] == []
+          and dcode == 0 and task.get("status") == "done"
+          and no_change.get("reason") == "the declared file already does this")
+
+    # SECOND-DIRECTION CASE, for a refusal made unconditional: the same
+    # `could-not-prove` return beside a real change in the declared file
+    # commits it.
+    fx = repos.make()
+    _restartable(fx)
+    scode, said = _start(fx)
+    _file_started_return(fx, "could-not-prove")
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # the task's own work\n")
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    carried = _carried(fx, _head(fx)) if _head(fx) != before else []
+    check("ctw-ro2 ALLOW: the same `could-not-prove` return beside a change in "
+          "the declared file commits it: %r" % ((scode, code, text[:300], carried),),
+          scode == 0 and code == 0 and OWNED in carried)
+
+    fx = repos.make()
+    _set_task(fx, files=[FRESH])
+    _restartable(fx)
+    scode, said = _start(fx)
+    _file_started_return(fx, "could-not-prove")
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw-ro3 %s: %r" % (ALL_NEW_CLAUSE, (
+              scode, said[-200:], code, text[:600], _head(fx) == before,
+              _staged(fx))),
+          scode == 0 and code == 1 and FRESH in text
+          and "--no-change" in text and _head(fx) == before
+          and _staged(fx) == [])
+
+    # SECOND-DIRECTION CASE, for a refusal keyed on the declaration alone: the
+    # same all-new declaration with the new file written commits it.
+    fx = repos.make()
+    _set_task(fx, files=[FRESH])
+    _restartable(fx)
+    scode, said = _start(fx)
+    _file_started_return(fx, "could-not-prove")
+    _write(os.path.join(fx["root"], FRESH), "fresh = 1  # the task's new file\n")
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    carried = _carried(fx, _head(fx)) if _head(fx) != before else []
+    check("ctw-ro4 ALLOW: the same all-new declaration, its file written, "
+          "commits it: %r" % ((scode, code, text[:300], carried),),
+          scode == 0 and code == 0 and FRESH in carried)
+
+
 @_own_repos
 def _fixture_git_cases(check, repos):
     """A fixture git command that fails carries git's own stderr text."""
@@ -2442,7 +2558,8 @@ STAGES = (("nm-block", "_no_maintenance_cases"),
           ("dp-block", "_default_project_cases"),
           ("ae-block", "_attempt_cases"), ("bl-block", "_bug_link_cases"),
           ("ir-block", "_index_row_cases"),
-          ("ce-block", "_close_evidence_cases"))
+          ("ce-block", "_close_evidence_cases"),
+          ("ro-block", "_records_only_cases"))
 
 
 if __name__ == "__main__":

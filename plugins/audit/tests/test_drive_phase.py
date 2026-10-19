@@ -5321,6 +5321,140 @@ def _wave_adopt_cases(check):
           and "P1.1" not in (_drive_state(root).get("keptTrees") or {}))
 
 
+# A gate that passes wherever it runs and logs the directory it ran in, outside
+# the fixture: green in the phase tree as in the task tree, which is the shape
+# that let a close commit nothing of the task - the log is what says where.
+_CWD_LOG = ("import os\n"
+            "with open(os.environ['DRIVE_CWD_LOG'], 'a') as fh:\n"
+            "    fh.write(os.path.realpath(os.getcwd()) + '\\n')\n")
+
+KEPT_RESTART_CLAUSE = ("a restarted task whose kept worktree holds changes is "
+                       "not dispatched or gated in the phase tree, and the "
+                       "drive names the kept tree")
+
+
+def _kept_restart_cases(check):
+    """A wave member blocked with its work in its kept tree, then restarted by
+    hand with `start`, is never run in the phase tree: the drive either runs it
+    in the kept tree or stops naming it, and a close never commits it empty."""
+    M, why = _load("drive_phase_kept_restart")
+    if M is None:
+        check("kr1 the driver loads", False, why)
+        return
+    for unmark in (False, True):
+        _kept_restart_fixture(M, check, unmark)
+
+
+def _kept_restart_fixture(M, check, unmark):
+    """One repository for `_kept_restart_cases`: kr1 with the kept tree as a
+    closed wave leaves it, kr2 with its marker removed first."""
+    root, mpath = _wave_repo("keptrestart%d" % (int(unmark),), 2,
+                             red=("P1.1",))
+    # The logging gate is committed before the first wave, so the tree cut
+    # for it holds the script; its log is named by the environment, since a
+    # path outside the repository in the gate's text is not the same gate.
+    _write_lf(os.path.join(root, "log_cwd.py"), _CWD_LOG)
+    _harness.git(root, "add", "--", "log_cwd.py")
+    _harness.git(root, "commit", "-qm", "the logging gate")
+    aux = os.path.realpath(_harness.fixture_root("drive-cwdlog-"))
+    log = os.path.join(aux, "cwd.log")
+    held = os.environ.get("DRIVE_CWD_LOG")
+    os.environ["DRIVE_CWD_LOG"] = log
+    try:
+        _kept_restart_run(M, check, root, mpath, log, unmark)
+    finally:
+        if held is None:
+            os.environ.pop("DRIVE_CWD_LOG", None)
+        else:
+            os.environ["DRIVE_CWD_LOG"] = held
+        _harness.remove_tree(aux)
+
+
+def _worktree_paths(root):
+    """The real paths of every worktree git lists for `root`, sorted."""
+    return sorted(os.path.realpath(ln[len("worktree "):]) for ln in _harness.git(
+        root, "worktree", "list", "--porcelain").splitlines()
+        if ln.startswith("worktree "))
+
+
+def _kept_restart_run(M, check, root, mpath, log, unmark=False):
+    """The block, restart and drive of `_kept_restart_cases`, and its case."""
+    def one_attempt(plan):
+        plan["phases"][0]["tasks"][0]["maxAttempts"] = 1
+    _commit_plan(root, mpath, one_attempt, "one attempt for P1.1")
+    _code, first = _next_wave(M, root, mpath)
+    for t in _dispatched(first):
+        _file_wave_executor(root, mpath, t)
+    _next_wave(M, root, mpath)
+    with _Env(root):
+        M.main(["next", PHASE, mpath, "--project-dir", root, "--answer", "block",
+                "--reason", "the gate is red"], out=lambda *_a: None)
+    kept = (_drive_state(root).get("keptTrees") or {}).get("P1.1")
+    kept_stood = bool(kept) and os.path.isdir(kept)
+
+    def green_anywhere(plan):
+        task = plan["phases"][0]["tasks"][0]
+        task["maxAttempts"] = 3
+        task["tests"]["gate"] = ['"%s" log_cwd.py' % (sys.executable,)]
+    _commit_plan(root, mpath, green_anywhere, "P1.1: a gate green anywhere")
+    with _Env(root):
+        started = _verb(root, "audit-task.py", ["start", "P1.1", mpath,
+                                                "--project-dir", root])
+    unmarked = False
+    if unmark and kept_stood:
+        admin = M._worktrees.admin_dir(kept)
+        marker = os.path.join(admin, M._worktrees.PROVENANCE_FILE) if admin else ""
+        if os.path.isfile(marker):
+            os.remove(marker)
+            unmarked = True
+    trees_before = _worktree_paths(root)
+    prints, briefs = [], []
+    with _Env(root):
+        for _ in range(8):
+            said = []
+            code = M.main(["next", PHASE, mpath, "--project-dir", root],
+                          out=said.append)
+            text = "\n".join(said)
+            prints.append(text)
+            kind = instruction(text)
+            if code != 0 or kind[0] != "dispatch" or kind[2] != "P1.1":
+                break
+            briefs.append(_brief_of(root, text, "P1.1"))
+            # The executor changes nothing: its work is already in the kept
+            # tree, which is where a run of the task has to find it.
+            _verb(root, DRIVER, ["submit", "P1.1", "--role", "executor", mpath,
+                                 "--project-dir", root],
+                  stdin=json.dumps(_executor_body("P1.1")))
+    task = tasks_of(mpath).get("P1.1") or {}
+    sha = task.get("commit")
+    carried = (_harness.git(root, "show", "--name-only", "--pretty=format:", sha)
+               .split() if sha else [])
+    gated_in = _provisioned(log)
+    said_all = "\n".join(prints + briefs)
+    if unmark:
+        check("kr2 a kept tree with no marker naming its task stops the drive, "
+              "naming the tree, before any dispatch, gate or fresh tree: %r" % ((
+                  kept, unmarked, started[0], [p[-500:] for p in prints],
+                  len(briefs), gated_in, task.get("status"), sha,
+                  trees_before, _worktree_paths(root)),),
+              kept_stood and unmarked and started[0] == 0
+              and len(prints) == 1 and kept in prints[0]
+              and "stopped" in prints[0] and "marker" in prints[0]
+              and briefs == [] and gated_in == []
+              and task.get("status") == "in_progress" and sha is None
+              and _worktree_paths(root) == trees_before
+              and os.path.realpath(kept) in trees_before)
+        return
+    check("kr1 %s: %r" % (KEPT_RESTART_CLAUSE, (
+              kept, started[0], [p[-400:] for p in prints], gated_in,
+              task.get("status"), carried)),
+          kept_stood and started[0] == 0
+          and kept in said_all
+          and all(("tree: %s" % (kept,)) in b for b in briefs)
+          and root not in gated_in
+          and (sha is None or "src/f1.txt" in carried))
+
+
 def _discard_run(M, prefix):
     """A wave where P1.2 also writes an undeclared file, answered `discard`:
     `(tree, the answer's print, state after)`."""
@@ -6958,6 +7092,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("fm2-block", "_follower_shot_cases"),
           ("al-block", "_ascii_locale_cases"),
           ("wt-block", "_wave_resume_cases"), ("wt5-block", "_wave_adopt_cases"),
+          ("kr-block", "_kept_restart_cases"),
           ("wt7-block", "_wave_review_discard_cases"),
           ("wd-block", "_wave_redo_cases"), ("wg-block", "_wave_regate_cases"),
           ("wh-block", "_wave_hooks_cases"),

@@ -1,0 +1,106 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_commit_task_work.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__scoped_commit.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_audit_task.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_drive_phase.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T20:08:03Z",
+    "basis": "`python3 plugins/audit/tests/test_commit_task_work.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 130 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ctw-ro3 (house FAIL): SELFTEST FAILED: 128/130 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Applied the saved P130.43-ywo patch (quality-gates-internal/plans/2026-10-17-redesign-implementation/patches/P130.43-ywo.patch; the brief and the manifest both print its path as <outside-repo>, so I found it with a filesystem search) using git apply -3 (exit 0, all five files clean), then git restore --staged . ; git ls-files -u was empty. Then fixed the four review findings. (1) commit-task-work.py: stage_targets now returns `work`, meaning every declared non-record entry inside the git root whatever git makes of it, and _commit_work keys any_red_first and the named declared files on it, so a task whose declared files are all new and absent is refused under could-not-prove (case ctw-ro3, allow case ctw-ro4). (2) audit-task.py: I pulled the attempt-span log out of _no_change_moves into _attempt_commits(..., end=). _close_evidence_refusal takes attempt={phase, plan, startHead, records}. When the task declares any non-record file (_declared_work), and neither the SHA nor any commit since the start up to the SHA touches one, the close is refused whatever the red-first word says. If the span holds a change, the older not-attempted question still applies (keeps lo-ce1). Cases lo-ce4 and lo-ce5. (3) drive-phase.py: kept_marker() reads _worktrees.read_provenance(expect_task=...). wave_step stops through unmarked_kept_stop, naming each tree and the marker basis, before it opens a wave that would cut a fresh tree. Case kr2: the marker is removed, the drive stops on its first step with nothing dispatched or gated, and git's worktree list is unchanged. (4) test__scoped_commit.py: direct cases sc-ce1..sc-ce4 for declared, tree and any_red_first, in both directions. I corrected the _scoped_commit comment that said done --commit asks only beside not-attempted. Existing fixtures that closed on records only and are now refused by design: ctw79 (now declares OWNED with a change beside the hollow directory), pd5b (closes on a commit that adds its declared src/fresh.ts) and tw5 (commits src/a.ts in the linked tree after start and closes on that). The description says pd5b and tw5 have their change in an earlier commit since start. That is not true of those fixtures: no commit ever touched pd5b's declared file, and tw5 closed on the HEAD its own start recorded. Results, each suite run whole and one at a time, all exit 0: test_commit_task_work 130/130, test__scoped_commit 35/35, test_audit_task 1093/1093, test_drive_phase 391/391, test__refs 286/286. ruff and vermin are clean on the 8 files. _deps.layer_violations() reports nothing for drive-phase/_worktrees. Not done, because it is outside the four findings and the task's files: the original description's item (3), a falsifier find-text absent from the measured tree. Not run by me (own-tests): other suites that drive done --commit or commit-task-work, namely test__invariants, test__output, test_commit_audit_state and test_run_test_gate. The new refusal could affect a records-only close fixture in them.",
+    "descriptive": "A task commit or done --commit whose attempt carries no change to a declared non-record file is now refused whatever red-first says, including when the declared files are all new. A kept tree without its marker stops the drive instead of being orphaned."
+  },
+  "testsAdded": [
+    "ctw-ro3",
+    "ctw-ro4",
+    "lo-ce4",
+    "lo-ce5",
+    "kr2",
+    "sc-ce1",
+    "sc-ce2",
+    "sc-ce3",
+    "sc-ce4"
+  ],
+  "casesAdded": [
+    [
+      "ctw-ro1",
+      "ctw-ro2"
+    ],
+    [
+      "kr1",
+      "kr2"
+    ],
+    [
+      "ctw-ro3",
+      "ctw-ro4"
+    ],
+    [
+      "lo-ce4",
+      "lo-ce5"
+    ]
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_commit_task_work.py: a task commit whose staged change holds only plan and record files is refused, naming the declared files, while an explicit no-change close still records": {
+      "file": "plugins/audit/scripts/governance/_scoped_commit.py",
+      "find": "if changed is False and (any_red_first or word == RED_FIRST_NOT_ATTEMPTED):",
+      "replace": "if changed is False and word == RED_FIRST_NOT_ATTEMPTED:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "--selftest",
+        "--stage",
+        "ro-block"
+      ]
+    },
+    "plugins/audit/tests/test_drive_phase.py: a restarted task whose kept worktree holds changes is not dispatched or gated in the phase tree, and the drive names the kept tree": {
+      "file": "plugins/audit/scripts/governance/drive-phase.py",
+      "find": "return path if isinstance(path, str) and os.path.isdir(path) else None",
+      "replace": "return None",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_drive_phase.py",
+        "--selftest",
+        "--stage",
+        "kr-block"
+      ]
+    },
+    "plugins/audit/tests/test_commit_task_work.py: a task whose declared files are all new and absent from the commit tree is refused under could-not-prove too": {
+      "file": "plugins/audit/scripts/governance/commit-task-work.py",
+      "find": "tree=project, any_red_first=bool(targets[\"work\"]))",
+      "replace": "tree=project, any_red_first=bool(targets[\"declared\"]))",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "--selftest",
+        "--stage",
+        "ro-block"
+      ]
+    },
+    "plugins/audit/tests/test_audit_task.py: done --commit is refused when no commit since the task's start touches a declared non-record file": {
+      "file": "plugins/audit/scripts/manifest/audit-task.py",
+      "find": "        if since == []:",
+      "replace": "        if False:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_task.py",
+        "--selftest",
+        "--stage",
+        "lo-block"
+      ]
+    }
+  },
+  "claims": "claims:\n1 commit-task-work.py stage_targets `work` + _commit_work any_red_first=bool(targets[\"work\"]); audit-task.py _close_evidence_refusal `if since == []` branch; drive-phase.py unmarked_kept_stop called in wave_step ahead of open_wave; the _scoped_commit.py comment was rewritten to match what done --commit now does\n2 ctw-ro3 and lo-ce4 seen red before the fix (3/4, 20/21) and green after; each new refusal has an allow case (ctw-ro4, lo-ce5, sc-ce2, sc-ce3); falsifiers filed for the drive to run, with no mutation made in the shared tree\n3 the records-only class also lived in existing fixtures: grep for done --commit / commit-task-work users found ctw79, pd5b, tw5 in my files, now carrying work; test__invariants, test__output, test_commit_audit_state, test_run_test_gate were left unrun, because they are outside my files and own-tests\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded\n6 the refusal reads git's file set: the staged/declared rels, and git log over the attempt span with the declared rels as pathspec; the allow cases were shown passing\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:98bd7f3911b7e7b01f24fbf3097b533bc4ba778dc352a172ef1ec2dd9da82dde\",\"dirtyDigest\":\"sha256:eea8d54c3bf75ffa8de42e60d32d7f1ae163b2804670f0291aab5b390accbd58\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_scoped_commit.py\":\"ef59fc1224eed972\",\"plugins/audit/scripts/governance/commit-task-work.py\":\"23c4ecfc7dd353fc\",\"plugins/audit/scripts/governance/drive-phase.py\":\"23c9a525ad3f6f7a\",\"plugins/audit/scripts/manifest/audit-task.py\":\"19245e72d4d28e55\",\"plugins/audit/tests/test__scoped_commit.py\":\"04410601a34c555a\",\"plugins/audit/tests/test_audit_task.py\":\"631a12f230a9bbb3\",\"plugins/audit/tests/test_commit_task_work.py\":\"8f19a820001a524f\",\"plugins/audit/tests/test_drive_phase.py\":\"569880cc092ef4bd\"},\"head\":\"8b38e70b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_scoped_commit.py\",\"plugins/audit/scripts/governance/commit-task-work.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test__scoped_commit.py\",\"plugins/audit/tests/test_audit_task.py\",\"plugins/audit/tests/test_commit_task_work.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:717832f6bc70e665c049742afaf38660b37dd1c242511973921477cb39b637ee\",\"v\":2}",
+  "testsAddGaps": [
+    "plugins/audit/tests/test_drive_phase.py: a restarted task whose kept worktree holds changes is not dispatched or gated in the phase tree, and the drive names the kept tree - bound to `kr1`, which the suite did not print",
+    "plugins/audit/tests/test_drive_phase.py: a restarted task whose kept worktree holds changes is not dispatched or gated in the phase tree, and the drive names the kept tree - bound to `kr2`, which the suite did not print",
+    "plugins/audit/tests/test_audit_task.py: done --commit is refused when no commit since the task's start touches a declared non-record file - bound to `lo-ce4`, which the suite did not print",
+    "plugins/audit/tests/test_audit_task.py: done --commit is refused when no commit since the task's start touches a declared non-record file - bound to `lo-ce5`, which the suite did not print"
+  ]
+}

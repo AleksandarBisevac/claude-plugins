@@ -1085,11 +1085,20 @@ def attempt_strays(git_root, record, started_at, owned, skip):
 # --- what a close stands on ---------------------------------------------------
 # A green gate over an unchanged tree proves only that nothing broke. So a close
 # - the task commit, and `done --commit` after it - asks two things of the
-# evidence before it calls the task finished: whether the executor's filed
-# return says it attempted nothing while the task's declared files carry no
-# change, and whether every file the task's `tests.add` names exists. Either
-# answer refuses, naming the evidence; a task whose honest answer was that
-# nothing needed to change closes through `--no-change`, which asks neither.
+# evidence before it calls the task finished: whether the task's declared files
+# carry a change in what is being closed, and whether every file the task's
+# `tests.add` names exists. Either answer refuses, naming the evidence; a task
+# whose honest answer was that nothing needed to change closes through
+# `--no-change`, which asks neither.
+#
+# THE TASK COMMIT ASKS THE FIRST QUESTION WHATEVER THE RED-FIRST WORD SAYS
+# (`any_red_first`). Asked only beside a return saying `not-attempted`, it let
+# a task run in a tree that never held its work - the finished change left in
+# a kept worktree - come back `could-not-prove` and commit plan and record
+# files alone: what the commit carries is the evidence, and what the return
+# calls it is not. `done --commit` asks it of the whole attempt rather than of
+# its SHA alone, because the change may already sit in an earlier commit since
+# the task's start (`audit-task.py` `_close_evidence_refusal`).
 RED_FIRST_NOT_ATTEMPTED = "not-attempted"
 
 
@@ -1107,24 +1116,50 @@ def absent_tests_add(task, project):
     return absent
 
 
-def close_evidence_refusal(task, project, executor, changed):
+def _declared_names(task):
+    """The task's declared `files`, `:line-range` suffixes dropped, in order."""
+    names = []
+    for entry in task.get("files") or []:
+        name = _vocab._strip_line_suffix(str(entry)).strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def close_evidence_refusal(task, project, executor, changed, declared=None,
+                           tree=None, any_red_first=False):
     """The sentence refusing a close whose evidence shows no work, or "".
 
     `executor` is the executor's filed return for the task's current start, or
     None; `changed` is whether the task's declared files carry a change in what
     is being closed - None when that could not be read, which asks only the
-    `tests.add` question rather than guessing an answer to the other."""
+    `tests.add` question rather than guessing an answer to the other.
+    `declared` names the files that question was asked of (the task's `files`
+    when None); `tree` is the working tree the close is made from, whose bytes
+    any verdict binding it measured, named when given. With `any_red_first` an
+    unchanged declared set refuses whatever red-first the return records, and
+    with none filed; without it, only beside `not-attempted`."""
     tid = str(task.get("id"))
     parts = []
     red = ((executor or {}).get("redFirst") or {}) \
         if isinstance(executor, dict) else {}
-    if changed is False and red.get("status") == RED_FIRST_NOT_ATTEMPTED:
-        said = ((executor.get("outcome") or {}).get("descriptive") or "").strip()
-        parts.append("the executor's filed return records red-first `%s`%s and "
-                     "the task's declared files carry no change, so a green "
-                     "gate here proves only that nothing broke"
-                     % (RED_FIRST_NOT_ATTEMPTED,
-                        " (its outcome: %r)" % (said[:120],) if said else ""))
+    word = red.get("status")
+    if changed is False and (any_red_first or word == RED_FIRST_NOT_ATTEMPTED):
+        said = ((executor.get("outcome") or {}).get("descriptive") or "").strip() \
+            if isinstance(executor, dict) else ""
+        names = list(declared) if declared is not None else _declared_names(task)
+        parts.append(
+            "the task's declared files (%s) carry no change%s, so a green gate "
+            "here proves only that nothing broke%s%s"
+            % (", ".join(names) or "none outside the plan's records",
+               " in %s - only plan and record files would be committed" % (tree,)
+               if tree else "",
+               "; the executor's filed return records red-first `%s`" % (word,)
+               if isinstance(word, str) and word else "",
+               " (its outcome: %r)" % (said[:120],) if said else ""))
+        if tree:
+            parts.append("if the task's work sits in another worktree (a kept "
+                         "task tree), bring it into %s first" % (tree,))
     absent = absent_tests_add(task, project)
     if absent:
         parts.append("%s, named by the task's tests.add, %s not on disk"

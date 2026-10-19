@@ -6099,16 +6099,33 @@ def _no_change_moves(project, git_root, phase, task, plan=None, start_head=None)
     code, _top = _git_answer(git_root, "rev-parse", "--show-toplevel")
     if code != 0:
         return [], notes
-    moved = []
+    touched = _attempt_commits(project, git_root, phase, task, files,
+                               plan=plan, start_head=start_head) or []
+    moved = ["%s changed in commit %s" % (path, commit[:7])
+             for path, commit in touched]
+    moved += ["%s has an uncommitted change" % (path,)
+              for path in _porcelain_paths(git_root, files) or []]
+    return moved, notes
+
+
+def _attempt_commits(project, git_root, phase, task, files, plan=None,
+                     start_head=None, end="HEAD"):
+    """`[(path, sha), ...]` - each path under `files` (git-root-relative
+    pathspecs) that a commit of `task`'s attempt changed, up to `end`, spelled
+    the way the plan spells it: `git log --name-only` prints from the checkout's
+    top, and a task's `files` are read from `project`, so each path goes through
+    `_config.git_to_plan`. None when git will not answer the log. `_no_change_moves` documents the span: from the HEAD the
+    start recorded, or else from the phase's `baseRef` cut by `startedAt` with
+    the commits other tasks record as their own left out."""
     since, others = [], set()
     if start_head and _git_answer(git_root, "rev-parse", "--verify", "-q",
                                   "%s^{commit}" % (start_head,))[0] == 0:
-        span = "%s..HEAD" % (start_head,)
+        span = "%s..%s" % (start_head, end)
     else:
         base = phase.get("baseRef")
-        span = "%s..HEAD" % (base,) if base and _git_answer(
+        span = "%s..%s" % (base, end) if base and _git_answer(
             git_root, "rev-parse", "--verify", "-q",
-            "%s^{commit}" % (base,))[0] == 0 else "HEAD"
+            "%s^{commit}" % (base,))[0] == 0 else end
         since = ["--since=%s" % (task["startedAt"],)] if task.get("startedAt") else []
         others = set(str(t.get("commit")) for t in _mio.tasks_by_id(
             plan or {"phases": [phase]}).values()
@@ -6117,17 +6134,17 @@ def _no_change_moves(project, git_root, phase, task, plan=None, start_head=None)
     # A declared directory lists the files under it, so a commit line is told
     # apart by its own marker rather than by not being a declared path.
     code, log = _git_answer(git_root, *(["log", "--format=@%H", "--name-only"]
-                                        + since + [span, "--"] + files))
-    if code == 0:
-        commit = None
-        for line in [ln.strip() for ln in log.splitlines() if ln.strip()]:
-            if line.startswith("@"):
-                commit = line[1:]
-            elif commit and commit not in others:
-                moved.append("%s changed in commit %s" % (line, commit[:7]))
-    moved += ["%s has an uncommitted change" % (path,)
-              for path in _porcelain_paths(git_root, files) or []]
-    return moved, notes
+                                        + since + [span, "--"] + list(files)))
+    if code != 0:
+        return None
+    hc = _loader.load_hooks_config(modname="audit__config")
+    touched, commit = [], None
+    for line in [ln.strip() for ln in log.splitlines() if ln.strip()]:
+        if line.startswith("@"):
+            commit = line[1:]
+        elif commit and commit not in others:
+            touched.append((hc.git_to_plan(line, git_root, project), commit))
+    return touched
 
 
 def _porcelain_paths(git_root, pathspec=()):
@@ -6245,14 +6262,40 @@ def _filing_rows(project, config, mpath):
         return None
 
 
+def _declared_work(project, git_root, task, records):
+    """`[(name, rel), ...]` - the task's declared `files` in the plan's own
+    spelling with their git-root-relative path, leaving out each entry that
+    lies outside the git root or under one of the `records` paths: the work a
+    close is asked to stand on, not the bookkeeping a task may also declare."""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    work = []
+    for name in sorted(set(_vocab._strip_line_suffix(f).strip()
+                           for f in (task.get("files") or [])
+                           if isinstance(f, str) and f.strip())):
+        rel = hc.plan_to_git(name, git_root, project)
+        if rel is not None and not any(_touts.covers(r, rel) for r in records):
+            work.append((name, rel))
+    return work
+
+
 def _close_evidence_refusal(project, mpath, git_root, task, sha, verified,
-                            rows):
+                            rows, attempt=None):
     """`_scoped_commit.close_evidence_refusal` over a close on `sha`: the
-    executor's return filed for the current start, and whether the commit
+    executor's return filed for the current start, and whether the work
     carries a change to a declared file - asked only of a SHA git verified. A
     return edited after its filing row recorded it refuses here, in every form
     of the close; a filed return that will not parse leaves the first question
-    unasked here, and `--from-return` is where that refuses."""
+    unasked here, and `--from-return` is where that refuses.
+
+    `attempt` - `{"phase", "plan", "startHead", "records"}` - asks the
+    question of the whole attempt: a task declaring any file outside the
+    plan's records is refused, whatever red-first its return records or with
+    none filed, when neither `sha` nor any commit since its start up to `sha`
+    touches one. Its change may sit in an earlier commit of the attempt, which
+    is why the span and not `sha` alone is read. The narrower question - `sha`
+    touching nothing declared, beside `not-attempted` - is still asked
+    whenever the span holds a change, and is the only one for a task whose
+    every declared entry is a record."""
     path = return_path(project, mpath, task, "executor")
     mismatch = _fr.filed_mismatch(path, rows, project)
     if mismatch:
@@ -6260,6 +6303,20 @@ def _close_evidence_refusal(project, mpath, git_root, task, sha, verified,
     _text, executor, _problem, _unchecked = _fr.read_filed_return_checked(
         path, rows, project)
     changed = _commit_touches(project, git_root, task, sha) if verified else None
+    work = (_declared_work(project, git_root, task, attempt["records"])
+            if attempt and verified else [])
+    if work and not changed:
+        since = _attempt_commits(project, git_root, attempt["phase"], task,
+                                 [rel for _name, rel in work],
+                                 plan=attempt["plan"],
+                                 start_head=attempt["startHead"], end=sha)
+        # An empty span refuses on its own; a span holding a change falls to
+        # the narrower question below, which still refuses a `not-attempted`
+        # return over a `sha` that itself touches nothing declared.
+        if since == []:
+            return _scoped_commit.close_evidence_refusal(
+                task, project, executor, False,
+                declared=[name for name, _rel in work], any_red_first=True)
     return _scoped_commit.close_evidence_refusal(task, project, executor, changed)
 
 
@@ -6803,8 +6860,14 @@ def _locked_done(args, project, config, mpath, tid, out):
                    "it" if len(during) == 1 else "them", basis, tid,
                    "it" if len(during) == 1 else "them"))
             return E_USAGE
-        evidence = _close_evidence_refusal(project, mpath, git_root, node, sha,
-                                           unverified is None, filing_rows)
+        evidence = _close_evidence_refusal(
+            project, mpath, git_root, node, sha, unverified is None,
+            filing_rows, attempt={
+                "phase": phase, "plan": assembled,
+                "startHead": _start_head(project, config, node),
+                "records": (_bookkeeping_rels(project, config, mpath,
+                                              raw_index, git_root)
+                            + _run_state_rels(project, config, git_root))})
         if evidence:
             out("[audit-task] REFUSED: %s closes on %s, but %s. Nothing "
                 "written." % (tid, sha[:7], evidence))

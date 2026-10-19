@@ -217,6 +217,71 @@ def _cases(check):
           M.fitted_header(outgrown, "a subject nobody will read") == outgrown)
     _row_cases(check, tmp)
     _staging_cases(check, tmp, outside)
+    _close_evidence_cases(check, tmp)
+
+
+# --- what a close stands on ----------------------------------------------------
+def _close_evidence_cases(check, tmp):
+    """`close_evidence_refusal`'s `declared`, `tree` and `any_red_first`, asked
+    directly: each case pairs the parameter's refusal with the call it must
+    leave quiet, so neither an inert parameter nor one that always refuses
+    passes."""
+    project = os.path.join(tmp, "ce-project")
+    os.makedirs(project)
+    task = {"id": "P1.1", "files": ["src/a.py:1-3", "src/a.py", "src/b.py"],
+            "tests": {"add": []}}
+    proved = {"redFirst": {"status": "could-not-prove", "basis": "b"},
+              "outcome": {"descriptive": "left in another tree"}}
+    skipped = {"redFirst": {"status": M.RED_FIRST_NOT_ATTEMPTED, "basis": "b"},
+               "outcome": {"descriptive": "blocked"}}
+
+    loud = M.close_evidence_refusal(task, project, proved, False,
+                                    declared=["src/a.py"], tree=project,
+                                    any_red_first=True)
+    unfiled = M.close_evidence_refusal(task, project, None, False,
+                                       any_red_first=True)
+    check("sc-ce1 `any_red_first` refuses an unchanged declared set beside "
+          "`could-not-prove` and with no return filed; the first names "
+          "`declared` (not the task's whole list), `tree` with the kept-tree "
+          "pointer, and the red-first word: %r" % ((loud[:400], unfiled[:300]),),
+          loud.count("(src/a.py)") == 1 and "src/b.py" not in loud
+          and loud.count(project) == 2
+          and "only plan and record files" in loud
+          and "kept task tree" in loud and "`could-not-prove`" in loud
+          and "--no-change" in loud
+          and unfiled and "red-first" not in unfiled and "--no-change" in unfiled)
+
+    # SECOND DIRECTION, for `any_red_first` read as always on: without it the
+    # same `could-not-prove` return is no refusal, and `not-attempted` still is.
+    narrow = M.close_evidence_refusal(task, project, proved, False)
+    narrow_na = M.close_evidence_refusal(task, project, skipped, False)
+    check("sc-ce2 without `any_red_first` a `could-not-prove` return over an "
+          "unchanged declared set closes, and `not-attempted` still refuses: %r"
+          % ((narrow, narrow_na[:200]),),
+          narrow == "" and "`not-attempted`" in narrow_na)
+
+    # OVER-FIRE DIRECTION: a changed declared set, or one that could not be
+    # read, never refuses whatever the flag says.
+    changed = M.close_evidence_refusal(task, project, proved, True,
+                                       declared=["src/a.py"], tree=project,
+                                       any_red_first=True)
+    unread = M.close_evidence_refusal(task, project, proved, None,
+                                      any_red_first=True)
+    check("sc-ce3 ALLOW: `any_red_first` over a changed declared set, or one "
+          "whose change could not be read, refuses nothing: %r"
+          % ((changed, unread),), changed == "" and unread == "")
+
+    default = M.close_evidence_refusal(task, project, proved, False,
+                                       any_red_first=True)
+    empty = M.close_evidence_refusal(task, project, proved, False, declared=[],
+                                     any_red_first=True)
+    check("sc-ce4 `declared` omitted names the task's own files once each, "
+          "line suffix dropped; an empty `declared` says so; no `tree` names "
+          "no tree: %r" % ((default[:300], empty[:200]),),
+          "(src/a.py, src/b.py)" in default and default.count("src/a.py") == 1
+          and ":1-3" not in default
+          and "none outside the plan's records" in empty
+          and project not in default and "kept task tree" not in default)
 
 
 # --- the row inside the commit -------------------------------------------------

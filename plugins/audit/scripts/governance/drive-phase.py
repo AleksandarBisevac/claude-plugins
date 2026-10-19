@@ -237,6 +237,7 @@ import _runner_collects  # noqa: E402  (collects: whether a runner takes a test 
 import _gate_derive  # noqa: E402  (entry_runner: which runner a gate entry invokes)
 import _tree_stamp  # noqa: E402  (parse_stamp, declared_scope: the scope a filing was made under)
 import _scope_companions  # noqa: E402  (derive: the runner config a widen declares)
+import _worktrees  # noqa: E402  (read_provenance: whether a kept tree's marker names its task)
 
 E_OK, E_STOPPED, E_USAGE = 0, 1, 2
 PREFIX = "[drive-phase]"
@@ -1726,7 +1727,13 @@ def advance(ctx, state, manifest, phase, task, tree=None):
     """The next due step for the task the drive is on; None when the drive goes
     on to the next task, else what to print. `tree` is the task's own worktree
     when it runs in a wave: its gate is measured there, its stamp graded there,
-    and its bytes are integrated into the phase tree before the close."""
+    and its bytes are integrated into the phase tree before the close. A
+    serial step (`tree` None) on a task whose kept tree stands is stopped
+    instead: it would run the task in the phase tree, without its work."""
+    if tree is None:
+        stop = kept_tree_stop(ctx, state, task)
+        if stop is not None:
+            return stop
     executor, problem = filed(ctx, task, "executor")
     if problem:
         return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], problem)
@@ -2716,6 +2723,69 @@ def carried_members(ctx, phase):
                    and carried_commit(ctx, t["id"])), key=_id_key)
 
 
+def kept_tree(state, task):
+    """The tree a closed wave kept for `task` when it still stands on disk, else
+    None. A blocked member's finished work stays in that tree after its wave
+    closes, so a run of the task anywhere else - the phase tree above all -
+    measures and commits bytes that are not its work."""
+    path = (state.get("keptTrees") or {}).get(task.get("id"))
+    return path if isinstance(path, str) and os.path.isdir(path) else None
+
+
+def kept_members(state, phase):
+    """The ids of the in-progress tasks whose kept tree still stands: each was
+    a wave member blocked or left behind and then started again by hand, which
+    makes a task `in_progress` with no wave recorded to run it in."""
+    return sorted((t["id"] for t in _tasks(phase)
+                   if t.get("status") == "in_progress" and kept_tree(state, t)),
+                  key=_id_key)
+
+
+def kept_marker(path, task_id):
+    """`(True, basis)` when the kept tree at `path` carries the marker naming
+    `task_id` - the one `manage-worktrees.py task-add` adopts a tree by - else
+    `(False, why)`. A wave opened over a tree without it would not adopt the
+    tree: `task-add` would cut a fresh one and leave the work orphaned there."""
+    held = _worktrees.read_provenance(path, expect_task=str(task_id))
+    return held.get("ours") is True, held.get("basis") or ""
+
+
+def unmarked_kept_stop(ctx, state, kept):
+    """The stop for the kept members whose tree lacks its marker, or None."""
+    unmarked = []
+    for tid in kept:
+        path = state["keptTrees"][tid]
+        ours, why = kept_marker(path, tid)
+        if not ours:
+            unmarked.append((tid, path, why))
+    if not unmarked:
+        return None
+    return _stopped(ctx, "%s: the kept tree holding the task's work from an "
+                    "earlier wave carries no marker naming the task, so a wave "
+                    "would cut a fresh tree beside it rather than adopt it, and "
+                    "the serial step would run the task in the phase tree "
+                    "without that work. Carry the tree's diff into the phase "
+                    "tree and remove the tree, then drive the phase again"
+                    % ("; ".join("%s's tree at %s (%s)" % (tid, path, why)
+                                 for tid, path, why in unmarked),))
+
+
+def kept_tree_stop(ctx, state, task):
+    """The stop for a serial step on a task whose kept tree stands, or None.
+    Every serial step runs in the phase tree, so it is never taken for such a
+    task: the work in the tree would be left out of the gate and the close."""
+    path = kept_tree(state, task)
+    if path is None:
+        return None
+    return _stopped(ctx, "%s has a kept tree at %s holding its work from an "
+                    "earlier wave, and this step would run it in the phase tree "
+                    "instead - dispatched, gated and closed without that work. "
+                    "Drive the phase (next %s) at executor.waveWidth 2 or more, "
+                    "which runs it in that tree when its marker names the task, "
+                    "or carry the tree's diff into the phase tree and remove the "
+                    "tree" % (task["id"], path, ctx["phase"]))
+
+
 def wave_step(ctx, state, manifest, phase, width, basis):
     """The wave's step: walk the one open, else open one when no task is in
     progress and `_wave.select` picks two or more ready tasks. NO_WAVE when
@@ -2729,6 +2799,19 @@ def wave_step(ctx, state, manifest, phase, width, basis):
                               "their filed work waits in carry refs" % (
                                   ", ".join(carried),))
             return open_wave(ctx, state, carried, width, basis)
+        # AHEAD OF THE IN-PROGRESS TEST BELOW: a hand `start` on a blocked
+        # member makes it in_progress with no wave, and that test would hand it
+        # to the serial step, in the phase tree, while its work sits in its tree.
+        kept = kept_members(state, phase)
+        stop = unmarked_kept_stop(ctx, state, kept) if kept else None
+        if stop is not None:
+            return stop
+        if kept:
+            ctx["did"].append("wave resumed over %s: started again with no wave "
+                              "recorded, its work waits in its kept tree (%s)" % (
+                                  ", ".join(kept), ", ".join(
+                                      state["keptTrees"][t] for t in kept)))
+            return open_wave(ctx, state, kept, width, basis)
         if any(t.get("status") == "in_progress" for t in _tasks(phase)):
             return NO_WAVE
         ready = set(_status_facts.ready_tasks(manifest))

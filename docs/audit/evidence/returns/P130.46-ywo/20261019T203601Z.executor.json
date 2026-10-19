@@ -1,0 +1,50 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test__deps.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_audit_task.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_commit_task_work.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_drive_phase.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T20:52:26Z",
+    "basis": "`python3 plugins/audit/tests/test_commit_task_work.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 130 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ctw-ro1 (house FAIL), ctw-ro3 (house FAIL): SELFTEST FAILED: 128/130 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Attempt 1's work was confirmed in the project tree (git diff --stat HEAD shows _scoped_commit.py, commit-task-work.py, drive-phase.py, audit-task.py and their tests). Fix: audit-task.py _attempt_commits now takes `project` first and spells each path `git log --name-only` prints through hooks _config.git_to_plan(line, git_root, project), loaded with _loader.load_hooks_config(modname=\"audit__config\") as its neighbours do; the pathspecs it receives were already plan_to_git output. Both callers (_no_change_moves, _close_evidence_refusal) pass project. The no-change message now names a path in the plan's spelling, which in a nested project is the declared entry. Added case nn3 in test_audit_task.py (_nested_no_change_cases, real git init with the project at member/): _attempt_commits returns exactly ['src/a.py'] and not 'member/src/a.py' - equality, because nn1's substring test cannot tell the two spellings apart. nn3 was not run red by me; it has no falsifier of its own (one per tests.add entry). Runs, one at a time from plugins/audit, each exit 0: test__deps 250/250 (gb1 green), test_audit_task 1094/1094 (lo-ce4, lo-ce5, nn3 PASS), test_commit_task_work 130/130, test_drive_phase 391/391, test__refs 286/286. ruff check and vermin -t=3.8- on audit-task.py and test_audit_task.py exit 0.",
+    "descriptive": "audit-task.py's attempt log goes through the git path-base pair, so test__deps gb1 is green again, with a nested-project case locking the plan spelling."
+  },
+  "testsAdded": [
+    "nn3"
+  ],
+  "casesAdded": [
+    [
+      "ctw-ro1",
+      "ctw-ro2"
+    ],
+    [
+      "kr1",
+      "kr2"
+    ],
+    [
+      "ctw-ro3",
+      "ctw-ro4"
+    ],
+    [
+      "lo-ce4",
+      "lo-ce5",
+      "nn3"
+    ]
+  ],
+  "claims": "claims:\n1 audit-task.py _attempt_commits: the docstring says paths come back in the plan's spelling and the loop calls hc.git_to_plan(line, git_root, project) on each one\n2 nn3 asserts equality with ['src/a.py'] where the unrouted code returns member/src/a.py; I did not run the mutation in the shared tree, so nn3 is not seen red by me; test__deps gb1 was red before the edit and is 250/250 after\n3 grep for git log --name-only users in audit-task.py: _attempt_commits is the only one the lint named; the lint's whole walk (test__deps, exit 0) now reports none outside the pair or the table\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 the path is spelled from the git-root-relative listing git printed, through the pair; no text pattern\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:41f43d14f6d77666b5e66b7a295a8c441764d55b6a52c2f37b01722572c4b1c5\",\"dirtyDigest\":\"sha256:a4603477c3b4296b5ac90000385138c7d018b9e7219d1d3e74fabc892843c82e\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"cd99fe07adbe4a95\",\"plugins/audit/scripts/governance/_scoped_commit.py\":\"ef59fc1224eed972\",\"plugins/audit/scripts/governance/commit-task-work.py\":\"23c4ecfc7dd353fc\",\"plugins/audit/scripts/governance/drive-phase.py\":\"23c9a525ad3f6f7a\",\"plugins/audit/scripts/manifest/audit-task.py\":\"59611192f66df6f9\",\"plugins/audit/tests/test__scoped_commit.py\":\"04410601a34c555a\",\"plugins/audit/tests/test_audit_task.py\":\"6fcc8a41ee35e72b\",\"plugins/audit/tests/test_commit_task_work.py\":\"8f19a820001a524f\",\"plugins/audit/tests/test_drive_phase.py\":\"569880cc092ef4bd\"},\"head\":\"8ebe1891\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/_scoped_commit.py\",\"plugins/audit/scripts/governance/commit-task-work.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test__scoped_commit.py\",\"plugins/audit/tests/test_audit_task.py\",\"plugins/audit/tests/test_commit_task_work.py\",\"plugins/audit/tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:11a7c9d26c9c2ac4c2ca18b04ea4a325f63b319691f32309437ac73fd073917e\",\"v\":2}",
+  "testsAddGaps": [
+    "plugins/audit/tests/test_drive_phase.py: a restarted task whose kept worktree holds changes is not dispatched or gated in the phase tree, and the drive names the kept tree - bound to `kr1`, which the suite did not print",
+    "plugins/audit/tests/test_drive_phase.py: a restarted task whose kept worktree holds changes is not dispatched or gated in the phase tree, and the drive names the kept tree - bound to `kr2`, which the suite did not print",
+    "plugins/audit/tests/test_audit_task.py: done --commit is refused when no commit since the task's start touches a declared non-record file - bound to `lo-ce4`, which the suite did not print",
+    "plugins/audit/tests/test_audit_task.py: done --commit is refused when no commit since the task's start touches a declared non-record file - bound to `lo-ce5`, which the suite did not print",
+    "plugins/audit/tests/test_audit_task.py: done --commit is refused when no commit since the task's start touches a declared non-record file - bound to `nn3`, which the suite did not print"
+  ]
+}
