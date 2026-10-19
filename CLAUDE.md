@@ -282,7 +282,7 @@ docstring beside `_harness.fixture_root()` — and was retired with the other li
 catch was nothing, so a family added to the runner owes its mention in each of them to whoever
 adds it. Print the runner's constants rather than trusting this paragraph.
 
-**`gate-parity.py` is why that cannot come back.** `tools/verify.sh`,
+**`gate-parity.py` is why the gate-set descriptions cannot drift apart again.** `tools/verify.sh`,
 `.github/workflows/ci.yml`, `CONTRIBUTING.md` and this list are hand-maintained descriptions
 of one gate set, and they had drifted in both directions at once — the sweep above, `vitest`
 (which ran only in CI, so a change under `scripts/ui/` could reach a push with none of its

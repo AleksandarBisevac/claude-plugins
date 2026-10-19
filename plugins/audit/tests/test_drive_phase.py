@@ -3370,7 +3370,8 @@ def _blocked_cases(check):
     attempts = _attempts(mpath, "P1.1")
     check("bk1 a phase whose only task is blocked with attempts left prints "
           "`decide stalled` with that task's remedy - `start`, which runs it "
-          "and clears the block - and not `unblock`, which refuses it: %r"
+          "and clears the block - and not `unblock`, which clears the block "
+          "without running it: %r"
           % ((attempts, last),),
           run["steps"][-1] == ("decide", "stalled", None) and attempts == 1
           and _remedy(last) == ["start P1.1"]

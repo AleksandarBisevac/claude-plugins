@@ -1,0 +1,56 @@
+{
+  "gates": {
+    "test_require_plan --selftest": "pass",
+    "test__config --selftest": "pass",
+    "test__manifest_phases --selftest": "pass",
+    "test_drive_phase --selftest": "pass",
+    "test__refs --selftest": "pass",
+    "python3 tools/sweep-selftests.py": "pass",
+    "prose_number_claims": "pass",
+    "doc_prose_numbers": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8-": "pass",
+    "tools/measure-context.py --gate": "pass",
+    "tools/gate-parity.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T16:43:58Z",
+    "basis": "`python3 plugins/audit/tests/test_require_plan.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 238 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - s7c (house FAIL): SELFTEST FAILED: 237/238 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(1) require-plan.py _covers_clause: terminal covers (done/cancelled) now say 'terminal work is not re-started: `/audit:task start <id>` refuses it'; unstarted keep 'until that task is started'; mixed says both. (2) test__config.py dt1: declaring_tasks reports one task listing src/ and src/a.ts once, as direct (hooks/_config.py unchanged). (3) _declaration_note docstring now enumerates the causes (incl. only-an-unstarted-directory-covers) without a count. (4) _manifest_vocab.py comment rewrapped. (5) CLAUDE.md antecedent now 'gate-parity.py is why the gate-set descriptions cannot drift apart again' (Edit allowed, no guard refusal). (6) test_drive_phase.py bk1 label now says unblock clears the block without running it. (7) commands/task.md one line names meta.fullGate / meta.phaseGate.always|exclude holders; measure-context '/audit:task add' 7989/8000 (a longer wording breached at 8018). (8) _manifest_phases.py: _is_python_runner added; _runs_first_path_as_program applies _only_plain_options only to python interpreters, other runners with options are left unread (case gx5). (9) gate_entry_commands fallback drops attached redirection words via _ATTACHED_REDIRECTION (case gx6). Added gx5, gx6, s7c, s7d (unstarted keeps its sentence), dt1. Ran: test_require_plan 238/238, test__config 352/352, test__manifest_phases 131/131, test_drive_phase 385/385, test__refs 286/286, full tools/sweep-selftests.py 340/340 files exit 0 (run before the final task.md rewording; measure-context --gate passes after), prose_number_claims [] and doc_prose_numbers [], ruff clean, vermin ok, gate-parity ok.",
+    "descriptive": "Refusal sentences no longer claim a done task's directory entry opens when started, and the review lows (python-only flag skip, redirection fallback, stale docs) are fixed."
+  },
+  "testsAdded": [
+    "test_require_plan.py: s7c a done task covering the file through a directory entry gets a refusal sentence that does not say the entry opens when the task starts",
+    "test_require_plan.py: s7d ...and the unstarted task keeps the sentence that IS true of it",
+    "test__config.py: dt1 one task listing both a directory and the exact file is reported once, as direct",
+    "test__manifest_phases.py: gx5",
+    "test__manifest_phases.py: gx6"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_require_plan.py: a done task covering the file through a directory entry gets a refusal sentence that does not say the entry opens when the task starts": {
+      "file": "plugins/audit/hooks/require-plan.py",
+      "find": "if d.get(\"status\") in _TERMINAL_DECLARING_STATUSES]",
+      "replace": "if d.get(\"status\") in ()]",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_require_plan.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test__config.py: one task listing both a directory and the exact file is reported once, as direct": {
+      "file": "plugins/audit/hooks/_config.py",
+      "find": "elif direct and not seen[tid][\"direct\"]:",
+      "replace": "elif False:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__config.py",
+        "--selftest"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:1d80ca873288e458ac9eccc817b35806b6410eb363cbba69caadcab78d7671e5\",\"dirtyDigest\":\"sha256:97c1da0e5d062c64ef389e64e521f240a2f31900ec39a0f4ad0379e285732a76\",\"dirtyPaths\":{\"CLAUDE.md\":\"1463184aceb867ab\",\"plugins/audit/commands/task.md\":\"771957ccbca4c5a4\",\"plugins/audit/hooks/require-plan.py\":\"8cde884491e57799\",\"plugins/audit/scripts/manifest/_manifest_phases.py\":\"d7070a21bc28eedc\",\"plugins/audit/scripts/manifest/_manifest_vocab.py\":\"6b525b7a95073db7\",\"plugins/audit/tests/test__config.py\":\"95c5eadca569de4e\",\"plugins/audit/tests/test__manifest_phases.py\":\"57507d774a437aa0\",\"plugins/audit/tests/test_drive_phase.py\":\"eb67d1b42c9206f4\",\"plugins/audit/tests/test_require_plan.py\":\"fb4dc29fb5c20d95\"},\"head\":\"70d632b4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CLAUDE.md\",\"plugins/audit/commands/task.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/require-plan.py\",\"plugins/audit/scripts/manifest/_manifest_phases.py\",\"plugins/audit/scripts/manifest/_manifest_vocab.py\",\"plugins/audit/tests/test__config.py\",\"plugins/audit/tests/test__manifest_phases.py\",\"plugins/audit/tests/test_drive_phase.py\",\"plugins/audit/tests/test_require_plan.py\"],\"scopeDigest\":\"sha256:2a26740f6c00cf02c58b8fa76d68381c57a6eba34d1b10e1a0c5e992c885f043\",\"v\":2}"
+}

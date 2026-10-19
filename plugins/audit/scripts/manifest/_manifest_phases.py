@@ -1163,10 +1163,24 @@ _SCRIPT_RUNNER = re.compile(
     r"pwsh|powershell)$")
 
 
+_PYTHON_RUNNER = re.compile(r"^(?:python[0-9.]*|py)$")
+
+
+def _runner_name(word):
+    """The lower-cased program name of a shell word's value, or None."""
+    base = str(word or "").replace("\\", "/").rsplit("/", 1)[-1]
+    return base.lower().replace(".exe", "")
+
+
 def _is_script_runner(word):
     """Whether `word` (a shell word's value, or None) names an interpreter."""
-    base = str(word or "").replace("\\", "/").rsplit("/", 1)[-1]
-    return bool(_SCRIPT_RUNNER.match(base.lower().replace(".exe", "")))
+    return bool(_SCRIPT_RUNNER.match(_runner_name(word)))
+
+
+def _is_python_runner(word):
+    """Whether `word` names a Python interpreter, the only runner whose options
+    `_PLAIN_INTERPRETER_FLAGS` describes."""
+    return bool(_PYTHON_RUNNER.match(_runner_name(word)))
 
 
 # The words that join or open simple commands; a redirection operator is the
@@ -1176,6 +1190,12 @@ _LIST_PUNCT = frozenset("();&|")
 
 def _is_list_operator(token):
     return bool(token) and all(c in _LIST_PUNCT for c in token)
+
+
+# A redirection operator with the file it names in the SAME word: `>out.log`,
+# `2>err.log`, `&>all.log`, `2>&1`. The target must not start with an operator
+# character, so a bare `>>` or `>&` stays the operator that takes the next word.
+_ATTACHED_REDIRECTION = re.compile(r"^(?:[0-9]*|&)[<>]+&?[^<>&|].*$")
 
 
 def _is_redirection(token):
@@ -1199,7 +1219,9 @@ def gate_entry_commands(entry):
     path keeps its separators.
 
     An entry the reader cannot delimit (an unbalanced quote) falls back to the
-    whitespace split with only the bare operators separating commands.
+    whitespace split with only the bare operators separating commands, and a
+    word that is a redirection with its target written against it
+    (`>out.log`, `2>&1`) is dropped, as the delimited reading drops the target.
     """
     if not isinstance(entry, str):
         return []
@@ -1213,7 +1235,7 @@ def gate_entry_commands(entry):
             tokens.append(";")
     except ValueError:
         tokens = [t if t not in ("&&", "||", "|", "&", ";") else ";"
-                  for t in entry.split()]
+                  for t in entry.split() if not _ATTACHED_REDIRECTION.match(t)]
     commands, current, skip = [], [], False
     for token in tokens:
         if skip:
@@ -1231,10 +1253,13 @@ def gate_entry_commands(entry):
     return commands
 
 
-# Interpreter flags that change nothing about WHICH file is run: a bundle of
-# letter flags (`-u`, `-uB`) and the two that take a separate argument. Every
-# other option (`-m`, `-c`, node's `--test`) can make the next word something
-# other than the program, so an entry using one is not read.
+# PYTHON'S interpreter flags that change nothing about WHICH file is run: a
+# bundle of letter flags (`-u`, `-uB`) and the two that take a separate
+# argument. Every other option (`-m`, `-c`, node's `--test`) can make the next
+# word something other than the program, so an entry using one is not read -
+# and so is any option of another runner (`bash -s` reads the script from
+# stdin, so the paths behind it are its arguments), because this set is
+# Python's and says nothing about theirs.
 _PLAIN_INTERPRETER_FLAGS = re.compile(r"^-[uBEsSIOvqbdRxt]+$")
 _ARGUMENT_FLAGS = ("-X", "-W")
 
@@ -1257,9 +1282,12 @@ def _only_plain_options(words):
 
 def _runs_first_path_as_program(before):
     """Whether the words in front of a command's first path make that path the
-    program: nothing at all, or an interpreter followed only by plain options."""
+    program: nothing at all, or an interpreter followed by no option, or by a
+    Python interpreter's plain options."""
     return not before or any(
-        _is_script_runner(word) and _only_plain_options(before[i + 1:])
+        _is_script_runner(word) and (
+            not before[i + 1:] or (_is_python_runner(word)
+                                   and _only_plain_options(before[i + 1:])))
         for i, word in enumerate(before))
 
 

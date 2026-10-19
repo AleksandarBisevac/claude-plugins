@@ -4013,7 +4013,29 @@
           "shots",
           "interactive"
         ],
-        "gateBasis": "declared"
+        "gateBasis": "declared",
+        "falsifiers": {
+          "plugins/audit/tests/test__config.py: one task listing both a directory and the exact file is reported once, as direct": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test__config.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/hooks/_config.py",
+            "find": "elif direct and not seen[tid][\"direct\"]:",
+            "replace": "elif False:"
+          },
+          "plugins/audit/tests/test_require_plan.py: a done task covering the file through a directory entry gets a refusal sentence that does not say the entry opens when the task starts": {
+            "command": [
+              "python3",
+              "plugins/audit/tests/test_require_plan.py",
+              "--selftest"
+            ],
+            "file": "plugins/audit/hooks/require-plan.py",
+            "find": "if d.get(\"status\") in _TERMINAL_DECLARING_STATUSES]",
+            "replace": "if d.get(\"status\") in ()]"
+          }
+        }
       },
       "model": "sonnet",
       "skills": [
@@ -4035,7 +4057,12 @@
       "startedAt": "2026-10-19T16:31:37Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-19T16:55:17Z.b6332b",
+        "status": "passed",
+        "at": "2026-10-19T16:55:17Z"
+      }
     },
     {
       "id": "P130.40-ywo",

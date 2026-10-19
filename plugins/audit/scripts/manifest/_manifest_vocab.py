@@ -897,8 +897,9 @@ OFF_SCHEMA = {
 # for `meta.ado`, `_manifest_phases` for the phase and the task, `_manifest_crossrefs`
 # for the bug and the proposal). A claim's would sit in `_check_claim`, beside the
 # loop above. Every other NESTED object in the tree keeps its vocabulary inline at
-# that call rather than here; the `meta.ado` ones are described below. This module exists for the vocabularies MULTIPLE modules share, which is this
-# file's own stated criterion, and a claim has one reader.
+# that call rather than here; the `meta.ado` ones are described below. This module
+# exists for the vocabularies MULTIPLE modules share, which is this file's own
+# stated criterion, and a claim has one reader.
 #
 # So the missing warning is a missing CALL, not a missing set, and adding the set on
 # its own would be worse than leaving it out: `_help.vocab_sets()` reads every

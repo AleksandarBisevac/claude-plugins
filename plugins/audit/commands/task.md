@@ -129,7 +129,7 @@ with `/audit:bug add` first.
 
 `T build-command <key> --command "<cmd>" [--replace]` adds a `meta.buildCommands` key; a key
 the plan holds is refused unless `--replace`. `T build-command <key> --remove` drops one no
-gate entry names. `--reason` is journaled.
+gate entry or `meta.fullGate` / `meta.phaseGate.always|exclude` list names. `--reason` is journaled.
 
 ## Subcommand: `reindex`
 

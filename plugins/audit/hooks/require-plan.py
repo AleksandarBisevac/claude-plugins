@@ -447,18 +447,36 @@ def _split_declared(declared):
 
 
 def _covers_clause(covers):
-    """What a directory entry of a task that has not started is, in words:
-    covered by the directory entry `lib/` of P1.5 (status "pending")."""
+    """What a directory entry of a task that is not running is, in words:
+    covered by the directory entry `lib/` of P1.5 (status "pending"), and why
+    it opens nothing - that the task has not started, or, for a `done` or
+    `cancelled` one, that terminal work is not re-started, which is the wording
+    `_declaration_note` has for a terminal task. Mixed covers say both."""
+    terminal = [d for d in covers
+                if d.get("status") in _TERMINAL_DECLARING_STATUSES]
+    refused = ("terminal work is not re-started: `/audit:task start %s` "
+               "refuses it" % (terminal[0].get("taskId") or "?")
+               if terminal else "")
+    if not terminal:
+        why = "until that task is started"
+    elif len(terminal) == len(covers):
+        why = "- " + refused
+    else:
+        why = "until an unstarted task is started, and never for a terminal " \
+              "one (%s)" % refused
     return "covered by " + ", ".join(
         "the directory entry `%s` of %s (status \"%s\")"
         % (d.get("entry") or "?", d.get("taskId") or "?",
            d.get("status") or "?")
-        for d in covers) + ", which opens nothing until that task is started"
+        for d in covers) + ", which opens nothing " + why
 
 
 def _declaration_note(root, manifest_rel, rel, manifest_exists):
     """The refusal's second sentence and the remedy each audience gets, keyed on
-    WHICH of three causes actually holds:
+    WHICH cause actually holds - no task declares the file; only an unstarted
+    task's directory entry covers it (`_covers_clause` words that sentence);
+    a task declares it and has not started; a task declares it and is
+    terminal:
     {"stated": <sentence>|None, "subagent": <clause>, "orchestrator": <clause>}.
 
     The refusal used to state one cause for both. It told a subagent the file was

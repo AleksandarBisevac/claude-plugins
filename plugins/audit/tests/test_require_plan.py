@@ -1016,6 +1016,28 @@ def _cases(check):
           v_d == "block" and "IS declared by" not in m_d
           and "directory entry `src/search/` of P2.5 (status \"pending\")" in m_d
           and "/audit:task scope" in m_d, repr(m_d))
+    _term = {}
+    for _st in ("done", "cancelled"):
+        _term_plan = plan_with(_st)
+        _term_plan["phases"][0]["tasks"][0]["files"] = ["src/search/"]
+        _term_plan["fileIndex"] = {"src/search/": ["P2.5"]}
+        write_manifest(_term_plan)
+        _term[_st] = refuse("selftest-s7c-" + _st, agent=True,
+                            file_path="src/search/new.ts")
+    check("s7c a done task covering the file through a directory entry gets a "
+          "refusal sentence that does not say the entry opens when the task "
+          "starts",
+          all(v == "block" and "until that task is started" not in m
+              and "directory entry `src/search/` of P2.5 (status \"%s\")" % st
+              in m and "terminal" in m and "/audit:task start P2.5" in m
+              for st, (v, m) in sorted(_term.items())),
+          repr(_term))
+    write_manifest(_dir_plan)
+    _v_pend, _m_pend = refuse("selftest-s7d", agent=True,
+                              file_path="src/search/new.ts")
+    check("s7d ...and the unstarted task keeps the sentence that IS true of it",
+          _v_pend == "block" and "until that task is started" in _m_pend
+          and "terminal" not in _m_pend, repr(_m_pend))
     write_manifest(plan_with("pending"))
     check("s8 the DECISION's map still holds in_progress coverage alone: the "
           "pending task is invisible to it and visible only to the read-only "

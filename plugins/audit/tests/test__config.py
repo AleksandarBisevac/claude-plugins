@@ -2621,6 +2621,22 @@ def _cases(check):
                   "phaseTree": _cv_phase}), "p.json") == []
               and M.task_covered_outputs(_cv_phase, "p.json")
               == M.in_progress_outputs(_cv_phase, "p.json"))
+        # declaring_tasks: a task reaching one file through a directory AND
+        # through the file itself is one row, promoted to direct.
+        _dt_phase = os.path.join(_tb, "phase-declaring")
+        os.makedirs(_dt_phase)
+        with open(os.path.join(_dt_phase, "p.json"), "w") as fh:
+            json.dump({"meta": {"version": 2}, "fileIndex": {},
+                       "phases": [{"id": "P1", "status": "in_progress", "tasks": [
+                           {"id": "T1", "status": "pending",
+                            "files": ["src/", "src/a.ts"]},
+                           {"id": "T2", "status": "pending",
+                            "files": ["src/"]}]}]}, fh)
+        _dt_got = M.declaring_tasks(_dt_phase, "p.json", "src/a.ts")
+        check("dt1 one task listing both a directory and the exact file is "
+              "reported once, as direct: %r" % (_dt_got,),
+              [(d["taskId"], d["entry"], d["direct"]) for d in _dt_got]
+              == [("T1", "src/a.ts", True), ("T2", "src/", False)])
     finally:
         _harness.remove_tree(_tb)
 

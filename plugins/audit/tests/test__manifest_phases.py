@@ -1330,6 +1330,42 @@ def _cases(check):
           "test_y.py" in _gx3_caught[4][1] and "test_ok.py" not in _gx3_caught[4][1]
           and "a/test_x.py" in _gx3_caught[4][1])
 
+    # The flag set above is Python's: another runner's options are not read by it.
+    _gx5_quiet = [(e, _gx_ask(e)) for e in (
+        "bash -s a/test_x.sh a/test_y.sh",
+        "sh -x a/test_x.sh a/test_y.sh",
+        "node -r pre a/x.test.mjs a/y.test.mjs",
+        "ruby -w a/test_x.rb a/test_y.rb")]
+    _gx5_caught = [(e, _gx_ask(e)) for e in (
+        "bash a/test_x.sh a/test_y.sh",
+        "python3.11 -u a/test_x.py a/test_y.py",
+        "py -u a/test_x.py a/test_y.py")]
+    check("gx5 an option of a runner that is not Python's leaves the entry "
+          "unread, while Python's plain options before a suite list still draw "
+          "the shape problem",
+          all(r is None for _e, r in _gx5_quiet)
+          and all(isinstance(r, str) and r for _e, r in _gx5_caught),
+          ([(e, r) for e, r in _gx5_quiet if r is not None],
+           [(e, r) for e, r in _gx5_caught if not r]))
+    # An entry the shell reader cannot delimit (an unbalanced quote) is split on
+    # whitespace, and a redirection written into one word names a file written
+    # to, not an argument of the command.
+    _gx6_quiet = [(e, _gx_ask(e)) for e in (
+        "python3 a/test_x.py >a/test_y.py 'unbalanced",
+        "python3 a/test_x.py 2>a/test_y.py 'unbalanced",
+        "python3 a/test_x.py > a/test_y.py 'unbalanced",
+        "python3 a/test_x.py &>a/test_y.py 'unbalanced")]
+    _gx6_caught = [(e, _gx_ask(e)) for e in (
+        "python3 a/test_x.py a/test_y.py 'unbalanced",
+        "python3 a/test_x.py >out.txt a/test_y.py 'unbalanced")]
+    check("gx6 the unbalanced-quote fallback drops a redirection target that is "
+          "attached to its operator, as the delimited reading does, and still "
+          "reports a real second suite",
+          all(r is None for _e, r in _gx6_quiet)
+          and all(isinstance(r, str) and r for _e, r in _gx6_caught),
+          ([(e, r) for e, r in _gx6_quiet if r is not None],
+           [(e, r) for e, r in _gx6_caught if not r]))
+
     # --- what an open finding is -------------------------------------------
     _of_ph = {"review": {"findings": [
         {"id": "fa", "status": "fixed"},
