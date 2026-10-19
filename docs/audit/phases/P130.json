@@ -2309,7 +2309,7 @@
     {
       "id": "P130.24-ywo",
       "title": "The task-start scope preflight asks a runner only about the paths it can collect, and a Python suite counts as collected by the sweep",
-      "status": "in_progress",
+      "status": "blocked",
       "description": "Fault F731. scope_gap (plugins/audit/scripts/governance/drive-phase.py:1073-1115) keeps, from a task's gate entries, only those whose entry_runner is in _gate_derive.UNIT_RUNNERS, then declares a scope-gap when none of those runners collects a tests.add path. The Python suites here are collected by tools/sweep-selftests.py behind the `selftests` entry, whose entry_runner is None, so it is never asked; with `vitest` also in the gate, every Python test path draws NOT_COLLECTED from vitest and a scope-gap decision whose only remedies are widen (adds vitest.config.mjs, which the task never edits) or block. Seen on P130.4 (test__config.py) and P130.7 (test__deps.py). Fix: read how _gate_derive already splits paths by language (_runners_for, _gate_derive.py:312) and have scope_gap ask a runner only about paths that runner can take, treating plugins/audit/tests/*.py (and the project's own Python suite location) as collected by the sweep when the gate holds `selftests`; the alternative of counting any collecting runner is acceptable only if it reuses that same split, and the return names which was taken. A path no runner of the gate can take at all must still be reported rather than silently passed. Acceptance: (1) a Python tests.add path under a gate holding `selftests` and `vitest` draws no scope-gap decision and no could-not-tell line; (2) a .mjs/.js tests.add path vitest does not collect still draws the scope-gap decision with its widen remedy; (3) a Python path under a gate holding neither the sweep nor pytest is still reported; (4) each new case is red with the fix reverted (the return shows the red run).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2363,7 +2363,8 @@
         "runId": "2026-10-19T05:41:28Z.21bec2",
         "status": "failed",
         "at": "2026-10-19T05:41:28Z"
-      }
+      },
+      "blockedReason": "Waits on P130.26-ywo (sc4, F733, fails alone now). Also owes a fix on return: test__refs c5 reads its new fixture literals as references to missing scripts - plugins/audit/tests/test__runner_collects.py ~:366-368 (plugins/audit/tests/test_x.py) and plugins/audit/tests/test_drive_phase.py ~:6768-6787 (plugins/audit/tests/test_mine.py); spell them unanchored (e.g. backend/tests/...)."
     },
     {
       "id": "P130.25-ywo",
