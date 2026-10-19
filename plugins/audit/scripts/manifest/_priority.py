@@ -153,8 +153,9 @@ def ranks(phases):
     re-expressing `sort_key` in JavaScript is the one way this feature could grow
     a second opinion about order; the panel's Overview did exactly that for a
     while, under a comment saying its key mirrored this function, and what
-    replaced the comment is a lint — `_deps.SHARED_CONCERNS`' "phase execution
-    order" row fails the build on that shape anywhere under `scripts/ui/`.
+    replaced the comment is this number: a client reads `porder` and sorts by
+    it, and never re-expresses the comparator. Nothing enforces that any more;
+    search `scripts/ui/` for a sort over phase fields before adding one.
 
     Two callers of this function is not two orders, and it is structural rather
     than a preference: `_report_html` and `_status_facts` are layer-mates, so

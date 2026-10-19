@@ -330,19 +330,25 @@ def _cases(check):
                               "fetchedAt": "2026-08-24T00:00:00Z",
                               "basis": "captured for this case"}}
     _unreached = []
-    for _lvl in M.INLINE_ANCHORS:
+    # The levels are `_ado_ok`'s own keys, each required to be a key the module this
+    # file guards knows for `meta.ado`, so a level renamed there goes red here
+    # instead of being probed under a name nothing reads.
+    for _name in sorted(_ado_ok):
+        _lvl = "meta.ado." + _name
         _cfg = dict((k, dict(v)) for k, v in _ado_ok.items())
-        _cfg[_lvl.rsplit(".", 1)[1]]["zzzProbe"] = 1
+        _cfg[_name]["zzzProbe"] = 1
         _af, _aw = _ado.check_ado_meta(_cfg)
-        if _af or len(_aw) != 1 or "zzzProbe" not in _aw[0] or _lvl not in _aw[0]:
+        if (_name not in M.KNOWN_ADO or _af or len(_aw) != 1
+                or "zzzProbe" not in _aw[0] or _lvl not in _aw[0]):
             _unreached.append((_lvl, _af, _aw))
     _a0, _w1 = _ado.check_ado_meta(dict((k, dict(v))
                                         for k, v in _ado_ok.items()))
-    check("mv33 ...and every one of those literals is really consulted: an unknown "
-          "key at each level draws exactly one warning naming it through "
+    check("mv33 reads its keys from the module it guards, with no anchor table of "
+          "its own: each key of the fixture is one `KNOWN_ADO` holds, an unknown "
+          "key at that level draws exactly one warning naming it through "
           "`_manifest_ado.check_ado_meta`, and a clean config draws none, the "
           "same property mv28 covers for CLAIM_KEYS: %r" % (_unreached,),
-          _unreached == [] and (_a0, _w1) == ([], []))
+          _unreached == [] and (_a0, _w1) == ([], []) and len(_ado_ok) > 0)
 
     # --- the OTHER schema walk, and why it cannot answer this ---------------------
     # "Reuse gen-demo-manifest's walk" is the obvious suggestion, it has been made

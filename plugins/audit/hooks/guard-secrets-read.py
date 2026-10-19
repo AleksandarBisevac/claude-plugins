@@ -555,10 +555,8 @@ def _resolve_write_expr(expr, bindings):
     both ways, and the fabrication did too: a write whose first operand was a
     temp-root literal and whose second was a variable resolved to the literal
     alone, claiming the temp exemption for a path whose variable half could have
-    been anything. (Spelled that way round rather than shown, because
-    `_refs.absolute_reach_violations()` reads this docstring as text and a
-    root-anchored literal inside a read/write call is the shape it exists to
-    catch. `s61` in the suite carries the executable form.)
+    been anything. (Described rather than shown; `s61` in the suite carries
+    the executable form.)
     """
     operands = _concat_operands(expr.strip())
     if not operands:

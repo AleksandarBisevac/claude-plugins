@@ -36,11 +36,11 @@ keys does, a layer up. This is NOT the tree's only schema walk: the other one,
 `gen-demo-manifest.schema_fields()`, keys a field by `$def` NAME, so an inline
 object has no owner to attribute a sub-key to and every `meta.ado` sub-key is
 outside its reach - see the SCHEMA_ANCHORS comment for that measurement, and for
-why the layer settles where the comparison goes. `SUBSET_ANCHORS` and
-`INLINE_ANCHORS` say the same thing about the other two shapes a vocabulary takes
-here: a RECOMMENDED subset, checked for containment, and a nested level whose
-vocabulary is a set literal at its `_unknown_keys()` call rather than a set on
-this module at all.
+why the layer settles where the comparison goes. Two other shapes a vocabulary
+takes here cannot be held to that coverage, and the section headed "the shapes a
+vocabulary takes that the coverage table does not hold" says why: a
+RECOMMENDED subset, and a nested level whose vocabulary is a set literal at its
+`_unknown_keys()` call rather than a set on this module at all.
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__manifest_vocab.py` - see
@@ -293,8 +293,8 @@ REVIEW_ONLY_PREFIX = "review-only:"
 # of the diff's prose with no command form. `_gate_feed` sits above this module
 # and may not be imported from here, so the fact is written twice and
 # `test__gate_feed` pins the two equal. NOT named `*_KEYS` here: on this module
-# that suffix means a subset of the schema's own keys, which `SUBSET_ANCHORS`
-# checks, and these are `buildCommands` names a plan chooses, with no schema
+# that suffix means a subset of the schema's own keys (as `CLAIM_KEYS` is),
+# and these are `buildCommands` names a plan chooses, with no schema
 # level to anchor to. `_manifest_phases` re-exports it as `REVIEW_ONLY_KEYS`.
 REVIEW_ONLY_GATES = ("claimsMatchCode",)
 
@@ -633,7 +633,8 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
 # Recommended keys on a parallel-run claim — soft: a claim that omits one draws a
 # warning from `_manifest_phases._check_claim`, never a finding. NARROWER than the
 # schema's `claim` properties on purpose (`at` is written BY a claim, not asked OF
-# one), so it answers to `SUBSET_ANCHORS` below — containment, not coverage.
+# one), so the only comparison with the schema that fits it is containment, not
+# coverage — see the section on the shapes the coverage table does not hold, below.
 # `host` is in the schema and deliberately NOT recommended: the claim lives in a
 # committed shard, so a machine name there is published, and `audit-task start`
 # writes none - recommending it would warn on every claim the plugin itself writes.
@@ -806,7 +807,8 @@ KNOWN_PROPOSAL = {"id", "name", "status", "origin", "scope", "benefit",
 # warns about when a claim omits one, so being NARROWER than the schema is the rule
 # working rather than drift. Holding it to "covers the anchor" would fail a correct
 # set, and a lint that fails its own remedy is a lint people route around. It answers
-# to `SUBSET_ANCHORS` below instead, which asks the other question.
+# to containment, which asks the other question - see the section on the shapes
+# the coverage table does not hold, below.
 SCHEMA_ANCHORS = (
     ("KNOWN_ROOT", ""),
     ("KNOWN_META", "meta"),
@@ -866,24 +868,22 @@ OFF_SCHEMA = {
     },
 }
 
-# --- the recommended subsets, which answer a DIFFERENT question -------------------
+# --- the shapes a vocabulary takes that the coverage table does not hold ----------
 # `SCHEMA_ANCHORS` asks for COVERAGE: the set holds every property the schema
 # declares at the anchor, and every key it holds beyond them is in `OFF_SCHEMA` with
-# a reason. `SUBSET_ANCHORS` asks only for CONTAINMENT, in one direction: every key
-# in the set is a property the schema declares at the anchor, and the schema is free
-# to declare more. That is not a weaker version of the same lint, it is the only
-# shape a RECOMMENDED subset can be checked with — a set whose whole job is to name
-# some of a level's keys would fail a coverage check while behaving perfectly.
+# a reason. Two shapes cannot be held to that, and nothing compares either with the
+# schema now; each is driven through its real consumer by a case in
+# `tests/test__manifest_vocab.py` instead.
 #
-# The one member today is `CLAIM_KEYS`, and the thing it protects is at
-# `_manifest_phases._check_claim`: `missing = [k for k in CLAIM_KEYS if not
-# claim.get(k)]`. A key misspelled in this tuple is asked of no claim and reported
-# by nothing — the warning does not become wrong, it stops existing for that key —
-# which is exactly the failure a set of literals restating schema vocabulary invites.
-# `_help.schema_subset_drift()` is the comparison; it lives with the schema walk for
-# the reason `SCHEMA_ANCHORS` gives above, and reports a key the schema does not
-# declare, an anchor that declares nothing, an empty set, and a subset nothing
-# anchors. What it CANNOT see is written on that function.
+# A RECOMMENDED SUBSET (`CLAIM_KEYS`) is the first. A set whose whole job is to name
+# some of a level's keys would fail a coverage check while behaving perfectly, so
+# the only comparison its shape admits is containment, in one direction: every key
+# in the set a property the schema declares at the anchor, the schema free to
+# declare more. What it protects is at `_manifest_phases._check_claim`:
+# `missing = [k for k in CLAIM_KEYS if not claim.get(k)]`. A key misspelled in this
+# tuple is asked of no claim and reported by nothing — the warning does not become
+# wrong, it stops existing for that key — which is exactly the failure a set of
+# literals restating schema vocabulary invites; `mv28` asks each key of a real claim.
 #
 # THERE IS NO `KNOWN_CLAIM`, AND THE REASON IS NOT THAT `claim` IS SPECIAL — it is
 # not. It is an object with four declared properties and `additionalProperties:
@@ -897,10 +897,7 @@ OFF_SCHEMA = {
 # for `meta.ado`, `_manifest_phases` for the phase and the task, `_manifest_crossrefs`
 # for the bug and the proposal). A claim's would sit in `_check_claim`, beside the
 # loop above. Every other NESTED object in the tree keeps its vocabulary inline at
-# that call rather than here, and `INLINE_ANCHORS` below is the list of which levels
-# those are — the only list, because the one this comment used to carry spelled three
-# of those literals out and was already missing a fourth on the day it was written.
-# This module exists for the vocabularies MULTIPLE modules share, which is this
+# that call rather than here; the `meta.ado` ones are described below. This module exists for the vocabularies MULTIPLE modules share, which is this
 # file's own stated criterion, and a claim has one reader.
 #
 # So the missing warning is a missing CALL, not a missing set, and adding the set on
@@ -915,31 +912,26 @@ OFF_SCHEMA = {
 # `_unknown_keys()` call to read it is the remedy — and the machinery already forces
 # it to be done whole, because `mv20` fails a `KNOWN_*` set `SCHEMA_ANCHORS` does not
 # anchor. A case asserting `KNOWN_CLAIM` does not exist would forbid its own fix.
-SUBSET_ANCHORS = (
-    ("CLAIM_KEYS", "phases[].claim"),
-)
-
-# --- the nested vocabularies, which are LITERALS AT THEIR CALL SITE ---------------
-# The two tables above both assume a NAMED set on this module: `_help.vocab_sets()`
-# and `vocab_subsets()` read them off it by attribute name, so a vocabulary that is
-# not an attribute anywhere is invisible to both. The `meta.ado` sub-objects are
-# exactly that shape. Each is checked against a set literal written straight into the
-# `_unknown_keys()` call in `_manifest_ado.py`, each restates properties
-# `schema/audit-plan.schema.json` declares, and until this table existed nothing
-# compared any of them — the same class `SCHEMA_ANCHORS` closed for the seven
-# top-level sets, one nesting level down and therefore untouched by it.
 #
-# COVERAGE, NOT CONTAINMENT, AND THE CONSUMER SETTLES IT PER LEVEL. Every literal
-# here is the `known` argument of `_unknown_keys(obj, known, where, warnings)`, which
-# warns about any key NOT in it — the same consumer the seven `KNOWN_*` sets have,
-# and the reason they are coverage-shaped. A property the schema declares and the
-# literal omits makes the validator warn about a real key; a key in the literal the
-# schema does not declare is a typo that both widens the vocabulary and silently
-# takes the warning for the key it was meant to be. Both directions cost something,
-# so both are checked. `CLAIM_KEYS` is containment-shaped because its consumer asks a
-# different question (`missing = [k for k in CLAIM_KEYS if not claim.get(k)]`, a
-# subset by design), and no literal here has any consumer other than the one call it
-# is written into — an argument cannot acquire a second reader.
+# THE NESTED `meta.ado` LEVELS are the second shape: `onComplete`, `comments`,
+# `sprint`, `pull`, `hierarchy`, `parentCandidates` and `connection` each keep their
+# vocabulary as a LITERAL AT THE CALL SITE, the `known` argument of an
+# `_unknown_keys(obj, known, where, warnings)` call in `_manifest_ado.py`, not as a
+# set on this module. `_help.vocab_sets()` reads attributes off this module by name,
+# so a vocabulary that is not an attribute anywhere is invisible to it.
+#
+# COVERAGE, NOT CONTAINMENT, AND THE CONSUMER SETTLES IT PER LEVEL. `_unknown_keys()`
+# warns about any key NOT in `known`, the same consumer the seven `KNOWN_*` sets
+# have, and the reason they are coverage-shaped. A property the schema declares and
+# the literal omits makes the validator warn about a real key; a key in the literal
+# the schema does not declare is a typo that both widens the vocabulary and silently
+# takes the warning for the key it was meant to be. `CLAIM_KEYS` is
+# containment-shaped because its consumer asks a different question, and no literal
+# here has any consumer other than the one call it is written into — an argument
+# cannot acquire a second reader. Nothing compares these literals with
+# `schema/audit-plan.schema.json`: `mv33` drives each level through
+# `check_ado_meta` with an unknown key and asks that the warning name it, which
+# proves the call is reached and not that the literal is complete.
 #
 # WHY THE LITERALS DID NOT SIMPLY MOVE UP HERE, which is the obvious alternative.
 # `SCHEMA_ANCHORS` would not have needed a single change to take them:
@@ -955,31 +947,9 @@ SUBSET_ANCHORS = (
 #     only is the failure `OFF_SCHEMA`'s written reasons exist to prevent.
 #   * This module's criterion is the vocabularies MULTIPLE modules share; it is why
 #     `TERMINAL` is not here. Each of these has one reader.
-#   * A hand-written set is only as complete as somebody's memory. The report that
-#     opened this named `onComplete`, `sprint` and `pull`; the scan that reads the
-#     calls found `comments` as well.
-#
-# So the DATA is the list of levels whose vocabulary is a literal, and the COMPARISON
-# reads that literal where the validator reads it — `_help.schema_inline_drift()`
-# parses `scripts/`, takes every `_unknown_keys(obj, {…}, "dotted.path", w)` whose
-# set and whose path are both literals, and holds each to the schema at that path.
-#
-# THIS TABLE IS NOT REDUNDANT WITH THE SCAN, and that is its whole job: a scan alone
-# cannot tell "clean" from "there is nothing left to look at". A path declared here
-# with no call site found is a NAMED failure, and a literal found at a path not
-# declared here is the other one, so neither the check nor the code it guards can
-# shrink in silence. There is no exemption table because no level needs one today,
-# and none can be needed quietly: dropping an entry to escape the check reports the
-# call site as undeclared instead.
-INLINE_ANCHORS = (
-    "meta.ado.onComplete",
-    "meta.ado.comments",
-    "meta.ado.sprint",
-    "meta.ado.pull",
-    "meta.ado.hierarchy",
-    "meta.ado.parentCandidates",
-    "meta.ado.connection",
-)
+#   * A hand-written list of these levels is only as complete as somebody's memory:
+#     the first one named `onComplete`, `sprint` and `pull` and was missing
+#     `comments`.
 
 
 # --- the shape checks every level shares -----------------------------------------

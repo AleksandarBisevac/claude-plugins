@@ -177,8 +177,8 @@ documented grep under-reported by dozens and why a third regex was never the ans
 **Read the `refactoring-the-assembled-ui` skill before editing anything under `scripts/ui/`, or
 `_ui_theme.py`.** Neither surface is a single file any more — the report's script and stylesheet
 and the panel's script are each a directory of ordered parts, and `ui/*/README.md` says what each
-part is for. Assets of 400+ lines also owe one section marker per 400 lines, enforced by
-`_deps.ui_navigability_violations()`.
+part is for. Assets of 400+ lines also owe one section marker per 400 lines; nothing enforces
+that for assets, so it is the author to keep.
 
 ## Tests
 
@@ -276,15 +276,11 @@ channel is the one that caught a suite shelling out to the real `az`, which writ
 operator's home directory on any machine that has it — CI's ubuntu runner included. A suite
 that needs scratch space builds it under `tempfile.mkdtemp()` and removes it in `finally`.
 
-**And this paragraph is a checked one.** `gate-parity.py`'s `isolation_drift()` reads the
-runner's own constants rather than restating them, and fails when a family of variables it pins
-is named by none of the documents that describe the isolation — this one, `CONTRIBUTING.md`, and
-the docstring beside `_harness.fixture_root()` — or when the runner's watched directories, their
-channel labels and the files planted in them stop agreeing with each other. The filtered names
-are read off the runner's tables too, and each must appear in every one of those documents as a
-code span, itself or under a glob like `GIT_AUTHOR_*`. That surface grew
-more than once and left each document behind by a different amount, which is what a rule is worth
-more than another correction of.
+**And this paragraph is not checked against the runner.** A lint once compared the runner's own
+constants with the documents that describe the isolation — this one, `CONTRIBUTING.md`, and the
+docstring beside `_harness.fixture_root()` — and was retired with the other lints whose measured
+catch was nothing, so a family added to the runner owes its mention in each of them to whoever
+adds it. Print the runner's constants rather than trusting this paragraph.
 
 **`gate-parity.py` is why that cannot come back.** `tools/verify.sh`,
 `.github/workflows/ci.yml`, `CONTRIBUTING.md` and this list are hand-maintained descriptions
