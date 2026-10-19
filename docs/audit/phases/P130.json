@@ -1142,7 +1142,9 @@
         "P130.27-ywo",
         "P130.28-ywo",
         "P130.29-ywo",
-        "P130.30-ywo"
+        "P130.30-ywo",
+        "P130.31-ywo",
+        "P130.32-ywo"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -1781,7 +1783,7 @@
     {
       "id": "P130.16-ywo",
       "title": "A verb adds or replaces a meta.buildCommands key on an existing plan",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fault F714, part (b). No `audit-task.py` verb or config setting writes a `meta.buildCommands` key on an existing plan: only `/audit:init` (a new plan) and the panel's `PUT /api/composition` (plugins/audit/scripts/panel/_panel_write.py, `apply_composition` :2344) do, and the panel needs a browser session token. A fix task that had to add the `vitest` key stopped on this and was cancelled, and the redesign plan routes every buildCommands edit through the panel for the same reason. Fix: a new `audit-task.py` verb that sets one key - `build-command <key> --command \"<cmd>\" [manifest]` - adding the key when absent and refusing an existing key unless `--replace` is passed (the refusal names the current value); `--remove` drops a key and is refused while any task's or phase's gate entry names it. The command text is judged by `_machine_paths.executed_value_refusal`, the judgement the panel already applies to the same field (`_EXECUTED_ROWS` in _panel_write.py), and is written byte for byte. The write goes through the plan's lock, `_write_plan` and the validator, and journals one row naming the key, the old and the new value and the reason. Wire it everywhere a verb is declared: the usage block at the top of audit-task.py, `VERB_FLAGS`, the argparse table, `plugins/audit/commands/task.md` (argument-hint, description and a subcommand section) and the `/audit:task` row in `plugins/audit/README.md`. Adding a verb is free under COMPATIBILITY.md; no existing key's reading changes. Acceptance: (1) on a plan without `vitest`, `build-command vitest --command 'npx vitest run'` adds the key, revalidates, and writes one journal row; (2) the same call on a plan that has the key is refused naming the current value and writes nothing, and with `--replace` it replaces it; (3) a command carrying a machine path is refused with the panel's sentence; (4) `--remove` of a key a gate entry still names is refused naming the entry, and of an unused key removes it; (5) the usage block, VERB_FLAGS, commands/task.md and the README row all name the verb with the same flags.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1849,19 +1851,34 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b6252aae2f05",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py gains the build-command verb: `build-command <key> (--command CMD [--replace] | --remove) [--reason TEXT|-]`. Door (cmd_build_command) refuses before the lock a key that is not one word, a key carrying a machine path (check_free_text), --remove with --command/--replace, no --command and no --remove, and a command judged by _machine_paths.executed_value_refusal under the field name the panel uses (meta.buildCommands), so the sentence is byte-identical to the panel's. _locked_build_command reads the plan (_read_plan), refuses an existing key without --replace naming its current value, refuses --replace and --remove of an absent key, refuses --remove naming each phase testGate / task tests.gate entry that names the key (_gate_holders, every status), writes through _write_plan (index_fields=meta, revalidated, rolled back on findings), and journals one buildcommand.change row with details field=meta.buildCommands.<key>, from, to, reason. Command text stored verbatim (a double-space/quote fixture asserted equal). Wired: usage block, VERB_FLAGS row, parser choices + --command (dest build_command, because dest `command` is the verb word) / --replace / --remove, doors map, commands/task.md (description, argument-hint, a short subcommand section), README /audit:task row. Tests: new stage bcm-block (bcm1, bcm2, titled with the tests.add clauses verbatim after the case id), plus the existing derived grids extended for the new verb in test_audit_task.py (vf grid _vf_pos, vf4 _vf_ok, tw5 _tw_argv). Cross-file lints made me edit two files outside `files`: PLUGIN-BUILD-GUIDE.md (test__deps e1 requires a code span naming the verb under the audit-task.py section; added a paragraph) and plugins/audit/tests/test__refs.py (tk1 regex now admits a hyphenated verb, tk3 and pf2 enumerations list build-command); the plan gate allowed both writes. commands/task.md body is held under the measure-context ceiling, so the section there is four lines and the detail lives in the README row and PLUGIN-BUILD-GUIDE.md. Results: test_audit_task.py 1082/1082, test__refs.py 286/286, test__deps.py 244/244, whole sweep 340/340 files ok (16400 cases) in the task tree, ruff clean, vermin clean, gate-parity and measure-context --gate OK. Additions beyond the spec text, stated: an optional --reason (the spec journals 'the reason' but names no flag for it), and refusal of --replace/--remove on an absent key. --remove checks only phase testGate and task tests.gate as specified, not meta.fullGate or meta.phaseGate.always, which can also name a key.",
+        "descriptive": "A new audit-task.py build-command verb adds, replaces or removes one meta.buildCommands key on an existing plan without the panel's browser session, with the panel's machine-path refusal, a refusal that names the current value or the gate entry holding the key, and one journal row per write."
       },
       "startedAt": "2026-10-19T03:27:42Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-19T04:55:11Z",
+      "verifiedBy": [
+        "bcm1 build-command adds an absent meta.buildCommands key and journals it, refuses an existing key without --replace and replaces it with --replace, refuses a command carrying a machine path, and refuses --remove of a key a gate entry names, writing nothing on every refusal",
+        "bcm2 the build-command verb is in the usage block and in VERB_FLAGS with exactly the flags commands/task.md documents"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-19T04:55:05Z.5a9ff2",
         "status": "passed",
         "at": "2026-10-19T04:55:05Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "b6252aae2f05",
+        "at": "2026-10-19T04:55:11Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-19T03:58:45Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage bcm-block` in a throwaway tree at HEAD exited 1 with 2 of 2 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `bcm-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - bcm1 (house FAIL), bcm2 (house FAIL): SELFTEST FAILED: 0/2 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1935,7 +1952,7 @@
     {
       "id": "P130.18-ywo",
       "title": "A gate entry is checked for shape where it is written, and --gate-set leaves a trailing manifest positional alone",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Faults F720 and F721. (a) `add --from-file` minted tasks of this phase with gate entries such as `python3 plugins/audit/tests/test__config.py plugins/audit/tests/test_commit_task_work.py`, which run the first suite with the second as its argument, and one entry naming the same suite twice. Read at HEAD, that derivation came from the installed 3.4.0 copy, whose `_task_gate_setup` read a sibling's shape before the recorded spelling; HEAD resolves through `_gate_derive.resolve_shape` (plugins/audit/scripts/manifest/audit-task.py:2698, spelling first) and, for the same tasks, gives `python3 tools/sweep-selftests.py <suites>`. What HEAD still lacks is the other half the fault asks: nothing checks a gate entry's shape where it is written, so a hand-written or sibling-derived entry of that shape is accepted by `add`, `add --from-file`, `scope --gate` and `scope --gate-set`, and the validator says nothing. Fix: one predicate, in the lowest module both audit-task.py and the validator reach (`_manifest_phases.py`, beside `gate_entry_paths` and `is_suite_path`; layer_violations() decides), reports an entry that is not a `meta.buildCommands` key whose first path-shaped word is itself a suite file and that names a further suite path, and an entry naming one path twice. The write verbs refuse such an entry, naming it and naming `meta.phaseGate.derived.spelling` when the plan records one; `_manifest_rules.py` reports it on an existing plan as a WARNING, never an error, because COMPATIBILITY.md promises validation stays additive. (b) `scope <id> --gate-set a b c docs/audit/audit-plan.json` writes the manifest path as a fourth gate entry, because `--gate-set` is declared with `nargs='*'` (audit-task.py:13854) and swallows the positional after it; passing the manifest first works. Fix: when the manifest positional is absent and the last `--gate-set` value names an existing file the manifest loader reads as a plan, that value is the manifest, not a gate entry - `retarget` shares the flag and the fix; and a gate entry naming an existing JSON manifest file is refused at write time in any position. The parser's comment beside `--gate-set` says both. Acceptance: (1) an `add --from-file` batch whose tasks each name several Python suites in tests.add and no gate, on a plan that records the spelling and holds siblings with `python3 tools/sweep-selftests.py ...` entries, gives each task one spelled entry naming all its suites; (2) `add`, `add --from-file`, `scope --gate` and `scope --gate-set` refuse `python3 a/test_x.py a/test_y.py` and an entry naming one suite twice, writing nothing; (3) validate-manifest reports such an entry already in a plan as a warning and exits as it did before; (4) `scope <id> --gate-set a b <manifest>` and `scope <manifest> <id> --gate-set a b` write the same gate, `[a, b]`; (5) a gate entry that is a manifest path is refused in either order.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1976,16 +1993,17 @@
       "dependsOn": [
         "P130.6"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T04:55:13Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.19-ywo",
@@ -2164,7 +2182,7 @@
     {
       "id": "P130.22-ywo",
       "title": "The CI description says what main-run concurrency does, and the slice check and the CI verifier read every shape of the field they judge",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fault F730 (the P130.2 review, filed at docs/audit/evidence/returns/P130.2/20261017T230831Z.reviewer.json). Five defects in or beside P130.2's work. (1) .github/workflows/ci.yml:39-44 says a run on main 'is the record of what landed and is never cancelled'; `cancel-in-progress: false` protects only a RUNNING run, and GitHub still replaces a PENDING run when a newer one queues in the group `ci-refs/heads/main`. CHANGELOG.md:27 ('everywhere but `main`') carries the same implication. Fix: reword both to say a running main run is never cancelled and a queued one can be replaced - or key the concurrency group on the SHA on main so main runs never share a group, which makes the sentence true as written; the return names which was taken. (2) tools/gate-parity.py:1579: `slice_drift` classifies a job as release-tier only when its `if:` matches `_RELEASE_TIER_IF` and every other job as per-run, so a job with `if: ${{ false }}` or a push-only condition still counts as running its slices on every run, and `slice_drift` and `shard_matrix_drift` (:1609-1642) return []. Fix: a job `if:` counts as per-run only when it reduces to the verified-run guard the workflow puts on its jobs, optionally with the release-tier term; any other condition is a `problems` row naming the job and saying its condition cannot be proved to run on every run. A job that runs no `tools/verify.sh --only` call, such as the push-only `verified` guard job (ci.yml:97-99), carries no slice and stays outside this judgement. (3) tools/ci-verified.py:128-141: `decide()` matches a listed run on head_sha, path, status and jobs, never on its `event`, and `ask_github` (:153-170) does not keep it; a pull_request run's head_sha is the PR head while its checkout is the merge commit, so a PR run can vouch for a main SHA reached by fast-forward. Fix: accept only `workflow_dispatch` and `push` runs, append a `why` line naming the refused run's event, and fetch the jobs only of runs that can be accepted; the docstring's 'exactly this commit' then holds for every run it accepts. (4) Stale mentions: tools/check-git-pipeline.py:11,29,38,226 and plugins/audit/tests/test_gen_demo_manifest.py:729,800 say ci.yml carries the launcher steps and the scale-demo step; P130.2 moved them into tools/verify.sh's e2e and manifests slices. Fix: name the verify.sh slice that runs each (read it off `sh tools/verify.sh --list`, never retype it from memory). (5) Pre-existing: .claude/skills/reproducing-ci-locally/SKILL.md:20-23 derives the local commands from `sed -n '/jobs:/,$p' .github/workflows/ci.yml`, which for this repo yields only `sh tools/verify.sh --only ...` calls; add a pointer to `sh tools/verify.sh --list` as the way to see the gate in this repo. Acceptance: (1) the ci.yml comment and the CHANGELOG line state only what the concurrency block does, for a running and for a queued main run; (2) gate-parity's new sv cases with `if: ${{ false }}` and with a push-only condition on a per-run job each report that job, and sv0 (the allow case) stays green; (3) ci-verified's new cv case with a green pull_request run on the asking SHA, same workflow path, all jobs success, refuses and its `why` names the event, and cv1 (a green workflow_dispatch run) still verifies; (4) `grep -n 'ci.yml' tools/check-git-pipeline.py plugins/audit/tests/test_gen_demo_manifest.py` finds no sentence claiming ci.yml runs a step verify.sh now runs; (5) the skill names `sh tools/verify.sh --list`; (6) each new case is red with its fix reverted (the return shows the red run).",
       "files": [
         ".github/workflows/ci.yml",
@@ -2205,16 +2223,17 @@
       "dependsOn": [
         "P130.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T04:55:15Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.23-ywo",
@@ -2276,7 +2295,7 @@
     {
       "id": "P130.24-ywo",
       "title": "The task-start scope preflight asks a runner only about the paths it can collect, and a Python suite counts as collected by the sweep",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fault F731. scope_gap (plugins/audit/scripts/governance/drive-phase.py:1073-1115) keeps, from a task's gate entries, only those whose entry_runner is in _gate_derive.UNIT_RUNNERS, then declares a scope-gap when none of those runners collects a tests.add path. The Python suites here are collected by tools/sweep-selftests.py behind the `selftests` entry, whose entry_runner is None, so it is never asked; with `vitest` also in the gate, every Python test path draws NOT_COLLECTED from vitest and a scope-gap decision whose only remedies are widen (adds vitest.config.mjs, which the task never edits) or block. Seen on P130.4 (test__config.py) and P130.7 (test__deps.py). Fix: read how _gate_derive already splits paths by language (_runners_for, _gate_derive.py:312) and have scope_gap ask a runner only about paths that runner can take, treating plugins/audit/tests/*.py (and the project's own Python suite location) as collected by the sweep when the gate holds `selftests`; the alternative of counting any collecting runner is acceptable only if it reuses that same split, and the return names which was taken. A path no runner of the gate can take at all must still be reported rather than silently passed. Acceptance: (1) a Python tests.add path under a gate holding `selftests` and `vitest` draws no scope-gap decision and no could-not-tell line; (2) a .mjs/.js tests.add path vitest does not collect still draws the scope-gap decision with its widen remedy; (3) a Python path under a gate holding neither the sweep nor pytest is still reported; (4) each new case is red with the fix reverted (the return shows the red run).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2315,16 +2334,17 @@
       "dependsOn": [
         "P130.14-ywo"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-19T04:55:17Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.25-ywo",
@@ -2621,6 +2641,103 @@
       "dependsOn": [
         "P130.14-ywo"
       ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.31-ywo",
+      "title": "build-command --remove refuses a key that meta.fullGate or meta.phaseGate.always names",
+      "status": "pending",
+      "description": "F736 item 1. audit-task.py _build_command_refusal (--remove arm) asks _gate_holders, which reads only phase testGate and task tests.gate. meta.fullGate and meta.phaseGate.always (check meta.phaseGate.exclude too) name meta.buildCommands keys as well; removing such a key leaves a dangling reference. Extend the holder read with those plan-level lists, named in the refusal, and add a case per holder, red before the change.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: build-command --remove refuses a key named by meta.fullGate, and one named by meta.phaseGate.always, and writes nothing",
+          "plugins/audit/tests/test_audit_task.py: build-command --remove still removes a key no gate, fullGate or phaseGate.always names"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass"
+      ],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.18-ywo",
+        "P130.20-ywo"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.32-ywo",
+      "title": "Every poll-dependent wait in capture-screenshots.mjs is proven to route through waitForPoll or sleepPollWindow",
+      "status": "pending",
+      "description": "F736 item 2 (P130.17-ywo review low). gate-card-wait.test.mjs:58-62 pins the wait function and greps the old 6500 literal only. Add a structural check over tools/capture-screenshots.mjs: every waitForFunction/waitForTimeout/setTimeout call site touching the poll is a call of waitForPoll/sleepPollWindow, or sits on an explicit allow-list carrying a reason per entry. Prove it red by adding a hand-written wait with another number in a scratch copy (not in the tree).",
+      "files": [
+        "tools/ui-tests/gate-card-wait.test.mjs",
+        "tools/capture-screenshots.mjs"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/gate-card-wait.test.mjs: a hand-written poll-dependent wait with another number in a scratch copy of capture-screenshots.mjs is refused, and every real call site is a helper call or an allow-listed entry with a reason"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-javascript",
+        "no-silent-pass"
+      ],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,
