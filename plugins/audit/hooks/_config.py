@@ -3475,9 +3475,15 @@ def covering_output(outputs, rel):
 
 
 def declaring_tasks(root, manifest_rel, rel):
-    """[{"taskId", "status"}] for every task declaring `rel` WHATEVER its status
-    — its own `files` or a `fileIndex` row keyed to it. Empty list when none
-    does, and on any error.
+    """[{"taskId", "status", "entry", "direct"}] for every task declaring `rel`
+    WHATEVER its status — its own `files` or a `fileIndex` row keyed to it.
+    Empty list when none does, and on any error.
+
+    `entry` is the declared path that covers `rel` and `direct` is True when
+    that entry IS `rel` rather than a directory above it. A directory entry
+    covers every file under it, so a message that names its task as the file's
+    owner says more than the entry does; the two fields let the message say
+    what the entry is.
 
     FOR A MESSAGE, NEVER FOR A VERDICT. `in_progress_task_map` above drops
     every task that is not `in_progress`, and that filter is the gate: an
@@ -3521,11 +3527,23 @@ def declaring_tasks(root, manifest_rel, rel):
     except Exception:
         pass
 
-    key = covering_key(fmap, rel)
-    if key is None:
-        return out
-    for tid in fmap.get(key, []):
-        out.append({"taskId": tid, "status": statuses.get(tid)})
+    # EVERY entry covering `rel`, not the first: a pending task's directory
+    # listed ahead of another task's entry for the file itself would otherwise
+    # be the only owner a message could name. A task that reaches `rel` through
+    # several entries is reported once, by the entry that names the file itself
+    # when it has one.
+    seen = {}
+    for key, tids in fmap.items():
+        if covering_key({key: 1}, rel) is None:
+            continue
+        direct = key.rstrip("/") == rel.rstrip("/")
+        for tid in tids:
+            if tid not in seen:
+                seen[tid] = {"taskId": tid, "status": statuses.get(tid),
+                             "entry": key, "direct": direct}
+                out.append(seen[tid])
+            elif direct and not seen[tid]["direct"]:
+                seen[tid].update(entry=key, direct=True)
     return out
 
 

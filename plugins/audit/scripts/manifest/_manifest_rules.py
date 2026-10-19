@@ -647,6 +647,47 @@ def finding_subject(line):
                      locus.strip()] + ids)
 
 
+def directory_entry_warnings(manifest, is_dir=None):
+    """Warnings for each task `files` entry that names a directory.
+
+    An entry covers itself and everything under `entry/`, so a directory in
+    `files` hands the task every file beneath it - including the ones another
+    task lists. WHICH entries are directories is a question for the file
+    system, and `validate()` reads none: the caller that holds a project
+    directory passes `is_dir(entry) -> bool`, and with none given only an
+    entry ending in `/` is reported, because that spelling says it on its own.
+
+    Never raises: a `manifest` or a task shape it cannot read yields what it
+    could read, and a test that raises counts as "not a directory".
+    """
+    phases = manifest.get("phases") if isinstance(manifest, dict) else None
+    out = []
+    for phase in phases if isinstance(phases, list) else []:
+        tasks = phase.get("tasks") if isinstance(phase, dict) else None
+        for task in tasks if isinstance(tasks, list) else []:
+            files = task.get("files") if isinstance(task, dict) else None
+            for entry in files if isinstance(files, list) else []:
+                if not isinstance(entry, str) or not entry:
+                    continue
+                if entry.endswith("/") or _asks_dir(is_dir, entry):
+                    out.append(_output.finding(
+                        "rules.files.directory-entry",
+                        "task %s: `files` entry %r is a directory - it covers "
+                        "every file under it, so scope should list paths, "
+                        "not directories" % (task.get("id") or "?", entry)))
+    return out
+
+
+def _asks_dir(is_dir, entry):
+    """`is_dir(entry)` as a bool; no test, or one that raises, is False."""
+    if is_dir is None:
+        return False
+    try:
+        return bool(is_dir(entry))
+    except Exception:
+        return False
+
+
 def validate(manifest, today=None, schema=None):
     """Return (findings, warnings) — two lists of strings; empty findings = valid.
 

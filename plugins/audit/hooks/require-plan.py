@@ -434,6 +434,28 @@ def _owner_note(root, cfg, state_dir, session_id, rel,
 _TERMINAL_DECLARING_STATUSES = ("done", "cancelled")
 
 
+def _split_declared(declared):
+    """(owners, covers) of `_config.declaring_tasks`' rows. An owner is a task
+    whose entry names the file itself, or one that is `in_progress`; a cover is
+    a task that has not started and reaches the file only through a directory
+    entry. A cover decides nothing - the verdict reads the entries of running
+    tasks alone - so a message must not name it as the file's owner."""
+    owners = [d for d in declared
+              if d.get("direct") or d.get("status") == "in_progress"]
+    covers = [d for d in declared if d not in owners]
+    return owners, covers
+
+
+def _covers_clause(covers):
+    """What a directory entry of a task that has not started is, in words:
+    covered by the directory entry `lib/` of P1.5 (status "pending")."""
+    return "covered by " + ", ".join(
+        "the directory entry `%s` of %s (status \"%s\")"
+        % (d.get("entry") or "?", d.get("taskId") or "?",
+           d.get("status") or "?")
+        for d in covers) + ", which opens nothing until that task is started"
+
+
 def _declaration_note(root, manifest_rel, rel, manifest_exists):
     """The refusal's second sentence and the remedy each audience gets, keyed on
     WHICH of three causes actually holds:
@@ -482,13 +504,17 @@ def _declaration_note(root, manifest_rel, rel, manifest_exists):
     the path, and only one of those is worth a reader's line. That branch is
     reachable only through planGate:"deny"/enforce:true, whose own cause sentence
     already says the refusal holds regardless of what the plan contains."""
-    declared = (_config.declaring_tasks(root, manifest_rel, rel)
-                if manifest_exists else [])
+    declared, covers = _split_declared(
+        _config.declaring_tasks(root, manifest_rel, rel)
+        if manifest_exists else [])
     if not declared:
         return {
-            "stated": ("No task in %s declares %s - it is in no task's `files`, "
-                       "in no task's `outputs` and in no `fileIndex` row."
-                       % (manifest_rel, rel)
+            "stated": (("No task in %s names %s - it is %s." % (
+                            manifest_rel, rel, _covers_clause(covers))
+                        if covers else
+                        "No task in %s declares %s - it is in no task's "
+                        "`files`, in no task's `outputs` and in no "
+                        "`fileIndex` row." % (manifest_rel, rel))
                        if manifest_exists else None),
             "subagent": ("report to the orchestrator that %s is outside your "
                          "task's `files` and why you need it, naming the "
@@ -865,13 +891,17 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
                 or _config.covering_output(binding["outputs"], rel) is not None:
             return ("allow", "covered by the bound task %s: %s"
                     % (binding["taskId"], rel))
-        others = [d["taskId"] for d in _config.declaring_tasks(
-            binding["phaseTree"], manifest_rel, rel)
-            if d["taskId"] != binding["taskId"]]
+        owners, covers = _split_declared([
+            d for d in _config.declaring_tasks(
+                binding["phaseTree"], manifest_rel, rel)
+            if d["taskId"] != binding["taskId"]])
         return ("block", _BOUND_OUTSIDE % (
             rel, binding["taskId"], binding["phaseTree"],
-            ("it is declared by %s, a different task" % ", ".join(others))
-            if others else "no task of this plan declares it for this one"))
+            (("it is declared by %s, a different task"
+              % ", ".join(d["taskId"] for d in owners))
+             if owners else
+             "no task of this plan declares it for this one")
+            + (" (%s)" % _covers_clause(covers) if covers else "")))
     away = _config.bound_worktrees(root)
     if away:
         mine = {w["taskId"]: w["worktree"] for w in away}

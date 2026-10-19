@@ -1005,6 +1005,18 @@ def _cases(check):
     check("s7 ...and at status pending the same edit is still refused, so s6 "
           "is not a gate that quietly stopped gating",
           v_no == "block", repr(v_no))
+    _dir_plan = plan_with("pending")
+    _dir_plan["phases"][0]["tasks"][0]["files"] = ["src/search/"]
+    _dir_plan["fileIndex"] = {"src/search/": ["P2.5"]}
+    write_manifest(_dir_plan)
+    v_d, m_d = refuse("selftest-s7b", agent=True, file_path="src/search/new.ts")
+    check("s7b a file covered only by the DIRECTORY entry of an unstarted task "
+          "is not stated as declared by that task: the sentence says what the "
+          "entry is, and the remedy is the undeclared one (widen the scope)",
+          v_d == "block" and "IS declared by" not in m_d
+          and "directory entry `src/search/` of P2.5 (status \"pending\")" in m_d
+          and "/audit:task scope" in m_d, repr(m_d))
+    write_manifest(plan_with("pending"))
     check("s8 the DECISION's map still holds in_progress coverage alone: the "
           "pending task is invisible to it and visible only to the read-only "
           "lookup the message uses",
@@ -1859,7 +1871,18 @@ def _cases(check):
                                 {"id": "P1.3", "title": "c", "status": "pending",
                                  "files": ["src/c.ts"]},
                                 {"id": "P1.4", "title": "d", "status": "pending",
-                                 "files": ["src/d.ts"]}]}]}
+                                 "files": ["src/d.ts"]},
+                                # the directory-entry group (bt8): a pending
+                                # task listing a directory, another pending
+                                # task naming one file under it, and a running
+                                # task listing a directory of its own.
+                                {"id": "P1.5", "title": "e", "status": "pending",
+                                 "files": ["lib/"]},
+                                {"id": "P1.6", "title": "f", "status": "pending",
+                                 "files": ["lib/exact.ts"]},
+                                {"id": "P1.7", "title": "g",
+                                 "status": "in_progress",
+                                 "files": ["lib2/"]}]}]}
         with open(os.path.join(main, "docs", "audit", "audit-plan.json"), "w",
                   encoding="utf-8") as fh:
             json.dump(plan, fh, indent=2)
@@ -1951,6 +1974,22 @@ def _cases(check):
                   "worktree's stale shard: P1.4 is pending in the worktree's "
                   "copy and in_progress in the phase tree, so its own file is "
                   "allowed: %r" % (_v,), _v[0] == "allow")
+            _v_dir = _bt_edit(_w["A"], "lib/new.ts", "bt-8a")
+            _v_self = _bt_edit(_w["A"], "lib/exact.ts", "bt-8b")
+            _v_run = _bt_edit(_w["A"], "lib2/new.ts", "bt-8c")
+            check("bt8 a bound in_progress task refused a new file under a "
+                  "directory entry of a pending task gets a refusal that does "
+                  "not name the pending task as the file's owner; a pending "
+                  "task naming the file itself, and an in_progress task "
+                  "covering it, are still named",
+                  all(v[0] == "block" for v in (_v_dir, _v_self, _v_run))
+                  and "declared by P1.5" not in _v_dir[1]
+                  and "directory entry `lib/` of P1.5" in _v_dir[1]
+                  and "declared by P1.6, a different task" in _v_self[1]
+                  and "declared by P1.6, P1.5" not in _v_self[1]
+                  and "declared by P1.5" not in _v_self[1]
+                  and "declared by P1.7, a different task" in _v_run[1],
+                  repr((_v_dir, _v_self, _v_run)))
         finally:
             if _bt_prev is None:
                 os.environ.pop("CLAUDE_PROJECT_DIR", None)

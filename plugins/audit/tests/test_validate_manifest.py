@@ -315,6 +315,7 @@ def _cases(record):
         _cases_success_line(record, path2)
         _cases_schema_parity(record, path2)
         _cases_never_raises(record, path2)
+        _cases_directory_entries(record)
     finally:
         if os.path.exists(path2):
             os.unlink(path2)
@@ -1002,6 +1003,52 @@ def _cases_muted(record, path):
            "means nothing is quarantined, which is not a defect: %r"
            % (_muted_lines(f_ab) + _muted_lines(w_ab),),
            _muted_lines(f_ab) == [] and _muted_lines(w_ab) == [])
+
+
+def _cases_directory_entries(record):
+    """A directory in a task's `files` is warned, and the exit code is untouched.
+
+    The project is a throwaway directory holding a `.git` entry (so the walk from
+    the manifest stops here and not at whatever repository the suite sits in)
+    and a real `src/lib` directory; the SAME plan with a file entry is the
+    baseline the exit code is compared with.
+    """
+    import shutil
+    import tempfile
+    root = tempfile.mkdtemp(prefix="validate-dirent-")
+    try:
+        os.makedirs(os.path.join(root, ".git"))
+        os.makedirs(os.path.join(root, "src", "lib"))
+        os.makedirs(os.path.join(root, "docs", "audit"))
+        with open(os.path.join(root, "src", "a.ts"), "w", encoding="utf-8") as fh:
+            fh.write("x\n")
+        manifest = os.path.join(root, "docs", "audit", "audit-plan.json")
+
+        def _plan_with(entry):
+            plan = _valid_manifest()
+            plan["phases"][0]["tasks"][0]["files"] = [entry]
+            plan["fileIndex"] = {entry: ["P0.1"]}
+            return plan
+
+        def _run_plan(entry):
+            with open(manifest, "w", encoding="utf-8") as fh:
+                json.dump(_plan_with(entry), fh)
+            return _run([manifest, "--verbose"])
+
+        code_dir, out_dir = _run_plan("src/lib")
+        code_file, out_file = _run_plan("src/a.ts")
+        warned = [ln for ln in out_dir.splitlines()
+                  if "P0.1" in ln and "src/lib" in ln]
+        record("dd1 a plan whose task lists an existing project directory in "
+               "files draws a warning naming the task and the entry, and the "
+               "exit code is the one the same plan without the entry gets",
+               len(warned) == 1 and warned[0].startswith("WARNING: ")
+               and code_dir == code_file == 0
+               and "scope should list paths" not in out_file
+               and "directory" not in out_file,
+               repr((code_dir, code_file, warned, out_file)))
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 def _selftest():

@@ -57,6 +57,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import datetime
 import json
+import os
 import re
 import sys
 
@@ -1070,6 +1071,7 @@ def _cases(record):
     _cases_muted(record)
     _cases_schema_input(record)
     _cases_falsifier(record)
+    _cases_directory_entries(record)
 
 
 # --- tests.falsifiers: kept in the schema, read by nothing -------------------
@@ -1344,6 +1346,62 @@ def _cases_muted(record):
            "same answer as without the pin - `today` changes nothing but the "
            "expiry grade",
            plain == M.validate(_valid_manifest()))
+
+
+def _dir_plan(files):
+    """`_valid_manifest()` with the first task's `files` replaced."""
+    plan = _valid_manifest()
+    plan["phases"][0]["tasks"][0]["files"] = list(files)
+    return plan
+
+
+def _cases_directory_entries(record):
+    """The predicate behind the warning for a directory in a task's `files`."""
+    # P0.1 lists a directory by the caller's test, a directory by its trailing
+    # slash, and a plain file; the fixture values tell "asks the supplied test"
+    # from "asks the file system" (`plugins/audit` exists here, `src/lib` does not).
+    plan = _dir_plan(["src/lib", "docs/", "src/a.ts"])
+    found = M.directory_entry_warnings(plan, lambda e: e == "src/lib")
+    record("dr1 the directory-entry predicate reports a task files entry the "
+           "supplied directory test calls a directory, or one ending in /, "
+           "naming the task and the entry, reports nothing for file entries, "
+           "and reads no file when given no directory test",
+           len(found) == 2
+           and "P0.1" in found[0] and "'src/lib'" in found[0]
+           and "P0.1" in found[1] and "'docs/'" in found[1]
+           and "src/a.ts" not in " ".join(found)
+           and "scope should list paths" in found[0]
+           and M.directory_entry_warnings(
+               _dir_plan(["src/a.ts", "src/b.ts"]), lambda e: False) == []
+           and _reads_no_file(
+               lambda: M.directory_entry_warnings(
+                   _dir_plan(["plugins/audit", "docs/"])),
+               expect=1),
+           repr(found))
+
+
+def _reads_no_file(call, expect):
+    """True when `call()` returns `expect` warnings with every file-system
+    question in `os.path` and `open` raising - so a read cannot pass quietly."""
+    import builtins
+
+    def refuse(*_a, **_k):
+        raise AssertionError("the predicate asked the file system")
+    names = ("isdir", "exists", "isfile", "lexists", "islink")
+    saved = dict((n, getattr(os.path, n)) for n in names)
+    saved_open, saved_stat, saved_listdir = builtins.open, os.stat, os.listdir
+    try:
+        for n in names:
+            setattr(os.path, n, refuse)
+        builtins.open, os.stat, os.listdir = refuse, refuse, refuse
+        try:
+            return len(call()) == expect
+        except AssertionError:
+            return False
+    finally:
+        for n in names:
+            setattr(os.path, n, saved[n])
+        builtins.open, os.stat, os.listdir = saved_open, saved_stat, saved_listdir
 
 
 def _selftest():

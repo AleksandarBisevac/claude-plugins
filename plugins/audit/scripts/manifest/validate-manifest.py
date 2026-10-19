@@ -185,6 +185,14 @@ def main(argv):
            _manifest_rules.SETTLE_COMMAND)
         for pid, key, was, now in stale]
 
+    # A directory in a task's `files` covers every file under it. Whether an entry
+    # IS a directory is the file system's to say, which `validate()` reads none
+    # of; this command holds the manifest path, so it resolves the project and
+    # hands the rules the test. A warning, never a finding: validation stays additive.
+    project = _output.project_of_manifest(paths[0])
+    warnings = warnings + _manifest_rules.directory_entry_warnings(
+        manifest, lambda entry: os.path.isdir(os.path.join(project, entry)))
+
     # THE EVIDENCE ARM OF THE SAME 'RUNS NO SUITE' WARNING. `validate()` already
     # asked the CERTAIN arm with no evidence at all (`_manifest_rules._check_meta`
     # -> `phase_gate_suite_gap(manifest)`, `suite_keys=None`) - that answers only

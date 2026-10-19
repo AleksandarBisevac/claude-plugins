@@ -1,0 +1,21 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/scripts/manifest/_manifest_vocab.py:900",
+   "issue": "The reworded comment joined two sentences onto one 148-character line ('that call rather than here; the `meta.ado` ones are described below. This module exists for the vocabularies MULTIPLE modules share, which is this'), breaking the comment's wrapped shape; every neighbouring line is wrapped near 90 columns.",
+   "resolution": "Re-wrap the sentence across lines at the comment's width; no wording change."},
+  {"id": 2, "severity": "low", "file": "CLAUDE.md:285",
+   "issue": "'`gate-parity.py` is why that cannot come back.' now follows directly after the rewritten isolation paragraph (CLAUDE.md:279-283), which says that paragraph is NOT checked and is owed by whoever adds a family. 'that' now reads as the unchecked isolation-doc drift, which the next sentence does not guard; the sentence it protects (gate-set descriptions drifting) is two lines down.",
+   "resolution": "Make the antecedent explicit, e.g. '`gate-parity.py` is why the drift between the gate-set descriptions cannot come back.'"}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Description clauses: (a) 'delete SUBSET_ANCHORS' - done, _manifest_vocab.py hunk removes the tuple; (b) 'rewrite mv33 to loop its own keys and drop INLINE_ANCHORS' - done, test__manifest_vocab.py:333 now loops sorted(_ado_ok), additionally requires each name in M.KNOWN_ADO, and INLINE_ANCHORS is deleted; (c) 'reword the comments to state the constraint without the deleted name' - done in _manifest_vocab.py (module docstring, REVIEW_ONLY_GATES, CLAIM_KEYS, SCHEMA_ANCHORS, former subset/nested sections), _priority.py:156 (replaces the SHARED_CONCERNS sentence with a statement that nothing enforces it) and guard-secrets-read.py:559 (docstring no longer names absolute_reach_violations); (d) 'apply the CLAUDE.md replacement' - both applied, ui_navigability sentence now author-kept (verified: no asset navigability lint remains; _deps.navigability_violations covers .py only) and the isolation paragraph now says it is not checked. The CLAUDE.md replacement text carries no present-tense count, so it is clean under the prose-number rules. Acceptance (1) literally is not met: git grep of the eight names in the task tree still hits .claude/skills/refactoring-the-assembled-ui/SKILL.md:266 and .claude/skills/writing-javascript/SKILL.md:104 (past-tense 'was retired' history, honest and says nothing is enforced) and tools/prove-gates.py:2407-2414 (the _retired tuple, a deliberate refusal list whose comment at :2396-2401 says it spells the names on purpose). I judge all three honest, not stale claims, and the executor disclosed them in the filed outcome and claims item 3; the executor's outcome otherwise matches the diff (files, mv33 behaviour, CLAUDE.md edits). The 'no filed counterpart' line is the known false gap F737: mv33 exists with the declared title as its prefix. Limit: mv33 now no longer fails when a new _unknown_keys literal is added to _manifest_ado.py without a fixture entry (the scan that found undeclared literals is gone), which is the intended consequence of the retirement and is stated in the comment.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor filed not-attempted: regression task with expectRedFirst false, and the rewritten mv33 passes on HEAD's code since the guarded module is unchanged. Its by-hand check (rename fixture key onComplete to onCompleteX turns mv33 FAIL 63/64, restored 64/64) is an unrecorded manual observation, not a stamped red; I did not rerun it and do not upgrade the word.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate's 'selftests' entry is `python3 tools/sweep-selftests.py`, which runs the whole project; the bound is the whole suite, so the question is not asked."
+ },
+ "verdict": "findings"
+}
