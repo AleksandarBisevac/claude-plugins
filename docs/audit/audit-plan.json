@@ -5051,7 +5051,8 @@
       "P130.8",
       "P130.30-ywo",
       "P130.40-ywo",
-      "P130.33-ywo"
+      "P130.33-ywo",
+      "P130.50-ywo"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
