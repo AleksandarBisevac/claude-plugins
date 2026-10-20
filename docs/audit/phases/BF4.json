@@ -70,9 +70,9 @@
       "bugId": "BUG-28",
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-20T16:34:10Z.67771f",
-        "status": "failed",
-        "at": "2026-10-20T16:34:10Z"
+        "runId": "2026-10-20T18:51:48Z.cd91d4",
+        "status": "passed",
+        "at": "2026-10-20T18:51:48Z"
       },
       "notes": [
         {
@@ -85,7 +85,7 @@
       "id": "BF4.2",
       "title": "Fix BUG-27: every CI job pins its runner image, and a floating -latest label is refused",
       "status": "pending",
-      "description": "",
+      "description": "\n\nAlso, from the BF4.1 review (docs/audit/evidence/returns/BF4.1/20261020T161236Z.reviewer.json), in the same file: (a) case vsh12 (tools/gate-parity.py ~:2794-2795) asserts return_trap_honoured(dash) is False, and since BF4.1 an OSError becomes False, so a dash that cannot be started satisfies the case without the probe running - assert on return_trap_probe's reason (the probe ran and the shell rejected the trap) the way vsh11/vsh14 do, and skip with a stated reason when dash is absent; (b) the comment ~:2753-2755 claims Windows refuses a non-executable image 'the same way' as WinError 193 - CreateProcess on an extensionless path most likely raises FileNotFoundError (WinError 2); say only that it raises an OSError.",
       "files": [
         ".github/workflows/ci.yml",
         "tools/gate-parity.py"

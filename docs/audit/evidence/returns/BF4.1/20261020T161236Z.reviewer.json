@@ -1,0 +1,29 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "tools/gate-parity.py:2794-2795",
+   "issue": "vsh12 asserts return_trap_honoured(_rt_dash) is False. The diff made return_trap_honoured swallow an OSError into False (return_trap_probe, 1743-1745), so a dash that cannot be started now satisfies 'dash rejects the RETURN trap' without the probe having run. Before the diff that state raised. The sibling cases vsh11/vsh14 guard this with reason None, but vsh12 does not. This is a does-the-behaviour-still-matter hole the diff introduced in a case the diff did not touch.",
+   "resolution": "Have vsh12 call return_trap_probe(_rt_dash) and require (False, None), so 'rejected' means the shell ran and printed no trap word."},
+  {"id": 2, "severity": "low", "file": "tools/gate-parity.py:2753-2755",
+   "issue": "The comment says 'Windows refuses any non-executable image the same way'. Nothing handed shows that, and the filed outcome states WinError 193. CreateProcess on an extensionless path appends .exe, so the likely Windows error for the extensionless file 'not-a-program' is FileNotFoundError (WinError 2). The case still holds, because both are OSError subclasses and the probe catches OSError. The comment asserts a mechanism that was not observed.",
+   "resolution": "Reword to say only what is true on every OS: starting that path raises an OSError subclass (PermissionError on posix, an OSError on Windows). Do not name the Windows errno."}
+ ],
+ "preExisting": [
+  {"id": 1, "severity": "low", "file": "tools/gate-parity.py:1723,2160",
+   "issue": "run_in_scratch_shell and run_verify call subprocess.run with no OSError handling. The program is a shutil.which() binary, not a shebang, so the Windows-start shape is fine. If the shell vanishes or fails to start, the exception ends the selftest body instead of failing a case. The same holds for the probe-adjacent vsh5 call at 1859.",
+   "resolution": "Catch OSError at those two call sites the way line 641 and return_trap_probe do, and fail the case with the reason."},
+  {"id": 2, "severity": "low", "file": "tools/gate-parity.py:1677-1685,2146",
+   "issue": "The generator stub and the verify stubs are '#!/bin/sh' files named python3, python and so on. They are executed by the shell, never as argv[0], so they do not break Windows process start. They do rely on MSYS sh honouring shebangs, and run_in_scratch_shell passes an env with no SYSTEMROOT.",
+   "resolution": "Leave as is unless the Windows shard goes red there; record it as the next place to look."}
+ ],
+ "intent": {
+  "answer": "cannot-tell",
+  "note": "The brief's '## Task' section is empty, so no description clause was handed to judge against. Against the phase desiredOutcome ('gate-parity's SIGINT/trap cases run on Windows'): vsh11 now writes Python stubs ('says.py', 'silent.py' at 2742-2748) and runs them as [sys.executable, stub, '-c', probe] (return_trap_probe at 1738-1739). The program that gets started is the interpreter, a real binary, not a shebang file, so Windows can execute it. No chmod and no shebang remain in vsh11. An OSError is recorded: return_trap_probe catches OSError at 1744-1745 and returns (False, reason). The vsh15 check records a would-be raise as raised= and fails instead of ending the body (2760-2766, 2781-2785). vsh12 (2794) and vsh5 (1861) pass a real shell binary with no prefix, so they are fine. Every other subprocess call in the selftest path uses sys.executable (185) or a shutil.which shell with a script as an argument (641, 1723, 2160). None uses a shebang file as argv[0]. The shebang stubs at 1677 and 2146 are run by the shell, not by CreateProcess. The executor's claim matches the diff: the probe returns (honoured, reason), the bool wrapper is unchanged for vsh5/vsh12, and vsh14/vsh15 exist and print. I ran 'python3 tools/gate-parity.py --selftest' once: ALL PASS 73/73, with vsh14 and vsh15 printed. The 'did not print' testsAddGaps entries are the known inline-suite binding (F747), so they are not a failure of the code. Windows was not run, so the Windows claims are by reading only. Only the OSError/FileNotFoundError wording on Windows is unverified (finding 2).",
+  "missing": ["task description (the brief's ## Task section is empty)"],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "The executor filed could-not-prove. Its basis: 'python3 tools/gate-parity.py --selftest' at HEAD exited 1 with 'TypeError: return_trap_honoured() takes 1 positional argument but 2 were given'. That error names no symbol the task introduces and no vsh14/vsh15 assertion was reached, so it is not a red proof. The basis holds for could-not-prove. The filed falsifier (swapping 'except OSError' for 'except ZeroDivisionError') would make vsh15 fail by reading, but I did not run it.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate's 'selftests' entry is 'python3 tools/sweep-selftests.py', which runs the whole project, so the bound is the whole tree and the question is not asked. The other gate entries (validate, plugin-validate, report, lint, shots, interactive) select no tests of this task's behaviour."
+ },
+ "verdict": "findings",
+ "tasks": []
+}
