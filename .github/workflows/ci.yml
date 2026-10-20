@@ -92,7 +92,7 @@ concurrency:
 # to ubuntu-26.04 between two runs, and the new image could not install the browser
 # the lockfile pins nor offer the interpreter the lint job asks for. The images below
 # are the ones the last green run (38937779587) logged under `Runner Image`: Linux
-# ubuntu-24.04 and Windows windows-2025-vs2026. Moving to a newer image is an edit
+# ubuntu-24.04 and Windows windows-2025. Moving to a newer image is an edit
 # to this file, made on purpose and seen in a diff. tools/gate-parity.py reports a
 # `-latest` runs-on or matrix value by job name (`floating_runners()`).
 jobs:
@@ -155,11 +155,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2025-vs2026]
+        os: [ubuntu-24.04, windows-2025]
         leg: [plain, stress, cp1252]
         shard: [1, 2, 3]
         exclude:
-          - os: windows-2025-vs2026
+          - os: windows-2025
             leg: stress
           - os: ubuntu-24.04
             leg: cp1252
@@ -189,11 +189,11 @@ jobs:
   # subprocesses, a forced codec and an MSYS path all behave differently. The ubuntu
   # half of the same slices rides in the lint job, which shares its setup.
   e2e:
-    name: e2e (windows-2025-vs2026)
+    name: e2e (windows-2025)
     needs: verified
     if: ${{ !cancelled() && needs.verified.outputs.run == '' }}
     timeout-minutes: 5
-    runs-on: windows-2025-vs2026
+    runs-on: windows-2025
     steps:
       - uses: actions/checkout@v5
         with:
@@ -309,11 +309,11 @@ jobs:
   # verify.sh's RESAMPLE table gives them. A red draw on a green SHA is a finding for
   # /audit:bug; nothing files it automatically yet.
   resample:
-    name: resample (windows-2025-vs2026)
+    name: resample (windows-2025)
     needs: verified
     if: ${{ !cancelled() && needs.verified.outputs.run == '' && inputs.tier == 'release' }}
     timeout-minutes: 40
-    runs-on: windows-2025-vs2026
+    runs-on: windows-2025
     steps:
       - uses: actions/checkout@v5
         with:

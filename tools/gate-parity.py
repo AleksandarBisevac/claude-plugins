@@ -2373,7 +2373,7 @@ def _runner_image_cases(check):
     # The over-fire direction: a check that reported every job, or every label that
     # carries a hyphen, fails this one, which names no floating label at all.
     pinned = floating_runners(_RI_PLAIN.replace("ubuntu-latest", "ubuntu-24.04")
-                              .replace("windows-latest", "windows-2025-vs2026"))
+                              .replace("windows-latest", "windows-2025"))
     check("ri2 ...and the same workflow with every label an explicit image is "
           "clean, over all four jobs read: %r" % (pinned,),
           (pinned["findings"], pinned["jobs"], pinned["problem"]) == ([], 4, None))

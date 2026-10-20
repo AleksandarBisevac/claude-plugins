@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": ".github/workflows/ci.yml:94-95",
+   "issue": "The header comment says the pinned images are 'the ones the last green run (38937779587) logged under `Runner Image`' and now lists Windows as windows-2025, but that run logged windows-2025-vs2026. The sentence is now slightly inaccurate as history.",
+   "resolution": "Optional: reword to say the Windows label is the stable windows-2025 label, whose image the run logged as windows-2025-vs2026. No action is needed for this release under D9."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'Pin `windows-2025` everywhere: the matrix `os` axis (:158), the `exclude` row (:162), the e2e and resample `runs-on` (:196, :316) and their display names (:192, :312), the header comment (:95). Update the ri2 fixture ... to `windows-2025`.' The diff changes exactly those lines in .github/workflows/ci.yml (header :95, matrix os :158, exclude :162, e2e name and runs-on, resample name and runs-on) and the ri2 `.replace(\"windows-latest\", \"windows-2025\")` in tools/gate-parity.py. `git diff HEAD --stat` shows 8 insertions and 8 deletions across the two files, all of them label swaps. `git grep vs2026` finds no hit in either file; the only remaining hits are historical evidence and journal rows. The remaining `-latest` text in ci.yml is comments (:82, :91, :97, :139), and every `runs-on` is ubuntu-24.04, windows-2025 or `${{ matrix.os }}`. The executor's outcome ('sed over ci.yml and gate-parity.py ... nothing else changed') describes the diff accurately. Its gate claims (gate-parity --selftest and plain run both pass) were not re-run by me, since I am barred from the gate. They are consistent with a pure label swap.",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "The executor filed could-not-prove, quoting the helper: 'task BF4.3-p5e declares no test file, so a throwaway at HEAD would prove nothing about this task's test'. testsAdded is empty and tests.add is none, so no new test was owed. The basis holds.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "I read the gate list, which includes sweep-selftests.py, and the runner-image cases ri1-ri7 in tools/gate-parity.py (_runner_image_cases), the only tests that touch the changed label. The ri2 fixture assigns an arbitrary explicit image and asserts findings == [] and jobs == 4, so it exercises floating_runners() reading a pinned label. It is not swallowing the behaviour. The swap changes no behaviour those cases assert, and I found no assertion that would pass with the floating-runner detection deleted."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

@@ -65,9 +65,16 @@
         "file": "tools/gate-parity.py:195-201",
         "issue": "`_matrix_key_values` reads only an inline `key: [a, b]` or scalar. A block-sequence axis (`os:` with `- ubuntu-latest` on following lines) yields no value from the axis. If an `include` or `exclude` row also names `os`, the check sees only those rows and passes a floating axis value without comment. If the key is listed nowhere, it is reported, so only the mixed shape is silent. ci.yml does not use the shape today.",
         "resolution": "Treat an empty `rest` after `key:` as a block sequence and collect the following `- value` lines at deeper indent, or report the job as unreadable when a matrix key line has no inline value. Add a case beside ri4."
+      },
+      {
+        "id": "BF4-R6",
+        "severity": "low",
+        "file": ".github/workflows/ci.yml:94-95",
+        "issue": "The header comment says the pinned images are 'the ones the last green run (38937779587) logged under `Runner Image`' and now lists Windows as windows-2025, but that run logged windows-2025-vs2026. The sentence is now slightly inaccurate as history.",
+        "resolution": "Optional: reword to say the Windows label is the stable windows-2025 label, whose image the run logged as windows-2025-vs2026. No action is needed for this release under D9."
       }
     ],
-    "outcome": "[findings: 5 - 0 high, 1 med, 4 low; 2 with a recorded fix commit]"
+    "outcome": "[findings: 6 - 0 high, 1 med, 5 low; 2 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -273,9 +280,9 @@
       ],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-20T19:24:54Z.4bbfbf",
-        "status": "failed",
-        "at": "2026-10-20T19:24:54Z"
+        "runId": "2026-10-20T19:37:30Z.d5c3a7",
+        "status": "passed",
+        "at": "2026-10-20T19:37:30Z"
       }
     }
   ],
