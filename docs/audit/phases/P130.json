@@ -5632,6 +5632,53 @@
         "status": "passed",
         "at": "2026-10-20T09:43:29Z"
       }
+    },
+    {
+      "id": "P130.55-ywo",
+      "title": "The SIGINT cases of gate-parity hold when the sweep runs as a background job",
+      "status": "pending",
+      "description": "F746. tools/gate-parity.py cases vsh6 (~:1856) and vsh9 (~:1812) send `kill -INT $$` to a shell started through `run_in_scratch_shell` (~:1699), a bare subprocess.run. A background job (nohup, &, a harness runner) hands the child SIGINT as ignored, and POSIX sh keeps an inherited-ignored signal ignored, so `trap` never fires and the INT leg fails; in the foreground both pass. Fix: start that child with SIGINT reset to SIG_DFL (preexec_fn on POSIX; on Windows the cases are already skipped or not applicable - check), so the cases measure verify.sh's trap and not the caller's signal disposition. Acceptance: (1) a new case runs the INT leg with this process's SIGINT set to SIG_IGN and still sees exit 130 (red before the fix); (2) vsh6/vsh9 pass under `nohup python3 tools/gate-parity.py --selftest &`-style background runs; (3) full sweep green.",
+      "files": [
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/gate-parity.py: (inline --selftest) the INT leg exits 130 even when this process ignores SIGINT"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass"
+      ],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.53-ywo"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "ok, sve preporuke (owner, 2026-10-14, approving CONSOLIDATED-PLAN.md) / Nova faza za F1 (Recommended) (owner, 2026-10-16, where the F1 tasks live)",
