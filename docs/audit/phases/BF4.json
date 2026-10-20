@@ -1,7 +1,7 @@
 {
   "id": "BF4",
   "title": "Bugfix batch 4",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "The release-tier CI run is green on Linux and Windows: every job pins its runner image, and gate-parity's SIGINT/trap cases run on Windows",
   "testGate": [
@@ -16,8 +16,8 @@
     "vitest"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "0b415d48ebb70f0d23590556f98d24a959b5ebce",
+  "branch": "audit/bf4-bugfix-batch-4",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -30,7 +30,7 @@
     {
       "id": "BF4.1",
       "title": "Fix BUG-28: gate-parity's trap cases run on Windows",
-      "status": "pending",
+      "status": "in_progress",
       "description": "",
       "files": [
         "tools/gate-parity.py"
@@ -58,17 +58,29 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-20T16:12:36Z",
       "completedAt": null,
       "verifiedBy": [],
-      "bugId": "BUG-28"
+      "bugId": "BUG-28",
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-20T16:34:10Z.67771f",
+        "status": "failed",
+        "at": "2026-10-20T16:34:10Z"
+      },
+      "notes": [
+        {
+          "at": "2026-10-20T18:36:54Z",
+          "text": "The `gate` entry (audit-status --gate) is dropped from BF4.1 and BF4.2 by the owner's decision of 2026-10-20 (\"Izbaci `gate` iz BF4 taskova (Recommended)\"): its open-high-bugs condition counts BUG-27 and BUG-28, the very bugs this phase fixes, so no fix task could pass it. Every other step stays; the condition still holds the phase sign-off and the release, when both bugs are closed. The tool fault (the condition should exempt the bug the gated task fixes) is in the register."
+        }
+      ]
     },
     {
       "id": "BF4.2",
@@ -89,7 +101,6 @@
           "selftests",
           "validate",
           "plugin-validate",
-          "gate",
           "report",
           "lint",
           "shots",
@@ -116,5 +127,12 @@
       "verifiedBy": [],
       "bugId": "BUG-27"
     }
-  ]
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "d55605e4-ee14-4690-adce-d240ad64810b",
+    "branch": "audit/bf4-bugfix-batch-4",
+    "at": "2026-10-20T16:12:36Z"
+  },
+  "startedAt": "2026-10-20T16:12:36Z"
 }

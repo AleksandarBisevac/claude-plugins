@@ -1,0 +1,48 @@
+{
+  "gates": {
+    "python3 tools/gate-parity.py --selftest (foreground, 73/73)": "pass",
+    "nohup python3 tools/gate-parity.py --selftest & (73/73, SIGINT cases green)": "pass",
+    "python3 tools/sweep-selftests.py (340/340 files ok, exit 0)": "pass",
+    "ruff check tools/gate-parity.py": "pass",
+    "vermin -t=3.8- tools/gate-parity.py": "pass",
+    "python3 tools/gate-parity.py (exit 0)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-20T16:21:45Z",
+    "basis": "`python3 tools/gate-parity.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 69/70 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'return_trap_probe': TypeError: return_trap_honoured() takes 1 positional argument but 2 were given; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/gate-parity.py: new return_trap_probe(shell, argv_prefix=()) returns (honoured, reason) and catches OSError (reason names the shell and the error); return_trap_honoured(shell, argv_prefix=()) now delegates and stays a plain bool, so vsh5/vsh12 callers are unchanged. vsh11 stubs are now Python programs (no '#!/bin/sh', no chmod) run as [sys.executable, stub, '-c', probe], an argv every OS can start (macOS argv printed: [python3.14, 'X.py', '-c', 'probe']); Windows cannot be run here, so (1) is shown by reading the argv, not by execution. New cases vsh14 (stubs not shell scripts, probe ran, reason None) and vsh15 (a 0644 text file as the program raises PermissionError on posix / WinError 193 on Windows; probe answers (False, reason containing OSError), the bool stays False, and the case ran). Gates: selftest 73/73 foreground and under nohup, sweep 340/340, ruff and vermin clean. claims: the new docstrings state only what the code does (probe returns reason None only when the program ran; OSError is the only exception caught); no numbers written into prose.",
+    "descriptive": "gate-parity's RETURN-trap probe no longer needs a shell shebang and cannot end the selftest body on an OSError, so the Windows shard no longer aborts at vsh11."
+  },
+  "testsAdded": [
+    "vsh14",
+    "vsh15"
+  ],
+  "casesAdded": [
+    [
+      "vsh14",
+      "vsh15"
+    ]
+  ],
+  "falsifiers": {
+    "tools/gate-parity.py: (inline --selftest) return_trap_honoured over stubs that are not shell scripts runs on every OS, and an OSError from the program is recorded as a failed case instead of ending the selftest body": {
+      "file": "tools/gate-parity.py",
+      "find": "    except OSError as exc:\n        return False, \"OSError starting",
+      "replace": "    except ZeroDivisionError as exc:\n        return False, \"OSError starting",
+      "command": [
+        "python3",
+        "tools/gate-parity.py",
+        "--selftest"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:05800d7e474ef86fe0493ebab2fd6a6b760cfde27717358d15b03501e23319a0\",\"dirtyDigest\":\"sha256:cb02c12066431c530da322939c8d5acac6130a4d43ae13792917dd8ce3ef4c0a\",\"dirtyPaths\":{\"tools/gate-parity.py\":\"cc6cfad546210700\"},\"head\":\"0b415d48\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/gate-parity.py\"],\"scopeDigest\":\"sha256:bf8ff8293b2038d4e22476566070f125ccd4c2469b231519c8fb97a6079fda18\",\"v\":2}",
+  "testsAddGaps": [
+    "tools/gate-parity.py: (inline --selftest) return_trap_honoured over stubs that are not shell scripts runs on every OS, and an OSError from the program is recorded as a failed case instead of ending the selftest body - bound to `vsh14`, which the suite did not print",
+    "tools/gate-parity.py: (inline --selftest) return_trap_honoured over stubs that are not shell scripts runs on every OS, and an OSError from the program is recorded as a failed case instead of ending the selftest body - bound to `vsh15`, which the suite did not print"
+  ],
+  "testsAddUnchecked": []
+}
