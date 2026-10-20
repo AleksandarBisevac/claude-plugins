@@ -842,7 +842,7 @@
     {
       "id": "BF4",
       "title": "Bugfix batch 4",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/BF4.json"
     }
   ],
