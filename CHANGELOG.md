@@ -123,6 +123,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 - **The panel browser check's poll-window waits derive from the panel's poll interval**, settled
   by repeated measurement first, and `capture-screenshots.mjs` is checked for routing every
   poll-dependent wait through `waitForPoll` or `sleepPollWindow`.
+- **A committed screenshot is recorded stale by a digest over what its surface's page receives.**
+  `_surface_digest.py` hashes the report's stylesheet and script and the panel's page as the
+  browser gets them, with the plugin's version taken out, and `capture-screenshots.mjs` writes
+  that digest beside each picture while the screenshot-staleness check compares against it. A
+  prose-only edit to `_ui_theme.py`, a docstring or a comment, no longer owes a recapture; a
+  token or markup change still does, and a `scripts/ui/` part no surface claims is reported
+  instead of passing unseen.
 
 ### Fixed
 - **`done` refuses a missing or swallowed `--technical`.** `--technical` with no value, or one

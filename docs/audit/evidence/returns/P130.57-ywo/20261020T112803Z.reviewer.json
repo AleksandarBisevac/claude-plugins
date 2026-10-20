@@ -1,0 +1,21 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "CHANGELOG.md:129-131",
+   "issue": "The clause 'A prose-only edit to `_ui_theme.py`, a docstring or a comment, no longer owes a recapture' claims more than commit 8e382f8c did. The digest is taken over the assembled text (_surface_digest.py surface_texts(): report CSS + NUL + SCRIPT, panel UI_HTML) and nothing strips comments from it. The TOKEN_CSS string in _ui_theme.py carries CSS comments (/* ... */ at _ui_theme.py:64-119) that ship in both pages, so an edit to one still changes the digest and still owes a recapture. 'A comment' read by a changelog reader includes those, and they are most of the prose in that file. Only Python docstrings and # comments are excluded from the digest.",
+   "resolution": "Narrow the wording to what the page cannot see, e.g. 'a Python docstring or # comment in `_ui_theme.py`; a comment inside the CSS it emits is part of the page and still owes one'."},
+  {"id": 2, "severity": "low", "file": "CHANGELOG.md:131-132",
+   "issue": "The clause 'a `scripts/ui/` part no surface claims is reported instead of passing unseen' is listed in a Changed bullet as part of this change, but 8e382f8c did not add it. The unassigned-part report existed in _output.ui_surface_digests and in loadUiSourceDigests (the `if (parsed.unassigned?.length)` lines are unchanged context in the 8e382f8c capture-screenshots.mjs diff), and was present since 9f29c519, which is in v1.0.0. Read under [Unreleased]/Changed it presents a long-standing behaviour as new.",
+   "resolution": "Drop the clause, or write it as unchanged ('...still reports a part no surface claims')."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task asked for a Changed line stating, as behaviour with no count and no task id, that a committed screenshot is recorded stale by a digest over what each surface's page receives (_surface_digest.py), so a prose-only edit to _ui_theme.py no longer owes a recapture while a token or markup change still does. CHANGELOG.md:126-132 does that and carries no count or id. Clause check against 8e382f8c: 'hashes the report's stylesheet and script and the panel's page as the browser gets them' matches surface_texts() (_surface_digest.py:78-90); 'with the plugin's version taken out' matches without_version(), which replaces only the JSON-quoted version; 'capture-screenshots.mjs writes that digest beside each picture' matches recordCapture and loadUiSourceDigests; 'the screenshot-staleness check compares against it' matches _refs._ui_source_findings and screenshot_capture_drift; 'a token or markup change still does' holds. Two clauses claim more than the commit did, filed as findings 1 and 2. The executor's filed outcome describes the diff accurately: one bullet after the poll-wait bullet. It did drop its own first wording about an unassigned part 'owing a recapture', but kept the 'reported instead of passing unseen' clause, which is pre-existing behaviour.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "The filed return says 'gate-only task, expectRedFirst false: a CHANGELOG line, no test owed'; tests.add is none, so no red is owed.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate runs whole projects (sweep-selftests.py over the tree, the vitest and browser checks, the report render and validators). No command selects a narrower set of tests that a CHANGELOG line could be tied to. The gate-parity and prose-number lints are inside that sweep, and I did not trace them one by one."
+ },
+ "verdict": "findings"
+}

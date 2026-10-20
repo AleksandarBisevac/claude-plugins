@@ -1,0 +1,18 @@
+{
+  "gates": {
+    "gate-parity": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task, expectRedFirst false: a CHANGELOG line, no test owed",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Added one Changed bullet to CHANGELOG.md [Unreleased], after the poll-wait bullet, written from commit 8e382f8c (_surface_digest.py hashes the report CSS+SCRIPT and the panel UI_HTML with the version token removed; capture-screenshots.mjs writes it beside each picture; _refs.screenshot_capture_drift compares it; an unassigned scripts/ui part is reported). No count, no task id. Ran python3 tools/gate-parity.py -> exit 0; _deps.doc_prose_numbers() -> [] (run in the task tree). Other gates not run (own-tests: nothing of its own).\n\nclaims:\n1 CHANGELOG.md bullet matches _surface_digest.py surface_texts()/without_version() and _refs._ui_digests_by_command / screenshot_capture_drift as read in git show 8e382f8c; the unassigned-part clause matches loadUiSourceDigests in capture-screenshots.mjs, and I dropped my first wording that said such a part 'owes a recapture' because the code reports an error, not staleness\n2 n/a - no check touched\n3 grep digest/recapture/screenshot in CHANGELOG.md found only the poll-wait line, as the finding said; no other missing P130 line was in scope\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written in the bullet",
+    "descriptive": "The unreleased changelog now says a prose edit to _ui_theme.py no longer owes a screenshot recapture."
+  },
+  "testsAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:41d050ded0bb4d55907663fd182c47f04665ef01ed40893a4b64125c66992c44\",\"dirtyDigest\":\"sha256:22d68108cef1e29273604a4ee4a8441dc0e012ff850959ddb74bdfee22f754a8\",\"dirtyPaths\":{\"CHANGELOG.md\":\"6302474bba8e3e80\"},\"head\":\"9d8e6b08\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\"],\"scopeDigest\":\"sha256:d8935ff1b2497513a2c7f3b7b2e96a48c53978a06a4d1a5b7d9bfeb7294816e1\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

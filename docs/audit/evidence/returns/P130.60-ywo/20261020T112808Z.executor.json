@@ -1,0 +1,20 @@
+{
+  "gates": {
+    "gate-parity": "pass",
+    "prose-lints": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only docs task, expectRedFirst false, no test added",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Ran `python3 tools/gate-parity.py --list` first: it prints the slice/job table plus one summary line, nothing about affected dispatch, SECURITY.md fail modes, time bounds or exemption audits. Edited CLAUDE.md (lines 297-299) so the sentence says the docstring is the statement of those rules and --list prints only the slices and the jobs running them. No guard refused the edit. Evidence: `python3 tools/gate-parity.py` exit 0; _deps.doc_prose_numbers() returned [] and _output.prose_number_claims() returned [] in the task tree. The full selftests/browser gates were not run (own-tests: nothing of its own).",
+    "descriptive": "CLAUDE.md no longer claims --list shows the non-slice rules; it points at the docstring for those."
+  },
+  "testsAdded": [],
+  "claims": "claims: the sentence now matches the observed output of `python3 tools/gate-parity.py --list` (run, exit 0; output lists slices and jobs only); the number-free edit adds no count; prose lints empty and gate-parity exit 0 as above.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:f96a99e89e1b78a387b99539f955977e57184df31fda7782d2738773fa08627f\",\"dirtyDigest\":\"sha256:132e38f3413781841748d4d82951e04fc0aaabba2cc68f5268d77fa768ca5897\",\"dirtyPaths\":{\"CLAUDE.md\":\"951a1680648610b2\"},\"head\":\"9d8e6b08\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CLAUDE.md\"],\"scopeDigest\":\"sha256:83187acac4920cdab221f6cc82365155fb31a29a84153810c8684059cd6355e3\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

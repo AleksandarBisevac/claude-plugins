@@ -481,31 +481,49 @@
         "severity": "low",
         "file": "CHANGELOG.md:6-150",
         "issue": "P130.3 (8e382f8c, 'A screenshot is stale exactly when what the page receives changed, not when _ui_theme.py's prose did') landed a new module _surface_digest.py, a changed capture-screenshots.mjs and a changed screenshot-staleness check, and is a named clause of the phase desiredOutcome ('a prose edit in _ui_theme.py no longer owes a screenshot recapture'). [Unreleased] has no line for it (grep for digest/recapture/screenshot finds only the poll-wait line at CHANGELOG.md:123). The task acceptance says every feat(P130) commit's user-visible change has a line, and the neighbouring tool-level changes (prove-gates labels, poll waits) do have one.",
-        "resolution": "Add a Changed line: a committed screenshot is recorded stale by a digest over what each surface's page receives (_surface_digest.py), so a prose-only edit to _ui_theme.py no longer owes a recapture while a token or markup change still does. State it as behaviour, with no count and no task id."
+        "resolution": "Add a Changed line: a committed screenshot is recorded stale by a digest over what each surface's page receives (_surface_digest.py), so a prose-only edit to _ui_theme.py no longer owes a recapture while a token or markup change still does. State it as behaviour, with no count and no task id.",
+        "fixTask": "P130.57-ywo"
       },
       {
         "id": "P130-R49",
         "severity": "low",
         "file": "CONTRIBUTING.md:216",
         "issue": "'It compares no document' is broader than gate-parity.py does: the very next sentences list failmode_table_drift(), which compares SECURITY.md's fail-mode table (a document) against hooks.json (tools/gate-parity.py:537, docstring lines 42-45). The true narrower statement is the one CLAUDE.md:290-296 makes ('no longer compares documents against the runner').",
-        "resolution": "Reword to 'It compares no description of the gate set against the runner: the documents point at verify.sh --list rather than listing commands'."
+        "resolution": "Reword to 'It compares no description of the gate set against the runner: the documents point at verify.sh --list rather than listing commands'.",
+        "fixTask": "P130.58-ywo"
       },
       {
         "id": "P130-R50",
         "severity": "low",
         "file": "CHANGELOG.md:110,151",
         "issue": "Two entries describe the same plan-gate refusal change: Changed 'The plan gate's refusal names the right owner' (line 110) and Fixed 'The plan-gate refusal states only what is true' (line 151). Both say a not-started task reached only through a directory entry is no longer named as the file's owner; the second adds the terminal-task case. A reader sees one change twice, in two sections.",
-        "resolution": "Fold them into one entry (the Fixed one, since the old text was false), keeping the shared-coverage-function sentence and the terminal-task case."
+        "resolution": "Fold them into one entry (the Fixed one, since the old text was false), keeping the shared-coverage-function sentence and the terminal-task case.",
+        "fixTask": "P130.59-ywo"
       },
       {
         "id": "P130-R51",
         "severity": "low",
         "file": "CLAUDE.md:297",
         "issue": "'run python3 tools/gate-parity.py --list rather than trusting this paragraph' points at a command that prints the slices and the jobs running them (verified by running it), not the other rules the paragraph lists (affected dispatch, SECURITY.md fail modes, job time bounds, exemption audits). Those are held by the docstring the previous sentence names, so the pointer covers only the slice half.",
-        "resolution": "Say 'run python3 tools/gate-parity.py --list for the slices and read its docstring for the rest', or drop the --list pointer."
+        "resolution": "Say 'run python3 tools/gate-parity.py --list for the slices and read its docstring for the rest', or drop the --list pointer.",
+        "fixTask": "P130.60-ywo"
+      },
+      {
+        "id": "P130-R52",
+        "severity": "low",
+        "file": "CHANGELOG.md:129-131",
+        "issue": "The clause 'A prose-only edit to `_ui_theme.py`, a docstring or a comment, no longer owes a recapture' claims more than commit 8e382f8c did. The digest is taken over the assembled text (_surface_digest.py surface_texts(): report CSS + NUL + SCRIPT, panel UI_HTML) and nothing strips comments from it. The TOKEN_CSS string in _ui_theme.py carries CSS comments (/* ... */ at _ui_theme.py:64-119) that ship in both pages, so an edit to one still changes the digest and still owes a recapture. 'A comment' read by a changelog reader includes those, and they are most of the prose in that file. Only Python docstrings and # comments are excluded from the digest.",
+        "resolution": "Narrow the wording to what the page cannot see, e.g. 'a Python docstring or # comment in `_ui_theme.py`; a comment inside the CSS it emits is part of the page and still owes one'."
+      },
+      {
+        "id": "P130-R53",
+        "severity": "low",
+        "file": "CHANGELOG.md:131-132",
+        "issue": "The clause 'a `scripts/ui/` part no surface claims is reported instead of passing unseen' is listed in a Changed bullet as part of this change, but 8e382f8c did not add it. The unassigned-part report existed in _output.ui_surface_digests and in loadUiSourceDigests (the `if (parsed.unassigned?.length)` lines are unchanged context in the 8e382f8c capture-screenshots.mjs diff), and was present since 9f29c519, which is in v1.0.0. Read under [Unreleased]/Changed it presents a long-standing behaviour as new.",
+        "resolution": "Drop the clause, or write it as unchanged ('...still reports a part no surface claims')."
       }
     ],
-    "outcome": "[findings: 51 - 0 high, 10 med, 41 low; 41 with a recorded fix commit]"
+    "outcome": "[findings: 53 - 0 high, 10 med, 43 low; 41 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -5748,7 +5766,7 @@
     {
       "id": "P130.56-ywo",
       "title": "One reader answers which commits belong to a task's attempt, the scope preflight knows Playwright, and the phase review's code lows are fixed",
-      "status": "in_progress",
+      "status": "done",
       "description": "REPLACES P130.52-ywo. Its finished work is saved as a patch: <outside-repo> (git apply --check passed on the phase head) - apply it in your tree (git apply -3, then git restore --staged .), then fix the pre-commit review's MEDIUM finding: when a rebase leaves the recorded start head off HEAD's history, `_scoped_commit.attempt_span` (~:1210) returns ([], why) before any fallback and `audit-task._no_change_moves` (~:6098-6102) only adds a note, so `done --no-change` succeeds over committed work the old code refused. Make the span reader answer 'cannot tell' (None, why) - not 'no commits' - when the start head is not an ancestor, and make every caller treat cannot-tell as a refusal on the no-change and commit paths (fail loud), naming the start head and the rebase; rewrite case sc-as1, which pins the wrong behaviour, and add the rebase case for --no-change. Keep everything else the review confirmed (one reader, byte-identical guard payloads, Playwright, red_at_base filtering). The original task follows: Whole-phase review of P130 (medium 1, 2; low 5-8). (1) The span start..HEAD of a task's attempt has two readers with different rules: `_scoped_commit.earlier_attempt_commits` (~:1145) checks the start head is an ancestor and excludes other tasks' commits; audit-task.py `_attempt_commits_read` (~:6113) only `rev-parse --verify`s it - after a rebase/reset `done --commit` skips the empty-span refusal (~:6318) and `_no_change_moves` treats foreign commits as moves. Make ONE function (in the lowest module both may import) the only reader of the attempt span - ancestor check, other tasks' recorded commits excluded, plan_to_git pathspecs - and route both callers through it; delete the second. Case: a start head off HEAD's history makes both callers claim nothing and say why. (2) `scope_gap` (drive-phase.py ~:1205-1252): `npx playwright test` is classified by neither entry_collector nor can_run_tests, so a gate [vitest, npx playwright test] asks an e2e spec only of vitest and stops wrongly - add playwright to the test-runner token table (TEST_RUNNER_TOKENS) and treat its specs as could-not-tell unless its config is read; case for the gate shape. (5) declared non-record work is derived three times (`_scoped_commit._declared_names`, `commit-task-work.declared_names`, `audit-task._declared_work`) - one function. (6) guard-capabilities.py ~:68 and guard-history-rewrite.py ~:1766 build their own deny payload - use `_config.deny_payload` (change only the payload construction, never how a guard reads a command; if a host safeguard refuses an edit to a guard file, stop that part and report it). (7) drive-phase.py ~:237 import comment names entry_runner; it uses entry_collector. (8) `build-command` accepts a key starting with `affected/`, which _manifest_rules refuses as a gate entry - refuse it in build-command; `drive-phase.red_at_base` takes the newest clean run of any gate with no step-name filter while `run-test-gate.base_red` filters by steps - filter the same way. Acceptance: a case per item; full sweep green; bench-hooks --gate green.",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
@@ -5796,19 +5814,293 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9d8e6b085efc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Applied <outside-repo> with `git apply -3` (exit 0, all 11 files applied cleanly), `git restore --staged .` (exit 0), `git ls-files -u` empty, `git diff --stat` 11 files. The fix: _scoped_commit.attempt_span returns (None, why) - cannot tell - when `merge-base --is-ancestor` answers 1, the why naming the start head's first 12 hex digits and 'rebased or reset'; docstring states None is cannot-tell and every caller refuses on it. audit-task._no_change_moves returns (None, notes + ['... CANNOT BE TOLD: <why>']) whenever the span reader answers None (not-ancestor or a git log failure, which before only added a note and let the close through); the done --no-change caller refuses on None with E_USAGE, printing the note (start head named), advising re-start (spends an attempt, records the new head) or --commit, writing nothing. done --commit (_close_evidence_refusal) already refused on None, now reached for the not-ancestor case too, with the reason naming the start head; comments updated. commit-task-work.earlier_attempt passes None through; its only caller asks it while already refusing, and the refusal carries why. Tests: sc-ea2 rewritten to require None (not []); sc-as1 rewritten to require None from the commit caller with the start head named, the done --commit refusal naming it, and _no_change_moves None with a note naming it; new ncm7 (command-level: start records head, amend rewrites it out of HEAD's history, a commit to the declared file, done --no-change refused E_USAGE naming the start head, 'not an ancestor', 'rebase', manifest bytes unchanged) and ncm7b (second direction: same start, no rewrite, a commit to another file only, closes 0). PLUGIN-BUILD-GUIDE.md's span paragraph now says cannot-tell and names ncm7. Guard hook diffs are the patch's payload construction only (_config.deny_payload/ask_payload); no guard edit was made by me. Counts: test__scoped_commit 43/43, test_commit_task_work 132/132, test_audit_task 1099/1099, test_drive_phase 416/416, test_guard_capabilities 35/35, test_guard_history_rewrite 291/291, test__refs 286/286, each exit 0; full sweep `python3 tools/sweep-selftests.py` exit 0, 340/340 files ok, 16600 cases; ruff exit 0; vermin exit 0; bench-hooks --gate exit 0 (measured on 3.14.7 only, 3.8-3.13 NOT MEASURED). Falsifiers each probed in a scratch copy of the tree (not the task tree): all three turned their case red (sc-ea2+sc-as1, pw1, ncm7), exit 1 each. test_guard_history_rewrite.py and hooks/_config.py are declared but unchanged.",
+        "descriptive": "A rebase that leaves a task's recorded start head off HEAD's history now makes every close refuse with the start head named, instead of letting done --no-change close over committed work."
       },
       "startedAt": "2026-10-20T10:36:22Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-20T11:27:08Z",
+      "verifiedBy": [
+        "sc-ea2 (rewritten)",
+        "sc-as1 (rewritten)",
+        "sc-as2",
+        "sc-ea4",
+        "sc-dw1",
+        "sc-dw2",
+        "ncm7",
+        "ncm7b",
+        "pw1",
+        "pw2",
+        "bcm5",
+        "bb5",
+        "imc1",
+        "c4",
+        "c5"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-20T11:16:22Z.a0e29e",
         "status": "passed",
         "at": "2026-10-20T11:16:22Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "9d8e6b085efc",
+        "at": "2026-10-20T11:27:08Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-20T10:53:08Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage ncm-block` in a throwaway tree at HEAD exited 1 with 1 of 10 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ncm7 (house FAIL): SELFTEST FAILED: 9/10 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P130.57-ywo",
+      "title": "fix P130-R48: P130.3 (8e382f8c, 'A screenshot is stale exactly when what the ...",
+      "status": "in_progress",
+      "description": "P130.3 (8e382f8c, 'A screenshot is stale exactly when what the page receives changed, not when _ui_theme.py's prose did') landed a new module _surface_digest.py, a changed capture-screenshots.mjs and a changed screenshot-staleness check, and is a named clause of the phase desiredOutcome ('a prose edit in _ui_theme.py no longer owes a screenshot recapture'). [Unreleased] has no line for it (grep for digest/recapture/screenshot finds only the poll-wait line at CHANGELOG.md:123). The task acceptance says every feat(P130) commit's user-visible change has a line, and the neighbouring tool-level changes (prove-gates labels, poll waits) do have one.\n\nResolution asked: Add a Changed line: a committed screenshot is recorded stale by a digest over what each surface's page receives (_surface_digest.py), so a prose-only edit to _ui_theme.py no longer owes a recapture while a token or markup change still does. State it as behaviour, with no count and no task id.",
+      "files": [
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-paths"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-20T11:28:03Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-20T11:28:01Z",
+          "text": "scope: CHANGELOG.md, every path the finding(s) P130-R48 name"
+        },
+        {
+          "at": "2026-10-20T11:28:01Z",
+          "text": "no suite: CHANGELOG.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/_deps.py, plugins/audit/scripts/_output.py, plugins/audit/scripts/_refs.py, plugins/audit/tests/test__deps.py and 3 more"
+        },
+        {
+          "at": "2026-10-20T11:28:01Z",
+          "text": "gate-only, not tdd: every file P130-R48 names is a document (CHANGELOG.md) with no test of its own, so there is no case to write first and no red to show; the gate the task carries is its check"
+        }
+      ],
+      "fixes": [
+        "P130-R48"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-20T11:40:22Z.6f18a4",
+        "status": "passed",
+        "at": "2026-10-20T11:40:22Z"
+      }
+    },
+    {
+      "id": "P130.58-ywo",
+      "title": "fix P130-R49: 'It compares no document' is broader than gate-parity.py does: ...",
+      "status": "in_progress",
+      "description": "'It compares no document' is broader than gate-parity.py does: the very next sentences list failmode_table_drift(), which compares SECURITY.md's fail-mode table (a document) against hooks.json (tools/gate-parity.py:537, docstring lines 42-45). The true narrower statement is the one CLAUDE.md:290-296 makes ('no longer compares documents against the runner').\n\nResolution asked: Reword to 'It compares no description of the gate set against the runner: the documents point at verify.sh --list rather than listing commands'.",
+      "files": [
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-paths"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-20T11:28:05Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-20T11:28:01Z",
+          "text": "scope: CONTRIBUTING.md, every path the finding(s) P130-R49 name"
+        },
+        {
+          "at": "2026-10-20T11:28:01Z",
+          "text": "no suite: CONTRIBUTING.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/_deps.py, plugins/audit/scripts/_refs.py, plugins/audit/tests/test_derive_phase_gate.py, tools/affected.py, tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-10-20T11:28:01Z",
+          "text": "gate-only, not tdd: every file P130-R49 names is a document (CONTRIBUTING.md) with no test of its own, so there is no case to write first and no red to show; the gate the task carries is its check"
+        }
+      ],
+      "fixes": [
+        "P130-R49"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-20T11:51:22Z.97bc9c",
+        "status": "passed",
+        "at": "2026-10-20T11:51:22Z"
+      }
+    },
+    {
+      "id": "P130.59-ywo",
+      "title": "fix P130-R50: Two entries describe the same plan-gate refusal change: Changed...",
+      "status": "pending",
+      "description": "Two entries describe the same plan-gate refusal change: Changed 'The plan gate's refusal names the right owner' (line 110) and Fixed 'The plan-gate refusal states only what is true' (line 151). Both say a not-started task reached only through a directory entry is no longer named as the file's owner; the second adds the terminal-task case. A reader sees one change twice, in two sections.\n\nResolution asked: Fold them into one entry (the Fixed one, since the old text was false), keeping the shared-coverage-function sentence and the terminal-task case.",
+      "files": [
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-paths"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-20T11:28:02Z",
+          "text": "scope: CHANGELOG.md, every path the finding(s) P130-R50 name"
+        },
+        {
+          "at": "2026-10-20T11:28:02Z",
+          "text": "no suite: CHANGELOG.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/_deps.py, plugins/audit/scripts/_output.py, plugins/audit/scripts/_refs.py, plugins/audit/tests/test__deps.py and 3 more"
+        },
+        {
+          "at": "2026-10-20T11:28:02Z",
+          "text": "gate-only, not tdd: every file P130-R50 names is a document (CHANGELOG.md) with no test of its own, so there is no case to write first and no red to show; the gate the task carries is its check"
+        }
+      ],
+      "fixes": [
+        "P130-R50"
+      ]
+    },
+    {
+      "id": "P130.60-ywo",
+      "title": "fix P130-R51: 'run python3 tools/gate-parity.py --list rather than trusting t...",
+      "status": "in_progress",
+      "description": "'run python3 tools/gate-parity.py --list rather than trusting this paragraph' points at a command that prints the slices and the jobs running them (verified by running it), not the other rules the paragraph lists (affected dispatch, SECURITY.md fail modes, job time bounds, exemption audits). Those are held by the docstring the previous sentence names, so the pointer covers only the slice half.\n\nResolution asked: Say 'run python3 tools/gate-parity.py --list for the slices and read its docstring for the rest', or drop the --list pointer.",
+      "files": [
+        "CLAUDE.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-paths"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-20T11:28:08Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-20T11:28:02Z",
+          "text": "scope: CLAUDE.md, every path the finding(s) P130-R51 name"
+        },
+        {
+          "at": "2026-10-20T11:28:02Z",
+          "text": "no suite: CLAUDE.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/_deps.py, plugins/audit/scripts/_refs.py, tools/affected.py, tools/measure-context.py, tools/prove-gates.py"
+        },
+        {
+          "at": "2026-10-20T11:28:02Z",
+          "text": "gate-only, not tdd: every file P130-R51 names is a document (CLAUDE.md) with no test of its own, so there is no case to write first and no red to show; the gate the task carries is its check"
+        }
+      ],
+      "fixes": [
+        "P130-R51"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-20T12:02:20Z.c700ff",
+        "status": "passed",
+        "at": "2026-10-20T12:02:20Z"
       }
     }
   ],
