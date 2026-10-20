@@ -832,6 +832,12 @@
       "title": "One executable description of CI, and a plugin that ships only what it runs",
       "status": "done",
       "shard": "phases/P130.json"
+    },
+    {
+      "id": "BF3",
+      "title": "Bugfix batch 3",
+      "status": "pending",
+      "shard": "phases/BF3.json"
     }
   ],
   "fileIndex": {
@@ -4434,7 +4440,8 @@
       "P130.49-ywo",
       "P130.50-ywo",
       "P130.52-ywo",
-      "P130.56-ywo"
+      "P130.56-ywo",
+      "BF3.1"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -6548,7 +6555,8 @@
       "P130.49-ywo",
       "P130.50-ywo",
       "P130.52-ywo",
-      "P130.56-ywo"
+      "P130.56-ywo",
+      "BF3.1"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -10718,6 +10726,25 @@
       ],
       "taskId": "P130.11-ywo",
       "fixedIn": "05c10b1a3d54",
+      "notes": null
+    },
+    {
+      "id": "BUG-26",
+      "title": "done --technical misses a manifest path that contains a space",
+      "status": "in_progress",
+      "severity": "med",
+      "reportedAt": "2026-10-20T13:33:41Z",
+      "reportedBy": null,
+      "description": "`_technical_is_manifest` (plugins/audit/scripts/manifest/audit-task.py ~:10102), added by P130.20-ywo (414a4761), returns False for any --technical value holding whitespace before it compares the value with the manifest positional or asks whether it is an existing .json file. A manifest path with a space - any Windows profile directory whose user name holds a space, and the spaced TMPDIR of tools/verify.sh's selftests-stress slice - is therefore taken as prose, so `done <id> --technical <that path>` records the path as outcome.technical and swallows the positional instead of being refused. Found by `sh tools/verify.sh --release` (selftests-stress, `--spaced`): test_audit_task.py pd15 fails 1098/1099. Not in v3.4.0 (the check is new); it blocks the v3.5.0 tag.",
+      "repro": null,
+      "expected": null,
+      "actual": null,
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "taskId": "BF3.1",
+      "fixedIn": null,
       "notes": null
     }
   ],
