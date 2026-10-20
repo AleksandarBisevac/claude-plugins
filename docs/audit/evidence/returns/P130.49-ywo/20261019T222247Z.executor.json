@@ -1,0 +1,58 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- plugins/audit/scripts plugins/audit/hooks plugins/audit/tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-19T22:53:14Z",
+    "basis": "`python3 plugins/audit/tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 106/107 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_command_names_suite': TypeError: case_binding_gaps() takes 3 positional arguments but 4 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_entry_suite': TypeError: case_binding_gaps() takes 3 positional arguments but 4 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_suites_run': TypeError: case_binding_gaps() takes 3 positional arguments but 4 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'case_binding_unchecked': TypeError: case_binding_gaps() takes 3 positional arguments but 4 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'earlier_attempt_commits': TypeError: case_binding_gaps() takes 3 positional arguments but 4 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'start_head_of': TypeError: case_binding_gaps() takes 3 positional arguments but 4 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_attempt_commits_read': TypeError: case_binding_gaps() takes 3 positional arguments but 4 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_STDIN_TEXT_FLAG': TypeError: case_binding_gaps() takes 3 positional arguments but 4 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_text_on_stdin': TypeError: case_binding_gaps() takes 3 positional arguments but 4 were given; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "casesAdded": [
+    "cb4",
+    "lo-ce6"
+  ],
+  "outcome": {
+    "technical": "(a) _filed_returns.case_binding_gaps takes the submit's argv and grades an id only against the suite its tests.add entry names; new case_binding_unchecked names the entries whose suite the command did not run as 'not checked' (never 'not printed'); a command naming none of the declared suites grades as before. drive-phase submit passes the argv and records a 'not checked' did-line. (b1) _scoped_commit.close_evidence_refusal takes earlier/earlier_why; commit-task-work reads the commits in start_head..HEAD (head from the task.start journal row, via new start_head_of / earlier_attempt_commits, paths through _config.plan_to_git) and, when the work is already committed, names `audit-task.py done <id> --commit <sha>` instead of --no-change and 'bring it into'; with no recorded start head it claims nothing. _scoped_commit now imports _loader, so the one PLUGIN-BUILD-GUIDE.md module-map line was updated (plan gate allowed the edit). (b2) audit-task.py _attempt_commits_read returns (touched, failure); _close_evidence_refusal refuses when git log fails, naming the log and its exit code; _attempt_commits kept as a wrapper. (b3) kr1 now requires a non-None sha; new case kr3 asks kept_tree_stop directly. (c) full-gate.py _run_verb sends the bug-add --description on stdin via _text_on_stdin; _stream_subprocess takes stdin=None; seams in test_full_gate.py updated; case fglf14. (d) test_drive_phase.py argv_prose_violations reads PROSE_FLAGS from audit-task.py (argv_prose_flags, exempting only review_outcome), reads two-call/+= appends, joined --flag=value forms, flags held in names, and no longer spares calls nested in the helper's arguments (mt5-mt8); _verb_with_text refuses whitespace-only text with a sentence and its docstring says what each blank text does (mt9). Cases added: cb4, lo-ce6, ctw-ro5, ctw-ro6, kr3, fglf14, mt5-mt9; kr1 tightened. Full sweep: 340/340 files ok, 16571 cases, exit 0 (an earlier sweep run had test__deps and gate-parity red: the first was the guide map line above, gate-parity passed on re-run and in the second full sweep). test__refs.py --selftest 286/286.",
+    "descriptive": "A bound case id is graded only against the suite that holds it, the commit refusals name done --commit and fail loudly on a failed git log, full-gate sends machine text on stdin, and the argv-prose lint reads the verb's own flag list over the whole argv expression."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__filed_returns.py: cb4",
+    "plugins/audit/tests/test_audit_task.py: lo-ce6",
+    "plugins/audit/tests/test_commit_task_work.py: ctw-ro5, ctw-ro6",
+    "plugins/audit/tests/test_drive_phase.py: kr3, mt5, mt6, mt7, mt8, mt9",
+    "plugins/audit/tests/test_full_gate.py: fglf14"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test__filed_returns.py: an id bound to a case in a suite the submit did not run is reported not checked, while an id in the suite it ran is graded against that suite's labels": {
+      "file": "plugins/audit/scripts/manifest/_filed_returns.py",
+      "find": "if ran is not None and _entry_suite(entry) not in ran:",
+      "replace": "if False:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__filed_returns.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test_audit_task.py: done --commit refuses loudly when git log fails, naming the failure": {
+      "file": "plugins/audit/scripts/manifest/audit-task.py",
+      "find": "        if since is None:",
+      "replace": "        if False:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_task.py",
+        "--selftest",
+        "--stage",
+        "lo-ce6-block"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:d4f7aad8ca981eaf4afe88a815fc484d9a2b885aa0b0b39a3ef1bb3fc463af24\",\"dirtyDigest\":\"sha256:c939f250a523dccee60fb13f804c8f970537e03b4e81b17d35f288b89cc89d16\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"28cd00c41be7e9ef\",\"plugins/audit/scripts/governance/_scoped_commit.py\":\"41fa0c8bf0a330cd\",\"plugins/audit/scripts/governance/commit-task-work.py\":\"5d2150410817048b\",\"plugins/audit/scripts/governance/drive-phase.py\":\"2c79eee192b8ab00\",\"plugins/audit/scripts/governance/full-gate.py\":\"1e9554d31fe396dd\",\"plugins/audit/scripts/manifest/_filed_returns.py\":\"9bdf715c8e2f7b26\",\"plugins/audit/scripts/manifest/audit-task.py\":\"457f834bca35e2a5\",\"plugins/audit/tests/test__filed_returns.py\":\"f14bddf3d06c8a80\",\"plugins/audit/tests/test_audit_task.py\":\"c488733a358fdc54\",\"plugins/audit/tests/test_commit_task_work.py\":\"39bf1b8d743c45bb\",\"plugins/audit/tests/test_drive_phase.py\":\"148e0404cf9a2ed3\",\"plugins/audit/tests/test_full_gate.py\":\"2358bfc2289ea110\"},\"head\":\"d0268f2b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_scoped_commit.py\",\"plugins/audit/scripts/governance/commit-task-work.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/full-gate.py\",\"plugins/audit/scripts/manifest/_filed_returns.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test__filed_returns.py\",\"plugins/audit/tests/test_audit_task.py\",\"plugins/audit/tests/test_commit_task_work.py\",\"plugins/audit/tests/test_drive_phase.py\",\"plugins/audit/tests/test_full_gate.py\"],\"scopeDigest\":\"sha256:4eac59324b54e085f98d611aef419dea2fadf7dd654370bd0c2975aff2fb5743\",\"v\":2}",
+  "testsAddGaps": [
+    "plugins/audit/tests/test__filed_returns.py: an id bound to a case in a suite the submit did not run is reported not checked, while an id in the suite it ran is graded against that suite's labels - bound to `cb4`, which the suite did not print",
+    "plugins/audit/tests/test_audit_task.py: done --commit refuses loudly when git log fails, naming the failure - bound to `lo-ce6`, which the suite did not print"
+  ]
+}
