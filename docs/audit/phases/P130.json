@@ -5462,7 +5462,7 @@
     {
       "id": "P130.52-ywo",
       "title": "One reader answers which commits belong to a task's attempt, the scope preflight knows Playwright, and the phase review's code lows are fixed",
-      "status": "in_progress",
+      "status": "blocked",
       "description": "Whole-phase review of P130 (medium 1, 2; low 5-8). (1) The span start..HEAD of a task's attempt has two readers with different rules: `_scoped_commit.earlier_attempt_commits` (~:1145) checks the start head is an ancestor and excludes other tasks' commits; audit-task.py `_attempt_commits_read` (~:6113) only `rev-parse --verify`s it - after a rebase/reset `done --commit` skips the empty-span refusal (~:6318) and `_no_change_moves` treats foreign commits as moves. Make ONE function (in the lowest module both may import) the only reader of the attempt span - ancestor check, other tasks' recorded commits excluded, plan_to_git pathspecs - and route both callers through it; delete the second. Case: a start head off HEAD's history makes both callers claim nothing and say why. (2) `scope_gap` (drive-phase.py ~:1205-1252): `npx playwright test` is classified by neither entry_collector nor can_run_tests, so a gate [vitest, npx playwright test] asks an e2e spec only of vitest and stops wrongly - add playwright to the test-runner token table (TEST_RUNNER_TOKENS) and treat its specs as could-not-tell unless its config is read; case for the gate shape. (5) declared non-record work is derived three times (`_scoped_commit._declared_names`, `commit-task-work.declared_names`, `audit-task._declared_work`) - one function. (6) guard-capabilities.py ~:68 and guard-history-rewrite.py ~:1766 build their own deny payload - use `_config.deny_payload` (change only the payload construction, never how a guard reads a command; if a host safeguard refuses an edit to a guard file, stop that part and report it). (7) drive-phase.py ~:237 import comment names entry_runner; it uses entry_collector. (8) `build-command` accepts a key starting with `affected/`, which _manifest_rules refuses as a gate entry - refuse it in build-command; `drive-phase.red_at_base` takes the newest clean run of any gate with no step-name filter while `run-test-gate.base_red` filters by steps - filter the same way. Acceptance: a case per item; full sweep green; bench-hooks --gate green.",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
@@ -5524,7 +5524,8 @@
         "runId": "2026-10-20T09:43:03Z.686223",
         "status": "passed",
         "at": "2026-10-20T09:43:03Z"
-      }
+      },
+      "blockedReason": "Not confirmed: an adversarial pre-commit review found a medium regression - when a rebase leaves the start head off HEAD's history, attempt_span returns no commits and _no_change_moves only notes it, so a --no-change close succeeds over committed work (the old code refused it), and case sc-as1 pins that. The work is saved as a patch and the task is re-added with the fix."
     },
     {
       "id": "P130.53-ywo",
