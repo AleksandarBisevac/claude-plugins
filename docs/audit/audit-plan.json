@@ -931,7 +931,8 @@
       "P130.9",
       "P130.22-ywo",
       "P130.37-ywo",
-      "BF4.2"
+      "BF4.2",
+      "BF4.3-p5e"
     ],
     ".gitignore": [
       "P4.4",
@@ -7508,7 +7509,8 @@
       "P130.40-ywo",
       "P130.55-ywo",
       "BF4.1",
-      "BF4.2"
+      "BF4.2",
+      "BF4.3-p5e"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -10759,7 +10761,7 @@
     {
       "id": "BUG-27",
       "title": "CI jobs float on ubuntu-latest while pinning tools the new image cannot install",
-      "status": "in_progress",
+      "status": "fixed",
       "severity": "high",
       "reportedAt": "2026-10-20T16:11:50Z",
       "reportedBy": null,
@@ -10772,13 +10774,13 @@
         "tools/gate-parity.py"
       ],
       "taskId": "BF4.2",
-      "fixedIn": null,
+      "fixedIn": "49d5060c4bf3",
       "notes": null
     },
     {
       "id": "BUG-28",
       "title": "gate-parity vsh11 runs a /bin/sh stub as a program, which Windows cannot execute",
-      "status": "in_progress",
+      "status": "fixed",
       "severity": "high",
       "reportedAt": "2026-10-20T16:11:51Z",
       "reportedBy": null,
@@ -10790,7 +10792,7 @@
         "tools/gate-parity.py"
       ],
       "taskId": "BF4.1",
-      "fixedIn": null,
+      "fixedIn": "d82a2e4d39a3",
       "notes": null
     }
   ],
