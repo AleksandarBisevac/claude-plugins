@@ -26,5 +26,95 @@
     "findings": []
   },
   "summary": null,
-  "tasks": []
+  "tasks": [
+    {
+      "id": "BF4.1",
+      "title": "Fix BUG-28: gate-parity's trap cases run on Windows",
+      "status": "pending",
+      "description": "",
+      "files": [
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/gate-parity.py: (inline --selftest) return_trap_honoured over stubs that are not shell scripts runs on every OS, and an OSError from the program is recorded as a failed case instead of ending the selftest body"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "bugId": "BUG-28"
+    },
+    {
+      "id": "BF4.2",
+      "title": "Fix BUG-27: every CI job pins its runner image, and a floating -latest label is refused",
+      "status": "pending",
+      "description": "",
+      "files": [
+        ".github/workflows/ci.yml",
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/gate-parity.py: (inline --selftest) a workflow job whose runs-on is a floating *-latest label is reported by name, while an explicit image (ubuntu-24.04, windows-2025) is not"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "BF4.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "bugId": "BUG-27"
+    }
+  ]
 }
