@@ -45,7 +45,6 @@
           "selftests",
           "validate",
           "plugin-validate",
-          "gate",
           "report",
           "lint",
           "shots",
