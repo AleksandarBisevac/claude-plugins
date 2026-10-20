@@ -1153,7 +1153,14 @@ def earlier_attempt_commits(git_root, project, names, start_head, others=()):
     made just before the start, which would name work that is not the
     attempt's as the thing to close on. With no recorded head, or none git
     still holds, there is no span to ask about and the answer is `([], "")` -
-    the refusal then gives the advice it gave before, which claims nothing."""
+    the refusal then gives the advice it gave before, which claims nothing.
+
+    A HEAD GIT HOLDS IS NOT YET A SPAN. After a rebase or a reset the recorded
+    head can survive in the object store off HEAD's history, and `start..HEAD`
+    over it lists every commit since the merge base - commits that are not the
+    attempt's, named as the thing to close on. So the head must be an ancestor
+    of HEAD; when it is not, the answer is `([], why)`: nothing claimed, and the
+    reason said, which the refusal prints beside its advice."""
     hc = _loader.load_hooks_config(modname="audit__config")
     rels = [r for r in (hc.plan_to_git(n, git_root, project) for n in names)
             if r is not None]
@@ -1161,6 +1168,17 @@ def earlier_attempt_commits(git_root, project, names, start_head, others=()):
             "rev-parse", "--verify", "-q",
             "%s^{commit}" % (start_head,)])[0] != 0:
         return [], ""
+    code, _out, err = run_git(git_root, ["merge-base", "--is-ancestor",
+                                         start_head, "HEAD"])
+    if code == 1:
+        return [], ("the start head %s recorded for this attempt is not an "
+                    "ancestor of HEAD (the branch was rebased or reset since), "
+                    "so no span from it names the attempt's commits"
+                    % (start_head[:12],))
+    if code != 0:
+        return None, "`git merge-base --is-ancestor` %s%s" % (
+            "could not be run" if code is None else "exited %d" % (code,),
+            ": %s" % (" ".join(err.split()),) if err.strip() else "")
     span = "%s..HEAD" % (start_head,)
     code, out, err = run_git(git_root, ["log", "--format=%H", span, "--"]
                              + list(rels))

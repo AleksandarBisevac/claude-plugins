@@ -4950,7 +4950,10 @@ def submit(ctx, manifest, args, cmd, text):
                    "; ".join(unchecked)))
         # The drive's own reading, filed beside the claim: the reviewer's brief
         # prints these and not a recomputation that could not see the output.
+        # The unchecked entries ride with the gaps: ids no one compared with a
+        # printed label are as much the reviewer's to know as ids that failed.
         body[_fr.GAPS_FIELD] = gaps
+        body[_fr.UNCHECKED_FIELD] = unchecked
         if gaps:
             ctx["did"].append(
                 "tests.add: %d entr%s not bound to a printed case: %s"

@@ -5218,7 +5218,12 @@
       "startedAt": "2026-10-20T07:20:50Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-20T07:57:51Z.474ad5",
+        "status": "passed",
+        "at": "2026-10-20T07:57:51Z"
+      }
     }
   ],
   "request": "ok, sve preporuke (owner, 2026-10-14, approving CONSOLIDATED-PLAN.md) / Nova faza za F1 (Recommended) (owner, 2026-10-16, where the F1 tasks live)",

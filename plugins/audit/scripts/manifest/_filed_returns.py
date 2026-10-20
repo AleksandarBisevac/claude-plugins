@@ -119,6 +119,11 @@ CASES_FIELD = "casesAdded"
 # The drive's own reading of that binding, written into the filed return at
 # `submit` beside the stamp: what the reviewer's brief prints as the gaps.
 GAPS_FIELD = "testsAddGaps"
+# The entries whose ids were never compared with a printed label because the
+# submit's command did not run their suite (`case_binding_unchecked`): filed
+# beside the gaps, so the reviewer's brief shows what no one graded and an id
+# that was never compared does not read as one that passed.
+UNCHECKED_FIELD = "testsAddUnchecked"
 
 # The grade only a reviewer gives - `_refs.RED_FIRST_REVIEWER_ONLY`, held equal
 # to it by `pk4` in the tests - and the words of the inherited-test question,

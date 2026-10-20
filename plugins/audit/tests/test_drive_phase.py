@@ -7112,8 +7112,73 @@ def _unclassified_lint_entry_cases(check, run, clause):
               and text.count("could not tell") == 1)
 
 
+UNCHECKED_CLAUSE = ("ids bound to a suite the submit's command did not run are "
+                    "filed on the return beside testsAddGaps, and the reviewer's "
+                    "brief shows them")
+
+
+def _unchecked_ids_cases(check):
+    """A tdd task binding ids in two suites, submitted with a command that runs
+    one: the other suite's id is neither graded nor a gap, and it must still
+    reach the reviewer, who prints the return's fields and nothing else."""
+    M, why = _load("drive_phase_unchecked")
+    check("ucs0 the driver loads: %r" % (why,), M is not None)
+    if M is None:
+        return
+    plan = _plan(TASKS[:1], ("true",))
+    task = plan["phases"][0]["tasks"][0]
+    task["files"] = ["src/mine.py", "tests/test_mine.py", "tests/test_other.py"]
+    plan["fileIndex"] = dict((f, ["P1.1"]) for f in task["files"])
+    ran_entry = "tests/test_mine.py: new1"
+    skipped_entry = "tests/test_other.py: oth1"
+    task["tests"] = {"mode": "tdd", "add": [ran_entry, skipped_entry],
+                     "gate": ["true"], "expectRedFirst": True}
+    root, mpath = _repo("unchecked", task_ids=TASKS[:1])
+    os.makedirs(os.path.join(root, "tests"))
+    for rel, text in (("src/mine.py", "v = 1\n"),
+                      ("tests/test_mine.py", _house_suite([("old1", "mine.v >= 1")])),
+                      ("tests/test_other.py", _house_suite([("old2", "mine.v >= 1")]))):
+        with open(os.path.join(root, *rel.split("/")), "w", encoding="utf-8") as fh:
+            fh.write(text)
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh, indent=2)
+    _harness.git(root, "add", "-A")
+    _harness.git(root, "commit", "-qm", "tdd")
+    with _Env(root):
+        M.main(["next", PHASE, mpath, "--project-dir", root], out=[].append)
+    with open(os.path.join(root, "src", "mine.py"), "w", encoding="utf-8") as fh:
+        fh.write("v = 2\n")
+    with open(os.path.join(root, "tests", "test_mine.py"), "w", encoding="utf-8") as fh:
+        fh.write(_house_suite([("old1", "mine.v >= 1"), ("new1", "mine.v == 2")]))
+    with open(os.path.join(root, "tests", "test_other.py"), "w", encoding="utf-8") as fh:
+        fh.write(_house_suite([("old2", "mine.v >= 1"), ("oth1", "mine.v == 2")]))
+    body = _executor_body("P1.1", {"testsAdded": [ran_entry, skipped_entry],
+                                   "casesAdded": ["new1", "oth1"]})
+    code, text = _submit(None, root, mpath, "P1.1", body,
+                         tail=["--", sys.executable, "tests/test_mine.py"])
+    path = _filed_path(mpath, "P1.1")
+    filed = json.loads(_read(path).decode("utf-8")) if os.path.exists(path or "-") else {}
+    held = filed.get(_fr.UNCHECKED_FIELD)
+    lookup = _loader.load_script("audit-lookup.py", "drive_unchecked_lookup")
+    shown = "\n".join(lookup._tests_add_review_lines(task, filed))
+    quiet = "\n".join(lookup._tests_add_review_lines(
+        task, dict(filed, **{_fr.UNCHECKED_FIELD: []})))
+    check("ucs1 %s: %r" % (UNCHECKED_CLAUSE, (code, filed.get(_fr.GAPS_FIELD), held)),
+          code == 0 and filed.get(_fr.GAPS_FIELD) == []
+          and isinstance(held, list) and len(held) == 1
+          and held[0].startswith(skipped_entry) and "not checked" in held[0]
+          and held[0] in shown and ran_entry not in held[0])
+    # THE OTHER DIRECTION: a return whose submit graded every entry (the field is
+    # an empty list) shows no such section, so a brief that always printed one
+    # would pass the case above.
+    check("ucs2 ALLOW: a filed return with no unchecked entry shows the reviewer "
+          "no 'never compared' section: %r" % (quiet[-200:],),
+          "never compared" not in quiet and "never compared" in shown)
+
+
 STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("dr-block", "_refusal_cases"),
+          ("ucs-block", "_unchecked_ids_cases"),
           ("dd-block", "_decide_cases"), ("ct-block", "_continue_cases"),
           ("dd3-block", "_rerun_cases"), ("rs-block", "_resume_cases"),
           ("rrs-block", "_retry_reason_cases"),
@@ -7405,19 +7470,6 @@ def argv_prose_flags():
                         if dest not in ARGV_PROSE_EXEMPT))
 
 
-def _constant_names(tree):
-    """`{name: {string, ...}}` for every name the source assigns a string
-    literal to, so a flag held in a variable is read as the flag it holds."""
-    held = {}
-    for node in ast.walk(tree):
-        if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
-                and isinstance(node.value.value, str)):
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    held.setdefault(target.id, set()).add(node.value.value)
-    return held
-
-
 def _template_head(node):
     """The literal text a built string opens with - `"--text=" + x`, `"--text=%s"
     % x`, `"--text={}".format(x)` or an f-string - or "" for anything else
@@ -7484,6 +7536,54 @@ def _appended(scope):
     return out
 
 
+def _bindings(scope):
+    """`{name: [value, ...]}` for the names one function (or the module's own
+    statements) binds: the string a plain `name = "literal"` gives it, or None
+    for any other binding - a parameter, a built value, a loop or `with` target,
+    an unpacking, an augmented assignment."""
+    held = {}
+    args = getattr(scope, "args", None)
+    for arg in (list(args.args) + list(args.kwonlyargs)
+                + [a for a in (args.vararg, args.kwarg) if a]
+                if args is not None else []):
+        held.setdefault(arg.arg, []).append(None)
+    nodes = list(_scope_nodes(scope))
+    counted = set()
+    for node in nodes:
+        if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    counted.add(id(target))
+                    held.setdefault(target.id, []).append(node.value.value)
+    for node in nodes:
+        if (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
+                and id(node) not in counted):
+            held.setdefault(node.id, []).append(None)
+    return held
+
+
+def _in_scopes(scope, chain):
+    """`(node, chain)` for every node of `scope` and of the functions inside it,
+    `chain` being the binding tables of the scopes it stands in, innermost first."""
+    here = [_bindings(scope)] + chain
+    for node in _scope_nodes(scope):
+        yield node, here
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda,
+                             ast.ClassDef)):
+            for inner in _in_scopes(node, here):
+                yield inner
+
+
+def _held_by(name, chain):
+    """What the innermost scope that binds `name` says it holds (`_bindings`'
+    list), or [] for a name no scope here binds."""
+    for table in chain:
+        if name in table:
+            return table[name]
+    return []
+
+
 def argv_prose_violations(source, flags=None):
     """`["line N: <flag>"]` for every place `source` puts a prose flag beside a
     value that is not a literal. The pairing is read over the whole argv
@@ -7491,46 +7591,62 @@ def argv_prose_violations(source, flags=None):
     positional arguments (neighbours); two calls that append the flag and then
     the value, or `+=` them in two steps (`_appended`); a flag and value joined
     into one string (`"--text=" + built`, `%`, `.format`, an f-string); and a
-    flag held in a name (`_constant_names`). The only spared sequence is the
-    positional list of a call to `_verb_with_text` itself, whose flag and text
-    are separate parameters because it sends the text on stdin - the calls
-    nested in its other arguments are read like any other.
+    flag held in a name. The only spared sequence is the positional list of a
+    call to `_verb_with_text` itself, whose flag and text are separate
+    parameters because it sends the text on stdin - the calls nested in its
+    other arguments are read like any other.
+
+    A NAME IS READ IN ITS OWN FUNCTION (`_bindings`): the innermost scope that
+    binds it decides, and the module's assignments reach only a function that
+    never binds the name itself. It is the flag when any of its bindings there
+    is a prose flag - a name that is the flag on one path is reported - and it
+    is a literal value, like a string constant, only when every one of them is a
+    string literal.
 
     `flags` defaults to `argv_prose_flags()`: the verb's own list."""
     flags = tuple(argv_prose_flags() if flags is None else flags)
     tree = ast.parse(source)
-    names = _constant_names(tree)
 
-    def flag_of(node):
+    def flag_of(node, chain):
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             return node.value if node.value in flags else None
         if isinstance(node, ast.Name):
-            return next(iter(sorted(names.get(node.id, set()) & set(flags))), None)
+            return next(iter(sorted(
+                set(v for v in _held_by(node.id, chain) if v is not None)
+                & set(flags))), None)
         return None
+
+    def literal(node, chain):
+        if isinstance(node, ast.Constant):
+            return True
+        held = _held_by(node.id, chain) if isinstance(node, ast.Name) else []
+        return bool(held) and all(isinstance(v, str) for v in held)
 
     spared = set(id(node) for node in ast.walk(tree)
                  if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
                  and node.func.id == STDIN_TEXT_HELPER)
     found = []
 
-    def read(seq):
+    def read(seq, chain):
         for here, after in zip(seq, seq[1:]):
-            flag = flag_of(here)
-            if flag and not isinstance(after, ast.Constant):
+            flag = flag_of(here, chain)
+            if flag and not literal(after, chain):
                 found.append("line %d: %s" % (here.lineno, flag))
 
-    for node in ast.walk(tree):
+    for node, chain in _in_scopes(tree, []):
         if isinstance(node, (ast.List, ast.Tuple)):
-            read(node.elts)
+            read(node.elts, chain)
         elif isinstance(node, ast.Call) and id(node) not in spared:
-            read(node.args)
+            read(node.args, chain)
         head = _template_head(node)
         for flag in flags:
             if head.startswith(flag + "="):
                 found.append("line %d: %s" % (node.lineno, flag))
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Module)):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             for items in _appended(node).values():
-                read(items)
+                read(items, [_bindings(node)] + chain)
+    for items in _appended(tree).values():
+        read(items, [_bindings(tree)])
     return sorted(set(found))
 
 
@@ -7686,6 +7802,49 @@ def _machine_text_cases(check):
           and calls[0][0][2][-2:] == ["--text", ""]
           and calls[1][0][2][-2:] == ["--text", "-"]
           and calls[1][1].get("stdin") == "a  b")
+
+    # NAMES ARE RESOLVED IN THEIR OWN FUNCTION (reviewer's two over-fires), and a
+    # module-level name still reaches a function that never assigns it.
+    shadowed = ('x = "--text"\n'
+                'def r(b):\n    x = b\n    return [x, b]\n')
+    const_value = ('T = "a"\n'
+                   'def r():\n    return ["--text", T]\n'
+                   'def s():\n    v = "b"\n    return ["--text", v]\n')
+    check(clause("mt10", "ALLOW: a name that holds a built value in its own "
+                 "function is not the flag a module-level assignment gave the "
+                 "same name, and a name whose assignments are string literals "
+                 "is a literal value, not a built one; got %r"
+                 % ((argv_prose_violations(shadowed),
+                     argv_prose_violations(const_value)),)),
+          argv_prose_violations(shadowed) == []
+          and argv_prose_violations(const_value) == [])
+    inherited = ('FLAG = "--summary"\n'
+                 'def r(built):\n    return ["x", FLAG, built]\n')
+    mixed = ('def r(built, c):\n    flag = "--text"\n    if c:\n'
+             '        flag = built\n    return ["x", flag, built]\n')
+    check(clause("mt11", "a flag held in a module-level name and used in a "
+                 "function that never assigns it is reported, and so is a name "
+                 "that is the flag on one path and a built value on another; "
+                 "got %r" % ((argv_prose_violations(inherited),
+                              argv_prose_violations(mixed)),)),
+          len(argv_prose_violations(inherited)) == 1
+          and len(argv_prose_violations(mixed)) == 1)
+    # THE LINT READS THE OTHER SCRIPT THAT SENDS BUILT TEXT TO A VERB TOO.
+    with open(_loader.script_path("full-gate.py"), "r", encoding="utf-8") as fh:
+        gate_source = fh.read()
+    gate_seen = argv_prose_violations(gate_source)
+    gate_helpers = [n for n in ast.walk(ast.parse(gate_source))
+                    if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                    and n.func.id == STDIN_TEXT_HELPER]
+    gate_red = argv_prose_violations(
+        gate_source + "\n\ndef regress(built):\n"
+        "    return ['bug-add', '--reason', built]\n")
+    check(clause("mt12", "full-gate.py as shipped passes no non-literal after a "
+                 "prose flag in any verb argv it builds, and does send its "
+                 "description through the helper (%d calls); a scratch copy with "
+                 "a built string after a second prose flag is reported; found %r, "
+                 "scratch %r" % (len(gate_helpers), gate_seen, gate_red)),
+          gate_seen == [] and len(gate_helpers) >= 1 and len(gate_red) == 1)
 
 
 EMPTY_BLOB = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"

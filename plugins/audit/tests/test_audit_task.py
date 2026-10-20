@@ -18919,6 +18919,40 @@ def _attempt_log_failure_cases(check):
           and "carry no change" not in broken)
 
 
+START_HEAD_CLAUSE = ("the start head of a task's attempt is read by one function, "
+                     "_scoped_commit.start_head_of, which audit-task.py's "
+                     "_start_head calls with the journal rows it read")
+
+
+def _start_head_cases(check):
+    """`_start_head` is the journal read and nothing else: the scan for the
+    attempt's newest `task.start` row is `_scoped_commit.start_head_of`'s, so
+    the two readers that once existed cannot drift."""
+    task = {"id": "P1.1", "attempts": 2}
+    good = "a" * 40
+    rows = [{"action": "task.start", "details": {"taskId": "P1.1", "attempt": 1,
+                                                  "commit": "b" * 40}},
+            {"action": "task.start", "details": {"taskId": "P1.1", "attempt": 2,
+                                                  "commit": good}},
+            {"action": "task.start", "details": {"taskId": "P1.2", "attempt": 2,
+                                                  "commit": "c" * 40}}]
+    real_enabled, real_read = M._journal_io.enabled, M._journal_io.read_all
+    real_reader = M._scoped_commit.start_head_of
+    seen = []
+    M._journal_io.enabled = lambda config: True
+    M._journal_io.read_all = lambda project, config=None: rows
+    try:
+        direct = M._start_head("/nowhere", {}, task)
+        M._scoped_commit.start_head_of = lambda r, t: seen.append((r, t)) or "SENT"
+        delegated = M._start_head("/nowhere", {}, task)
+    finally:
+        M._journal_io.enabled, M._journal_io.read_all = real_enabled, real_read
+        M._scoped_commit.start_head_of = real_reader
+    check("sh1 %s: %r" % (START_HEAD_CLAUSE, (direct, delegated, len(seen))),
+          direct == good and delegated == "SENT" and len(seen) == 1
+          and seen[0] == (rows, task))
+
+
 def _gate_entry_cases(check):
     """The shape of a gate entry is asked where it is WRITTEN: four verbs
     refuse the entry that runs one suite with another as its argument, `add
@@ -19088,7 +19122,8 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("bcp-block", "_bcm_plan_holder_cases"),
           ("xf-block", "_crossfile_cases"),
           ("rf-block", "_retired_flag_cases"),
-          ("gx-block", "_gate_entry_cases"))
+          ("gx-block", "_gate_entry_cases"),
+          ("sh-block", "_start_head_cases"))
 
 
 if __name__ == "__main__":

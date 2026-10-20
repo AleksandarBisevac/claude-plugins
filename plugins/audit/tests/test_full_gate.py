@@ -1201,6 +1201,84 @@ def _learn_from_exit_cases(check):
         _harness.remove_tree(root_n)
 
 
+BROKEN_PIPE_CLAUSE = ("a verb that exits before reading its stdin is reaped and "
+                      "its output reported, with no BrokenPipeError escaping")
+
+
+def _stream_stdin_cases(check):
+    """`_stream_subprocess` feeds the child text and must survive a child that
+    exits first: the text is far larger than a pipe buffer, so the write meets a
+    closed pipe the way an argparse refusal leaves it."""
+    import subprocess
+    lines = []
+    child = [sys.executable, "-c",
+             "import sys; print('refused: bad flag'); sys.exit(2)"]
+    try:
+        code = M._stream_subprocess(child, lines.append, stdin="x" * 4000000)
+        raised = None
+    except BaseException as exc:                           # noqa: BLE001
+        code, raised = None, type(exc).__name__
+    check("fgsp1 %s: %r" % (BROKEN_PIPE_CLAUSE, (code, raised, lines)),
+          raised is None and code == 2 and lines == ["refused: bad flag"])
+    # THE OTHER DIRECTION: a child that does read its stdin still gets all of it,
+    # so a handler that swallowed every write error would pass the case above
+    # and fail this one.
+    echoed = []
+    reader = [sys.executable, "-c",
+              "import sys; data = sys.stdin.read(); print(len(data))"]
+    code_r = M._stream_subprocess(reader, echoed.append, stdin="y" * 300000)
+    check("fgsp2 ALLOW: a verb that reads its stdin receives the whole text and "
+          "its exit code comes back: %r" % ((code_r, echoed),),
+          code_r == 0 and echoed == ["300000"])
+    # NO CHILD LEFT BEHIND: a reaped child has a return code; this asks the
+    # popen the function made, by wrapping it.
+    made = []
+    real_popen = subprocess.Popen
+
+    class _Spy(real_popen):
+        def __init__(self, *a, **k):
+            real_popen.__init__(self, *a, **k)
+            made.append(self)
+    subprocess.Popen = _Spy
+    try:
+        M._stream_subprocess(child, lambda line: None, stdin="x" * 4000000)
+    finally:
+        subprocess.Popen = real_popen
+    check("fgsp3 the child of a refused write is reaped, its stdout closed: %r"
+          % ([(p.returncode, p.stdout.closed) for p in made],),
+          len(made) == 1 and made[0].returncode == 2 and made[0].stdout.closed)
+
+
+def _learning_stdin_route_cases(check):
+    """The description reaches `bug-add` on stdin because `learning_plan` puts
+    it there, at the call site: the plan's verb carries the text, and no second
+    step rewrites an argv afterwards."""
+    root, mpath = _learn_repo("learn-plan-stdin")
+    try:
+        _imported_row(root, "RUN-CI-PLAN", misses=[
+            {"test": "tests/test_cart.py", "phases": ["P1"],
+             "sources": ["src/cart.py"], "phasesDropped": "P2  P3"}])
+        row = [r for r in _ev_io.read_rows(root).get("rows") or []
+               if r.get("runId") == "RUN-CI-PLAN"][0]
+        plan = M.learning_plan(row, {}, {}, _ev_io.suite_listing(root))
+        shaped = [(v[0], len(v)) for v in plan["verbs"]]
+        bug = [v for v in plan["verbs"] if v[0] == "bug-add"]
+        couple = [v for v in plan["verbs"] if v[0] == "couple"]
+        argv = bug[0][2] if bug else []
+        at = argv.index("--description") if "--description" in argv else -1
+        check("fglp1 the bug-add verb learning_plan returns carries its "
+              "description as the stdin text, `-` on argv after the flag, and a "
+              "verb with no prose carries none: %r"
+              % ((shaped, argv[at:at + 2], [v[3] for v in plan['verbs']]),),
+              len(bug) == 1 and len(bug[0]) == 4 and at >= 0
+              and argv[at + 1] == "-" and "P2  P3" in (bug[0][3] or "")
+              and all(len(v) == 4 and v[3] is None for v in couple)
+              and not hasattr(M, "_text_on_stdin")
+              and not hasattr(M, "_STDIN_TEXT_FLAG"))
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
         _delegation_cases(check)
@@ -1211,6 +1289,8 @@ def _selftest():
         _pinned_learning_cases(check)
         _learn_from_exit_cases(check)
         _description_stdin_cases(check)
+        _stream_stdin_cases(check)
+        _learning_stdin_route_cases(check)
     return _harness.run(body)
 
 

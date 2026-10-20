@@ -3719,6 +3719,13 @@ untouched. HEAD is checked against the one read before staging just before the c
 commit's first parent after it; a mismatch there is refused with both SHAs named, and nothing is
 reset.
 
+**The start head has one reader and one test.** `start_head_of()` reads the HEAD an attempt's
+newest `task.start` journal row recorded, and is the only code that does: `commit-task-work.py`
+passes its rows to it and `audit-task.py`'s `_start_head` is the journal read followed by that
+call. `earlier_attempt_commits()` names the attempt's commits as `start..HEAD` only when that head is
+an ancestor of HEAD; a head git still holds after a rebase or reset is not, and the answer is then
+no commits and the reason, printed beside the refusal's advice.
+
 **No command can import another** — nothing may import a hyphenated entry point — so this
 module is the only place they meet, and a second spelling of a refusal rule is how one commit
 comes to carry what another forbids. It sits a layer above `_invariants` and reads it for `_under`,
@@ -4289,6 +4296,16 @@ plan holds. A spelling that pins to no tracked path, or to several, still files 
 failure happened — with no `--files`, no coupling, and a note saying why. Whether a miss is one the
 runner named is `same_suite`, never a suffix, and whether the row lists a coupled suite as its own
 miss is `own_miss`, the reading `couple --caught` refuses by.
+
+**The text a verb is given is sent on its stdin, at the call that builds it.** A bug's description
+is assembled from a row's pieces, and `audit-task.py` refuses on argv the marks a shell leaves in a
+typed line (a doubled space, whitespace before punctuation), which an assembled sentence carries
+whenever a piece did. `learning_plan` builds the `bug-add` verb through `_verb_with_text`, which puts
+`-` after `--description` and the sentence in the verb tuple's fourth element; `_run_verb` feeds that
+text to the child, and no later step rewrites an argv. `_stream_subprocess` writes it whole before
+reading any output and treats a pipe the child closed first (a verb that refused its arguments
+before reading) as the child having refused: the child is reaped and its lines and exit code are
+the answer. The argv lint in `test_drive_phase.py` reads this file as well as `drive-phase.py`.
 
 **The project is the manifest's, and a lost file is named.** Without `--project-dir` the project
 is `_panel_write.project_of_manifest(manifest)` — the plugin's one answer, never a count of

@@ -218,6 +218,41 @@ def _cases(check):
     _row_cases(check, tmp)
     _staging_cases(check, tmp, outside)
     _close_evidence_cases(check, tmp)
+    _earlier_attempt_cases(check, tmp)
+
+
+# --- the span an earlier attempt's commits are read over -----------------------
+NOT_ANCESTOR_CLAUSE = ("a start head that is not an ancestor of HEAD claims no "
+                       "earlier commit and says so")
+
+
+def _earlier_attempt_cases(check, tmp):
+    """`earlier_attempt_commits` names a span only when the recorded start head
+    is an ancestor of HEAD. An object git still holds after a rebase or a reset
+    is not one, and `start..HEAD` over it lists commits that are not the
+    attempt's."""
+    repo = _repo(tmp, "earlier")
+    start = _git(repo, "rev-parse", "HEAD").strip()
+    _write(os.path.join(repo, "keep", "a.txt"), "changed\n")
+    _git(repo, "commit", "-q", "-am", "the attempt's work")
+    work = _git(repo, "rev-parse", "HEAD").strip()
+    # A commit git holds that no branch reaches: what a rebased-away head is.
+    tree = _git(repo, "rev-parse", "HEAD^{tree}").strip()
+    stray = _git(repo, "commit-tree", tree, "-m", "left behind").strip()
+
+    honest = M.earlier_attempt_commits(repo, repo, ["keep/a.txt"], start)
+    check("sc-ea1 ALLOW: a start head that IS an ancestor of HEAD still lists the "
+          "commits since it that changed a declared file, and says nothing - the "
+          "case that goes red if the ancestor test is made unconditional: %r"
+          % (honest,),
+          honest == ([work], ""))
+    stale = M.earlier_attempt_commits(repo, repo, ["keep/a.txt"], stray)
+    check("sc-ea2 %s: %r" % (NOT_ANCESTOR_CLAUSE, stale),
+          stale[0] == [] and "not an ancestor" in stale[1]
+          and stray[:12] in stale[1])
+    gone = M.earlier_attempt_commits(repo, repo, ["keep/a.txt"], "0" * 40)
+    check("sc-ea3 a start head git does not hold at all still claims nothing and "
+          "says nothing, as before: %r" % (gone,), gone == ([], ""))
 
 
 # --- what a close stands on ----------------------------------------------------

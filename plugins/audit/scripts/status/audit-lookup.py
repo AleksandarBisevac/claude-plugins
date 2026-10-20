@@ -1098,6 +1098,15 @@ def _filed_gaps(task, filed):
     return _fr.case_binding_gaps(task, filed.get(_fr.CASES_FIELD), None)
 
 
+def _filed_unchecked(filed):
+    """The `tests.add` entries a filed return records as never compared with a
+    printed label (`testsAddUnchecked`, written at `submit`), or [] for a return
+    that holds none - one filed before the field, or one whose submit graded
+    every entry."""
+    held = filed.get(_fr.UNCHECKED_FIELD)
+    return [str(g) for g in held] if isinstance(held, list) else []
+
+
 def _tests_add_review_lines(task, filed):
     """`tests.add`, the gaps the drive already named before any reviewer runs
     (`filed` is the executor's return as an object), and the two questions (4)
@@ -1116,6 +1125,12 @@ def _tests_add_review_lines(task, filed):
         lines += ["Declared with no filed counterpart (named by the drive, "
                  "before you run - not yours to re-derive):"] + (
             ["- %s" % (g,) for g in gaps])
+    unchecked = _filed_unchecked(filed)
+    if unchecked:
+        lines += ["Ids the drive never compared with a printed label (the "
+                  "submit's command did not run their suite - neither passed "
+                  "nor failed, so verify them yourself):"] + (
+            ["- %s" % (u,) for u in unchecked])
     if add:
         lines += ["Per declared test, ask: (1) can it fail on the unfixed "
                  "code - read the executor's `redFirst` word and basis, or "

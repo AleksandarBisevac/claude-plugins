@@ -6054,14 +6054,7 @@ def _start_head(project, config, task):
         rows = _journal_io.read_all(project, config=config)
     except Exception:
         return None
-    head = None
-    for row in rows:
-        details = (row or {}).get("details") if isinstance(row, dict) else None
-        if (row.get("action") == "task.start" and isinstance(details, dict)
-                and details.get("taskId") == task.get("id")
-                and details.get("attempt") == task.get("attempts")):
-            head = details.get("commit") or None
-    return head if _SHA_SHAPE.match(head or "") else None
+    return _scoped_commit.start_head_of(rows, task)
 
 
 def _no_change_moves(project, git_root, phase, task, plan=None, start_head=None):

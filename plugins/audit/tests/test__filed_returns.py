@@ -940,6 +940,15 @@ def _case_binding_cases(check):
           and len(skipped) == 1 and skipped[0].startswith(two["tests"]["add"][1])
           and "not checked" in skipped[0] and "did not print" not in skipped[0]
           and both == [] and blind == [])
+    unchecked = M.case_binding_unchecked(two, ran)
+    named = {M.CASES_FIELD, M.GAPS_FIELD, M.UNCHECKED_FIELD}
+    check("cb5 the sentences `case_binding_unchecked` gives are filed under a "
+          "field of their own, distinct from the claim and from the gaps, and a "
+          "return carrying it is still whole: %r"
+          % ((M.UNCHECKED_FIELD, unchecked),),
+          len(named) == 3 and len(unchecked) == 1
+          and M.return_problems("executor", _executor(
+              **{M.UNCHECKED_FIELD: unchecked, M.GAPS_FIELD: []})) == [])
     shape = [M.return_problems("executor", _executor(casesAdded=v))
              for v in (["gx1"], [["sv35", "sv36"], "gx1"], "gx1", [7], [[]], [""])]
     check("cb3 the shape takes a list of ids or id lists and refuses any other "

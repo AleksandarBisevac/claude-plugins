@@ -80,6 +80,7 @@ plugins/audit/tests/test_full_gate.py.
 Stdlib only, Python 3.8 compatible.
 """
 import argparse
+import errno
 import os
 import sys
 import time
@@ -142,6 +143,29 @@ def declares_full_gate(manifest):
     return bool(_ev.full_gate(manifest)["commands"])
 
 
+def _feed_stdin(proc, text):
+    """Write `text` to the child's stdin and close it. A verb that exits before
+    it reads (an argparse refusal, a bad manifest path) leaves a closed pipe, and
+    the write or the close meets it: that is the child having refused, not a
+    fault here, so it is not raised - the child's own lines and exit code, read
+    by the caller, are the answer. Windows reports the same pipe as EINVAL.
+
+    The text is written whole before any output is read: a verb reads its stdin
+    before it prints, so neither pipe fills."""
+    try:
+        proc.stdin.write(text)
+        proc.stdin.close()
+    except OSError as exc:
+        if not isinstance(exc, BrokenPipeError) \
+                and exc.errno not in (errno.EPIPE, errno.EINVAL):
+            raise
+    finally:
+        try:
+            proc.stdin.close()
+        except OSError:
+            pass
+
+
 def _stream_subprocess(cmd, out, stdin=None):
     """Run `cmd`, printing every line of its combined output as it arrives,
     and return its exit code. `stdin`, when given, is the text fed to the
@@ -160,16 +184,17 @@ def _stream_subprocess(cmd, out, stdin=None):
                             stderr=subprocess.STDOUT, text=True,
                             stdin=None if stdin is None else subprocess.PIPE,
                             encoding="utf-8", errors="replace", bufsize=1)
-    if stdin is not None:
-        # The text is small and written whole before the output is read: a
-        # verb reads its stdin before it prints, so the pipe never fills.
-        proc.stdin.write(stdin)
-        proc.stdin.close()
     try:
+        if stdin is not None:
+            _feed_stdin(proc, stdin)
         for line in proc.stdout:
             out(line.rstrip("\n"))
+    except BaseException:
+        proc.kill()
+        raise
     finally:
         proc.stdout.close()
+        proc.wait()
     return proc.wait()
 
 
@@ -337,9 +362,25 @@ def _described(miss, run_id, head):
     return text
 
 
+def _verb_with_text(label, test, argv, flag, text):
+    """The plan's verb tuple for `argv` plus one prose option whose value is
+    text this file built. That value goes on stdin (`-` on argv): `audit-task.py`
+    reads the marks a shell leaves (a run of spaces, whitespace before
+    punctuation) off every prose value on argv and refuses it - right for a line
+    a person typed, wrong for a sentence assembled from a row's pieces, which
+    holds a doubled space whenever a piece did. Stdin carries the text of ONE
+    option per call, so a verb with a second built prose option needs a second
+    channel, not a second call of this. A blank text goes on argv, where a verb
+    reads an empty value as none."""
+    if not str(text).strip():
+        return (label, test, list(argv) + [flag, ""], None)
+    return (label, test, list(argv) + [flag, "-"], text)
+
+
 def learning_plan(row, coupled, open_titles, listing):
-    """What a red row teaches: `{"verbs": [(label, test, argv)], "notes":
-    [line]}`.
+    """What a red row teaches: `{"verbs": [(label, test, argv, stdin)], "notes":
+    [line]}`, `stdin` being the text a verb reads on its standard input (None
+    for a verb that reads none).
 
     `coupled` maps each test the plan already couples to its sources, read
     BEFORE anything here writes - so a suite coupled by this run is not also
@@ -395,17 +436,18 @@ def learning_plan(row, coupled, open_titles, listing):
                     "couple", "--test", test,
                     "--sources", ",".join(miss["sources"]),
                     "--basis-run", run_id, "--basis-head", head,
-                    "--phases", ",".join(miss.get("phases") or [])]))
+                    "--phases", ",".join(miss.get("phases") or [])], None))
         title = bug_title(pinned["test"])
         if title in open_titles:
             notes.append("no bug for %s: %s is already open under the title "
                          "%r" % (pinned["test"], open_titles[title], title))
             continue
-        verbs.append(("bug-add", pinned["test"], [
-            "bug-add", title, "--severity", "med",
+        verbs.append(_verb_with_text(
+            "bug-add", pinned["test"],
+            ["bug-add", title, "--severity", "med"]
+            + (["--files", test] if test is not None else []),
             "--description",
-            _described(pinned, run_id, head or "an unrecorded head")]
-            + (["--files", test] if test is not None else [])))
+            _described(pinned, run_id, head or "an unrecorded head")))
     # EACH NAMED SUITE IS PINNED TO ONE COUPLED KEY OR TO NONE
     # (`_evidence_io.resolve_named`): a runner may print a suite relative to
     # its own directory, and a name that fits several coupled suites cannot
@@ -436,7 +478,7 @@ def learning_plan(row, coupled, open_titles, listing):
             notes.append("no catch credited for %s in run %s: %s"
                          % (spelling, run_id, why))
     verbs.extend(("couple --caught", key, ["couple", "--test", key,
-                                           "--caught", run_id])
+                                           "--caught", run_id], None)
                  for key in caught)
     return {"verbs": verbs, "notes": notes}
 
@@ -458,36 +500,14 @@ def _plan_state(manifest):
     return coupled, open_titles
 
 
-# THE PROSE FLAG THIS FILE BUILDS TEXT FOR. `audit-task.py` reads the marks a
-# shell leaves (a run of spaces, whitespace before punctuation) off every prose
-# value that arrives on argv and refuses it - right for a line a person typed,
-# wrong for a sentence assembled here from a row's pieces, which holds a doubled
-# space whenever a piece did. The text goes on stdin, where it arrives verbatim.
-_STDIN_TEXT_FLAG = "--description"
-
-
-def _text_on_stdin(argv):
-    """`(argv, text)`: `argv` with the value after `_STDIN_TEXT_FLAG` replaced
-    by `-` and that value as `text`, or `(argv, None)` when the flag is absent
-    or carries no text (an empty value is legal on argv and a verb reads it as
-    none)."""
-    if _STDIN_TEXT_FLAG not in argv:
-        return list(argv), None
-    at = argv.index(_STDIN_TEXT_FLAG)
-    if at + 1 >= len(argv) or not str(argv[at + 1]).strip():
-        return list(argv), None
-    return list(argv[:at + 1]) + ["-"] + list(argv[at + 2:]), argv[at + 1]
-
-
-def _run_verb(label, test, argv, manifest_path, project, out):
-    """Run one `audit-task.py` verb, printing what it is and what it said.
-    Returns its exit code."""
-    argv, text = _text_on_stdin(argv)
+def _run_verb(label, test, argv, stdin, manifest_path, project, out):
+    """Run one `audit-task.py` verb, printing what it is and what it said, with
+    `stdin` (the text it reads there, or None) fed to it. Returns its exit code."""
     cmd = ([sys.executable, _loader.script_path("audit-task.py")] + argv
            + [manifest_path, "--project-dir", project])
     out("%s learning: audit-task.py %s for %s" % (PREFIX, label, test))
-    code = (_stream_subprocess(cmd, out) if text is None
-            else _stream_subprocess(cmd, out, stdin=text))
+    code = (_stream_subprocess(cmd, out) if stdin is None
+            else _stream_subprocess(cmd, out, stdin=stdin))
     out("%s audit-task.py %s for %s exited %d%s"
         % (PREFIX, label, test, code,
            "" if code == 0 else " - its own lines above say what it refused"))
@@ -526,8 +546,8 @@ def learn_from_row(row, manifest_path, project, out):
         out("%s learned nothing from run %s: %s"
             % (PREFIX, row.get("runId"), why))
         return {"verbs": 0, "failed": 0, "error": None}
-    failed = [label for label, test, argv in plan["verbs"]
-              if _run_verb(label, test, argv, manifest_path, project,
+    failed = [label for label, test, argv, stdin in plan["verbs"]
+              if _run_verb(label, test, argv, stdin, manifest_path, project,
                            out) != 0]
     return {"verbs": len(plan["verbs"]), "failed": len(failed), "error": None}
 
