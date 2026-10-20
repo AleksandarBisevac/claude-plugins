@@ -1,0 +1,30 @@
+{
+  "id": "BF4",
+  "title": "Bugfix batch 4",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "The release-tier CI run is green on Linux and Windows: every job pins its runner image, and gate-parity's SIGINT/trap cases run on Windows",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": []
+}
