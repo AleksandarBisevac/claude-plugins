@@ -1,7 +1,7 @@
 {
   "id": "BF4",
   "title": "Bugfix batch 4",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "The release-tier CI run is green on Linux and Windows: every job pins its runner image, and gate-parity's SIGINT/trap cases run on Windows",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "0b415d48ebb70f0d23590556f98d24a959b5ebce",
   "branch": "audit/bf4-bugfix-batch-4",
-  "mergedAt": null,
+  "mergedAt": "2026-10-20T19:50:06Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -313,5 +313,6 @@
     "runId": "2026-10-20T19:49:57Z.f41a6e",
     "status": "passed",
     "at": "2026-10-20T19:49:57Z"
-  }
+  },
+  "mergedHead": "27cc0065d2d57bfdc7d895bcb4ca662125d9d3cf"
 }
