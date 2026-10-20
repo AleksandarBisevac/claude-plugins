@@ -1108,7 +1108,7 @@
     {
       "id": "P130.8",
       "title": "Tests and the two lint modules leave the shipped plugin: plugins/audit/tests/ becomes tests/, _deps and _refs become tools/lints/",
-      "status": "pending",
+      "status": "cancelled",
       "description": "Plan F1.4 (S1a), invariant I11. Lands after every task that edits plugins/audit/tests/. (1) `git mv plugins/audit/tests tests` (157 files, 10,776,898 bytes at 571becfd; 157 and 10,194,666 at edbbb86e) and `git mv` of plugins/audit/scripts/_deps.py and _refs.py to tools/lints/. (2) A new anchor `_output.LINTS_DIR` that the product never puts on sys.path, beside TESTS_DIR, which now points at the repo root's tests/; `_refs` gains an anchor by suite name. (3) The ruff and vermin directory lists exist only in verify.sh (a consequence of F1.2), and name tests/ and tools/lints/. (4) .github/sweep-costs.json's keys under plugins/audit/tests/ (155 at 571becfd, a table last recorded at P127) are re-keyed to tests/ with their values unchanged, so the shard split keeps its costs (the plan put this in F1.5). (5) Every file outside the moved tree that names the old path is repointed (179 outside the history paths at 571becfd: `git grep -l 'plugins/audit/tests' HEAD -- . ':!plugins/audit/tests' ':!docs/audit' ':!CHANGELOG.md' ':!docs/research'`, the same count at edbbb86e); a shipped document or agent body that points at a suite (reference/phase-signoff.md:370, reference/execute-task.md, reference/verbs-in-full.md, agents/audit-reviewer.md) names it as `tests/<file>` in the source repository, because the installed copy no longer has it. (6) docs/audit/**, CHANGELOG.md's released sections and docs/research/ stay untouched: they are history and a hash chain. (7) CLAUDE.md is the owner's: the task drafts its new paths in the outcome. (8) This repo's meta.buildCommands.lint names plugins/audit/tests for vermin; the owner repoints it through the panel in the same landing, since no verb writes buildCommands. (9) P129's pending tasks name plugins/audit/tests/ paths; the orchestrator repoints them with `/audit:task scope` after the landing. Acceptance: the full sweep on a clean `git archive` export is green, allowing only the red places known to exist on an export alone; `python3 tools/prove-gates.py --list | awk '{print $2}' | sort -u` is the same set before and after; no lint checks fewer references than before without a named reason (the POC caught `_refs` dropping from 453 to 0); `git ls-tree -r --name-only <sha> plugins/audit | grep -c /tests/` gives 0; the whole repo changes by less than 0.5k lines; the installed cache after `/audit:version` update holds no tests/. NEW PATHS (absent at 571becfd, created by this task): tests/ (the moved suites), tools/lints/, tools/lints/_deps.py, tools/lints/_refs.py.",
       "files": [
         "plugins/audit/tests",
@@ -1369,21 +1369,22 @@
         "P130.48-ywo",
         "P130.49-ywo"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: Moved to 3.6.0, the start of redesign S1, by the owner's decision of 2026-10-20 (\"Prebaci ih u 3.6.0 (Recommended)\"): it is restructuring (its own description names it plan F1.4/F1.5, S1), not a fix, and a move this size (P130.8 about 500 paths, P130.9 about 230) should land on a CI-verified release base. The derived named-path scope is kept in quality-gates-internal/plans/2026-10-17-redesign-implementation/phases/p130-8-9-scopes.json for the S1 tasks."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-20T07:20:27Z",
+      "completedAt": "2026-10-20T07:20:40Z",
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P130.9",
       "title": "The rest of the development code leaves the plugin, the selftest stubs go, and B9 is recorded",
-      "status": "pending",
+      "status": "cancelled",
       "description": "Plan F1.5 (S1b), invariants I11 and I12. Runs on F1.4's paths (tests/, tools/lints/). (1) plugins/audit/scripts/demo/ (gen-demo-manifest.py, gen-demo-usage.py, _demo_cast.py) moves to tools/demo/; `render-report.py --bench` is removed and the benchmark becomes tools/bench-report.py (new) over tools/_usage_bench.py (moved from scripts/usage/). (2) The lint halves of _output.py, config/_help.py, _ui_theme.py and config/_config_rules.py move to tools/lints/ under basenames that collide with nothing in scripts/ (for example _output_lints.py), and the product halves stay. (3) reference/phase-signoff.md:370 (the plan's :350) and every other shipped pointer to an unshipped file is repointed or removed. (4) .github/sweep-costs.json, tools/capture-screenshots.mjs (`resolveScript('gen-demo-manifest.py')`), tools/check-rendered-artifacts.py, tools/check-example-ledgers.py, tools/check-report-interactive.mjs and tools/verify.sh follow the moves. (5) The `--selftest` stubs in shipped modules are deleted, not rewritten: at 571becfd 149 `if` blocks in 143 files, 1,166 lines (the same at edbbb86e; the plan's 142 blocks and 1,124 lines came from the code study's narrower AST rule), counted by any top-level `if` whose test names `selftest`. A shipped entry point given `--selftest` is then an ordinary usage error. (6) `selftest_coverage`'s `migrated` class goes: coverage becomes a development check that every shipped module has tests/test_<name>.py or a named exemption. (7) COMPATIBILITY.md is unchanged (neither `--selftest` nor `--bench` is promised); CHANGELOG.md records both under Removed. (8) B9 is recorded: on the landing SHA, `git archive <sha> | tar -x -C <empty dir> && python3 studies/K-poc/linekinds.py <dir>/plugins/audit > k.json && python3 studies/K-poc/agg.py k.json`, and the `code` figure goes into the plan with the SHA (84,131 at 571becfd; 83,024 at the v3.4.0 tag, the letter of D9). Acceptance: as F1.4; `git ls-tree -r -l <sha> plugins/audit | awk '{s+=$4} END{print s}'` gives at most 10,416,128 (21,263,295 at 571becfd, 9,942,204 once tests/, _deps.py and _refs.py are gone, before this task's removals). NEW PATHS (absent at 571becfd, created by this task): tools/demo/, tools/bench-report.py, tools/_usage_bench.py, tools/lints/<module>_lints.py. Paths under tests/ and tools/lints/ are the ones F1.4 created.",
       "files": [
         "plugins/audit/scripts/demo",
@@ -1453,10 +1454,10 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: Moved to 3.6.0, the start of redesign S1, by the owner's decision of 2026-10-20 (\"Prebaci ih u 3.6.0 (Recommended)\"): it is restructuring (its own description names it plan F1.4/F1.5, S1), not a fix, and a move this size (P130.8 about 500 paths, P130.9 about 230) should land on a CI-verified release base. The derived named-path scope is kept in quality-gates-internal/plans/2026-10-17-redesign-implementation/phases/p130-8-9-scopes.json for the S1 tasks."
       },
       "startedAt": null,
-      "completedAt": null,
+      "completedAt": "2026-10-20T07:20:40Z",
       "verifiedBy": []
     },
     {
@@ -5077,7 +5078,7 @@
     {
       "id": "P130.49-ywo",
       "title": "A bound case id is graded only against the suite that holds it, and the commit refusals of P130.46 name the right verb and fail loudly",
-      "status": "in_progress",
+      "status": "done",
       "description": "F745. (a) `_filed_returns.case_binding_gaps` (plugins/audit/scripts/manifest/_filed_returns.py ~:460, message ~:483) checks every bound id against the labels printed by the one `--` command the submit ran, so ids bound to cases in other suites read 'which the suite did not print' although they exist and pass (P130.46-ywo: kr1, kr2 in test_drive_phase.py; lo-ce4, lo-ce5, nn3 in test_audit_task.py, while the command ran test_commit_task_work.py). Grade an id only against the suite its tests.add entry names; an entry whose suite the submit did not run is 'not checked' with that reason, never 'not printed'. (b1) commit-task-work.py ~:923 -> `_scoped_commit` advice ~:1162-1173 names `--no-change` and 'bring it into <tree> first'; when the attempt's work is already in an earlier commit since start, name `audit-task.py done <id> --commit <sha>` instead. (b2) audit-task.py `_attempt_commits` returns None when `git log` fails (~:6136-6139) and the caller (~:6309) refuses only on `[]`, so a failed git log falls through to the narrower question - refuse loudly naming the git failure (guard path, fail-loud). (b3) drive-phase.py `kept_tree_stop` (~:2773) gets a direct case; kr1 must not accept a None sha. (c) plugins/audit/scripts/governance/full-gate.py (~:397-400, via _run_verb ~:454) passes a built string (`_described(...)`) as `bug-add --description` on argv, which audit-task.py's shell-damage check judges - send it on stdin the way drive-phase.py `_verb_with_text` (P130.47-ywo) does. (d) From the P130.47-ywo review (docs/audit/evidence/returns/P130.47-ywo/20261019T213952Z.reviewer.json): MED - the lint `argv_prose_violations` in plugins/audit/tests/test_drive_phase.py (~:7322-7329) carries a hand-typed copy of audit-task.py PROSE_FLAGS (~:1000) that already omits --rename, --no-evidence-reason, --issue, --resolution, --repro, --expected, --actual, --override-verdict - read the set from audit-task.py itself; LOW - the lint misses two-call appends, joined `--text=` forms and a flag held in a name, and the helper exemption spares any Call nested inside a _verb_with_text argument - read the flag/value pairing over the whole argv expression; LOW - `_verb_with_text`'s docstring says a blank text on argv has nothing for a check to read, but a whitespace-only text is refused on argv too - send whitespace-only text on stdin as well, or refuse it in the helper with a sentence. Acceptance: (1) a submit whose command ran suite A, binding ids in suites A and B, grades A's ids and reports B's as not checked; (2) the earlier-commit case names done --commit; (3) a failing git log refuses; (4) kept_tree_stop has a case; (5) full sweep green.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -5126,20 +5127,96 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "94e6f8e33f52",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(a) _filed_returns.case_binding_gaps takes the submit's argv and grades an id only against the suite its tests.add entry names; new case_binding_unchecked names the entries whose suite the command did not run as 'not checked' (never 'not printed'); a command naming none of the declared suites grades as before. drive-phase submit passes the argv and records a 'not checked' did-line. (b1) _scoped_commit.close_evidence_refusal takes earlier/earlier_why; commit-task-work reads the commits in start_head..HEAD (head from the task.start journal row, via new start_head_of / earlier_attempt_commits, paths through _config.plan_to_git) and, when the work is already committed, names `audit-task.py done <id> --commit <sha>` instead of --no-change and 'bring it into'; with no recorded start head it claims nothing. _scoped_commit now imports _loader, so the one PLUGIN-BUILD-GUIDE.md module-map line was updated (plan gate allowed the edit). (b2) audit-task.py _attempt_commits_read returns (touched, failure); _close_evidence_refusal refuses when git log fails, naming the log and its exit code; _attempt_commits kept as a wrapper. (b3) kr1 now requires a non-None sha; new case kr3 asks kept_tree_stop directly. (c) full-gate.py _run_verb sends the bug-add --description on stdin via _text_on_stdin; _stream_subprocess takes stdin=None; seams in test_full_gate.py updated; case fglf14. (d) test_drive_phase.py argv_prose_violations reads PROSE_FLAGS from audit-task.py (argv_prose_flags, exempting only review_outcome), reads two-call/+= appends, joined --flag=value forms, flags held in names, and no longer spares calls nested in the helper's arguments (mt5-mt8); _verb_with_text refuses whitespace-only text with a sentence and its docstring says what each blank text does (mt9). Cases added: cb4, lo-ce6, ctw-ro5, ctw-ro6, kr3, fglf14, mt5-mt9; kr1 tightened. Full sweep: 340/340 files ok, 16571 cases, exit 0 (an earlier sweep run had test__deps and gate-parity red: the first was the guide map line above, gate-parity passed on re-run and in the second full sweep). test__refs.py --selftest 286/286.",
+        "descriptive": "A bound case id is graded only against the suite that holds it, the commit refusals name done --commit and fail loudly on a failed git log, full-gate sends machine text on stdin, and the argv-prose lint reads the verb's own flag list over the whole argv expression."
       },
       "startedAt": "2026-10-19T22:22:47Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-20T07:20:26Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__filed_returns.py: cb4",
+        "plugins/audit/tests/test_audit_task.py: lo-ce6",
+        "plugins/audit/tests/test_commit_task_work.py: ctw-ro5, ctw-ro6",
+        "plugins/audit/tests/test_drive_phase.py: kr3, mt5, mt6, mt7, mt8, mt9",
+        "plugins/audit/tests/test_full_gate.py: fglf14"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-20T07:17:10Z.89663e",
         "status": "passed",
         "at": "2026-10-20T07:17:10Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "94e6f8e33f52",
+        "at": "2026-10-20T07:20:26Z",
+        "return": "docs/audit/evidence/returns/P130.49-ywo/20261019T222247Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-19T22:53:14Z",
+        "basis": "`python3 plugins/audit/tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 106/107 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_command_names_suite': TypeError: case_binding_gaps() takes 3 positional arguments but 4 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_entry_suite': TypeError: case_binding_gaps() takes 3 positional arguments but 4 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_suites_run': TypeError: case_binding_gaps() takes 3 positional arguments but 4 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'case_binding_unchecked': TypeError: case_binding_gaps() takes 3 positional arguments but 4 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'earlier_attempt_commits': TypeError: case_binding_gaps() takes 3 positional arguments but 4 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'start_head_of': TypeError: case_binding_gaps() takes 3 positional arguments but 4 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_attempt_commits_read': TypeError: case_binding_gaps() takes 3 positional arguments but 4 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_STDIN_TEXT_FLAG': TypeError: case_binding_gaps() takes 3 positional arguments but 4 were given; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_text_on_stdin': TypeError: case_binding_gaps() takes 3 positional arguments but 4 were given; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P130.50-ywo",
+      "title": "The P130.49 review lows are fixed: the start head is an ancestor, one start-head reader, a verb that exits early cannot break the stdin write, unchecked ids reach the reviewer, and the argv lint is scope-aware and covers full-gate",
+      "status": "pending",
+      "description": "Review of P130.49-ywo (docs/audit/evidence/returns/P130.49-ywo/20261019T222247Z.reviewer.json - read it whole). (1) `_scoped_commit.earlier_attempt_commits` (~:1142-1153) proves only that the start head is an object git holds; require `git merge-base --is-ancestor <start> HEAD`, else claim nothing and say the start head is not an ancestor. (2) `_scoped_commit.start_head_of` (~:1130-1141) duplicates `audit-task._start_head`; one reader in the lowest module both may import (layer rules), the other calls it. (3) full-gate.py `_stream_subprocess` (~:160-166) writes and closes the child's stdin outside try/finally; a verb that exits before reading (argparse refusal) raises BrokenPipeError and leaves the child unreaped - write inside try, treat BrokenPipeError as 'the verb exited before reading', reap the child, report its output. (4) drive-phase.py (~:4942-4950): `case_binding_unchecked` sentences reach only ctx['did']; file them on the return beside testsAddGaps so the reviewer brief shows ids that were never compared. (5) test_drive_phase.py argv lint (~:7391-7402, :7498-7506) resolves names file-wide; resolve per function scope, and do not report a Name whose single assignment in scope is a string literal. (6) Run the argv lint over full-gate.py too (it reports full-gate.py ~:406 today) and fix full-gate.py's `learning_plan` to send `--description` via the stdin route at the call site instead of the one-flag runtime rewrite (~:469-488), then delete the rewrite. Acceptance: a case per item; full sweep green.",
+      "files": [
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/full-gate.py",
+        "plugins/audit/tests/test_full_gate.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__scoped_commit.py: a start head that is not an ancestor of HEAD claims no earlier commit and says so",
+          "plugins/audit/tests/test_full_gate.py: a verb that exits before reading its stdin is reaped and its output reported, with no BrokenPipeError escaping"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.49-ywo"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "ok, sve preporuke (owner, 2026-10-14, approving CONSOLIDATED-PLAN.md) / Nova faza za F1 (Recommended) (owner, 2026-10-16, where the F1 tasks live)",
