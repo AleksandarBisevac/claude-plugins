@@ -838,6 +838,12 @@
       "title": "Bugfix batch 3",
       "status": "done",
       "shard": "phases/BF3.json"
+    },
+    {
+      "id": "BF4",
+      "title": "Bugfix batch 4",
+      "status": "pending",
+      "shard": "phases/BF4.json"
     }
   ],
   "fileIndex": {
@@ -10745,6 +10751,43 @@
       ],
       "taskId": "BF3.1",
       "fixedIn": "343a677360c6",
+      "notes": null
+    },
+    {
+      "id": "BUG-27",
+      "title": "CI jobs float on ubuntu-latest while pinning tools the new image cannot install",
+      "status": "open",
+      "severity": "high",
+      "reportedAt": "2026-10-20T16:11:50Z",
+      "reportedBy": null,
+      "description": "Release-tier CI run 39450681745 (ci/v3.5.0, 98d7c9b1) went red because `ubuntu-latest` moved from ubuntu-24.04 to ubuntu-26.04 between the v3.4.0 run and this one: browser (panel) and browser (report) fail at `npx playwright install --with-deps chromium` (Playwright 1.56.0, pinned in package.json, does not support ubuntu26.04-x64), and lint + e2e fails at actions/setup-python with Python 3.9 not found for Ubuntu 26.04 (.github/workflows/ci.yml ~:221-224). A job that pins a tool version must also pin the runner image it was proven on, or a vendor's image move breaks CI with no change in the repo. Fix: every job names an explicit image (ubuntu-24.04, and an explicit windows image), and tools/gate-parity.py refuses a floating `*-latest` runs-on label.",
+      "repro": null,
+      "expected": null,
+      "actual": null,
+      "files": [
+        ".github/workflows/ci.yml",
+        "tools/gate-parity.py"
+      ],
+      "taskId": null,
+      "fixedIn": null,
+      "notes": null
+    },
+    {
+      "id": "BUG-28",
+      "title": "gate-parity vsh11 runs a /bin/sh stub as a program, which Windows cannot execute",
+      "status": "open",
+      "severity": "high",
+      "reportedAt": "2026-10-20T16:11:51Z",
+      "reportedBy": null,
+      "description": "Release-tier CI run 39450681745: selftests (windows-latest, plain 1) and (cp1252 1) fail on tools/gate-parity.py with `OSError: [WinError 193] %1 is not a valid Win32 application` raised in `return_trap_honoured` (~:1737): case vsh11 (~:2720-2730), added by commit 4176618c (P128.54-izt, after v3.4.0), writes `#!/bin/sh` stub files and passes them to subprocess.run as the program; Windows cannot run a shebang file, and because the call raises inside the selftest body every later case is skipped too. Passes on macOS and Linux. Fix: make the stubs runnable on every OS (Python stubs run through sys.executable, or an argv prefix) and make return_trap_honoured catch OSError into a recorded False so one case can never take the body down.",
+      "repro": null,
+      "expected": null,
+      "actual": null,
+      "files": [
+        "tools/gate-parity.py"
+      ],
+      "taskId": null,
+      "fixedIn": null,
       "notes": null
     }
   ],
