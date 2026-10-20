@@ -28,21 +28,30 @@
         "severity": "low",
         "file": ".gitattributes:26-32",
         "issue": "The comment still says `ui_surface_digests()` hashes `_ui_theme.py` 'as a member of BOTH surfaces, reading raw bytes', and that a CRLF checkout therefore moved every digest. The diff deletes `ui_surface_digests()` and `_UI_TOKEN_LAYER`. The digest is now taken over the imported page text, so the file is no longer read as raw bytes (Python normalises source newlines on import). The comment names a function that no longer exists and gives a reason that no longer holds. The executor could not edit it because the plan gate refused the file.",
-        "resolution": "Rewrite the comment to say what the `_ui_theme.py text eol=lf` pin is still for, or drop the pin and the comment together if nothing else reads the file's bytes. Do it in a task that declares .gitattributes."
+        "resolution": "fixed in P130.19-ywo (3de0a85abf19): Rewrite the comment to say what the `_ui_theme.py text eol=lf` pin is still for, or drop the pin and the comment together if nothing else reads the file's bytes. Do it in a task that declares .gitattributes.",
+        "fixTask": "P130.19-ywo",
+        "commit": "3de0a85abf19",
+        "status": "fixed"
       },
       {
         "id": "P130-R2",
         "severity": "low",
         "file": "plugins/audit/scripts/_ui_theme.py:872",
         "issue": "The comment says the anchor's walk needs the same directory for `ui_surface_digests()`, 'in the anchor, for the screenshot rule'. That function is removed by this diff. The anchor now holds `ui_surface_sources()`, and the digest lives in `_surface_digest.py`. The executor could not edit it because the plan gate refused the file.",
-        "resolution": "Change it to `ui_surface_sources()` and drop 'for the screenshot rule'. The plan gate currently lists P130.7, P130.8 and P130.9 as declaring this file, so make the edit under one of them."
+        "resolution": "fixed in P130.19-ywo (3de0a85abf19): Change it to `ui_surface_sources()` and drop 'for the screenshot rule'. The plan gate currently lists P130.7, P130.8 and P130.9 as declaring this file, so make the edit under one of them.",
+        "fixTask": "P130.19-ywo",
+        "commit": "3de0a85abf19",
+        "status": "fixed"
       },
       {
         "id": "P130-R3",
         "severity": "low",
         "file": "plugins/audit/schema/audit-plan.schema.json:1860-1880",
         "issue": "The retired $defs/falsifier keeps its property descriptions in the present tense. `find` still says the drive 'reports [a missing find] as could-not-run', `command` says it is 'run from the copy's root', and `timeout` says 'Absent reads `drive-phase.py`'s FALSIFIER_TIMEOUT'. That constant is deleted by this diff (fp0b asserts it is gone), so the sentence names a symbol that no longer exists and describes behaviour nothing performs. The task asked for the field to be 'described as retired and read by nothing'. Only the parent and the def itself were reworded.",
-        "resolution": "Reword the five property descriptions in the past tense or reduce them to 'retired, read by nothing'. Delete the FALSIFIER_TIMEOUT reference."
+        "resolution": "fixed in P130.21-ywo (6f856734b1d9): Reword the five property descriptions in the past tense or reduce them to 'retired, read by nothing'. Delete the FALSIFIER_TIMEOUT reference.",
+        "fixTask": "P130.21-ywo",
+        "commit": "6f856734b1d9",
+        "status": "fixed"
       },
       {
         "id": "P130-R4",
@@ -56,42 +65,60 @@
         "severity": "low",
         "file": ".github/workflows/ci.yml:39-44",
         "issue": "The comment says a run on main 'is the record of what landed and is never cancelled'. `cancel-in-progress: false` only stops a RUNNING run being cancelled. GitHub still cancels a PENDING run when a newer run queues in the same group `ci-refs/heads/main`. Two pushes to main in quick succession, or a push while a dispatch on main is queued, can leave a main SHA with a cancelled run. CHANGELOG.md says 'everywhere but main' with the same implication. Read from GitHub's concurrency semantics; not exercised.",
-        "resolution": "Reword the comment to say a RUNNING main run is never cancelled and a queued one can be replaced, or key the group on the SHA on main so main runs never share a group."
+        "resolution": "fixed in P130.37-ywo (8c7ce0037ec4): Reword the comment to say a RUNNING main run is never cancelled and a queued one can be replaced, or key the group on the SHA on main so main runs never share a group.",
+        "fixTask": "P130.37-ywo",
+        "commit": "8c7ce0037ec4",
+        "status": "fixed"
       },
       {
         "id": "P130-R6",
         "severity": "low",
         "file": "tools/gate-parity.py:1579",
         "issue": "'Every per-run slice has a job' reads a job's `if:` only for `inputs.tier == 'release'`. Mutated copies with `if: ${{ false }}` on browser-panel, and a push-only condition on browser-panel, both returned [] for slice_drift and shard_matrix_drift (lines 1609-1642). The claim holds only for the one condition shape it reads.",
-        "resolution": "Treat a job `if:` as the known per-run guard only when it reduces to the verified-run guard, optionally with the release-tier term; otherwise report it as a condition the reader cannot prove runs on every run. Add sv cases for `if: false` and a push-only condition."
+        "resolution": "fixed in P130.37-ywo (8c7ce0037ec4): Treat a job `if:` as the known per-run guard only when it reduces to the verified-run guard, optionally with the release-tier term; otherwise report it as a condition the reader cannot prove runs on every run. Add sv cases for `if: false` and a push-only condition.",
+        "fixTask": "P130.37-ywo",
+        "commit": "8c7ce0037ec4",
+        "status": "fixed"
       },
       {
         "id": "P130-R7",
         "severity": "low",
         "file": "tools/ci-verified.py:128-141",
         "issue": "`decide()` matches on `head_sha` and `path` but never on the run's `event` (ask_github at 162-165). A pull_request run's `head_sha` is the PR head while its checkout is the merge commit; if main later receives that SHA by fast-forward, the PR run vouches for a tree it never tested and every main job is skipped. The docstring's 'exactly this commit' holds for workflow_dispatch and push only.",
-        "resolution": "Fetch `event` with the run listing and accept only workflow_dispatch and push runs. Add a cv case where a green pull_request run on the same SHA refuses."
+        "resolution": "fixed in P130.37-ywo (8c7ce0037ec4): Fetch `event` with the run listing and accept only workflow_dispatch and push runs. Add a cv case where a green pull_request run on the same SHA refuses.",
+        "fixTask": "P130.37-ywo",
+        "commit": "8c7ce0037ec4",
+        "status": "fixed"
       },
       {
         "id": "P130-R8",
         "severity": "low",
         "file": "tools/check-git-pipeline.py:11",
         "issue": "Untouched files still say ci.yml carries the launcher steps and the scale-demo step (tools/check-git-pipeline.py:11,29,38,226; plugins/audit/tests/test_gen_demo_manifest.py:729,800). This diff moved those steps into verify.sh's e2e and manifests slices.",
-        "resolution": "Change 'ci.yml' to tools/verify.sh's e2e slice / the manifests slice at those lines."
+        "resolution": "fixed in P130.37-ywo (8c7ce0037ec4): Change 'ci.yml' to tools/verify.sh's e2e slice / the manifests slice at those lines.",
+        "fixTask": "P130.37-ywo",
+        "commit": "8c7ce0037ec4",
+        "status": "fixed"
       },
       {
         "id": "P130-R9",
         "severity": "low",
         "file": "plugins/audit/tests/test_commit_task_work.py:785",
         "issue": "The diff rewrites the label of an unrelated existing case from `ctw29 SECOND-DIRECTION CASE` to `ctw29SECOND-DIRECTION CASE` (space deleted), a stray edit outside the task's scope that changes the case id other tooling and logs key on.",
-        "resolution": "Restore the space so the label reads `ctw29 SECOND-DIRECTION CASE` as at 678ca8f5."
+        "resolution": "fixed in P130.25-ywo (502b3a4f6f37): Restore the space so the label reads `ctw29 SECOND-DIRECTION CASE` as at 678ca8f5.",
+        "fixTask": "P130.25-ywo",
+        "commit": "502b3a4f6f37",
+        "status": "fixed"
       },
       {
         "id": "P130-R10",
         "severity": "low",
         "file": "plugins/audit/hooks/detect-plan-skip.py:158",
         "issue": "The hooks side was given `_config.local_stamp()` as its one home for the offset-bearing local stamp, but detect-plan-skip.py:158 still spells the identical `time.strftime(\"%Y-%m-%dT%H:%M:%S%z\", time.localtime())` inline, so the hooks half of (4) is not one-per-side. The executor's claim 3 lists only scripts-side stragglers as left on purpose and does not name this one.",
-        "resolution": "Call `_config.local_stamp()` there (a hook may import hooks/_config), or list it with the other deliberate leftovers as a follow-up task."
+        "resolution": "fixed in P130.25-ywo (502b3a4f6f37): Call `_config.local_stamp()` there (a hook may import hooks/_config), or list it with the other deliberate leftovers as a follow-up task.",
+        "fixTask": "P130.25-ywo",
+        "commit": "502b3a4f6f37",
+        "status": "fixed"
       },
       {
         "id": "P130-R11",
@@ -105,7 +132,10 @@
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/_manifest_vocab.py:883,963; plugins/audit/hooks/guard-secrets-read.py:559; plugins/audit/scripts/manifest/_priority.py:156; CLAUDE.md:181,279",
         "issue": "Comments and documents still name mechanisms this diff deleted: `_help.schema_subset_drift()` and `_help.schema_inline_drift()` as 'the comparison' (_manifest_vocab.py), `_refs.absolute_reach_violations()` reading a docstring (guard-secrets-read.py), `_deps.SHARED_CONCERNS` (_priority.py), and in CLAUDE.md `ui_navigability_violations()` and the 'checked paragraph' claim for `isolation_drift()`. SUBSET_ANCHORS is now read by nothing, although the outcome says everything only the retired lints read went in the orphan cascade. These files are outside the changed lines but the retirement is what made the sentences false (shape crosses the boundary: the lint on one side, the sentence on the other). The executor disclosed the three code files as gate-refused and drafted the CLAUDE.md text in its outcome.",
-        "resolution": "Widen scope to (or hand to P130.8) _manifest_vocab.py, guard-secrets-read.py, _priority.py: delete SUBSET_ANCHORS, drop INLINE_ANCHORS by rewriting mv33 to loop its own keys, reword the three comments. Owner applies the CLAUDE.md replacement drafted in the outcome."
+        "resolution": "fixed in P130.27-ywo (7273a6cab960): Widen scope to (or hand to P130.8) _manifest_vocab.py, guard-secrets-read.py, _priority.py: delete SUBSET_ANCHORS, drop INLINE_ANCHORS by rewriting mv33 to loop its own keys, reword the three comments. Owner applies the CLAUDE.md replacement drafted in the outcome.",
+        "fixTask": "P130.27-ywo",
+        "commit": "7273a6cab960",
+        "status": "fixed"
       },
       {
         "id": "P130-R13",
@@ -119,84 +149,120 @@
         "severity": "low",
         "file": "tools/ui-tests/gate-card-wait.test.mjs:58-62",
         "issue": "The test pins the wait function (pollIntervalOf/pollWindowMs) and greps capture-screenshots.mjs for the 6500 / 6.5s literals, but nothing proves each of the eight converted sites routes through waitForPoll/sleepPollWindow. A future hand-written wait with a different number (say 7000) or a waitForFunction with an inline timeout passes both the function cases and the literal grep, so the interval and a wait can still diverge at a call site.",
-        "resolution": "Extend the source check to count `waitForFunction(` calls carrying a numeric `timeout:` in the poll-window sites, or assert that every `waitForTimeout(` argument in the assertLiveData/assertComboOverlay/assertGateCard bodies is the computed window. Alternatively, file it as a known limit in the test header's WHAT THIS CANNOT SEE block."
+        "resolution": "fixed in P130.32-ywo (ca7b79f60686): Extend the source check to count `waitForFunction(` calls carrying a numeric `timeout:` in the poll-window sites, or assert that every `waitForTimeout(` argument in the assertLiveData/assertComboOverlay/assertGateCard bodies is the computed window. Alternatively, file it as a known limit in the test header's WHAT THIS CANNOT SEE block.",
+        "fixTask": "P130.32-ywo",
+        "commit": "ca7b79f60686",
+        "status": "fixed"
       },
       {
         "id": "P130-R15",
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1190-1219",
         "issue": "gate_entry_shape_problem reads a whole entry as one command, never splitting on && || ; |. Probed read-only: 'python3 a/test_x.py && python3 a/test_y.py' (two suites run in sequence, a correct entry, and the same joiner the plan's own lint gate uses) is reported as 'runs a/test_x.py as a program and hands it a/test_y.py as arguments' - a false statement - and would be refused by add, add --from-file, scope --gate and --gate-set and warned on by validate. No test covers a chained entry (gx1 quiet list has none).",
-        "resolution": "Cut the shell words at control operators before reading, judge each segment on its own (first path, the word before it, the extra suite paths), and add a chained-suites allow case to gx1."
+        "resolution": "fixed in P130.42-ywo (8ccaa35c4f50): Cut the shell words at control operators before reading, judge each segment on its own (first path, the word before it, the extra suite paths), and add a chained-suites allow case to gx1.",
+        "fixTask": "P130.42-ywo",
+        "commit": "8ccaa35c4f50",
+        "status": "fixed"
       },
       {
         "id": "P130-R16",
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1208-1211",
         "issue": "The 'names a path twice' rule applies to every path-shaped word, not to suites. Probed: 'pytest a/test_x.py::t1 a/test_x.py::t2' (two distinct node ids) and 'python3 tools/r.py --in docs/p.json --out docs/p.json' are both refused/warned as naming a path more than once. The task says an entry naming one suite twice; an in-place tool invocation or two node ids of one file are legitimate and would be refused with no way round.",
-        "resolution": "Restrict the repeat rule to is_suite_path words and compare them with any '::' node id kept (or only flag when the whole word is identical); add an allow case for node ids and for a non-suite repeated path."
+        "resolution": "fixed in P130.42-ywo (8ccaa35c4f50): Restrict the repeat rule to is_suite_path words and compare them with any '::' node id kept (or only flag when the whole word is identical); add an allow case for node ids and for a non-suite repeated path.",
+        "fixTask": "P130.42-ywo",
+        "commit": "8ccaa35c4f50",
+        "status": "fixed"
       },
       {
         "id": "P130-R17",
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1636-1649 and plugins/audit/tests/test__manifest_rules.py:1103-1105",
         "issue": "contradicts task clause: acceptance (3) and tests.add say validate-manifest reports such an entry 'already in a plan' / 'a plan already holding a malformed gate entry' as a warning; the walk warns only for a task whose status is not TERMINAL, and gx2 pins silence for a done task. A plan holding the shape in finished tasks (the very tasks the fault was filed on) validates silent. The narrowing is the executor's own reading and the comment justifies it, but the clause does not carry it.",
-        "resolution": "Warn for every task regardless of status (it is only a warning), or get the clause amended before narrowing; drop the done-task half of gx2 accordingly."
+        "resolution": "fixed in P130.42-ywo (8ccaa35c4f50): Warn for every task regardless of status (it is only a warning), or get the clause amended before narrowing; drop the done-task half of gx2 accordingly.",
+        "fixTask": "P130.42-ywo",
+        "commit": "8ccaa35c4f50",
+        "status": "fixed"
       },
       {
         "id": "P130-R18",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1180-1186",
         "issue": "'Run as a program' is read from the word IMMEDIATELY before the first path, so an interpreter option hides it: 'python3 -u a/test_x.py a/test_y.py' and 'python3 -X dev a/test_x.py a/test_y.py' return None (probed) although they have exactly the F720 shape. The predicate's own docstring claims the interpreter-or-nothing reading.",
-        "resolution": "Walk back from the first path to the segment start, skipping option words (and their values), and treat '-m <module>' as a runner; add the option case to gx1."
+        "resolution": "fixed in P130.42-ywo (8ccaa35c4f50): Walk back from the first path to the segment start, skipping option words (and their values), and treat '-m <module>' as a runner; add the option case to gx1.",
+        "fixTask": "P130.42-ywo",
+        "commit": "8ccaa35c4f50",
+        "status": "fixed"
       },
       {
         "id": "P130-R19",
         "severity": "low",
         "file": "plugins/audit/hooks/require-plan.py:118-125,137-151,891-905",
         "issue": "_covers_clause says a directory entry 'opens nothing until that task is started' for EVERY non-direct, non-in_progress row, including done/cancelled tasks. Before this diff a done task covering the file through a directory reached the terminal branch of _declaration_note (:~569) whose whole point is that '/audit:task start' refuses terminal work and a NEW task is the route; now _split_declared (:106-115) files it as a 'cover', the terminal branch is skipped, and the text implies starting it is the way forward. Verdicts are unchanged; the wording is false for terminal statuses, and the s7b/bt8 cases only exercise 'pending'.",
-        "resolution": "In _covers_clause branch on status in _TERMINAL_DECLARING_STATUSES and say 'which is terminal and is not re-started' instead of 'opens nothing until that task is started'; add a case with a done task whose directory entry covers the file."
+        "resolution": "fixed in P130.39-ywo (4765b8b9a851): In _covers_clause branch on status in _TERMINAL_DECLARING_STATUSES and say 'which is terminal and is not re-started' instead of 'opens nothing until that task is started'; add a case with a done task whose directory entry covers the file.",
+        "fixTask": "P130.39-ywo",
+        "commit": "4765b8b9a851",
+        "status": "fixed"
       },
       {
         "id": "P130-R20",
         "severity": "low",
         "file": "plugins/audit/hooks/_config.py:3530-3546",
         "issue": "The new multi-key walk and the promotion branch (`elif direct and not seen[tid][\"direct\"]: seen[tid].update(entry=key, direct=True)`) - a task listing both `lib/` and `lib/exact.ts` - is reached by no case: bt8 and s7b use different tasks for the directory and the exact file, and s8 reads only taskId. The entry/direct fields themselves are asserted nowhere on declaring_tasks directly (test__config.py is in the diff scope but untouched). Deleting the elif would leave every case green and would make a task that names the file itself render as a 'cover', i.e. dropped from 'declared by'.",
-        "resolution": "Add a declaring_tasks case (test_require_plan.py near s8 or test__config.py) with one task listing both `lib/` and `lib/exact.ts` asserting a single row with direct True and entry `lib/exact.ts`, and a row for a directory-only task asserting direct False and the entry."
+        "resolution": "fixed in P130.39-ywo (4765b8b9a851): Add a declaring_tasks case (test_require_plan.py near s8 or test__config.py) with one task listing both `lib/` and `lib/exact.ts` asserting a single row with direct True and entry `lib/exact.ts`, and a row for a directory-only task asserting direct False and the entry.",
+        "fixTask": "P130.39-ywo",
+        "commit": "4765b8b9a851",
+        "status": "fixed"
       },
       {
         "id": "P130-R21",
         "severity": "low",
         "file": "plugins/audit/hooks/require-plan.py:~529-533",
         "issue": "_declaration_note's docstring still says it is keyed on 'WHICH of three causes actually holds'; the undeclared-branch now also carries a fourth state (covered only by an unstarted directory entry), which the docstring never mentions.",
-        "resolution": "Add one paragraph to the docstring naming the directory-cover case and that it takes the undeclared remedies."
+        "resolution": "fixed in P130.39-ywo (4765b8b9a851): Add one paragraph to the docstring naming the directory-cover case and that it takes the undeclared remedies.",
+        "fixTask": "P130.39-ywo",
+        "commit": "4765b8b9a851",
+        "status": "fixed"
       },
       {
         "id": "P130-R22",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/_manifest_vocab.py:900",
         "issue": "The reworded comment joined two sentences onto one 148-character line ('that call rather than here; the `meta.ado` ones are described below. This module exists for the vocabularies MULTIPLE modules share, which is this'), breaking the comment's wrapped shape; every neighbouring line is wrapped near 90 columns.",
-        "resolution": "Re-wrap the sentence across lines at the comment's width; no wording change."
+        "resolution": "fixed in P130.39-ywo (4765b8b9a851): Re-wrap the sentence across lines at the comment's width; no wording change.",
+        "fixTask": "P130.39-ywo",
+        "commit": "4765b8b9a851",
+        "status": "fixed"
       },
       {
         "id": "P130-R23",
         "severity": "low",
         "file": "CLAUDE.md:285",
         "issue": "'`gate-parity.py` is why that cannot come back.' now follows directly after the rewritten isolation paragraph (CLAUDE.md:279-283), which says that paragraph is NOT checked and is owed by whoever adds a family. 'that' now reads as the unchecked isolation-doc drift, which the next sentence does not guard; the sentence it protects (gate-set descriptions drifting) is two lines down.",
-        "resolution": "Make the antecedent explicit, e.g. '`gate-parity.py` is why the drift between the gate-set descriptions cannot come back.'"
+        "resolution": "fixed in P130.27-ywo (7273a6cab960): Make the antecedent explicit, e.g. '`gate-parity.py` is why the drift between the gate-set descriptions cannot come back.'",
+        "fixTask": "P130.27-ywo",
+        "commit": "7273a6cab960",
+        "status": "fixed"
       },
       {
         "id": "P130-R24",
         "severity": "low",
         "file": "tools/ui-tests/gate-card-wait.test.mjs:132-136",
         "issue": "pollDependent() flags a wait only when its call text names RUNSTATUS/pollRunStatus or carries a literal of 4+ digits >= the poll interval. A hand-written wait whose duration is a computed or named value (panelPollWindowMs(), POLL_MARGIN_MS + n, a const like PANEL_BOOT_MS/TAB_WIRED_MS at capture-screenshots.mjs:670,678) is invisible to the scan, so a hand-rolled copy of the helper's window outside waitForPoll/sleepPollWindow passes. The test's own WHAT THIS CANNOT SEE names only the sub-interval literal case.",
-        "resolution": "Add panelPollWindowMs|pollWindowText|POLL_MARGIN_MS|pollIntervalOf to the names pollDependent() treats as poll-dependent (they are the helpers' own window), and add one scratch-copy mutation using panelPollWindowMs() in a bare page.waitForTimeout; or extend the cannot-see note to say computed durations are unpoliced."
+        "resolution": "fixed in P130.45-ywo (4efd5fbbf8c5): Add panelPollWindowMs|pollWindowText|POLL_MARGIN_MS|pollIntervalOf to the names pollDependent() treats as poll-dependent (they are the helpers' own window), and add one scratch-copy mutation using panelPollWindowMs() in a bare page.waitForTimeout; or extend the cannot-see note to say computed durations are unpoliced.",
+        "fixTask": "P130.45-ywo",
+        "commit": "4efd5fbbf8c5",
+        "status": "fixed"
       },
       {
         "id": "P130-R25",
         "severity": "low",
         "file": "tools/ui-tests/gate-card-wait.test.mjs:77-106",
         "issue": "blank() is a hand-rolled tokenizer with no regex-literal and no nested-template (`${ '...' }`) handling. An unbalanced quote inside a future regex literal would desync it and blank the rest of the file, silently dropping every later wait from waitSites(); the real-file assertions would stay green because stale/broad only look at allow-listed finds and unlisted would be empty. Today's file has no such regex (grep over the file finds none), so this is latent.",
-        "resolution": "Cross-check the scan: assert that the count of primitive-call matches in the blanked text equals the count from a plain regexp over the unblanked text minus those inside comments, or fail when blank() ends with a different line count/bracket balance than the source. One assertion makes a desync red rather than silent."
+        "resolution": "fixed in P130.45-ywo (4efd5fbbf8c5): Cross-check the scan: assert that the count of primitive-call matches in the blanked text equals the count from a plain regexp over the unblanked text minus those inside comments, or fail when blank() ends with a different line count/bracket balance than the source. One assertion makes a desync red rather than silent.",
+        "fixTask": "P130.45-ywo",
+        "commit": "4efd5fbbf8c5",
+        "status": "fixed"
       },
       {
         "id": "P130-R26",
@@ -210,129 +276,183 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_runner_collects.py:130-141",
         "issue": "_sweep_reading answers NOT_COLLECTED for any .py path that lacks a SWEEP_DIRS prefix. A bare basename (test_audit_task.py) is not a prefix match, so a real suite the sweep runs draws a false scope-gap. I confirmed by call: collects('test_audit_task.py','sweep','.') gives not-collected, and './plugins/audit/tests/test_a.py' gives not-collected too. tests_add_path accepts both spellings (_manifest_phases.py:922-931). The plan holds 44 bare-basename tests.add entries (P31.x, P26.x and others, all done or cancelled) under sweep-only gates (selftests, validate, lint). Before this diff the sweep was ignored, so runners was [] and those tasks started. Now runners is [sweep], the stop is block-only (DECISIONS scope-gap, drive-phase.py:467; widen refused at :2682 because config is None), and no vitest is needed to trigger it. This is F737-shaped: a false gap for a real Python suite under a gate that holds the sweep. The acceptance sentence 'no could-not-tell line' only covers the full-path spelling.",
-        "resolution": "In _sweep_reading, normalise a leading './' away. For a path with no directory component, or any path not under a root, answer COULD_NOT_TELL, or resolve it by looking for an existing file of that name under the roots. Reserve NOT_COLLECTED for a path that has a directory part, none of the roots prefix it, and no file of that suffix exists under a root. Add a case for the bare name and the './' form."
+        "resolution": "fixed in P130.38-ywo (fcd0817a4e48): In _sweep_reading, normalise a leading './' away. For a path with no directory component, or any path not under a root, answer COULD_NOT_TELL, or resolve it by looking for an existing file of that name under the roots. Reserve NOT_COLLECTED for a path that has a directory part, none of the roots prefix it, and no file of that suffix exists under a root. Add a case for the bare name and the './' form.",
+        "fixTask": "P130.38-ywo",
+        "commit": "fcd0817a4e48",
+        "status": "fixed"
       },
       {
         "id": "P130-R28",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:1089-1102",
         "issue": "The 'no runner takes' stop treats the runner list as the gate's whole set of test commands, but entry_collector knows only vitest, jest, pytest and the sweep. A gate such as ['selftests', 'node --test x.test.mjs'], or sweep plus 'python3 -m unittest ...', has an unrecognised entry that runs the path. Before this diff the sweep was not counted, so runners stayed [] and the task started. Now the sweep makes runners non-empty, runners_taking returns [] for the .mjs path, and the task stops with 'no runner in this gate takes ...'. The only exit is block (config None, so widen is refused). Separately, the decision text offers 'widen|block' and does not say that the real cure is adding the runner entry to the gate or correcting tests.add. Pending P109.9 declares tests/audit/test__output.py under gate selftests and will now stop this way. That is probably a correct stop, but its message gives no remedy.",
-        "resolution": "Raise the 'no runner takes' decision only when every path-scoped gate entry resolved to a known collector. If any entry names no collector (entry_collector None and the entry is not a lint or validate), return the could-not-tell line instead. Make the message name the remedy (add a collecting entry to tests.gate, or correct the tests.add path). Add a case with sweep plus an unrecognised runner entry."
+        "resolution": "fixed in P130.48-ywo (d0268f2b9eef): Raise the 'no runner takes' decision only when every path-scoped gate entry resolved to a known collector. If any entry names no collector (entry_collector None and the entry is not a lint or validate), return the could-not-tell line instead. Make the message name the remedy (add a collecting entry to tests.gate, or correct the tests.add path). Add a case with sweep plus an unrecognised runner entry.",
+        "fixTask": "P130.48-ywo",
+        "commit": "d0268f2b9eef",
+        "status": "fixed"
       },
       {
         "id": "P130-R29",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_runner_collects.py:121-127",
         "issue": "_sweep_roots takes every quoted string on a line and joins them with '/', so a compact or commented tuple becomes a wrong root silently. I called it: SWEEP_DIRS = (\\n \"tools\", \".claude/hooks\",\\n) gives ['tools/.claude/hooks'], and a trailing comment like '# the \"x\" dir' gives ['tools/x']. A wrong root makes every real suite a false NOT_COLLECTED, and nothing reports it as could-not-tell. No case parses the real tools/sweep-selftests.py. Both new cases use fixture SWEEP_DIRS text (test__runner_collects.py:211-218, test_drive_phase.py:293-294). On today's file I checked it yields the five correct roots.",
-        "resolution": "Parse the tuple with ast.literal_eval or an AST walk, which handles os.path.join. If that cannot be done, treat any line holding more than one separate string argument, or a trailing comment, as unreadable and return None. Add a selftest case asserting that _sweep_roots on the repo's real tools/sweep-selftests.py equals its SWEEP_DIRS, so a reformat goes red rather than silent."
+        "resolution": "fixed in P130.45-ywo (4efd5fbbf8c5): Parse the tuple with ast.literal_eval or an AST walk, which handles os.path.join. If that cannot be done, treat any line holding more than one separate string argument, or a trailing comment, as unreadable and return None. Add a selftest case asserting that _sweep_roots on the repo's real tools/sweep-selftests.py equals its SWEEP_DIRS, so a reformat goes red rather than silent.",
+        "fixTask": "P130.45-ywo",
+        "commit": "4efd5fbbf8c5",
+        "status": "fixed"
       },
       {
         "id": "P130-R30",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py; plugins/audit/tests/test__manifest_rules.py (index state in claude-plugins-P130.41-ywo)",
         "issue": "git ls-files -u in the task tree still lists stage 1/2/3 entries for both conflicted files (status UU), although the working-tree text has no conflict markers. A plain commit or commit-by-path refuses unmerged paths until they are re-added.",
-        "resolution": "Run git add on those two paths before the close commits (resolution is already correct in the working tree), and check git ls-files -u prints nothing."
+        "resolution": "fixed in P130.41-ywo (a7d72ddb1fdf): Run git add on those two paths before the close commits (resolution is already correct in the working tree), and check git ls-files -u prints nothing.",
+        "fixTask": "P130.41-ywo",
+        "commit": "a7d72ddb1fdf",
+        "status": "fixed"
       },
       {
         "id": "P130-R31",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1114-1135",
         "issue": "_PLAIN_INTERPRETER_FLAGS is Python's flag set but _runs_first_path_as_program applies it to every name in _SCRIPT_RUNNER (bash, sh, ruby, perl, node...). Probed on the tree: `bash -s a/test_x.sh a/test_y.sh` is refused with 'runs a/test_x.sh as a program and hands it a/test_y.sh as arguments'. For bash, -s reads the script from stdin, so the first path is not the program and the sentence is false. This breaks the task's 'every refusal sentence must stay true'. It is contrived and only reachable through -s (-E on perl and -O on bash take an argument word, so they fall out as unread).",
-        "resolution": "Key the plain-flag table by interpreter, python-only for python*/py, and leave any option before the first path unread for the other runners. Or drop the letters whose meaning differs per interpreter (at least s, E, x, t) from the shared set."
+        "resolution": "fixed in P130.45-ywo (4efd5fbbf8c5): Key the plain-flag table by interpreter, python-only for python*/py, and leave any option before the first path unread for the other runners. Or drop the letters whose meaning differs per interpreter (at least s, E, x, t) from the shared set.",
+        "fixTask": "P130.45-ywo",
+        "commit": "4efd5fbbf8c5",
+        "status": "fixed"
       },
       {
         "id": "P130-R32",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1197-1200",
         "issue": "The unbalanced-quote fallback in gate_entry_commands separates commands on bare operators only. It does not drop redirection targets, which the docstring says it does for the main path. `python3 a/test_x.py > a/test_y.py \"x` (unbalanced) would count a/test_y.py as an argument and refuse with a sentence that is false of it. The entry is broken shell anyway, so this is low.",
-        "resolution": "In the fallback, skip the word after any token matching _is_redirection, or return no commands at all (read nothing) when the entry cannot be delimited."
+        "resolution": "fixed in P130.45-ywo (4efd5fbbf8c5): In the fallback, skip the word after any token matching _is_redirection, or return no commands at all (read nothing) when the entry cannot be delimited.",
+        "fixTask": "P130.45-ywo",
+        "commit": "4efd5fbbf8c5",
+        "status": "fixed"
       },
       {
         "id": "P130-R33",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:1152-1173",
         "issue": "The executor's trade-off makes the misroute stop effectively dead. `unclassified` collects every entry for which `_gate_derive.entry_collector` (_gate_derive.py:263-275) returns None, and that function only knows vitest/jest/pytest (UNIT_RUNNERS) and sweep-selftests.py. This repo's own meta.buildCommands (docs/audit/audit-plan.json) resolves validate, plugin-validate, gate, report, lint, shots and interactive to commands that all return None (read by running a json load of meta.buildCommands and matching each against entry_collector's rules); any gate the repo declares and that holds one of them (the phase gate certainly does) therefore makes `unclassified` non-empty, so `if not takers and unclassified` at :1166 always takes the could-not-tell branch and the `no runner in this gate takes %s` decision at :1175 is unreachable. It only fires for a gate made solely of vitest/jest/pytest/sweep entries, which real gates (lint, validate, build entries) almost never are. Acceptance (4) says the P130.38 misroute stops 'still fire', but only the test fixtures keep them alive (uc3 uses a single-entry gate, line test_drive_phase.py uc3, `(SWEEP_GATE,)`), not production gates. The could-not-tell line is also misleading for such gates: it names unclassified[0], which is a lint or validate entry, as the entry that 'may run' the suite.",
-        "resolution": "Count an entry as unclassified only when it can run tests: it names a suite path (`_phases.is_suite_path` on a `_phases.shell_word_path` word) or a known test module/runner token (`-m unittest`, `--test`, `mocha`, `tap`, `ava`, `node --test`, `npm test`). Lint, validate, report, shots entries are then ignored and the definite 'no runner takes this path' stop fires again for gates like this repo's. Name that qualifying entry (not unclassified[0] blindly) in the could-not-tell line."
+        "resolution": "fixed in P130.48-ywo (d0268f2b9eef): Count an entry as unclassified only when it can run tests: it names a suite path (`_phases.is_suite_path` on a `_phases.shell_word_path` word) or a known test module/runner token (`-m unittest`, `--test`, `mocha`, `tap`, `ava`, `node --test`, `npm test`). Lint, validate, report, shots entries are then ignored and the definite 'no runner takes this path' stop fires again for gates like this repo's. Name that qualifying entry (not unclassified[0] blindly) in the could-not-tell line.",
+        "fixTask": "P130.48-ywo",
+        "commit": "d0268f2b9eef",
+        "status": "fixed"
       },
       {
         "id": "P130-R34",
         "severity": "low",
         "file": "plugins/audit/tests/test_drive_phase.py (_unclassified_entry_cases, uc3/uc4)",
         "issue": "No case holds the realistic shape: a known-runner gate plus a non-test entry (lint, validate). uc3 and uc4 use only the sweep or sweep plus `python3 -m unittest`, so the suite stays green while finding 1 holds; nothing pins that a lint-only extra entry leaves the stop in force.",
-        "resolution": "Add a case: gate (SWEEP_GATE, a lint command such as `ruff check .`) with a `.mjs` suite path expects the scope-gap decision, alongside the existing uc1/uc2 could-not-tell cases, which should keep a test-capable unclassified entry."
+        "resolution": "fixed in P130.48-ywo (d0268f2b9eef): Add a case: gate (SWEEP_GATE, a lint command such as `ruff check .`) with a `.mjs` suite path expects the scope-gap decision, alongside the existing uc1/uc2 could-not-tell cases, which should keep a test-capable unclassified entry.",
+        "fixTask": "P130.48-ywo",
+        "commit": "d0268f2b9eef",
+        "status": "fixed"
       },
       {
         "id": "P130-R35",
         "severity": "med",
         "file": "plugins/audit/tests/test_drive_phase.py:7322-7329",
         "issue": "ARGV_PROSE_FLAGS is a hand-typed copy of audit-task.py's PROSE_FLAGS (audit-task.py:1000) and already omits --rename, --no-evidence-reason, --issue, --resolution, --repro, --expected, --actual, --override-verdict (read, and confirmed by running the lint on scratch snippets: [\"done\", \"--no-evidence-reason\", built] and [\"retarget\", \"--rename\", built] both return []). A reintroduced argv call on any of those flags, each one the verb gap-checks, passes the lint, so 'no call site can regress' holds for 8 of the 16 flags the verb checks. The comment justifies only --review-outcome.",
-        "resolution": "Derive the set from the verb: load audit-task.py by basename (_loader) and take its PROSE_FLAGS (dest -> --flag), minus one declared exemption {review_outcome} with its reason. Then a flag added to PROSE_FLAGS is linted by default."
+        "resolution": "fixed in P130.49-ywo (94e6f8e33f52): Derive the set from the verb: load audit-task.py by basename (_loader) and take its PROSE_FLAGS (dest -> --flag), minus one declared exemption {review_outcome} with its reason. Then a flag added to PROSE_FLAGS is linted by default.",
+        "fixTask": "P130.49-ywo",
+        "commit": "94e6f8e33f52",
+        "status": "fixed"
       },
       {
         "id": "P130-R36",
         "severity": "low",
         "file": "plugins/audit/tests/test_drive_phase.py:7343-7366",
         "issue": "The lint reads only 'literal flag, then non-Constant neighbour in one List/Tuple/Call'. Probed on scratch snippets, it returns [] for: a.append(\"--text\"); a.append(built) (two calls); [\"note\", \"--text=\" + built] and \"--text=%s\" % built (joined form); FLAG = \"--text\"; [FLAG, built] (flag held in a name). It also fires on a legitimate value held in a named constant ([\"--reason\", NOTE_CONST]) and on a literal concatenation (\"a\" + \"b\"), because any non-Constant counts as built. mt3 only pins the list, tuple and += shapes.",
-        "resolution": "Resolve module-level string constants before comparing; treat a BinOp/JoinedStr/Mod whose left literal starts with a prose flag plus '=' as a hit; add consecutive-append detection (an Expr call to .append with a prose-flag literal followed by a non-literal append on the same receiver); count a Name that resolves to a module constant string, and a BinOp of two literals, as literal. Add an mt3/mt4 row for each."
+        "resolution": "fixed in P130.50-ywo (6711cb477898): Resolve module-level string constants before comparing; treat a BinOp/JoinedStr/Mod whose left literal starts with a prose flag plus '=' as a hit; add consecutive-append detection (an Expr call to .append with a prose-flag literal followed by a non-literal append on the same receiver); count a Name that resolves to a module constant string, and a BinOp of two literals, as literal. Add an mt3/mt4 row for each.",
+        "fixTask": "P130.50-ywo",
+        "commit": "6711cb477898",
+        "status": "fixed"
       },
       {
         "id": "P130-R37",
         "severity": "low",
         "file": "plugins/audit/tests/test_drive_phase.py:7345-7350",
         "issue": "The helper exemption is blanket: spared.update(id(arg) for arg in node.args) also spares any Call passed as an argument of _verb_with_text, so _verb_with_text(c, s, _task_args(c, \"note\", t, \"--text\", built), \"--reason\", x) reports nothing (probed: []). The sparing exists only so the helper's own flag/text neighbours are not read, but that is already achieved by spare-ing the helper Call node itself.",
-        "resolution": "Spare only the helper call node's own positional list; do not add its argument Call nodes to `spared`, so nested argv builders are still read."
+        "resolution": "fixed in P130.50-ywo (6711cb477898): Spare only the helper call node's own positional list; do not add its argument Call nodes to `spared`, so nested argv builders are still read.",
+        "fixTask": "P130.50-ywo",
+        "commit": "6711cb477898",
+        "status": "fixed"
       },
       {
         "id": "P130-R38",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:767-781",
         "issue": "The helper docstring says a blank text on argv has 'nothing in it for a check to read'. A whitespace-only text such as '  ' is truthy to the verb and matches `\\A[ \\t]+` (audit-task.py:875) so it is refused on argv, exactly as '-' with whitespace-only stdin is refused (audit-task.py:1076). Also the stdin route rstrip('\\n')s (audit-task.py:1075), so built text ending in newlines is not verbatim, which the docstring's 'arrives verbatim' omits. No regression (argv behaved the same before) but the stated reason is wrong.",
-        "resolution": "Reword to say blank means empty after strip and goes as-is because the verb treats an empty value as legal and a whitespace-only one is refused on either route, and note the trailing-newline strip; or normalise whitespace-only to '' before sending."
+        "resolution": "fixed in P130.50-ywo (6711cb477898): Reword to say blank means empty after strip and goes as-is because the verb treats an empty value as legal and a whitespace-only one is refused on either route, and note the trailing-newline strip; or normalise whitespace-only to '' before sending.",
+        "fixTask": "P130.50-ywo",
+        "commit": "6711cb477898",
+        "status": "fixed"
       },
       {
         "id": "P130-R39",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_scoped_commit.py:1142-1153",
         "issue": "earlier_attempt_commits proves only that the recorded start head is an object git holds (rev-parse --verify), not that it is an ancestor of HEAD. After a rebase or reset that leaves the old head in the object store, start..HEAD lists every commit since the merge base that touches a declared file, and the `others` filter (other tasks' recorded commit SHAs) is stale for the same reason. The refusal then tells the person to close on a sha that is not the attempt's. This cannot make the close ACCEPT anything (the refusal gate is unchanged: only the last sentence differs, and `done --commit` re-verifies in audit-task.py), so it is wrong advice, not a loosened guard.",
-        "resolution": "Add `git merge-base --is-ancestor <start_head> HEAD` beside the rev-parse and return ([], \"\") when it is not, so the old advice is given when no honest span exists."
+        "resolution": "fixed in P130.50-ywo (6711cb477898): Add `git merge-base --is-ancestor <start_head> HEAD` beside the rev-parse and return ([], \"\") when it is not, so the old advice is given when no honest span exists.",
+        "fixTask": "P130.50-ywo",
+        "commit": "6711cb477898",
+        "status": "fixed"
       },
       {
         "id": "P130-R40",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_scoped_commit.py:1130-1141 and plugins/audit/scripts/manifest/audit-task.py:6049-6063",
         "issue": "start_head_of is a second copy of audit-task._start_head (same journal scan, same taskId/attempt/commit match, same hex-shape test). Two readers of one row shape will drift; the module layering here already shares _journal_io, so the scan itself could live in one place.",
-        "resolution": "Have audit-task._start_head call _scoped_commit.start_head_of (or move both to _journal_io) with the rows it already reads."
+        "resolution": "fixed in P130.50-ywo (6711cb477898): Have audit-task._start_head call _scoped_commit.start_head_of (or move both to _journal_io) with the rows it already reads.",
+        "fixTask": "P130.50-ywo",
+        "commit": "6711cb477898",
+        "status": "fixed"
       },
       {
         "id": "P130-R41",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/full-gate.py:160-166",
         "issue": "_stream_subprocess writes and closes the child's stdin outside the try/finally. The comment 'a verb reads its stdin before it prints, so the pipe never fills' does not cover a verb that exits before reading stdin (an argparse refusal or a bad manifest path). The close then raises BrokenPipeError, which escapes with the child unreaped and its stdout pipe open, in a path that is meant to report 'its own lines above say what it refused' rather than crash learning.",
-        "resolution": "Wrap the write/close in `try/except (BrokenPipeError, OSError): pass` (as subprocess.communicate does) and keep the wait/stdout drain in the existing finally."
+        "resolution": "fixed in P130.50-ywo (6711cb477898): Wrap the write/close in `try/except (BrokenPipeError, OSError): pass` (as subprocess.communicate does) and keep the wait/stdout drain in the existing finally.",
+        "fixTask": "P130.50-ywo",
+        "commit": "6711cb477898",
+        "status": "fixed"
       },
       {
         "id": "P130-R42",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:4942-4950",
         "issue": "case_binding_unchecked's sentences go only to ctx['did'] (the drive's run log); body[GAPS_FIELD] and the filed return carry only the graded gaps. Acceptance (1) asks that B's ids be 'reported as not checked', but the reviewer's brief prints the filed testsAddGaps, so an id that was never compared with a printed label reads as clean there. The ungraded ids are therefore invisible where the next judge looks.",
-        "resolution": "File the unchecked sentences in the return beside GAPS_FIELD (a second field the brief prints) or append them to the gaps list under a distinct 'not checked' wording the brief already renders."
+        "resolution": "fixed in P130.50-ywo (6711cb477898): File the unchecked sentences in the return beside GAPS_FIELD (a second field the brief prints) or append them to the gaps list under a distinct 'not checked' wording the brief already renders.",
+        "fixTask": "P130.50-ywo",
+        "commit": "6711cb477898",
+        "status": "fixed"
       },
       {
         "id": "P130-R43",
         "severity": "low",
         "file": "plugins/audit/tests/test_drive_phase.py:7391-7402,7498-7506",
         "issue": "The lint's name resolution is file-wide, not scope-wide: _constant_names collects every string assigned to a name anywhere in the file. Probed on the new code: `x = \"--text\"` at module level plus `def r(b): x = b; return [x, b]` reports 'line 4: --text' although x holds a built value there. Likewise `T = \"a\"` then `[\"--text\", T]` is reported because a Name is not an ast.Constant, though the value is a literal. mt8 only checks the opposite scoping (separate lists), so neither over-fire is pinned.",
-        "resolution": "Resolve a Name against the assignments of its own function (fall back to the module only for names never assigned locally), treat a Name bound only to string constants as a literal value, and add both as ALLOW cases next to mt8."
+        "resolution": "fixed in P130.50-ywo (6711cb477898): Resolve a Name against the assignments of its own function (fall back to the module only for names never assigned locally), treat a Name bound only to string constants as a literal value, and add both as ALLOW cases next to mt8.",
+        "fixTask": "P130.50-ywo",
+        "commit": "6711cb477898",
+        "status": "fixed"
       },
       {
         "id": "P130-R44",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/full-gate.py:469-488",
         "issue": "The (c) fix is a runtime rewrite that knows ONE flag (`_STDIN_TEXT_FLAG = \"--description\"`) and moves only its first occurrence; the lint that would catch the class is run over drive-phase.py alone (test_drive_phase.py:7565). Probed: the new lint reports full-gate.py line 406 (`--description`, _described(...)) as a violation, so the class stays open here - a second built prose flag added to a full-gate verb argv (e.g. --reason) goes on argv unnoticed, and stdin carries only one flag per call.",
-        "resolution": "Either run argv_prose_violations over full-gate.py with the call-site exempted by name, or derive the flag from the verb's PROSE_FLAGS like the lint does and refuse (not silently pass on argv) a verb argv holding a second built prose flag."
+        "resolution": "fixed in P130.50-ywo (6711cb477898): Either run argv_prose_violations over full-gate.py with the call-site exempted by name, or derive the flag from the verb's PROSE_FLAGS like the lint does and refuse (not silently pass on argv) a verb argv holding a second built prose flag.",
+        "fixTask": "P130.50-ywo",
+        "commit": "6711cb477898",
+        "status": "fixed"
       }
     ],
-    "outcome": "[findings: 44 - 0 high, 8 med, 36 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 44 - 0 high, 8 med, 36 low; 40 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -5163,7 +5283,7 @@
     {
       "id": "P130.50-ywo",
       "title": "The P130.49 review lows are fixed: the start head is an ancestor, one start-head reader, a verb that exits early cannot break the stdin write, unchecked ids reach the reviewer, and the argv lint is scope-aware and covers full-gate",
-      "status": "in_progress",
+      "status": "done",
       "description": "Review of P130.49-ywo (docs/audit/evidence/returns/P130.49-ywo/20261019T222247Z.reviewer.json - read it whole). (1) `_scoped_commit.earlier_attempt_commits` (~:1142-1153) proves only that the start head is an object git holds; require `git merge-base --is-ancestor <start> HEAD`, else claim nothing and say the start head is not an ancestor. (2) `_scoped_commit.start_head_of` (~:1130-1141) duplicates `audit-task._start_head`; one reader in the lowest module both may import (layer rules), the other calls it. (3) full-gate.py `_stream_subprocess` (~:160-166) writes and closes the child's stdin outside try/finally; a verb that exits before reading (argparse refusal) raises BrokenPipeError and leaves the child unreaped - write inside try, treat BrokenPipeError as 'the verb exited before reading', reap the child, report its output. (4) drive-phase.py (~:4942-4950): `case_binding_unchecked` sentences reach only ctx['did']; file them on the return beside testsAddGaps so the reviewer brief shows ids that were never compared. (5) test_drive_phase.py argv lint (~:7391-7402, :7498-7506) resolves names file-wide; resolve per function scope, and do not report a Name whose single assignment in scope is a string literal. (6) Run the argv lint over full-gate.py too (it reports full-gate.py ~:406 today) and fix full-gate.py's `learning_plan` to send `--description` via the stdin route at the call site instead of the one-flag runtime rewrite (~:469-488), then delete the rewrite. Acceptance: a case per item; full sweep green.",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
@@ -5210,19 +5330,34 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6711cb477898",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(1) _scoped_commit.earlier_attempt_commits now runs `git merge-base --is-ancestor <start> HEAD` after the rev-parse: exit 1 returns ([], reason naming the start head and 'not an ancestor of HEAD'), other non-zero exits return (None, reason). (2) audit-task._start_head is the journal read plus a call to _scoped_commit.start_head_of; the duplicated scan is deleted (audit-task already imported _scoped_commit, so no new layer edge; _deps.LAYERS unchanged and test__deps --selftest 286/286). (3) full-gate._stream_subprocess feeds stdin through new _feed_stdin, which treats BrokenPipeError (and EPIPE/EINVAL) as the verb having exited before reading; stdout drain, kill-on-error and proc.wait() sit in the try/finally. (4) New _filed_returns.UNCHECKED_FIELD ('testsAddUnchecked'); drive-phase.py files case_binding_unchecked sentences under it beside testsAddGaps; audit-lookup.py (not in the task's files; the Edit tool was not refused; I first wrote the same change through a Bash python heredoc by mistake, then undid and redid it with Edit) gets _filed_unchecked and prints them in the reviewer's tests.add section. (5) test_drive_phase argv lint resolves names per function (_bindings/_in_scopes/_held_by), module names only reach functions that never bind them, a name whose bindings are all string literals is a literal value; mt10 (both reviewer over-fires as ALLOW), mt11 (module-level flag and mixed-path name still reported). (6) mt12 runs the lint over full-gate.py (clean, and a scratch copy with a built --reason is reported); full-gate learning_plan builds bug-add through _verb_with_text (argv gets '--description -', verb tuple is now (label, test, argv, stdin)), _text_on_stdin and _STDIN_TEXT_FLAG deleted. New cases: sc-ea1..3, sh1, fgsp1..3, fglp1, ucs0..2, cb5, mt10..12. PLUGIN-BUILD-GUIDE.md gains two paragraphs (start-head reader/ancestor, stdin route). Evidence: full `python3 tools/sweep-selftests.py` exit 0 (340/340 files ok); a first full sweep failed on duplicate case ids uc1/uc2 of mine, renamed to ucs*. test__refs 250/250, test__deps 286/286, ruff and vermin clean. Observed, not mine: _deps.layer_violations() called bare returns one entry (panel/_panel_state.py runtime-loads render-report), in a file this task did not touch; test__deps passes.",
+        "descriptive": "The P130.49 review lows are closed: an old start head no longer names the attempt's commits, one start-head reader, a verb that refuses before reading stdin no longer crashes full-gate, never-compared ids reach the reviewer, and the argv lint is scope-aware and covers full-gate with no runtime rewrite left."
       },
       "startedAt": "2026-10-20T07:20:50Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-20T07:57:53Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test__scoped_commit.py: a start head that is not an ancestor of HEAD claims no earlier commit and says so",
+        "plugins/audit/tests/test_full_gate.py: a verb that exits before reading its stdin is reaped and its output reported, with no BrokenPipeError escaping"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-20T07:57:51Z.474ad5",
         "status": "passed",
         "at": "2026-10-20T07:57:51Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "6711cb477898",
+        "at": "2026-10-20T07:57:53Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-20T07:45:47Z",
+        "basis": "`python3 plugins/audit/tests/test__scoped_commit.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 38 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sc-ea2 (house FAIL): SELFTEST FAILED: 37/38 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
