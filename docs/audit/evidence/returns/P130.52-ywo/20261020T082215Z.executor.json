@@ -1,0 +1,68 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test__scoped_commit.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_drive_phase.py --selftest --stage pw-block": "pass",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__deps.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/bench-hooks.py --gate": "pass",
+    "ruff check plugins/audit tools && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-20T08:59:19Z",
+    "basis": "`python3 plugins/audit/tests/test__scoped_commit.py --selftest` in a throwaway tree at HEAD exited 1 with 8 of 43 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sc-ea1 (house FAIL), sc-ea2 (house FAIL), sc-ea3 (house FAIL), sc-ea4 (house FAIL), sc-as1 (house FAIL), sc-as2 (house FAIL), sc-dw1 (house FAIL) and 1 more: SELFTEST FAILED: 35/43 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(1) _scoped_commit.attempt_span(git_root, project, plan, task, names, start_head, end='HEAD', phase=None) is now the only reader of an attempt's span: ancestor check of the start head against end (not-ancestor -> ([], why)), other tasks' recorded commits always excluded (computed from plan), names through plan_to_git and printed paths back through git_to_plan, phase baseRef+startedAt fallback only when a phase is passed. Deleted _scoped_commit.earlier_attempt_commits and audit-task._attempt_commits/_attempt_commits_read. commit-task-work gains earlier_attempt() (dedups shas) and work_names(); audit-task _close_evidence_refusal (done --commit) passes the span's why as earlier_why so an empty span off HEAD's history refuses and says why; _no_change_moves notes the why and counts no move. (5) _scoped_commit.declared_work(task, project, git_root, records=()) replaces _scoped_commit._declared_names, commit-task-work.declared_names and audit-task._declared_work (plan order, dedup, suffix dropped, outside-root and record entries left out). audit-task._declared_rels kept its own plan_to_git call: routing it through declared_work turned _deps gb1 red (git_path_base_violations cannot see a door across modules for _commit_touches' diff-tree), and GIT_PATH_BASE_EXEMPT lives in _deps.py, outside this task's files. (2) drive-phase: PLAYWRIGHT_TOKEN ('playwright','test') joins TEST_RUNNER_TOKENS (tuples now matched on basenames); scope_gap turns a known runner's definite NOT_COLLECTED into a could-not-tell line when a playwright entry is in the gate and the path is a JS/TS file. (6) guard-capabilities._decision_payload delegates to _config.deny_payload/ask_payload; guard-history-rewrite.main prints _config.deny_payload(...). Only payload construction changed; no host refusal met. (7) drive-phase's _gate_derive import note names entry_collector. (8) build-command refuses a key with _evidence_io.DERIVED_STEP_PREFIX (removal still allowed); red_at_base takes names and filters both the run (base_run names) and the suites read to those steps; new gate_step_names(manifest, phase, task_ids) feeds both callers. PLUGIN-BUILD-GUIDE.md paragraphs updated. Tests: test__scoped_commit sc-ea1..3 rewritten onto attempt_span, new sc-ea4, sc-as1, sc-as2, sc-dw1, sc-dw2 (43/43); test_drive_phase pw1, pw2 (pw-block), imc1 (imc-block), bb5 (bb-block); test_audit_task bcm5, nn3 and lo-ce6 repointed at the one reader; test_guard_capabilities c4 (no hook outside _config builds a permissionDecision dict, AST) and c5 (its allow direction). Red before the fix: test__scoped_commit 35/43 (sc-as1 showed done --commit '' and no-change moves ['keep/a.txt changed in commit ...']), pw1 stopped at scope-gap, bb5 TypeError on names, imc1 named _gate_derive.entry_runner, bcm5 exit 0, c4 named both guards. Full sweep exit 0: 340/340 files ok. test__refs 286/286, test__deps 250/250, _deps.layer_violations() still the single pre-existing panel/_panel_state.py entry, bench-hooks --gate exit 0 (measured on 3.14.7 only; 3.8-3.13 not measured here). Both falsifiers were applied in a scratch copy and turned their case red (sc-as1, pw1). The plan gate refused one Bash heredoc write to _scoped_commit.py; the same edit then went through the Edit tool, which the gate allowed.",
+    "descriptive": "One function now reads an attempt's commit span and one reads a task's declared work, so a rebased branch can no longer close a task on another task's commits; the scope preflight now knows about Playwright, and the phase review's low findings are fixed."
+  },
+  "testsAdded": [
+    "sc-ea4",
+    "sc-as1",
+    "sc-as2",
+    "sc-dw1",
+    "sc-dw2",
+    "pw1",
+    "pw2",
+    "imc1",
+    "bb5",
+    "bcm5",
+    "c4",
+    "c5"
+  ],
+  "casesAdded": [
+    "sc-as1",
+    "pw1"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test__scoped_commit.py: a start head off HEAD's history makes the one attempt-span reader claim no commit and say why, for both the commit and the done --commit callers": {
+      "file": "plugins/audit/scripts/governance/_scoped_commit.py",
+      "find": "if code == 1:",
+      "replace": "if code == 1 and False:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test_drive_phase.py: a gate of vitest plus npx playwright test does not stop on a declared e2e spec vitest does not collect": {
+      "file": "plugins/audit/scripts/governance/drive-phase.py",
+      "find": "browser = [e for e in unclassified if runs_playwright(build.get(e, e))]",
+      "replace": "browser = []",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_drive_phase.py",
+        "--selftest",
+        "--stage",
+        "pw-block"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:a20b8d857781eb7edc3f9ef0f52d1101fa9216c7953d0b99f8859a5b1d585eeb\",\"dirtyDigest\":\"sha256:a1dbbb2e31168d69474f9ac1dc3d5c698483e400592a6e4c77c940f84715a28a\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"c92dce4b2d2880a7\",\"plugins/audit/hooks/guard-capabilities.py\":\"45a96600c1050749\",\"plugins/audit/hooks/guard-history-rewrite.py\":\"d33f0441c092af74\",\"plugins/audit/scripts/governance/_scoped_commit.py\":\"b0b4dfdcbc6b1161\",\"plugins/audit/scripts/governance/commit-task-work.py\":\"e07f427a57f8943b\",\"plugins/audit/scripts/governance/drive-phase.py\":\"3d47974b0fd98020\",\"plugins/audit/scripts/manifest/audit-task.py\":\"3c43fab20dbd84d6\",\"plugins/audit/tests/test__scoped_commit.py\":\"d1b7304edd3ddb71\",\"plugins/audit/tests/test_audit_task.py\":\"a25307237eb0a436\",\"plugins/audit/tests/test_drive_phase.py\":\"d14116b9674a579f\",\"plugins/audit/tests/test_guard_capabilities.py\":\"30a940f5ab40cdc3\"},\"head\":\"823dff92\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/guard-capabilities.py\",\"plugins/audit/hooks/guard-history-rewrite.py\",\"plugins/audit/scripts/governance/_scoped_commit.py\",\"plugins/audit/scripts/governance/commit-task-work.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test__scoped_commit.py\",\"plugins/audit/tests/test_audit_task.py\",\"plugins/audit/tests/test_commit_task_work.py\",\"plugins/audit/tests/test_drive_phase.py\",\"plugins/audit/tests/test_guard_capabilities.py\",\"plugins/audit/tests/test_guard_history_rewrite.py\"],\"scopeDigest\":\"sha256:5c1579fbd6dfe60d8d073ed041ba5e2831562502ce54b5a30032b9939f171409\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": [
+    "plugins/audit/tests/test_drive_phase.py: a gate of vitest plus npx playwright test does not stop on a declared e2e spec vitest does not collect - not checked: the submit's command did not run `plugins/audit/tests/test_drive_phase.py`, so the ids bound to it were not compared with any printed label"
+  ]
+}

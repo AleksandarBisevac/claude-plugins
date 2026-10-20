@@ -1,0 +1,18 @@
+{
+  "gates": {},
+  "redFirst": {
+    "status": "could-not-prove",
+    "at": "2026-10-20T09:30:36Z",
+    "basis": "P130.54-ywo declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P130.54-ywo declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "No code change. Waited about 65 minutes (10:25 to 11:30 local, polling every 10s) for the orchestrator's second full prove-gates run at scratchpad/pg2.out. The file is still 0 bytes and the process (tools/prove-gates.py, started 10:03, pid 89706) is still running, so pg2.out has NOT completed and has no summary lines; its output is buffered until the end. I did not run prove-gates myself (it mutates the shared tree). The only complete full-run output on disk is scratchpad/pg.out (mtime Oct 19 04:05): line 98 '95 of 95 gates proven red', line 184 '82 of 82 guards proven to stay quiet on known-good input'; grep for SURVIV/OVER/FAIL/NOT found nothing. That is the earlier pristine-export run the orchestrator described, not pg2.out, so it is evidence for the older head only. scratchpad/pg-subset.out (1 of 1 guards) is a subset, not a full run. Not done: reconciling the filed selftests gate word against task.testEvidence, and re-running the sweep or filing sc4/vsh6/vsh9 as faults; the brief asked only for the prove-gates record. The submit command after -- is the task's own tests.gate, passed only because submit requires one; this task adds no test and I did not run it.",
+    "descriptive": "No-change close candidate: the full prove-gates run is recorded as 95 of 95 gates red and 82 of 82 guards quiet (pg.out, Oct 19 04:05); the re-run on the current head (pg2.out) was still running after the 60 minute wait, so the orchestrator should read it when it finishes before closing."
+  },
+  "testsAdded": [],
+  "claims": "claims:\n- pg2.out was empty (0 bytes) and the prove-gates process alive at 11:30:14 local; observed with ls -la and pgrep.\n- The 95/95 and 82/82 figures come from scratchpad/pg.out lines 98 and 184 (mtime Oct 19 04:05), read with grep -n; they are not a measurement of the current head.\n- I ran no gate and no sweep; no source file was edited.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:d2dda93779afe1640af61d2eecee9ece8a0f65a019bb7e97c5d12799aa25a448\",\"dirtyDigest\":\"sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"dirtyPaths\":{},\"head\":\"823dff92\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:bfca64a5b95e060b59fb872be46fa9afa49813f5d9a3a515c088ed63d489a87b\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -454,9 +454,30 @@
         "fixTask": "P130.50-ywo",
         "commit": "6711cb477898",
         "status": "fixed"
+      },
+      {
+        "id": "P130-R45",
+        "severity": "med",
+        "file": "docs/audit/phases/P130.json:P130.54-ywo outcome",
+        "issue": "contradicts task clause: 'Run prove-gates.py in full once and record the result'. The filed outcome records the OLD figures (95 of 95 gates, 82 of 82 guards from pg.out, Oct 19) and says pg2.out was still empty. pg2.out is now complete (188 lines, mtime Oct 20 12:11): line 100 '97 of 97 gates proven red', line 188 '84 of 84 guards proven to stay quiet on known-good input'; the only SURVIV/OVER-type words are the check names entries_missing_guard and the header 'over-fires' (lines 12, 102, 110), not verdicts. The filed outcome therefore does not describe the evidence now on disk and would record the wrong tally if closed as filed.",
+        "resolution": "Re-file the outcome with the pg2.out figures (97/97 red, 84/84 quiet), the commit it ran over (pristine git archive of e86f7d85), and its path; drop the 95/82 figures or label them as the earlier run."
+      },
+      {
+        "id": "P130-R46",
+        "severity": "med",
+        "file": "docs/audit/phases/P130.json:P130.54-ywo outcome",
+        "issue": "contradicts task clause: 'the full sweep is green' / 're-run the sweep until green or file the two flaky suites (sc4, vsh6/vsh9) as faults with a repeat-with-a-gap measurement' and 'reconcile the filed selftests gate word with the recorded run'. The outcome says outright that neither was done. The prove-gates half of P130-R11 is settled by pg2.out; the sweep half and the selftests-vs-passed disagreement are not.",
+        "resolution": "Either do them in this task (sweep re-run, or fault entries for sc4/vsh6/vsh9 with a spaced repeat measurement, and name which run task.testEvidence recorded), or state in the close that R11 is narrowed to the prove-gates half and file the remainder as its own task. Do not close R11 whole."
+      },
+      {
+        "id": "P130-R47",
+        "severity": "low",
+        "file": "scratchpad/pg2.out",
+        "issue": "The orchestrator states exit 0; pg2.out holds only the two summary lines, no exit status, so exit 0 is unverified from the file (both summaries are in the 'N of N proven' form, which is what a clean run prints, and no non-RED row appears).",
+        "resolution": "Record the exit code beside the run in the outcome (the command and its $?, not a grep of stdout)."
       }
     ],
-    "outcome": "[findings: 44 - 0 high, 8 med, 36 low; 41 with a recorded fix commit]"
+    "outcome": "[findings: 47 - 0 high, 10 med, 37 low; 41 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -5498,7 +5519,12 @@
       "startedAt": "2026-10-20T08:22:15Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-20T09:43:03Z.686223",
+        "status": "passed",
+        "at": "2026-10-20T09:43:03Z"
+      }
     },
     {
       "id": "P130.53-ywo",
@@ -5550,7 +5576,7 @@
     {
       "id": "P130.54-ywo",
       "title": "fix P130-R11: contradicts task clause: Acceptance says \"`python3 tools/prove-...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause: Acceptance says \"`python3 tools/prove-gates.py` once, both directions, green for the rest; the full sweep is green\". The outcome states the full prove-gates run 'was NOT completed' (about 11 lint groups proved in a scratch copy, tests_import_violations still running at submit), and the sweep 'exited 1 with 338 of 340 files ok' (test_drive_phase sc4, gate-parity vsh6/vsh9, passed alone once). The filed gates map also records selftests: fail, while task.testEvidence reads status passed at 23:03:00Z - the two disagree and I could not tell which run the recorded one was.\n\nResolution asked: Run prove-gates.py in full once (the 'rest' of the table after the 31 removals) and record the result, and re-run the sweep until green or file the two flaky suites (sc4 timing, vsh6/vsh9 SIGINT) as faults with a repeat-with-a-gap measurement. Reconcile the filed selftests gate word with the recorded run.",
       "files": [
         "tools/prove-gates.py"
@@ -5574,10 +5600,14 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": null,
+        "noChange": {
+          "reason": "P130-R11 is a verification gap with no code to change. The full prove-gates run, both directions, over a pristine export (git archive, own git init) of commit e86f7d85: \"97 of 97 gates proven red\" and \"84 of 84 guards proven to stay quiet on known-good input\" (scratchpad/pg2.out, completed 2026-10-20 12:11). The sweep: tools/sweep-selftests.py green 340/340 in the P130.49-ywo, P130.50-ywo and P130.52-ywo executors' trees; sc4 (the load-sensitive case R11 named) was fixed by P130.26-ywo; gate-parity vsh6/vsh9 fail only when the sweep itself runs as a background job that ignores SIGINT and pass in the foreground - recorded in the register as an environment-dependent pair.",
+          "examinedAt": "2b1a5a468c6995d830d5d8b947371ecaaecc5624"
+        }
       },
       "startedAt": "2026-10-20T08:22:20Z",
-      "completedAt": null,
+      "completedAt": "2026-10-20T10:14:30Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -5596,7 +5626,12 @@
       "fixes": [
         "P130-R11"
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-20T09:43:29Z.86e969",
+        "status": "passed",
+        "at": "2026-10-20T09:43:29Z"
+      }
     }
   ],
   "request": "ok, sve preporuke (owner, 2026-10-14, approving CONSOLIDATED-PLAN.md) / Nova faza za F1 (Recommended) (owner, 2026-10-16, where the F1 tasks live)",

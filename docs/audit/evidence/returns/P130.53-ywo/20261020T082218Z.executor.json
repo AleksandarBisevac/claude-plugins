@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "gate-parity": "pass",
+    "prose-lints": "pass",
+    "selftest test__deps/test__output/test__refs": "pass",
+    "measure-context --gate": "pass",
+    "check-prohibitions": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task: no test added, so no red was owed",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "CHANGELOG.md [Unreleased] reordered to Added/Changed/Fixed/Removed and extended with a line per user-visible change of the feat(P130) commits, each written from the diff (build-command verb and its --remove refusal; unblock arms; done refusing a missing/swallowed --technical; directory-entry and reserved-gate-entry validator warnings; nested-project fixes; BUG-24; BUG-25; base-red reading and base-red fixer first; casesAdded/testsAddGaps/testsAddUnchecked; scope preflight; evidence-based close refusal and kept-tree stop; stdin hand-off; git_to_plan/plan_to_git; deny/ask payloads and utc/local stamp helpers; gate-entry shape check; plan-gate refusal owner; sweep grading; prove-gates label check; panel poll waits; panel.md). Nothing about tests/ or tools/lints moving. CLAUDE.md: the commands intro now points at `verify.sh --list`, the gate-parity line comment, and the two paragraphs about gate-parity/'this list was the last side' replaced by one that states what gate-parity.py does now (slice_drift, shard_matrix_drift, affected dispatch, SECURITY fail modes, job time bounds, exemption audit) and that it no longer compares documents; closing sentence re CONTRIBUTING fixed. Ran: tools/gate-parity.py exit 0; _output.prose_number_claims() == [] and _deps.doc_prose_numbers() == [] (default scan set; CHANGELOG history lines are exempt in the default set); test__deps 250/250, test__output 259/259, test__refs 286/286 selftests exit 0; measure-context --gate and check-prohibitions exit 0. No guard refused the CLAUDE.md edit. Not run: full sweep, ruff/vermin, browser gates (no code touched). Out of scope but stale: CONTRIBUTING.md:213-219 still says gate-parity.py holds the sweep's isolation against every document, the sweep's roots and the scratch-path rule for tools/; the isolation/roots checks were retired by P130.7 and gate-parity.py's docstring lists none of them - the orchestrator should decide whether a follow-up edits CONTRIBUTING.md. claims: 1 CHANGELOG lines each from the named commit diffs (e.g. audit-task.py _gate_write_refusal for gate shape; _filed_returns.py UNCHECKED_FIELD='testsAddUnchecked'; hooks/_config.py git_to_plan/plan_to_git); CLAUDE.md sentences checked against gate-parity.py docstring and `gate-parity.py --list`. 2 n/a no check touched. 3 grep of gate-parity/verify.sh in CLAUDE.md: lines 185,191,199,232,285 all read and made true or left (232 shard_matrix_drift still exists). 4 n/a no rule to an agent. 5 n/a. 6 n/a. 7 no number written into prose; lints empty.",
+    "descriptive": "The unreleased changelog now covers every user-visible P130 change and CLAUDE.md describes what gate-parity.py actually checks."
+  },
+  "testsAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:d873bbc5977f6b2e2a078316f8e1c405cf0d9a06eb99f7c0efc78fb664a6c69e\",\"dirtyDigest\":\"sha256:70e5acb714da0f021f04a5fe31201673b1cb30602b3b6a2840101db4e5da818f\",\"dirtyPaths\":{\"CHANGELOG.md\":\"1cdd475683f778c7\",\"CLAUDE.md\":\"de2d2972012715e4\"},\"head\":\"823dff92\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"CLAUDE.md\"],\"scopeDigest\":\"sha256:34d7e5ef27da6ed006e3f2e709a403ad932280f5fe2a6dffb1b5bab2a4d35696\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

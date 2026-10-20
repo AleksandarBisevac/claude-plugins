@@ -1,0 +1,25 @@
+{
+ "findings": [
+  {"id": 1, "severity": "med", "file": "docs/audit/phases/P130.json:P130.54-ywo outcome",
+   "issue": "contradicts task clause: 'Run prove-gates.py in full once and record the result'. The filed outcome records the OLD figures (95 of 95 gates, 82 of 82 guards from pg.out, Oct 19) and says pg2.out was still empty. pg2.out is now complete (188 lines, mtime Oct 20 12:11): line 100 '97 of 97 gates proven red', line 188 '84 of 84 guards proven to stay quiet on known-good input'; the only SURVIV/OVER-type words are the check names entries_missing_guard and the header 'over-fires' (lines 12, 102, 110), not verdicts. The filed outcome therefore does not describe the evidence now on disk and would record the wrong tally if closed as filed.",
+   "resolution": "Re-file the outcome with the pg2.out figures (97/97 red, 84/84 quiet), the commit it ran over (pristine git archive of e86f7d85), and its path; drop the 95/82 figures or label them as the earlier run."},
+  {"id": 2, "severity": "med", "file": "docs/audit/phases/P130.json:P130.54-ywo outcome",
+   "issue": "contradicts task clause: 'the full sweep is green' / 're-run the sweep until green or file the two flaky suites (sc4, vsh6/vsh9) as faults with a repeat-with-a-gap measurement' and 'reconcile the filed selftests gate word with the recorded run'. The outcome says outright that neither was done. The prove-gates half of P130-R11 is settled by pg2.out; the sweep half and the selftests-vs-passed disagreement are not.",
+   "resolution": "Either do them in this task (sweep re-run, or fault entries for sc4/vsh6/vsh9 with a spaced repeat measurement, and name which run task.testEvidence recorded), or state in the close that R11 is narrowed to the prove-gates half and file the remainder as its own task. Do not close R11 whole."},
+  {"id": 3, "severity": "low", "file": "scratchpad/pg2.out",
+   "issue": "The orchestrator states exit 0; pg2.out holds only the two summary lines, no exit status, so exit 0 is unverified from the file (both summaries are in the 'N of N proven' form, which is what a clean run prints, and no non-RED row appears).",
+   "resolution": "Record the exit code beside the run in the outcome (the command and its $?, not a grep of stdout)."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "diverges",
+  "note": "Clause: 'Run prove-gates.py in full once (the rest of the table after the 31 removals) and record the result, and re-run the sweep until green or file the two flaky suites ... Reconcile the filed selftests gate word with the recorded run.' The diff to tools/prove-gates.py is empty (no code change expected). The orchestrator's pg2.out settles the prove-gates half: 97 of 97 gates red (line 100) and 84 of 84 guards quiet (line 188), run over a pristine export of e86f7d85. Code under plugins/ and tools/ is identical between e86f7d85 and the current HEAD (git diff --stat e86f7d85 HEAD -- plugins tools is empty), so the run covers the committed code; P130.52's code is not committed yet, so it is not covered and a final full run is owed after it lands, at release/sign-off, not in this task (the task cannot cover code that does not exist yet). It does not settle the sweep or the gate-word reconciliation, which the filed outcome says were not done. Claim under review: the filed outcome describes pg.out (95/82) and a still-running pg2, which no longer matches the disk.",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "Executor's redFirst is could-not-prove, basis holds verbatim: 'ERROR: task P130.54-ywo declares no test file, so a throwaway at HEAD would prove nothing about this task's test'. The task adds no test and the diff is empty.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate is 'python3 tools/sweep-selftests.py tools/prove-gates.py', selecting the prove-gates.py selftest. The diff changes nothing, so there is no behaviour the task names whose deletion could be tested; I did not read that selftest's cases."
+ },
+ "verdict": "findings",
+ "tasks": []
+}
