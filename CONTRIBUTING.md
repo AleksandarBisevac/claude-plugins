@@ -213,11 +213,14 @@ refuse, and a refusal runs everything.
 **`tools/gate-parity.py` holds the workflow to the list** - in the `lint` slice, with its
 own cases in the sweep: every slice a job names is one `--list` prints, every per-run
 slice is run by some job outside the release tier, and a sharded slice's matrix runs every
-part 1..N on every runner (`shard_matrix_drift()`). It also holds the rules that read a
-runner or a document for a living: the sweep's isolation against every document that
-describes it, the sweep's roots, `SECURITY.md`'s fail-mode table, the scratch-path rule
-for every runnable file under `tools/`, and that every CI job carries a time bound backed
-by a measured `longest` line.
+part 1..N on every runner (`shard_matrix_drift()`). It compares no document: the documents
+point at `verify.sh --list` rather than listing commands, so there is no document side left
+to read. It also holds the rules that read a runner or a file for a living: every check the
+`--affected` selector names is one the runner can dispatch (`affected_dispatch()`),
+`SECURITY.md`'s fail-mode table against the hooks `hooks.json` registers
+(`failmode_table_drift()`), that every CI job carries a time bound backed by a measured
+`longest` line, and that every reason-carrying exemption table names who audits it
+(`exemption_audit_drift()`). Its docstring is the list of what it holds.
 
 To run one suite, or a few, without a whole slice:
 

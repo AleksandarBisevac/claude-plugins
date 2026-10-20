@@ -475,9 +475,37 @@
         "file": "scratchpad/pg2.out",
         "issue": "The orchestrator states exit 0; pg2.out holds only the two summary lines, no exit status, so exit 0 is unverified from the file (both summaries are in the 'N of N proven' form, which is what a clean run prints, and no non-RED row appears).",
         "resolution": "Record the exit code beside the run in the outcome (the command and its $?, not a grep of stdout)."
+      },
+      {
+        "id": "P130-R48",
+        "severity": "low",
+        "file": "CHANGELOG.md:6-150",
+        "issue": "P130.3 (8e382f8c, 'A screenshot is stale exactly when what the page receives changed, not when _ui_theme.py's prose did') landed a new module _surface_digest.py, a changed capture-screenshots.mjs and a changed screenshot-staleness check, and is a named clause of the phase desiredOutcome ('a prose edit in _ui_theme.py no longer owes a screenshot recapture'). [Unreleased] has no line for it (grep for digest/recapture/screenshot finds only the poll-wait line at CHANGELOG.md:123). The task acceptance says every feat(P130) commit's user-visible change has a line, and the neighbouring tool-level changes (prove-gates labels, poll waits) do have one.",
+        "resolution": "Add a Changed line: a committed screenshot is recorded stale by a digest over what each surface's page receives (_surface_digest.py), so a prose-only edit to _ui_theme.py no longer owes a recapture while a token or markup change still does. State it as behaviour, with no count and no task id."
+      },
+      {
+        "id": "P130-R49",
+        "severity": "low",
+        "file": "CONTRIBUTING.md:216",
+        "issue": "'It compares no document' is broader than gate-parity.py does: the very next sentences list failmode_table_drift(), which compares SECURITY.md's fail-mode table (a document) against hooks.json (tools/gate-parity.py:537, docstring lines 42-45). The true narrower statement is the one CLAUDE.md:290-296 makes ('no longer compares documents against the runner').",
+        "resolution": "Reword to 'It compares no description of the gate set against the runner: the documents point at verify.sh --list rather than listing commands'."
+      },
+      {
+        "id": "P130-R50",
+        "severity": "low",
+        "file": "CHANGELOG.md:110,151",
+        "issue": "Two entries describe the same plan-gate refusal change: Changed 'The plan gate's refusal names the right owner' (line 110) and Fixed 'The plan-gate refusal states only what is true' (line 151). Both say a not-started task reached only through a directory entry is no longer named as the file's owner; the second adds the terminal-task case. A reader sees one change twice, in two sections.",
+        "resolution": "Fold them into one entry (the Fixed one, since the old text was false), keeping the shared-coverage-function sentence and the terminal-task case."
+      },
+      {
+        "id": "P130-R51",
+        "severity": "low",
+        "file": "CLAUDE.md:297",
+        "issue": "'run python3 tools/gate-parity.py --list rather than trusting this paragraph' points at a command that prints the slices and the jobs running them (verified by running it), not the other rules the paragraph lists (affected dispatch, SECURITY.md fail modes, job time bounds, exemption audits). Those are held by the docstring the previous sentence names, so the pointer covers only the slice half.",
+        "resolution": "Say 'run python3 tools/gate-parity.py --list for the slices and read its docstring for the rest', or drop the --list pointer."
       }
     ],
-    "outcome": "[findings: 47 - 0 high, 10 med, 37 low; 41 with a recorded fix commit]"
+    "outcome": "[findings: 51 - 0 high, 10 med, 41 low; 41 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -5562,17 +5590,22 @@
       "dependsOn": [
         "P130.51-ywo"
       ],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-20T08:22:18Z",
+      "startedAt": "2026-10-20T10:20:38Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-20T10:32:55Z.b178a9",
+        "status": "passed",
+        "at": "2026-10-20T10:32:55Z"
+      }
     },
     {
       "id": "P130.54-ywo",

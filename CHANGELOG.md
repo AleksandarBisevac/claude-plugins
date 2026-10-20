@@ -6,6 +6,59 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ## [Unreleased]
 
+### Added
+- **A push to `main` of an already-verified commit runs only the guard.**
+  `tools/ci-verified.py` asks GitHub whether a run of `ci.yml` already passed that exact
+  commit - every job `success`, a skipped job counting as not passed - and when one did, every
+  other job is skipped and the `verified` job names the run. Another commit's run, another
+  workflow's run, the asking run, an unreadable job list and a question it could not ask each
+  refuse, and a refusal runs everything.
+- **`audit-task.py build-command <key> --command "<cmd>"`** adds a `meta.buildCommands` key to a
+  plan that exists, where there was no verb and the key was a hand edit. A key the plan already
+  holds is refused unless `--replace` is given, and `--remove` drops a key only when no gate
+  entry, whether a phase's or a task's, and none of `meta.fullGate`, `meta.phaseGate.always` and
+  `meta.phaseGate.exclude` names it. The command text is refused where it would be a machine path,
+  as the panel's own writer refuses it, and `--reason` is journaled as `buildcommand.change`.
+- **A declared test is bound to its case by id.** An executor return carries `casesAdded`, one
+  case id per `tests.add` entry by index - the word a suite prints first on the case's `PASS` /
+  `FAIL` line - and `drive-phase.py submit` reports an entry with no id, and an id the suite did
+  not print, as `testsAddGaps` on the filed return. Ids it could not compare with a printed label
+  (a runner that prints none) ride beside the gaps as `testsAddUnchecked`, and the reviewer's
+  brief prints both. No title wording is read, and the gaps report: they do not refuse the filing.
+  An id is graded only against the suite that holds it, so a task whose entries span suites is not
+  charged with another suite's labels.
+- **The validator warns on a directory in a task's `files`** (`rules.files.directory-entry`),
+  since an entry covers every file under it - including the ones another task lists. It also warns
+  on a gate entry spelled with the reserved `affected/` prefix (`rules.gate.reserved-entry`),
+  which a recorded row reads back as a derived step so no verdict ever binds that gate.
+- **A red gate is read against its base.** A task gate that is red only where the run recorded at
+  its base is red says so - the base run, the suites it charges to the base and those it charges
+  to the work, kept on the committed row as `baseRed` - and a ready task whose `tests.add` names a
+  suite red at HEAD is selected first, at any run width.
+- **`done` closes only on evidence.** A task commit carries the task's change: when no declared
+  file changed, or a file `tests.add` names was never written, the close is refused naming the
+  evidence and the verb that repairs it (`done --commit <sha>` when the work already sits in an
+  earlier commit since the task's start, a kept task worktree to bring in, or `--no-change` for a
+  task whose answer was that nothing needed to change). The earlier-commit span is the HEAD the
+  start recorded and nothing softer, and a head that is not an ancestor of HEAD claims nothing. A
+  restarted task whose kept worktree stands is stopped rather than run in the phase tree.
+- **Machine-built text reaches a verb on stdin.** The drive hands a prose value it assembled to
+  the verb as `<flag> -` with the text on stdin, so a verb's check for the marks a shell leaves in
+  a typed line never judges text no shell touched. A verb that exits before it reads its stdin no
+  longer breaks the write.
+- **One pair of functions converts between git's paths and the plan's.** `git_to_plan` and
+  `plan_to_git` in `hooks/_config.py` are the only door from a path git names (from the checkout's
+  top, or from the current directory) to the plan's spelling and from a plan entry to a pathspec,
+  for a project that is its checkout, a member project under it, or one with `meta.gitRoot` below
+  it. Every site that listed paths through git routes through them, and a lint names any listing
+  call that does not.
+- **The shared PreToolUse payloads and timestamps have one home each.** `_config.deny_payload` /
+  `ask_payload` build every hook's decision, `_config.local_stamp()` the local-time stamp the
+  bypass file and the free-file slot carry, `_utc_stamp.utc_stamp` the UTC one the scripts write,
+  and `_scoped_commit.commit_message` the claims-and-co-author commit message every committing
+  verb builds; the copies in the hooks and verbs are gone, and `detect-plan-skip.py` stamps its
+  bypass file through `local_stamp()`.
+
 ### Changed
 - **CI is one executable description of the gate set.** `tools/verify.sh` groups every gate
   into named slices - `--only <slice,...>`, `--shard I/N` for a sweep slice, `--list` printing
@@ -34,14 +87,75 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   says which set a verdict was read from. `doc_prose_numbers()` takes a `repo_root`.
 - **The sweep runner binds `_output.remove_tree`** instead of keeping a copy that a lint
   compared statement for statement with the home.
+- **`unblock` has two arms, told apart by the attempts spent against `maxAttempts`.** A blocked
+  task goes back to `pending` with its `blockedReason` removed - its attempts reset when they
+  reached the ceiling, kept as recorded when they had not (a task held on purpose, or blocked
+  early) - and a task that is not blocked is unblocked only when its attempts reached the ceiling.
+  A pending or running task with attempts left, a done or cancelled task and a phase id are
+  refused. The reason is journaled as `task.unblock`, and `commands/task.md` and the README say
+  so.
+- **The task-start scope preflight asks a runner only what it can answer.** It asks a runner only
+  about the paths of the language it takes (a Python suite goes to the project's sweep or pytest,
+  never to vitest, whose `NOT_COLLECTED` about a file it could never take stopped a task whose
+  suite the sweep runs), reads the sweep's `SWEEP_DIRS` as code and says why it cannot when it
+  cannot, and answers `could-not-tell` for a gate entry only when that entry could run tests - a
+  validate, lint or report entry no longer makes the preflight give up.
+- **A gate entry is checked for shape where it is written.** `add`, `scope` and `retarget` refuse
+  an entry that is the path of a plan (`scope --gate-set a b <manifest>` used to take the manifest
+  as a third entry, and a manifest positional after the flag is now left alone), and `add` and
+  `scope` also refuse one naming a suite twice in a command or running a suite file as a program
+  with another suite behind it (`python3 a/test_x.py a/test_y.py`, where the second never runs as
+  a suite); the validator warns on the same entries already in a plan. A chained command, a
+  repeated tool path and two node ids of one file are read as the legal entries they are.
+- **The plan gate's refusal names the right owner.** A task that has not started and reaches a
+  file only through a directory entry is named as what it is - a cover that opens nothing until
+  the task starts - not as the file's owner. The edit path and the Bash-write path of the gate
+  read a task's coverage through one function, so the two agree.
+- **The sweep grades every leg by the plain rules.** The code-page leg used to drop the contract
+  and migrated-file rules, so a suite that caught its own `UnicodeEncodeError` and exited 0
+  without its contract was green there; every leg now shares one grade, `--encoding cp1252
+  --spaced` runs both conditions in one execution, and the heading a leg prints names every
+  condition it ran under.
+- **`tools/prove-gates.py` checks its rows against the suites' labels.** It reads each suite's
+  `check()` labels from source - one built with `%` or `+` keeps its fixed part - and reports a
+  row whose selector no label could carry, so a case id that lost its title's space is caught
+  instead of the row reading as attributed.
+- **The panel browser check's poll-window waits derive from the panel's poll interval**, settled
+  by repeated measurement first, and `capture-screenshots.mjs` is checked for routing every
+  poll-dependent wait through `waitForPoll` or `sleepPollWindow`.
 
-### Added
-- **A push to `main` of an already-verified commit runs only the guard.**
-  `tools/ci-verified.py` asks GitHub whether a run of `ci.yml` already passed that exact
-  commit - every job `success`, a skipped job counting as not passed - and when one did, every
-  other job is skipped and the `verified` job names the run. Another commit's run, another
-  workflow's run, the asking run, an unreadable job list and a question it could not ask each
-  refuse, and a refusal runs everything.
+### Fixed
+- **`done` refuses a missing or swallowed `--technical`.** `--technical` with no value, or one
+  that took the manifest path the call meant as its positional, is refused with a `REFUSED:` line
+  on stderr and a non-zero exit, nothing written - it used to reach argparse's bare usage block or
+  record the path as the account of the close. Under `--json` the refusal stays the one `{ok:
+  false, refused}` object.
+- **A task whose gate carries derived affected steps can be committed.** The steps a run adds
+  beside a gate are named `affected/<arm>: <suites>` and told apart from the declared gate in one
+  place, so the verdict that measured them binds the gate it was run under.
+- **A project nested under its git root is read as the member project.** The stamp helper prefixes
+  the project's offset onto a task's declared entries, so the paths it digests, copies and names
+  are the checkout's while the plan's stay the project's; the follower recipes and the phase gate
+  run where the project is; integration compares changed paths and declared files on one base, so
+  a declared file is no longer an outside path and a checkout-root file of the same name is no
+  longer covered; and `git diff --name-only --relative` keeps a changed suite spelled from the
+  project.
+- **Red-first reads Playwright's `Error: No tests found.` as red** (BUG-25), as it already did for
+  jest and vitest, so a task whose declared Playwright spec does not exist yet is a proved red and
+  not a `could-not-prove`.
+- **`/audit:usage` compares like with like** (BUG-24). The CLI's cost figure is each session's
+  cumulative cost, so under `--since`, `--until`, `--phase`, `--task`, `--model`, `--author`,
+  `--area` or `--attr` - any flag that cuts the ledger down to part of it - the comparison is
+  replaced by one line naming the flags that withheld it and why, in the terminal view, the HTML
+  report and its Markdown twin, instead of a gap between two different quantities.
+- **The plan-gate refusal states only what is true.** It no longer names a task that has not
+  started, or a finished one, as a file's owner when only a directory entry reaches the file: it
+  says the entry covers the file and opens nothing until the task is started, or never for a
+  terminal task. A base-red reading that cannot be made no longer crashes a gate run whose verdict
+  is decided - it reads `unreadable` and says why - and a run whose HEAD git could not name says
+  so.
+- **`commands/panel.md` describes the help drawer the panel ships** instead of saying there is
+  none.
 
 ### Removed
 - **The gate-set comparisons `tools/gate-parity.py` no longer needs.** With one description

@@ -187,16 +187,16 @@ that for assets, so it is the author to keep.
 the checks a version bump owes. Prefer it: running these by hand cost two red CI
 runs in one day, both from a forgotten step rather than a broken change.
 
-The commands it calls, with the manifest and plugin-structure half handed to
-`CONTRIBUTING.md`. `gate-parity.py` holds that hand-off gate by gate, so what is left
-out here is left out on the record and not by omission:
+`sh tools/verify.sh --list` prints every slice, its tier and the steps it runs, read off
+the same calls a run makes; that list is the gate set, and the block below is the
+commands a change most often reruns by hand, not a second copy of it:
 
 ```bash
 python3 tools/sweep-selftests.py           # hooks, scripts, tests, tools/ AND .claude/hooks/, each in a scratch dir
 python3 tools/sweep-selftests.py --selftest
 python3 tools/sweep-selftests.py --encoding cp1252   # again, a legacy code page for stdio AND a non-UTF-8 locale only where the pin is Windows-shaped; prints which half ran; --fast skips it
 python3 tools/sweep-selftests.py --spaced            # again, TMPDIR spaced + symlinked; posix only; --fast skips it
-python3 tools/gate-parity.py               # every description of the gate set, compared
+python3 tools/gate-parity.py               # ci.yml's slices against verify.sh --list, SECURITY.md's fail modes, job time bounds
 python3 tools/bench-hooks.py --gate        # the hook import budget; no flag prints the measurement
 python3 tools/measure-context.py --gate    # what each pipeline entry makes the main loop read, vs its ceiling
 python3 tools/check-git-pipeline.py        # the write half, against a REAL git repo
@@ -282,19 +282,20 @@ docstring beside `_harness.fixture_root()` — and was retired with the other li
 catch was nothing, so a family added to the runner owes its mention in each of them to whoever
 adds it. Print the runner's constants rather than trusting this paragraph.
 
-**`gate-parity.py` is why the gate-set descriptions cannot drift apart again.** `tools/verify.sh`,
-`.github/workflows/ci.yml`, `CONTRIBUTING.md` and this list are hand-maintained descriptions
-of one gate set, and they had drifted in both directions at once — the sweep above, `vitest`
-(which ran only in CI, so a change under `scripts/ui/` could reach a push with none of its
-suites having run), and `vermin`'s directory list. A gate added to one side and not another
-now fails the build by name, and every declared exemption carries a reason that is itself
-checked.
-
-**This list was the last side added, and what got it added was reading it.** It had said of
-itself that it was one of the sides being compared, while being the one side nothing read —
-and it was missing the hook import budget, the artifact comparison and the demo gate from the
-whole document, and both browser gates from this list. Which sides it reads comes from
-running it — a sentence here is the thing that was wrong.
+**`tools/verify.sh` is the one description of the gate set, and `gate-parity.py` holds the
+workflow to it.** The gate set used to be described by hand in the runner,
+`.github/workflows/ci.yml`, `CONTRIBUTING.md` and this list, and the copies drifted in both
+directions at once (the sweep, `vitest`, `vermin`'s directory list). Now every CI job is setup
+plus one `tools/verify.sh --only <slices>` call and the documents point at `--list`, so there
+are no copies left to compare. What `gate-parity.py` checks is what the workflow says *about*
+the slices: every slice a job names is one `verify.sh --list` prints, every per-run slice has
+a job outside the release tier, and a sharded slice's matrix runs every part on every runner.
+It also holds rules that are not parity questions: every check `--affected` names is one the
+runner can dispatch, `SECURITY.md`'s fail-mode table is the one `hooks.json` registers, every
+CI job carries a time bound backed by a measured `longest` line, and every reason-carrying
+exemption table names who audits it. It no longer compares documents against the runner.
+Its docstring is the current statement; run `python3 tools/gate-parity.py --list` rather than
+trusting this paragraph.
 
 **Every `--selftest` block lives in `plugins/audit/tests/`, not in the module it tests**
 (`73042a1` — count them with
@@ -307,9 +308,9 @@ migrated file that STILL prints the contract is red, because the classifier read
 literals and a file assembling the line would otherwise slip past both.
 
 `CONTRIBUTING.md` has the manifest and plugin-structure checks that complete the pre-PR set,
-and carries every gate above with the reasoning for each. The browser gates at the bottom of
-that list are the only thing that can prove the report actually paints and stays interactive —
-a selftest can only assert what the CSS *says*.
+and the reasoning for the gates; `verify.sh --list` is the list. The browser gates at the
+bottom of the block above are the only thing that can prove the report actually paints and
+stays interactive — a selftest can only assert what the CSS *says*.
 
 A check that has only ever been seen passing may be asserting nothing. Break the thing it guards
 and confirm it goes red before trusting it — `tools/redfirst.sh` does that for one check, and

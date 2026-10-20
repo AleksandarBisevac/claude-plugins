@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "tools/gate-parity.py": "pass",
+    "prose_number_claims": "pass",
+    "doc_prose_numbers": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task: no test added, so no red was owed",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Attempt 1's CHANGELOG.md and CLAUDE.md edits were present in the tree (git diff --stat HEAD showed both). Attempt 2 rewrote the gate-parity paragraph at CONTRIBUTING.md:213-223 to match the tool's docstring: it holds slice_drift / shard_matrix_drift, says it compares no document (documents point at verify.sh --list), and lists the rules it still holds - affected_dispatch(), failmode_table_drift() (SECURITY.md vs hooks.json), per-job time bounds backed by a longest line, exemption_audit_drift(). The retired claims (sweep isolation against documents, sweep roots, scratch-path rule for tools/) are removed. The other two gate-parity mentions in CONTRIBUTING.md (shard_matrix_drift near the sweep costs; 'python3 tools/gate-parity.py --list') were read and are still true. CHANGELOG: no feat(P130) commit landed after attempt 1's base - attempt 1 ran at head 823dff92, the same base as this tree, and the newest feat commit (P130.51, a CONTRIBUTING.md wording fix) is its ancestor and not user-visible - so no new line was owed; P130.50's user-visible parts (early-exit verb stdin write, unchecked ids reaching the reviewer) already have lines. Ran: python3 tools/gate-parity.py exit 0; _output.prose_number_claims() == [] and _deps.doc_prose_numbers() == []. Not run: full sweep, ruff/vermin, browser gates (docs only).",
+    "descriptive": "CONTRIBUTING.md now says only what gate-parity.py does; CHANGELOG [Unreleased] and CLAUDE.md from attempt 1 stand."
+  },
+  "testsAdded": [],
+  "claims": "claims:\n1 CONTRIBUTING.md:213-223 each sentence checked against tools/gate-parity.py docstring (lines 1-55), `gate-parity.py --list` output, and defs at affected_dispatch:163, failmode_table_drift:537, slice_drift:899, shard_matrix_drift:940, exemption_audit_drift:1326, untimed_jobs:1431, job_bound_evidence:1517; the lint-slice claim at tools/verify.sh:547\n2 n/a - no check touched\n3 grep -n 'gate-parity' CONTRIBUTING.md: 3 hits (213 rewritten; 302 shard_matrix_drift still exists; 487 --list still exists)\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 no number written into prose; prose_number_claims() and doc_prose_numbers() both print []",
+  "stamp": "audit-stamp: {\"content\":\"sha256:e8e9aed53ba7e68d86d189ceadc2467dcb90811b8c8e77f8decba79928abf44d\",\"dirtyDigest\":\"sha256:c84e76e251a1a024d0928f10df7c2587788198de51abde6ad8b42f73d30e2943\",\"dirtyPaths\":{\"CHANGELOG.md\":\"1cdd475683f778c7\",\"CLAUDE.md\":\"de2d2972012715e4\",\"CONTRIBUTING.md\":\"e020a774e7b6fb8a\"},\"head\":\"823dff92\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"CLAUDE.md\",\"CONTRIBUTING.md\"],\"scopeDigest\":\"sha256:5691887a8b288fa9d226f7af38b74c9c30f45fb335a5d9db110c82b25e9d91ca\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
