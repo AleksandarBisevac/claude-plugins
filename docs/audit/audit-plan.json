@@ -1508,7 +1508,8 @@
       "P130.28-ywo",
       "P130.35-ywo",
       "P130.46-ywo",
-      "P130.49-ywo"
+      "P130.49-ywo",
+      "P130.50-ywo"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3690,7 +3691,8 @@
       "P130.4",
       "P130.43-ywo",
       "P130.46-ywo",
-      "P130.49-ywo"
+      "P130.49-ywo",
+      "P130.50-ywo"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -4410,7 +4412,8 @@
       "P130.40-ywo",
       "P130.41-ywo",
       "P130.46-ywo",
-      "P130.49-ywo"
+      "P130.49-ywo",
+      "P130.50-ywo"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -6129,7 +6132,8 @@
       "P125.34-0h5",
       "P125.118-0h5",
       "P130.43-ywo",
-      "P130.46-ywo"
+      "P130.46-ywo",
+      "P130.50-ywo"
     ],
     "plugins/audit/tests/test__status_facts.py": [
       "P32.7",
@@ -6517,7 +6521,8 @@
       "P130.41-ywo",
       "P130.42-ywo",
       "P130.46-ywo",
-      "P130.49-ywo"
+      "P130.49-ywo",
+      "P130.50-ywo"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -7737,7 +7742,8 @@
       "P123.62-64p",
       "P125.68-0h5",
       "P130.8",
-      "P130.49-ywo"
+      "P130.49-ywo",
+      "P130.50-ywo"
     ],
     "plugins/audit/tests/test_full_gate.py": [
       "P80.10",
@@ -7747,7 +7753,8 @@
       "P123.62-64p",
       "P125.136-0h5",
       "P130.4",
-      "P130.49-ywo"
+      "P130.49-ywo",
+      "P130.50-ywo"
     ],
     ".claude/hooks/guard-release.py": [
       "P80.11",
@@ -9302,7 +9309,8 @@
       "P130.46-ywo",
       "P130.47-ywo",
       "P130.48-ywo",
-      "P130.49-ywo"
+      "P130.49-ywo",
+      "P130.50-ywo"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -9428,7 +9436,8 @@
       "P130.46-ywo",
       "P130.47-ywo",
       "P130.48-ywo",
-      "P130.49-ywo"
+      "P130.49-ywo",
+      "P130.50-ywo"
     ],
     "plugins/audit/tests/test__config_rules.py": [
       "P118.6",
@@ -9472,7 +9481,8 @@
       "P130.6",
       "P130.8",
       "P130.33-ywo",
-      "P130.49-ywo"
+      "P130.49-ywo",
+      "P130.50-ywo"
     ],
     "plugins/audit/tests/test__filed_returns.py": [
       "P118.3",
@@ -9507,7 +9517,8 @@
       "P125.144-0h5",
       "P130.6",
       "P130.33-ywo",
-      "P130.49-ywo"
+      "P130.49-ywo",
+      "P130.50-ywo"
     ],
     "plugins/audit/agents/guide.md": [
       "P118.9",
