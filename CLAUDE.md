@@ -294,8 +294,9 @@ It also holds rules that are not parity questions: every check `--affected` name
 runner can dispatch, `SECURITY.md`'s fail-mode table is the one `hooks.json` registers, every
 CI job carries a time bound backed by a measured `longest` line, and every reason-carrying
 exemption table names who audits it. It no longer compares documents against the runner.
-Its docstring is the current statement; run `python3 tools/gate-parity.py --list` rather than
-trusting this paragraph.
+Its docstring is the current statement of those rules; `python3 tools/gate-parity.py --list`
+prints only the slices and the jobs running them, so run it for that half and read the
+docstring for the rest, rather than trusting this paragraph.
 
 **Every `--selftest` block lives in `plugins/audit/tests/`, not in the module it tests**
 (`73042a1` — count them with

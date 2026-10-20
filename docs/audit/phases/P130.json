@@ -491,8 +491,10 @@
         "severity": "low",
         "file": "CONTRIBUTING.md:216",
         "issue": "'It compares no document' is broader than gate-parity.py does: the very next sentences list failmode_table_drift(), which compares SECURITY.md's fail-mode table (a document) against hooks.json (tools/gate-parity.py:537, docstring lines 42-45). The true narrower statement is the one CLAUDE.md:290-296 makes ('no longer compares documents against the runner').",
-        "resolution": "Reword to 'It compares no description of the gate set against the runner: the documents point at verify.sh --list rather than listing commands'.",
-        "fixTask": "P130.58-ywo"
+        "resolution": "fixed in P130.58-ywo (8eb9742bfd74): Reword to 'It compares no description of the gate set against the runner: the documents point at verify.sh --list rather than listing commands'.",
+        "fixTask": "P130.58-ywo",
+        "commit": "8eb9742bfd74",
+        "status": "fixed"
       },
       {
         "id": "P130-R50",
@@ -525,7 +527,7 @@
         "resolution": "Drop the clause, or write it as unchanged ('...still reports a part no surface claims')."
       }
     ],
-    "outcome": "[findings: 53 - 0 high, 10 med, 43 low; 42 with a recorded fix commit]"
+    "outcome": "[findings: 53 - 0 high, 10 med, 43 low; 43 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -5936,7 +5938,7 @@
     {
       "id": "P130.58-ywo",
       "title": "fix P130-R49: 'It compares no document' is broader than gate-parity.py does: ...",
-      "status": "in_progress",
+      "status": "done",
       "description": "'It compares no document' is broader than gate-parity.py does: the very next sentences list failmode_table_drift(), which compares SECURITY.md's fail-mode table (a document) against hooks.json (tools/gate-parity.py:537, docstring lines 42-45). The true narrower statement is the one CLAUDE.md:290-296 makes ('no longer compares documents against the runner').\n\nResolution asked: Reword to 'It compares no description of the gate set against the runner: the documents point at verify.sh --list rather than listing commands'.",
       "files": [
         "CONTRIBUTING.md"
@@ -5964,13 +5966,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8eb9742bfd74",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CONTRIBUTING.md line ~216: 'It compares no document: the documents point at verify.sh --list ... no document side left to read' reworded to 'It compares no description of the gate set against the runner: ... no such description left to read', matching tools/gate-parity.py docstring lines 42-45 (failmode_table_drift compares SECURITY.md against hooks.json) and CLAUDE.md's 'no longer compares documents against the runner'. Ran `python3 tools/gate-parity.py` in the task tree: exit 0. `_deps.doc_prose_numbers()` returned [] (empty). Task has no tests of its own; full gates left to the orchestrator.",
+        "descriptive": "CONTRIBUTING.md no longer claims gate-parity.py compares no document, which its own next sentence contradicted."
       },
       "startedAt": "2026-10-20T11:28:05Z",
-      "completedAt": null,
+      "completedAt": "2026-10-20T12:05:22Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -5994,6 +5996,17 @@
         "runId": "2026-10-20T11:51:22Z.97bc9c",
         "status": "passed",
         "at": "2026-10-20T11:51:22Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8eb9742bfd74",
+        "at": "2026-10-20T12:05:22Z",
+        "return": "docs/audit/evidence/returns/P130.58-ywo/20261020T112805Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only docs task; tests.add is none, so no red was owed",
+        "at": "n/a"
       }
     },
     {
