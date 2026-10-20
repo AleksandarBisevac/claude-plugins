@@ -213,9 +213,9 @@ refuse, and a refusal runs everything.
 **`tools/gate-parity.py` holds the workflow to the list** - in the `lint` slice, with its
 own cases in the sweep: every slice a job names is one `--list` prints, every per-run
 slice is run by some job outside the release tier, and a sharded slice's matrix runs every
-part 1..N on every runner (`shard_matrix_drift()`). It compares no document: the documents
-point at `verify.sh --list` rather than listing commands, so there is no document side left
-to read. It also holds the rules that read a runner or a file for a living: every check the
+part 1..N on every runner (`shard_matrix_drift()`). It compares no description of the gate
+set against the runner: the documents point at `verify.sh --list` rather than listing
+commands, so there is no such description left to read. It also holds the rules that read a runner or a file for a living: every check the
 `--affected` selector names is one the runner can dispatch (`affected_dispatch()`),
 `SECURITY.md`'s fail-mode table against the hooks `hooks.json` registers
 (`failmode_table_drift()`), that every CI job carries a time bound backed by a measured
