@@ -917,6 +917,29 @@ def _case_binding_cases(check):
           and M.case_binding_gaps({"tests": {"add": []}}, ["x1"], printed) == []
           and M.case_binding_gaps(task, ["gx1", "gx2", "sv35", "extra9"],
                                   printed) == [])
+    # A command that ran suite A while the task binds ids in suites A and B:
+    # A's ids are graded against A's labels; B's are not checked, whatever the
+    # labels say, and the reason is that the suite was not run - never that the
+    # suite "did not print" it.
+    two = {"tests": {"add": ["plugins/audit/tests/test_audit_task.py: first suite case",
+                             "plugins/audit/tests/test_commit_task_work.py: second suite case"]}}
+    ran = ["python3", "plugins/audit/tests/test_audit_task.py", "--selftest"]
+    seen_a = ["aa1 first suite case"]
+    graded = M.case_binding_gaps(two, ["aa1", "bb1"], seen_a, ran)
+    wrong_a = M.case_binding_gaps(two, ["aa9", "bb1"], seen_a, ran)
+    skipped = M.case_binding_unchecked(two, ran)
+    both = M.case_binding_unchecked(two, ran + ["plugins/audit/tests/test_commit_task_work.py"])
+    blind = M.case_binding_unchecked(two, ["python3", "tools/sweep-selftests.py"])
+    check("cb4 an id bound to a case in a suite the submit did not run is "
+          "reported not checked, while an id in the suite it ran is graded "
+          "against that suite's labels (%r)"
+          % ((graded, wrong_a, skipped, both, blind),),
+          graded == []
+          and len(wrong_a) == 1 and wrong_a[0].startswith(two["tests"]["add"][0])
+          and "`aa9`" in wrong_a[0]
+          and len(skipped) == 1 and skipped[0].startswith(two["tests"]["add"][1])
+          and "not checked" in skipped[0] and "did not print" not in skipped[0]
+          and both == [] and blind == [])
     shape = [M.return_problems("executor", _executor(casesAdded=v))
              for v in (["gx1"], [["sv35", "sv36"], "gx1"], "gx1", [7], [[]], [""])]
     check("cb3 the shape takes a list of ids or id lists and refuses any other "

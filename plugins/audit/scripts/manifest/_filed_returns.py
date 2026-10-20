@@ -457,7 +457,56 @@ def _printed_ids(printed):
     return ids
 
 
-def case_binding_gaps(task, cases_added, printed):
+def _entry_suite(entry):
+    """The suite path a `tests.add` entry names: the text before its first colon."""
+    return str(entry).split(":", 1)[0].strip().replace("\\", "/")
+
+
+def _command_names_suite(command, suite):
+    """Whether one argv token of `command` is `suite`, a path ending in it or a
+    path it ends, with a `::selector` left off - so a `./`-prefixed path, the
+    bare file name run from its own directory and the path with a pytest-style
+    selector after it all name the same suite."""
+    for token in command:
+        token = str(token).split("::", 1)[0].replace("\\", "/")
+        while token.startswith("./"):
+            token = token[2:]
+        if token and (token == suite or suite.endswith("/" + token)
+                      or token.endswith("/" + suite)):
+            return True
+    return False
+
+
+def _suites_run(task, command):
+    """The set of declared suite paths `command` names, or None when it names
+    none of them (a runner given a directory or a whole sweep): then nothing
+    says which suites ran and every entry is graded as before."""
+    if command is None:
+        return None
+    suites = {_entry_suite(e) for e in
+              ((task or {}).get("tests") or {}).get("add") or []}
+    named = {s for s in suites if _command_names_suite(command, s)}
+    return named or None
+
+
+def case_binding_unchecked(task, command):
+    """One sentence per declared `tests.add` entry whose suite the submit's
+    `command` did not run, each opening with the entry itself. Those ids are
+    not graded against what the command printed - it printed nothing of that
+    suite - so they are reported as not checked and never as unprinted. Empty
+    when `command` names none of the declared suites, since nothing then says
+    which ran."""
+    ran = _suites_run(task, command)
+    if ran is None:
+        return []
+    return ["%s - not checked: the submit's command did not run `%s`, so the "
+            "ids bound to it were not compared with any printed label"
+            % (str(e), _entry_suite(e))
+            for e in ((task or {}).get("tests") or {}).get("add") or []
+            if _entry_suite(e) not in ran]
+
+
+def case_binding_gaps(task, cases_added, printed, command=None):
     """One sentence per declared `tests.add` entry the return does not bind to
     a case the suite printed, each opening with the entry itself.
 
@@ -469,16 +518,24 @@ def case_binding_gaps(task, cases_added, printed):
     an id the suite did not print. `printed` is the list of labels the test
     command printed, or None when its runner prints none the drive reads - then
     only the presence of a binding is graded, and the caller says the ids were
-    not checked. Items past the declared list add nothing."""
+    not checked. Items past the declared list add nothing.
+
+    AN ID IS GRADED ONLY AGAINST THE SUITE ITS ENTRY NAMES. `command` is the
+    argv the submit ran: an entry whose suite it did not run has its ids left
+    ungraded (`case_binding_unchecked` says so), because the labels printed are
+    another suite's and the id can only read as missing from them."""
     declared = [str(e) for e in ((task or {}).get("tests") or {}).get("add") or []]
     given = cases_added if isinstance(cases_added, list) else []
     seen = _printed_ids(printed) if printed is not None else None
+    ran = _suites_run(task, command)
     gaps = []
     for index, entry in enumerate(declared):
         ids = _bound_ids(given[index]) if index < len(given) else None
         if ids is None:
             gaps.append("%s - no case id bound (`%s[%d]` is absent or not an id)"
                         % (entry, CASES_FIELD, index))
+            continue
+        if ran is not None and _entry_suite(entry) not in ran:
             continue
         gaps += ["%s - bound to `%s`, which the suite did not print"
                  % (entry, one) for one in ids

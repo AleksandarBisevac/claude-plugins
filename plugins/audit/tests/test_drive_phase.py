@@ -5343,6 +5343,32 @@ def _kept_restart_cases(check):
         return
     for unmark in (False, True):
         _kept_restart_fixture(M, check, unmark)
+    _kept_tree_stop_case(M, check)
+
+
+def _kept_tree_stop_case(M, check):
+    """`kept_tree_stop` asked directly: a standing kept tree stops a serial step
+    naming the tree and the task, and nothing else does - a tree gone from disk,
+    another task's tree, a state recording none."""
+    tree = tempfile.mkdtemp(prefix="drive-kept-stop-")
+    try:
+        task = {"id": "P1.1"}
+        state = {"keptTrees": {"P1.1": tree, "P1.2": tree + "-gone"}}
+        ctx = {"phase": "P1"}
+        stood = M.kept_tree_stop(ctx, state, task)
+        other = M.kept_tree_stop({"phase": "P1"}, state, {"id": "P1.3"})
+        gone = M.kept_tree_stop({"phase": "P1"}, state, {"id": "P1.2"})
+        bare = M.kept_tree_stop({"phase": "P1"}, {}, task)
+    finally:
+        _harness.remove_tree(tree)
+    check("kr3 kept_tree_stop stops a serial step on a task whose kept tree "
+          "stands, naming the tree and the task, and answers None for a tree "
+          "gone from disk, for another task and for a state recording none: %r"
+          % ((stood, other, gone, bare),),
+          isinstance(stood, tuple) and stood[0] == M.E_STOPPED
+          and tree in stood[1] and "P1.1" in stood[1] and "stopped" in stood[1]
+          and ctx.get("stop") == "stopped"
+          and other is None and gone is None and bare is None)
 
 
 def _kept_restart_fixture(M, check, unmark):
@@ -5452,7 +5478,7 @@ def _kept_restart_run(M, check, root, mpath, log, unmark=False):
           and kept in said_all
           and all(("tree: %s" % (kept,)) in b for b in briefs)
           and root not in gated_in
-          and (sha is None or "src/f1.txt" in carried))
+          and sha is not None and "src/f1.txt" in carried)
 
 
 def _discard_run(M, prefix):
@@ -7360,46 +7386,151 @@ MACHINE_TEXT_CLAUSE = ("a scope widening whose note text holds a run of spaces a
                        "value")
 
 # The flags whose value a verb reads for the marks a shell leaves in a typed
-# line. `--review-outcome` is left out on purpose: `signoff` reads `--summary`
-# in the same call and stdin carries one flag, and what the drive builds into
-# the other is a hex head prefix, which holds none of those marks.
-ARGV_PROSE_FLAGS = ("--text", "--reason", "--description", "--summary",
-                    "--intent-basis", "--outcome", "--technical",
-                    "--descriptive")
+# line are READ FROM THE VERB (`audit-task.py` `PROSE_FLAGS`, in the spelling
+# argparse derives the option from), never copied here: a copy omitted eight
+# of them the day it was typed. `review_outcome` is left out on purpose:
+# `signoff` reads `--summary` in the same call and stdin carries one flag, and
+# what the drive builds into the other is a hex head prefix, which holds none
+# of those marks.
+ARGV_PROSE_EXEMPT = ("review_outcome",)
 STDIN_TEXT_HELPER = "_verb_with_text"
 
 
-def argv_prose_violations(source):
-    """`["line N: <flag>"]` for every place `source` writes a prose flag as a
-    literal followed by something that is not a literal - in a list, a tuple or
-    a call's positional arguments - outside a call to `_verb_with_text`, whose
-    flag and text are separate parameters because it sends the text on stdin.
-    A list or call is read as a sequence of neighbours, so the argv builders
-    (`args += [...]`, `_task_args(ctx, ..., flag, value)`, a tuple handed to
-    one) are all seen without naming any of them."""
+def argv_prose_flags():
+    """The prose options of `audit-task.py` as they are typed (`--no-evidence-
+    reason`), less `ARGV_PROSE_EXEMPT`, sorted - read off the loaded script's
+    `PROSE_FLAGS`."""
+    verb = _loader.load_script("audit-task.py", "argv_prose_flags_mod")
+    return tuple(sorted("--" + dest.replace("_", "-") for dest in verb.PROSE_FLAGS
+                        if dest not in ARGV_PROSE_EXEMPT))
+
+
+def _constant_names(tree):
+    """`{name: {string, ...}}` for every name the source assigns a string
+    literal to, so a flag held in a variable is read as the flag it holds."""
+    held = {}
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    held.setdefault(target.id, set()).add(node.value.value)
+    return held
+
+
+def _template_head(node):
+    """The literal text a built string opens with - `"--text=" + x`, `"--text=%s"
+    % x`, `"--text={}".format(x)` or an f-string - or "" for anything else
+    (a plain literal included: it is whole, nothing is built into it)."""
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod)):
+        left = node.left
+        while isinstance(left, ast.BinOp) and isinstance(left.op, ast.Add):
+            left = left.left
+        return left.value if (isinstance(left, ast.Constant)
+                              and isinstance(left.value, str)) else ""
+    if isinstance(node, ast.JoinedStr) and node.values:
+        first = node.values[0]
+        return first.value if (isinstance(first, ast.Constant)
+                               and isinstance(first.value, str)) else ""
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "format"
+            and isinstance(node.func.value, ast.Constant)
+            and isinstance(node.func.value.value, str)):
+        return node.func.value.value
+    return ""
+
+
+def _scope_nodes(scope):
+    """The nodes of one function (or of the module's own statements), not those
+    of a function defined inside it: a name in two functions is two lists."""
+    stack = list(ast.iter_child_nodes(scope))
+    while stack:
+        node = stack.pop()
+        yield node
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                 ast.Lambda, ast.ClassDef)):
+            stack.extend(ast.iter_child_nodes(node))
+
+
+def _appended(scope):
+    """`{target: [item, ...]}` - every item a function (or the module) adds to a
+    list by name, in source order: the elements of `x = [...]`, `x += [...]`
+    and `x.extend([...])`, and the argument of `x.append(...)`. Two calls that
+    add a flag and then its value are one argv, and this is where it is seen."""
+    entries = []
+    for node in _scope_nodes(scope):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.List):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    entries.append((node.lineno, node.col_offset, target.id,
+                                    list(node.value.elts)))
+        elif (isinstance(node, ast.AugAssign) and isinstance(node.op, ast.Add)
+              and isinstance(node.target, ast.Name)
+              and isinstance(node.value, ast.List)):
+            entries.append((node.lineno, node.col_offset, node.target.id,
+                            list(node.value.elts)))
+        elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+              and isinstance(node.func.value, ast.Name)):
+            if node.func.attr == "append" and len(node.args) == 1:
+                entries.append((node.lineno, node.col_offset, node.func.value.id,
+                                [node.args[0]]))
+            elif (node.func.attr == "extend" and len(node.args) == 1
+                  and isinstance(node.args[0], ast.List)):
+                entries.append((node.lineno, node.col_offset, node.func.value.id,
+                                list(node.args[0].elts)))
+    out = {}
+    for _line, _col, target, items in sorted(entries, key=lambda e: e[:2]):
+        out.setdefault(target, []).extend(items)
+    return out
+
+
+def argv_prose_violations(source, flags=None):
+    """`["line N: <flag>"]` for every place `source` puts a prose flag beside a
+    value that is not a literal. The pairing is read over the whole argv
+    expression, in every shape one is built in: a list, a tuple or a call's
+    positional arguments (neighbours); two calls that append the flag and then
+    the value, or `+=` them in two steps (`_appended`); a flag and value joined
+    into one string (`"--text=" + built`, `%`, `.format`, an f-string); and a
+    flag held in a name (`_constant_names`). The only spared sequence is the
+    positional list of a call to `_verb_with_text` itself, whose flag and text
+    are separate parameters because it sends the text on stdin - the calls
+    nested in its other arguments are read like any other.
+
+    `flags` defaults to `argv_prose_flags()`: the verb's own list."""
+    flags = tuple(argv_prose_flags() if flags is None else flags)
     tree = ast.parse(source)
-    spared = set()
-    for node in ast.walk(tree):
-        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                and node.func.id == STDIN_TEXT_HELPER):
-            spared.update(id(arg) for arg in node.args)
-            spared.add(id(node))
+    names = _constant_names(tree)
 
-    def sequences(node):
-        if isinstance(node, (ast.List, ast.Tuple)):
-            yield node.elts
-        elif isinstance(node, ast.Call) and id(node) not in spared:
-            yield node.args
+    def flag_of(node):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value if node.value in flags else None
+        if isinstance(node, ast.Name):
+            return next(iter(sorted(names.get(node.id, set()) & set(flags))), None)
+        return None
 
+    spared = set(id(node) for node in ast.walk(tree)
+                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                 and node.func.id == STDIN_TEXT_HELPER)
     found = []
+
+    def read(seq):
+        for here, after in zip(seq, seq[1:]):
+            flag = flag_of(here)
+            if flag and not isinstance(after, ast.Constant):
+                found.append("line %d: %s" % (here.lineno, flag))
+
     for node in ast.walk(tree):
-        for elts in sequences(node):
-            for here, after in zip(elts, elts[1:]):
-                literal = (isinstance(here, ast.Constant)
-                           and isinstance(here.value, str))
-                if (literal and here.value in ARGV_PROSE_FLAGS
-                        and not isinstance(after, ast.Constant)):
-                    found.append("line %d: %s" % (here.lineno, here.value))
+        if isinstance(node, (ast.List, ast.Tuple)):
+            read(node.elts)
+        elif isinstance(node, ast.Call) and id(node) not in spared:
+            read(node.args)
+        head = _template_head(node)
+        for flag in flags:
+            if head.startswith(flag + "="):
+                found.append("line %d: %s" % (node.lineno, flag))
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Module)):
+            for items in _appended(node).values():
+                read(items)
     return sorted(set(found))
 
 
@@ -7464,6 +7595,97 @@ def _machine_text_cases(check):
                  "and a non-prose flag beside a built value are not reported; "
                  "got %r" % (argv_prose_violations(fine),)),
           argv_prose_violations(fine) == [])
+
+    # THE FLAG SET IS THE VERB'S, read from it: every dest `audit-task.py`
+    # lists, less the one exemption, and the eight a hand-typed copy once left
+    # out among them.
+    verb = _loader.load_script("audit-task.py", "argv_prose_flags_mod")
+    wanted = sorted("--" + d.replace("_", "-") for d in verb.PROSE_FLAGS
+                    if d not in ARGV_PROSE_EXEMPT)
+    omitted = ("--rename", "--no-evidence-reason", "--issue", "--resolution",
+               "--repro", "--expected", "--actual", "--override-verdict")
+    check(clause("mt5", "the lint's prose flags are the verb's PROSE_FLAGS as "
+                 "typed, read from audit-task.py, and include every flag the "
+                 "earlier copy omitted; got %r" % (argv_prose_flags(),)),
+          list(argv_prose_flags()) == wanted
+          and all(f in argv_prose_flags() for f in omitted)
+          and "--review-outcome" not in argv_prose_flags())
+    omitted_forms = ['def r(ctx, built):\n    return ["%s", built]\n' % (f,)
+                     for f in omitted]
+    check(clause("mt6", "a built value after each flag the earlier copy omitted "
+                 "is reported; got %r"
+                 % ([argv_prose_violations(f) for f in omitted_forms],)),
+          all(len(argv_prose_violations(f)) == 1 for f in omitted_forms))
+    # Each shape the reviewer found the neighbour-only reading blind to.
+    two_calls = ('def r(ctx, built):\n    args = ["note", "P1.1"]\n'
+                 '    args.append("--text")\n    args.append(built)\n')
+    two_steps = ('def r(ctx, built):\n    args = ["note", "P1.1"]\n'
+                 '    args += ["--description"]\n    args += [built]\n')
+    joined = ('def r(ctx, built):\n    return ["note", "--text=" + built]\n')
+    joined_fmt = ('def r(ctx, built):\n    return ["note", "--text=%s" % built,'
+                  ' "--reason={}".format(built)]\n')
+    named = ('def r(ctx, built):\n    flag = "--summary"\n'
+             '    return _task_args(ctx, "signoff", "P1", flag, built)\n')
+    nested = ('def r(ctx, built):\n    return _verb_with_text(ctx, "audit-task.py",'
+              ' _task_args(ctx, "note", "P1.1", "--text", built), "--text", built)\n')
+    shapes = dict((name, argv_prose_violations(text)) for name, text in (
+        ("two-call append", two_calls), ("two-step +=", two_steps),
+        ("joined =", joined), ("joined % and format", joined_fmt),
+        ("flag in a name", named), ("nested in helper args", nested)))
+    check(clause("mt7", "the argv expression is read whole: two appends, two "
+                 "`+=`, a joined `--flag=value`, a flag held in a name and a call "
+                 "nested in the helper's arguments are each reported; got %r"
+                 % (shapes,)),
+          len(shapes["two-call append"]) == 1 and len(shapes["two-step +="]) == 1
+          and len(shapes["joined ="]) == 1
+          and len(shapes["joined % and format"]) == 2
+          and len(shapes["flag in a name"]) == 1
+          and len(shapes["nested in helper args"]) == 1)
+    # THE OTHER DIRECTION, so no widening above is a lint that reports a flag
+    # wherever it stands: separate functions share no list, a literal value is
+    # no built one, and a non-prose flag is not a prose flag.
+    apart = ('def a(ctx):\n    args = []\n    args.append("--text")\n'
+             'def b(ctx, built):\n    args = []\n    args.append(built)\n')
+    literal_pair = ('def r(ctx):\n    args = ["note"]\n    args.append("--text")\n'
+                    '    args.append("a literal")\n    args += ["--severity"]\n'
+                    '    args += ["x"]\n    return ["--text=a literal"]\n')
+    quiet = ('def r(ctx, built):\n    flag = "--severity"\n'
+             '    args = ["bug-add", flag, built]\n    args.append("--files")\n'
+             '    args.append(built)\n    return "--texture=" + built\n')
+    check(clause("mt8", "a flag in one function and a built value in another, "
+                 "literal values, and non-prose flags built from values are not "
+                 "reported; got %r"
+                 % ((argv_prose_violations(apart),
+                     argv_prose_violations(literal_pair),
+                     argv_prose_violations(quiet)),)),
+          argv_prose_violations(apart) == []
+          and argv_prose_violations(literal_pair) == []
+          and argv_prose_violations(quiet) == [])
+    # `_verb_with_text`: a blank text is not sent on argv, which the verb would
+    # refuse for the marks it reads; the helper says so and runs nothing.
+    with _Env(root):
+        ctx2 = M.context(ns)
+        calls = []
+        real_verb = M._verb_or_stop
+        M._verb_or_stop = lambda *a, **k: calls.append((a, k)) or ("ok", None)
+        try:
+            blank = M._verb_with_text(ctx2, "audit-task.py", ["note"], "--text", "")
+            spaces = M._verb_with_text(ctx2, "audit-task.py", ["note"], "--text",
+                                       "   ")
+            full = M._verb_with_text(ctx2, "audit-task.py", ["note"], "--text",
+                                     "a  b")
+        finally:
+            M._verb_or_stop = real_verb
+    check(clause("mt9", "a whitespace-only text is refused by the helper with a "
+                 "sentence naming the flag and sends nothing, an empty text goes "
+                 "on argv as the verb's own legal 'none', and a built text goes "
+                 "on stdin; got %r" % ((blank, spaces, full, calls),)),
+          spaces[0] is None and isinstance(spaces[1], tuple)
+          and "--text" in spaces[1][1] and "whitespace" in spaces[1][1]
+          and blank == ("ok", None) and full == ("ok", None) and len(calls) == 2
+          and calls[0][0][2][-2:] == ["--text", ""]
+          and calls[1][0][2][-2:] == ["--text", "-"]
+          and calls[1][1].get("stdin") == "a  b")
 
 
 EMPTY_BLOB = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"

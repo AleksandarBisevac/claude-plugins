@@ -920,10 +920,23 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
     # question stays the `not-attempted` one rather than refusing it always.
     changed = any(_scoped_commit.under_any(p, targets["declared"])
                   for p in pending)
+    # ONLY WHEN THE REFUSAL IS COMING: the work may already sit in an earlier
+    # commit since the start, and then the repair is `done --commit`, which the
+    # refusal can name only if it was told.
+    earlier, earlier_why = None, ""
+    if not changed and targets["work"]:
+        others = [str(t.get("commit")) for t in _mio.tasks_by_id(manifest).values()
+                  if isinstance(t, dict) and t.get("commit")
+                  and t.get("id") != task.get("id")]
+        earlier, earlier_why = _scoped_commit.earlier_attempt_commits(
+            git_root, project,
+            declared_names(task, project, git_root, targets["work"]),
+            _scoped_commit.start_head_of(journal_rows, task), others)
     refusal = _scoped_commit.close_evidence_refusal(
         task, project, executor, changed,
         declared=declared_names(task, project, git_root, targets["work"]),
-        tree=project, any_red_first=bool(targets["work"]))
+        tree=project, any_red_first=bool(targets["work"]),
+        earlier=earlier, earlier_why=earlier_why)
     if refusal:
         return E_FAIL, _scoped_commit.answer(
             skipped, refused="%s. Nothing was staged" % (refusal,))

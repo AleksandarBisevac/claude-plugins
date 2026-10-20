@@ -142,9 +142,10 @@ def declares_full_gate(manifest):
     return bool(_ev.full_gate(manifest)["commands"])
 
 
-def _stream_subprocess(cmd, out):
+def _stream_subprocess(cmd, out, stdin=None):
     """Run `cmd`, printing every line of its combined output as it arrives,
-    and return its exit code.
+    and return its exit code. `stdin`, when given, is the text fed to the
+    child's standard input; without it the child inherits ours.
 
     THE SEAM. A test replaces this function rather than the subprocess module
     itself, so a fixture can hand back canned lines and an exit code without
@@ -157,7 +158,13 @@ def _stream_subprocess(cmd, out):
     import subprocess
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True,
+                            stdin=None if stdin is None else subprocess.PIPE,
                             encoding="utf-8", errors="replace", bufsize=1)
+    if stdin is not None:
+        # The text is small and written whole before the output is read: a
+        # verb reads its stdin before it prints, so the pipe never fills.
+        proc.stdin.write(stdin)
+        proc.stdin.close()
     try:
         for line in proc.stdout:
             out(line.rstrip("\n"))
@@ -451,13 +458,36 @@ def _plan_state(manifest):
     return coupled, open_titles
 
 
+# THE PROSE FLAG THIS FILE BUILDS TEXT FOR. `audit-task.py` reads the marks a
+# shell leaves (a run of spaces, whitespace before punctuation) off every prose
+# value that arrives on argv and refuses it - right for a line a person typed,
+# wrong for a sentence assembled here from a row's pieces, which holds a doubled
+# space whenever a piece did. The text goes on stdin, where it arrives verbatim.
+_STDIN_TEXT_FLAG = "--description"
+
+
+def _text_on_stdin(argv):
+    """`(argv, text)`: `argv` with the value after `_STDIN_TEXT_FLAG` replaced
+    by `-` and that value as `text`, or `(argv, None)` when the flag is absent
+    or carries no text (an empty value is legal on argv and a verb reads it as
+    none)."""
+    if _STDIN_TEXT_FLAG not in argv:
+        return list(argv), None
+    at = argv.index(_STDIN_TEXT_FLAG)
+    if at + 1 >= len(argv) or not str(argv[at + 1]).strip():
+        return list(argv), None
+    return list(argv[:at + 1]) + ["-"] + list(argv[at + 2:]), argv[at + 1]
+
+
 def _run_verb(label, test, argv, manifest_path, project, out):
     """Run one `audit-task.py` verb, printing what it is and what it said.
     Returns its exit code."""
+    argv, text = _text_on_stdin(argv)
     cmd = ([sys.executable, _loader.script_path("audit-task.py")] + argv
            + [manifest_path, "--project-dir", project])
     out("%s learning: audit-task.py %s for %s" % (PREFIX, label, test))
-    code = _stream_subprocess(cmd, out)
+    code = (_stream_subprocess(cmd, out) if text is None
+            else _stream_subprocess(cmd, out, stdin=text))
     out("%s audit-task.py %s for %s exited %d%s"
         % (PREFIX, label, test, code,
            "" if code == 0 else " - its own lines above say what it refused"))

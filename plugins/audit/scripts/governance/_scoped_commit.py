@@ -83,6 +83,7 @@ _output.install_path()
 import _excerpt  # noqa: E402  (the one way a tool's output is quoted in a refusal)
 import _invariants  # noqa: E402  (`_under`: the one answer to "is this inside"; the trailer)
 import _task_outputs  # noqa: E402  (`covers`: the one rule for whether a declared path holds a file)
+import _loader  # noqa: E402  (load_hooks_config: `plan_to_git`, the one door from a plan entry to git's pathspec)
 import _journal_io  # noqa: E402  (the withdrawing row's append)
 import _manifest_io as _mio  # noqa: E402  (atomic_write_text: the start snapshot's one writer)
 import _manifest_phases as _phases  # noqa: E402  (tests_add_path: the file a `tests.add` entry names)
@@ -1126,8 +1127,55 @@ def _declared_names(task):
     return names
 
 
+def start_head_of(rows, task):
+    """The HEAD the task's current attempt recorded on its newest `task.start`
+    journal row (`rows`, the journal's full read), or None when no row of this
+    attempt names one - a journal off, a start older than the record."""
+    head = None
+    for row in rows or []:
+        details = row.get("details") if isinstance(row, dict) else None
+        if (row.get("action") == "task.start" and isinstance(details, dict)
+                and details.get("taskId") == task.get("id")
+                and details.get("attempt") == task.get("attempts")):
+            head = details.get("commit") or None
+    return head if re.match(r"^[0-9a-fA-F]{7,40}$", head or "") else None
+
+
+def earlier_attempt_commits(git_root, project, names, start_head, others=()):
+    """`(shas, why)` - the commits in `start_head..HEAD`, newest first, that
+    changed any of `names` (the plan's own spelling of a task's declared files,
+    read from `project`; each goes through `_config.plan_to_git` for git's
+    pathspec), leaving out the ones in `others` (the commits other tasks record
+    as their own). `why` is set, and `shas` None, when git would not list them.
+
+    THE SPAN IS THE HEAD THE START RECORDED, AND NOTHING SOFTER. A clock
+    reading (`--since startedAt`) has a second's grain and takes in a commit
+    made just before the start, which would name work that is not the
+    attempt's as the thing to close on. With no recorded head, or none git
+    still holds, there is no span to ask about and the answer is `([], "")` -
+    the refusal then gives the advice it gave before, which claims nothing."""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    rels = [r for r in (hc.plan_to_git(n, git_root, project) for n in names)
+            if r is not None]
+    if not start_head or not rels or run_git(git_root, [
+            "rev-parse", "--verify", "-q",
+            "%s^{commit}" % (start_head,)])[0] != 0:
+        return [], ""
+    span = "%s..HEAD" % (start_head,)
+    code, out, err = run_git(git_root, ["log", "--format=%H", span, "--"]
+                             + list(rels))
+    if code != 0:
+        return None, "`git log %s` %s%s" % (
+            span, "could not be run" if code is None else "exited %d" % (code,),
+            ": %s" % (" ".join(err.split()),) if err.strip() else "")
+    skip = set(others)
+    return [ln.strip() for ln in out.splitlines()
+            if ln.strip() and ln.strip() not in skip], ""
+
+
 def close_evidence_refusal(task, project, executor, changed, declared=None,
-                           tree=None, any_red_first=False):
+                           tree=None, any_red_first=False, earlier=None,
+                           earlier_why=""):
     """The sentence refusing a close whose evidence shows no work, or "".
 
     `executor` is the executor's filed return for the task's current start, or
@@ -1138,7 +1186,14 @@ def close_evidence_refusal(task, project, executor, changed, declared=None,
     when None); `tree` is the working tree the close is made from, whose bytes
     any verdict binding it measured, named when given. With `any_red_first` an
     unchanged declared set refuses whatever red-first the return records, and
-    with none filed; without it, only beside `not-attempted`."""
+    with none filed; without it, only beside `not-attempted`.
+
+    `earlier` is the commits since the task's start that already changed a
+    declared file (`earlier_attempt_commits`): the work is then committed, so
+    the repair is closing the task on that commit - `audit-task.py done <id>
+    --commit <sha>` - and neither `--no-change` nor a tree to bring in fits.
+    `earlier_why` is the reason that list could not be read, said in the
+    refusal rather than left out of it."""
     tid = str(task.get("id"))
     parts = []
     red = ((executor or {}).get("redFirst") or {}) \
@@ -1157,9 +1212,12 @@ def close_evidence_refusal(task, project, executor, changed, declared=None,
                "; the executor's filed return records red-first `%s`" % (word,)
                if isinstance(word, str) and word else "",
                " (its outcome: %r)" % (said[:120],) if said else ""))
-        if tree:
+        if tree and not earlier:
             parts.append("if the task's work sits in another worktree (a kept "
                          "task tree), bring it into %s first" % (tree,))
+        if earlier_why:
+            parts.append("whether the work already sits in an earlier commit "
+                         "of this attempt could not be read - %s" % (earlier_why,))
     absent = absent_tests_add(task, project)
     if absent:
         parts.append("%s, named by the task's tests.add, %s not on disk"
@@ -1167,6 +1225,12 @@ def close_evidence_refusal(task, project, executor, changed, declared=None,
                         "is" if len(absent) == 1 else "are"))
     if not parts:
         return ""
+    if earlier and changed is False:
+        return ("%s. The task's work is already committed since its start (%s): "
+                "close it on that commit with `audit-task.py done %s --commit "
+                "%s`"
+                % ("; ".join(parts), ", ".join(c[:12] for c in earlier[:3]),
+                   tid, earlier[0][:12]))
     return ("%s. Restart it so the work is done (/audit:task start %s), or "
             "cancel it (/audit:task cancel %s --reason <why>); a task whose "
             "answer was that nothing needed to change closes with /audit:task "

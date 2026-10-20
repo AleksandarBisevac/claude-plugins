@@ -18861,6 +18861,64 @@ def _nested_no_change_cases(check):
           touched is not None and [p for p, _c in touched] == ["src/a.py"])
 
 
+def _attempt_log_failure_cases(check):
+    """`done --commit` asks whether the attempt changed a declared file by
+    reading `git log`; a log that fails is a refusal naming the failure, never
+    the narrower question asked as if the span were empty or unread."""
+    root = os.path.realpath(_harness.fixture_root("audit-task-logfail-"))
+    ident = ("git", "-c", "user.email=fixture@example.com", "-c",
+             "user.name=Fixture", "-c", "commit.gpgsign=false")
+
+    def git(*argv):
+        return _harness.git(root, *argv, prefix=ident).strip()
+
+    try:
+        os.makedirs(os.path.join(root, "src"))
+        for name, text in (("src/a.py", "a = 1\n"), ("other.txt", "one\n")):
+            with open(os.path.join(root, name), "w") as fh:
+                fh.write(text)
+        git("init", "-q")
+        git("add", "-A")
+        git("commit", "-qm", "base")
+        start = git("rev-parse", "HEAD")
+        with open(os.path.join(root, "other.txt"), "w") as fh:
+            fh.write("two\n")
+        git("add", "-A")
+        git("commit", "-qm", "unrelated")
+        sha = git("rev-parse", "HEAD")
+        task = {"id": "P1.1", "files": ["src/a.py"], "status": "in_progress",
+                "attempts": 1, "startedAt": "2026-01-01T00:00:00Z",
+                "tests": {"mode": "tdd", "expectRedFirst": True, "add": []}}
+        phase = {"id": "P1", "tasks": [task]}
+        attempt = {"phase": phase, "plan": {"phases": [phase]},
+                   "startHead": start, "records": []}
+        mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+
+        def ask():
+            return M._close_evidence_refusal(root, mpath, root, task, sha, True,
+                                             [], attempt=attempt)
+        healthy = ask()
+        real = M._git_answer
+
+        def failing(git_root, *argv):
+            if argv and argv[0] == "log":
+                return 128, ""
+            return real(git_root, *argv)
+        M._git_answer = failing
+        try:
+            broken = ask()
+        finally:
+            M._git_answer = real
+    finally:
+        _harness.remove_tree(root)
+    check("lo-ce6 done --commit refuses loudly when git log fails, naming the "
+          "failure (a span git cannot list is not an empty span and not an "
+          "unread one: %r)" % ((healthy, broken),),
+          "carry no change" in healthy and "git log" not in healthy
+          and "git log" in broken and "128" in broken
+          and "carry no change" not in broken)
+
+
 def _gate_entry_cases(check):
     """The shape of a gate entry is asked where it is WRITTEN: four verbs
     refuse the entry that runs one suite with another as its argument, `add
@@ -19013,6 +19071,7 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("hd-block", "_held_cases"), ("ub-block", "_unblock_cases"),
           ("ncm-block", "_no_change_moved_cases"),
           ("ncn-block", "_nested_no_change_cases"),
+          ("lo-ce6-block", "_attempt_log_failure_cases"),
           ("lo-block", "_leftover_cases"),
           ("io-block", "_index_only_cases"),
           ("fd-block", "_finding_disposition_cases"),

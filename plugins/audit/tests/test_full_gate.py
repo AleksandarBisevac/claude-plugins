@@ -228,9 +228,9 @@ def _fake_runner(root, run_id, code, steps, misses=None, printed=None,
     line; every other command (the `audit-task.py` verbs) runs for real."""
     real = M._stream_subprocess
 
-    def seam(cmd, out):
+    def seam(cmd, out, stdin=None):
         if os.path.basename(cmd[1]) != "run-test-gate.py":
-            return real(cmd, out)
+            return real(cmd, out) if stdin is None else real(cmd, out, stdin=stdin)
         row = {"v": 1, "runId": run_id, "ts": _utc_stamp.utc_stamp(), "scope": "full",
                "status": status,
                "testedState": {"head": _git_head(root)}, "steps": steps}
@@ -685,12 +685,12 @@ def _no_runner_seam():
     real = M._stream_subprocess
     runner_calls = []
 
-    def seam(cmd, out):
+    def seam(cmd, out, stdin=None):
         if os.path.basename(cmd[1]) == "run-test-gate.py":
             runner_calls.append(cmd)
             out("FULL GATE RED")
             return 1
-        return real(cmd, out)
+        return real(cmd, out) if stdin is None else real(cmd, out, stdin=stdin)
     return seam, real, runner_calls
 
 
@@ -1093,6 +1093,47 @@ def _pinned_learning_cases(check):
 
 
 # --- --learn-from's exit when learning itself goes wrong -----------------------
+def _description_stdin_cases(check):
+    """The bug's description is text this file built, so it reaches `bug-add`
+    on stdin: a doubled space in a piece it was built from (a dropped-phases
+    list the row carries) is the mark a shell leaves, which the verb refuses on
+    argv and reads whole on stdin. The seam records how the description went."""
+    root, mpath = _learn_repo("learn-from-description-stdin")
+    try:
+        _imported_row(root, "RUN-CI-STDIN", misses=[
+            {"test": "tests/test_cart.py", "phases": ["P1"],
+             "sources": ["src/cart.py"], "phasesDropped": "P2  P3"}])
+        real = M._stream_subprocess
+        seen = []
+
+        def seam(cmd, out, stdin=None):
+            if "bug-add" in cmd:
+                seen.append((list(cmd), stdin))
+            if stdin is None:
+                return real(cmd, out)
+            return real(cmd, out, stdin=stdin)
+        M._stream_subprocess = seam
+        try:
+            code, lines = None, []
+            code = M.main([mpath, "--project-dir", root, "--learn-from",
+                           "RUN-CI-STDIN"], out=lines.append)
+        finally:
+            M._stream_subprocess = real
+        _coupling, bugs, actions = _plan_facts(root, mpath)
+        argv, sent = seen[0] if seen else ([], None)
+        at = argv.index("--description") if "--description" in argv else -1
+        check("fglf14 a bug description the file built goes to bug-add on "
+              "stdin, never on argv: the verb's shell-damage check refuses a "
+              "doubled space there, so the bug lands only on the stdin route: "
+              "%r" % ((code, at, argv[at + 1:at + 2], sent, actions),),
+              len(seen) == 1 and at >= 0 and argv[at + 1] == "-"
+              and isinstance(sent, str) and "P2  P3" in sent
+              and "bug.add" in actions and len(bugs) == 1
+              and code == M.E_OK)
+    finally:
+        _harness.remove_tree(root)
+
+
 def _learn_from_exit_cases(check):
     # --- a row whose learning raises -----------------------------------------
     root, mpath = _learn_repo("learn-from-raises")
@@ -1169,6 +1210,7 @@ def _selftest():
         _catch_rule_cases(check)
         _pinned_learning_cases(check)
         _learn_from_exit_cases(check)
+        _description_stdin_cases(check)
     return _harness.run(body)
 
 

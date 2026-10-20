@@ -774,10 +774,17 @@ def _verb_with_text(ctx, script, args, flag, text):
     right test for a line a person typed, and wrong for text assembled here,
     which holds a doubled space whenever a piece it was built from did. The
     stdin route is the one that arrives verbatim. Stdin carries ONE flag per
-    call, and a verb refuses an empty `-`, so a blank `text` goes on argv as it
-    is: there is nothing in it for a check to read and nothing to lose."""
-    if not (text or "").strip():
+    call. An EMPTY text goes on argv as it is: a verb reads an empty value as
+    none, which is legal. A text of whitespace alone is neither: on stdin the
+    verb refuses it as holding no text, and on argv spaces or tabs are the
+    leading-whitespace mark it refuses, so it is refused here with a sentence
+    naming the flag, and nothing is run."""
+    if not text:
         return _verb_or_stop(ctx, script, list(args) + [flag, text or ""])
+    if not text.strip():
+        return None, _stopped(ctx, "%s was built as %r, whitespace alone, which "
+                              "holds no text for %s to write; nothing was run"
+                              % (flag, text, script))
     return _verb_or_stop(ctx, script, list(args) + [flag, "-"], stdin=text)
 
 
@@ -4932,7 +4939,15 @@ def submit(ctx, manifest, args, cmd, text):
         body["stamp"] = line
         ctx["did"].append("stamp taken")
         printed = ctx.get("printed") if cmd else None
-        gaps = case_binding_gaps(task, body.get(_fr.CASES_FIELD), printed)
+        gaps = case_binding_gaps(task, body.get(_fr.CASES_FIELD), printed,
+                                 list(cmd) if cmd else None)
+        unchecked = (_fr.case_binding_unchecked(task, list(cmd))
+                     if cmd and printed is not None else [])
+        if unchecked:
+            ctx["did"].append(
+                "tests.add: %d entr%s not checked against a printed case: %s"
+                % (len(unchecked), "y was" if len(unchecked) == 1 else "ies were",
+                   "; ".join(unchecked)))
         # The drive's own reading, filed beside the claim: the reviewer's brief
         # prints these and not a recomputation that could not see the output.
         body[_fr.GAPS_FIELD] = gaps

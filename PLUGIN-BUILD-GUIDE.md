@@ -409,7 +409,7 @@ L7:
   _panel_state -> _evidence_io, _help, _journal_io, _manifest_io, _manifest_rules, _output, _panel_composition, _panel_discovery, _panel_paths, _panel_policy, _panel_runstate, _panel_usage, _panel_viewer, _proposals, _report_html
   _report_md -> _output, _report_html, _usage_markdown
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
-  _scoped_commit -> _excerpt, _invariants, _journal_io, _manifest_io, _manifest_phases, _manifest_vocab, _output, _task_outputs
+  _scoped_commit -> _excerpt, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _task_outputs
   _surface_digest -> _output, _panel_page, _report_ui
 
 L8:

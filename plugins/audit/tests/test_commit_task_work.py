@@ -2544,6 +2544,52 @@ def _no_maintenance_cases(check):
           bare_committed and len(bare_spawns) >= 1)
 
 
+EARLIER_COMMIT_CLAUSE = ("a task whose declared work is already in an earlier "
+                         "commit since its start is refused by a commit that "
+                         "would carry records only, and the refusal names "
+                         "`audit-task.py done <id> --commit <sha>`")
+
+
+@_own_repos
+def _earlier_commit_cases(check, repos):
+    """The refusal of a records-only task commit points at the repair that fits:
+    work committed since the start closes through `done --commit`, not through
+    `--no-change` or a worktree to bring in."""
+    fx = repos.make()
+    _restartable(fx)
+    scode, said = _start(fx)
+    _file_started_return(fx, "could-not-prove")
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # the task's own work\n")
+    TI._git(fx["root"], "add", "--", OWNED)
+    TI._git(fx["root"], "commit", "-q", "-m", "the task's work, committed by hand",
+            "--", OWNED)
+    work = _head(fx)
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw-ro5 %s: %r" % (EARLIER_COMMIT_CLAUSE, (
+              scode, said[-200:], code, text[:900], _head(fx) == before,
+              _staged(fx))),
+          scode == 0 and code == 1 and _head(fx) == before and _staged(fx) == []
+          and "audit-task.py done %s --commit %s" % (TASK, work[:12]) in text
+          and "--no-change" not in text and "bring it into" not in text)
+
+    # SECOND-DIRECTION CASE, for advice made unconditional: with no earlier
+    # commit holding the work the refusal still names `--no-change` and names
+    # no `--commit`.
+    fx = repos.make()
+    _restartable(fx)
+    scode, said = _start(fx)
+    _file_started_return(fx, "could-not-prove")
+    _gate(fx)
+    code, text = _run(fx)
+    check("ctw-ro6 ALLOW: a records-only refusal with no earlier commit of the "
+          "work keeps naming `--no-change` and names no `--commit`: %r"
+          % ((scode, code, text[:600]),),
+          scode == 0 and code == 1 and "--no-change" in text
+          and "--commit" not in text)
+
+
 STAGES = (("nm-block", "_no_maintenance_cases"),
           ("fg-block", "_fixture_git_cases"),("or-block", "_ordinary_cases"),("dc-block", "_declared_cases"),
           ("rc-block", "_records_cases"), ("ix-block", "_index_cases"),
@@ -2559,7 +2605,8 @@ STAGES = (("nm-block", "_no_maintenance_cases"),
           ("ae-block", "_attempt_cases"), ("bl-block", "_bug_link_cases"),
           ("ir-block", "_index_row_cases"),
           ("ce-block", "_close_evidence_cases"),
-          ("ro-block", "_records_only_cases"))
+          ("ro-block", "_records_only_cases"),
+          ("ec-block", "_earlier_commit_cases"))
 
 
 if __name__ == "__main__":

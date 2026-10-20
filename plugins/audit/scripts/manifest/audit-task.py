@@ -6110,11 +6110,23 @@ def _no_change_moves(project, git_root, phase, task, plan=None, start_head=None)
 
 def _attempt_commits(project, git_root, phase, task, files, plan=None,
                      start_head=None, end="HEAD"):
-    """`[(path, sha), ...]` - each path under `files` (git-root-relative
+    """`_attempt_commits_read` without the failure: the touched list, or None
+    when git will not answer the log."""
+    return _attempt_commits_read(project, git_root, phase, task, files,
+                                 plan=plan, start_head=start_head, end=end)[0]
+
+
+def _attempt_commits_read(project, git_root, phase, task, files, plan=None,
+                          start_head=None, end="HEAD"):
+    """`([(path, sha), ...], None)`, or `(None, failure)` naming the `git log`
+    that did not answer - a guard that reads the list must be able to say why
+    it has none.
+
+    The list holds each path under `files` (git-root-relative
     pathspecs) that a commit of `task`'s attempt changed, up to `end`, spelled
     the way the plan spells it: `git log --name-only` prints from the checkout's
     top, and a task's `files` are read from `project`, so each path goes through
-    `_config.git_to_plan`. None when git will not answer the log. `_no_change_moves` documents the span: from the HEAD the
+    `_config.git_to_plan`. `_no_change_moves` documents the span: from the HEAD the
     start recorded, or else from the phase's `baseRef` cut by `startedAt` with
     the commits other tasks record as their own left out."""
     since, others = [], set()
@@ -6136,7 +6148,8 @@ def _attempt_commits(project, git_root, phase, task, files, plan=None,
     code, log = _git_answer(git_root, *(["log", "--format=@%H", "--name-only"]
                                         + since + [span, "--"] + list(files)))
     if code != 0:
-        return None
+        return None, ("`git log %s` %s" % (span, "could not be run" if code is None
+                                           else "exited %d" % (code,)))
     hc = _loader.load_hooks_config(modname="audit__config")
     touched, commit = [], None
     for line in [ln.strip() for ln in log.splitlines() if ln.strip()]:
@@ -6144,7 +6157,7 @@ def _attempt_commits(project, git_root, phase, task, files, plan=None,
             commit = line[1:]
         elif commit and commit not in others:
             touched.append((hc.git_to_plan(line, git_root, project), commit))
-    return touched
+    return touched, None
 
 
 def _porcelain_paths(git_root, pathspec=()):
@@ -6306,10 +6319,16 @@ def _close_evidence_refusal(project, mpath, git_root, task, sha, verified,
     work = (_declared_work(project, git_root, task, attempt["records"])
             if attempt and verified else [])
     if work and not changed:
-        since = _attempt_commits(project, git_root, attempt["phase"], task,
-                                 [rel for _name, rel in work],
-                                 plan=attempt["plan"],
-                                 start_head=attempt["startHead"], end=sha)
+        since, failure = _attempt_commits_read(
+            project, git_root, attempt["phase"], task,
+            [rel for _name, rel in work], plan=attempt["plan"],
+            start_head=attempt["startHead"], end=sha)
+        # A LOG GIT WOULD NOT ANSWER REFUSES, loudly: it is neither an empty
+        # span nor a span holding a change, and falling to the narrower
+        # question below would close a task over a question never asked.
+        if since is None:
+            return ("whether this attempt changed %s could not be read - %s"
+                    % (", ".join(name for name, _rel in work), failure))
         # An empty span refuses on its own; a span holding a change falls to
         # the narrower question below, which still refuses a `not-attempted`
         # return over a `sha` that itself touches nothing declared.
