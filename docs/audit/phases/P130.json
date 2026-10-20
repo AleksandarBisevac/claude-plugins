@@ -269,7 +269,8 @@
         "severity": "low",
         "file": ".claude/skills/reproducing-ci-locally/SKILL.md:28-30",
         "issue": "The added paragraph says the `sed -n '/jobs:/,$p'` / `grep run:` read 'yields only `sh tools/verify.sh --only <slices>` calls' and that 'every CI job is setup plus one such call'. The read also yields non-verify.sh run steps: .github/workflows/ci.yml:115 (the `verified` job's ci-verified.py call, a gh/python step with no verify.sh) and the pip install / setup run steps at :226, :246, :271, :293. The sentence is a claim about the workflow that the workflow does not bear out literally.",
-        "resolution": "Reword to 'the gate itself is in `sh tools/verify.sh --only <slices>` calls; the other run steps are setup and the verified-run guard', keeping the pointer to `sh tools/verify.sh --list`."
+        "resolution": "Reword to 'the gate itself is in `sh tools/verify.sh --only <slices>` calls; the other run steps are setup and the verified-run guard', keeping the pointer to `sh tools/verify.sh --list`.",
+        "fixTask": "P130.51-ywo"
       },
       {
         "id": "P130-R27",
@@ -5358,6 +5359,69 @@
         "basis": "`python3 plugins/audit/tests/test__scoped_commit.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 38 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sc-ea2 (house FAIL): SELFTEST FAILED: 37/38 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
         "status": "proved",
         "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P130.51-ywo",
+      "title": "fix P130-R26: The added paragraph says the `sed -n '/jobs:/,$p'` / `grep run:...",
+      "status": "in_progress",
+      "description": "The added paragraph says the `sed -n '/jobs:/,$p'` / `grep run:` read 'yields only `sh tools/verify.sh --only <slices>` calls' and that 'every CI job is setup plus one such call'. The read also yields non-verify.sh run steps: .github/workflows/ci.yml:115 (the `verified` job's ci-verified.py call, a gh/python step with no verify.sh) and the pip install / setup run steps at :226, :246, :271, :293. The sentence is a claim about the workflow that the workflow does not bear out literally.\n\nResolution asked: Reword to 'the gate itself is in `sh tools/verify.sh --only <slices>` calls; the other run steps are setup and the verified-run guard', keeping the pointer to `sh tools/verify.sh --list`.",
+      "files": [
+        ".claude/skills/reproducing-ci-locally/SKILL.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-paths"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-20T08:03:14Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-20T08:03:13Z",
+          "text": "scope: .claude/skills/reproducing-ci-locally/SKILL.md, every path the finding(s) P130-R26 name"
+        },
+        {
+          "at": "2026-10-20T08:03:13Z",
+          "text": "no suite: .claude/skills/reproducing-ci-locally/SKILL.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/_refs.py, plugins/audit/scripts/panel/_panel_discovery.py, plugins/audit/tests/test__panel_discovery.py and 5 more"
+        },
+        {
+          "at": "2026-10-20T08:03:13Z",
+          "text": "gate-only, not tdd: every file P130-R26 names is a document (.claude/skills/reproducing-ci-locally/SKILL.md) with no test of its own, so there is no case to write first and no red to show; the gate the task carries is its check"
+        }
+      ],
+      "fixes": [
+        "P130-R26"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-20T08:14:58Z.2392e1",
+        "status": "passed",
+        "at": "2026-10-20T08:14:58Z"
       }
     }
   ],

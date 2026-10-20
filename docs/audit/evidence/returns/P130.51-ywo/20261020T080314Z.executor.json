@@ -1,0 +1,17 @@
+{
+  "gates": {},
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task, expectRedFirst false, tests.add none; prose-only edit to one skill document",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Reworded .claude/skills/reproducing-ci-locally/SKILL.md lines 28-32: the read yields setup steps and `sh tools/verify.sh --only <slices>` calls, the gate itself is those calls, every gate job is setup plus one such call, and the `verified` job is named as the exception (runs tools/ci-verified.py, calls no slice). Pointer to `sh tools/verify.sh --list` kept. Evidence: `grep -n run: .github/workflows/*.yml` shows ci.yml:115 as the ci-verified.py step and :178,:198,:229,:251,:276,:298,:318 as verify.sh calls; :226,:246,:271,:293 are setup runs. No gates run (task adds no tests; own-tests has nothing to run).",
+    "descriptive": "The skill's sentence about CI jobs now matches ci.yml: gate jobs are setup plus one verify.sh call, and the verified job is the named exception."
+  },
+  "testsAdded": [],
+  "claims": "claims:\n1 .github/workflows/ci.yml:115 is the verified job's `python tools/ci-verified.py` step with no verify.sh call; verify.sh calls at ci.yml:178,198,229,251,276,298,318; sentence rewritten to say only that\n2 n/a - no check touched\n3 grep -rn 'one such' over the tree (excluding docs/audit): the only hit about CI jobs was the SKILL.md sentence; the others (COMPATIBILITY.md:464, capture-screenshots.mjs, tests, scripts) are unrelated uses of the phrase, left\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:c4d67f3c2430c54139f944c815988f2503d8cfcc6afb313d8a1f107c3679acf3\",\"dirtyDigest\":\"sha256:067b0536d033d9732d46f392e586eb3b61d36f621c9d09fa2a12489cfb453ac8\",\"dirtyPaths\":{\".claude/skills/reproducing-ci-locally/SKILL.md\":\"c3112648d3fd9ea9\"},\"head\":\"e86f7d85\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".claude/skills/reproducing-ci-locally/SKILL.md\"],\"scopeDigest\":\"sha256:d1ee817a22d31bdf6ff853a265a0af44cc0fd54805881f3246a030ef0c0a1a6f\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

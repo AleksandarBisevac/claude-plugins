@@ -26,8 +26,10 @@ grep -rn "run:" .github/workflows/
 ```
 
 **In this repo** that read yields setup steps (a checkout, a toolchain, a `pip install`) and
-one `sh tools/verify.sh --only <slices>` call per job: every CI job is setup plus one such
-call, and `tools/verify.sh` says what a slice runs.
+`sh tools/verify.sh --only <slices>` calls, and the gate itself is those calls: every gate job
+is setup plus one such call. The exception is the `verified` job, which runs
+`tools/ci-verified.py` (the guard that asks whether this SHA was already verified) and calls
+no slice. `tools/verify.sh` says what a slice runs.
 `sh tools/verify.sh --list` prints each slice, its tier and the steps it executes, which
 is the gate in this repo; `gate-parity.py` holds the workflow's slice names to that list.
 

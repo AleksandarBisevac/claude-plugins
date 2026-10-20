@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: the old paragraph claimed the read yields only verify.sh calls and that every CI job is setup plus one such call; asked for a reword saying the gate itself is in `sh tools/verify.sh --only <slices>` calls and the other run steps are setup and the verified-run guard, keeping the `--list` pointer. The diff (SKILL.md lines 28-32) says the read yields setup steps and verify.sh calls, the gate is those calls, every gate job is setup plus one such call, and names the `verified` job as the exception running tools/ci-verified.py and calling no slice; the `sh tools/verify.sh --list` sentence is kept. Checked against ci.yml: jobs are verified (:99), selftests (:142), e2e (:183), lint (:200), manifests (:231), browser-panel (:256), browser-report (:278), resample (:303). verified's only run step is ci-verified.py (:115-119), no verify.sh. Every other job has exactly one verify.sh call: :178, :198, :229, :251, :276, :298, :318. The remaining run steps are setup: pip install ruff/vermin at :226, and the npm ci / claude-code / playwright install blocks at :246, :271, :293. So 'setup steps (a checkout, a toolchain, a pip install)' holds, and the claim that the verified job is the sole exception holds. The executor's claim (outcome.technical and descriptive) matches the diff, and its cited line numbers match the file. Small residue: the parenthetical lists checkout, toolchain and pip install but not the npm/playwright setup runs. It is introduced as an example list, so not a defect.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor filed not-attempted: gate-only task, tests.add none, prose-only edit to one skill document. The mode owes no red.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "The diff is prose in a .claude skill document. tests.gate lists whole-project commands (sweep-selftests, validate, plugin-validate, lint, shots, interactive), so the question is not asked and I read no selected test."
+ },
+ "verdict": "clean",
+ "tasks": []
+}
