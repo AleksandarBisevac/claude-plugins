@@ -22,7 +22,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "BF4-R1",
@@ -49,34 +49,43 @@
         "severity": "med",
         "file": ".github/workflows/ci.yml:158,162,192,196,312,316 (and the comment at :95, the names at :192/:312, and the fixture in tools/gate-parity.py ri2 ~:358-359)",
         "issue": "The Windows pin is `windows-2025-vs2026`. Per the orchestrator-verified fact (GitHub-hosted runners label tables, actions/runner-images README, 2026-05-14 changelog) that label is documented as meant for testing only, is redundant because windows-2025 itself moved to VS 2026, and is ABSENT from the private-repository label table; `windows-2025` is the stable label. The executor took the name from the `Image:` line of the run log and states in outcome.technical that it 'was not verified' as a runs-on label. A pin to a testing-only label is the same fragility the task removes: an unsupported label can queue forever or be retired, and it hits every Windows cell (selftests, e2e, resample). The Linux pin ubuntu-24.04 is valid.",
-        "resolution": "Pin `windows-2025` everywhere: the matrix `os` axis (:158), the `exclude` row (:162), the e2e and resample `runs-on` (:196, :316) and their display names (:192, :312), the header comment (:95). Update the ri2 fixture, which uses `windows-2025-vs2026` as the example of an explicit image, to `windows-2025`. ri1's wording already names windows-2025.",
-        "fixTask": "BF4.3-p5e"
+        "resolution": "fixed in BF4.3-p5e (b1eedf7986e6): Pin `windows-2025` everywhere: the matrix `os` axis (:158), the `exclude` row (:162), the e2e and resample `runs-on` (:196, :316) and their display names (:192, :312), the header comment (:95). Update the ri2 fixture, which uses `windows-2025-vs2026` as the example of an explicit image, to `windows-2025`. ri1's wording already names windows-2025.",
+        "fixTask": "BF4.3-p5e",
+        "commit": "b1eedf7986e6",
+        "status": "fixed"
       },
       {
         "id": "BF4-R4",
         "severity": "low",
         "file": ".github/workflows/ci.yml:155,192,198,312",
         "issue": "The pin changes the check names the workflow reports: the selftests cells (`selftests (${{ matrix.os }}, ...)` now print ubuntu-24.04 / the Windows label), `e2e (...)`, `lint + e2e (ubuntu-24.04)` and `resample (...)`. A branch-protection required-check entry for the old names, which lives in repository settings outside the tree, would never report. The executor checked tools/ci-verified.py (prefix `resample (`) but not the remote required-checks list. Putting the image name into a display name also means the next image move renames the check again.",
-        "resolution": "State in the hand-off that the owner must update the repository's required-check list. Optionally drop the image name from the e2e, lint and resample names so a future image bump does not rename the check."
+        "resolution": "State in the hand-off that the owner must update the repository's required-check list. Optionally drop the image name from the e2e, lint and resample names so a future image bump does not rename the check.",
+        "status": "accepted-open",
+        "acceptedReason": "BF4 fixes BUG-28 (gate-parity trap cases runnable on Windows, OSError recorded, BF4.1), BUG-27 (every CI job pins its runner image, floating -latest refused, BF4.2) and the review's medium (windows-2025 instead of the testing-only windows-2025-vs2026 label, BF4.3). The open findings are lows, which under the owner's rule D9 (2026-10-20) do not hold a release and go to the next release's cleanup task: R4 the reported check names changed with the pins, R5 the matrix reader does not read a block-sequence axis, and the BF4.3 header comment naming the image the green run logged. The proof of the CI fixes is the next release-tier run on Linux and Windows. Per-task reviewer answers continued over: BF4.1 intent cannot-tell: Owner's standing answer for this session (2026-10-18): \"Da, odgovaraj sam (Recommended)\". Checked: the reviewer could not tell the intent only because Windows cannot be run here; it found every trap-case program argv starts with sys.executable, and its two lows (vsh12 passing vacuously, a wrong Windows error in a comment) are folded into BF4.2, whose next CI release-tier run on Windows is the proof."
       },
       {
         "id": "BF4-R5",
         "severity": "low",
         "file": "tools/gate-parity.py:195-201",
         "issue": "`_matrix_key_values` reads only an inline `key: [a, b]` or scalar. A block-sequence axis (`os:` with `- ubuntu-latest` on following lines) yields no value from the axis. If an `include` or `exclude` row also names `os`, the check sees only those rows and passes a floating axis value without comment. If the key is listed nowhere, it is reported, so only the mixed shape is silent. ci.yml does not use the shape today.",
-        "resolution": "Treat an empty `rest` after `key:` as a block sequence and collect the following `- value` lines at deeper indent, or report the job as unreadable when a matrix key line has no inline value. Add a case beside ri4."
+        "resolution": "Treat an empty `rest` after `key:` as a block sequence and collect the following `- value` lines at deeper indent, or report the job as unreadable when a matrix key line has no inline value. Add a case beside ri4.",
+        "status": "accepted-open",
+        "acceptedReason": "BF4 fixes BUG-28 (gate-parity trap cases runnable on Windows, OSError recorded, BF4.1), BUG-27 (every CI job pins its runner image, floating -latest refused, BF4.2) and the review's medium (windows-2025 instead of the testing-only windows-2025-vs2026 label, BF4.3). The open findings are lows, which under the owner's rule D9 (2026-10-20) do not hold a release and go to the next release's cleanup task: R4 the reported check names changed with the pins, R5 the matrix reader does not read a block-sequence axis, and the BF4.3 header comment naming the image the green run logged. The proof of the CI fixes is the next release-tier run on Linux and Windows. Per-task reviewer answers continued over: BF4.1 intent cannot-tell: Owner's standing answer for this session (2026-10-18): \"Da, odgovaraj sam (Recommended)\". Checked: the reviewer could not tell the intent only because Windows cannot be run here; it found every trap-case program argv starts with sys.executable, and its two lows (vsh12 passing vacuously, a wrong Windows error in a comment) are folded into BF4.2, whose next CI release-tier run on Windows is the proof."
       },
       {
         "id": "BF4-R6",
         "severity": "low",
         "file": ".github/workflows/ci.yml:94-95",
         "issue": "The header comment says the pinned images are 'the ones the last green run (38937779587) logged under `Runner Image`' and now lists Windows as windows-2025, but that run logged windows-2025-vs2026. The sentence is now slightly inaccurate as history.",
-        "resolution": "Optional: reword to say the Windows label is the stable windows-2025 label, whose image the run logged as windows-2025-vs2026. No action is needed for this release under D9."
+        "resolution": "Optional: reword to say the Windows label is the stable windows-2025 label, whose image the run logged as windows-2025-vs2026. No action is needed for this release under D9.",
+        "status": "accepted-open",
+        "acceptedReason": "BF4 fixes BUG-28 (gate-parity trap cases runnable on Windows, OSError recorded, BF4.1), BUG-27 (every CI job pins its runner image, floating -latest refused, BF4.2) and the review's medium (windows-2025 instead of the testing-only windows-2025-vs2026 label, BF4.3). The open findings are lows, which under the owner's rule D9 (2026-10-20) do not hold a release and go to the next release's cleanup task: R4 the reported check names changed with the pins, R5 the matrix reader does not read a block-sequence axis, and the BF4.3 header comment naming the image the green run logged. The proof of the CI fixes is the next release-tier run on Linux and Windows. Per-task reviewer answers continued over: BF4.1 intent cannot-tell: Owner's standing answer for this session (2026-10-18): \"Da, odgovaraj sam (Recommended)\". Checked: the reviewer could not tell the intent only because Windows cannot be run here; it found every trap-case program argv starts with sys.executable, and its two lows (vsh12 passing vacuously, a wrong Windows error in a comment) are folded into BF4.2, whose next CI release-tier run on Windows is the proof."
       }
     ],
-    "outcome": "[findings: 6 - 0 high, 1 med, 5 low; 2 with a recorded fix commit]"
+    "outcome": "[findings: 6 - 0 high, 1 med, 5 low; 3 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "BF4 fixes BUG-28 (gate-parity trap cases runnable on Windows, OSError recorded, BF4.1), BUG-27 (every CI job pins its runner image, floating -latest refused, BF4.2) and the review's medium (windows-2025 instead of the testing-only windows-2025-vs2026 label, BF4.3). The open findings are lows, which under the owner's rule D9 (2026-10-20) do not hold a release and go to the next release's cleanup task: R4 the reported check names changed with the pins, R5 the matrix reader does not read a block-sequence axis, and the BF4.3 header comment naming the image the green run logged. The proof of the CI fixes is the next release-tier run on Linux and Windows. Per-task reviewer answers continued over: BF4.1 intent cannot-tell: Owner's standing answer for this session (2026-10-18): \"Da, odgovaraj sam (Recommended)\". Checked: the reviewer could not tell the intent only because Windows cannot be run here; it found every trap-case program argv starts with sys.executable, and its two lows (vsh12 passing vacuously, a wrong Windows error in a comment) are folded into BF4.2, whose next CI release-tier run on Windows is the proof.",
   "tasks": [
     {
       "id": "BF4.1",
@@ -221,7 +230,7 @@
     {
       "id": "BF4.3-p5e",
       "title": "fix BF4-R3: The Windows pin is `windows-2025-vs2026`. Per the orchestrator-ve...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The Windows pin is `windows-2025-vs2026`. Per the orchestrator-verified fact (GitHub-hosted runners label tables, actions/runner-images README, 2026-05-14 changelog) that label is documented as meant for testing only, is redundant because windows-2025 itself moved to VS 2026, and is ABSENT from the private-repository label table; `windows-2025` is the stable label. The executor took the name from the `Image:` line of the run log and states in outcome.technical that it 'was not verified' as a runs-on label. A pin to a testing-only label is the same fragility the task removes: an unsupported label can queue forever or be retired, and it hits every Windows cell (selftests, e2e, resample). The Linux pin ubuntu-24.04 is valid.\n\nResolution asked: Pin `windows-2025` everywhere: the matrix `os` axis (:158), the `exclude` row (:162), the e2e and resample `runs-on` (:196, :316) and their display names (:192, :312), the header comment (:95). Update the ri2 fixture, which uses `windows-2025-vs2026` as the example of an explicit image, to `windows-2025`. ri1's wording already names windows-2025.",
       "files": [
         ".github/workflows/ci.yml",
@@ -249,13 +258,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b1eedf7986e6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Ran sed s/windows-2025-vs2026/windows-2025/g over .github/workflows/ci.yml (header comment :95, matrix os :158, exclude row :162, e2e name :192 and runs-on :196, resample name :312 and runs-on :316) and tools/gate-parity.py (ri2 fixture replace at :2376). ubuntu-24.04 untouched. grep confirms no 'vs2026' remains in either file. Exit codes: `python3 tools/gate-parity.py --selftest` = 0 (81/81 cases passed); `python3 tools/gate-parity.py` = 0. Nothing else changed.",
+        "descriptive": "Windows CI jobs now pin the stable windows-2025 runner label instead of the testing-only windows-2025-vs2026."
       },
       "startedAt": "2026-10-20T19:22:29Z",
-      "completedAt": null,
+      "completedAt": "2026-10-20T19:38:27Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -283,14 +292,26 @@
         "runId": "2026-10-20T19:37:30Z.d5c3a7",
         "status": "passed",
         "at": "2026-10-20T19:37:30Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b1eedf7986e6",
+        "at": "2026-10-20T19:38:27Z",
+        "return": "docs/audit/evidence/returns/BF4.3-p5e/20261020T192229Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "could-not-prove",
+        "at": "2026-10-20T19:23:32Z",
+        "basis": "BF4.3-p5e declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task BF4.3-p5e declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+        "source": "red-first-helper"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "d55605e4-ee14-4690-adce-d240ad64810b",
-    "branch": "audit/bf4-bugfix-batch-4",
-    "at": "2026-10-20T16:12:36Z"
-  },
-  "startedAt": "2026-10-20T16:12:36Z"
+  "startedAt": "2026-10-20T16:12:36Z",
+  "testEvidence": {
+    "runId": "2026-10-20T19:49:57Z.f41a6e",
+    "status": "passed",
+    "at": "2026-10-20T19:49:57Z"
+  }
 }
