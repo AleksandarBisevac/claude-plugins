@@ -1,0 +1,56 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__deps.py --selftest": "pass",
+    "ruff check plugins/audit tools": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-20T07:45:47Z",
+    "basis": "`python3 plugins/audit/tests/test__scoped_commit.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 38 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sc-ea2 (house FAIL): SELFTEST FAILED: 37/38 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "casesAdded": [
+    [
+      "sc-ea2"
+    ],
+    [
+      "fgsp1",
+      "fgsp3"
+    ]
+  ],
+  "outcome": {
+    "technical": "(1) _scoped_commit.earlier_attempt_commits now runs `git merge-base --is-ancestor <start> HEAD` after the rev-parse: exit 1 returns ([], reason naming the start head and 'not an ancestor of HEAD'), other non-zero exits return (None, reason). (2) audit-task._start_head is the journal read plus a call to _scoped_commit.start_head_of; the duplicated scan is deleted (audit-task already imported _scoped_commit, so no new layer edge; _deps.LAYERS unchanged and test__deps --selftest 286/286). (3) full-gate._stream_subprocess feeds stdin through new _feed_stdin, which treats BrokenPipeError (and EPIPE/EINVAL) as the verb having exited before reading; stdout drain, kill-on-error and proc.wait() sit in the try/finally. (4) New _filed_returns.UNCHECKED_FIELD ('testsAddUnchecked'); drive-phase.py files case_binding_unchecked sentences under it beside testsAddGaps; audit-lookup.py (not in the task's files; the Edit tool was not refused; I first wrote the same change through a Bash python heredoc by mistake, then undid and redid it with Edit) gets _filed_unchecked and prints them in the reviewer's tests.add section. (5) test_drive_phase argv lint resolves names per function (_bindings/_in_scopes/_held_by), module names only reach functions that never bind them, a name whose bindings are all string literals is a literal value; mt10 (both reviewer over-fires as ALLOW), mt11 (module-level flag and mixed-path name still reported). (6) mt12 runs the lint over full-gate.py (clean, and a scratch copy with a built --reason is reported); full-gate learning_plan builds bug-add through _verb_with_text (argv gets '--description -', verb tuple is now (label, test, argv, stdin)), _text_on_stdin and _STDIN_TEXT_FLAG deleted. New cases: sc-ea1..3, sh1, fgsp1..3, fglp1, ucs0..2, cb5, mt10..12. PLUGIN-BUILD-GUIDE.md gains two paragraphs (start-head reader/ancestor, stdin route). Evidence: full `python3 tools/sweep-selftests.py` exit 0 (340/340 files ok); a first full sweep failed on duplicate case ids uc1/uc2 of mine, renamed to ucs*. test__refs 250/250, test__deps 286/286, ruff and vermin clean. Observed, not mine: _deps.layer_violations() called bare returns one entry (panel/_panel_state.py runtime-loads render-report), in a file this task did not touch; test__deps passes.",
+    "descriptive": "The P130.49 review lows are closed: an old start head no longer names the attempt's commits, one start-head reader, a verb that refuses before reading stdin no longer crashes full-gate, never-compared ids reach the reviewer, and the argv lint is scope-aware and covers full-gate with no runtime rewrite left."
+  },
+  "testsAdded": [
+    "plugins/audit/tests/test__scoped_commit.py: a start head that is not an ancestor of HEAD claims no earlier commit and says so",
+    "plugins/audit/tests/test_full_gate.py: a verb that exits before reading its stdin is reaped and its output reported, with no BrokenPipeError escaping"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test__scoped_commit.py: a start head that is not an ancestor of HEAD claims no earlier commit and says so": {
+      "file": "plugins/audit/scripts/governance/_scoped_commit.py",
+      "find": "    if code == 1:",
+      "replace": "    if code == 99:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test_full_gate.py: a verb that exits before reading its stdin is reaped and its output reported, with no BrokenPipeError escaping": {
+      "file": "plugins/audit/scripts/governance/full-gate.py",
+      "find": "    except OSError as exc:",
+      "replace": "    except ZeroDivisionError as exc:",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_full_gate.py",
+        "--selftest"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:8a154fe3bcb2b9c37edae3c4da905fa6fbbf93da7bac374a1388fa5b6390fc19\",\"dirtyDigest\":\"sha256:22139a5e307230786f647166ca6d1e6c7772b56c4df26743bd5603e465048723\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"0029466ab53dc9e4\",\"plugins/audit/scripts/governance/_scoped_commit.py\":\"2690bf62a68f06c3\",\"plugins/audit/scripts/governance/drive-phase.py\":\"5fe340faa013c0df\",\"plugins/audit/scripts/governance/full-gate.py\":\"2a7967bc71d11799\",\"plugins/audit/scripts/manifest/_filed_returns.py\":\"eeed46277d02bea5\",\"plugins/audit/scripts/manifest/audit-task.py\":\"f5ee4b4f98f1076d\",\"plugins/audit/scripts/status/audit-lookup.py\":\"583a34b6075605e7\",\"plugins/audit/tests/test__filed_returns.py\":\"b84f1a0b7981d1b1\",\"plugins/audit/tests/test__scoped_commit.py\":\"cea0a78b840c1fd6\",\"plugins/audit/tests/test_audit_task.py\":\"453c2f64c866796c\",\"plugins/audit/tests/test_drive_phase.py\":\"2b98db4825877a2d\",\"plugins/audit/tests/test_full_gate.py\":\"0d41eff6a631ce6c\"},\"head\":\"004bfa1f\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/_scoped_commit.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/full-gate.py\",\"plugins/audit/scripts/manifest/_filed_returns.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test__filed_returns.py\",\"plugins/audit/tests/test__scoped_commit.py\",\"plugins/audit/tests/test_audit_task.py\",\"plugins/audit/tests/test_drive_phase.py\",\"plugins/audit/tests/test_full_gate.py\"],\"scopeDigest\":\"sha256:8964bbad249e4ec93c395dfc8168140b4b07156a3ad6ab98d19ac55844c9c916\",\"v\":2}",
+  "testsAddGaps": []
+}

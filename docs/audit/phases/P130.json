@@ -5163,7 +5163,7 @@
     {
       "id": "P130.50-ywo",
       "title": "The P130.49 review lows are fixed: the start head is an ancestor, one start-head reader, a verb that exits early cannot break the stdin write, unchecked ids reach the reviewer, and the argv lint is scope-aware and covers full-gate",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Review of P130.49-ywo (docs/audit/evidence/returns/P130.49-ywo/20261019T222247Z.reviewer.json - read it whole). (1) `_scoped_commit.earlier_attempt_commits` (~:1142-1153) proves only that the start head is an object git holds; require `git merge-base --is-ancestor <start> HEAD`, else claim nothing and say the start head is not an ancestor. (2) `_scoped_commit.start_head_of` (~:1130-1141) duplicates `audit-task._start_head`; one reader in the lowest module both may import (layer rules), the other calls it. (3) full-gate.py `_stream_subprocess` (~:160-166) writes and closes the child's stdin outside try/finally; a verb that exits before reading (argparse refusal) raises BrokenPipeError and leaves the child unreaped - write inside try, treat BrokenPipeError as 'the verb exited before reading', reap the child, report its output. (4) drive-phase.py (~:4942-4950): `case_binding_unchecked` sentences reach only ctx['did']; file them on the return beside testsAddGaps so the reviewer brief shows ids that were never compared. (5) test_drive_phase.py argv lint (~:7391-7402, :7498-7506) resolves names file-wide; resolve per function scope, and do not report a Name whose single assignment in scope is a string literal. (6) Run the argv lint over full-gate.py too (it reports full-gate.py ~:406 today) and fix full-gate.py's `learning_plan` to send `--description` via the stdin route at the call site instead of the one-flag runtime rewrite (~:469-488), then delete the rewrite. Acceptance: a case per item; full sweep green.",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
@@ -5176,7 +5176,8 @@
         "plugins/audit/tests/test_drive_phase.py",
         "plugins/audit/scripts/manifest/_filed_returns.py",
         "plugins/audit/tests/test__filed_returns.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/status/audit-lookup.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -5207,16 +5208,17 @@
       "dependsOn": [
         "P130.49-ywo"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-20T07:20:50Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     }
   ],
   "request": "ok, sve preporuke (owner, 2026-10-14, approving CONSOLIDATED-PLAN.md) / Nova faza za F1 (Recommended) (owner, 2026-10-16, where the F1 tasks live)",
