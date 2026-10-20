@@ -509,8 +509,10 @@
         "severity": "low",
         "file": "CLAUDE.md:297",
         "issue": "'run python3 tools/gate-parity.py --list rather than trusting this paragraph' points at a command that prints the slices and the jobs running them (verified by running it), not the other rules the paragraph lists (affected dispatch, SECURITY.md fail modes, job time bounds, exemption audits). Those are held by the docstring the previous sentence names, so the pointer covers only the slice half.",
-        "resolution": "Say 'run python3 tools/gate-parity.py --list for the slices and read its docstring for the rest', or drop the --list pointer.",
-        "fixTask": "P130.60-ywo"
+        "resolution": "fixed in P130.60-ywo (722104bc78b1): Say 'run python3 tools/gate-parity.py --list for the slices and read its docstring for the rest', or drop the --list pointer.",
+        "fixTask": "P130.60-ywo",
+        "commit": "722104bc78b1",
+        "status": "fixed"
       },
       {
         "id": "P130-R52",
@@ -525,9 +527,16 @@
         "file": "CHANGELOG.md:131-132",
         "issue": "The clause 'a `scripts/ui/` part no surface claims is reported instead of passing unseen' is listed in a Changed bullet as part of this change, but 8e382f8c did not add it. The unassigned-part report existed in _output.ui_surface_digests and in loadUiSourceDigests (the `if (parsed.unassigned?.length)` lines are unchanged context in the 8e382f8c capture-screenshots.mjs diff), and was present since 9f29c519, which is in v1.0.0. Read under [Unreleased]/Changed it presents a long-standing behaviour as new.",
         "resolution": "Drop the clause, or write it as unchanged ('...still reports a part no surface claims')."
+      },
+      {
+        "id": "P130-R54",
+        "severity": "low",
+        "file": "CHANGELOG.md:154-158",
+        "issue": "The folded sentence 'The edit path and the Bash-write path of the gate read a task's coverage through one function' is true of the refusal arms (require-plan.py:909,948 and guard-secrets-read.py:2344 call _config.task_covered_files, fa3faa97) but the after-the-fact Bash-write report still reads plan coverage through the other function: guard-bash-writes.py:2070 calls _config.in_progress_files. fa3faa97's own claim 3 records that file as deliberately untouched. A reader can take 'the Bash-write path' to include it.",
+        "resolution": "Say 'the Edit refusal and the shell-write refusal' (the two arms of the plan gate that name an owner) instead of 'the Bash-write path', or leave as is since the entry is about the refusal wording; no code change."
       }
     ],
-    "outcome": "[findings: 53 - 0 high, 10 med, 43 low; 43 with a recorded fix commit]"
+    "outcome": "[findings: 54 - 0 high, 10 med, 44 low; 44 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6012,67 +6021,10 @@
     {
       "id": "P130.59-ywo",
       "title": "fix P130-R50: Two entries describe the same plan-gate refusal change: Changed...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Two entries describe the same plan-gate refusal change: Changed 'The plan gate's refusal names the right owner' (line 110) and Fixed 'The plan-gate refusal states only what is true' (line 151). Both say a not-started task reached only through a directory entry is no longer named as the file's owner; the second adds the terminal-task case. A reader sees one change twice, in two sections.\n\nResolution asked: Fold them into one entry (the Fixed one, since the old text was false), keeping the shared-coverage-function sentence and the terminal-task case.",
       "files": [
         "CHANGELOG.md"
-      ],
-      "tests": {
-        "mode": "gate-only",
-        "add": [],
-        "expectRedFirst": false,
-        "gate": [
-          "selftests",
-          "validate",
-          "plugin-validate",
-          "gate",
-          "report",
-          "lint",
-          "shots",
-          "interactive"
-        ],
-        "gateBasis": "phase-no-paths"
-      },
-      "model": "sonnet",
-      "skills": [],
-      "risk": "low",
-      "blockedBy": [],
-      "dependsOn": [],
-      "attempts": 0,
-      "maxAttempts": 3,
-      "commit": null,
-      "outcome": {
-        "technical": null,
-        "descriptive": null
-      },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": [],
-      "notes": [
-        {
-          "at": "2026-10-20T11:28:02Z",
-          "text": "scope: CHANGELOG.md, every path the finding(s) P130-R50 name"
-        },
-        {
-          "at": "2026-10-20T11:28:02Z",
-          "text": "no suite: CHANGELOG.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/_deps.py, plugins/audit/scripts/_output.py, plugins/audit/scripts/_refs.py, plugins/audit/tests/test__deps.py and 3 more"
-        },
-        {
-          "at": "2026-10-20T11:28:02Z",
-          "text": "gate-only, not tdd: every file P130-R50 names is a document (CHANGELOG.md) with no test of its own, so there is no case to write first and no red to show; the gate the task carries is its check"
-        }
-      ],
-      "fixes": [
-        "P130-R50"
-      ]
-    },
-    {
-      "id": "P130.60-ywo",
-      "title": "fix P130-R51: 'run python3 tools/gate-parity.py --list rather than trusting t...",
-      "status": "in_progress",
-      "description": "'run python3 tools/gate-parity.py --list rather than trusting this paragraph' points at a command that prints the slices and the jobs running them (verified by running it), not the other rules the paragraph lists (affected dispatch, SECURITY.md fail modes, job time bounds, exemption audits). Those are held by the docstring the previous sentence names, so the pointer covers only the slice half.\n\nResolution asked: Say 'run python3 tools/gate-parity.py --list for the slices and read its docstring for the rest', or drop the --list pointer.",
-      "files": [
-        "CLAUDE.md"
       ],
       "tests": {
         "mode": "gate-only",
@@ -6102,8 +6054,71 @@
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-20T11:28:08Z",
+      "startedAt": "2026-10-20T12:05:26Z",
       "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-20T11:28:02Z",
+          "text": "scope: CHANGELOG.md, every path the finding(s) P130-R50 name"
+        },
+        {
+          "at": "2026-10-20T11:28:02Z",
+          "text": "no suite: CHANGELOG.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/_deps.py, plugins/audit/scripts/_output.py, plugins/audit/scripts/_refs.py, plugins/audit/tests/test__deps.py and 3 more"
+        },
+        {
+          "at": "2026-10-20T11:28:02Z",
+          "text": "gate-only, not tdd: every file P130-R50 names is a document (CHANGELOG.md) with no test of its own, so there is no case to write first and no red to show; the gate the task carries is its check"
+        }
+      ],
+      "fixes": [
+        "P130-R50"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-20T12:18:44Z.9fb3ed",
+        "status": "passed",
+        "at": "2026-10-20T12:18:44Z"
+      }
+    },
+    {
+      "id": "P130.60-ywo",
+      "title": "fix P130-R51: 'run python3 tools/gate-parity.py --list rather than trusting t...",
+      "status": "done",
+      "description": "'run python3 tools/gate-parity.py --list rather than trusting this paragraph' points at a command that prints the slices and the jobs running them (verified by running it), not the other rules the paragraph lists (affected dispatch, SECURITY.md fail modes, job time bounds, exemption audits). Those are held by the docstring the previous sentence names, so the pointer covers only the slice half.\n\nResolution asked: Say 'run python3 tools/gate-parity.py --list for the slices and read its docstring for the rest', or drop the --list pointer.",
+      "files": [
+        "CLAUDE.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-paths"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "722104bc78b1",
+      "outcome": {
+        "technical": "Ran `python3 tools/gate-parity.py --list` first: it prints the slice/job table plus one summary line, nothing about affected dispatch, SECURITY.md fail modes, time bounds or exemption audits. Edited CLAUDE.md (lines 297-299) so the sentence says the docstring is the statement of those rules and --list prints only the slices and the jobs running them. No guard refused the edit. Evidence: `python3 tools/gate-parity.py` exit 0; _deps.doc_prose_numbers() returned [] and _output.prose_number_claims() returned [] in the task tree. The full selftests/browser gates were not run (own-tests: nothing of its own).",
+        "descriptive": "CLAUDE.md no longer claims --list shows the non-slice rules; it points at the docstring for those."
+      },
+      "startedAt": "2026-10-20T11:28:08Z",
+      "completedAt": "2026-10-20T12:05:24Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -6127,6 +6142,17 @@
         "runId": "2026-10-20T12:02:20Z.c700ff",
         "status": "passed",
         "at": "2026-10-20T12:02:20Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "722104bc78b1",
+        "at": "2026-10-20T12:05:24Z",
+        "return": "docs/audit/evidence/returns/P130.60-ywo/20261020T112808Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only docs task, expectRedFirst false, no test added",
+        "at": "n/a"
       }
     }
   ],

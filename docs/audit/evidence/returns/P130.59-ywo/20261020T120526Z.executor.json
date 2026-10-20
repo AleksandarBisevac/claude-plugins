@@ -1,0 +1,16 @@
+{
+  "gates": {},
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task, expectRedFirst false, tests.add none: a CHANGELOG edit, no test owed",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "CHANGELOG.md only. (1) Removed the Changed entry 'The plan gate's refusal names the right owner' and folded its one unique sentence (edit path and Bash-write path read coverage through one function) into the Fixed entry 'The plan-gate refusal states only what is true', which keeps the terminal-task case. (2) P130.3 bullet: dropped the clause about a scripts/ui/ part no surface claims (reviewer finding 2; _output.ui_surface_digests and loadUiSourceDigests already reported it, unchanged context in 8e382f8c's capture-screenshots.mjs diff). (3) Rewrote the prose-only clause (finding 1) to what 8e382f8c changed: the digest used to be over the raw bytes of the sources plus the whole of _ui_theme.py (old _output.py docstring in the _surface_digest.py header), now over the assembled page text, so a Python docstring or # comment in _ui_theme.py no longer owes a recapture while a comment inside the emitted CSS, a token or a markup change still does. Checks: python3 tools/gate-parity.py exit 0; _deps.doc_prose_numbers() returns []; test__output.py --selftest 259/259 passed. Gates not run (own-tests: nothing of its own).\n\nclaims:\n1 CHANGELOG.md:122-128 says only what 8e382f8c did: _surface_digest.py header (old digest over raw source bytes plus all of _ui_theme.py, new digest over CSS+NUL+SCRIPT / UI_HTML) and the _refs.py/capture-screenshots.mjs diff; the unassigned-part clause removed as pre-existing\n2 n/a - no check touched; gate-parity exit 0 and doc_prose_numbers() == [] observed\n3 grep of CHANGELOG.md for 'plan gate.s refusal|plan-gate refusal|prose-only|no surface claims': 4 hits before (110, 151, 130, 131) - the two refusal entries merged to one, the two UI clauses rewritten/dropped; no other hit\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+    "descriptive": "CHANGELOG [Unreleased] now describes the plan-gate refusal change once and the P130.3 screenshot-digest bullet claims only what 8e382f8c changed."
+  },
+  "testsAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:ad9746f2dec5bc751d8f4959ccd360690b39ed016c576a35c42d85382bb53d93\",\"dirtyDigest\":\"sha256:22d68108cef1e29273604a4ee4a8441dc0e012ff850959ddb74bdfee22f754a8\",\"dirtyPaths\":{\"CHANGELOG.md\":\"85593bce36b9a392\"},\"head\":\"722104bc\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\"],\"scopeDigest\":\"sha256:e11c1a6d5198da7006795f3910c38d90a1c2b5b5b2578e742a9bc901dff208bc\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

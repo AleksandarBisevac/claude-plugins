@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "CHANGELOG.md:154-158",
+   "issue": "The folded sentence 'The edit path and the Bash-write path of the gate read a task's coverage through one function' is true of the refusal arms (require-plan.py:909,948 and guard-secrets-read.py:2344 call _config.task_covered_files, fa3faa97) but the after-the-fact Bash-write report still reads plan coverage through the other function: guard-bash-writes.py:2070 calls _config.in_progress_files. fa3faa97's own claim 3 records that file as deliberately untouched. A reader can take 'the Bash-write path' to include it.",
+   "resolution": "Say 'the Edit refusal and the shell-write refusal' (the two arms of the plan gate that name an owner) instead of 'the Bash-write path', or leave as is since the entry is about the refusal wording; no code change."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'Fold them into one entry (the Fixed one, since the old text was false), keeping the shared-coverage-function sentence and the terminal-task case.' Diff removes the Changed entry (old CHANGELOG.md:110-113) and moves its one unique sentence into the Fixed entry (CHANGELOG.md:154-158), which keeps 'or never for a terminal task'. Checked against the commits: 84d838bf (P130.23) is the not-started directory-entry wording; 4765b8b9 (P130.39) adds the terminal case (_covers_clause in require-plan.py); fa3faa97 (P130.34) is the one-function change (task_covered_files in _config.py, called from require-plan.py and guard-secrets-read.py). The folded entry is faithful to all three; the remaining 'validator warns on a directory' entry (CHANGELOG.md:30) is a distinct change and is not duplicated. The P130.3 bullet (CHANGELOG.md:122-128): 8e382f8c replaced _output.ui_surface_digests (raw bytes of every source plus the whole _ui_theme.py, the removed _output.py hunk) with _surface_digest.py over CSS+NUL+SCRIPT and UI_HTML; the new text says exactly that. On the asked question I checked directly: _ui_theme.py is read only through its TOKEN_CSS and constants; a Python # comment or docstring there never reaches the assembled text (the module docstring is absent from _report_ui.CSS+SCRIPT and from _panel_page.UI_HTML, and the only __doc__ use is print(__doc__) in its --help at _ui_theme.py:1793), while a /* */ comment inside TOKEN_CSS is present in both _report_ui.CSS and _panel_page.UI_HTML, so 'a comment inside the CSS it emits ... still does' owe a recapture is also true. The dropped 'a scripts/ui/ part no surface claims is reported' clause was pre-existing (ui_surface_sources/unassigned existed before 8e382f8c), so removing it from this bullet is correct. The executor's outcome describes the diff accurately.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "executor filed not-attempted: gate-only task, expectRedFirst false, tests.add none, a CHANGELOG edit; no test was owed.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "The diff is CHANGELOG.md only and no behaviour was changed or deleted, so there is nothing for a gate test to still pass over. The gate commands were read (selftests, validate, plugin-validate, gate, report, lint, shots, interactive); the selftests entry runs the whole sweep, so the bound is the whole project."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

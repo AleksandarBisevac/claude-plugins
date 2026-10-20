@@ -107,10 +107,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   with another suite behind it (`python3 a/test_x.py a/test_y.py`, where the second never runs as
   a suite); the validator warns on the same entries already in a plan. A chained command, a
   repeated tool path and two node ids of one file are read as the legal entries they are.
-- **The plan gate's refusal names the right owner.** A task that has not started and reaches a
-  file only through a directory entry is named as what it is - a cover that opens nothing until
-  the task starts - not as the file's owner. The edit path and the Bash-write path of the gate
-  read a task's coverage through one function, so the two agree.
 - **The sweep grades every leg by the plain rules.** The code-page leg used to drop the contract
   and migrated-file rules, so a suite that caught its own `UnicodeEncodeError` and exited 0
   without its contract was green there; every leg now shares one grade, `--encoding cp1252
@@ -127,9 +123,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `_surface_digest.py` hashes the report's stylesheet and script and the panel's page as the
   browser gets them, with the plugin's version taken out, and `capture-screenshots.mjs` writes
   that digest beside each picture while the screenshot-staleness check compares against it. A
-  prose-only edit to `_ui_theme.py`, a docstring or a comment, no longer owes a recapture; a
-  token or markup change still does, and a `scripts/ui/` part no surface claims is reported
-  instead of passing unseen.
+  Python docstring or `#` comment in `_ui_theme.py` no longer owes a recapture, because the
+  digest used to be taken over the raw bytes of the sources; a comment inside the CSS it emits,
+  a token or a markup change is part of the page and still does.
 
 ### Fixed
 - **`done` refuses a missing or swallowed `--technical`.** `--technical` with no value, or one
@@ -158,9 +154,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 - **The plan-gate refusal states only what is true.** It no longer names a task that has not
   started, or a finished one, as a file's owner when only a directory entry reaches the file: it
   says the entry covers the file and opens nothing until the task is started, or never for a
-  terminal task. A base-red reading that cannot be made no longer crashes a gate run whose verdict
-  is decided - it reads `unreadable` and says why - and a run whose HEAD git could not name says
-  so.
+  terminal task. The edit path and the Bash-write path of the gate read a task's coverage through
+  one function, so the two agree. A base-red reading that cannot be made no longer crashes a gate
+  run whose verdict is decided - it reads `unreadable` and says why - and a run whose HEAD git
+  could not name says so.
 - **`commands/panel.md` describes the help drawer the panel ships** instead of saying there is
   none.
 
