@@ -37,16 +37,37 @@
         "file": "tools/gate-parity.py:2753-2755",
         "issue": "The comment says 'Windows refuses any non-executable image the same way'. Nothing handed shows that, and the filed outcome states WinError 193. CreateProcess on an extensionless path appends .exe, so the likely Windows error for the extensionless file 'not-a-program' is FileNotFoundError (WinError 2). The case still holds, because both are OSError subclasses and the probe catches OSError. The comment asserts a mechanism that was not observed.",
         "resolution": "Reword to say only what is true on every OS: starting that path raises an OSError subclass (PermissionError on posix, an OSError on Windows). Do not name the Windows errno."
+      },
+      {
+        "id": "BF4-R3",
+        "severity": "med",
+        "file": ".github/workflows/ci.yml:158,162,192,196,312,316 (and the comment at :95, the names at :192/:312, and the fixture in tools/gate-parity.py ri2 ~:358-359)",
+        "issue": "The Windows pin is `windows-2025-vs2026`. Per the orchestrator-verified fact (GitHub-hosted runners label tables, actions/runner-images README, 2026-05-14 changelog) that label is documented as meant for testing only, is redundant because windows-2025 itself moved to VS 2026, and is ABSENT from the private-repository label table; `windows-2025` is the stable label. The executor took the name from the `Image:` line of the run log and states in outcome.technical that it 'was not verified' as a runs-on label. A pin to a testing-only label is the same fragility the task removes: an unsupported label can queue forever or be retired, and it hits every Windows cell (selftests, e2e, resample). The Linux pin ubuntu-24.04 is valid.",
+        "resolution": "Pin `windows-2025` everywhere: the matrix `os` axis (:158), the `exclude` row (:162), the e2e and resample `runs-on` (:196, :316) and their display names (:192, :312), the header comment (:95). Update the ri2 fixture, which uses `windows-2025-vs2026` as the example of an explicit image, to `windows-2025`. ri1's wording already names windows-2025."
+      },
+      {
+        "id": "BF4-R4",
+        "severity": "low",
+        "file": ".github/workflows/ci.yml:155,192,198,312",
+        "issue": "The pin changes the check names the workflow reports: the selftests cells (`selftests (${{ matrix.os }}, ...)` now print ubuntu-24.04 / the Windows label), `e2e (...)`, `lint + e2e (ubuntu-24.04)` and `resample (...)`. A branch-protection required-check entry for the old names, which lives in repository settings outside the tree, would never report. The executor checked tools/ci-verified.py (prefix `resample (`) but not the remote required-checks list. Putting the image name into a display name also means the next image move renames the check again.",
+        "resolution": "State in the hand-off that the owner must update the repository's required-check list. Optionally drop the image name from the e2e, lint and resample names so a future image bump does not rename the check."
+      },
+      {
+        "id": "BF4-R5",
+        "severity": "low",
+        "file": "tools/gate-parity.py:195-201",
+        "issue": "`_matrix_key_values` reads only an inline `key: [a, b]` or scalar. A block-sequence axis (`os:` with `- ubuntu-latest` on following lines) yields no value from the axis. If an `include` or `exclude` row also names `os`, the check sees only those rows and passes a floating axis value without comment. If the key is listed nowhere, it is reported, so only the mixed shape is silent. ci.yml does not use the shape today.",
+        "resolution": "Treat an empty `rest` after `key:` as a block sequence and collect the following `- value` lines at deeper indent, or report the job as unreadable when a matrix key line has no inline value. Add a case beside ri4."
       }
     ],
-    "outcome": "[findings: 2 - 0 high, 0 med, 2 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 5 - 0 high, 1 med, 4 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "BF4.1",
       "title": "Fix BUG-28: gate-parity's trap cases run on Windows",
-      "status": "in_progress",
+      "status": "done",
       "description": "",
       "files": [
         "tools/gate-parity.py"
@@ -75,14 +96,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d82a2e4d39a3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/gate-parity.py: new return_trap_probe(shell, argv_prefix=()) returns (honoured, reason) and catches OSError (reason names the shell and the error); return_trap_honoured(shell, argv_prefix=()) now delegates and stays a plain bool, so vsh5/vsh12 callers are unchanged. vsh11 stubs are now Python programs (no '#!/bin/sh', no chmod) run as [sys.executable, stub, '-c', probe], an argv every OS can start (macOS argv printed: [python3.14, 'X.py', '-c', 'probe']); Windows cannot be run here, so (1) is shown by reading the argv, not by execution. New cases vsh14 (stubs not shell scripts, probe ran, reason None) and vsh15 (a 0644 text file as the program raises PermissionError on posix / WinError 193 on Windows; probe answers (False, reason containing OSError), the bool stays False, and the case ran). Gates: selftest 73/73 foreground and under nohup, sweep 340/340, ruff and vermin clean. claims: the new docstrings state only what the code does (probe returns reason None only when the program ran; OSError is the only exception caught); no numbers written into prose.",
+        "descriptive": "gate-parity's RETURN-trap probe no longer needs a shell shebang and cannot end the selftest body on an OSError, so the Windows shard no longer aborts at vsh11."
       },
       "startedAt": "2026-10-20T16:12:36Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-20T18:54:03Z",
+      "verifiedBy": [
+        "vsh14",
+        "vsh15"
+      ],
       "bugId": "BUG-28",
       "reviewPerTask": "signals",
       "testEvidence": {
@@ -95,12 +119,24 @@
           "at": "2026-10-20T18:36:54Z",
           "text": "The `gate` entry (audit-status --gate) is dropped from BF4.1 and BF4.2 by the owner's decision of 2026-10-20 (\"Izbaci `gate` iz BF4 taskova (Recommended)\"): its open-high-bugs condition counts BUG-27 and BUG-28, the very bugs this phase fixes, so no fix task could pass it. Every other step stays; the condition still holds the phase sign-off and the release, when both bugs are closed. The tool fault (the condition should exempt the bug the gated task fixes) is in the register."
         }
-      ]
+      ],
+      "intentCheck": {
+        "answer": "cannot-tell",
+        "commit": "d82a2e4d39a3",
+        "at": "2026-10-20T18:54:03Z",
+        "return": "docs/audit/evidence/returns/BF4.1/20261020T161236Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-20T16:21:45Z",
+        "basis": "`python3 tools/gate-parity.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 69/70 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names 'return_trap_probe': TypeError: return_trap_honoured() takes 1 positional argument but 2 were given; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
+      }
     },
     {
       "id": "BF4.2",
       "title": "Fix BUG-27: every CI job pins its runner image, and a floating -latest label is refused",
-      "status": "pending",
+      "status": "in_progress",
       "description": "\n\nAlso, from the BF4.1 review (docs/audit/evidence/returns/BF4.1/20261020T161236Z.reviewer.json), in the same file: (a) case vsh12 (tools/gate-parity.py ~:2794-2795) asserts return_trap_honoured(dash) is False, and since BF4.1 an OSError becomes False, so a dash that cannot be started satisfies the case without the probe running - assert on return_trap_probe's reason (the probe ran and the shell rejected the trap) the way vsh11/vsh14 do, and skip with a stated reason when dash is absent; (b) the comment ~:2753-2755 claims Windows refuses a non-executable image 'the same way' as WinError 193 - CreateProcess on an extensionless path most likely raises FileNotFoundError (WinError 2); say only that it raises an OSError.",
       "files": [
         ".github/workflows/ci.yml",
@@ -130,17 +166,23 @@
       "dependsOn": [
         "BF4.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-20T18:54:12Z",
       "completedAt": null,
       "verifiedBy": [],
-      "bugId": "BUG-27"
+      "bugId": "BUG-27",
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-20T19:19:03Z.67ec70",
+        "status": "passed",
+        "at": "2026-10-20T19:19:03Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

@@ -87,6 +87,14 @@ concurrency:
 #   longest browser-report: 7m19s (estimate, run 38929591548)
 #   longest verified: 0m30s (estimate, no run yet)
 #   longest resample: 13m30s (estimate, no run yet)
+# EVERY JOB PINS ITS RUNNER IMAGE, and so does every `os` value a matrix crosses. A
+# `*-latest` label is a pointer GitHub moves: `ubuntu-latest` went from ubuntu-24.04
+# to ubuntu-26.04 between two runs, and the new image could not install the browser
+# the lockfile pins nor offer the interpreter the lint job asks for. The images below
+# are the ones the last green run (38937779587) logged under `Runner Image`: Linux
+# ubuntu-24.04 and Windows windows-2025-vs2026. Moving to a newer image is an edit
+# to this file, made on purpose and seen in a diff. tools/gate-parity.py reports a
+# `-latest` runs-on or matrix value by job name (`floating_runners()`).
 jobs:
   # HAS THIS EXACT COMMIT ALREADY PASSED THIS WORKFLOW? Asked on a push to main only:
   # a phase reaches main as a commit its ci/ branch dispatch already ran, and running
@@ -100,7 +108,7 @@ jobs:
     name: verified
     if: ${{ github.event_name == 'push' }}
     timeout-minutes: 5
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       run: ${{ steps.ask.outputs.verified }}
     steps:
@@ -147,13 +155,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-24.04, windows-2025-vs2026]
         leg: [plain, stress, cp1252]
         shard: [1, 2, 3]
         exclude:
-          - os: windows-latest
+          - os: windows-2025-vs2026
             leg: stress
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             leg: cp1252
         include:
           - leg: plain
@@ -181,11 +189,11 @@ jobs:
   # subprocesses, a forced codec and an MSYS path all behave differently. The ubuntu
   # half of the same slices rides in the lint job, which shares its setup.
   e2e:
-    name: e2e (windows-latest)
+    name: e2e (windows-2025-vs2026)
     needs: verified
     if: ${{ !cancelled() && needs.verified.outputs.run == '' }}
     timeout-minutes: 5
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     steps:
       - uses: actions/checkout@v5
         with:
@@ -198,11 +206,11 @@ jobs:
         run: sh tools/verify.sh --only runner,e2e
 
   lint:
-    name: lint + e2e (ubuntu-latest)
+    name: lint + e2e (ubuntu-24.04)
     needs: verified
     if: ${{ !cancelled() && needs.verified.outputs.run == '' }}
     timeout-minutes: 5
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
         with:
@@ -233,7 +241,7 @@ jobs:
     needs: verified
     if: ${{ !cancelled() && needs.verified.outputs.run == '' }}
     timeout-minutes: 5
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -258,7 +266,7 @@ jobs:
     needs: verified
     if: ${{ !cancelled() && needs.verified.outputs.run == '' }}
     timeout-minutes: 15
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -280,7 +288,7 @@ jobs:
     needs: verified
     if: ${{ !cancelled() && needs.verified.outputs.run == '' }}
     timeout-minutes: 15
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -301,11 +309,11 @@ jobs:
   # verify.sh's RESAMPLE table gives them. A red draw on a green SHA is a finding for
   # /audit:bug; nothing files it automatically yet.
   resample:
-    name: resample (windows-latest)
+    name: resample (windows-2025-vs2026)
     needs: verified
     if: ${{ !cancelled() && needs.verified.outputs.run == '' && inputs.tier == 'release' }}
     timeout-minutes: 40
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     steps:
       - uses: actions/checkout@v5
         with:

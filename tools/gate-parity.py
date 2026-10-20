@@ -45,6 +45,8 @@ here was a second reader of the same files:
     paragraph, and why the second direction is what makes the first worth having.
   * every CI job carries a time bound, two to three times the longest run its
     `longest` line records (`untimed_jobs()`, `job_bound_evidence()`).
+  * every CI job pins its runner image: no `runs-on`, and no value of a matrix it
+    reads, is a floating `*-latest` label (`floating_runners()`).
   * every reason-carrying exemption table names who audits it
     (`exemption_audit_drift()`).
 """
@@ -1586,6 +1588,107 @@ def job_timeout_verdict(repo=None):
     return got["findings"] + job_bound_evidence(text)
 
 
+# --- every CI job pins its runner image -------------------------------------------
+# A `*-latest` label is a pointer GitHub moves: `ubuntu-latest` went from ubuntu-24.04
+# to ubuntu-26.04 between two runs of the same commit, and the new image could not
+# install the browser the lockfile pins nor offered the interpreter the lint job asks
+# for. Nothing in the repository changed, so no diff explains the red. An explicit
+# image changes when this file does. The label is read where it is WRITTEN: a job's
+# `runs-on`, and - when that is `${{ matrix.K }}` - every value the job's matrix
+# gives K, in its axes and in its `include` and `exclude` rows, because an
+# `exclude` left on the old label matches no cell once the axis is pinned and
+# silently stops excluding.
+_FLOATING_LABEL = re.compile(r"^[A-Za-z0-9._-]*-latest$", re.IGNORECASE)
+_RUNS_ON_MATRIX = re.compile(r"^\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}$")
+
+
+def _matrix_key_values(lines, key):
+    """Every value the job's `matrix:` block writes for `key` - the axis list, and
+    each `include` / `exclude` row's entry - or None when it has no such block.
+
+    Read from the lines rather than from `_matrix_cells()`, which resolves the
+    cells that RUN and so no longer shows an `exclude` value that matches none."""
+    body = [re.sub(r"\s+#.*$", "", ln.rstrip()) for ln in lines
+            if ln.strip() and not ln.strip().startswith("#")]
+    heads = [i for i, ln in enumerate(body) if ln.strip() == "matrix:"]
+    if len(heads) != 1:
+        return None
+    base = len(body[heads[0]]) - len(body[heads[0]].lstrip())
+    values = []
+    for ln in body[heads[0] + 1:]:
+        if len(ln) - len(ln.lstrip()) <= base:
+            break
+        got = re.match(r"^\s*(?:-\s+)?%s:\s*(.*)$" % re.escape(key), ln)
+        if not got:
+            continue
+        rest = got.group(1).strip()
+        if rest.startswith("[") and rest.endswith("]"):
+            rest = rest[1:-1]
+        values += [v.strip().strip("'\"") for v in rest.split(",") if v.strip()]
+    return values
+
+
+def floating_runners(text):
+    """{"findings": [(job, why)], "jobs": n, "problem": str|None} for a workflow.
+
+    A finding is a job whose runner image is a floating `*-latest` label - written
+    as its `runs-on`, or as a value its matrix gives the key `runs-on` reads - or
+    whose label this cannot read: none at all, an expression other than a
+    `matrix.` reference, or a reference to a key its matrix never lists. An
+    unreadable label is reported rather than passed, because a label nobody could
+    read is not a label somebody pinned. `jobs` counts the jobs read, so an empty
+    finding list over zero jobs cannot pass for a clean workflow; a text with no
+    `jobs:` block is a `problem`.
+    """
+    jobs = _workflow_jobs(text)
+    if not jobs:
+        return {"findings": [], "jobs": 0,
+                "problem": "no top-level `jobs:` block naming a job, so no "
+                           "runner image could be read"}
+    findings = []
+    for job, lines in jobs:
+        label = _job_keys(lines).get("runs-on")
+        if label is None:
+            findings.append((job, "no `runs-on`, so which image runs it cannot "
+                                  "be read"))
+            continue
+        label = label.strip().strip("'\"")
+        ref = _RUNS_ON_MATRIX.match(label)
+        if ref:
+            labels = _matrix_key_values(lines, ref.group(1))
+            if not labels:
+                findings.append((job, "`runs-on` reads matrix key `%s`, which "
+                                      "the job's matrix does not list"
+                                 % ref.group(1)))
+                continue
+        elif "${{" in label or not label:
+            findings.append((job, "`runs-on` is %r, a form this check cannot "
+                                  "resolve to an image" % label))
+            continue
+        else:
+            labels = [v.strip().strip("'\"")
+                      for v in label.strip("[]").split(",") if v.strip()]
+        findings += [(job, "runner image %r floats: GitHub moves a `-latest` "
+                           "label, so pin the image it points at today" % one)
+                     for one in labels if _FLOATING_LABEL.match(one)]
+    return {"findings": findings, "jobs": len(jobs), "problem": None}
+
+
+def runner_image_verdict(repo=None):
+    """`floating_runners()` over ci.yml as [(job, why)], with an unreadable
+    workflow or one with no jobs in it AS a finding."""
+    path = os.path.join(repo or REPO, CI_REL)
+    try:
+        with io.open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except (IOError, OSError, UnicodeDecodeError) as exc:
+        return [("ci.yml", "could not be read: %s" % (exc,))]
+    got = floating_runners(text)
+    if got["problem"] is not None:
+        return [("ci.yml", got["problem"])]
+    return got["findings"]
+
+
 def slice_verdict(repo=None):
     """`(slice findings, the parsed list or None, job count)` for the tree.
 
@@ -1606,7 +1709,8 @@ def slice_verdict(repo=None):
 
 
 def parity(repo=None):
-    """{"slices", "failmodes", "job_timeouts", "stale_exemptions", "counts"}.
+    """{"slices", "failmodes", "job_timeouts", "runner_images",
+    "stale_exemptions", "counts"}.
 
     The rules that are not slice questions ride here because this command is
     already the one that reads a runner and the documents describing it, and a
@@ -1616,6 +1720,7 @@ def parity(repo=None):
     return {"slices": slices,
             "failmodes": failmode_table_verdict(repo),
             "job_timeouts": job_timeout_verdict(repo),
+            "runner_images": runner_image_verdict(repo),
             "stale_exemptions": exemption_audit_drift(repo),
             "counts": {"slices": len(listed["order"]) if listed else 0,
                        "jobs": jobs}}
@@ -1625,7 +1730,7 @@ def render(result, stream=None):
     """Print the verdict. Returns the exit code."""
     out = stream if stream is not None else sys.stdout
     bad = (result["slices"] + result["failmodes"] + result["job_timeouts"]
-           + result["stale_exemptions"])
+           + result["runner_images"] + result["stale_exemptions"])
     out.write("gate parity: %d slice(s) listed by verify.sh --list, %d job(s) in "
               "ci.yml\n" % (result["counts"].get("slices", 0),
                             result["counts"].get("jobs", 0)))
@@ -1635,6 +1740,8 @@ def render(result, stream=None):
         out.write("  fail-mode drift (%s): %s\n" % (subject, note))
     for job, note in result["job_timeouts"]:
         out.write("  CI job bound (%s): %s\n" % (job, note))
+    for job, note in result["runner_images"]:
+        out.write("  CI runner image (%s): %s\n" % (job, note))
     for name, note in result["stale_exemptions"]:
         out.write("  exemption table (%s): %s\n" % (name, note))
     if not bad:
@@ -1643,8 +1750,9 @@ def render(result, stream=None):
                   "parts, SECURITY.md's fail modes are the ones hooks.json "
                   "registers, every CI job carries a time bound two to three "
                   "times its longest recorded run (or the floor for a "
-                  "sub-minute job), and every exemption table names who "
-                  "audits it\n")
+                  "sub-minute job), every CI job pins its runner image "
+                  "instead of a floating `-latest` label, and every exemption "
+                  "table names who audits it\n")
     return 1 if bad else 0
 
 
@@ -2111,11 +2219,13 @@ def _slice_cases(check):
                   for _s, why in absent["slices"]))
 
     clean = {"slices": [], "failmodes": [], "job_timeouts": [],
+             "runner_images": [],
              "stale_exemptions": [], "counts": {"slices": 3, "jobs": 2}}
     for key, row, needle in (("slices", ("js", "no job runs it"), "js"),
                              ("failmodes", ("guard-edits / PreToolUse", "why"),
                               "guard-edits / PreToolUse"),
                              ("job_timeouts", ("lint", "no bound"), "lint"),
+                             ("runner_images", ("e2e", "floats"), "e2e"),
                              ("stale_exemptions", ("GONE", "outlived"), "GONE")):
         buf = io.StringIO()
         code = render(dict(clean, **{key: [row]}), stream=buf)
@@ -2237,6 +2347,92 @@ def _verify_slice_run_cases(check):
               and summary_labels(out2) is None and left == [] and left2 == [])
     finally:
         remove_tree(root)
+
+
+# --- every CI job pins its runner image: the cases ---------------------------------
+_RI_CLAUSE = ("a workflow job whose runs-on is a floating *-latest label is reported "
+              "by name, while an explicit image (ubuntu-24.04, windows-2025) is not")
+_RI_PLAIN = ("name: ci\njobs:\n"
+             "  floats:\n    runs-on: ubuntu-latest\n    steps:\n      - run: x\n"
+             "  pinned:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: x\n"
+             "  win-pinned:\n    runs-on: windows-2025\n    steps:\n      - run: x\n"
+             "  win-floats:\n    runs-on: windows-latest\n    steps:\n      - run: x\n")
+_RI_MATRIX = ("name: ci\njobs:\n  cells:\n    strategy:\n      matrix:\n"
+              "        os: [ubuntu-24.04, windows-2025]\n        leg: [a, b]\n"
+              "%s"
+              "    runs-on: ${{ matrix.os }}\n    steps:\n      - run: x\n")
+
+
+def _runner_image_cases(check):
+    plain = floating_runners(_RI_PLAIN)
+    check("ri1 %s (the plain `runs-on:` label: %r)" % (_RI_CLAUSE, plain),
+          plain["problem"] is None and plain["jobs"] == 4
+          and [job for job, _why in plain["findings"]] == ["floats", "win-floats"]
+          and all("-latest" in why for _job, why in plain["findings"]))
+
+    # The over-fire direction: a check that reported every job, or every label that
+    # carries a hyphen, fails this one, which names no floating label at all.
+    pinned = floating_runners(_RI_PLAIN.replace("ubuntu-latest", "ubuntu-24.04")
+                              .replace("windows-latest", "windows-2025-vs2026"))
+    check("ri2 ...and the same workflow with every label an explicit image is "
+          "clean, over all four jobs read: %r" % (pinned,),
+          (pinned["findings"], pinned["jobs"], pinned["problem"]) == ([], 4, None))
+
+    axis = floating_runners(_RI_MATRIX % "").get("findings")
+    floated = floating_runners(
+        (_RI_MATRIX % "").replace("windows-2025]", "windows-latest]"))
+    check("ri3 ...a `runs-on: ${{ matrix.os }}` job is judged by the values its "
+          "matrix lists for `os`: pinned values are clean and one floating value "
+          "is reported, naming the job and the value: %r / %r" % (axis, floated),
+          axis == [] and [j for j, _w in floated["findings"]] == ["cells"]
+          and "windows-latest" in floated["findings"][0][1])
+
+    # An `exclude` or `include` row is a value the matrix names too: left on the old
+    # label after the axis was pinned, an exclude matches no cell and silently stops
+    # excluding, which is a wrong CI that no job's runs-on shows.
+    stale = floating_runners(_RI_MATRIX % (
+        "        exclude:\n          - os: windows-latest\n            leg: a\n"))
+    added = floating_runners(_RI_MATRIX % (
+        "        include:\n          - os: ubuntu-latest\n            leg: c\n"))
+    check("ri4 ...and so are the values in a matrix's `exclude` and `include` "
+          "rows: %r / %r" % (stale["findings"], added["findings"]),
+          [j for j, _w in stale["findings"]] == ["cells"]
+          and "windows-latest" in stale["findings"][0][1]
+          and [j for j, _w in added["findings"]] == ["cells"]
+          and "ubuntu-latest" in added["findings"][0][1])
+
+    unreadable = (
+        floating_runners("name: ci\njobs:\n  a:\n    steps:\n      - run: x\n"),
+        floating_runners("name: ci\njobs:\n  a:\n"
+                         "    runs-on: ${{ inputs.runner }}\n    steps:\n"
+                         "      - run: x\n"),
+        floating_runners("name: ci\njobs:\n  a:\n    runs-on: ${{ matrix.os }}\n"
+                         "    steps:\n      - run: x\n"),
+        floating_runners("name: ci\non:\n  push:\n"))
+    check("ri5 ...a job with no runs-on, one whose label is an expression this "
+          "cannot resolve, a matrix reference to a key the matrix does not list, "
+          "and a workflow with no `jobs:` block are each NAMED, never an empty "
+          "list over a question nobody could ask: %r" % (unreadable,),
+          [j for j, _w in unreadable[0]["findings"]] == ["a"]
+          and [j for j, _w in unreadable[1]["findings"]] == ["a"]
+          and [j for j, _w in unreadable[2]["findings"]] == ["a"]
+          and unreadable[3]["problem"] is not None
+          and unreadable[3]["jobs"] == 0)
+
+    with io.open(os.path.join(REPO, CI_REL), encoding="utf-8") as fh:
+        live = floating_runners(fh.read())
+    check("ri6 THE LIVE CLAIM: no job in ci.yml and no value of a matrix it "
+          "crosses is a floating label, over %d job(s) read - the count keeps a "
+          "workflow nobody parsed from reading as clean: %r"
+          % (live["jobs"], live),
+          live["problem"] is None and live["findings"] == [] and live["jobs"] > 0
+          and runner_image_verdict() == [] and parity()["runner_images"] == [])
+
+    absent = runner_image_verdict(os.path.join(REPO, "no-such-repo-dir"))
+    check("ri7 a tree with no workflow in it is a NAMED finding, so the verdict "
+          "`parity()` renders cannot come back clean over a file nobody read: %r"
+          % (absent,),
+          len(absent) == 1 and "could not be read" in absent[0][1])
 
 
 # --- selftest -----------------------------------------------------------------
@@ -2715,6 +2911,7 @@ def _cases(check):
     _verify_cleanup_cases(check)
     _slice_cases(check)
     _verify_slice_run_cases(check)
+    _runner_image_cases(check)
 
     # The verdict behind vsh5, in all its corners. The dash rows are the ones
     # that must stay red: a dash that left nothing is a control that stopped
@@ -2750,8 +2947,9 @@ def _cases(check):
         _rt_says = return_trap_honoured(_rt_stubs["says"], _rt_run)
         _rt_silent = return_trap_honoured(_rt_stubs["silent"], _rt_run)
         # A file the OS cannot start as a program: a plain text file with no
-        # execute bit raises on posix, and Windows refuses any non-executable
-        # image the same way, so the probe's OSError path is reachable here.
+        # execute bit raises an OSError on posix, and starting an extensionless
+        # path raises an OSError on Windows too, so the probe's OSError path is
+        # reachable on both. Which error it is differs and the case does not read it.
         _rt_dead = os.path.join(_rt_root, "not-a-program")
         with io.open(_rt_dead, "w", encoding="utf-8", newline="\n") as fh:
             fh.write("echo honoured\n")
@@ -2789,9 +2987,14 @@ def _cases(check):
         skip(check, "vsh12", "no dash on PATH, so dash's own refusal of the RETURN "
              "trap is not probed", _rt_dash is None)
     else:
+        # The probe's own answer, not the boolean: a dash that cannot be started is
+        # also False, and that would satisfy the boolean without the shell ever
+        # having been asked. A reason of None is the probe having run.
+        _rt_dash_probe = return_trap_probe(_rt_dash)
         check("vsh12 dash rejects the RETURN trap when probed directly, so no dash "
-              "machine can reach the skip: %r" % (_rt_dash,),
-              return_trap_honoured(_rt_dash) is False)
+              "machine can reach the skip - the probe ran (reason None) and the "
+              "shell refused the trap: %r on %r" % (_rt_dash_probe, _rt_dash),
+              _rt_dash_probe == (False, None))
 
 
 def _selftest():
