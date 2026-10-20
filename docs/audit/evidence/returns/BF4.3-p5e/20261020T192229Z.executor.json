@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "python3 tools/gate-parity.py --selftest": "pass",
+    "python3 tools/gate-parity.py": "pass"
+  },
+  "redFirst": {
+    "status": "could-not-prove",
+    "at": "2026-10-20T19:23:32Z",
+    "basis": "BF4.3-p5e declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task BF4.3-p5e declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Ran sed s/windows-2025-vs2026/windows-2025/g over .github/workflows/ci.yml (header comment :95, matrix os :158, exclude row :162, e2e name :192 and runs-on :196, resample name :312 and runs-on :316) and tools/gate-parity.py (ri2 fixture replace at :2376). ubuntu-24.04 untouched. grep confirms no 'vs2026' remains in either file. Exit codes: `python3 tools/gate-parity.py --selftest` = 0 (81/81 cases passed); `python3 tools/gate-parity.py` = 0. Nothing else changed.",
+    "descriptive": "Windows CI jobs now pin the stable windows-2025 runner label instead of the testing-only windows-2025-vs2026."
+  },
+  "testsAdded": [],
+  "falsifiers": {},
+  "stamp": "audit-stamp: {\"content\":\"sha256:e5408076e7016c101c75f2296415be0cc614434f42f9fc22b38087366b96976e\",\"dirtyDigest\":\"sha256:83e5553116b87c790eb6b7f37c4c38dbc4f5b0371531f4967b5d40988ad7d3e8\",\"dirtyPaths\":{\".github/workflows/ci.yml\":\"a8d51c1ac7307065\",\"tools/gate-parity.py\":\"edfcef6c245175fc\"},\"head\":\"9ec54437\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".github/workflows/ci.yml\",\"tools/gate-parity.py\"],\"scopeDigest\":\"sha256:49e352e9973f5fdb77a0c2c6686964dc5821cc44dd3889e9fda9bdbce1a5496d\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -49,7 +49,8 @@
         "severity": "med",
         "file": ".github/workflows/ci.yml:158,162,192,196,312,316 (and the comment at :95, the names at :192/:312, and the fixture in tools/gate-parity.py ri2 ~:358-359)",
         "issue": "The Windows pin is `windows-2025-vs2026`. Per the orchestrator-verified fact (GitHub-hosted runners label tables, actions/runner-images README, 2026-05-14 changelog) that label is documented as meant for testing only, is redundant because windows-2025 itself moved to VS 2026, and is ABSENT from the private-repository label table; `windows-2025` is the stable label. The executor took the name from the `Image:` line of the run log and states in outcome.technical that it 'was not verified' as a runs-on label. A pin to a testing-only label is the same fragility the task removes: an unsupported label can queue forever or be retired, and it hits every Windows cell (selftests, e2e, resample). The Linux pin ubuntu-24.04 is valid.",
-        "resolution": "Pin `windows-2025` everywhere: the matrix `os` axis (:158), the `exclude` row (:162), the e2e and resample `runs-on` (:196, :316) and their display names (:192, :312), the header comment (:95). Update the ri2 fixture, which uses `windows-2025-vs2026` as the example of an explicit image, to `windows-2025`. ri1's wording already names windows-2025."
+        "resolution": "Pin `windows-2025` everywhere: the matrix `os` axis (:158), the `exclude` row (:162), the e2e and resample `runs-on` (:196, :316) and their display names (:192, :312), the header comment (:95). Update the ri2 fixture, which uses `windows-2025-vs2026` as the example of an explicit image, to `windows-2025`. ri1's wording already names windows-2025.",
+        "fixTask": "BF4.3-p5e"
       },
       {
         "id": "BF4-R4",
@@ -208,6 +209,73 @@
         "basis": "`python3 tools/gate-parity.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 70 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, the task's run with its inline suite tools/gate-parity.py laid over as HEAD's copy plus its 5 test hunk(s), 8 other hunk(s) held at HEAD), each passing with the working tree's implementation - sv9 (house FAIL): SELFTEST FAILED: 68/70 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
         "status": "proved",
         "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "BF4.3-p5e",
+      "title": "fix BF4-R3: The Windows pin is `windows-2025-vs2026`. Per the orchestrator-ve...",
+      "status": "in_progress",
+      "description": "The Windows pin is `windows-2025-vs2026`. Per the orchestrator-verified fact (GitHub-hosted runners label tables, actions/runner-images README, 2026-05-14 changelog) that label is documented as meant for testing only, is redundant because windows-2025 itself moved to VS 2026, and is ABSENT from the private-repository label table; `windows-2025` is the stable label. The executor took the name from the `Image:` line of the run log and states in outcome.technical that it 'was not verified' as a runs-on label. A pin to a testing-only label is the same fragility the task removes: an unsupported label can queue forever or be retired, and it hits every Windows cell (selftests, e2e, resample). The Linux pin ubuntu-24.04 is valid.\n\nResolution asked: Pin `windows-2025` everywhere: the matrix `os` axis (:158), the `exclude` row (:162), the e2e and resample `runs-on` (:196, :316) and their display names (:192, :312), the header comment (:95). Update the ri2 fixture, which uses `windows-2025-vs2026` as the example of an explicit image, to `windows-2025`. ri1's wording already names windows-2025.",
+      "files": [
+        ".github/workflows/ci.yml",
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-20T19:22:29Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-20T19:22:29Z",
+          "text": "scope: .github/workflows/ci.yml, tools/gate-parity.py, every path the finding(s) BF4-R3 name"
+        },
+        {
+          "at": "2026-10-20T19:22:29Z",
+          "text": "no suite: tools/gate-parity.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-20T19:22:29Z",
+          "text": "no suite: .github/workflows/ci.yml - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/_refs.py, plugins/audit/scripts/config/_config_rules.py, plugins/audit/scripts/panel/_panel_settings.py, plugins/audit/tests/_harness.py and 11 more"
+        },
+        {
+          "at": "2026-10-20T19:22:29Z",
+          "text": "no tests.add clause for BF4-R3: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "BF4-R3"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-20T19:24:54Z.4bbfbf",
+        "status": "failed",
+        "at": "2026-10-20T19:24:54Z"
       }
     }
   ],
