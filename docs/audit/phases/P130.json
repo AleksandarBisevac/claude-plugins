@@ -5462,7 +5462,7 @@
     {
       "id": "P130.52-ywo",
       "title": "One reader answers which commits belong to a task's attempt, the scope preflight knows Playwright, and the phase review's code lows are fixed",
-      "status": "blocked",
+      "status": "cancelled",
       "description": "Whole-phase review of P130 (medium 1, 2; low 5-8). (1) The span start..HEAD of a task's attempt has two readers with different rules: `_scoped_commit.earlier_attempt_commits` (~:1145) checks the start head is an ancestor and excludes other tasks' commits; audit-task.py `_attempt_commits_read` (~:6113) only `rev-parse --verify`s it - after a rebase/reset `done --commit` skips the empty-span refusal (~:6318) and `_no_change_moves` treats foreign commits as moves. Make ONE function (in the lowest module both may import) the only reader of the attempt span - ancestor check, other tasks' recorded commits excluded, plan_to_git pathspecs - and route both callers through it; delete the second. Case: a start head off HEAD's history makes both callers claim nothing and say why. (2) `scope_gap` (drive-phase.py ~:1205-1252): `npx playwright test` is classified by neither entry_collector nor can_run_tests, so a gate [vitest, npx playwright test] asks an e2e spec only of vitest and stops wrongly - add playwright to the test-runner token table (TEST_RUNNER_TOKENS) and treat its specs as could-not-tell unless its config is read; case for the gate shape. (5) declared non-record work is derived three times (`_scoped_commit._declared_names`, `commit-task-work.declared_names`, `audit-task._declared_work`) - one function. (6) guard-capabilities.py ~:68 and guard-history-rewrite.py ~:1766 build their own deny payload - use `_config.deny_payload` (change only the payload construction, never how a guard reads a command; if a host safeguard refuses an edit to a guard file, stop that part and report it). (7) drive-phase.py ~:237 import comment names entry_runner; it uses entry_collector. (8) `build-command` accepts a key starting with `affected/`, which _manifest_rules refuses as a gate entry - refuse it in build-command; `drive-phase.red_at_base` takes the newest clean run of any gate with no step-name filter while `run-test-gate.base_red` filters by steps - filter the same way. Acceptance: a case per item; full sweep green; bench-hooks --gate green.",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
@@ -5514,10 +5514,10 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: Cancelled to re-add with its review fix; its work is saved as a patch: quality-gates-internal/plans/2026-10-17-redesign-implementation/patches/P130.52-ywo.patch (applies cleanly to the phase head)."
       },
       "startedAt": "2026-10-20T08:22:15Z",
-      "completedAt": null,
+      "completedAt": "2026-10-20T10:20:15Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
@@ -5670,6 +5670,66 @@
       "dependsOn": [
         "P130.53-ywo"
       ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.56-ywo",
+      "title": "One reader answers which commits belong to a task's attempt, the scope preflight knows Playwright, and the phase review's code lows are fixed",
+      "status": "pending",
+      "description": "REPLACES P130.52-ywo. Its finished work is saved as a patch: <outside-repo> (git apply --check passed on the phase head) - apply it in your tree (git apply -3, then git restore --staged .), then fix the pre-commit review's MEDIUM finding: when a rebase leaves the recorded start head off HEAD's history, `_scoped_commit.attempt_span` (~:1210) returns ([], why) before any fallback and `audit-task._no_change_moves` (~:6098-6102) only adds a note, so `done --no-change` succeeds over committed work the old code refused. Make the span reader answer 'cannot tell' (None, why) - not 'no commits' - when the start head is not an ancestor, and make every caller treat cannot-tell as a refusal on the no-change and commit paths (fail loud), naming the start head and the rebase; rewrite case sc-as1, which pins the wrong behaviour, and add the rebase case for --no-change. Keep everything else the review confirmed (one reader, byte-identical guard payloads, Playwright, red_at_base filtering). The original task follows: Whole-phase review of P130 (medium 1, 2; low 5-8). (1) The span start..HEAD of a task's attempt has two readers with different rules: `_scoped_commit.earlier_attempt_commits` (~:1145) checks the start head is an ancestor and excludes other tasks' commits; audit-task.py `_attempt_commits_read` (~:6113) only `rev-parse --verify`s it - after a rebase/reset `done --commit` skips the empty-span refusal (~:6318) and `_no_change_moves` treats foreign commits as moves. Make ONE function (in the lowest module both may import) the only reader of the attempt span - ancestor check, other tasks' recorded commits excluded, plan_to_git pathspecs - and route both callers through it; delete the second. Case: a start head off HEAD's history makes both callers claim nothing and say why. (2) `scope_gap` (drive-phase.py ~:1205-1252): `npx playwright test` is classified by neither entry_collector nor can_run_tests, so a gate [vitest, npx playwright test] asks an e2e spec only of vitest and stops wrongly - add playwright to the test-runner token table (TEST_RUNNER_TOKENS) and treat its specs as could-not-tell unless its config is read; case for the gate shape. (5) declared non-record work is derived three times (`_scoped_commit._declared_names`, `commit-task-work.declared_names`, `audit-task._declared_work`) - one function. (6) guard-capabilities.py ~:68 and guard-history-rewrite.py ~:1766 build their own deny payload - use `_config.deny_payload` (change only the payload construction, never how a guard reads a command; if a host safeguard refuses an edit to a guard file, stop that part and report it). (7) drive-phase.py ~:237 import comment names entry_runner; it uses entry_collector. (8) `build-command` accepts a key starting with `affected/`, which _manifest_rules refuses as a gate entry - refuse it in build-command; `drive-phase.red_at_base` takes the newest clean run of any gate with no step-name filter while `run-test-gate.base_red` filters by steps - filter the same way. Acceptance: a case per item; full sweep green; bench-hooks --gate green.",
+      "files": [
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/hooks/guard-capabilities.py",
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_guard_capabilities.py",
+        "plugins/audit/tests/test_guard_history_rewrite.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__scoped_commit.py: a start head off HEAD's history makes the one attempt-span reader claim no commit and say why, for both the commit and the done --commit callers",
+          "plugins/audit/tests/test_drive_phase.py: a gate of vitest plus npx playwright test does not stop on a declared e2e spec vitest does not collect",
+          "plugins/audit/tests/test_audit_task.py: a --no-change close is refused when a rebase left the start head off HEAD's history, naming the start head"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,
