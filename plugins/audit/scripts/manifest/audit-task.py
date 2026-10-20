@@ -6070,13 +6070,19 @@ def _no_change_moves(project, git_root, phase, task, plan=None, start_head=None)
     nothing. An entry outside the git root is named in the notes, never
     dropped in silence.
 
-    THE SPAN STARTS AT THE HEAD THE START RECORDED (`start_head`), so a
-    commit already in the branch when the task started is never this task's,
-    whatever date it carries. Without one it starts at the phase's `baseRef`
-    and is cut by the start's committer date - which counts a commit made
-    before the start and dated after it - and a commit another task of the
-    plan records as its own is then left out: it is that task's work."""
-    notes, files = [], []
+    THE SPAN IS `_scoped_commit.attempt_span`'s, the one reader of it: from
+    the HEAD the start recorded (`start_head`), so a commit already in the
+    branch when the task started is never this task's, whatever date it
+    carries; without one, from the phase's `baseRef` cut by the start's
+    committer date - which counts a commit made before the start and dated
+    after it. A commit another task of the plan records as its own is left out
+    either way.
+
+    CANNOT TELL IS `(None, notes)`, never `([], notes)`: a start head off HEAD's
+    history (a rebase or a reset since the start) or a log git would not answer
+    leaves the span unread, and the note says which. An empty list there is
+    the close's own "nothing moved", so the caller refuses on None instead."""
+    notes, names, files = [], [], []
     hc = _loader.load_hooks_config(modname="audit__config")
     for entry in sorted(set(_vocab._strip_line_suffix(f).strip()
                             for f in (task.get("files") or [])
@@ -6086,71 +6092,23 @@ def _no_change_moves(project, git_root, phase, task, plan=None, start_head=None)
             notes.append("  %s lies outside the git root %s, so whether it "
                          "changed is NOT ASKED" % (entry, git_root))
         else:
+            names.append(entry)
             files.append(rel)
     if not files:
         return [], notes
     code, _top = _git_answer(git_root, "rev-parse", "--show-toplevel")
     if code != 0:
         return [], notes
-    touched = _attempt_commits(project, git_root, phase, task, files,
-                               plan=plan, start_head=start_head) or []
+    touched, why = _scoped_commit.attempt_span(
+        git_root, project, plan, task, names, start_head, phase=phase)
+    if touched is None:
+        return None, notes + ["  whether a commit of the attempt changed %s "
+                              "CANNOT BE TOLD: %s" % (", ".join(names), why)]
     moved = ["%s changed in commit %s" % (path, commit[:7])
              for path, commit in touched]
     moved += ["%s has an uncommitted change" % (path,)
               for path in _porcelain_paths(git_root, files) or []]
     return moved, notes
-
-
-def _attempt_commits(project, git_root, phase, task, files, plan=None,
-                     start_head=None, end="HEAD"):
-    """`_attempt_commits_read` without the failure: the touched list, or None
-    when git will not answer the log."""
-    return _attempt_commits_read(project, git_root, phase, task, files,
-                                 plan=plan, start_head=start_head, end=end)[0]
-
-
-def _attempt_commits_read(project, git_root, phase, task, files, plan=None,
-                          start_head=None, end="HEAD"):
-    """`([(path, sha), ...], None)`, or `(None, failure)` naming the `git log`
-    that did not answer - a guard that reads the list must be able to say why
-    it has none.
-
-    The list holds each path under `files` (git-root-relative
-    pathspecs) that a commit of `task`'s attempt changed, up to `end`, spelled
-    the way the plan spells it: `git log --name-only` prints from the checkout's
-    top, and a task's `files` are read from `project`, so each path goes through
-    `_config.git_to_plan`. `_no_change_moves` documents the span: from the HEAD the
-    start recorded, or else from the phase's `baseRef` cut by `startedAt` with
-    the commits other tasks record as their own left out."""
-    since, others = [], set()
-    if start_head and _git_answer(git_root, "rev-parse", "--verify", "-q",
-                                  "%s^{commit}" % (start_head,))[0] == 0:
-        span = "%s..%s" % (start_head, end)
-    else:
-        base = phase.get("baseRef")
-        span = "%s..%s" % (base, end) if base and _git_answer(
-            git_root, "rev-parse", "--verify", "-q",
-            "%s^{commit}" % (base,))[0] == 0 else end
-        since = ["--since=%s" % (task["startedAt"],)] if task.get("startedAt") else []
-        others = set(str(t.get("commit")) for t in _mio.tasks_by_id(
-            plan or {"phases": [phase]}).values()
-            if isinstance(t, dict) and t.get("commit")
-            and t.get("id") != task.get("id"))
-    # A declared directory lists the files under it, so a commit line is told
-    # apart by its own marker rather than by not being a declared path.
-    code, log = _git_answer(git_root, *(["log", "--format=@%H", "--name-only"]
-                                        + since + [span, "--"] + list(files)))
-    if code != 0:
-        return None, ("`git log %s` %s" % (span, "could not be run" if code is None
-                                           else "exited %d" % (code,)))
-    hc = _loader.load_hooks_config(modname="audit__config")
-    touched, commit = [], None
-    for line in [ln.strip() for ln in log.splitlines() if ln.strip()]:
-        if line.startswith("@"):
-            commit = line[1:]
-        elif commit and commit not in others:
-            touched.append((hc.git_to_plan(line, git_root, project), commit))
-    return touched, None
 
 
 def _porcelain_paths(git_root, pathspec=()):
@@ -6268,22 +6226,6 @@ def _filing_rows(project, config, mpath):
         return None
 
 
-def _declared_work(project, git_root, task, records):
-    """`[(name, rel), ...]` - the task's declared `files` in the plan's own
-    spelling with their git-root-relative path, leaving out each entry that
-    lies outside the git root or under one of the `records` paths: the work a
-    close is asked to stand on, not the bookkeeping a task may also declare."""
-    hc = _loader.load_hooks_config(modname="audit__config")
-    work = []
-    for name in sorted(set(_vocab._strip_line_suffix(f).strip()
-                           for f in (task.get("files") or [])
-                           if isinstance(f, str) and f.strip())):
-        rel = hc.plan_to_git(name, git_root, project)
-        if rel is not None and not any(_touts.covers(r, rel) for r in records):
-            work.append((name, rel))
-    return work
-
-
 def _close_evidence_refusal(project, mpath, git_root, task, sha, verified,
                             rows, attempt=None):
     """`_scoped_commit.close_evidence_refusal` over a close on `sha`: the
@@ -6309,16 +6251,19 @@ def _close_evidence_refusal(project, mpath, git_root, task, sha, verified,
     _text, executor, _problem, _unchecked = _fr.read_filed_return_checked(
         path, rows, project)
     changed = _commit_touches(project, git_root, task, sha) if verified else None
-    work = (_declared_work(project, git_root, task, attempt["records"])
+    work = (_scoped_commit.declared_work(task, project, git_root,
+                                         attempt["records"])
             if attempt and verified else [])
     if work and not changed:
-        since, failure = _attempt_commits_read(
-            project, git_root, attempt["phase"], task,
-            [rel for _name, rel in work], plan=attempt["plan"],
-            start_head=attempt["startHead"], end=sha)
-        # A LOG GIT WOULD NOT ANSWER REFUSES, loudly: it is neither an empty
-        # span nor a span holding a change, and falling to the narrower
-        # question below would close a task over a question never asked.
+        since, failure = _scoped_commit.attempt_span(
+            git_root, project, attempt["plan"], task,
+            [name for name, _rel in work], attempt["startHead"], end=sha,
+            phase=attempt["phase"])
+        # A SPAN NOBODY READ REFUSES, loudly - a log git would not answer, or
+        # a start head off HEAD's history (named in `failure`): it is neither
+        # an empty span nor a span holding a change, and falling to the
+        # narrower question below would close a task over a question never
+        # asked.
         if since is None:
             return ("whether this attempt changed %s could not be read - %s"
                     % (", ".join(name for name, _rel in work), failure))
@@ -6328,7 +6273,8 @@ def _close_evidence_refusal(project, mpath, git_root, task, sha, verified,
         if since == []:
             return _scoped_commit.close_evidence_refusal(
                 task, project, executor, False,
-                declared=[name for name, _rel in work], any_red_first=True)
+                declared=[name for name, _rel in work], any_red_first=True,
+                earlier_why=failure)
     return _scoped_commit.close_evidence_refusal(task, project, executor, changed)
 
 
@@ -6827,6 +6773,16 @@ def _locked_done(args, project, config, mpath, tid, out):
         moved, unasked = _no_change_moves(
             project, git_root, phase, node, plan=assembled,
             start_head=_start_head(project, config, node))
+        if moved is None:
+            out("[audit-task] REFUSED: %s closes --no-change, and whether its "
+                "declared files changed since its start cannot be told:\n%s\n"
+                "A no-change close claims that nothing moved, so it is never "
+                "made over a span nobody read. Re-start the task "
+                "(/audit:task start %s, which spends an attempt and records "
+                "the head the branch stands on now), or close it --commit <sha> "
+                "naming the work. Nothing written."
+                % (tid, "\n".join(unasked), tid))
+            return E_USAGE
         if moved:
             out("[audit-task] REFUSED: %s closes --no-change, and its declared "
                 "files did change: %s. A close with no commit is never asked "
@@ -13648,6 +13604,15 @@ def cmd_build_command(args, out):
     machine = _journal_io.check_free_text(project, "the build-command key", key)
     if machine:
         out("[audit-task] " + machine)
+        return E_USAGE
+    # THE PREFIX IS RESERVED for the steps a run adds beside the gate, and the
+    # validator refuses a gate entry spelled with it - so a key spelled with it
+    # is one no gate could ever name. Removing one stays possible.
+    if _evidence_io.is_derived_step(key) and not args.remove:
+        out("[audit-task] build-command: %r starts with %r, which is reserved "
+            "for the steps a run adds beside the gate - no gate entry may name "
+            "such a key, so it would run nothing; rename it; nothing written"
+            % (key, _evidence_io.DERIVED_STEP_PREFIX))
         return E_USAGE
     command = args.build_command
     if args.remove and (command is not None or args.replace):

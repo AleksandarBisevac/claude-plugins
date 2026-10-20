@@ -836,18 +836,33 @@ def commit_work(manifest, phase, task, manifest_path, project, git_root,
     return code, answer
 
 
-def declared_names(task, project, git_root, declared_rels):
-    """The task's `files` entries, in the plan's own spelling, whose path is
-    one of `declared_rels` - the declared work a commit is asked to carry, with
-    the record entries a task may also declare left out."""
-    names = []
-    for entry in task.get("files") or []:
-        name = _vocab._strip_line_suffix(str(entry)).strip()
-        rel = _invariants._rel(os.path.join(project, name), git_root) \
-            if name else None
-        if rel is not None and rel in declared_rels and name not in names:
-            names.append(name)
-    return names
+def work_names(task, project, git_root, work):
+    """The task's declared work in the plan's own spelling
+    (`_scoped_commit.declared_work`), narrowed to the git-root paths in `work` -
+    the allow-list's own reading of which declared entries are records."""
+    return [name for name, rel in _scoped_commit.declared_work(task, project,
+                                                               git_root)
+            if rel in work]
+
+
+def earlier_attempt(plan, task, project, git_root, journal_rows, work):
+    """`(shas, why)` - the commits of the task's attempt that already changed
+    its declared work (`work`, git-root paths), newest first, each once: the
+    one span reader's answer (`_scoped_commit.attempt_span`) from the start head
+    the journal recorded, with no softer bound. `shas` is None - cannot tell -
+    when git would not answer or the start head is off HEAD's history, and
+    `why` then says which. The commit asks it only when it is refusing already
+    (no declared change pending), and the refusal carries `why`."""
+    touched, why = _scoped_commit.attempt_span(
+        git_root, project, plan, task, work_names(task, project, git_root, work),
+        _scoped_commit.start_head_of(journal_rows, task))
+    if touched is None:
+        return None, why
+    shas = []
+    for _path, sha in touched:
+        if sha not in shas:
+            shas.append(sha)
+    return shas, why
 
 
 def _commit_work(manifest, phase, task, manifest_path, project, git_root,
@@ -925,16 +940,11 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
     # refusal can name only if it was told.
     earlier, earlier_why = None, ""
     if not changed and targets["work"]:
-        others = [str(t.get("commit")) for t in _mio.tasks_by_id(manifest).values()
-                  if isinstance(t, dict) and t.get("commit")
-                  and t.get("id") != task.get("id")]
-        earlier, earlier_why = _scoped_commit.earlier_attempt_commits(
-            git_root, project,
-            declared_names(task, project, git_root, targets["work"]),
-            _scoped_commit.start_head_of(journal_rows, task), others)
+        earlier, earlier_why = earlier_attempt(manifest, task, project, git_root,
+                                               journal_rows, targets["work"])
     refusal = _scoped_commit.close_evidence_refusal(
         task, project, executor, changed,
-        declared=declared_names(task, project, git_root, targets["work"]),
+        declared=work_names(task, project, git_root, targets["work"]),
         tree=project, any_red_first=bool(targets["work"]),
         earlier=earlier, earlier_why=earlier_why)
     if refusal:

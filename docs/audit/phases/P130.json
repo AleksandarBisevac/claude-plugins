@@ -5681,7 +5681,7 @@
     {
       "id": "P130.55-ywo",
       "title": "The SIGINT cases of gate-parity hold when the sweep runs as a background job",
-      "status": "in_progress",
+      "status": "done",
       "description": "F746. tools/gate-parity.py cases vsh6 (~:1856) and vsh9 (~:1812) send `kill -INT $$` to a shell started through `run_in_scratch_shell` (~:1699), a bare subprocess.run. A background job (nohup, &, a harness runner) hands the child SIGINT as ignored, and POSIX sh keeps an inherited-ignored signal ignored, so `trap` never fires and the INT leg fails; in the foreground both pass. Fix: start that child with SIGINT reset to SIG_DFL (preexec_fn on POSIX; on Windows the cases are already skipped or not applicable - check), so the cases measure verify.sh's trap and not the caller's signal disposition. Acceptance: (1) a new case runs the INT leg with this process's SIGINT set to SIG_IGN and still sees exit 130 (red before the fix); (2) vsh6/vsh9 pass under `nohup python3 tools/gate-parity.py --selftest &`-style background runs; (3) full sweep green.",
       "files": [
         "tools/gate-parity.py"
@@ -5716,19 +5716,33 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "306e13f233c4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/gate-parity.py: import signal; new _default_sigint() (signal.signal(SIGINT, SIG_DFL)) passed as preexec_fn to the subprocess.run in run_in_scratch_shell when os.name == 'posix' (None on Windows, where preexec_fn does not exist). New case 'vsh13 the INT leg exits 130 even when this process ignores SIGINT' sets SIGINT to SIG_IGN around both INT legs (kill -INT $$ against the workdir trap, and the generator-stub int mode), restores the previous disposition in finally. Full file 71/71 in the foreground and under nohup &; sweep over gate-parity, test__output, test__deps ok (580 cases); ruff and vermin clean.",
+        "descriptive": "The vsh6/vsh9 INT cases now measure verify.sh's trap rather than the caller's signal disposition, so they pass in background jobs."
       },
       "startedAt": "2026-10-20T10:36:20Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-20T11:20:00Z",
+      "verifiedBy": [
+        "vsh13 the INT leg exits 130 even when this process ignores SIGINT"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-20T11:05:24Z.cb7a34",
         "status": "passed",
         "at": "2026-10-20T11:05:24Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "306e13f233c4",
+        "at": "2026-10-20T11:20:00Z",
+        "return": "docs/audit/evidence/returns/P130.55-ywo/20261020T103620Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-20T10:41:31Z",
+        "basis": "`python3 tools/gate-parity.py --selftest` in a throwaway tree at HEAD exited 1, but no test was collected or none reached an assertion: SELFTEST FAILED: 44/45 cases passed; no error the run printed - its final ImportError/ModuleNotFoundError/AttributeError/NameError, a house abort, a missing module - names '_default_sigint': NameError: name 'signal' is not defined. Did you forget to import 'signal'?; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {

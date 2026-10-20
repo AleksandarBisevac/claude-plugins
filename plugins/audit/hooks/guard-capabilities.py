@@ -68,14 +68,10 @@ def _policy_mod():
 
 
 def _decision_payload(decision, msg):
-    """Canonical PreToolUse payload for a decision ("deny" or "ask")."""
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": decision,
-            "permissionDecisionReason": "[guard-capabilities] " + msg,
-        }
-    }
+    """Canonical PreToolUse payload for a decision ("deny" or "ask"), signed:
+    `_config`'s payload, the one shape every guard emits."""
+    build = _config.ask_payload if decision == "ask" else _config.deny_payload
+    return build("[guard-capabilities] " + msg)
 
 
 def _warn_payload(msg):

@@ -1764,13 +1764,8 @@ def main():
     try:
         verdict, reason = decide(data)
         if verdict == "deny":
-            print(json.dumps({
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "deny",
-                    "permissionDecisionReason": "[guard-history-rewrite] " + reason,
-                }
-            }))
+            print(json.dumps(_config.deny_payload(
+                "[guard-history-rewrite] " + reason)))
     except Exception:
         pass
     sys.exit(0)

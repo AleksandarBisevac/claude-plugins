@@ -32,6 +32,7 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _scoped_commit as M                         # noqa: E402
 import _journal_io                                 # noqa: E402
+import _loader                                     # noqa: E402
 
 
 def _git(repo, *args):
@@ -221,15 +222,28 @@ def _cases(check):
     _earlier_attempt_cases(check, tmp)
 
 
-# --- the span an earlier attempt's commits are read over -----------------------
+# --- the span an attempt's commits are read over -------------------------------
 NOT_ANCESTOR_CLAUSE = ("a start head that is not an ancestor of HEAD claims no "
                        "earlier commit and says so")
+# The callers are entry points, loaded once here: the cases below are about the
+# span every one of them reads, so they drive each of them over one fixture.
+AT = _loader.load_script("audit-task.py", "at_for_scoped_commit")
+CTW = _loader.load_script("commit-task-work.py", "ctw_for_scoped_commit")
+
+
+def _span(reader, *args, **kwargs):
+    """`reader(*args)`, or `("missing", None)` when the module holds no such
+    function - a case over a reader that is not there fails its assertion
+    rather than ending the run."""
+    if reader is None:
+        return "missing", None
+    return reader(*args, **kwargs)
 
 
 def _earlier_attempt_cases(check, tmp):
-    """`earlier_attempt_commits` names a span only when the recorded start head
-    is an ancestor of HEAD. An object git still holds after a rebase or a reset
-    is not one, and `start..HEAD` over it lists commits that are not the
+    """`attempt_span` names a span only when the recorded start head is an
+    ancestor of the span's end. An object git still holds after a rebase or a
+    reset is not one, and `start..HEAD` over it lists commits that are not the
     attempt's."""
     repo = _repo(tmp, "earlier")
     start = _git(repo, "rev-parse", "HEAD").strip()
@@ -238,21 +252,129 @@ def _earlier_attempt_cases(check, tmp):
     work = _git(repo, "rev-parse", "HEAD").strip()
     # A commit git holds that no branch reaches: what a rebased-away head is.
     tree = _git(repo, "rev-parse", "HEAD^{tree}").strip()
-    stray = _git(repo, "commit-tree", tree, "-m", "left behind").strip()
+    stray = _git(repo, "commit-tree", tree, "-p", start, "-m",
+                 "left behind").strip()
 
-    honest = M.earlier_attempt_commits(repo, repo, ["keep/a.txt"], start)
+    task = {"id": "P1.1", "attempts": 1, "files": ["keep/a.txt"]}
+    plan = {"phases": [{"id": "P1", "tasks": [task]}]}
+    reader = getattr(M, "attempt_span", None)
+
+    honest = _span(reader, repo, repo, plan, task, ["keep/a.txt"], start)
     check("sc-ea1 ALLOW: a start head that IS an ancestor of HEAD still lists the "
           "commits since it that changed a declared file, and says nothing - the "
           "case that goes red if the ancestor test is made unconditional: %r"
           % (honest,),
-          honest == ([work], ""))
-    stale = M.earlier_attempt_commits(repo, repo, ["keep/a.txt"], stray)
-    check("sc-ea2 %s: %r" % (NOT_ANCESTOR_CLAUSE, stale),
-          stale[0] == [] and "not an ancestor" in stale[1]
-          and stray[:12] in stale[1])
-    gone = M.earlier_attempt_commits(repo, repo, ["keep/a.txt"], "0" * 40)
+          honest == ([("keep/a.txt", work)], ""))
+    stale = _span(reader, repo, repo, plan, task, ["keep/a.txt"], stray)
+    # `None`, not `[]`: an empty span is "the attempt committed nothing", which
+    # a no-change close accepts; over a rebased-away start head the span is
+    # unread, and reading it as empty let a close stand on work it never saw.
+    check("sc-ea2 %s - as cannot-tell (None), never as an empty span: %r"
+          % (NOT_ANCESTOR_CLAUSE, stale),
+          stale[0] is None and "not an ancestor" in str(stale[1])
+          and stray[:12] in str(stale[1]))
+    gone = _span(reader, repo, repo, plan, task, ["keep/a.txt"], "0" * 40)
     check("sc-ea3 a start head git does not hold at all still claims nothing and "
           "says nothing, as before: %r" % (gone,), gone == ([], ""))
+    other = dict(task, id="P1.2", commit=work)
+    plan_other = {"phases": [{"id": "P1", "tasks": [task, other]}]}
+    foreign = _span(reader, repo, repo, plan_other, task, ["keep/a.txt"], start)
+    check("sc-ea4 a commit another task of the plan records as its own is left "
+          "out of the span even when a start head bounds it - it is that task's "
+          "work, whichever caller asks: %r" % (foreign,),
+          foreign == ([], ""))
+    _attempt_span_caller_cases(check, repo, start, work, stray)
+    _declared_work_cases(check, tmp)
+
+
+def _declared_work_cases(check, tmp):
+    """`declared_work` is the one reading of which declared entries are work:
+    the plan's spelling beside git's, a line suffix dropped, an entry outside
+    the git root or under a record left out, each entry once, in plan order."""
+    project = os.path.join(tmp, "dw-checkout", "app")
+    os.makedirs(project)
+    git_root = os.path.dirname(project)
+    task = {"id": "P1.1", "files": [
+        "src/b.py:10-20", "src/a.py", "src/b.py", "../../outside.txt",
+        "docs/audit/phases/P1.json", "  "]}
+    reader = getattr(M, "declared_work", None)
+    got = _span(reader, task, project, git_root, ["app/docs/audit"])
+    check("sc-dw1 the task's declared work is read once: plan spelling with its "
+          "git-root path, the line suffix dropped, each entry once in plan "
+          "order, an entry outside the git root and one under a record left "
+          "out: %r" % (got,),
+          got == [("src/b.py", "app/src/b.py"), ("src/a.py", "app/src/a.py")])
+    # The readers it replaced, by name: a second copy left beside the one
+    # reading is how the two came to differ in the first place.
+    left = [name for mod, name in ((M, "_declared_names"),
+                                   (CTW, "declared_names"),
+                                   (AT, "_declared_work"),
+                                   (M, "earlier_attempt_commits"),
+                                   (AT, "_attempt_commits_read"),
+                                   (AT, "_attempt_commits"))
+            if hasattr(mod, name)]
+    check("sc-dw2 no second reader of the declared work or of the attempt span "
+          "is left beside the one each caller now goes through: %r" % (left,),
+          left == [])
+
+
+def _attempt_span_caller_cases(check, repo, start, work, stray):
+    """Every caller reading the span over one start head off HEAD's history.
+
+    The commit's (`commit-task-work.earlier_attempt`), the `done --commit`
+    close's (`audit-task._close_evidence_refusal`) and the `done --no-change`
+    close's (`audit-task._no_change_moves`): each must answer cannot-tell -
+    never an empty span - and carry the reason naming the start head, since
+    each reads the one span."""
+    _write(os.path.join(repo, "other.txt"), "no declared file\n")
+    _git(repo, "add", "other.txt")
+    _git(repo, "commit", "-q", "-m", "a commit touching nothing declared")
+    end = _git(repo, "rev-parse", "HEAD").strip()
+    task = {"id": "P1.1", "attempts": 1, "files": ["keep/a.txt"],
+            "status": "in_progress"}
+    phase = {"id": "P1", "tasks": [task]}
+    plan = {"phases": [phase]}
+    rows = [{"action": "task.start",
+             "details": {"taskId": "P1.1", "attempt": 1, "commit": stray}}]
+    mpath = os.path.join(repo, "docs", "audit", "audit-plan.json")
+
+    def close(head):
+        return AT._close_evidence_refusal(
+            repo, mpath, repo, task, end, True, [],
+            attempt={"phase": phase, "plan": plan, "startHead": head,
+                     "records": []})
+
+    earlier = getattr(CTW, "earlier_attempt", None)
+    committed = _span(earlier, plan, task, repo, repo, rows, ["keep/a.txt"])
+    closed, closed_honest = close(stray), close(start)
+    moved, notes = AT._no_change_moves(repo, repo, phase, task, plan=plan,
+                                       start_head=stray)
+    # Each caller is asked for the CANNOT-TELL answer, not an empty one: the
+    # commit caller hands back None (its caller refuses on it), the done
+    # --commit close refuses naming the start head, and the no-change reader
+    # hands back None with the start head in its note, which its caller turns
+    # into a refusal. An empty list in either None slot is the defect this
+    # case exists for - an unread span read as "the attempt committed nothing".
+    check("sc-as1 a start head off HEAD's history makes the one attempt-span "
+          "reader claim no commit and say why, for both the commit and the done "
+          "--commit callers (and the no-change close beside them), as "
+          "cannot-tell naming the start head: commit %r, done --commit %r, "
+          "no-change %r %r" % (committed, closed[:300], moved, notes),
+          committed[0] is None and "not an ancestor" in str(committed[1])
+          and stray[:12] in str(committed[1])
+          and "not an ancestor" in closed and stray[:12] in closed
+          and moved is None
+          and any("not an ancestor" in n and stray[:12] in n for n in notes))
+    # SECOND-DIRECTION CASE, for a reader made to refuse every start head: an
+    # ancestor start head whose span holds the work still closes, and still
+    # hands the commit caller that work's commit.
+    honest = _span(earlier, plan, task, repo, repo,
+                   [dict(rows[0], details=dict(rows[0]["details"],
+                                               commit=start))], ["keep/a.txt"])
+    check("sc-as2 ALLOW: the same callers over an ancestor start head claim the "
+          "work's commit and refuse nothing: commit %r, done --commit %r"
+          % (honest, closed_honest[:300]),
+          honest == ([work], "") and closed_honest == "")
 
 
 # --- what a close stands on ----------------------------------------------------

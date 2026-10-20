@@ -234,7 +234,7 @@ import _verdict_binding as _vb  # noqa: E402  (phase_binding: whether a held pha
 import _wave  # noqa: E402  (select: which ready tasks may run together)
 import _doctor_setup  # noqa: E402  (hooks_task_binding: whether the loaded hooks bind a task tree)
 import _runner_collects  # noqa: E402  (collects: whether a runner takes a test path)
-import _gate_derive  # noqa: E402  (entry_runner: which runner a gate entry invokes)
+import _gate_derive  # noqa: E402  (entry_collector: what collects a gate entry's tests)
 import _tree_stamp  # noqa: E402  (parse_stamp, declared_scope: the scope a filing was made under)
 import _scope_companions  # noqa: E402  (derive: the runner config a widen declares)
 import _worktrees  # noqa: E402  (read_provenance: whether a kept tree's marker names its task)
@@ -875,7 +875,24 @@ def next_task(manifest, phase, red_at_base=None):
     return (waiting[0], "ready") if waiting else (None, None)
 
 
-def red_at_base(ctx, task_ids=()):
+def gate_step_names(manifest, phase, task_ids):
+    """The gate entries that measure the tasks in `task_ids` (`_mio.gate_entries`,
+    each under its own phase), each once in first-seen order - or `phase`'s own
+    gate when none of them is in the plan. These are the step names a run of
+    those gates records."""
+    names, found = [], False
+    for each in manifest.get("phases") or []:
+        if not isinstance(each, dict):
+            continue
+        for task in each.get("tasks") or []:
+            if isinstance(task, dict) and task.get("id") in task_ids:
+                found = True
+                names += [e for e in _mio.gate_entries(each, task)[0]
+                          if e not in names]
+    return names if found else list(_mio.gate_entries(phase)[0])
+
+
+def red_at_base(ctx, task_ids=(), names=None):
     """`(suites, run_id)` - the suites the newest run that tested HEAD itself
     names as failing, which every task started from HEAD inherits.
 
@@ -883,7 +900,12 @@ def red_at_base(ctx, task_ids=()):
     gate red on its own uncommitted work never reorders anybody, and by no
     task in `task_ids` - the ones being ordered, none of which may vouch for
     itself. `([], None)` when no such run is recorded or the ledger cannot be
-    read, so nothing is reordered on a reading nobody took."""
+    read, so nothing is reordered on a reading nobody took.
+
+    `names` (`gate_step_names`) are the steps of the gates in question: a run
+    of none of them is passed over, and only those steps' suites are read -
+    the filter `run-test-gate.base_red` applies to the same question, so a
+    newer clean run of another gate cannot answer for this one."""
     head = git_head(ctx)
     if not head:
         return [], None
@@ -891,10 +913,12 @@ def red_at_base(ctx, task_ids=()):
         rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
     except Exception:                                          # noqa: BLE001
         return [], None
-    base = _evio.base_run(rows, head, task_ids)
+    base = _evio.base_run(rows, head, task_ids, names)
     if base is None:
         return [], None
-    return _evio.named_failing_suites(base.get("steps")), base.get("runId")
+    steps = [st for st in base.get("steps") or [] if names is None
+             or isinstance(st, dict) and st.get("name") in names]
+    return _evio.named_failing_suites(steps), base.get("runId")
 
 
 def base_red_why(ctx, text, manifest, phase, task):
@@ -1165,12 +1189,34 @@ def render_decision(ctx, pending):
 
 
 # Words that make a gate entry a test run, for the entries `entry_collector` cannot
-# classify. A tuple matches as a contiguous run of words; a bare word matches a
-# command's basename (`./node_modules/.bin/mocha`). Everything else in a gate -
-# validate, lint, report, screenshots - runs no suite and cannot be the one that
-# collects a path no known runner takes.
+# classify. A tuple matches as a contiguous run of words' basenames; a bare word
+# matches a command's basename (`./node_modules/.bin/mocha`). Everything else in a
+# gate - validate, lint, report, screenshots - runs no suite and cannot be the one
+# that collects a path no known runner takes.
+#
+# The browser runner is one of them, and more: it takes the languages vitest
+# takes, and its config (`testDir`, `testMatch`) is not read here, so a spec
+# vitest leaves out may be its. Only its `test` subcommand runs tests -
+# `playwright install` does not.
+PLAYWRIGHT_TOKEN = ("playwright", "test")
 TEST_RUNNER_TOKENS = (("-m", "unittest"), ("-m", "pytest"), ("node", "--test"),
+                      PLAYWRIGHT_TOKEN,
                       "mocha", "tap", "ava", "jasmine", "karma")
+
+
+def _bases(command):
+    """`(words, basenames)` of a gate entry, quotes stripped."""
+    words = [w.strip("\"'") for w in str(command or "").split()]
+    return words, [w.rsplit("/", 1)[-1] for w in words]
+
+
+def _carries(base, token):
+    """Whether the basenames `base` hold `token`: a tuple as a contiguous run,
+    a bare word anywhere."""
+    if isinstance(token, tuple):
+        return any(tuple(base[i:i + len(token)]) == token
+                   for i in range(len(base)))
+    return token in base
 
 
 def can_run_tests(command):
@@ -1178,16 +1224,22 @@ def can_run_tests(command):
     test-runner token, or names a suite FILE (a word whose last segment has an
     extension and reads as a suite - a directory such as `plugins/audit/tests`
     handed to a linter is not one)."""
-    words = [w.strip("\"'") for w in str(command or "").split()]
-    base = [w.rsplit("/", 1)[-1] for w in words]
-    for token in TEST_RUNNER_TOKENS:
-        if isinstance(token, tuple):
-            if any(tuple(words[i:i + len(token)]) == token
-                   for i in range(len(words))):
-                return True
-        elif token in base:
-            return True
+    words, base = _bases(command)
+    if any(_carries(base, token) for token in TEST_RUNNER_TOKENS):
+        return True
     return any("." in b and _phases.is_suite_path(w) for w, b in zip(words, base))
+
+
+def runs_playwright(command):
+    """Whether a gate entry runs the browser runner's tests."""
+    return _carries(_bases(command)[1], PLAYWRIGHT_TOKEN)
+
+
+def _playwright_language(path):
+    """Whether `path` is in a language the browser runner reads - the one
+    vitest and jest read (`_runner_collects.JS_EXTENSIONS`)."""
+    name = str(path or "").replace("\\", "/").rsplit("/", 1)[-1]
+    return "." in name and name.rpartition(".")[2] in _runner_collects.JS_EXTENSIONS
 
 
 def scope_gap(ctx, state, task):
@@ -1243,6 +1295,16 @@ def scope_gap(ctx, state, task):
                 answers[0][0], path, _clip(answers[0][1]["basis"], 100)))
             continue
         runner, got = answers[0]
+        browser = [e for e in unclassified if runs_playwright(build.get(e, e))]
+        if browser and _playwright_language(path):
+            # A definite no from the runners this reading knows, beside a
+            # browser runner whose config it does not read: the spec may be
+            # that runner's, so the gate's answer is not known.
+            ctx["did"].append("could not tell whether the gate runs %s: %s does "
+                              "not collect it, and the entry %s runs playwright, "
+                              "whose config this reading does not read" % (
+                                  path, runner, _clip(browser[0], 60)))
+            continue
         found = _scope_companions.derive(
             {"tests": [path], "runner": runner, "files": task.get("files") or []},
             ctx["project"])["companions"]
@@ -2878,7 +2940,9 @@ def wave_step(ctx, state, manifest, phase, width, basis):
         ready = set(_status_facts.ready_tasks(manifest))
         picked = _wave.select(sorted((t for t in _tasks(phase) if t["id"] in ready),
                                      key=lambda t: _id_key(t["id"])), width,
-                              red_at_base=red_at_base(ctx, sorted(ready))[0])["wave"]
+                              red_at_base=red_at_base(
+                                  ctx, sorted(ready), gate_step_names(
+                                      manifest, phase, ready))[0])["wave"]
         if len(picked) < 2:
             return NO_WAVE
         by_id = _mio.tasks_by_id(manifest)
@@ -4624,8 +4688,10 @@ def drive_phase(ctx, state, phase):
             if said is not NO_WAVE:
                 return _as_result(said)
         idle = not any(t.get("status") == "in_progress" for t in _tasks(phase))
+        ready = sorted(_status_facts.ready_tasks(manifest)) if idle else []
         task, how = next_task(manifest, phase, red_at_base(
-            ctx, sorted(_status_facts.ready_tasks(manifest)))[0] if idle else None)
+            ctx, ready, gate_step_names(manifest, phase, ready))[0]
+            if idle else None)
         if task is None:
             if all(t.get("status") in _mio.TERMINAL for t in _tasks(phase)):
                 return _as_result(sign_off(ctx, state, manifest, phase))

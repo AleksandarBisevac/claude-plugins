@@ -29,6 +29,7 @@ the shared sentinel instead of a hand-written one.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import ast
 import json
 import os
 import shutil
@@ -43,6 +44,24 @@ import _config                                     # noqa: E402
 
 M = _loader.load(os.path.join(_harness.HOOKS_DIR, "guard-capabilities.py"),
                  modname="guard_capabilities")
+
+
+def _payload_literal_sites(hooks_dir=None):
+    """The hook files, other than `_config.py`, holding a dict literal keyed
+    `permissionDecision` - a PreToolUse decision built outside its one home.
+    Read off the AST, so a docstring quoting the contract is not one."""
+    hooks_dir = hooks_dir or _harness.HOOKS_DIR
+    found = []
+    for name in sorted(os.listdir(hooks_dir)):
+        if not name.endswith(".py") or name == "_config.py":
+            continue
+        with open(os.path.join(hooks_dir, name), "r", encoding="utf-8") as fh:
+            tree = ast.parse(fh.read(), name)
+        if any(isinstance(node, ast.Dict) and any(
+                isinstance(key, ast.Constant) and key.value == "permissionDecision"
+                for key in node.keys) for node in ast.walk(tree)):
+            found.append(name)
+    return found
 
 
 # --- cases --------------------------------------------------------------------
@@ -108,6 +127,28 @@ def _cases(check):
     check("c2 the ask payload is the same shape with the other decision",
           json.loads(json.dumps(M._decision_payload("ask", "w")))
           ["hookSpecificOutput"]["permissionDecision"] == "ask")
+    builders = _payload_literal_sites()
+    check("c4 no hook builds a PreToolUse permission decision of its own - "
+          "`_config.deny_payload` and `ask_payload` are its one home, so the "
+          "shape every guard emits is decided once (files holding one: %r)"
+          % (builders,),
+          builders == [])
+    # SECOND-DIRECTION CASE, for a reading that sees nothing: a hook file
+    # building the literal is named, and one quoting it in a docstring is not.
+    probe = tempfile.mkdtemp(prefix="guard-capabilities-payload-")
+    try:
+        for name, text in (
+                ("builds.py", 'X = {"permissionDecision": "deny"}\n'),
+                ("quotes.py", '"""emits {"permissionDecision": "deny"}"""\n'),
+                ("_config.py", 'X = {"permissionDecision": "deny"}\n')):
+            with open(os.path.join(probe, name), "w", encoding="utf-8") as fh:
+                fh.write(text)
+        seen = _payload_literal_sites(probe)
+    finally:
+        shutil.rmtree(probe, ignore_errors=True)
+    check("c5 ALLOW: the payload reading names a hook building the literal and "
+          "passes one quoting it in a docstring, and `_config.py` itself: %r"
+          % (seen,), seen == ["builds.py"])
     warn = json.loads(json.dumps(M._warn_payload("w")))
     check("c3 a warning is a systemMessage and carries NO permissionDecision - "
           "`allow` would skip the permission system, so an advisory written that "

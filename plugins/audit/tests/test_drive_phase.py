@@ -7112,6 +7112,56 @@ def _unclassified_lint_entry_cases(check, run, clause):
               and text.count("could not tell") == 1)
 
 
+IMPORT_NOTE = re.compile(r"^import (\w+)(?: as (\w+))?\s+# noqa: E402\s+"
+                         r"\(((?:\w+, )*\w+):", re.M)
+
+
+def _import_note_cases(check):
+    """An import's note names what the driver takes from that module; a note
+    naming a function the driver never calls sends a reader to the wrong one."""
+    with open(_loader.script_path(DRIVER), "r", encoding="utf-8") as fh:
+        source = fh.read()
+    notes = [(m.group(2) or m.group(1), name)
+             for m in IMPORT_NOTE.finditer(source)
+             for name in m.group(3).split(", ")]
+    unused = ["%s.%s" % pair for pair in notes if "%s.%s" % pair not in source]
+    # The reading must see the notes at all, or an empty list proves nothing.
+    check("imc1 every name an import note in the driver gives is one the driver "
+          "uses from that module (%d notes read): %r" % (len(notes), unused),
+          len(notes) >= 10 and unused == [])
+
+
+def _playwright_gate_cases(check):
+    """A gate of vitest beside `npx playwright test`: an e2e spec vitest's
+    config leaves out may be the browser runner's, whose config this reading
+    does not read - so it is could-not-tell, never a scope-gap stop."""
+    M, why = _load("drive_phase_playwright")
+    if M is None:
+        check("pw1 the driver loads: %r" % (why,), False)
+        return
+
+    def run(prefix, gate):
+        root, mpath = _language_repo(prefix, "e2e/checkout.spec.ts", gate)
+        code, text = _next_wave(M, root, mpath)
+        return code, text, tasks_of(mpath)["P1.1"]
+
+    code, text, task = run("pwtest", (VITEST_GATE, "npx playwright test"))
+    check("pw1 a gate of vitest plus npx playwright test does not stop on a "
+          "declared e2e spec vitest does not collect - one could-not-tell line "
+          "naming playwright, the task dispatched: %r" % (text,),
+          code == 0 and _dispatched(text) == ["P1.1"] and "scope-gap" not in text
+          and text.count("could not tell") == 1 and "playwright" in text)
+    # SECOND-DIRECTION CASE, for a token read as any mention of the runner:
+    # `playwright install` runs no test, so vitest's definite no still stops.
+    code, text, task = run("pwinstall", (VITEST_GATE, "npx playwright install"))
+    check("pw2 ALLOW: a gate of vitest plus `npx playwright install`, which runs "
+          "no test, still stops at scope-gap on the spec vitest does not "
+          "collect: %r" % (text,),
+          code == 0 and instruction(text) == ("decide", "scope-gap", None)
+          and "vitest does not collect e2e/checkout.spec.ts" in text
+          and not _dispatched(text) and task.get("status") == "pending")
+
+
 UNCHECKED_CLAUSE = ("ids bound to a suite the submit's command did not run are "
                     "filed on the return beside testsAddGaps, and the reviewer's "
                     "brief shows them")
@@ -7228,6 +7278,8 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("pf-block", "_preflight_cases"),
           ("pg-block", "_scope_language_cases"),
           ("pu-block", "_unclassified_entry_cases"),
+          ("pw-block", "_playwright_gate_cases"),
+          ("imc-block", "_import_note_cases"),
           ("tx-block", "_text_cases"),
           ("sn-block", "_signal_cases"), ("sn3-block", "_explain_cases"),
           ("sn5-block", "_signal_drive_cases"),
@@ -8715,8 +8767,35 @@ def _base_red_drive_cases(check):
         for ledger in ledgers:
             M._evio.read_rows = lambda _p, _c=None, _l=ledger: {"rows": _l}
             at_head.append(M.red_at_base(ctx, ["P1.1", "P1.2", "P1.3"]))
+        # A newer clean run of ANOTHER gate, red on a suite of its own: the
+        # reading filters by the gate's step names, as `run-test-gate.base_red`
+        # does, so the older run of the gate in question is the one read.
+        other_gate = dict(_at_head("h-lint", "2026-10-19T08:00:00Z", "P1.9", clean),
+                          steps=[{"name": "lint", "exit": 1,
+                                  "failingSuites": ["tests/test_lint.py"],
+                                  "failingSuitesBasis": "the 1 suite file(s) "
+                                  "pytest %s, read from its lines"
+                                  % (_evio.NAMED_FAILING,)}])
+        mixed = [_at_head("h-unit", "2026-10-19T06:00:00Z", "P1.9", clean),
+                 other_gate]
+        M._evio.read_rows = lambda _p, _c=None: {"rows": mixed}
+        try:
+            by_name = [M.red_at_base(ctx, ["P1.1"], names)
+                       for names in (["unit"], None)]
+        except TypeError as exc:
+            by_name = ["red_at_base takes no step names: %s" % (exc,)]
+        gated = dict(phase, testGate=["unit"])
+        names_of = getattr(M, "gate_step_names", None)
+        step_names = (names_of({"meta": {}, "phases": [gated]}, gated, ["P1.1"])
+                      if names_of else None)
     finally:
         M._evio.read_rows, M.git_head = real, real_head
+    check("bb5 the HEAD reading filters by the gate's step names as the "
+          "gate-red reading does: a newer clean run of another gate is passed "
+          "over for the gate's own, and the drive's callers name the gate's "
+          "entries: %r, names %r" % (by_name, step_names),
+          by_name == [([suite], "h-unit"), (["tests/test_lint.py"], "h-lint")]
+          and step_names == ["unit"])
     check("bb3 the HEAD reading the pick orders by takes only a run on a clean "
           "tree at HEAD, never a candidate task's own run: %r" % (at_head,),
           at_head == [([], None), ([], None), ([suite], "h-clean")])

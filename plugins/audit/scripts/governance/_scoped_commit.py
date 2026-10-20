@@ -1117,14 +1117,30 @@ def absent_tests_add(task, project):
     return absent
 
 
-def _declared_names(task):
-    """The task's declared `files`, `:line-range` suffixes dropped, in order."""
-    names = []
+def declared_work(task, project, git_root, records=()):
+    """`[(name, rel), ...]` - the task's declared `files` that are its work: each
+    entry in the plan's own spelling, its `:line-range` suffix dropped, beside
+    its git-root-relative path (`_config.plan_to_git`), once each, in plan
+    order. An entry outside the git root, or under one of the git-root-relative
+    `records` paths, is not work and is left out.
+
+    THE ONE READING OF IT. The task commit, the `done --commit` close and the
+    refusal both of them print each ask which declared entries are work, and
+    three readings of one list came to disagree about order and about what a
+    record is - so every caller asks this one, narrowing by its own records."""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    work, seen = [], set()
     for entry in task.get("files") or []:
-        name = _vocab._strip_line_suffix(str(entry)).strip()
-        if name and name not in names:
-            names.append(name)
-    return names
+        name = (_vocab._strip_line_suffix(entry).strip()
+                if isinstance(entry, str) else "")
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        rel = hc.plan_to_git(name, git_root, project)
+        if rel is not None and not any(_task_outputs.covers(r, rel)
+                                       for r in records or ()):
+            work.append((name, rel))
+    return work
 
 
 def start_head_of(rows, task):
@@ -1141,54 +1157,94 @@ def start_head_of(rows, task):
     return head if re.match(r"^[0-9a-fA-F]{7,40}$", head or "") else None
 
 
-def earlier_attempt_commits(git_root, project, names, start_head, others=()):
-    """`(shas, why)` - the commits in `start_head..HEAD`, newest first, that
-    changed any of `names` (the plan's own spelling of a task's declared files,
-    read from `project`; each goes through `_config.plan_to_git` for git's
-    pathspec), leaving out the ones in `others` (the commits other tasks record
-    as their own). `why` is set, and `shas` None, when git would not list them.
+def _git_failure(what, code, err):
+    """The clause naming a git call that did not answer, with its stderr."""
+    return "`git %s` %s%s" % (
+        what, "could not be run" if code is None else "exited %d" % (code,),
+        ": %s" % (" ".join(err.split()),) if (err or "").strip() else "")
 
-    THE SPAN IS THE HEAD THE START RECORDED, AND NOTHING SOFTER. A clock
-    reading (`--since startedAt`) has a second's grain and takes in a commit
-    made just before the start, which would name work that is not the
-    attempt's as the thing to close on. With no recorded head, or none git
-    still holds, there is no span to ask about and the answer is `([], "")` -
-    the refusal then gives the advice it gave before, which claims nothing.
+
+def _is_commit(git_root, ref):
+    return run_git(git_root, ["rev-parse", "--verify", "-q",
+                              "%s^{commit}" % (ref,)])[0] == 0
+
+
+def attempt_span(git_root, project, plan, task, names, start_head, end="HEAD",
+                 phase=None):
+    """`(touched, why)` - each `(path, sha)` a commit of `task`'s attempt up to
+    `end` changed, newest first, for the paths under `names` (the plan's own
+    spelling of declared entries; each goes through `_config.plan_to_git` for
+    git's pathspec, and each path git prints back through `git_to_plan`).
+    `touched` is None - CANNOT TELL, never "no commits" - when git would not
+    answer or the recorded start head bounds no span of `end`'s history, and
+    `why` then names the call or the start head. Every caller refuses on None.
+
+    THE ONLY READER OF THE ATTEMPT'S SPAN. The task commit asks it whether the
+    work already sits in an earlier commit, `done --commit` whether the attempt
+    changed anything declared, `done --no-change` how a declared file moved.
+    Two readers of one span with different rules let a rebased branch close a
+    task over another task's commits through one while the other refused.
+
+    THE SPAN IS THE HEAD THE START RECORDED, AND NOTHING SOFTER. A clock reading
+    (`--since startedAt`) has a second's grain and takes in a commit made just
+    before the start. With no recorded head, or none git still holds, there is
+    no span: `([], "")`, unless `phase` is given - then the span is the phase's
+    `baseRef..end` cut by the task's `startedAt`, which is all a start from
+    before the record can be asked about.
 
     A HEAD GIT HOLDS IS NOT YET A SPAN. After a rebase or a reset the recorded
-    head can survive in the object store off HEAD's history, and `start..HEAD`
+    head can survive in the object store off `end`'s history, and `start..end`
     over it lists every commit since the merge base - commits that are not the
-    attempt's, named as the thing to close on. So the head must be an ancestor
-    of HEAD; when it is not, the answer is `([], why)`: nothing claimed, and the
-    reason said, which the refusal prints beside its advice."""
+    attempt's. So the head must be an ancestor of `end`; when it is not, the
+    answer is `(None, why)`: the span is unread, which is not the same answer
+    as an empty one. `[]` there let `done --no-change` close over work the
+    attempt had committed, because "no commit of the attempt" is what that
+    close is asked to establish.
+
+    A COMMIT ANOTHER TASK OF `plan` RECORDS AS ITS OWN IS NEVER IN IT, whichever
+    bound the span has: it is that task's work."""
     hc = _loader.load_hooks_config(modname="audit__config")
     rels = [r for r in (hc.plan_to_git(n, git_root, project) for n in names)
             if r is not None]
-    if not start_head or not rels or run_git(git_root, [
-            "rev-parse", "--verify", "-q",
-            "%s^{commit}" % (start_head,)])[0] != 0:
+    if not rels:
         return [], ""
-    code, _out, err = run_git(git_root, ["merge-base", "--is-ancestor",
-                                         start_head, "HEAD"])
-    if code == 1:
-        return [], ("the start head %s recorded for this attempt is not an "
-                    "ancestor of HEAD (the branch was rebased or reset since), "
-                    "so no span from it names the attempt's commits"
-                    % (start_head[:12],))
+    since = []
+    if start_head and _is_commit(git_root, start_head):
+        code, _out, err = run_git(git_root, ["merge-base", "--is-ancestor",
+                                             start_head, end])
+        if code == 1:
+            return None, ("the start head %s recorded for this attempt is not an "
+                        "ancestor of %s (the branch was rebased or reset "
+                        "since), so no span from it names the attempt's commits"
+                        % (start_head[:12], end if end == "HEAD" else end[:12]))
+        if code != 0:
+            return None, _git_failure("merge-base --is-ancestor", code, err)
+        span = "%s..%s" % (start_head, end)
+    elif phase is None:
+        return [], ""
+    else:
+        base = phase.get("baseRef")
+        span = ("%s..%s" % (base, end) if base and _is_commit(git_root, base)
+                else end)
+        since = (["--since=%s" % (task["startedAt"],)]
+                 if task.get("startedAt") else [])
+    whole = plan if plan is not None else {"phases": [phase] if phase else []}
+    others = set(str(t.get("commit")) for t in _mio.tasks_by_id(whole).values()
+                 if isinstance(t, dict) and t.get("commit")
+                 and t.get("id") != task.get("id"))
+    # A declared directory lists the files under it, so a commit line is told
+    # apart by its own marker rather than by not being a declared path.
+    code, out, err = run_git(git_root, ["log", "--format=@%H", "--name-only"]
+                             + since + [span, "--"] + rels)
     if code != 0:
-        return None, "`git merge-base --is-ancestor` %s%s" % (
-            "could not be run" if code is None else "exited %d" % (code,),
-            ": %s" % (" ".join(err.split()),) if err.strip() else "")
-    span = "%s..HEAD" % (start_head,)
-    code, out, err = run_git(git_root, ["log", "--format=%H", span, "--"]
-                             + list(rels))
-    if code != 0:
-        return None, "`git log %s` %s%s" % (
-            span, "could not be run" if code is None else "exited %d" % (code,),
-            ": %s" % (" ".join(err.split()),) if err.strip() else "")
-    skip = set(others)
-    return [ln.strip() for ln in out.splitlines()
-            if ln.strip() and ln.strip() not in skip], ""
+        return None, _git_failure("log %s" % (span,), code, err)
+    touched, commit = [], None
+    for line in [ln.strip() for ln in out.splitlines() if ln.strip()]:
+        if line.startswith("@"):
+            commit = line[1:]
+        elif commit and commit not in others:
+            touched.append((hc.git_to_plan(line, git_root, project), commit))
+    return touched, ""
 
 
 def close_evidence_refusal(task, project, executor, changed, declared=None,
@@ -1207,11 +1263,12 @@ def close_evidence_refusal(task, project, executor, changed, declared=None,
     with none filed; without it, only beside `not-attempted`.
 
     `earlier` is the commits since the task's start that already changed a
-    declared file (`earlier_attempt_commits`): the work is then committed, so
-    the repair is closing the task on that commit - `audit-task.py done <id>
-    --commit <sha>` - and neither `--no-change` nor a tree to bring in fits.
-    `earlier_why` is the reason that list could not be read, said in the
-    refusal rather than left out of it."""
+    declared file (`attempt_span`): the work is then committed, so the repair
+    is closing the task on that commit - `audit-task.py done <id> --commit
+    <sha>` - and neither `--no-change` nor a tree to bring in fits.
+    `earlier_why` is the reason that list could not be read - git did not
+    answer, or the start head is off HEAD's history - said in the refusal
+    rather than left out of it."""
     tid = str(task.get("id"))
     parts = []
     red = ((executor or {}).get("redFirst") or {}) \
@@ -1220,7 +1277,8 @@ def close_evidence_refusal(task, project, executor, changed, declared=None,
     if changed is False and (any_red_first or word == RED_FIRST_NOT_ATTEMPTED):
         said = ((executor.get("outcome") or {}).get("descriptive") or "").strip() \
             if isinstance(executor, dict) else ""
-        names = list(declared) if declared is not None else _declared_names(task)
+        names = list(declared) if declared is not None else [
+            name for name, _rel in declared_work(task, project, project)]
         parts.append(
             "the task's declared files (%s) carry no change%s, so a green gate "
             "here proves only that nothing broke%s%s"

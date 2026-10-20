@@ -3722,9 +3722,18 @@ reset.
 **The start head has one reader and one test.** `start_head_of()` reads the HEAD an attempt's
 newest `task.start` journal row recorded, and is the only code that does: `commit-task-work.py`
 passes its rows to it and `audit-task.py`'s `_start_head` is the journal read followed by that
-call. `earlier_attempt_commits()` names the attempt's commits as `start..HEAD` only when that head is
-an ancestor of HEAD; a head git still holds after a rebase or reset is not, and the answer is then
-no commits and the reason, printed beside the refusal's advice.
+call. **The span from it has one reader too**: `attempt_span()` is what the task commit, `done
+--commit` and `done --no-change` all ask which commits are the attempt's. It names them as
+`start..end` only when that head is an ancestor of `end`; a head git still holds after a rebase or
+reset is not, and the answer is then **cannot tell** (`None` and the reason naming the start head)
+— never an empty span, which is what a `--no-change` close is asked to establish. Every caller
+refuses on it: the commit and `done --commit` carry the reason in their refusal, and `done
+--no-change` refuses where an empty span would have let it close over committed work. A commit
+another task of the plan records as its own is never in it, and every name goes
+through `_config.plan_to_git`. `declared_work()` is, the same way, the one reading of which
+declared entries are a task's work. `sc-as1` drives all three callers over one start head off
+HEAD's history, and `ncm7` drives the `--no-change` close through the command after an amend has rewritten the
+recorded start head out of HEAD's history.
 
 **No command can import another** — nothing may import a hyphenated entry point — so this
 module is the only place they meet, and a second spelling of a refusal rule is how one commit
@@ -4369,7 +4378,9 @@ ready one - a ready task whose `tests.add` names a suite the newest run that tes
 names as failing goes ahead of the rest (`_wave.base_red_first`), since every other task's gate
 inherits that red until it lands. That run is `_evidence_io.base_run`'s: its tested tree was
 clean (`tested_tree_clean`), so a task gate red on its own uncommitted work is not one, and it is
-no ready task's own run (`red_at_base`); with none recorded nothing is reordered. `bb3` drives it. A recorded gate run while sibling executors edit the same tree measures their
+no ready task's own run (`red_at_base`); with none recorded nothing is reordered. It is a run of
+the ready tasks' own gates, and only those steps' suites are read (`gate_step_names`) - the filter
+`run-test-gate.base_red` puts on the same question. `bb3` and `bb5` drive it. A recorded gate run while sibling executors edit the same tree measures their
 unfinished work, so the driver never has two tasks between dispatch and gate at once.
 
 **What the driver keeps.** `stateDir/drive/<phaseId>.json` holds what no verb records: which

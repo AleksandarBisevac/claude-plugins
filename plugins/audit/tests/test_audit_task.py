@@ -63,6 +63,7 @@ import _gate_derive                                # noqa: E402  (the identity p
 import _panel_write                                # noqa: E402  (as audit-task imports it)
 import _locks as _lock_lib                         # noqa: E402  (its claim writer, which the command no longer re-exports)
 import _filed_returns as _fr                       # noqa: E402  (the word only a close writes)
+import _evidence_io                                # noqa: E402  (DERIVED_STEP_PREFIX: the prefix no build-command key may take)
 
 M = _loader.load_script("audit-task.py", modname="audit_task")
 # What `_harness.staged_main` runs each block of a full run as, and the
@@ -16292,6 +16293,43 @@ def _no_change_layout_cases(check, project, git, write, close, read):
           "`--no-change` (ncm1 is the refusal beside it): %r"
           % ((code, text[:240]),), code == 0)
 
+    # A rebase after the start: the head `start` recorded is an object git
+    # still holds, but no longer an ancestor of HEAD, so `start..HEAD` is not
+    # the attempt's span and the span is unread. Reading it as empty closed
+    # `--no-change` over the work committed since; it is a refusal instead.
+    proj, mpath = project("start-head-rebased")
+    base_of[0] = git(proj, "rev-parse", "HEAD").stdout.decode().strip()
+    replan(mpath, unstarted)
+    s3 = start(proj)
+    git(proj, "commit", "-q", "--amend", "-m", "base, rebased",
+        date="2025-06-03T00:00:00Z")
+    rebased = git(proj, "rev-parse", "HEAD").stdout.decode().strip()
+    write(proj, "src/a.ts", "this task's, after the rebase\n")
+    git(proj, "commit", "-q", "-am", "work", date="2026-02-01T00:00:00Z")
+    before = read(mpath)
+    code, text = close(proj)
+    check("ncm7 a --no-change close is refused when a rebase left the start "
+          "head off HEAD's history, naming the start head, and writes nothing: "
+          "start %r, rebased %r, close %r"
+          % (s3[0], rebased != base_of[0], (code, text[:400])),
+          s3[0] == 0 and rebased != base_of[0] and code == M.E_USAGE
+          and base_of[0][:12] in text and "not an ancestor" in text
+          and "rebase" in text and read(mpath) == before)
+    # SECOND-DIRECTION CASE, for a close made to refuse every recorded start
+    # head: the same start with no rebase and a commit touching another file
+    # only still closes no-change.
+    proj, mpath = project("start-head-kept")
+    base_of[0] = git(proj, "rev-parse", "HEAD").stdout.decode().strip()
+    replan(mpath, unstarted)
+    s4 = start(proj)
+    write(proj, "src/b.ts", "another task's\n")
+    git(proj, "commit", "-q", "-am", "other", date="2026-02-01T00:00:00Z")
+    code, text = close(proj)
+    check("ncm7b ALLOW: the same start head still an ancestor of HEAD, with a "
+          "commit since touching another file only, closes no-change: start "
+          "%r, close %r" % (s4[0], (code, text[:240])),
+          s4[0] == 0 and code == 0)
+
 
 def _index_only_cases(check):
     """A verb's shard write never carries an index-only field into the body.
@@ -18552,6 +18590,17 @@ def _build_command_cases(check):
         rm_absent = run(["build-command", "nowhere", "--remove",
                          "--project-dir", proj])
         refused_clean = (raw(mpath) == written and len(rows(proj)) == 1)
+        # The reserved prefix: the validator refuses a gate entry spelled with
+        # it, so a key spelled with it could never be named by a gate.
+        derived_code, derived_txt = run(
+            ["build-command", "%sunit" % (_evidence_io.DERIVED_STEP_PREFIX,),
+             "--command", "true", "--project-dir", proj])
+        check("bcm5 build-command refuses a key starting with the reserved "
+              "derived-step prefix, which no gate entry may name, and writes "
+              "nothing: %r" % ((derived_code, derived_txt[-240:]),),
+              derived_code == 2
+              and _evidence_io.DERIVED_STEP_PREFIX in derived_txt
+              and raw(mpath) == written and len(rows(proj)) == 1)
 
         rep_code, rep_txt = run(["build-command", "vitest", "--command",
                                  spaced, "--replace", "--reason", "add a "
@@ -18853,8 +18902,9 @@ def _nested_no_change_cases(check):
     # `git log --name-only` prints from the checkout's top, so the path comes
     # back as `member/src/a.py` unless it goes through the pair; a substring
     # test against `src/a.py` cannot tell the two spellings apart, equality can.
-    touched = M._attempt_commits(proj, root, phase, task, ["member/src/a.py"],
-                                 start_head=start)
+    touched, _why = M._scoped_commit.attempt_span(root, proj, None, task,
+                                                  ["src/a.py"], start,
+                                                  phase=phase)
     check("nn3 %s (an attempt's commits come back in the plan's own spelling, "
           "equal to the declared entry and not the checkout-top path: %r)"
           % (NESTED_MOVES_CLAUSE, touched),
@@ -18898,17 +18948,18 @@ def _attempt_log_failure_cases(check):
             return M._close_evidence_refusal(root, mpath, root, task, sha, True,
                                              [], attempt=attempt)
         healthy = ask()
-        real = M._git_answer
+        # The span's one reader runs git through `_scoped_commit.run_git`.
+        real = M._scoped_commit.run_git
 
-        def failing(git_root, *argv):
-            if argv and argv[0] == "log":
-                return 128, ""
-            return real(git_root, *argv)
-        M._git_answer = failing
+        def failing(git_root, args, **kwargs):
+            if args and args[0] == "log":
+                return 128, "", ""
+            return real(git_root, args, **kwargs)
+        M._scoped_commit.run_git = failing
         try:
             broken = ask()
         finally:
-            M._git_answer = real
+            M._scoped_commit.run_git = real
     finally:
         _harness.remove_tree(root)
     check("lo-ce6 done --commit refuses loudly when git log fails, naming the "
