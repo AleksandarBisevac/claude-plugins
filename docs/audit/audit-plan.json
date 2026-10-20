@@ -830,7 +830,7 @@
     {
       "id": "P130",
       "title": "One executable description of CI, and a plugin that ships only what it runs",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P130.json"
     }
   ],
