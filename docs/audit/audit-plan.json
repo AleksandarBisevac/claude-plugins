@@ -836,7 +836,7 @@
     {
       "id": "BF3",
       "title": "Bugfix batch 3",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/BF3.json"
     }
   ],
@@ -10731,7 +10731,7 @@
     {
       "id": "BUG-26",
       "title": "done --technical misses a manifest path that contains a space",
-      "status": "in_progress",
+      "status": "fixed",
       "severity": "med",
       "reportedAt": "2026-10-20T13:33:41Z",
       "reportedBy": null,
@@ -10744,7 +10744,7 @@
         "plugins/audit/tests/test_audit_task.py"
       ],
       "taskId": "BF3.1",
-      "fixedIn": null,
+      "fixedIn": "343a677360c6",
       "notes": null
     }
   ],
