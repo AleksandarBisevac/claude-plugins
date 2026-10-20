@@ -836,7 +836,7 @@
     {
       "id": "BF3",
       "title": "Bugfix batch 3",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/BF3.json"
     }
   ],
