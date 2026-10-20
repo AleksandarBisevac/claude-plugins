@@ -269,8 +269,10 @@
         "severity": "low",
         "file": ".claude/skills/reproducing-ci-locally/SKILL.md:28-30",
         "issue": "The added paragraph says the `sed -n '/jobs:/,$p'` / `grep run:` read 'yields only `sh tools/verify.sh --only <slices>` calls' and that 'every CI job is setup plus one such call'. The read also yields non-verify.sh run steps: .github/workflows/ci.yml:115 (the `verified` job's ci-verified.py call, a gh/python step with no verify.sh) and the pip install / setup run steps at :226, :246, :271, :293. The sentence is a claim about the workflow that the workflow does not bear out literally.",
-        "resolution": "Reword to 'the gate itself is in `sh tools/verify.sh --only <slices>` calls; the other run steps are setup and the verified-run guard', keeping the pointer to `sh tools/verify.sh --list`.",
-        "fixTask": "P130.51-ywo"
+        "resolution": "fixed in P130.51-ywo (9da74f35278a): Reword to 'the gate itself is in `sh tools/verify.sh --only <slices>` calls; the other run steps are setup and the verified-run guard', keeping the pointer to `sh tools/verify.sh --list`.",
+        "fixTask": "P130.51-ywo",
+        "commit": "9da74f35278a",
+        "status": "fixed"
       },
       {
         "id": "P130-R27",
@@ -453,7 +455,7 @@
         "status": "fixed"
       }
     ],
-    "outcome": "[findings: 44 - 0 high, 8 med, 36 low; 40 with a recorded fix commit]"
+    "outcome": "[findings: 44 - 0 high, 8 med, 36 low; 41 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -5364,7 +5366,7 @@
     {
       "id": "P130.51-ywo",
       "title": "fix P130-R26: The added paragraph says the `sed -n '/jobs:/,$p'` / `grep run:...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The added paragraph says the `sed -n '/jobs:/,$p'` / `grep run:` read 'yields only `sh tools/verify.sh --only <slices>` calls' and that 'every CI job is setup plus one such call'. The read also yields non-verify.sh run steps: .github/workflows/ci.yml:115 (the `verified` job's ci-verified.py call, a gh/python step with no verify.sh) and the pip install / setup run steps at :226, :246, :271, :293. The sentence is a claim about the workflow that the workflow does not bear out literally.\n\nResolution asked: Reword to 'the gate itself is in `sh tools/verify.sh --only <slices>` calls; the other run steps are setup and the verified-run guard', keeping the pointer to `sh tools/verify.sh --list`.",
       "files": [
         ".claude/skills/reproducing-ci-locally/SKILL.md"
@@ -5392,13 +5394,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9da74f35278a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Reworded .claude/skills/reproducing-ci-locally/SKILL.md lines 28-32: the read yields setup steps and `sh tools/verify.sh --only <slices>` calls, the gate itself is those calls, every gate job is setup plus one such call, and the `verified` job is named as the exception (runs tools/ci-verified.py, calls no slice). Pointer to `sh tools/verify.sh --list` kept. Evidence: `grep -n run: .github/workflows/*.yml` shows ci.yml:115 as the ci-verified.py step and :178,:198,:229,:251,:276,:298,:318 as verify.sh calls; :226,:246,:271,:293 are setup runs. No gates run (task adds no tests; own-tests has nothing to run).",
+        "descriptive": "The skill's sentence about CI jobs now matches ci.yml: gate jobs are setup plus one verify.sh call, and the verified job is the named exception."
       },
       "startedAt": "2026-10-20T08:03:14Z",
-      "completedAt": null,
+      "completedAt": "2026-10-20T08:15:48Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -5422,7 +5424,124 @@
         "runId": "2026-10-20T08:14:58Z.2392e1",
         "status": "passed",
         "at": "2026-10-20T08:14:58Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9da74f35278a",
+        "at": "2026-10-20T08:15:48Z",
+        "return": "docs/audit/evidence/returns/P130.51-ywo/20261020T080314Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task, expectRedFirst false, tests.add none; prose-only edit to one skill document",
+        "at": "n/a"
       }
+    },
+    {
+      "id": "P130.52-ywo",
+      "title": "One reader answers which commits belong to a task's attempt, the scope preflight knows Playwright, and the phase review's code lows are fixed",
+      "status": "pending",
+      "description": "Whole-phase review of P130 (medium 1, 2; low 5-8). (1) The span start..HEAD of a task's attempt has two readers with different rules: `_scoped_commit.earlier_attempt_commits` (~:1145) checks the start head is an ancestor and excludes other tasks' commits; audit-task.py `_attempt_commits_read` (~:6113) only `rev-parse --verify`s it - after a rebase/reset `done --commit` skips the empty-span refusal (~:6318) and `_no_change_moves` treats foreign commits as moves. Make ONE function (in the lowest module both may import) the only reader of the attempt span - ancestor check, other tasks' recorded commits excluded, plan_to_git pathspecs - and route both callers through it; delete the second. Case: a start head off HEAD's history makes both callers claim nothing and say why. (2) `scope_gap` (drive-phase.py ~:1205-1252): `npx playwright test` is classified by neither entry_collector nor can_run_tests, so a gate [vitest, npx playwright test] asks an e2e spec only of vitest and stops wrongly - add playwright to the test-runner token table (TEST_RUNNER_TOKENS) and treat its specs as could-not-tell unless its config is read; case for the gate shape. (5) declared non-record work is derived three times (`_scoped_commit._declared_names`, `commit-task-work.declared_names`, `audit-task._declared_work`) - one function. (6) guard-capabilities.py ~:68 and guard-history-rewrite.py ~:1766 build their own deny payload - use `_config.deny_payload` (change only the payload construction, never how a guard reads a command; if a host safeguard refuses an edit to a guard file, stop that part and report it). (7) drive-phase.py ~:237 import comment names entry_runner; it uses entry_collector. (8) `build-command` accepts a key starting with `affected/`, which _manifest_rules refuses as a gate entry - refuse it in build-command; `drive-phase.red_at_base` takes the newest clean run of any gate with no step-name filter while `run-test-gate.base_red` filters by steps - filter the same way. Acceptance: a case per item; full sweep green; bench-hooks --gate green.",
+      "files": [
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/hooks/guard-capabilities.py",
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_guard_capabilities.py",
+        "plugins/audit/tests/test_guard_history_rewrite.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__scoped_commit.py: a start head off HEAD's history makes the one attempt-span reader claim no commit and say why, for both the commit and the done --commit callers",
+          "plugins/audit/tests/test_drive_phase.py: a gate of vitest plus npx playwright test does not stop on a declared e2e spec vitest does not collect"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.51-ywo"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P130.53-ywo",
+      "title": "The CHANGELOG's unreleased section describes every user-visible change of P130, and CLAUDE.md's gate-parity sentences match what it does now",
+      "status": "pending",
+      "description": "Whole-phase review of P130 (medium 3, low 4). CHANGELOG.md [Unreleased] covers only the CI/lint/falsifier work; add, in the house style of earlier sections, every user-visible change P130 landed: build-command verb and its --remove refusal; unblock's two arms; done refusing a missing or swallowed --technical; the validator warning on a directory in a task's files; nested-project fixes (stamp, followers, phase gate, integrate, lookup, derive-phase-gate, git path pair and its lint); BUG-24 (/audit:usage like-with-like) and BUG-25 (red-first on Playwright no-tests); a red gate read against its base and a base-red fixer ordered first; tests.add bound to case ids with the gaps/unchecked fields on the filed return; the scope preflight changes; the kept-tree stop and the evidence-based empty-commit refusal; machine-built text handed to verbs on stdin; the case-id/prove-gates attribution check; the shared deny/ask payloads and utc stamp helper. Read each task's title and commit (git log main..HEAD --grep 'feat(P130') to write each line from what landed, not from this list. Nothing about moving tests/ or tools/lints/ (that is 3.6.0). CLAUDE.md ~:285-291 says gate-parity.py compares verify.sh, ci.yml, CONTRIBUTING.md and that list and checks exemptions; P130.2/P130.7 changed that - make each sentence there true of what gate-parity.py does now (read it), and the command list line. No number written into prose (the lints `_output.prose_number_claims` and `_deps.doc_prose_numbers` must stay empty). Acceptance: every feat(P130...) commit's user-visible change has a CHANGELOG line; the prose lints are empty; tools/gate-parity.py exits 0.",
+      "files": [
+        "CHANGELOG.md",
+        "CLAUDE.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [
+        "before-you-claim"
+      ],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P130.51-ywo"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "ok, sve preporuke (owner, 2026-10-14, approving CONSOLIDATED-PLAN.md) / Nova faza za F1 (Recommended) (owner, 2026-10-16, where the F1 tasks live)",
