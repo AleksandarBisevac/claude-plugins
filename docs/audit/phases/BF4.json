@@ -29,14 +29,20 @@
         "severity": "low",
         "file": "tools/gate-parity.py:2794-2795",
         "issue": "vsh12 asserts return_trap_honoured(_rt_dash) is False. The diff made return_trap_honoured swallow an OSError into False (return_trap_probe, 1743-1745), so a dash that cannot be started now satisfies 'dash rejects the RETURN trap' without the probe having run. Before the diff that state raised. The sibling cases vsh11/vsh14 guard this with reason None, but vsh12 does not. This is a does-the-behaviour-still-matter hole the diff introduced in a case the diff did not touch.",
-        "resolution": "Have vsh12 call return_trap_probe(_rt_dash) and require (False, None), so 'rejected' means the shell ran and printed no trap word."
+        "resolution": "fixed in BF4.2 (49d5060c4bf3): Have vsh12 call return_trap_probe(_rt_dash) and require (False, None), so 'rejected' means the shell ran and printed no trap word.",
+        "fixTask": "BF4.2",
+        "commit": "49d5060c4bf3",
+        "status": "fixed"
       },
       {
         "id": "BF4-R2",
         "severity": "low",
         "file": "tools/gate-parity.py:2753-2755",
         "issue": "The comment says 'Windows refuses any non-executable image the same way'. Nothing handed shows that, and the filed outcome states WinError 193. CreateProcess on an extensionless path appends .exe, so the likely Windows error for the extensionless file 'not-a-program' is FileNotFoundError (WinError 2). The case still holds, because both are OSError subclasses and the probe catches OSError. The comment asserts a mechanism that was not observed.",
-        "resolution": "Reword to say only what is true on every OS: starting that path raises an OSError subclass (PermissionError on posix, an OSError on Windows). Do not name the Windows errno."
+        "resolution": "fixed in BF4.2 (49d5060c4bf3): Reword to say only what is true on every OS: starting that path raises an OSError subclass (PermissionError on posix, an OSError on Windows). Do not name the Windows errno.",
+        "fixTask": "BF4.2",
+        "commit": "49d5060c4bf3",
+        "status": "fixed"
       },
       {
         "id": "BF4-R3",
@@ -60,7 +66,7 @@
         "resolution": "Treat an empty `rest` after `key:` as a block sequence and collect the following `- value` lines at deeper indent, or report the job as unreadable when a matrix key line has no inline value. Add a case beside ri4."
       }
     ],
-    "outcome": "[findings: 5 - 0 high, 1 med, 4 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 5 - 0 high, 1 med, 4 low; 2 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -136,7 +142,7 @@
     {
       "id": "BF4.2",
       "title": "Fix BUG-27: every CI job pins its runner image, and a floating -latest label is refused",
-      "status": "in_progress",
+      "status": "done",
       "description": "\n\nAlso, from the BF4.1 review (docs/audit/evidence/returns/BF4.1/20261020T161236Z.reviewer.json), in the same file: (a) case vsh12 (tools/gate-parity.py ~:2794-2795) asserts return_trap_honoured(dash) is False, and since BF4.1 an OSError becomes False, so a dash that cannot be started satisfies the case without the probe running - assert on return_trap_probe's reason (the probe ran and the shell rejected the trap) the way vsh11/vsh14 do, and skip with a stated reason when dash is absent; (b) the comment ~:2753-2755 claims Windows refuses a non-executable image 'the same way' as WinError 193 - CreateProcess on an extensionless path most likely raises FileNotFoundError (WinError 2); say only that it raises an OSError.",
       "files": [
         ".github/workflows/ci.yml",
@@ -168,20 +174,40 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "49d5060c4bf3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "ci.yml: every runs-on and every matrix os value (axis, exclude row) pinned: ubuntu-latest -> ubuntu-24.04; windows-latest -> windows-2025-vs2026 (the Image: line of every Windows job in green run 38937779587, read with gh run view --log; the Linux jobs of that run logged ubuntu-24.04). windows-2025-vs2026 is the image NAME the log prints; that it is also accepted as a runs-on label was not verified here (no CI run possible) - the next release-tier run is the proof, and windows-2025 is the fallback label if it is refused. Job display names that spelled the old labels (e2e, lint + e2e, resample) were renamed to the pinned label; tools/ci-verified.py exempts jobs by name prefix 'resample (' so that is unaffected; the sweep-costs.json platform field and the --platform comment were left as recorded history. tools/gate-parity.py: new drift family floating_runners()/runner_image_verdict() (parity()['runner_images'], rendered as 'CI runner image (job): ...'), reading runs-on and, for ${{ matrix.K }}, every value of K in the matrix axes and include/exclude rows; unreadable label forms (no runs-on, foreign expression, unlisted matrix key, no jobs block) are reported not passed. Cases ri1-ri7 + the runner_images row of sv9. Also (a) vsh12 now asserts return_trap_probe(dash) == (False, None), i.e. the probe ran and dash refused the trap (skip with a stated reason when dash is absent, unchanged); (b) the comment above the unstartable-file fixture now says only that an OSError is raised. Red first: before the implementation the selftest died with NameError floating_runners and sv9 runner_images failed (68/70). Scratch checks via module exec of mutated source: the condition replaced by False reports nothing on a ci.yml with ubuntu-latest; replaced by True reports 11 findings on the pinned ci.yml; a scratch tree ci.yml with runs-on: ubuntu-latest is reported by job name ('verified') by runner_image_verdict and by parity(); return_trap_probe on an unstartable path returns (False, 'OSError ...'), which vsh12's old boolean assertion could not tell from dash refusing. Runs: gate-parity --selftest foreground 81/81 exit 0, under nohup & 81/81, gate-parity.py exit 0, sweep-selftests.py exit 0 (340/340 files ok, 16612 cases), ruff clean. CI itself was not run: the CI proof is the next release-tier run.",
+        "descriptive": "Every CI job now pins ubuntu-24.04 / windows-2025-vs2026 instead of floating -latest, and gate-parity names any job or matrix os value that floats again."
       },
       "startedAt": "2026-10-20T18:54:12Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-20T19:22:06Z",
+      "verifiedBy": [
+        "ri1",
+        "ri2",
+        "ri3",
+        "ri4",
+        "ri5",
+        "ri6",
+        "ri7"
+      ],
       "bugId": "BUG-27",
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-20T19:19:03Z.67ec70",
         "status": "passed",
         "at": "2026-10-20T19:19:03Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "49d5060c4bf3",
+        "at": "2026-10-20T19:22:06Z",
+        "return": "docs/audit/evidence/returns/BF4.2/20261020T185412Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-20T19:06:00Z",
+        "basis": "`python3 tools/gate-parity.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 70 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, the task's run with its inline suite tools/gate-parity.py laid over as HEAD's copy plus its 5 test hunk(s), 8 other hunk(s) held at HEAD), each passing with the working tree's implementation - sv9 (house FAIL): SELFTEST FAILED: 68/70 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
