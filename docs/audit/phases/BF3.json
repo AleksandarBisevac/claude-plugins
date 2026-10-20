@@ -22,15 +22,16 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [],
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "BF3 holds one task, BF3.1, fixing BUG-26 found by tools/verify.sh --release's stress slice: done --technical now refuses a manifest path whatever characters it holds (pd15b red with the old order, green after; test_audit_task 1100/1100 plain and under --spaced). Gate green, no finding open.",
   "tasks": [
     {
       "id": "BF3.1",
       "title": "Fix BUG-26: done --technical misses a manifest path that contains a space",
-      "status": "in_progress",
+      "status": "done",
       "description": "",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -61,28 +62,42 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "343a677360c6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "In audit-task.py _technical_is_manifest the whitespace test is removed from the first guard; only empty and '-' return False first, then the manifest-equality and existing .json checks run (an existing .json path is never prose; the whitespace test was dead after them since the fall-through is False anyway). Docstring updated. New case pd15b in test_audit_task.py builds its fixture via mk(os.path.join(tempfile.mkdtemp(prefix='s p '), 'dn-technical')), checks the manifest-path --technical is refused with REFUSED on stderr naming --technical, file bytes unchanged, and the positional spelling still closes writing the text. Results: test_audit_task.py --selftest exit 0, 1100/1100 cases (1099/1100 before the fix, only pd15b red); tools/sweep-selftests.py --spaced --quiet plugins/audit/tests/test_audit_task.py exit 0, 1/1 files ok, 1100 cases.",
+        "descriptive": "done --technical now refuses the manifest path even when the path contains a space."
       },
       "startedAt": "2026-10-20T13:34:12Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-20T13:57:22Z",
+      "verifiedBy": [
+        "pd15b done whose --technical value is the absolute manifest path under a directory whose name holds a space is refused with REFUSED on stderr and the positional is kept"
+      ],
       "bugId": "BUG-26",
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-20T13:57:20Z.33b1ed",
         "status": "passed",
         "at": "2026-10-20T13:57:20Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "343a677360c6",
+        "at": "2026-10-20T13:57:22Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-20T13:40:41Z",
+        "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 1100 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pd15b (house FAIL): SELFTEST FAILED: 1099/1100 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "d55605e4-ee14-4690-adce-d240ad64810b",
-    "branch": "audit/bf3-bugfix-batch-3",
-    "at": "2026-10-20T13:34:12Z"
-  },
-  "startedAt": "2026-10-20T13:34:12Z"
+  "startedAt": "2026-10-20T13:34:12Z",
+  "testEvidence": {
+    "runId": "2026-10-20T14:08:42Z.bd98ea",
+    "status": "passed",
+    "at": "2026-10-20T14:08:42Z"
+  }
 }
