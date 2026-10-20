@@ -7057,6 +7057,38 @@ def _close_cases(check):
               and (task_in(mpe, "P2.4").get("outcome") or {}).get("technical")
               == "one module rewritten")
 
+        # THE SAME REFUSAL WHEN THE MANIFEST'S OWN PATH HOLDS A SPACE: a value
+        # carrying whitespace reads as prose, and the path is a value that
+        # names the file, so the order of the two readings is what is under test.
+        _pf_root = tempfile.mkdtemp(prefix="s p ")
+        try:
+            projf, mpf = mk(os.path.join(_pf_root, "dn-technical"),
+                            pd_fixture())
+            with open(mpf, "rb") as _fh:
+                _pf_before = _fh.read()
+            _pf_mp = pe_run(["done", "P2.4", "--project-dir", projf,
+                             "--commit", _PD_SHA, "--technical", mpf]
+                            + _NOT_ASKED)
+            with open(mpf, "rb") as _fh:
+                _pf_after = _fh.read()
+            _pf_pos = pe_run(["done", "P2.4", mpf, "--project-dir", projf,
+                              "--commit", _PD_SHA, "--technical",
+                              "one module rewritten"] + _NOT_ASKED)
+            _pf_tech = (task_in(mpf, "P2.4").get("outcome") or {}).get(
+                "technical")
+        finally:
+            _harness.remove_tree(_pf_root)
+        check("pd15b done whose --technical value is the absolute manifest "
+              "path under a directory whose name holds a space is refused with "
+              "REFUSED on stderr and the positional is kept: %r"
+              % ((" " in mpf, _pf_mp[0], _pf_mp[2][:140], _pf_pos[0]),),
+              " " in mpf and _pf_mp[0] == 2
+              and _pf_mp[2].startswith("REFUSED")
+              and "--technical" in _pf_mp[2].splitlines()[0]
+              and _pf_after == _pf_before
+              and _pf_pos[0] == 0
+              and _pf_tech == "one module rewritten")
+
         # ---- (rd) a close does not stand over a verdict that no longer holds ----
         # THE PROBE SEQUENCE: a gate run recorded red for the task, then `done`.
         # The commit verb refuses to commit over that verdict, and the close used

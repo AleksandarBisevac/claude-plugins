@@ -10105,12 +10105,15 @@ def _technical_is_manifest(args):
     `done <id> --technical docs/audit/audit-plan.json` is the shape of a caller
     who meant the path as the positional manifest and let the flag take it:
     argparse hands the path to the flag, the positional stays empty, and the path
-    is recorded as the close's account. An existing `.json` path with no
-    whitespace in it is not an account of anything, so it is refused by name; text
-    that merely mentions one stays legal.
+    is recorded as the close's account. A value that IS the manifest, or names an
+    existing `.json` file, is not an account of anything, so it is refused by name
+    whatever characters the path holds - a space in a directory name does not turn
+    a path into prose, which is why the two path readings run before anything else
+    is asked of the value. Text that merely mentions a file names no existing path
+    as a whole, so it stays legal.
     """
     value = (args.technical or "").strip()
-    if not value or value == "-" or re.search(r"\s", value):
+    if not value or value == "-":
         return False
     if args.manifest and os.path.abspath(args.manifest) == os.path.abspath(value):
         return True

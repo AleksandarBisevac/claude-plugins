@@ -1,0 +1,37 @@
+{
+  "gates": {
+    "own-test: python3 plugins/audit/tests/test_audit_task.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py --spaced --quiet plugins/audit/tests/test_audit_task.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-20T13:40:41Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 1100 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pd15b (house FAIL): SELFTEST FAILED: 1099/1100 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "In audit-task.py _technical_is_manifest the whitespace test is removed from the first guard; only empty and '-' return False first, then the manifest-equality and existing .json checks run (an existing .json path is never prose; the whitespace test was dead after them since the fall-through is False anyway). Docstring updated. New case pd15b in test_audit_task.py builds its fixture via mk(os.path.join(tempfile.mkdtemp(prefix='s p '), 'dn-technical')), checks the manifest-path --technical is refused with REFUSED on stderr naming --technical, file bytes unchanged, and the positional spelling still closes writing the text. Results: test_audit_task.py --selftest exit 0, 1100/1100 cases (1099/1100 before the fix, only pd15b red); tools/sweep-selftests.py --spaced --quiet plugins/audit/tests/test_audit_task.py exit 0, 1/1 files ok, 1100 cases.",
+    "descriptive": "done --technical now refuses the manifest path even when the path contains a space."
+  },
+  "casesAdded": [
+    "pd15b"
+  ],
+  "testsAdded": [
+    "pd15b done whose --technical value is the absolute manifest path under a directory whose name holds a space is refused with REFUSED on stderr and the positional is kept"
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test_audit_task.py: done whose --technical value is the absolute manifest path under a directory whose name holds a space is refused with REFUSED on stderr and the positional is kept": {
+      "file": "plugins/audit/scripts/manifest/audit-task.py",
+      "find": "    if not value or value == \"-\":\n        return False\n    if args.manifest",
+      "replace": "    if not value or value == \"-\" or re.search(r\"\\s\", value):\n        return False\n    if args.manifest",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_task.py",
+        "--selftest"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:0ae09ac248c812190a077e68a77330d724e7b643580c68bdbd7f63bf3e80f567\",\"dirtyDigest\":\"sha256:2cbf3d54d3186e62fc6b3acb37fd46c8c846e1924873e4a2f97f2fe6767ee4a7\",\"dirtyPaths\":{\"plugins/audit/scripts/manifest/audit-task.py\":\"b67b26eaafe029dc\",\"plugins/audit/tests/test_audit_task.py\":\"3108a6a78594f81e\"},\"head\":\"a259b6e0\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:defa7d531ed1ef3f35aede3c19fb730f3ebdc45e7bc2d71b2451558a450e9897\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
