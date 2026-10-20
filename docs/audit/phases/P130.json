@@ -1,7 +1,7 @@
 {
   "id": "P130",
   "title": "One executable description of CI, and a plugin that ships only what it runs",
-  "status": "in_progress",
+  "status": "done",
   "description": "F1 of CONSOLIDATED-PLAN.md (quality-gates-internal, reports/2026-10-14-cost-code-ci-analysis, section 2.2; owner approval 2026-10-14 in DECISIONS.md, V1-V9). It touches the plugin's behaviour toward a user in two places only: `--selftest` on shipped entry points and `render-report --bench` go away (neither is promised by COMPATIBILITY.md), plus the falsifier, which the owner retired (2026-10-16, P128.17's cancellation). The CI half touches tools/ and .github/ only. Invariants established: I11 (plugins/audit/ holds only what the installed copy runs), I12 (B9 recorded at F1.5's landing SHA), I13 (a screenshot is stale exactly when what the page receives changed), I14-I17 (one executable gate description, a matrix derived from conditions, intermittents sought on purpose on the release tier, a verified SHA not re-run). ORDER: every task that edits plugins/audit/tests/ lands before F1.4 moves that directory to tests/, so F1.6, F1.6-falsifier and F1.7 run at their 571becfd paths and before the move, not after it as the plan had them; F1.5 follows F1.4. Stop criteria (plan section 5): F1.2 stops if a stress-only or stress-misses difference repeats in two attempts or the median wall exceeds 8m59s over at least five runs; F1.4-F1.5 stop if the prove-gates name set changes unexplained, a lint checks fewer references without a named reason, tests/ reaches the installed cache, the product imports from tools/, or the whole repo changes by 0.5k lines or more for a move; F1 ends only with B9 recorded and the repo smaller, not merely rearranged. Every figure was re-measured at 571becfd; the companion F1-NOTES.md carries each one, old beside new, with its command.",
   "desiredOutcome": "Every CI job is setup plus one `tools/verify.sh --only <slices>` call and a SHA already green on every job is not run again on main; every sweep leg is graded by the plain rules; the installed plugin carries no tests/, no lint modules, no demo generator and no bench, and its bytes are at most 10,416,128; B9 is recorded with the SHA it was measured at; a prose edit in _ui_theme.py no longer owes a screenshot recapture; and the retired lints and the falsifier are gone with their cases and prove-gates rows.",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "31d78436ea407515262ddb0082261052df08d8e1",
   "branch": "audit/p130-one-executable-description-of",
-  "mergedAt": null,
+  "mergedAt": "2026-10-20T12:33:28Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -6207,5 +6207,6 @@
     "runId": "2026-10-20T12:32:08Z.e01906",
     "status": "passed",
     "at": "2026-10-20T12:32:08Z"
-  }
+  },
+  "mergedHead": "17bf47b820da7fc53814b7e62db9438aeb68bdc3"
 }
