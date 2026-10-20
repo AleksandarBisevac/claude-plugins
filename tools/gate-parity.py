@@ -1727,17 +1727,34 @@ def run_in_scratch_shell(sh, root, script, mode=None):
             sorted(os.listdir(scratch)))
 
 
-def return_trap_honoured(shell):
+def return_trap_probe(shell, argv_prefix=()):
+    """(honoured, reason): whether `shell` runs a function-scoped RETURN trap.
+
+    `argv_prefix` is put in front of the shell's own argv, so a stand-in that is
+    a Python program can be run through the interpreter on every OS instead of
+    through a shebang Windows cannot read. The shell is asked directly, one
+    line, and it answers True only by printing the trap's word. A program the
+    OS refuses to start is an answer too, not an escape: it is False with the
+    reason named, so one unrunnable shell can fail its case without ending the
+    suite body that asked. `reason` is None whenever the probe actually ran."""
+    argv = list(argv_prefix) + [shell, "-c",
+                                "f() { trap 'echo honoured' RETURN; return 0; }; f"]
+    try:
+        done = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    except OSError as exc:
+        return False, "OSError starting %r: %s" % (shell, exc)
+    return b"honoured" in done.stdout, None
+
+
+def return_trap_honoured(shell, argv_prefix=()):
     """True when `shell` runs a function-scoped RETURN trap, asked directly.
 
     The skip for a missing control has to rest on what the shell IS, so it is
     probed here with a one-line function rather than inferred from how many
     directories the control left. A shell that rejects the signal name (dash
-    prints `bad trap`) or runs nothing answers False."""
-    done = subprocess.run(
-        [shell, "-c", "f() { trap 'echo honoured' RETURN; return 0; }; f"],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    return b"honoured" in done.stdout
+    prints `bad trap`), runs nothing, or cannot be started answers False; the
+    reason for the last is `return_trap_probe`'s."""
+    return return_trap_probe(shell, argv_prefix)[0]
 
 
 def return_trap_verdict(dash_present, left_count, honoured):
@@ -2718,22 +2735,54 @@ def _cases(check):
           and return_trap_verdict(False, 0, True) == "skip")
     # The probe reads what the shell PRINTS, so two stub "shells" separate its
     # verdicts on any machine: one that prints the word, one that prints nothing.
+    # The stubs are Python programs handed to the interpreter running this suite,
+    # because a file starting with a shell shebang is not a program Windows can
+    # start at all.
     _rt_root = tempfile.mkdtemp(prefix="return-trap-probe-")
     try:
         _rt_stubs = {}
-        for _name, _body in (("says", "echo honoured\n"), ("silent", "true\n")):
-            _rt_stubs[_name] = os.path.join(_rt_root, _name)
+        for _name, _body in (("says", "print('honoured')\n"),
+                             ("silent", "pass\n")):
+            _rt_stubs[_name] = os.path.join(_rt_root, _name + ".py")
             with io.open(_rt_stubs[_name], "w", encoding="utf-8", newline="\n") as fh:
-                fh.write("#!/bin/sh\n" + _body)
-            os.chmod(_rt_stubs[_name], 0o755)
-        _rt_says = return_trap_honoured(_rt_stubs["says"])
-        _rt_silent = return_trap_honoured(_rt_stubs["silent"])
+                fh.write(_body)
+        _rt_run = (sys.executable,)
+        _rt_says = return_trap_honoured(_rt_stubs["says"], _rt_run)
+        _rt_silent = return_trap_honoured(_rt_stubs["silent"], _rt_run)
+        # A file the OS cannot start as a program: a plain text file with no
+        # execute bit raises on posix, and Windows refuses any non-executable
+        # image the same way, so the probe's OSError path is reachable here.
+        _rt_dead = os.path.join(_rt_root, "not-a-program")
+        with io.open(_rt_dead, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write("echo honoured\n")
+        os.chmod(_rt_dead, 0o644)
+        _rt_ok = return_trap_probe(_rt_stubs["says"], _rt_run)
+        try:
+            _rt_gone = return_trap_probe(_rt_dead)
+            _rt_gone_bool = return_trap_honoured(_rt_dead)
+            _rt_raised = None
+        except OSError as exc:
+            _rt_gone = _rt_gone_bool = None
+            _rt_raised = exc
     finally:
         from _suite import remove_tree
         remove_tree(_rt_root)
     check("vsh11 the direct probe reads the shell's own answer: a shell that prints "
           "the trap's word is honoured and one that prints nothing is not: %r / %r"
           % (_rt_says, _rt_silent), _rt_says is True and _rt_silent is False)
+    check("vsh14 (inline --selftest) return_trap_honoured over stubs that are not "
+          "shell scripts runs on every OS - the stub is a Python program run "
+          "through the interpreter, so no shebang is needed and the probe ran "
+          "(reason None): %r" % (_rt_ok,),
+          _rt_ok == (True, None) and _rt_says is True and _rt_silent is False)
+    check("vsh15 (inline --selftest) an OSError from the program is recorded as a "
+          "failed case instead of ending the selftest body - the probe answers "
+          "False with the reason named, return_trap_honoured stays a plain False, "
+          "and this case itself ran: raised=%r probe=%r bool=%r"
+          % (_rt_raised, _rt_gone, _rt_gone_bool),
+          _rt_raised is None and _rt_gone is not None
+          and _rt_gone[0] is False and "OSError" in (_rt_gone[1] or "")
+          and _rt_gone_bool is False)
     _rt_dash = shutil.which("dash")
     if _rt_dash is None:
         from _harness import skip

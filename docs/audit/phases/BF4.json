@@ -23,7 +23,23 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "BF4-R1",
+        "severity": "low",
+        "file": "tools/gate-parity.py:2794-2795",
+        "issue": "vsh12 asserts return_trap_honoured(_rt_dash) is False. The diff made return_trap_honoured swallow an OSError into False (return_trap_probe, 1743-1745), so a dash that cannot be started now satisfies 'dash rejects the RETURN trap' without the probe having run. Before the diff that state raised. The sibling cases vsh11/vsh14 guard this with reason None, but vsh12 does not. This is a does-the-behaviour-still-matter hole the diff introduced in a case the diff did not touch.",
+        "resolution": "Have vsh12 call return_trap_probe(_rt_dash) and require (False, None), so 'rejected' means the shell ran and printed no trap word."
+      },
+      {
+        "id": "BF4-R2",
+        "severity": "low",
+        "file": "tools/gate-parity.py:2753-2755",
+        "issue": "The comment says 'Windows refuses any non-executable image the same way'. Nothing handed shows that, and the filed outcome states WinError 193. CreateProcess on an extensionless path appends .exe, so the likely Windows error for the extensionless file 'not-a-program' is FileNotFoundError (WinError 2). The case still holds, because both are OSError subclasses and the probe catches OSError. The comment asserts a mechanism that was not observed.",
+        "resolution": "Reword to say only what is true on every OS: starting that path raises an OSError subclass (PermissionError on posix, an OSError on Windows). Do not name the Windows errno."
+      }
+    ],
+    "outcome": "[findings: 2 - 0 high, 0 med, 2 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
