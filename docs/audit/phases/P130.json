@@ -501,8 +501,10 @@
         "severity": "low",
         "file": "CHANGELOG.md:110,151",
         "issue": "Two entries describe the same plan-gate refusal change: Changed 'The plan gate's refusal names the right owner' (line 110) and Fixed 'The plan-gate refusal states only what is true' (line 151). Both say a not-started task reached only through a directory entry is no longer named as the file's owner; the second adds the terminal-task case. A reader sees one change twice, in two sections.",
-        "resolution": "Fold them into one entry (the Fixed one, since the old text was false), keeping the shared-coverage-function sentence and the terminal-task case.",
-        "fixTask": "P130.59-ywo"
+        "resolution": "fixed in P130.59-ywo (02fe0b0eea64): Fold them into one entry (the Fixed one, since the old text was false), keeping the shared-coverage-function sentence and the terminal-task case.",
+        "fixTask": "P130.59-ywo",
+        "commit": "02fe0b0eea64",
+        "status": "fixed"
       },
       {
         "id": "P130-R51",
@@ -519,14 +521,20 @@
         "severity": "low",
         "file": "CHANGELOG.md:129-131",
         "issue": "The clause 'A prose-only edit to `_ui_theme.py`, a docstring or a comment, no longer owes a recapture' claims more than commit 8e382f8c did. The digest is taken over the assembled text (_surface_digest.py surface_texts(): report CSS + NUL + SCRIPT, panel UI_HTML) and nothing strips comments from it. The TOKEN_CSS string in _ui_theme.py carries CSS comments (/* ... */ at _ui_theme.py:64-119) that ship in both pages, so an edit to one still changes the digest and still owes a recapture. 'A comment' read by a changelog reader includes those, and they are most of the prose in that file. Only Python docstrings and # comments are excluded from the digest.",
-        "resolution": "Narrow the wording to what the page cannot see, e.g. 'a Python docstring or # comment in `_ui_theme.py`; a comment inside the CSS it emits is part of the page and still owes one'."
+        "resolution": "fixed in P130.59-ywo (02fe0b0eea64): Narrow the wording to what the page cannot see, e.g. 'a Python docstring or # comment in `_ui_theme.py`; a comment inside the CSS it emits is part of the page and still owes one'.",
+        "fixTask": "P130.59-ywo",
+        "commit": "02fe0b0eea64",
+        "status": "fixed"
       },
       {
         "id": "P130-R53",
         "severity": "low",
         "file": "CHANGELOG.md:131-132",
         "issue": "The clause 'a `scripts/ui/` part no surface claims is reported instead of passing unseen' is listed in a Changed bullet as part of this change, but 8e382f8c did not add it. The unassigned-part report existed in _output.ui_surface_digests and in loadUiSourceDigests (the `if (parsed.unassigned?.length)` lines are unchanged context in the 8e382f8c capture-screenshots.mjs diff), and was present since 9f29c519, which is in v1.0.0. Read under [Unreleased]/Changed it presents a long-standing behaviour as new.",
-        "resolution": "Drop the clause, or write it as unchanged ('...still reports a part no surface claims')."
+        "resolution": "fixed in P130.59-ywo (02fe0b0eea64): Drop the clause, or write it as unchanged ('...still reports a part no surface claims').",
+        "fixTask": "P130.59-ywo",
+        "commit": "02fe0b0eea64",
+        "status": "fixed"
       },
       {
         "id": "P130-R54",
@@ -536,7 +544,7 @@
         "resolution": "Say 'the Edit refusal and the shell-write refusal' (the two arms of the plan gate that name an owner) instead of 'the Bash-write path', or leave as is since the entry is about the refusal wording; no code change."
       }
     ],
-    "outcome": "[findings: 54 - 0 high, 10 med, 44 low; 44 with a recorded fix commit]"
+    "outcome": "[findings: 54 - 0 high, 10 med, 44 low; 47 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6021,7 +6029,7 @@
     {
       "id": "P130.59-ywo",
       "title": "fix P130-R50: Two entries describe the same plan-gate refusal change: Changed...",
-      "status": "in_progress",
+      "status": "done",
       "description": "Two entries describe the same plan-gate refusal change: Changed 'The plan gate's refusal names the right owner' (line 110) and Fixed 'The plan-gate refusal states only what is true' (line 151). Both say a not-started task reached only through a directory entry is no longer named as the file's owner; the second adds the terminal-task case. A reader sees one change twice, in two sections.\n\nResolution asked: Fold them into one entry (the Fixed one, since the old text was false), keeping the shared-coverage-function sentence and the terminal-task case.",
       "files": [
         "CHANGELOG.md"
@@ -6049,13 +6057,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "02fe0b0eea64",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CHANGELOG.md only. (1) Removed the Changed entry 'The plan gate's refusal names the right owner' and folded its one unique sentence (edit path and Bash-write path read coverage through one function) into the Fixed entry 'The plan-gate refusal states only what is true', which keeps the terminal-task case. (2) P130.3 bullet: dropped the clause about a scripts/ui/ part no surface claims (reviewer finding 2; _output.ui_surface_digests and loadUiSourceDigests already reported it, unchanged context in 8e382f8c's capture-screenshots.mjs diff). (3) Rewrote the prose-only clause (finding 1) to what 8e382f8c changed: the digest used to be over the raw bytes of the sources plus the whole of _ui_theme.py (old _output.py docstring in the _surface_digest.py header), now over the assembled page text, so a Python docstring or # comment in _ui_theme.py no longer owes a recapture while a comment inside the emitted CSS, a token or a markup change still does. Checks: python3 tools/gate-parity.py exit 0; _deps.doc_prose_numbers() returns []; test__output.py --selftest 259/259 passed. Gates not run (own-tests: nothing of its own).\n\nclaims:\n1 CHANGELOG.md:122-128 says only what 8e382f8c did: _surface_digest.py header (old digest over raw source bytes plus all of _ui_theme.py, new digest over CSS+NUL+SCRIPT / UI_HTML) and the _refs.py/capture-screenshots.mjs diff; the unassigned-part clause removed as pre-existing\n2 n/a - no check touched; gate-parity exit 0 and doc_prose_numbers() == [] observed\n3 grep of CHANGELOG.md for 'plan gate.s refusal|plan-gate refusal|prose-only|no surface claims': 4 hits before (110, 151, 130, 131) - the two refusal entries merged to one, the two UI clauses rewritten/dropped; no other hit\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+        "descriptive": "CHANGELOG [Unreleased] now describes the plan-gate refusal change once and the P130.3 screenshot-digest bullet claims only what 8e382f8c changed."
       },
       "startedAt": "2026-10-20T12:05:26Z",
-      "completedAt": null,
+      "completedAt": "2026-10-20T12:20:25Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -6079,6 +6087,17 @@
         "runId": "2026-10-20T12:18:44Z.9fb3ed",
         "status": "passed",
         "at": "2026-10-20T12:18:44Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "02fe0b0eea64",
+        "at": "2026-10-20T12:20:25Z",
+        "return": "docs/audit/evidence/returns/P130.59-ywo/20261020T120526Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task, expectRedFirst false, tests.add none: a CHANGELOG edit, no test owed",
+        "at": "n/a"
       }
     },
     {
