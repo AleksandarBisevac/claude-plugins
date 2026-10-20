@@ -1,7 +1,7 @@
 {
   "id": "BF3",
   "title": "Bugfix batch 3",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "BUG-26 is fixed: done --technical refuses a manifest path whatever characters it holds, and the v3.5.0 release verifies green under the stress slice",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "a259b6e0b34e01df913969190a2459b4e16d6e98",
   "branch": "audit/bf3-bugfix-batch-3",
-  "mergedAt": null,
+  "mergedAt": "2026-10-20T14:08:49Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -99,5 +99,6 @@
     "runId": "2026-10-20T14:08:42Z.bd98ea",
     "status": "passed",
     "at": "2026-10-20T14:08:42Z"
-  }
+  },
+  "mergedHead": "9b1a6331743d1f9a62ce71297b12f2c19ce94d38"
 }
