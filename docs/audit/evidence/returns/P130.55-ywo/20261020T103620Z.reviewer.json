@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'start that child with SIGINT reset to SIG_DFL (preexec_fn on POSIX; on Windows ... check)'. Diff: tools/gate-parity.py:1700-1708 adds _default_sigint() calling signal.signal(SIGINT, SIG_DFL); :1724-1725 passes it as preexec_fn only when os.name == 'posix' (None otherwise, so Windows never sees the POSIX-only argument). preexec_fn runs in the forked child before exec, so it cannot change the parent's disposition; the module has no threading/concurrent use (grep), so the preexec_fn thread-safety caveat does not apply. Acceptance (1): vsh13 (:1876-1895) sets SIGINT to SIG_IGN around both INT legs (the vsh6 kill leg and the vsh9 generator int leg), restores in finally, and asserts 130 for both with no 'resumed'/'status=' output and empty scratch. Acceptance (2)/(3 for this file): I ran python3 tools/gate-parity.py --selftest once from the task tree: 'ALL PASS: 71/71 cases passed', exit 0. The executor's outcome (reset in the one helper all vsh cases use; vsh13 added; 71/71 foreground and under nohup &) describes the diff. I did not re-run the nohup variant or the full sweep.",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "Executor's filed word is could-not-prove, basis: the throwaway-tree run at HEAD exited 1 with 'NameError: name signal is not defined' (44/45), i.e. the overlay dropped the new module-level import signal (fault F747), so the run failed on a missing import, not on vsh13's assertion; the task introduces _default_sigint but the failing symbol was signal, not a task symbol, so it does not meet the proved bar. The caller notes the executor separately observed vsh13 red with SIGINT ignored before the fix (kill leg returned 0 under SIG_IGN) and green 71/71 after; I cannot reproduce that red without writing, so I echo the filed word could-not-prove and do not upgrade it.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "The gate's selftests entry runs python3 tools/sweep-selftests.py (whole project, so the bound is the whole suite). The only pre-existing tests this diff touches are the vsh6 (tools/gate-parity.py:1856-1865) and vsh9 (:1812-1822) INT/TERM legs that run through run_in_scratch_shell; each asserts an exact exit code (130/143), absence of 'resumed'/'status=' output and an empty scratch dir, so each would fail if the trap behaviour were deleted. Read-only reading of that file; the rest of the sweep was not read."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

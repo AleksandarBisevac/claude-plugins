@@ -55,6 +55,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -1696,8 +1697,21 @@ def shell_function_text(source, name):
     return found.group(0) if found else None
 
 
+def _default_sigint():
+    """Runs in the child before exec: SIGINT back to its default action.
+
+    A caller that is a background job passes SIGINT down as ignored, and a
+    POSIX shell keeps an inherited-ignored signal ignored, so verify.sh's INT
+    trap would never be reachable and the cases would grade the caller instead
+    of the script. Windows has no preexec_fn, and its shell cases do not send
+    signals through it."""
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+
 def run_in_scratch_shell(sh, root, script, mode=None):
-    """(exit code, output, what is left in the TMPDIR it was given)."""
+    """(exit code, output, what is left in the TMPDIR it was given).
+
+    The child's SIGINT is reset to its default, whatever this process holds."""
     scratch = os.path.join(root, "tmp")
     if os.path.isdir(scratch):
         shutil.rmtree(scratch)
@@ -1707,7 +1721,8 @@ def run_in_scratch_shell(sh, root, script, mode=None):
     if mode is not None:
         env["STUB_MODE"] = mode
     done = subprocess.run([sh, "-c", script], cwd=root, env=env,
-                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          preexec_fn=_default_sigint if os.name == "posix" else None)
     return (done.returncode, done.stdout.decode("utf-8", "replace"),
             sorted(os.listdir(scratch)))
 
@@ -1857,6 +1872,27 @@ def _verify_cleanup_cases(check):
                   "workdir instead of resuming, under %s: code=%r out=%r left=%r"
                   % (_VERIFY_CLAUSE, sig, want, ran, code, out, left),
                   code == want and "resumed" not in out and left == [])
+
+        # A background job (nohup, `&`, a harness runner) hands its children SIGINT
+        # as ignored, and a POSIX shell keeps an inherited-ignored signal ignored,
+        # so a trap on it never fires. This process ignores it here, as such a
+        # caller would, and the INT legs must still end at 130: the cases measure
+        # verify.sh's trap, not the caller's disposition. The two legs are the
+        # ones vsh6 and vsh9 run; they are red without the reset in
+        # run_in_scratch_shell.
+        was = signal.signal(signal.SIGINT, signal.SIG_IGN)
+        try:
+            code_a, out_a, left_a = run_in_scratch_shell(
+                shell, root, trapped + "kill -INT $$\nprintf 'resumed\\n'\n")
+            code_b, out_b, left_b = run_in_scratch_shell(
+                shell, root, run_ledger, mode="int")
+        finally:
+            signal.signal(signal.SIGINT, was)
+        check("vsh13 the INT leg exits 130 even when this process ignores SIGINT, "
+              "under %s: kill=%r/%r/%r generator=%r/%r/%r"
+              % (ran, code_a, out_a, left_a, code_b, out_b, left_b),
+              code_a == 130 and "resumed" not in out_a and left_a == []
+              and code_b == 130 and "status=" not in out_b and left_b == [])
 
         code, out, left = run_in_scratch_shell(shell, root, trapped + "exit 3\n")
         check("vsh7 %s - a plain exit still removes the workdir and keeps its "

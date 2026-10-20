@@ -1,0 +1,96 @@
+{
+  "gates": {
+    "python3 plugins/audit/tests/test_audit_task.py --selftest --stage ncm-block": "pass",
+    "python3 plugins/audit/tests/test__scoped_commit.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_commit_task_work.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_audit_task.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_drive_phase.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_guard_capabilities.py --selftest": "pass",
+    "python3 plugins/audit/tests/test_guard_history_rewrite.py --selftest": "pass",
+    "python3 plugins/audit/tests/test__refs.py --selftest": "pass",
+    "selftests": "pass",
+    "ruff check plugins/audit tools && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests": "pass",
+    "python3 tools/bench-hooks.py --gate": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-20T10:53:08Z",
+    "basis": "`python3 plugins/audit/tests/test_audit_task.py --selftest --stage ncm-block` in a throwaway tree at HEAD exited 1 with 1 of 10 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ncm7 (house FAIL): SELFTEST FAILED: 9/10 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Applied <outside-repo> with `git apply -3` (exit 0, all 11 files applied cleanly), `git restore --staged .` (exit 0), `git ls-files -u` empty, `git diff --stat` 11 files. The fix: _scoped_commit.attempt_span returns (None, why) - cannot tell - when `merge-base --is-ancestor` answers 1, the why naming the start head's first 12 hex digits and 'rebased or reset'; docstring states None is cannot-tell and every caller refuses on it. audit-task._no_change_moves returns (None, notes + ['... CANNOT BE TOLD: <why>']) whenever the span reader answers None (not-ancestor or a git log failure, which before only added a note and let the close through); the done --no-change caller refuses on None with E_USAGE, printing the note (start head named), advising re-start (spends an attempt, records the new head) or --commit, writing nothing. done --commit (_close_evidence_refusal) already refused on None, now reached for the not-ancestor case too, with the reason naming the start head; comments updated. commit-task-work.earlier_attempt passes None through; its only caller asks it while already refusing, and the refusal carries why. Tests: sc-ea2 rewritten to require None (not []); sc-as1 rewritten to require None from the commit caller with the start head named, the done --commit refusal naming it, and _no_change_moves None with a note naming it; new ncm7 (command-level: start records head, amend rewrites it out of HEAD's history, a commit to the declared file, done --no-change refused E_USAGE naming the start head, 'not an ancestor', 'rebase', manifest bytes unchanged) and ncm7b (second direction: same start, no rewrite, a commit to another file only, closes 0). PLUGIN-BUILD-GUIDE.md's span paragraph now says cannot-tell and names ncm7. Guard hook diffs are the patch's payload construction only (_config.deny_payload/ask_payload); no guard edit was made by me. Counts: test__scoped_commit 43/43, test_commit_task_work 132/132, test_audit_task 1099/1099, test_drive_phase 416/416, test_guard_capabilities 35/35, test_guard_history_rewrite 291/291, test__refs 286/286, each exit 0; full sweep `python3 tools/sweep-selftests.py` exit 0, 340/340 files ok, 16600 cases; ruff exit 0; vermin exit 0; bench-hooks --gate exit 0 (measured on 3.14.7 only, 3.8-3.13 NOT MEASURED). Falsifiers each probed in a scratch copy of the tree (not the task tree): all three turned their case red (sc-ea2+sc-as1, pw1, ncm7), exit 1 each. test_guard_history_rewrite.py and hooks/_config.py are declared but unchanged.",
+    "description": "",
+    "descriptive": "A rebase that leaves a task's recorded start head off HEAD's history now makes every close refuse with the start head named, instead of letting done --no-change close over committed work."
+  },
+  "testsAdded": [
+    "sc-ea2 (rewritten)",
+    "sc-as1 (rewritten)",
+    "sc-as2",
+    "sc-ea4",
+    "sc-dw1",
+    "sc-dw2",
+    "ncm7",
+    "ncm7b",
+    "pw1",
+    "pw2",
+    "bcm5",
+    "bb5",
+    "imc1",
+    "c4",
+    "c5"
+  ],
+  "casesAdded": [
+    [
+      "sc-as1",
+      "sc-ea2"
+    ],
+    "pw1",
+    [
+      "ncm7",
+      "ncm7b"
+    ]
+  ],
+  "falsifiers": {
+    "plugins/audit/tests/test__scoped_commit.py: a start head off HEAD's history makes the one attempt-span reader claim no commit and say why, for both the commit and the done --commit callers": {
+      "file": "plugins/audit/scripts/governance/_scoped_commit.py",
+      "find": "            return None, (\"the start head %s recorded for this attempt is not an \"",
+      "replace": "            return [], (\"the start head %s recorded for this attempt is not an \"",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test__scoped_commit.py",
+        "--selftest"
+      ]
+    },
+    "plugins/audit/tests/test_drive_phase.py: a gate of vitest plus npx playwright test does not stop on a declared e2e spec vitest does not collect": {
+      "file": "plugins/audit/scripts/governance/drive-phase.py",
+      "find": "    return _carries(_bases(command)[1], PLAYWRIGHT_TOKEN)",
+      "replace": "    return False",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_drive_phase.py",
+        "--selftest",
+        "--stage",
+        "pw-block"
+      ]
+    },
+    "plugins/audit/tests/test_audit_task.py: a --no-change close is refused when a rebase left the start head off HEAD's history, naming the start head": {
+      "file": "plugins/audit/scripts/manifest/audit-task.py",
+      "find": "        if moved is None:\n",
+      "replace": "        if moved is None and False:\n",
+      "command": [
+        "python3",
+        "plugins/audit/tests/test_audit_task.py",
+        "--selftest",
+        "--stage",
+        "ncm-block"
+      ]
+    }
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:e0e9144af461ad76cb9309cd2221475329f608036c3fceb9176642a9d9be23c7\",\"dirtyDigest\":\"sha256:a1dbbb2e31168d69474f9ac1dc3d5c698483e400592a6e4c77c940f84715a28a\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"d6e0d7614f0a2143\",\"plugins/audit/hooks/guard-capabilities.py\":\"45a96600c1050749\",\"plugins/audit/hooks/guard-history-rewrite.py\":\"d33f0441c092af74\",\"plugins/audit/scripts/governance/_scoped_commit.py\":\"4a1c0a6764bfe164\",\"plugins/audit/scripts/governance/commit-task-work.py\":\"23f50061de628114\",\"plugins/audit/scripts/governance/drive-phase.py\":\"3d47974b0fd98020\",\"plugins/audit/scripts/manifest/audit-task.py\":\"305c5f41a7312904\",\"plugins/audit/tests/test__scoped_commit.py\":\"587a8e8d975002a4\",\"plugins/audit/tests/test_audit_task.py\":\"0145fa9560d64823\",\"plugins/audit/tests/test_drive_phase.py\":\"d14116b9674a579f\",\"plugins/audit/tests/test_guard_capabilities.py\":\"30a940f5ab40cdc3\"},\"head\":\"2365fce7\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/guard-capabilities.py\",\"plugins/audit/hooks/guard-history-rewrite.py\",\"plugins/audit/scripts/governance/_scoped_commit.py\",\"plugins/audit/scripts/governance/commit-task-work.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/tests/test__scoped_commit.py\",\"plugins/audit/tests/test_audit_task.py\",\"plugins/audit/tests/test_commit_task_work.py\",\"plugins/audit/tests/test_drive_phase.py\",\"plugins/audit/tests/test_guard_capabilities.py\",\"plugins/audit/tests/test_guard_history_rewrite.py\"],\"scopeDigest\":\"sha256:fd2f3b2d162ab1775d9d5ab0bde06b9597d57538f6aa6b8126b8d4c3975cc982\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": [
+    "plugins/audit/tests/test__scoped_commit.py: a start head off HEAD's history makes the one attempt-span reader claim no commit and say why, for both the commit and the done --commit callers - not checked: the submit's command did not run `plugins/audit/tests/test__scoped_commit.py`, so the ids bound to it were not compared with any printed label",
+    "plugins/audit/tests/test_drive_phase.py: a gate of vitest plus npx playwright test does not stop on a declared e2e spec vitest does not collect - not checked: the submit's command did not run `plugins/audit/tests/test_drive_phase.py`, so the ids bound to it were not compared with any printed label"
+  ]
+}

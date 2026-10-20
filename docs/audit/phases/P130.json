@@ -5558,7 +5558,7 @@
     {
       "id": "P130.53-ywo",
       "title": "The CHANGELOG's unreleased section describes every user-visible change of P130, and CLAUDE.md's gate-parity sentences match what it does now",
-      "status": "in_progress",
+      "status": "done",
       "description": "Whole-phase review of P130 (medium 3, low 4). CHANGELOG.md [Unreleased] covers only the CI/lint/falsifier work; add, in the house style of earlier sections, every user-visible change P130 landed: build-command verb and its --remove refusal; unblock's two arms; done refusing a missing or swallowed --technical; the validator warning on a directory in a task's files; nested-project fixes (stamp, followers, phase gate, integrate, lookup, derive-phase-gate, git path pair and its lint); BUG-24 (/audit:usage like-with-like) and BUG-25 (red-first on Playwright no-tests); a red gate read against its base and a base-red fixer ordered first; tests.add bound to case ids with the gaps/unchecked fields on the filed return; the scope preflight changes; the kept-tree stop and the evidence-based empty-commit refusal; machine-built text handed to verbs on stdin; the case-id/prove-gates attribution check; the shared deny/ask payloads and utc stamp helper. Read each task's title and commit (git log main..HEAD --grep 'feat(P130') to write each line from what landed, not from this list. Nothing about moving tests/ or tools/lints/ (that is 3.6.0). CLAUDE.md ~:285-291 says gate-parity.py compares verify.sh, ci.yml, CONTRIBUTING.md and that list and checks exemptions; P130.2/P130.7 changed that - make each sentence there true of what gate-parity.py does now (read it), and the command list line. No number written into prose (the lints `_output.prose_number_claims` and `_deps.doc_prose_numbers` must stay empty). Acceptance: every feat(P130...) commit's user-visible change has a CHANGELOG line; the prose lints are empty; tools/gate-parity.py exits 0.",
       "files": [
         "CHANGELOG.md",
@@ -5592,19 +5592,30 @@
       ],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2365fce74a1e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Attempt 1's CHANGELOG.md and CLAUDE.md edits were present in the tree (git diff --stat HEAD showed both). Attempt 2 rewrote the gate-parity paragraph at CONTRIBUTING.md:213-223 to match the tool's docstring: it holds slice_drift / shard_matrix_drift, says it compares no document (documents point at verify.sh --list), and lists the rules it still holds - affected_dispatch(), failmode_table_drift() (SECURITY.md vs hooks.json), per-job time bounds backed by a longest line, exemption_audit_drift(). The retired claims (sweep isolation against documents, sweep roots, scratch-path rule for tools/) are removed. The other two gate-parity mentions in CONTRIBUTING.md (shard_matrix_drift near the sweep costs; 'python3 tools/gate-parity.py --list') were read and are still true. CHANGELOG: no feat(P130) commit landed after attempt 1's base - attempt 1 ran at head 823dff92, the same base as this tree, and the newest feat commit (P130.51, a CONTRIBUTING.md wording fix) is its ancestor and not user-visible - so no new line was owed; P130.50's user-visible parts (early-exit verb stdin write, unchecked ids reaching the reviewer) already have lines. Ran: python3 tools/gate-parity.py exit 0; _output.prose_number_claims() == [] and _deps.doc_prose_numbers() == []. Not run: full sweep, ruff/vermin, browser gates (docs only).",
+        "descriptive": "CONTRIBUTING.md now says only what gate-parity.py does; CHANGELOG [Unreleased] and CLAUDE.md from attempt 1 stand."
       },
       "startedAt": "2026-10-20T10:20:38Z",
-      "completedAt": null,
+      "completedAt": "2026-10-20T10:36:18Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-20T10:32:55Z.b178a9",
         "status": "passed",
         "at": "2026-10-20T10:32:55Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2365fce74a1e",
+        "at": "2026-10-20T10:36:18Z",
+        "return": "docs/audit/evidence/returns/P130.53-ywo/20261020T102038Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task: no test added, so no red was owed",
+        "at": "n/a"
       }
     },
     {
@@ -5670,7 +5681,7 @@
     {
       "id": "P130.55-ywo",
       "title": "The SIGINT cases of gate-parity hold when the sweep runs as a background job",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F746. tools/gate-parity.py cases vsh6 (~:1856) and vsh9 (~:1812) send `kill -INT $$` to a shell started through `run_in_scratch_shell` (~:1699), a bare subprocess.run. A background job (nohup, &, a harness runner) hands the child SIGINT as ignored, and POSIX sh keeps an inherited-ignored signal ignored, so `trap` never fires and the INT leg fails; in the foreground both pass. Fix: start that child with SIGINT reset to SIG_DFL (preexec_fn on POSIX; on Windows the cases are already skipped or not applicable - check), so the cases measure verify.sh's trap and not the caller's signal disposition. Acceptance: (1) a new case runs the INT leg with this process's SIGINT set to SIG_IGN and still sees exit 130 (red before the fix); (2) vsh6/vsh9 pass under `nohup python3 tools/gate-parity.py --selftest &`-style background runs; (3) full sweep green.",
       "files": [
         "tools/gate-parity.py"
@@ -5703,21 +5714,27 @@
       "dependsOn": [
         "P130.53-ywo"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-20T10:36:20Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-20T11:05:24Z.cb7a34",
+        "status": "passed",
+        "at": "2026-10-20T11:05:24Z"
+      }
     },
     {
       "id": "P130.56-ywo",
       "title": "One reader answers which commits belong to a task's attempt, the scope preflight knows Playwright, and the phase review's code lows are fixed",
-      "status": "pending",
+      "status": "in_progress",
       "description": "REPLACES P130.52-ywo. Its finished work is saved as a patch: <outside-repo> (git apply --check passed on the phase head) - apply it in your tree (git apply -3, then git restore --staged .), then fix the pre-commit review's MEDIUM finding: when a rebase leaves the recorded start head off HEAD's history, `_scoped_commit.attempt_span` (~:1210) returns ([], why) before any fallback and `audit-task._no_change_moves` (~:6098-6102) only adds a note, so `done --no-change` succeeds over committed work the old code refused. Make the span reader answer 'cannot tell' (None, why) - not 'no commits' - when the start head is not an ancestor, and make every caller treat cannot-tell as a refusal on the no-change and commit paths (fail loud), naming the start head and the rebase; rewrite case sc-as1, which pins the wrong behaviour, and add the rebase case for --no-change. Keep everything else the review confirmed (one reader, byte-identical guard payloads, Playwright, red_at_base filtering). The original task follows: Whole-phase review of P130 (medium 1, 2; low 5-8). (1) The span start..HEAD of a task's attempt has two readers with different rules: `_scoped_commit.earlier_attempt_commits` (~:1145) checks the start head is an ancestor and excludes other tasks' commits; audit-task.py `_attempt_commits_read` (~:6113) only `rev-parse --verify`s it - after a rebase/reset `done --commit` skips the empty-span refusal (~:6318) and `_no_change_moves` treats foreign commits as moves. Make ONE function (in the lowest module both may import) the only reader of the attempt span - ancestor check, other tasks' recorded commits excluded, plan_to_git pathspecs - and route both callers through it; delete the second. Case: a start head off HEAD's history makes both callers claim nothing and say why. (2) `scope_gap` (drive-phase.py ~:1205-1252): `npx playwright test` is classified by neither entry_collector nor can_run_tests, so a gate [vitest, npx playwright test] asks an e2e spec only of vitest and stops wrongly - add playwright to the test-runner token table (TEST_RUNNER_TOKENS) and treat its specs as could-not-tell unless its config is read; case for the gate shape. (5) declared non-record work is derived three times (`_scoped_commit._declared_names`, `commit-task-work.declared_names`, `audit-task._declared_work`) - one function. (6) guard-capabilities.py ~:68 and guard-history-rewrite.py ~:1766 build their own deny payload - use `_config.deny_payload` (change only the payload construction, never how a guard reads a command; if a host safeguard refuses an edit to a guard file, stop that part and report it). (7) drive-phase.py ~:237 import comment names entry_runner; it uses entry_collector. (8) `build-command` accepts a key starting with `affected/`, which _manifest_rules refuses as a gate entry - refuse it in build-command; `drive-phase.red_at_base` takes the newest clean run of any gate with no step-name filter while `run-test-gate.base_red` filters by steps - filter the same way. Acceptance: a case per item; full sweep green; bench-hooks --gate green.",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
@@ -5763,16 +5780,22 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-20T10:36:22Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-20T11:16:22Z.a0e29e",
+        "status": "passed",
+        "at": "2026-10-20T11:16:22Z"
+      }
     }
   ],
   "request": "ok, sve preporuke (owner, 2026-10-14, approving CONSOLIDATED-PLAN.md) / Nova faza za F1 (Recommended) (owner, 2026-10-16, where the F1 tasks live)",
