@@ -21,7 +21,7 @@
       "plugin-validate": "claude plugin validate . && claude plugin validate plugins/audit",
       "gate": "python3 plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate",
       "report": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report",
-      "lint": "ruff check plugins/audit tools && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests",
+      "lint": "ruff check plugins/audit tools tests && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints",
       "shots": "node tools/capture-screenshots.mjs --check",
       "interactive": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html",
       "vitest": "npx vitest run"
@@ -848,7 +848,7 @@
     {
       "id": "P131",
       "title": "The writer is a plain Claude Code session, and scripts verify around it",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P131.json"
     }
   ],
@@ -885,7 +885,8 @@
     ".claude/skills/before-you-claim/evals/evals.json": [
       "P37.1",
       "P130.8",
-      "P131.1"
+      "P131.1",
+      "P131.15-dau"
     ],
     ".claude/skills/before-you-claim/references/questions.md": [
       "P37.1"
@@ -3312,7 +3313,8 @@
       "P130.8",
       "P130.9",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P131.15-dau"
     ],
     "plugins/audit/scripts/_refs.py": [
       "P23.1",
@@ -4335,7 +4337,8 @@
       "P130.28-ywo",
       "P130.41-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P131.15-dau"
     ],
     "plugins/audit/scripts/manifest/_manifest_vocab.py": [
       "P18.2",
@@ -4374,7 +4377,8 @@
       "P130.27-ywo",
       "P130.39-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P131.15-dau"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -5097,7 +5101,8 @@
       "P122.8-z4y",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P131.15-dau"
     ],
     "plugins/audit/scripts/status/_doctor_report.py": [
       "P53.5",
@@ -10668,7 +10673,8 @@
     "tools/lints/_refs.py": [
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P131.15-dau"
     ],
     "tools/ui-tests/number-format.test.mjs": [
       "P130.8",
@@ -10973,7 +10979,8 @@
     ],
     "tests/test__output.py": [
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P131.15-dau"
     ],
     "tests/test__panel_composition.py": [
       "P131.1"
@@ -11027,7 +11034,8 @@
     ],
     "tests/test__refs.py": [
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P131.15-dau"
     ],
     "tests/test__report_html.py": [
       "P131.1"

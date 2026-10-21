@@ -53,7 +53,7 @@
     {
       "id": "P131.1",
       "title": "Tests and the two lint modules leave the shipped plugin: plugins/audit/tests/ becomes tests/, _deps and _refs become tools/lints/",
-      "status": "in_progress",
+      "status": "done",
       "description": "Plan F1.4 (S1a), invariant I11. Lands after every task that edits plugins/audit/tests/. (1) `git mv plugins/audit/tests tests` (157 files, 10,776,898 bytes at 571becfd; 157 and 10,194,666 at edbbb86e) and `git mv` of plugins/audit/scripts/_deps.py and _refs.py to tools/lints/. (2) A new anchor `_output.LINTS_DIR` that the product never puts on sys.path, beside TESTS_DIR, which now points at the repo root's tests/; `_refs` gains an anchor by suite name. (3) The ruff and vermin directory lists exist only in verify.sh (a consequence of F1.2), and name tests/ and tools/lints/. (4) .github/sweep-costs.json's keys under plugins/audit/tests/ (155 at 571becfd, a table last recorded at P127) are re-keyed to tests/ with their values unchanged, so the shard split keeps its costs (the plan put this in F1.5). (5) Every file outside the moved tree that names the old path is repointed (179 outside the history paths at 571becfd: `git grep -l 'plugins/audit/tests' HEAD -- . ':!plugins/audit/tests' ':!docs/audit' ':!CHANGELOG.md' ':!docs/research'`, the same count at edbbb86e); a shipped document or agent body that points at a suite (reference/phase-signoff.md:370, reference/execute-task.md, reference/verbs-in-full.md, agents/audit-reviewer.md) names it as `tests/<file>` in the source repository, because the installed copy no longer has it. (6) docs/audit/**, CHANGELOG.md's released sections and docs/research/ stay untouched: they are history and a hash chain. (7) CLAUDE.md is the owner's: the task drafts its new paths in the outcome. (8) This repo's meta.buildCommands.lint names plugins/audit/tests for vermin; the owner repoints it through the panel in the same landing, since no verb writes buildCommands. (9) P129's pending tasks name plugins/audit/tests/ paths; the orchestrator repoints them with `/audit:task scope` after the landing. Acceptance: the full sweep on a clean `git archive` export is green, allowing only the red places known to exist on an export alone; `python3 tools/prove-gates.py --list | awk '{print $2}' | sort -u` is the same set before and after; no lint checks fewer references than before without a named reason (the POC caught `_refs` dropping from 453 to 0); `git ls-tree -r --name-only <sha> plugins/audit | grep -c /tests/` gives 0; the whole repo changes by less than 0.5k lines; the installed cache after `/audit:version` update holds no tests/. NEW PATHS (absent at 571becfd, created by this task): tests/ (the moved suites), tools/lints/, tools/lints/_deps.py, tools/lints/_refs.py. CARRIED from the cancelled P130.8 into S1 (owner, 2026-10-20). Item (8) is now done by the orchestrator in the same landing with `audit-task.py build-command lint`, since that verb exists; item (7) stays a drafted proposal for the owner.",
       "files": [
         ".claude/hooks/arm-release-bypass.py",
@@ -593,25 +593,40 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9a7674a50104",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "DONE. git mv plugins/audit/tests -> tests (159 tracked files incl. fixtures/) and scripts/_deps.py, _refs.py -> tools/lints/. git ls-files plugins/audit | grep -c /tests/ = 0. Anchors: _output.LINTS_DIR (never in install_path(); an4b), TESTS_DIR now repo-root tests/; LINTS_DIR added to the default scope of the dialect/hygiene lints (house_style, entries_missing_guard, truncated_evidence, usage_hint, bare_output_cut, selftest_argv, NEWLINE_DIRS, ENCODING_DIRS; ln1-ln3), selftest_coverage gained a 'lints' kind so the two modules stay classified migrated (covered_repo_paths maps lints/ to tools/lints), and _deps' source lints read tools/lints through _source_roots / _real_source_files(lints=True) so no hygiene rule checks fewer files. Both moved modules carry their own bootstrap (walk up to plugins/audit/scripts/_output.py) because PATH_PREAMBLE would run off the filesystem root from tools/lints. A SHIPPED SCRIPT USED _refs: audit-task.py imported _refs.moved_file_target; moved the three helpers (PLUGIN_REL, py_index, is_plugin_py_path, moved_file_target) into _output (mv1-mv4), _refs binds them, audit-task asks _output - otherwise every installed copy raised ImportError. _deps: out of LAYERS (stated in its docstring and LAYERS comment); tests_import_violations now also forbids shipped code importing/loading anything under tools/lints (lb1, lb1b, lb2, lb3); PLUGIN-BUILD-GUIDE module map regenerated with --write-map and tree lines moved. _refs: tests/ references are anchored by SUITE NAME (_harness or test_<module> for a module the tree keeps, known_suites/_suite_anchored), the old plugin-prefixed spelling is still matched and stat'd (so stale), tools/lints/ is a fourth arm and a surface of its own (bare tools walk prunes nested surfaces, counts_by_surface credits the most specific); sa1-sa3. Reference count: 1208 total / 1195 stat'd at the base export -> 1333 / 1312 now, 0 missing, and every surface count is >= its base value (reference 103 -> 103, agents 4 -> 4 after adding the lints arm; before it they dropped 103 -> 99 and 4 -> 3, which is what that arm is for). tools: sweep-selftests (SWEEP_DIRS names tests; retired_suite_files/retired_suite_refusal refuse a .py under the old directory by name, empty or pycache-only is quiet; sr1-sr3), gate-parity (lint_dir_findings/lint_dir_verdict read verify.sh's ruff and vermin commands, wired into parity() and render; ld1-ld7; HEAD's verify.sh yields four findings), verify.sh (ruff check plugins/audit tools tests; vermin ... tests tools/lints), prove-gates (L prefix for the 45 rows on the two moved modules, _GATE_LINT_MODULES, two anchors updated), _suite/affected/count-ui-pins repointed, affected.py gained a tools/lints arm (own suite + suites importing it + tree scanners; a10a) because the tool arm answered 'no rule matches' for migrated files under tools/. .github/sweep-costs.json: 155 keys re-keyed to tests/ and the two lint modules re-keyed, values unchanged (verified key by key), costs re-sorted. 708 occurrences of the old path in 194 files repointed mechanically; shipped docs that point at a suite say 'in the source repository' (audit-reviewer, execute-task, phase-signoff, verbs-in-full, audit-executor for _refs). History untouched: docs/audit/**, CHANGELOG.md, docs/research/ and CLAUDE.md not edited by me. Gate: python3 tools/sweep-selftests.py --quiet exit 0, 340/340 files ok, 155 migrated, 16639 cases (final run after the last edit). On a clean extract of the tracked files committed into a scratch git repo: 338/340 ok, the two red are tools/check-example-ledgers.py and tools/measure-context.py, both of which need commits an export lacks and both red on the base export too (base export: 6 red = those two + check-committed-pii + three that read git's index, all green once the files are tracked). Extra evidence, not gates: ruff check plugins/audit tools tests exit 0; vermin -t=3.8- over plugins/audit/scripts plugins/audit/hooks tests tools/lints exit 0; prove-gates --list name set identical before and after (71 names, diff empty); validate-manifest exit 0; prove-gates --only split_literal / tests_import / map_drift / red_first_drift / tool_basename in a scratch git copy: every row RED or proven quiet. NOT MET / NOT MINE: (a) 'the whole repo changes by less than 0.5k lines' - git diff HEAD -M --shortstat excluding docs/audit reads 1812 insertions, 1019 deletions over 340 files (net +793); 862 deletions and 1655 insertions remain without sweep-costs.json; most of it is the mechanical path repoint plus the new logic and cases, so this acceptance clause is unmet on any gross reading. (b) 'installed cache after /audit:version update holds no tests/' not run (needs an install); the tracked-files half is 0. (c) claude plugin validate, audit-status --gate, report, shots, interactive, vitest not run (own-tests reading: only the sweep command is the task's to run). (d) item 8 (buildCommands.lint) and item 9 (P129 scopes) are the orchestrator's. (e) plugins/audit/hooks/_config.py, detect-plan-skip.py etc. only had path text changed. GATE NOTE: a Bash-heredoc python edit of tools/lints/_refs.py (126 changed lines) was refused by the plan gate ('shell write ... magnitude 126 > 80'); I redid that edit through the Edit tool and did not retry it by shell. Later heredoc edits of the same file and of other .py files in my files list were not refused by the gate. DRAFT FOR THE OWNER'S CLAUDE.md (not edited): (1) line ~150 'they live in `tests/` (repository root)'; (2) line ~205 vermin command -> 'vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints' and the ruff line -> 'ruff check plugins/audit tools tests'; (3) line ~301 'Every `--selftest` block lives in `tests/`, not in the module it tests'; (4) the anchors bullet: add `LINTS_DIR` ('tools/lints, never put on sys.path by install_path(); a development caller adds it itself') and say `_deps.py` and `_refs.py` live there, outside the plugin; (5) the 'Adding a .py' item 3 stays (a shipped module still needs an _deps.LAYERS row) and note the two lint modules need none; (6) .claude/skills/writing-python/SKILL.md lists the anchors the same way and is not in this task's files - it wants LINTS_DIR too.",
+        "descriptive": "The suites and the two lint modules leave the shipped plugin; every reference lint, dialect lint and the sweep follow them with no check reading fewer files."
       },
       "startedAt": "2026-10-20T23:08:34Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-21T01:08:34Z",
+      "verifiedBy": [
+        "sweep-selftests: sr1 the sweep walks the suites at the repository root and lists none under the old plugin directory; sr2 a retired suite directory holding only bytecode is quiet while one holding a .py is refused by name; sr3 the live tree holds none",
+        "gate-parity: ld1-ld7 the ruff and vermin directory lists read off verify.sh must cover tests/ and tools/lints and must not name the old suite directory - good text, the pre-move text (findings by tool and directory), tools covering tools/lints, a missing command named, ruff without tests, the live claim through parity(), and an unreadable runner as a finding",
+        "also: _refs sa1-sa3 (suite-name anchor, deleted suite and old spelling reported missing, lints arm, nested surface read once), _deps lb1-lb3 and lb1b (shipped code may not import tools/lints), _output ln1-ln3 (lints dir in the default dialect scope), mv1-mv4 (moved_file_target and friends), an4b (LINTS_DIR), tools/affected.py a10a"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-21T01:06:24Z.a4ffb1",
         "status": "passed",
         "at": "2026-10-21T01:06:24Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "9a7674a50104",
+        "at": "2026-10-21T01:08:34Z",
+        "return": "docs/audit/evidence/returns/P131.1/20261020T230834Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "mode is regression with expectRedFirst false, so no red-first is owed: the two tests.add entries are inline suites (tools/sweep-selftests.py and tools/gate-parity.py hold their cases beside the code), so a throwaway tree at HEAD with those files copied over carries the fix and cannot go red. Evidence instead, in a COPY of the tree, never the shared one: scratchpad probe/mutations.py asserts each anchor occurs once, runs the suite green, mutates, and requires the named case to FAIL. sr1 (SWEEP_DIRS back to the old directory), sr2 (retired_suite_files finds nothing), ld1 (_covers always False), ld2 (_covers always True), ld6 (verify.sh vermin list back to the old directory) each went red by id with baseline exit 0 and mutated exit 1. Not the helper's block, so it is not a proved.",
+        "at": "2026-10-21T00:53:41Z"
       }
     },
     {
       "id": "P131.2",
       "title": "The rest of the development code leaves the plugin, the selftest stubs go, and B9 is recorded",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Plan F1.5 (S1b), invariants I11 and I12. Runs on F1.4's paths (tests/, tools/lints/). (1) plugins/audit/scripts/demo/ (gen-demo-manifest.py, gen-demo-usage.py, _demo_cast.py) moves to tools/demo/; `render-report.py --bench` is removed and the benchmark becomes tools/bench-report.py (new) over tools/_usage_bench.py (moved from scripts/usage/). (2) The lint halves of _output.py, config/_help.py, _ui_theme.py and config/_config_rules.py move to tools/lints/ under basenames that collide with nothing in scripts/ (for example _output_lints.py), and the product halves stay. (3) reference/phase-signoff.md:370 (the plan's :350) and every other shipped pointer to an unshipped file is repointed or removed. (4) .github/sweep-costs.json, tools/capture-screenshots.mjs (`resolveScript('gen-demo-manifest.py')`), tools/check-rendered-artifacts.py, tools/check-example-ledgers.py, tools/check-report-interactive.mjs and tools/verify.sh follow the moves. (5) The `--selftest` stubs in shipped modules are deleted, not rewritten: at 571becfd 149 `if` blocks in 143 files, 1,166 lines (the same at edbbb86e; the plan's 142 blocks and 1,124 lines came from the code study's narrower AST rule), counted by any top-level `if` whose test names `selftest`. A shipped entry point given `--selftest` is then an ordinary usage error. (6) `selftest_coverage`'s `migrated` class goes: coverage becomes a development check that every shipped module has tests/test_<name>.py or a named exemption. (7) COMPATIBILITY.md is unchanged (neither `--selftest` nor `--bench` is promised); CHANGELOG.md records both under Removed. (8) B9 is recorded: on the landing SHA, `git archive <sha> | tar -x -C <empty dir> && python3 studies/K-poc/linekinds.py <dir>/plugins/audit > k.json && python3 studies/K-poc/agg.py k.json`, and the `code` figure goes into the plan with the SHA (84,131 at 571becfd; 83,024 at the v3.4.0 tag, the letter of D9). Acceptance: as F1.4; `git ls-tree -r -l <sha> plugins/audit | awk '{s+=$4} END{print s}'` gives at most 10,416,128 (21,263,295 at 571becfd, 9,942,204 once tests/, _deps.py and _refs.py are gone, before this task's removals). NEW PATHS (absent at 571becfd, created by this task): tools/demo/, tools/bench-report.py, tools/_usage_bench.py, tools/lints/<module>_lints.py. Paths under tests/ and tools/lints/ are the ones F1.4 created. CARRIED from the cancelled P130.9 into S1 (owner, 2026-10-20).",
       "files": [
         ".claude/skills/VENDORED.md",
@@ -873,16 +888,17 @@
       "dependsOn": [
         "P131.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-21T01:14:54Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P131.3",
@@ -1461,6 +1477,53 @@
       "dependsOn": [
         "P131.1"
       ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P131.15-dau",
+      "title": "The moved-file guard sees the move to tests/ and tools/lints/, and no command in a docstring or eval imports _deps or _refs from scripts/",
+      "status": "pending",
+      "description": "Found by the adversarial review of P131.1 (two medium findings). (1) _output.moved_file_target and _refs.manifest_moved_files index only files under plugins/audit/, so a suite moved to tests/ or a lint moved to tools/lints/ reads as gone (quiet history) instead of moved: manifest_moved_files()['gone'] went 25 -> 2647, and /audit:task add --files plugins/audit/tests/... is accepted. Widen the index to tests/ and tools/lints/ so the move is recognised, keeping done tasks as history. Then the orchestrator repoints the pending tasks that still name old paths (P129.7-.11-izt, P109.1-.7 and .9, P86.1/.3/.4) with /audit:task scope. (2) Docstring commands in _manifest_rules.py:68, _manifest_vocab.py:13, _doctor_policy.py:27 and the before-you-claim eval prompt (evals.json:18) run sys.path.insert(0,'plugins/audit/scripts');import _deps, which now raises ModuleNotFoundError; repoint them to tools/lints and add the lint that keeps the class closed. Find them with: git grep -nE 'import _(deps|refs)' -- . ':!tests' ':!tools' ':!docs/audit'.",
+      "files": [
+        "plugins/audit/scripts/_output.py",
+        "tools/lints/_refs.py",
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/status/_doctor_policy.py",
+        ".claude/skills/before-you-claim/evals/evals.json",
+        "tests/test__output.py",
+        "tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__refs.py: moved_file_target('plugins/audit/tests/test__refs.py') answers tests/test__refs.py and moved_file_target('plugins/audit/scripts/_deps.py') answers tools/lints/_deps.py, and manifest_moved_files classifies a pending task naming either old path as moved (loud), not gone, while a done task naming it stays history",
+          "tests/test__output.py: no string literal in a shipped .py or in .claude/skills/**/evals.json holds a command that puts plugins/audit/scripts on sys.path and then imports _deps or _refs"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__refs.py tests/test__output.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,
