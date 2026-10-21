@@ -33,6 +33,7 @@ import json
 import ntpath
 import os
 import posixpath
+import re
 import shlex
 import signal
 import subprocess
@@ -5782,6 +5783,7 @@ STAGES = (
     ("sr-budget", "_budget_cases"),
     ("sl-block", "_success_line_cases"),
     ("ct-block", "_case_title_cases"),
+    ("sdr-block", "_drive_red_cases"),
 )
 
 
@@ -5811,6 +5813,56 @@ def _case_title_cases(check):
           "paraphrase and an empty one do not match (%r)" % (cases,),
           not disagree and [c[1] for c in cases] == [True, True, False, False, False, False]
           and M._filed_returns.title_names_clause is _filed_returns.title_names_clause)
+
+
+def _drive_red_cases(check):
+    """`red` as the step driver runs it after a writer session - the arguments
+    `drive-phase.py`'s `red_args` builds, the same builder `submit` uses - on
+    the session's UNCOMMITTED change proves red exactly as the executor's own
+    call does, leaves the shared tree as it was, and reports the digest of the
+    task's test files the drive locks."""
+    py = sys.executable
+    cmd = [py, "tests/test_mine.py"]
+    root, man = _red_repo("stamp-drive-red-", _red_test("import mine", "mine.v == 2"))
+    try:
+        drive = _loader.load_script("drive-phase.py", "drive_phase_red_args",
+                                    cache=False)
+        argv = drive.red_args(root, man, "P1.1", cmd)
+        why = None
+    except Exception as exc:                                   # noqa: BLE001
+        argv, why = None, "%s: %s" % (type(exc).__name__, exc)
+    exec_code, exec_got = _red(root, man, cmd)
+    before = _snapshot(root)
+    drive_code, drive_text = _run(argv) if argv else (None, why)
+    after = _snapshot(root)
+    try:
+        drive_got = json.loads(drive_text)
+    except (TypeError, ValueError):
+        drive_got = {}
+    exec_block = exec_got.get("redFirst") or {}
+    drive_block = drive_got.get("redFirst") or {}
+    with open(os.path.join(root, "tests", "test_mine.py"), "rb") as fh:
+        want = "sha256:" + hashlib.sha256(fh.read()).hexdigest()
+    digest = drive_got.get("testDigest") or {}
+    check("sdr1 red run by the drive on the writer's uncommitted change proves red "
+          "exactly as when an executor ran it - one exit, one verdict, one status, "
+          "the same split of HEAD and copied files and the same printed labels - "
+          "and the shared tree is untouched by it: %r"
+          % ((exec_code, drive_code, exec_block, drive_block, why),),
+          exec_code == M.E_PROVED and drive_code == exec_code
+          and exec_block.get("status") == drive_block.get("status") == "proved"
+          and exec_got.get("verdict") == drive_got.get("verdict") == "red"
+          and exec_got.get("atHead") == drive_got.get("atHead")
+          and exec_got.get("copied") == drive_got.get("copied")
+          and exec_got.get("printed") == drive_got.get("printed")
+          and before == after
+          and "--derive-introduces" in (argv or []) and argv[:1] == ["red"])
+    check("sdr2 ...and its payload carries the sha256 of each declared test file "
+          "as the run read it, beside a digest over them, outside the block the "
+          "return carries (which keeps its own three fields): %r" % (digest,),
+          digest.get("files") == [{"path": "tests/test_mine.py", "sha256": want}]
+          and re.match(r"^sha256:[0-9a-f]{64}$", str(digest.get("sha256") or ""))
+          and set(drive_block) == set(("status", "basis", "at")))
 
 
 def _cli(argv, stdin_text=None):

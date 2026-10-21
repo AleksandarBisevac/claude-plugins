@@ -67,6 +67,14 @@ copied from the working tree over it - so nobody has to put code without the fix
 back into a tree siblings are editing. The `red` section below says what it writes
 and how the removal is checked.
 
+RED REPORTS WHAT ITS PROOF WAS MADE OVER. Beside its block, `red` reports
+`testDigest` - the sha256 of each declared test file as the run read it, and one
+digest over the list - and `implementationDigest`, the same over the declared
+implementation files the fix run took from the working tree; the throwaway's
+`head` is the commit it ran at. A caller that keeps them holds a red to what it
+was proved over - the step driver hashes the same paths again before it files or
+commits a writer session's work, and re-proves when one moved.
+
 WHY THREE CODES AND NOT TWO. `unestablished` must not share an exit code with
 either neighbour. Sharing 0 makes an unanswerable comparison read as "unchanged",
 which is the false clean sheet the whole design refuses; sharing 1 makes it read
@@ -301,6 +309,7 @@ import argparse
 import ast
 import datetime
 import difflib
+import hashlib
 import json
 import os
 import posixpath
@@ -985,6 +994,62 @@ def split_scope(task):
     named = set(str(a).split(":", 1)[0].strip() for a in adds if isinstance(a, str))
     tests = [f for f in files if _is_test_path(f, named)]
     return [f for f in files if f not in tests], tests
+
+
+# --- the digest of a task's test files: what a proof was made over ---
+def test_digest(root, rels):
+    """`{"sha256", "files": [{"path", "sha256"}]}` over the files `rels` (the
+    declared test files, or the implementation files the fix run reads) as the
+    tree under `root` holds them now: one entry per path, sorted, its
+    `sha256` `sha256:<hex>` of its BYTES, as `_journal_io.file_hash` spells it
+    (None where the path is absent), and one digest over the list. A red is
+    proved over these bytes, so a caller holding the digest a proof reported
+    can hash the same paths later and name any that changed - the step driver
+    does, with `file_hash`, and its twin cases hold the two readings equal."""
+    files = [{"path": rel, "sha256": _file_sha(os.path.join(root, *rel.split("/")))}
+             for rel in sorted(set(rels))]
+    listing = "".join("%s %s\n" % (f["sha256"] or "absent", f["path"]) for f in files)
+    return {"sha256": "sha256:" + hashlib.sha256(listing.encode("utf-8")).hexdigest(),
+            "files": files}
+
+
+def _file_sha(path):
+    """`sha256:<hex>` of the file's bytes, read in binary so no newline is
+    translated; None when it cannot be read."""
+    try:
+        with open(path, "rb") as fh:
+            return "sha256:" + hashlib.sha256(fh.read()).hexdigest()
+    except OSError:
+        return None
+
+
+def declared_tests(project, manifest_path, task_id, deadline=None):
+    """`(root, implementation, tests, problem)` - the checkout's top and the
+    task's declared files split as `red` splits them, directories expanded, the
+    paths relative to that top. `problem` is the reason when the plan or git
+    cannot say, and the other three are then None. A task declaring no test
+    file and nothing that could be a directory comes back with `tests` empty
+    and `root` None before git is asked: the caller says what that means."""
+    try:
+        manifest = _mio.load_manifest(manifest_path)
+    except Exception as exc:
+        return None, None, None, "cannot read/parse %s: %s" % (manifest_path, exc)
+    task, problem = find_task(manifest if isinstance(manifest, dict) else {}, task_id)
+    if problem is not None:
+        return None, None, None, problem
+    task = checkout_task(task, project_offset(project, manifest_path))
+    implementation, tests = split_scope(task)
+    if not tests and not _declares_directory(task):
+        return None, implementation, [], None
+    code, root = _git(os.path.abspath(project), ["rev-parse", "--show-toplevel"],
+                      timeout=max(1, _left(deadline)) if deadline else 120)
+    if code != 0:
+        return None, None, None, ("%s is not inside a git repository: %s"
+                                  % (project, root))
+    root = native_top(root)
+    implementation, tests = split_scope(dict(
+        task, files=expand_declared(root, task.get("files"))))
+    return root, implementation, tests, None
 
 
 def _under(value, roots):
@@ -3599,26 +3664,10 @@ def _red_scope(args, cmd, deadline):
         return None, ("--introduces takes an identifier (letters, digits, `_`, "
                       "`.`, `-`), and %r is not one - a fragment is a substring of "
                       "outputs it has nothing to do with" % (bad[0],))
-    try:
-        manifest = _mio.load_manifest(args.manifest)
-    except Exception as exc:
-        return None, "cannot read/parse %s: %s" % (args.manifest, exc)
-    task, problem = find_task(manifest if isinstance(manifest, dict) else {},
-                              args.task)
+    root, implementation, tests, problem = declared_tests(
+        args.project, args.manifest, args.task, deadline)
     if problem is not None:
         return None, problem
-    task = checkout_task(task, project_offset(args.project, args.manifest))
-    implementation, tests = split_scope(task)
-    if not tests and not _declares_directory(task):
-        return None, ("task %s declares no test file, so a throwaway at HEAD "
-                      "would prove nothing about this task's test" % (args.task,))
-    code, root = _git(os.path.abspath(args.project), ["rev-parse", "--show-toplevel"],
-                      timeout=max(1, _left(deadline)))
-    if code != 0:
-        return None, "%s is not inside a git repository: %s" % (args.project, root)
-    root = native_top(root)
-    implementation, tests = split_scope(dict(
-        task, files=expand_declared(root, task.get("files"))))
     if not tests:
         return None, ("task %s declares no test file, so a throwaway at HEAD "
                       "would prove nothing about this task's test" % (args.task,))
@@ -3679,6 +3728,10 @@ def run_red(args, cmd, out):
         del env[key]
         dropped.append(key)
     deps = scope["deps"]
+    # The bytes the proof is made over, read before the throwaway copies them:
+    # a caller locks this and re-proves when a test file moves after it.
+    digest = test_digest(root, scope["declared"])
+    implementation_digest = test_digest(root, scope["implementation"])
     _c, head = _git(root, ["rev-parse", "HEAD"], timeout=max(1, _left(deadline)))
     base = holder_base(root)
     if base is None:
@@ -3791,6 +3844,8 @@ def run_red(args, cmd, out):
     shown = run["fix"]["text"] if run["fix"] is not None else run["text"]
     payload = {"verdict": verdict, "redFirst": block, "note": note,
                "printed": _runner_output.printed_labels(shown, cmd),
+               "testDigest": digest,
+               "implementationDigest": implementation_digest,
                "atHead": scope["implementation"], "copied": copied,
                "leftovers": leftovers,
                "dependencies": {"source": deps["source"], "linked": deps["linked"],

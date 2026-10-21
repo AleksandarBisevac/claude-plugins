@@ -1048,7 +1048,58 @@ def _selftest():
         _harness.stage(check, "pr-block", _plain_read_cases)
         _harness.stage(check, "rc-block", _crlf_cases)
         _harness.stage(check, "ds-block", _digest_site_cases)
+        _harness.stage(check, "rm-block", _red_command_cases)
     return _harness.run(body)
+
+
+def _red_command_cases(check):
+    """`red_command` is the one reader of which gate command runs a task's
+    new test: the command naming a `tests.add` file as a path of its own -
+    never one holding the name inside a longer one, and never on an entry
+    naming no file, whose empty name is inside every command."""
+    reader = getattr(M, "red_command", None)
+    if reader is None:
+        check("rm1 _filed_returns holds red_command", False, "absent")
+        return
+    task = {"id": "P1.1", "tests": {"mode": "tdd", "add": [
+        "tests/test_a.py: a case", ": the case alone"]}}
+    old = ("old", "python3 tests/test_a.py_old")
+    own = ("own", "python3 -m pytest tests/test_a.py::test_x -q")
+    whole = ("all", "python3 -m pytest")
+    check("rm1 the command naming tests/test_a.py as a path of its own is the "
+          "one picked, past one that names tests/test_a.py_old: %r"
+          % (reader(task, [whole, old, own]),),
+          reader(task, [whole, old, own]) == own[1])
+    check("rm2 a command naming only a longer path that begins with the file's "
+          "name is not the file's command - the substring reading's quirk: %r"
+          % (reader(task, [old]),), reader(task, [old]) is None)
+    bare = {"id": "P1.2", "tests": {"mode": "tdd", "add": [": the case alone"]}}
+    check("rm3 an entry naming no file picks no command, a whole-project gate "
+          "included: %r" % (reader(bare, [whole]),), reader(bare, [whole]) is None)
+    spelled = [reader(task, [("a", "python3 ./tests/test_a.py")]),
+               reader(task, [("b", 'python3 "tests/test_a.py" --selftest')]),
+               reader(task, [("c", "node --test=tests/test_a.py")])]
+    check("rm4 THE ALLOW TWIN: the file spelled with ./, quoted, or after an `=` "
+          "is still the file: %r" % (spelled,), all(spelled))
+    listed = [reader(task, [("d", "python3 -m pytest tests/test_a.py,tests/b.py")]),
+              reader(task, [("e", "python3 tests/test_a.py;echo done")]),
+              reader(task, [("f", "python3 $ROOT/tests/test_a.py")]),
+              reader(task, [("g", "python3 ${ROOT}/tests/test_a.py")])]
+    check("rm5 a comma or semicolon ends the path, and a `$VAR/` prefix leads "
+          "it: %r" % (listed,), all(listed))
+    glued = [reader(task, [("h", "python3 tests/test_a.py;x/tests/test_a.pyc")]),
+             reader(task, [("i", "python3 xtests/test_a.py")]),
+             reader(task, [("j", "python3 $ROOT/xtests/test_a.py")])]
+    check("rm6 THE DENY TWIN: a longer name glued on either side is still not "
+          "the file - only the first command words it: %r" % (glued,),
+          glued[0] == "python3 tests/test_a.py;x/tests/test_a.pyc"
+          and glued[1] is None and glued[2] is None)
+    base = {"id": "P1.3", "tests": {"mode": "tdd", "add": ["test_a.py: a case"]}}
+    one = reader(base, [whole, ("own", "python3 tests/test_a.py")])
+    two = reader(base, [("x", "python3 tests/test_a.py lib/test_a.py")])
+    check("rm7 a bare basename in tests.add is the file when exactly one path a "
+          "gate command names ends in /<basename>, and no file when two do: %r"
+          % ((one, two),), one == "python3 tests/test_a.py" and two is None)
 
 
 def _plain_read_tree(root, files):

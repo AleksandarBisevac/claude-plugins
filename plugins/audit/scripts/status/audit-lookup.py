@@ -919,17 +919,10 @@ def failing_suite_lines(suites, failing):
 
 def red_command(manifest, phase, task):
     """The resolved gate command that names one of the task's `tests.add`
-    files, or None: the command `submit` hands the red-first helper. Only a
-    command naming the file is taken; a whole-project gate is a red the helper
-    would grade against every test HEAD carries."""
-    added = [str(a).split(":", 1)[0].strip()
-             for a in ((task.get("tests") or {}).get("add") or [])
-             if isinstance(a, str) and a.strip()]
+    files, or None: the command `submit` hands the red-first helper -
+    `_filed_returns.red_command`, the one reader the step driver asks too."""
     entries, _whose = _task_gate(manifest, phase, task)
-    for _entry, cmd in _evio.resolved_commands(manifest, entries):
-        if isinstance(cmd, str) and any(f and f in cmd for f in added):
-            return cmd
-    return None
+    return _fr.red_command(task, _evio.resolved_commands(manifest, entries))
 
 
 # The return travels on the submit's stdin, never through a file: the reviewer

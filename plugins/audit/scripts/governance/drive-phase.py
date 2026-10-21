@@ -167,9 +167,47 @@ recorded session asks `gate-red-writer`, whose recommended `resume` sends the
 gate's failing lines to the latest session and spends no attempt; once
 `MAX_RESUME_ROUNDS` are spent the plain `gate-red` is asked, after a note naming
 each resumed run, and its `retry` starts a fresh session.
-The writer's prompt asks for no `submit`, and nothing here files its return
-yet, so a session that ends without one meets `no-executor-return`. Without
-`executor.writerModel` the executor Agent is dispatched as before.
+
+THE WRITER RUNS NO `submit`, SO THE DRIVE RUNS ITS VERBS (`writer_settle`), once
+per dispatch whose record holds a session's result; a round that produced none
+proves nothing and files nothing, and meets `no-executor-return`. Each dispatch
+keeps the commit HEAD named when it was printed. Commits descending from it that
+touch the task's files are `writer-committed`, naming the commit: `recheck` once
+a human has taken it out, or `block`. Any other move is `head-moved`, and a HEAD
+git cannot name on either side is `head-unknown`; both take `file`, which reads
+HEAD again. Nothing is filed before any of them is answered.
+Otherwise the work is proved - `stamp-verification.py red` with `red_args`, the
+arguments `submit` builds, over `_filed_returns.red_command`, the gate command
+naming a `tests.add` file, in a throwaway at HEAD with the task's test files
+copied over it - and the proof is HELD until the recorded gate is green: a filing
+is once per start, and a resume round may change the work. Only a `tdd` task owes
+the red; any other mode is `not-attempted` with its mode as the basis, and a tdd
+task whose gate names no `tests.add` file is `could-not-prove` with that basis.
+THE INVARIANT: the held proof records what it was made over - the HEAD its
+throwaway ran at, the `testDigest` of the task's declared test files (locked) and
+the `implementationDigest` of its declared implementation files, the ones the fix
+run read - and `tree_since_proof` is the one reading of whether those three still
+match. Every settle and `file_writer_return` itself ask it: a HEAD or a declared
+file that moved is proved again before anything is filed, the changed test files
+noted on the task. A file the task does not declare is not in that reading: one
+the diff touches after the proof is caught later, when `commit-task-work.py`'s
+`attempt_refusal` refuses by name a path changed during the attempt that no
+in_progress task declares. A red the
+helper will not grade (a test that passes without the fix, a test file gone),
+or a re-proof that no longer proves what the held proof did, is
+`red-refused-writer`, whose `resume` sends the helper's words to the session;
+nothing is filed and the lock stays. At the green gate the stamp is taken and
+`audit-task.py file-return` files a return built here: the diff's paths, the
+proof's block with its HEAD and digest, every re-proof, the stamp, why no
+`casesAdded` is bound (`casesAddedBasis`), and the last session's final message
+in `writerClaim` - kept as the session wrote it except that `file-return` scrubs
+machine paths from every committed return - a claim the gate and the reviewer
+grade. `close_task` refuses the commit with `tests-moved`, naming the files,
+while a test file differs from the locked digest: the filing and its review were
+of other bytes, so `retry` (a new start) is the way on. A file added under a
+declared test directory after the lock is not among the locked paths and is not
+compared. Without `executor.writerModel` the executor Agent is dispatched as
+before.
 
 Usage:
   drive-phase.py next <phaseId|taskId> [manifest] [--project-dir DIR]
@@ -392,6 +430,38 @@ STEPS = {
         "line": "decide gate-red %(task)s: recorded gate red (%(why)s)",
         "rule": ("rerun spends no attempt (GATE COULD NOT RUN); retry spends "
                  "one; past maxAttempts, block and tell the human.",)},
+    "decide-writer-committed": {
+        "line": "decide writer-committed %(task)s: the writer session committed "
+                "the task's files (%(why)s); nothing was filed",
+        "rule": ("The drive commits a writer's work: a human takes the commit "
+                 "out of history, keeping its changes, then recheck files them; "
+                 "block keeps the task.",)},
+    "decide-head-moved": {
+        "line": "decide head-moved %(task)s: HEAD moved past the dispatch "
+                "(%(why)s) by commits touching none of its files; nothing was "
+                "filed",
+        "rule": ("file proves and files the work against the new HEAD; block "
+                 "keeps the task.",)},
+    "decide-head-unknown": {
+        "line": "decide head-unknown %(task)s: git named no HEAD to check the "
+                "session's commits against (%(why)s); nothing was filed",
+        "rule": ("file reads HEAD again and, when git names it, proves and "
+                 "files the work; block keeps the task.",)},
+    "decide-red-refused-writer": {
+        "line": "decide red-refused-writer %(task)s: the red-first proof of the "
+                "writer's work did not hold (%(why)s); nothing was filed",
+        "rule": ("recommended: resume - the helper's words go to the session that "
+                 "wrote it and no attempt is spent; block keeps the task.",)},
+    "decide-red-refused": {
+        "line": "decide red-refused %(task)s: the red-first proof of the writer's "
+                "work did not hold (%(why)s); nothing was filed",
+        "rule": ("retry starts a fresh session and spends an attempt; block keeps "
+                 "the task.",)},
+    "decide-tests-moved": {
+        "line": "decide tests-moved %(task)s: test files changed after the filed "
+                "proof: %(why)s; the commit is refused",
+        "rule": ("The filing and its review cover other bytes: retry starts the "
+                 "task again and spends an attempt; block keeps the task.",)},
     "decide-no-executor-return": {
         "line": "decide no-executor-return %(task)s: the executor was dispatched "
                 "and filed no return for this start",
@@ -515,6 +585,20 @@ DECISIONS = {
     # round left: `resume` sends the failing lines to that session.
     "gate-red-writer": (("resume", "retry", "rerun", "block"), ("block",)),
     "no-executor-return": (("resume", "retry", "block"), ("block",)),
+    # A writer session that committed the task's files past its dispatch:
+    # nothing is filed until a human takes the commit out (`recheck`).
+    "writer-committed": (("recheck", "block"), ("block",)),
+    # HEAD moved past the dispatch by commits that are not the session's:
+    # `file` proves and files the work against the new HEAD.
+    "head-moved": (("file", "block"), ("block",)),
+    # git named no HEAD before or after the session: the commit check could not
+    # be made, so nothing is filed until `file` reads HEAD again.
+    "head-unknown": (("file", "block"), ("block",)),
+    # The red-first proof of a writer's work did not hold: back to its session.
+    "red-refused-writer": (("resume", "block"), ("block",)),
+    "red-refused": (("retry", "block"), ("block",)),
+    # A test file changed after the filed proof the commit is bound to.
+    "tests-moved": (("retry", "block"), ("block",)),
     "no-reviewer-return": (("redispatch", "not-asked"), ("not-asked",)),
     # A filed executor return whose stamp holds a file list other than the one
     # the task declares now: `retry` dispatches again under the new scope (an
@@ -579,7 +663,10 @@ SIGNAL_VERBS = {
     "dispatch-wave": "dispatch", "dispatch-phase-review": "dispatch",
     "resume-executor": "dispatch", "dispatch-writer": "dispatch",
     "resume-writer": "dispatch", "decide-gate-red-writer": "judge",
-    "wait-writer": "wait",
+    "wait-writer": "wait", "decide-writer-committed": "ask",
+    "decide-head-moved": "judge", "decide-head-unknown": "judge",
+    "decide-red-refused-writer": "judge",
+    "decide-red-refused": "judge", "decide-tests-moved": "judge",
     "decide-integration-refused": "judge", "decide-undeclared-change": "judge",
     "decide-scope-gap": "judge", "decide-gate-red": "judge",
     "decide-no-executor-return": "judge", "decide-scope-changed": "judge",
@@ -1448,7 +1535,7 @@ def dispatch(ctx, state, phase, task, role, tree=None):
     if writer:
         prompt = os.path.abspath(os.path.join(ctx["project"], found.group(1).strip()))
         _record, argv = open_dispatch(ctx, state, task, 0, lambda record: writer_argv(
-            ctx, task, writer, prompt, record, tree))
+            ctx, task, writer, prompt, record, tree), tree)
         return writer_said(ctx, task["id"], writer["model"], brief, argv)
     model = (task.get("model") if role == "executor"
              else (phase.get("review") or {}).get("model")) or "unset"
@@ -1491,26 +1578,31 @@ def writer_argv(ctx, task, writer, prompt, record, tree=None, resume=None):
 
 def writer_state(state, task):
     """The writer-session record for `task`'s current start: every dispatch
-    (its sequence number, resume round, record file and command), the lines of
-    each record already noted, the runs read back, the resume rounds spent and
-    whether the cap's note was asked for."""
+    (its sequence number, resume round, record file, command and HEAD), the
+    lines of each record already noted, the runs read back, the resume rounds
+    spent, whether the cap's note was asked for, the last dispatch settled
+    after its session, the proof held for the green gate, the test digest it
+    locked and each re-proof over changed test files."""
     held = _marked(state, "writer", task)
     base = {"seq": 0, "dispatches": [], "noted": {}, "runs": [], "resumes": 0,
-            "capNoted": False}
+            "capNoted": False, "settled": None, "lock": None, "reproofs": [],
+            "proof": None}
     return dict(base, **(held if isinstance(held, dict) else {}))
 
 
-def open_dispatch(ctx, state, task, round_n, build):
+def open_dispatch(ctx, state, task, round_n, build, tree=None):
     """Allocate the next dispatch of `task`'s writer: its record file, and the
-    command `build(record)` makes for it, kept so a wait can print it again.
-    Returns `(record, argv)`."""
+    command `build(record)` makes for it, kept so a wait can print it again,
+    beside the commit HEAD names in the tree it runs in - what a session that
+    commits is told apart by. Returns `(record, argv)`."""
     held = writer_state(state, task)
     seq = held["seq"]
     record = session_record(ctx, task, seq)
     argv = build(record)
     held["seq"] = seq + 1
     held["dispatches"] = list(held["dispatches"]) + [
-        {"seq": seq, "round": round_n, "record": record, "argv": argv}]
+        {"seq": seq, "round": round_n, "record": record, "argv": argv,
+         "head": tree_head(ctx, tree)}]
     _mark(state, "writer", task, held)
     write_state(ctx, state)
     return record, argv
@@ -1652,9 +1744,11 @@ def failing_lines(text):
     return [_clip(ln.rstrip(), RESUME_LINE_BYTES) for ln in lines[:RESUME_LINES]]
 
 
-def resume_prompt(lines):
-    return "\n".join(["The task gate the drive ran after your session is red. Its "
-                      "failing lines:", ""] + list(lines) + [
+GATE_RED_HEAD = "The task gate the drive ran after your session is red. Its failing lines:"
+
+
+def resume_prompt(lines, head=None):
+    return "\n".join([head or GATE_RED_HEAD, ""] + list(lines) + [
                          "", "Fix what fails. Leave the changes uncommitted: the "
                          "drive commits them. End with the same JSON object, one "
                          "entry per acceptance clause."]) + "\n"
@@ -1674,12 +1768,12 @@ def resume_writer(ctx, state, task, pending, tree=None):
     try:
         os.makedirs(os.path.dirname(prompt), exist_ok=True)
         with open(prompt, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write(resume_prompt(pending.get("failing") or []))
+            fh.write(resume_prompt(pending.get("failing") or [], pending.get("prompt")))
     except OSError as exc:
         return _stopped(ctx, "the resume prompt could not be written to %s (%s)"
                         % (prompt, exc))
     _record, argv = open_dispatch(ctx, state, task, round_n, lambda record: writer_argv(
-        ctx, task, writer, prompt, record, tree, resume=pending["session"]))
+        ctx, task, writer, prompt, record, tree, resume=pending["session"]), tree)
     held = writer_state(state, task)
     held["resumes"] = round_n
     _mark(state, "writer", task, held)
@@ -1738,6 +1832,461 @@ def cap_note(ctx, held, session):
                 else "never dispatched"))
     return ("writer session %s: the task gate is still red after its resume "
             "rounds (%s); a retry starts a fresh session" % (session, "; ".join(named)))
+
+
+# --- after the writer's session: prove, hold, file at the green gate -------------
+# The writer runs no `submit`, so the drive runs its verbs. A filing is once per
+# start, and a resume round may change the test files, so the proof is HELD in the
+# drive's state until the recorded gate is green and filed then: the return always
+# carries the proof made over the bytes it is filed with.
+WRITER_CLAIM_FIELD = "writerClaim"
+DIFF_PATHS_FIELD = "diffPaths"
+REPROOFS_FIELD = "reproofs"
+# Why a drive-filed return binds no case to a `tests.add` entry: the binding is
+# a judgement by index the writer would make, and a printed label alone does
+# not say which entry it answers.
+CASES_BASIS_FIELD = "casesAddedBasis"
+CASES_BASIS = ("absent: a writer session names no case per tests.add entry, and "
+               "the drive binds no printed label to an entry by itself; every "
+               "entry is listed among the gaps")
+RED_REFUSED_HEAD = ("The red-first proof the drive ran after your session did not "
+                    "hold. The helper's words:")
+
+
+def tree_head(ctx, tree=None):
+    """The commit HEAD names in `tree` (the task's own worktree), else in the
+    project's repository; None when git cannot say."""
+    if not tree:
+        return git_head(ctx)
+    try:
+        done = subprocess.run(["git", "-C", tree, "rev-parse", "HEAD"],
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout.strip() if done.returncode == 0 else None
+
+
+def head_move(ctx, task, since, now, tree=None):
+    """`"writer"` when HEAD's move from `since` to `now` is commits descending
+    from `since` that touch one of the task's declared files - what the session
+    left; `"other"` for any other move (a sibling's commit in a shared checkout,
+    a branch switched); None when git cannot say."""
+    where = tree or ctx["gitRoot"]
+    hc = _loader.load_hooks_config(modname="audit__config")
+    top = hc.checkout_top(where) or where
+    project = member_project(ctx, tree) or ctx["project"]
+    try:
+        above = subprocess.run(["git", "-C", top, "merge-base", "--is-ancestor",
+                                since, now], capture_output=True, timeout=60)
+        if above.returncode == 1:
+            return "other"
+        if above.returncode != 0:
+            return None
+        done = subprocess.run(["git", "-C", top, "log", "--format=", "--name-only",
+                               "--no-renames", "%s..%s" % (since, now)],
+                              capture_output=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    touched = set(hc.git_to_plan(p, top, project) for p in done.stdout.decode(
+        "utf-8", "replace").splitlines() if p.strip())
+    declared = [str(f).replace("\\", "/").rstrip("/") for f in task.get("files") or []
+                if isinstance(f, str) and f.strip()]
+    hit = any(p == f or p.startswith(f + "/") for p in touched for f in declared)
+    return "writer" if hit else "other"
+
+
+def writer_test_command(manifest, phase, task):
+    """`(argv, None)` - the resolved gate command naming one of the task's
+    `tests.add` files, split into words: `_filed_returns.red_command`, the one
+    reader the executor's brief prints after `--` - or `(None, basis)` saying
+    why there is none. A task that is not `tdd` owes no red-first proof and is
+    `(None, None)`, whatever its `tests.add` names."""
+    tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
+    added = _fr.tests_add_files(task)
+    if tests.get("mode") != "tdd":
+        return None, None
+    if not added:
+        return None, ("%s is %s and its tests.add names no file, so no test "
+                      "command could be derived" % (task["id"], tests.get("mode")))
+    entries, _whose = _fr.task_gate_entries(phase, task)
+    cmd = _fr.red_command(task, _evio.resolved_commands(manifest, entries))
+    if cmd is None:
+        return None, ("no gate entry of %s names its tests.add file (%s) as a "
+                      "path, so no test command could be derived and no red was "
+                      "run" % (task["id"], ", ".join(added)))
+    try:
+        return shlex.split(cmd), None
+    except ValueError as exc:
+        return None, ("the gate command naming %s does not split into words "
+                      "(%s), so no test command could be derived"
+                      % (", ".join(added), exc))
+
+
+def session_last_message(stream):
+    """`(text, None)` - the `result` text of the last result event the session's
+    stream holds, as the session wrote it - or `(None, why)`."""
+    try:
+        with open(stream, "r", encoding="utf-8") as fh:
+            raw = fh.read()
+    except (OSError, TypeError) as exc:
+        return None, "its stream could not be read (%s)" % (exc.__class__.__name__,)
+    text = None
+    for line in raw.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(event, dict) and event.get("type") == "result":
+            text = event.get("result")
+    if not isinstance(text, str):
+        return None, "its stream holds no result text"
+    return text, None
+
+
+def diff_paths(ctx, phase, tree=None):
+    """The paths the tree changed against HEAD, untracked ones included, with
+    the plan's own records left out (`_invariants.record_rels`), each spelled
+    as the plan spells it (`_config.git_to_plan`, read from the checkout's top):
+    the writer's diff as the return names it. None when git cannot say."""
+    where = tree or ctx["gitRoot"]
+    hc = _loader.load_hooks_config(modname="audit__config")
+    top = hc.checkout_top(where) or where
+    project = member_project(ctx, tree) or ctx["project"]
+    try:
+        done = subprocess.run(["git", "-C", where, "status", "--porcelain", "-z",
+                               "--untracked-files=all", "--no-renames"],
+                              capture_output=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    records = _invariants.record_rels(ctx["manifest"], phase, ctx["project"],
+                                      ctx["gitRoot"], config=ctx["config"])
+    paths = [item[3:].decode("utf-8", "replace") for item in done.stdout.split(b"\0")]
+    return sorted(set(hc.git_to_plan(p, top, project) for p in paths
+                      if p and not _invariants.is_record_path(p, records)))
+
+
+def locked_paths_now(ctx, lock, tree=None):
+    """The locked digest's own paths hashed as the tree holds them now -
+    `_journal_io.file_hash`, the sha256 of the bytes in the spelling
+    `stamp-verification.py red` reports them in (`testDigest`) - relative to
+    the checkout's top of `tree`, else of the project's repository. Only the
+    per-file hashes are compared, so the digest over the list is not
+    recomputed here; the `wf3` twin is what holds the two readings equal on an
+    unchanged file. A file added under a declared test directory after the
+    lock is not among its paths, so it is not compared."""
+    where = tree or ctx["gitRoot"]
+    hc = _loader.load_hooks_config(modname="audit__config")
+    top = hc.checkout_top(where) or where
+    files = []
+    for entry in lock.get("files") or []:
+        rel = entry.get("path") if isinstance(entry, dict) else None
+        if not isinstance(rel, str):
+            continue
+        files.append({"path": rel, "sha256": _journal_io.file_hash(
+            os.path.join(top, *rel.split("/")))})
+    return {"files": files}
+
+
+def changed_tests(lock, now):
+    """The test paths whose bytes differ between the digest a proof locked and
+    `now`, sorted: a path in either that the other lacks counts as changed."""
+    def files(d):
+        return dict((f.get("path"), f.get("sha256"))
+                    for f in (d or {}).get("files") or [] if isinstance(f, dict))
+    was, cur = files(lock), files(now)
+    return sorted(p for p in set(was) | set(cur) if was.get(p) != cur.get(p))
+
+
+def lock_moved(ctx, state, task, tree=None):
+    """The test files changed since the digest the task's red proof locked,
+    sorted; `[]` when nothing was locked or nothing moved."""
+    lock = writer_state(state, task).get("lock")
+    if not isinstance(lock, dict):
+        return []
+    return changed_tests(lock, locked_paths_now(ctx, lock, tree))
+
+
+def writer_prove(ctx, manifest, phase, task, tree=None):
+    """`(block, payload, None)` - the red-first block for the writer's work: the
+    helper's over the derived test command, carrying the digest it was proved
+    over and the HEAD its throwaway ran at; `could-not-prove` naming the basis
+    where no command can be derived; `not-attempted` where the task is not tdd
+    - or `(None, None, why)` with the helper's own words when it gave no block
+    or refused."""
+    cmd, basis = writer_test_command(manifest, phase, task)
+    if cmd is None and basis is None:
+        return {"status": "not-attempted", "at": _utc_stamp(),
+                "head": tree_head(ctx, tree),
+                "basis": "tests.mode %s: only a tdd task owes a red-first proof"
+                         % ((task.get("tests") or {}).get("mode") or "unset",)}, \
+            None, None
+    if cmd is None:
+        return {"status": "could-not-prove", "at": _utc_stamp(),
+                "head": tree_head(ctx, tree), "basis": basis}, None, None
+    block, payload, why = red_reading(ctx, task, red_args(
+        tree or ctx["gitRoot"], ctx["manifest"], task["id"], cmd))
+    if why is not None:
+        return None, None, "%s (exit %d): %s" % (
+            "the helper refused" if why[0] == "refused" else
+            "the helper gave no block", why[1], " ".join(str(why[2]).split()))
+    block = dict(block, source=_fr.HELPER_SOURCE) if payload else dict(block)
+    ran_at = ((payload or {}).get("throwaway") or {}).get("head") \
+        if isinstance(payload, dict) else None
+    block["head"] = ran_at or tree_head(ctx, tree)
+    digest = payload.get("testDigest") if isinstance(payload, dict) else None
+    if isinstance(digest, dict):
+        block["testDigest"] = digest
+    impl = payload.get("implementationDigest") if isinstance(payload, dict) else None
+    if isinstance(impl, dict):
+        block["implementationDigest"] = impl
+    return block, dict(payload or {}, implementationDigest=impl), None
+
+
+def hold_proof(ctx, state, task, block, payload=None):
+    """Hold `block` as the proof the writer's return is filed with, beside what
+    it was proved over: the HEAD, the test digest (locked) and the digest of
+    the implementation files the fix run read."""
+    held = writer_state(state, task)
+    impl = (payload or {}).get("implementationDigest")
+    held["proof"] = {"block": block, "printed": ctx.get("printed"),
+                     "head": block.get("head"),
+                     "implementation": impl if isinstance(impl, dict) else None}
+    digest = block.get("testDigest")
+    held["lock"] = dict(digest, at=block.get("at")) if isinstance(digest, dict) \
+        else None
+    _mark(state, "writer", task, held)
+    write_state(ctx, state)
+
+
+def tree_since_proof(ctx, state, task, tree=None):
+    """`(drift, changed_tests)` - how the tree the work would be filed or
+    committed with differs from what the held proof was made over, in the
+    three things the proof records - HEAD, a declared test file, a declared
+    implementation file - as phrases, and the test files among them. `([],
+    [])` when those match, or no proof is held. A file the task does not
+    declare is not read here; `commit-task-work.py`'s `attempt_refusal` is what
+    refuses one the attempt changed. THE ONE READING every filing and every
+    re-proof decision asks."""
+    proof = writer_state(state, task).get("proof")
+    if not isinstance(proof, dict):
+        return [], []
+    drift = []
+    now = tree_head(ctx, tree)
+    if proof.get("head") != now:
+        drift.append("HEAD %s, proved at %s" % ((now or "unknown")[:12],
+                                                (proof.get("head") or "unknown")[:12]))
+    tests = lock_moved(ctx, state, task, tree)
+    if tests:
+        drift.append("test files changed: %s" % (", ".join(tests),))
+    impl = proof.get("implementation")
+    moved = changed_tests(impl, locked_paths_now(ctx, impl, tree)) \
+        if isinstance(impl, dict) else []
+    if moved:
+        drift.append("implementation changed: %s" % (", ".join(moved),))
+    return drift, tests
+
+
+def red_refused(ctx, state, task, why):
+    """The decision a red-first proof that did not hold asks - the helper gave
+    no block (a test passing without the fix), refused (a test file gone), or a
+    re-proof no longer proves: back to the session that wrote it while a round
+    is left, else a fresh retry. Nothing is filed and no lock moves."""
+    session = recorded_session(state, task)
+    if session and writer_state(state, task)["resumes"] < MAX_RESUME_ROUNDS:
+        return decision(ctx, state, "red-refused-writer", task, _clip(why, 160),
+                        extra={"session": session, "failing": [_clip(why, 2000)],
+                               "prompt": RED_REFUSED_HEAD})
+    return decision(ctx, state, "red-refused", task, _clip(why, 160))
+
+
+def note_reproof(ctx, state, task, when, changed, block):
+    """Keep a re-proof over changed test files, for the return and the task."""
+    held = writer_state(state, task)
+    held["reproofs"] = list(held["reproofs"]) + [
+        {"when": when, "changed": list(changed), "status": block.get("status"),
+         "at": block.get("at")}]
+    _mark(state, "writer", task, held)
+    write_state(ctx, state)
+    refused = note_task(ctx, task, "test files changed after the red proof (%s): "
+                        "%s; re-proved red over them: %s - %s" % (
+                            when, ", ".join(changed), block.get("status"),
+                            _clip(str(block.get("basis") or ""), 300)))
+    ctx["did"].append("red-first re-proved %s over %s%s" % (
+        block.get("status"), ", ".join(changed),
+        "" if refused is None else " (not noted: %s)" % (refused,)))
+
+
+def prove_and_hold(ctx, state, manifest, phase, task, when, tree=None):
+    """Prove the work as the tree holds it now and hold that proof - unless it
+    is already held over this very tree and proved (or owed none). A proof
+    that no longer proves what the held one did, or that the helper will not
+    grade, is `red_refused`. None, or the decision."""
+    held = writer_state(state, task)
+    proof = held.get("proof")
+    drift, changed = tree_since_proof(ctx, state, task, tree)
+    was = ((proof or {}).get("block") or {}).get("status") \
+        if isinstance(proof, dict) else None
+    if isinstance(proof, dict) and not drift and was in ("proved", "not-attempted"):
+        return None
+    block, payload, why = writer_prove(ctx, manifest, phase, task, tree)
+    if why is not None:
+        return red_refused(ctx, state, task, why)
+    if was == "proved" and block.get("status") != "proved":
+        return red_refused(ctx, state, task, "the re-proof (%s) is %s: %s" % (
+            "; ".join(drift) or "the held tests", block.get("status"),
+            " ".join(str(block.get("basis") or "").split())))
+    hold_proof(ctx, state, task, block, payload)
+    if changed:
+        note_reproof(ctx, state, task, when, changed, block)
+    ctx["did"].append("red-first %s%s" % (block.get("status"), (
+        " again (%s)" % ("; ".join(drift),)) if proof else ""))
+    return None
+
+
+def writer_settle(ctx, state, manifest, phase, task, tree=None):
+    """What follows a writer session whose record holds a result, once per
+    dispatch: a move of HEAD stops it - `writer-committed` naming the commit
+    when the session committed the task's files, `head-moved` otherwise, and
+    `head-unknown` when git names no HEAD on either side - and nothing is
+    filed; else the work is proved and the proof held (`prove_and_hold`). None
+    when the drive goes on - also when the latest run produced no result,
+    which `no-executor-return` meets as before."""
+    held = writer_state(state, task)
+    if not held["dispatches"]:
+        return None
+    last = held["dispatches"][-1]
+    if held.get("settled") == last["seq"]:
+        return None
+    if not writer_round_done(state, task):
+        return None
+    now = tree_head(ctx, tree)
+    if not (last.get("head") and now):
+        return decision(ctx, state, "head-unknown", task, "HEAD %s, %s at the "
+                        "dispatch" % ((now or "unknown")[:12],
+                                      (last.get("head") or "unknown")[:12]),
+                        extra={"head": now})
+    if now != last["head"]:
+        whose = head_move(ctx, task, last["head"], now, tree)
+        if whose == "writer":
+            return decision(ctx, state, "writer-committed", task, "commit %s on "
+                            "the dispatch's %s" % (now[:12], last["head"][:12]),
+                            extra={"commit": now})
+        return decision(ctx, state, "head-moved", task, "HEAD %s, %s at the "
+                        "dispatch" % (now[:12], last["head"][:12]),
+                        extra={"head": now})
+    if already_filed(ctx, task) is None:
+        stop = prove_and_hold(ctx, state, manifest, phase, task,
+                              "resume round %d" % (last["round"],), tree)
+        if stop is not None:
+            return stop
+    held = writer_state(state, task)
+    held["settled"] = last["seq"]
+    _mark(state, "writer", task, held)
+    write_state(ctx, state)
+    return None
+
+
+def writer_round_done(state, task):
+    """Whether the latest writer dispatch's record holds a session's result: a
+    round that produced none - the session could not run, or ended with no
+    result - files nothing and proves nothing."""
+    held = writer_state(state, task)
+    if not held["dispatches"]:
+        return False
+    return any(r.get("session") for r in read_sessions(held["dispatches"][-1]["record"]))
+
+
+def writer_holds(state, task):
+    """Whether a writer's proof is held for `task`'s current start, waiting on
+    the green gate to be filed, and the latest round ended with a result."""
+    return (isinstance(writer_state(state, task).get("proof"), dict)
+            and writer_round_done(state, task))
+
+
+def writer_return(task, paths, block, stamp, claim, claim_why, reproofs=()):
+    """The return the drive files for a writer session: the diff's paths, the
+    red-first block, the stamp, every re-proof over changed test files, and the
+    last session's final message as the writer's CLAIM - which the recorded
+    gate and the reviewer grade, never a verdict itself. `file-return` scrubs
+    machine paths from it as from every committed return."""
+    tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
+    added = [a for a in tests.get("add") or []
+             if isinstance(a, str) and a.split(":", 1)[0].strip() in paths]
+    return {
+        "gates": {},
+        "outcome": {
+            "technical": "Filed by the drive at the writer's green gate: the diff "
+                         "touches %s; red-first %s. The session's last message %s "
+                         "%s as the writer's claim, not a verdict: the recorded "
+                         "gate and the reviewer grade the work." % (
+                             ", ".join(paths) or "no path", block.get("status"),
+                             "is kept in" if claim_why is None
+                             else "is absent (%s) from" % (claim_why,),
+                             WRITER_CLAIM_FIELD),
+            "descriptive": "%s written by a headless writer session and filed by "
+                           "the drive" % (task["id"],)},
+        "testsAdded": added,
+        "redFirst": block,
+        "stamp": stamp,
+        WRITER_CLAIM_FIELD: claim,
+        DIFF_PATHS_FIELD: list(paths),
+        REPROOFS_FIELD: list(reproofs)}
+
+
+def file_writer_return(ctx, state, manifest, phase, task, tree=None):
+    """Take the stamp and file the writer's return through `audit-task.py
+    file-return` with the held proof, once the recorded gate is green; None
+    when it is filed, else the stop."""
+    # THE INVARIANT: a return is filed only with a proof made over the HEAD and
+    # the declared test and implementation files it is filed with. A HEAD or a
+    # declared file that moved since the held proof is proved again first (or
+    # goes back to the writer); an undeclared file is commit-task-work's to refuse.
+    stop = prove_and_hold(ctx, state, manifest, phase, task, "before the filing",
+                          tree)
+    if stop is not None:
+        return stop
+    drift, _changed = tree_since_proof(ctx, state, task, tree)
+    if drift:
+        return _stopped(ctx, "the tree of %s moved while its proof ran (%s), so "
+                        "nothing was filed; next proves it again"
+                        % (task["id"], "; ".join(drift)))
+    held = writer_state(state, task)
+    proof = held.get("proof") or {}
+    block = proof.get("block") or {}
+    paths = diff_paths(ctx, phase, tree)
+    if paths is None:
+        return _stopped(ctx, "git could not list what the writer session of %s "
+                        "changed, so nothing was filed" % (task["id"],))
+    line, stop = take_stamp(ctx, task, tree) if tree else take_stamp(ctx, task)
+    if stop is not None:
+        return stop
+    streams = [r.get("stream") for r in held["runs"] if r.get("session")]
+    claim, why = session_last_message(streams[-1] if streams else None)
+    body = writer_return(task, paths, block, line, claim, why, held["reproofs"])
+    cmd, _basis = writer_test_command(manifest, phase, task)
+    printed = proof.get("printed") if cmd else None
+    body[_fr.GAPS_FIELD] = case_binding_gaps(task, None, printed, cmd)
+    body[_fr.UNCHECKED_FIELD] = (_fr.case_binding_unchecked(task, cmd)
+                                 if cmd and printed is not None else [])
+    body[CASES_BASIS_FIELD] = CASES_BASIS
+    out, stop = _verb_or_stop(ctx, "audit-task.py", [
+        "file-return", task["id"], "--role", "executor", ctx["manifest"],
+        "--project-dir", ctx["project"]], stdin=json.dumps(body, indent=2) + "\n")
+    if stop is not None:
+        return stop
+    path = _fr.return_path(ctx["evidence"], task, "executor")
+    if path and re.search(r"written: (.+)$", out.strip()):
+        _journal_filed_return(ctx, task, "executor", path, block.get("status"))
+    if tree:
+        carry_work(ctx, task, tree, (state.get("wave") or {}).get("records"))
+    ctx["did"].append("%s writer return filed by the drive, red-first %s; stamp "
+                      "taken after the gate" % (task["id"], block.get("status")))
+    return None
 
 
 def brief_scope(task):
@@ -2199,6 +2748,14 @@ def close_task(ctx, state, phase, task, intent_basis=None):
         _mark(state, "findings", task)
         write_state(ctx, state)
         ctx["did"].append("%d finding(s) of %s filed" % (len(findings), task["id"]))
+    # THE DIGEST THE RED PROOF LOCKED BINDS THE COMMIT: a test file changed
+    # after the filed proof is not the test that was watched failing, nor the
+    # one the review read, so the commit is refused; only a new start proves
+    # and files it again.
+    changed = lock_moved(ctx, state, task)
+    if changed:
+        return decision(ctx, state, "tests-moved", task, ", ".join(changed),
+                        extra={"changed": changed})
     out, stop = _verb_or_stop(ctx, "commit-task-work.py", [
         ctx["manifest"], task["id"], "--project", ctx["project"],
         "--subject", str(task.get("title") or task["id"])])
@@ -2246,9 +2803,26 @@ def advance(ctx, state, manifest, phase, task, tree=None):
     waiting = writer_wait(ctx, state, task)
     if waiting is not None:
         return waiting
+    settled = writer_settle(ctx, state, manifest, phase, task, tree)
+    if settled is not None:
+        return settled
     executor, problem = filed(ctx, task, "executor")
     if problem:
         return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], problem)
+    if executor is None and writer_holds(state, task):
+        # A WRITER'S RETURN IS FILED AT ITS GREEN GATE, with the proof held
+        # since its session: a red gate goes back to the session, and the
+        # return then carries the proof of the bytes it is filed with.
+        if not _marked(state, "gated", task):
+            stop = gate_step(ctx, state, manifest, phase, task, tree)
+            if stop is not None:
+                return stop
+        stop = file_writer_return(ctx, state, manifest, phase, task, tree)
+        if stop is not None:
+            return stop
+        executor, problem = filed(ctx, task, "executor")
+        if problem:
+            return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], problem)
     if executor is None:
         if stale_brief(state, task):
             # The brief went out before a scope widening, so no executor holds
@@ -2285,26 +2859,9 @@ def advance(ctx, state, manifest, phase, task, tree=None):
     # whatever the key: a task whose review is carried to the phase still owes
     # the measurement its close and its commit are bound to.
     if (reviewer is None or not due) and not _marked(state, "gated", task):
-        if tree:
-            stop = refresh_member_records(ctx, state, task, tree)
-            if stop is not None:
-                return stop
-        code, out, err = task_gate(ctx, state, phase, task, tree)
-        if code == 1:
-            followed, again = follow_red_gate(ctx, state, phase, task, out + err, tree)
-            if followed is not None:
-                return followed
-            if again is not None:
-                code, out, err = again
-        if code == 1:
-            return gate_red_decision(ctx, state, manifest, phase, task, out + err)
-        if code != 0:
-            return relay_refusal(ctx, "run-test-gate.py", code, out + err)
-        _mark(state, "gated", task)
-        write_state(ctx, state)
-        banners = gate_banners(out + err)
-        ctx["did"].append("gate %s green%s" % (task["id"], " (%s)" % (
-            "; ".join(banners),) if banners else ""))
+        stop = gate_step(ctx, state, manifest, phase, task, tree)
+        if stop is not None:
+            return stop
         ctx["did"].append(grade_stamp(ctx, executor.get("stamp"), tree)
                           if tree else grade_stamp(ctx, executor.get("stamp")))
     if due and reviewer is None:
@@ -2342,6 +2899,32 @@ def advance(ctx, state, manifest, phase, task, tree=None):
             "never red: it closes on its own green gate, and no re-review is "
             "owed" % (named,)))
     return close_task(ctx, state, phase, task)
+
+
+def gate_step(ctx, state, manifest, phase, task, tree=None):
+    """The task's recorded gate, once per start: None when it is green (and
+    marked so), else the decision or stop a red or unrun gate asks."""
+    if tree:
+        stop = refresh_member_records(ctx, state, task, tree)
+        if stop is not None:
+            return stop
+    code, out, err = task_gate(ctx, state, phase, task, tree)
+    if code == 1:
+        followed, again = follow_red_gate(ctx, state, phase, task, out + err, tree)
+        if followed is not None:
+            return followed
+        if again is not None:
+            code, out, err = again
+    if code == 1:
+        return gate_red_decision(ctx, state, manifest, phase, task, out + err)
+    if code != 0:
+        return relay_refusal(ctx, "run-test-gate.py", code, out + err)
+    _mark(state, "gated", task)
+    write_state(ctx, state)
+    banners = gate_banners(out + err)
+    ctx["did"].append("gate %s green%s" % (task["id"], " (%s)" % (
+        "; ".join(banners),) if banners else ""))
+    return None
 
 
 def gate_banners(text):
@@ -3482,7 +4065,24 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         ctx["did"].append("%s: scope change accepted (%s)" % (
             task["id"], _clip(reason, 80)))
         return None
-    if answer == "resume" and pending["decision"] == "gate-red-writer":
+    if answer == "recheck":
+        # The settle runs again: a commit a human took out of history leaves
+        # HEAD back at the dispatch, and the work is proved and held as usual.
+        return None
+    if answer == "file":
+        # HEAD moved by commits that are not the session's, or git could not
+        # name it: the dispatch is read as made at HEAD as it is now, and the
+        # work is proved against that (the filing re-proves whatever moved).
+        held = writer_state(state, task)
+        tree = ((state.get("wave") or {}).get("trees") or {}).get(task["id"])
+        if held["dispatches"]:
+            held["dispatches"] = held["dispatches"][:-1] + [
+                dict(held["dispatches"][-1], head=tree_head(ctx, tree))]
+            _mark(state, "writer", task, held)
+            write_state(ctx, state)
+        return None
+    if answer == "resume" and pending["decision"] in ("gate-red-writer",
+                                                      "red-refused-writer"):
         # The task is not re-started, so no attempt is spent; the gate is not
         # marked as run, so the next `next` measures the session's fix.
         return resume_writer(ctx, state, task, pending, (
@@ -5212,21 +5812,54 @@ def declares_test(task):
     return any(_fr.is_test_path(p.strip()) for p in named)
 
 
+def red_args(project, manifest, task_id, cmd, cases=(), introduces=(),
+             deps_from=None):
+    """The arguments of `stamp-verification.py red` for `task_id` over `cmd`, in
+    the tree `project`: the one spelling `submit` runs for an executor and the
+    drive runs after a writer session, so the two proofs cannot differ by how
+    they were asked for."""
+    extra = []
+    for flag, values in (("--case", cases), ("--introduces", introduces)):
+        for value in values:
+            extra += [flag, value]
+    if deps_from:
+        extra += ["--deps-from", deps_from]
+    extra.append("--derive-introduces")
+    return ["red", "--project", project, "--manifest", manifest, "--task",
+            task_id, "--json"] + extra + ["--"] + list(cmd)
+
+
 def red_block(ctx, task, args, cmd, tree=None):
     """`(block, None)` - the helper's `redFirst` block for `task` - or
     `(None, stop)`. A test that passed without the fix gets no block from the
     helper, and so no filing: the work is to fix the test. `tree` is the
     task's own worktree in a wave, whose test files and HEAD the red run reads."""
-    extra = []
-    for flag, values in (("--case", args.case), ("--introduces", args.introduces)):
-        for value in values:
-            extra += [flag, value]
-    if args.deps_from:
-        extra += ["--deps-from", args.deps_from]
-    extra.append("--derive-introduces")
-    code, out, err = run_verb(ctx, "stamp-verification.py", [
-        "red", "--project", tree or ctx["gitRoot"], "--manifest", ctx["manifest"],
-        "--task", task["id"], "--json"] + extra + ["--"] + list(cmd))
+    block, _payload, stop = red_run(ctx, task, red_args(
+        tree or ctx["gitRoot"], ctx["manifest"], task["id"], cmd, args.case,
+        args.introduces, args.deps_from))
+    return block, stop
+
+
+def red_run(ctx, task, argv):
+    """`(block, payload, None)` for one `stamp-verification.py red` run over
+    `argv` (`red_args`) - the helper's block and its whole payload, which
+    carries the test files' digest - or `(None, None, stop)`: the helper's
+    refusal relayed whole, or the sentence that it gave no block."""
+    block, payload, why = red_reading(ctx, task, argv)
+    if why is None:
+        return block, payload, None
+    kind, code, text = why
+    if kind == "refused":
+        return None, None, relay_refusal(ctx, "stamp-verification.py", code, text)
+    return None, None, _stopped(ctx, "the red-first helper gave no block (exit "
+                                "%d): %s Nothing filed." % (code, text))
+
+
+def red_reading(ctx, task, argv):
+    """`(block, payload, None)` - as `red_run` - or `(None, None, why)`, `why`
+    being `("refused", exit, the helper's words)` or `("no-block", exit, its
+    note)`: what each caller turns into its own stop or decision."""
+    code, out, err = run_verb(ctx, "stamp-verification.py", argv)
     try:
         payload = json.loads(out)
     except ValueError:
@@ -5239,16 +5872,15 @@ def red_block(ctx, task, args, cmd, tree=None):
             return {"status": "could-not-prove", "at": _utc_stamp(),
                     "basis": "%s declares no test file in `files` or `tests.add`, "
                              "so no red could be run; the helper said: %s"
-                             % (task["id"], " ".join((out + err).split()))}, None
-        return None, relay_refusal(ctx, "stamp-verification.py", code, out + err)
+                             % (task["id"], " ".join((out + err).split()))}, {}, None
+        return None, None, ("refused", code, out + err)
     block = payload.get("redFirst") if isinstance(payload, dict) else None
     printed = payload.get("printed") if isinstance(payload, dict) else None
     ctx["printed"] = printed if isinstance(printed, list) else None
     if not isinstance(block, dict):
-        return None, _stopped(ctx, "the red-first helper gave no block (exit %d): "
-                              "%s Nothing filed." % (code, payload.get("note")
-                                                     or "no note"))
-    return block, None
+        return None, None, ("no-block", code, (payload.get("note") if isinstance(
+            payload, dict) else None) or "no note")
+    return block, payload, None
 
 
 def take_stamp(ctx, task, tree=None):

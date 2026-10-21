@@ -121,9 +121,44 @@
         "file": "plugins/audit/scripts/governance/run-agent-session.py:603-634 (write_record, main) / tests/test_run_agent_session.py",
         "issue": "--record is written for every outcome including a usage refusal (prefixed `usage:`), but no case covers the usage-refusal path or an unwritable record path; only the success path is exercised, indirectly via ws2-ws6 through test_drive_phase.py (executor's NOT DONE note (d)).",
         "resolution": "Add a case in tests/test_run_agent_session.py: a bad --model with --record leaves {\"line\": \"usage: ...\", \"exit\": 2}, and an unwritable --record changes no exit code."
+      },
+      {
+        "id": "P131-R15",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:1874-1895,1987-2010,2027-2040",
+        "issue": "writer_test_command / writer_prove demand a red proof from every task that has a tests.add file, whatever its tests.mode (only the no-tests.add case consults the mode). The repo's rule is that red-first is owed by tdd (expectRedFirst is mode == tdd; the reviewer rule says not-attempted for gate-only and regression). A regression-mode writer task whose new test passes at HEAD gets no block from the helper, so it becomes red-refused-writer, two resume rounds are spent telling the session to make a passing test fail, then red-refused and a retry or block. A gate-only task that happens to name a test is treated the same way.",
+        "resolution": "Gate the proof on tests.mode == tdd (or expectRedFirst): for other modes with tests.add, run it if wanted but turn a no-block or refused helper answer into a not-attempted or could-not-prove block carrying the helper's words rather than into red-refused-writer. Add a wl-style case for a regression task whose test passes at HEAD."
+      },
+      {
+        "id": "P131-R16",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:2099",
+        "issue": "The commit check is skipped silently when either head is unknown: `if last.get(\"head\") and now and now != last[\"head\"]`. open_dispatch stores tree_head(...) which is None when git cannot say, and a dispatch recorded before this change has no head key. In both cases a session that committed passes settle unflagged and the drive goes on to prove, gate and file, which is acceptance clause 4 not holding with no signal that it was not checked.",
+        "resolution": "When the dispatch has no head or git cannot name HEAD now, say so in ctx[\"did\"] (or ask a decision) instead of passing as if checked; add a case with a dispatch lacking head."
+      },
+      {
+        "id": "P131-R17",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:2125-2150,2186-2192",
+        "issue": "A drive-filed writer return carries no casesAdded, so case_binding_gaps reports every tests.add entry as unbound (wf1 output: testsAddGaps = no case id bound), and testsAdded is the plan's own tests.add text filtered by diffPaths rather than anything the writer reported. The id-versus-printed-label comparison the reviewer brief relies on can therefore never run for a writer task, and the reviewer sees a standing gap on every one.",
+        "resolution": "Bind case ids from the helper's printed labels or the writer's per-clause answer, or state in execute-task.md that writer returns are unbound by design so the gap is not read as a defect."
+      },
+      {
+        "id": "P131-R18",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_filed_returns.py:975-981",
+        "issue": "names_path replaces audit-lookup's substring test (`f in cmd`) with a closed delimiter list. The same change alters the executor brief's own-tests/`--` command, not only the drive. A gate spelled `pytest tests/a.py,tests/b.py`, `python3 tests/a.py;x`, `$ROOT/tests/a.py` or `plugins/x/tests/a.py` against a declared `tests/a.py` named before and no longer does; the outcome is could-not-prove with a basis (honest, not silent), but a previously derivable red is lost. The lookbehind `(?<=\\./)` also accepts `../tests/a.py`.",
+        "resolution": "Either widen the trailing set to `,`, `;`, `)` and accept a `/`-preceded suffix match on a path boundary, or pin the narrower reading with a case that names the loss (rm2 only pins the `_old` suffix)."
+      },
+      {
+        "id": "P131-R19",
+        "severity": "low",
+        "file": "tests/test_drive_phase.py (wf/wl blocks)",
+        "issue": "Every wf/wl case drives the shared-tree path (tree is None). The wave branches this diff adds - open_dispatch(..., tree), head_move(..., tree) and member_project, diff_paths(..., tree), take_stamp(ctx, task, tree), carry_work after the filing, locked_paths_now(..., tree) - are read only; I could not tell from the tests that any of them work in a task worktree, which is where P131.6 itself runs.",
+        "resolution": "Add one wave-shaped case (a task worktree, a writer that edits there) holding the filing, the lock and the commit check."
       }
     ],
-    "outcome": "[findings: 14 - 0 high, 3 med, 11 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 19 - 0 high, 4 med, 15 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1304,9 +1339,9 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-21T08:54:42Z.66c7f4",
+        "runId": "2026-10-21T10:50:01Z.9327a7",
         "status": "passed",
-        "at": "2026-10-21T08:54:42Z"
+        "at": "2026-10-21T10:50:01Z"
       }
     },
     {
@@ -1723,7 +1758,7 @@
     {
       "id": "P131.14",
       "title": "The low findings carried from BF4: CI check names without the image, a block-list matrix axis read by gate-parity, and a history sentence in ci.yml corrected",
-      "status": "in_progress",
+      "status": "done",
       "description": "One batched task for the lows carried under D9. (1) BF4-R4: the pinned runner image appears in reported check names (selftests, e2e, lint + e2e, resample), so the next image move renames the checks; drop the image from the display names where the matrix allows, keep tools/ci-verified.py's prefixes matching, and state in the outcome that the repository's required-check list must be checked by the owner. (2) BF4-R5: tools/gate-parity.py `_matrix_key_values` reads only an inline list or scalar; a block-sequence axis yields nothing and, mixed with an include row naming the key, passes a floating value silently - read the block sequence (or report the job unreadable) and add a case beside ri4. (3) BF4-R6: .github/workflows/ci.yml's header comment says the pinned images are what the last green run logged, but that run logged windows-2025-vs2026 for the windows-2025 label; reword it as present-tense fact.",
       "files": [
         ".github/workflows/ci.yml",
@@ -1754,19 +1789,36 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "315a48ee0958",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/gate-parity.py: _matrix_key_values now returns {values, unread}: it reads inline lists, scalars and block sequences (new _block_items), and records an expression, a multi-line flow list or a key with nothing under it as unread; floating_runners reports an unread key by job instead of passing the include-only values. New image_in_job_names (called from floating_runners) reports a job name carrying a runner label or ${{ matrix.K }} for the runs-on key. Cases ri8 (block axis, over-fire twin, floating include), ri9 (unreadable forms named, readable block not), ri10 (names: matrix ref, literal, family-expression clean), ri11 (live ci.yml names clean). .github/workflows/ci.yml: display names are now selftests (linux|windows via startsWith(matrix.os,'windows') expression, leg shard), e2e (windows), lint + e2e (linux), resample (windows); runs-on and pinned images unchanged; header reworded to present-tense pins (ubuntu-24.04, windows-2025) instead of 'the last green run logged'. tools/ci-verified.py: its fixtures use image-free names; _is_exempt's exact-or-'name (' prefix rule already matches them (cv8/cv9 now exercise 'resample (windows)'), no logic change. OWNER ACTION: check names change (selftests (ubuntu-24.04, ...) -> selftests (linux, ...), e2e (windows-2025) -> e2e (windows), lint + e2e (ubuntu-24.04) -> lint + e2e (linux), resample (windows-2025) -> resample (windows)), so the repository's required-status-check list (branch protection / rulesets) must be checked by the owner and updated to the new names. Not verified: the expression-built name rendering on a real GitHub run (no CI run made). Full sweep on a committed copy: only check-example-ledgers.py and measure-context.py red.",
+        "descriptive": "CI check names no longer carry the runner image, and the gate-parity runner-image check reads block-sequence matrix axes and names unreadable ones instead of passing them."
       },
       "startedAt": "2026-10-21T07:02:43Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-21T09:09:05Z",
+      "verifiedBy": [
+        "ri8: block-sequence os axis with floating label beside an include row is reported; pinned twin clean; floating include still reported",
+        "ri9: unreadable matrix values (expression, empty key) are named per job",
+        "ri10: job display names carrying image via matrix ref or literal are reported, family-expression name clean",
+        "ri11: live ci.yml display names carry no runner image"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-21T08:55:26Z.5563f4",
         "status": "passed",
         "at": "2026-10-21T08:55:26Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "315a48ee0958",
+        "at": "2026-10-21T09:09:05Z",
+        "return": "docs/audit/evidence/returns/P131.14/20261021T070243Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-21T07:26:31Z",
+        "basis": "`python3 tools/sweep-selftests.py tools/gate-parity.py` in a throwaway tree at HEAD exited 1 with failing cases ri8 (house FAIL), ri9 (house FAIL), ri10 (house FAIL), tools/gate-parity.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 77/81 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {

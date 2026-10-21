@@ -2249,7 +2249,30 @@ def _selftest():
         _harness.stage(check, "nl-block", _nested_scope_cases)
         _harness.stage(check, "nm-block", _nested_member_cases)
         _harness.stage(check, "wp-block", _writer_prompt_cases)
+        _harness.stage(check, "rq-block", _red_command_reader_cases)
     return _harness.run(body)
+
+
+def _red_command_reader_cases(check):
+    """The brief's test command after `--` is `_filed_returns.red_command`'s
+    answer over the task's resolved gate: one reader, so the brief and the
+    drive cannot pick two commands for one task."""
+    def plan(gate):
+        task = {"id": "P1.1", "tests": {"mode": "tdd", "gate": [gate],
+                                        "add": ["tests/test_a.py: a case"]}}
+        phase = {"id": "P1", "tasks": [task]}
+        return {"meta": {"buildCommands": {}}, "phases": [phase]}, phase, task
+    got = []
+    for gate in ("python3 tests/test_a.py_old", "python3 tests/test_a.py"):
+        manifest, phase, task = plan(gate)
+        resolved = M._evio.resolved_commands(manifest, [gate])
+        got.append((M.red_command(manifest, phase, task),
+                    M._fr.red_command(task, resolved)
+                    if hasattr(M._fr, "red_command") else "absent"))
+    check("rq1 the brief's red command is _filed_returns.red_command's answer "
+          "over the same gate, so a gate naming tests/test_a.py_old gives none "
+          "and one naming tests/test_a.py gives it: %r" % (got,),
+          got == [(None, None), ("python3 tests/test_a.py", "python3 tests/test_a.py")])
 
 
 if __name__ == "__main__":

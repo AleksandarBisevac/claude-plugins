@@ -1608,6 +1608,77 @@ def task_gate_entries(phase, task):
         "the phase's testGate (the task declares no gate of its own)"
 
 
+def tests_add_files(task):
+    """The file half of each `tests.add` entry (`<file>: <the case>`), in order,
+    an entry naming no file left out."""
+    tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
+    return [f for f in (str(a).split(":", 1)[0].strip()
+                        for a in tests.get("add") or [] if isinstance(a, str)) if f]
+
+
+# What may stand on either side of a path a command names: the command's ends,
+# whitespace, a quote, and the separators a word list or a shell line uses;
+# before it also `=` (`--flag=path`), and after it `:` (a `::case` suffix).
+_PATH_BEFORE = " \t\"'=,;"
+_PATH_AFTER = " \t\"',;:"
+_VAR_PREFIX = re.compile(r"\$(?:\w+|\{\w+\})/$")
+
+
+def names_path(command, path):
+    """Whether `command` names `path` as a path of its own: led by the
+    command's start, a `_PATH_BEFORE` character, `./`, or a `$VAR/` prefix, and
+    ended by its end or a `_PATH_AFTER` character. A longer path that only
+    begins or ends with `path`'s spelling is not it."""
+    for hit in re.finditer(re.escape(path), command):
+        before, after = command[:hit.start()], command[hit.end():]
+        led = (not before or before[-1] in _PATH_BEFORE
+               or (before.endswith("./") and (len(before) == 2
+                                              or before[-3] in _PATH_BEFORE))
+               or _VAR_PREFIX.search(before) is not None)
+        if led and (not after or after[0] in _PATH_AFTER):
+            return True
+    return False
+
+
+def _paths_ending(command, basename):
+    """The paths `command`'s words name that end in `/<basename>`, a word's
+    `--flag=` head and `::case` tail left off."""
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return set()
+    found = set()
+    for word in words:
+        for part in re.split(r"[,;]", word.split("=", 1)[-1]):
+            part = part.split("::", 1)[0]
+            if part.endswith("/" + basename):
+                found.add(part)
+    return found
+
+
+def red_command(task, resolved):
+    """The resolved gate command that names one of the task's `tests.add` files
+    (`names_path`), or None: the command the red-first helper is handed - after
+    `--` in the executor's brief, and by the step driver after a writer session.
+    `resolved` is `_evidence_io.resolved_commands`' `[(entry, command)]` over the
+    task's gate (`task_gate_entries`). Only a command naming the file is taken:
+    a whole-project gate is a red the helper would grade against every test HEAD
+    carries, and an entry naming no file names nothing. An entry spelled as a
+    bare basename is the file only when exactly one path the gate's commands
+    name ends in `/<basename>` - two such paths are two files it might mean."""
+    added = tests_add_files(task)
+    commands = [c for _e, c in resolved or [] if isinstance(c, str)]
+    for cmd in commands:
+        if any(names_path(cmd, f) for f in added):
+            return cmd
+    for name in [f for f in added if "/" not in f]:
+        ending = [(cmd, _paths_ending(cmd, name)) for cmd in commands]
+        paths = set().union(*[p for _c, p in ending]) if ending else set()
+        if len(paths) == 1:
+            return next(cmd for cmd, p in ending if p)
+    return None
+
+
 def phase_answers(evidence_dir, phase, build, resolve):
     """`{task id: (answers, owed)}` for every task of `phase` recording a
     commit. `resolve` turns gate entries into `[(entry, command)]` - the
