@@ -848,7 +848,7 @@
     {
       "id": "P131",
       "title": "The writer is a plain Claude Code session, and scripts verify around it",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P131.json"
     }
   ],
