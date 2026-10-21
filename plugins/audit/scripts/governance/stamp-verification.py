@@ -286,7 +286,8 @@ WHAT THIS DESIGN ADDRESSES, from what was observed on 2026-10-06:
     suite: (3).
   - an inline suite under `tools/`, whose test file is its implementation
     file, so no HEAD-versus-fix split exists: addressed since by laying HEAD's
-    copy with only its test-definition hunks applied (`inline_test_text`), or
+    copy with only its test-definition hunks applied, and the new imports and
+    definitions those hunks reference (`inline_test_text`), or
     `could-not-prove` with the reason where no such split can be made.
   - the removal cases that kill a run (SIGTERM, SIGKILL) failing inside the
     helper's own throwaway, so HEAD reads red there: NOT addressed, and its
@@ -1306,10 +1307,20 @@ def derive_introduced(root, implementation, deadline=None):
 # changed hunks that lie inside a TEST DEFINITION applied - a def whose name
 # starts with `test` or `selftest` or ends in `cases`, or a class whose name
 # starts or ends with `Test` - and every other hunk held at HEAD. Which hunk is
-# a test is read from those names and nothing else, so a helper the new cases
-# call, defined outside them, stays at HEAD and the run fails to reach it; a
-# file that does not parse, is not Python, or is new at HEAD has no split to
-# make, and the red is `could-not-prove` with that reason.
+# a test is read from those names and nothing else; a file that does not parse,
+# is not Python, or is new at HEAD has no split to make, and the red is
+# `could-not-prove` with that reason.
+#
+# A new case often needs a new import or helper written outside any test
+# definition, and holding it at HEAD crashes the run on a NameError before the
+# case's assertion. So a hunk outside the test definitions is pulled in beside
+# them, one top-level statement at a time, when it changes no line of HEAD's
+# and the statement is an import, a def, a class or a plain assignment binding
+# a name HEAD's copy does not bind and an applied hunk references - closed
+# over, since a pulled-in helper may reference another (`_closure`). A new
+# definition the case calls may be the fix itself, so a run that passes with
+# hunks pulled in is made again with them held back (`run_red`). A name bound
+# some other way stays unresolved, and the red says which, off the NameError.
 _TEST_DEF_NAME = re.compile(r"^_*(?:test|selftest)|(?:^|_)cases$", re.I)
 _TEST_CLASS_NAME = re.compile(r"^_*Test|Tests?$")
 
@@ -1351,45 +1362,153 @@ def _inside(lines, start, stop, spans):
                for i in range(start, stop))
 
 
-def inline_test_text(head, now):
-    """`(text, held, applied, problem)` - HEAD's copy of an inline suite with
-    only the changed hunks inside a test definition (in both copies) applied;
-    how many hunks were held at HEAD and how many test hunks applied; and why
-    no test-only copy can be made, or None. A hunk of blank and comment lines
-    only is applied and counted as neither."""
+def _stmt_binds(stmt):
+    """The names one statement binds when it is a shape a pulled-in hunk may
+    carry - an import, a def, a class, a plain or annotated assignment to names
+    - else `()`. A star import binds names no reading can list."""
+    if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+        names = [a.asname or a.name.split(".")[0] for a in stmt.names]
+        return () if "*" in names else tuple(names)
+    if isinstance(stmt, _DEFS + (ast.ClassDef,)):
+        return (stmt.name,)
+    if isinstance(stmt, ast.Assign):
+        return tuple(n for t in stmt.targets for n in _target_names(t))
+    if isinstance(stmt, ast.AnnAssign) and stmt.value is not None:
+        return tuple(_target_names(stmt.target))
+    return ()
+
+
+def _module_binds(body):
+    """Every name a module binds at its top level, down through the blocks of
+    an `if`, `try` or `with` there - wider than `_top_names`, imports included,
+    since a name HEAD binds in any of them is one a pulled-in hunk would rebind."""
+    names = set()
+    for stmt in body:
+        names.update(_stmt_binds(stmt))
+        if type(stmt).__name__ in _COMPOUND:
+            for field in ("body", "orelse", "finalbody"):
+                names |= _module_binds(getattr(stmt, field, None) or [])
+            for handler in getattr(stmt, "handlers", None) or []:
+                names |= _module_binds(handler.body)
+    return names
+
+
+def _loads_by_line(tree):
+    """`{line: {name}}` - the names `tree` reads, by the line they sit on."""
+    found = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            found.setdefault(node.lineno, set()).add(node.id)
+    return found
+
+
+def _span_loads(loads, first, last):
+    return set(n for line in range(first, last + 1) for n in loads.get(line, ()))
+
+
+def _stmt_span(stmt):
+    return min([stmt.lineno] + [d.lineno for d in getattr(
+        stmt, "decorator_list", [])]), stmt.end_lineno
+
+
+def _hunk_units(old, i1, i2, new, j1, j2, tree):
+    """The top-level statements a hunk ADDS, `[(first, last, stmt)]`, when it
+    changes no line of HEAD's and every line it adds that is not blank or a
+    comment lies in one of them; else None - the hunk edits code HEAD has."""
+    if not all(_neutral(ln) for ln in old[i1:i2]):
+        return None
+    units = [_stmt_span(s) + (s,) for s in tree.body]
+    units = [u for u in units if j1 + 1 <= u[0] and u[1] <= j2]
+    covered = all(_neutral(new[j]) or any(a <= j + 1 <= b for a, b, _s in units)
+                  for j in range(j1, j2))
+    return units if covered else None
+
+
+def _closure(candidates, referenced, head_binds, loads):
+    """`{(hunk, index)}` - the units pulled in: each binds a name HEAD's copy
+    does not and the applied hunks or an already pulled-in unit reference,
+    read to a fixed point. `candidates` is `{hunk: units}`."""
+    pulled, reach, grew = set(), set(referenced), True
+    while grew:
+        grew = False
+        for hunk, units in sorted(candidates.items()):
+            for index, (first, last, stmt) in enumerate(units):
+                names = set(_stmt_binds(stmt))
+                if ((hunk, index) in pulled or not names or names & head_binds
+                        or not names & reach):
+                    continue
+                pulled.add((hunk, index))
+                reach |= _span_loads(loads, first, last)
+                grew = True
+    return pulled
+
+
+def inline_test_text(head, now, pull=True):
+    """`(text, held, applied, problem, pulled)` - HEAD's copy of an inline
+    suite with only the changed hunks inside a test definition (in both copies)
+    applied, and - under `pull` - the statements outside them its test hunks
+    need (`_closure`); how many hunks were held at HEAD in whole or in part and
+    how many test hunks applied; why no test-only copy can be made, or None;
+    and each pulled-in statement as `"<its first line> (line N)"`. A hunk of
+    blank and comment lines only is applied and counted as neither."""
     head_tree, now_tree = _parse(head), _parse(now)
     if head_tree is None or now_tree is None:
         return None, 0, 0, ("its %s copy does not parse, so its test definitions "
                             "cannot be told from its implementation"
-                            % ("HEAD" if head_tree is None else "working-tree",))
+                            % ("HEAD" if head_tree is None else "working-tree",)), []
     old, new = head.splitlines(True), now.splitlines(True)
     old_spans, new_spans = _test_spans(head_tree), _test_spans(now_tree)
-    out, held, applied = [], 0, 0
-    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
-            None, old, new, autojunk=False).get_opcodes():
+    loads = _loads_by_line(now_tree)
+    ops = difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes()
+    tests = set(k for k, (tag, i1, i2, j1, j2) in enumerate(ops)
+                if tag != "equal" and _inside(old, i1, i2, old_spans)
+                and _inside(new, j1, j2, new_spans))
+    candidates = {}
+    if pull:
+        for k, (tag, i1, i2, j1, j2) in enumerate(ops):
+            units = (None if tag == "equal" or k in tests
+                     else _hunk_units(old, i1, i2, new, j1, j2, now_tree))
+            if units:
+                candidates[k] = units
+    referenced = set()
+    for k in tests:
+        referenced |= _span_loads(loads, ops[k][3] + 1, ops[k][4])
+    chosen = _closure(candidates, referenced, _module_binds(head_tree.body), loads)
+    out, held, applied, pulled = [], 0, 0, []
+    for k, (tag, i1, i2, j1, j2) in enumerate(ops):
+        units = candidates.get(k) or []
+        mine = [u for index, u in enumerate(units) if (k, index) in chosen]
         if tag == "equal":
             out += old[i1:i2]
-        elif _inside(old, i1, i2, old_spans) and _inside(new, j1, j2, new_spans):
+        elif k in tests:
             out += new[j1:j2]
             if not all(_neutral(ln) for ln in old[i1:i2] + new[j1:j2]):
                 applied += 1
+        elif mine and len(mine) == len(units):
+            out += new[j1:j2]
         else:
             out += old[i1:i2]
+            for first, last, _stmt in mine:
+                out += new[first - 1:last]
             held += 1
+        pulled += ["%s (line %d)" % (new[stmt.lineno - 1].strip(), stmt.lineno)
+                   for _first, _last, stmt in mine]
     if not applied:
         return "".join(out), held, 0, (
             "none of its %d changed hunk(s) lies inside a test definition (a def "
             "named test*/selftest*/*cases, or a Test* class), so no copy holding "
-            "the new cases without the fix can be laid over HEAD" % (held,))
-    return "".join(out), held, applied, None
+            "the new cases without the fix can be laid over HEAD" % (held,)), []
+    return "".join(out), held, applied, None, pulled
 
 
 def inline_overlays(root, tests, deadline=None):
     """`(overlays, notes, problem)` - `{rel: test-only text}` for each inline
     suite among `tests` whose change holds both test and implementation hunks,
-    `{rel: (applied, held)}` for the basis, and the problem that leaves one
-    with no test-only copy, or None. An inline suite whose every hunk is a
-    test is laid over whole, like any test file."""
+    `{rel: {"applied", "held", "pulled", "plain", "plainHeld"}}` for the basis -
+    `plain` the copy with nothing pulled in, for the run made again when the
+    pulled-in copy passes - and the problem that leaves one with no test-only
+    copy, or None. An inline suite whose every hunk is a test is laid over
+    whole, like any test file."""
     overlays, notes = {}, {}
     for rel in tests:
         if not is_inline_suite(rel):
@@ -1406,13 +1525,62 @@ def inline_overlays(root, tests, deadline=None):
                       "implementation at" % ("new at HEAD" if head is None
                                              else "absent from the working tree",))
         else:
-            text, held, applied, reason = inline_test_text(head, now)
-            if reason is None and held:
-                overlays[rel], notes[rel] = text, (applied, held)
+            text, held, applied, reason, pulled = inline_test_text(head, now)
+            # A hunk pulled in whole is not counted as held, so a change whose
+            # every other hunk was pulled in holds none and is still split:
+            # laid over whole, a pass could not be told from the fix passing.
+            if reason is None and (held or pulled):
+                plain, plain_held = inline_test_text(head, now, pull=False)[:2]
+                overlays[rel] = text
+                notes[rel] = {"applied": applied, "held": held, "pulled": pulled,
+                              "plain": plain, "plainHeld": plain_held}
         if reason is not None:
             return {}, {}, ("inline suite %s (its test file is its implementation "
                             "file): %s" % (rel, reason))
     return overlays, notes, None
+
+
+def _pulled_in(notes):
+    """`[(rel, [statement])]` - what each inline suite's copy pulled in, for
+    the suites that pulled anything."""
+    return [(rel, n["pulled"]) for rel, n in sorted(notes.items()) if n["pulled"]]
+
+
+def inline_clause(notes, withdrawn):
+    """How each inline suite was laid over, for a basis: its test hunks, the
+    hunks held at HEAD, and what was pulled in - or, when the pulled-in copy
+    passed and the run was made again (`withdrawn`), what was held back."""
+    parts = []
+    for rel, n in sorted(notes.items()):
+        held = n["plainHeld"] if withdrawn else n["held"]
+        part = ("inline suite %s laid over as HEAD's copy plus its %d test "
+                "hunk(s), %d other hunk(s) held at HEAD" % (rel, n["applied"], held))
+        if n["pulled"] and not withdrawn:
+            part += (", and pulled in for the names its test hunks reference: %s"
+                     % ("; ".join(n["pulled"]),))
+        parts.append(part)
+    return "; ".join(parts)
+
+
+def withdrawn_clause(withdrawn):
+    """The sentence for a run made again with the pulled-in statements held
+    back, or "" when none was."""
+    if not withdrawn:
+        return ""
+    return ("; the run with %s pulled in passed, so what was pulled in may be the "
+            "fix the new cases test, and the run was made again with it held back"
+            % ("; ".join("%s's %s" % (rel, ", ".join(pulled))
+                         for rel, pulled in withdrawn),))
+
+
+_NAME_ERROR = re.compile(r"NameError: name '([^']+)' is not defined")
+
+
+def unresolved_name(text):
+    """The name in the last NameError `text` carries, or None - where an
+    inline suite's run stopped on a name no pulled-in hunk bound."""
+    hits = _NAME_ERROR.findall(_runner_output.plain_text(text or ""))
+    return hits[-1] if hits else None
 
 
 # --- which failing case is the task's own: the baseline is GREEN ---
@@ -3115,6 +3283,7 @@ def red_verdict(run, ctx):
         env_clause += ("; kept, naming the shared root: %s - the run may have read "
                        "shared-tree files through it" % (", ".join(ctx["naming"]),))
     env_clause += deps_clause(ctx.get("deps"))
+    env_clause = withdrawn_clause(run.get("withdrawn")) + env_clause
     if run["problem"] is not None:
         return E_CANNOT_PROVE, V_NOT_RUN, {
             "status": RED_CANNOT, "at": at,
@@ -3125,9 +3294,7 @@ def red_verdict(run, ctx):
     line = _decisive_line(text, tally)
     where = "`%s` in a throwaway tree at HEAD exited %d" % (shown, code)
     inline = ctx.get("inline") or {}
-    inline_clause = "; ".join(
-        "inline suite %s laid over as HEAD's copy plus its %d test hunk(s), %d "
-        "other hunk(s) held at HEAD" % (rel, a, h) for rel, (a, h) in sorted(inline.items()))
+    laid = inline_clause(inline, run.get("withdrawn"))
     if verdict == V_GREEN and inline:
         # The split between an inline suite's cases and its code is read from
         # definition names, so a pass here cannot be told from a misread split.
@@ -3137,7 +3304,7 @@ def red_verdict(run, ctx):
                      "implementation, and an inline suite's test hunks are told "
                      "from its fix only by the definitions they lie in, so a pass "
                      "cannot be told from a misread split%s"
-                     % (where, line, inline_clause, env_clause)}, None
+                     % (where, line, laid, env_clause)}, None
     if verdict == V_GREEN:
         return E_NOT_RED, verdict, None, (
             "%s (%s): the test PASSED in the throwaway - HEAD's implementation with "
@@ -3161,7 +3328,7 @@ def red_verdict(run, ctx):
         how += (", its declared jest or vitest test files new at HEAD (%s) left "
                 "absent" % (", ".join(absent),))
     if inline:
-        how += ", the task's run with its " + inline_clause
+        how += ", the task's run with its " + laid
     if ctx["cases"]:
         how = "named by --case, " + how
     baseline = baseline_problem(run.get("head"), run["cmd"], ctx.get("stages"))
@@ -3273,6 +3440,12 @@ def red_verdict(run, ctx):
                   "whose failing cases are its own - cannot be told"
                   % ("; ".join("%s: %s" % (r, _decisive_line(text, {"runner": r}))
                                for r in tally["mixed"]),))
+    elif verdict == V_COLLECT and inline and unresolved_name(text):
+        reason = ("an inline suite's applied test hunks reach %r, which stays "
+                  "unresolved - no hunk outside its test definitions binds it as "
+                  "an import or a new top-level definition that applies without "
+                  "the fix - so the run stopped on a NameError before an "
+                  "assertion (%s)" % (unresolved_name(text), laid))
     elif verdict == V_COLLECT:
         reason = "no test was collected or none reached an assertion"
         if tally and tally.get("runner") == "playwright":
@@ -3522,7 +3695,7 @@ def run_red(args, cmd, out):
     except OSError:
         pass
     run = {"cmd": cmd, "code": None, "text": "", "problem": None, "second": None,
-           "head": None, "fix": None}
+           "head": None, "fix": None, "withdrawn": None}
     state = {"new": [], "absent": [], "stages": [], "head_files": None, "head_defs": None,
              "head_modules": None, "head_js": None}
     copied = []
@@ -3563,6 +3736,17 @@ def run_red(args, cmd, out):
                                              "task", deps=deps, texts=overlays)
                 run["code"], run["text"], run["problem"] = (
                     task["code"], task["text"], task["problem"])
+            if (run["problem"] is None and _pulled_in(inline)
+                    and classify_run(run["code"], run["text"], cmd)[0] == V_GREEN):
+                # What was pulled in may be the fix the new case tests, so a
+                # pass with it cannot be credited: run again with it held back.
+                task, _c = _isolated_run(
+                    root, path, scope["declared"], cmd, deadline, args.timeout,
+                    env, holder, "task-held", deps=deps,
+                    texts=dict((rel, n["plain"]) for rel, n in inline.items()))
+                run["code"], run["text"], run["problem"] = (
+                    task["code"], task["text"], task["problem"])
+                run["withdrawn"] = _pulled_in(inline)
             if run["problem"] is None and _wants_second(
                     run["code"], run["text"], args.introduces, cmd, sources,
                     _roots(root, path)):
@@ -3616,8 +3800,14 @@ def run_red(args, cmd, out):
                                         if rel not in state["absent"]],
                             "absent": state["absent"],
                             "newStages": state["stages"]},
-               "inline": dict((rel, {"applied": a, "held": h})
-                              for rel, (a, h) in sorted(inline.items())),
+               "inline": dict((rel, {"applied": n["applied"],
+                                     "held": (n["plainHeld"] if run.get("withdrawn")
+                                              else n["held"]),
+                                     "pulledIn": [] if run.get("withdrawn")
+                                     else n["pulled"],
+                                     "heldBack": n["pulled"] if run.get("withdrawn")
+                                     else []})
+                              for rel, n in sorted(inline.items())),
                "environment": {"dropped": dropped, "naming": naming,
                                "set": ["%s=%s" % (k, env[k]) for k in
                                        ("PYTHONDONTWRITEBYTECODE",) if k in env]},

@@ -1002,12 +1002,17 @@
       "startedAt": "2026-10-21T03:14:54Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-21T04:07:00Z.22b9b9",
+        "status": "passed",
+        "at": "2026-10-21T04:07:00Z"
+      }
     },
     {
       "id": "P131.4",
       "title": "The writer's prompt is plain's own prompt, composed from the task by script, with one closing line asking for an answer per acceptance clause",
-      "status": "in_progress",
+      "status": "done",
       "description": "In audit-lookup.py add compose_writer_prompt beside compose_executor_brief: deterministic text in the format of the plain reference the owner's baseline measured, and nothing else. Its lines, in order: 'Implement the following task in this repository.'; 'Task: <title>'; the description; 'Files the task declares:' with one '- <path>' per declared file; 'Tests to add:' with one '- <entry>' per tests.add entry; 'Before you finish, check that everything passes:' with one '- <command>' per non-browser command of the task's resolved gate; one line naming the browser gates as run by the drive and not to be run in the session; 'Fix whatever does not pass. When everything is green, leave the changes uncommitted: the drive commits them.'; and one closing line asking for a final JSON object with one entry per acceptance clause, numbered as the task numbers them (the tests.add entries first, then the numbered items of the description's acceptance list), each either delivered with the file and line that delivers it or not delivered with the reason. The commit line and the closing line are the only deliberate differences from the measured prompt. The prompt carries no brief path, no clause section beyond that one line, no guidance block, no skills list and no submit instruction. Expose it as brief <taskId> --role writer. Acceptance: (1) on a fixture task the prompt equals the baseline template line for line except the two named lines; (2) it carries no brief path, no guidance text, no skills list and no submit instruction; (3) it lists no browser gate among the commands to run and names the browser gates as the drive's; (4) the closing line's clause numbering matches what the clause-coverage check will read for the same task; (5) two calls give identical bytes.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -1044,19 +1049,33 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ea05966b7bc6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-lookup.py: added compose_writer_prompt(manifest, phase, task) beside compose_executor_brief, with task_clauses / acceptance_items (clause numbering: tests.add entries first, then the numbered items after the LAST 'Acceptance:' read by sequence so an inner '(7)' stays in its item), writer_closing_line, runs_browser (BROWSER_GATE_SCRIPTS: capture-screenshots.mjs, check-report-interactive.mjs, verify.sh, plus 'playwright test'), and 'writer' in BRIEF_ROLES so `brief <taskId> --role writer` writes the prompt to briefs/<id>/<start>.writer.md via write_brief. Prompt is the E3 baseline layout (taken from quality-gates-internal/reports/2026-10-17-quality-study/E3-out/w1.prompt.txt) with three deliberate differences: the browser line (names the drive, which acceptance 3 requires; the baseline line named a machine-wide lock instead), the commit line, and the closing clause line. A gate with no browser entry gets no browser line. Empty files/tests/gate sections print '- none declared' / '- none'. Closing line JSON shape: keyed by clause number, {delivered:true,file,line} or {delivered:false,reason}; a task with no clause is told to answer {}. Tests: new wp-block in tests/test_audit_lookup.py, cases wp1..wp12; 127/127 selftest cases pass; full tools/sweep-selftests.py 190/190 files ok. Mutations run in a scratch process (monkeypatching, not the tree): runs_browser always False -> wp1,wp3,wp4 red; always True -> wp1,wp2,wp3,wp5 red; clauses sorted acceptance-first -> wp8 red; naive split on any (n) -> wp7,wp8,wp9 red; restored -> none red. The first edit to audit-lookup.py by a python heredoc was refused by the plan gate (magnitude 163 > 80); I redid it with the Edit tool, which the gate allowed. Not done here: drive-phase.py's own `brief` --role choices (_fr.RETURN_ROLES) are P131.5's files; P131.7's reader should import task_clauses rather than renumber.",
+        "descriptive": "The writer's prompt is now composed by script in plain's own layout, with one closing line asking for a JSON answer per numbered acceptance clause, and is exposed as brief <taskId> --role writer."
       },
       "startedAt": "2026-10-21T03:14:56Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-21T03:46:16Z",
+      "verifiedBy": [
+        "wp-block in tests/test_audit_lookup.py: fixture task equals the baseline literal line for line except browser/commit/closing lines; commit line; no browser gate among commands and one browser line naming each once; allow twin with no browser entry; forbidden words absent; closing line clause numbering 1..2 tests then 3..5 acceptance; task_clauses list; no-tests.add numbering from 1; no-clause task answers {}; byte determinism; CLI --role writer writes the prompt file"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-21T03:46:14Z.13f6d1",
         "status": "passed",
         "at": "2026-10-21T03:46:14Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "ea05966b7bc6",
+        "at": "2026-10-21T03:46:16Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-21T03:27:06Z",
+        "basis": "`python3 tests/test_audit_lookup.py --selftest` in a throwaway tree at HEAD exited 1 on \"AttributeError: module 'audit_lookup' has no attribute 'compose_writer_prompt'\" (read as python), and the task introduces 'compose_writer_prompt': absent from HEAD's module-level bindings of plugins/audit/scripts/status/audit-lookup.py and bound in the working tree's; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1364,7 +1383,12 @@
       "startedAt": "2026-10-21T03:14:59Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-21T03:50:34Z.b01cf1",
+        "status": "passed",
+        "at": "2026-10-21T03:50:34Z"
+      }
     },
     {
       "id": "P131.11",

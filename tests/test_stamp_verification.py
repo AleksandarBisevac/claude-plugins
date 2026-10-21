@@ -5367,12 +5367,14 @@ def _inline_suite_cases(check):
           code_p == M.E_CANNOT_PROVE and block_p.get("status") == "could-not-prove"
           and "misread split" in block_p.get("basis", ""))
     head_lines, wt_lines = _INLINE_HEAD.splitlines(True), _INLINE_WT.splitlines(True)
-    text, held, applied, problem = M.inline_test_text(_INLINE_HEAD, _INLINE_WT)
+    text, held, applied, problem, pulled = M.inline_test_text(_INLINE_HEAD,
+                                                              _INLINE_WT)
     check("si3 the test-only copy is HEAD with the test hunk applied and the "
-          "implementation hunk held back: one of each, `value` still returns 1 "
-          "and the new case is present: %r"
-          % ((held, applied, problem, text and text[:120]),),
-          problem is None and held == 1 and applied == 1
+          "implementation hunk held back: one of each, `value` still returns 1, "
+          "the new case is present, and the fix - an edit of a body HEAD has - "
+          "is never pulled in: %r"
+          % ((held, applied, problem, pulled, text and text[:120]),),
+          problem is None and held == 1 and applied == 1 and pulled == []
           and "    return 1\n" in text and "('new1', value() == 2)" in text
           and len(head_lines) + 1 == len(wt_lines))
     shapes = [("si5 an LF HEAD blob against a CRLF working file (autocrlf=true)",
@@ -5393,7 +5395,7 @@ def _inline_suite_cases(check):
         with open(os.path.join(root_s, "f.py"), "wb") as fh:
             fh.write(wt.encode("utf-8"))
         head_s, now_s = M._head_text(root_s, "f.py"), M._wt_text(root_s, "f.py")
-        text_s, held_s, applied_s, problem_s = M.inline_test_text(head_s, now_s)
+        text_s, held_s, applied_s, problem_s = M.inline_test_text(head_s, now_s)[:4]
         changed_s = M.changed_source(root_s, "f.py")[0]
         _git(root_s, "checkout", "--", "f.py")
         with open(os.path.join(root_s, "f.py"), "wb") as fh:
@@ -5418,6 +5420,139 @@ def _inline_suite_cases(check):
     check("si8 a test-only copy is written in the line ends the file under it "
           "already uses, so the fixture on disk keeps its bytes: %r" % (pairs,),
           pairs == ["a = 9\r\nb = 2\r\n", "a = 9\nb = 2\n"])
+
+
+# An inline suite with its regions held apart by padding definitions, so each
+# edit below is its own hunk however much context a hunk carries: the imports at
+# the top, a slot for a new helper, the fix in `value`, and the test in `_cases`.
+def _pad(name):
+    return ["def %s():" % name, "    return %r" % name, "", ""]
+
+
+_CLOSURE_HEAD = "\n".join(
+    ["import sys", "", ""] + _pad("pad_a") + _pad("pad_b")
+    + ["# helpers", "", ""] + _pad("pad_c") + _pad("pad_d")
+    + ["def value():", "    return 1", "", ""] + _pad("pad_e") + _pad("pad_f")
+    + ["def _cases(results):", "    results.append(('old1', value() >= 1))", "", ""]
+    + _INLINE_HEAD.split("\n")[_INLINE_HEAD.split("\n").index(
+        "if __name__ == '__main__':"):])
+_CLOSURE_FIX = _CLOSURE_HEAD.replace("    return 1", "    return 2")
+
+
+def _closure_case(cond):
+    """The fixture with the fix applied and a new case `new1` asserting `cond`."""
+    return _CLOSURE_FIX.replace(
+        "    results.append(('old1', value() >= 1))",
+        "    results.append(('old1', value() >= 1))\n"
+        "    results.append(('new1', %s))" % (cond,))
+
+
+# The new case needs a new top-level import and a new helper, which calls a
+# second new helper; a third nobody references sits in the same hunk, and must
+# stay at HEAD.
+_CLOSURE_WT = _closure_case("_doubled(value()) == 4 and json.dumps(1) == '1'").replace(
+    "import sys\n", "import sys\nimport json\n").replace(
+    "# helpers\n", "# helpers\ndef _add(a, b):\n    return a + b\n\n\n"
+    "def _doubled(n):\n    return _add(n, n)\n\n\ndef _spare():\n    return 0\n")
+# A new top-level statement rebinding a name HEAD already binds is the fix
+# however it is spelled, so it is never pulled in.
+_CLOSURE_REBIND = _closure_case("value() == 2").replace(
+    "def pad_f():", "value = lambda: 2\n\n\ndef pad_f():")
+# A name bound at run time, which no reading of the source can tie to a hunk.
+_CLOSURE_GHOST = _closure_case("_ghost() == 2").replace(
+    "# helpers\n", "# helpers\nglobals()['_ghost'] = lambda: value()\n")
+# A new helper written in the same hunk as the fix: pulling it in would apply
+# the fix too, so it is held, and the case using it cannot run.
+_CLOSURE_TANGLED = _closure_case("_tripled(1) == 3 and value() == 2").replace(
+    "    return 2\n", "    return 2\n\n\ndef _tripled(n):\n    return n * 3\n")
+# The fix IS the new definition the case calls: pulling it in turns the split
+# green, so it is held back again and the red is read off the missing name.
+_CLOSURE_SUBJECT = _closure_case("slug() == 'a-b'").replace(
+    "# helpers\n", "# helpers\ndef slug():\n    return 'a-b'\n")
+
+
+def _inline_closure_cases(check):
+    py = sys.executable
+    root, man = _inline_repo("stamp-inline-closure-", _CLOSURE_WT)
+    code, got = _red(root, man, [py, "tools/inline.py"])
+    block = got.get("redFirst") or {}
+    basis = block.get("basis", "")
+    check("si9 an inline suite whose new case needs a new top-level import and a "
+          "new helper is PROVED on the case's own assertion - the import and "
+          "helper hunks pulled in beside the test hunk, the fix held at HEAD - "
+          "and the basis names the hunks it pulled in and not the helper no "
+          "applied hunk references: exit=%r %r note=%r"
+          % (code, basis[:600], got.get("note")),
+          code == M.E_PROVED and block.get("status") == "proved"
+          and "new1" in basis and "NameError" not in basis
+          and "pulled in" in basis and "import json" in basis
+          and "_doubled" in basis and "_spare" not in basis)
+    root_g, man_g = _inline_repo("stamp-inline-ghost-", _CLOSURE_GHOST)
+    code_g, got_g = _red(root_g, man_g, [py, "tools/inline.py"])
+    block_g = got_g.get("redFirst") or {}
+    basis_g = block_g.get("basis", "")
+    check("si10 ...and where the referenced name is bound by no definition a "
+          "hunk carries, the closure cannot resolve it: could-not-prove, and the "
+          "basis names the unresolved symbol off the NameError rather than "
+          "saying no test was collected: exit=%r %r"
+          % (code_g, basis_g[:600] or got_g.get("note")),
+          code_g == M.E_CANNOT_PROVE and block_g.get("status") == "could-not-prove"
+          and "_ghost" in basis_g and "unresolved" in basis_g
+          and "no test was collected" not in basis_g)
+    root_t, man_t = _inline_repo("stamp-inline-tangled-", _CLOSURE_TANGLED)
+    code_t, got_t = _red(root_t, man_t, [py, "tools/inline.py"])
+    block_t = got_t.get("redFirst") or {}
+    basis_t = block_t.get("basis", "")
+    check("si11 ...and a new helper defined in the hunk that also carries the "
+          "fix is not pulled in - that would apply the fix and turn the split "
+          "green - so the answer is could-not-prove naming that helper as "
+          "unresolved, never a misread split: exit=%r %r"
+          % (code_t, basis_t[:600] or got_t.get("note")),
+          code_t == M.E_CANNOT_PROVE and block_t.get("status") == "could-not-prove"
+          and "_tripled" in basis_t and "unresolved" in basis_t
+          and "misread split" not in basis_t
+          and "no test was collected" not in basis_t)
+    root_s, man_s = _inline_repo("stamp-inline-subject-", _CLOSURE_SUBJECT)
+    code_s, got_s = _red(root_s, man_s, [py, "tools/inline.py"],
+                         "--introduces", "slug")
+    block_s = got_s.get("redFirst") or {}
+    basis_s = block_s.get("basis", "")
+    check("si12 ...and when the definition pulled in is the fix itself - the run "
+          "with it passes - it is held back again and the red is proved on the "
+          "missing name under --introduces, as it was before any hunk was pulled "
+          "in, never answered as a misread split: exit=%r %r"
+          % (code_s, basis_s[:600] or got_s.get("note")),
+          code_s == M.E_PROVED and block_s.get("status") == "proved"
+          and "'slug'" in basis_s and "held back" in basis_s
+          and "misread split" not in basis_s)
+    text, held, applied, problem, pulled = M.inline_test_text(_CLOSURE_HEAD,
+                                                              _CLOSURE_WT)
+    plain = M.inline_test_text(_CLOSURE_HEAD, _CLOSURE_WT, pull=False)
+    rebind = M.inline_test_text(_CLOSURE_HEAD, _CLOSURE_REBIND)
+    check("si13 the copy pulls in exactly the import, the helper the case calls "
+          "and the helper THAT one calls - one statement at a time, so the "
+          "unreferenced helper in the same hunk stays out and the fix stays at "
+          "HEAD - while the copy with nothing pulled in is the plain split, and "
+          "a new statement rebinding a name HEAD binds is never pulled in: "
+          "%r %r %r" % ((held, applied, problem, pulled), plain[1:5], rebind[1:5]),
+          problem is None and applied == 1 and held == 2
+          and [p.split(" (line ")[0] for p in pulled]
+          == ["import json", "def _add(a, b):", "def _doubled(n):"]
+          and text.count("import json\n") == 1 and text.count("def _add(") == 1
+          and text.count("def _doubled(") == 1 and "def _spare(" not in text
+          and text.count("    return 1\n") == 1 and "    return 2\n" not in text
+          and plain[4] == [] and plain[1] == 3 and "import json" not in plain[0]
+          and rebind[4] == [] and rebind[3] is None and rebind[1] == 2
+          and "value = lambda" not in rebind[0])
+    root_n, man_n = _red_repo("stamp-inline-nonline-",
+                              _red_test("import mine", "mine_undefined == 2"))
+    code_n, got_n = _red(root_n, man_n, [py, "tests/test_mine.py"])
+    basis_n = (got_n.get("redFirst") or {}).get("basis", "")
+    check("si14 ...and a NameError in a suite that is NOT inline keeps the "
+          "collection reason - the unresolved-name wording is the inline split's "
+          "alone: exit=%r %r" % (code_n, basis_n[:400]),
+          code_n == M.E_CANNOT_PROVE and "no test was collected" in basis_n
+          and "unresolved" not in basis_n and "mine_undefined" in basis_n)
 
 
 # --- a stage the task's own test files add: new at HEAD, not red there ---
@@ -5614,6 +5749,7 @@ STAGES = (
     ("sh-owner-module", "_owner_module_cases"),
     ("sh-crlf-abort", "_crlf_abort_cases"),
     ("si-inline", "_inline_suite_cases"),
+    ("si-inline-closure", "_inline_closure_cases"),
     ("sr-directory", "_directory_scope_cases"),
     ("sr-sandbox-words", "_sandbox_words_cases"),
     ("sr-process", "_process_cases"),
