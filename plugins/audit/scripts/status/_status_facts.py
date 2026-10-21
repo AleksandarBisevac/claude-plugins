@@ -1334,7 +1334,15 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None,
                  "open": len(open_bugs),
                  "openHighSeverity": sum(
                      1 for b in open_bugs
-                     if _is_high_severity(b.get("severity")))},
+                     if _is_high_severity(b.get("severity"))),
+                 # The ids behind that count, which is what a task gate's
+                 # exemption is matched against (`evaluate_gate`'s `exempt`).
+                 # A bug with no usable id is in the count and not here, so it
+                 # can never be exempted - it stays counted.
+                 "openHighIds": sorted(
+                     str(b["id"]) for b in open_bugs
+                     if _is_high_severity(b.get("severity"))
+                     and _mio.keyable_id(b.get("id")))},
         # What the plan's `testEvidence` pointers SAY, never what the ledger holds.
         # Unconditional and whole, the same call `priorityNote` makes below: an
         # empty `failing` list and a block nobody computed must not look alike, and
@@ -1420,13 +1428,108 @@ def unmet_refs(manifest):
 
 
 # --- gate evaluation ------------------------------------------------------------
-def evaluate_gate(summary, conditions):
-    """Return the list of FAILED condition names."""
+def task_bug_ids(manifest, task_id):
+    """The ids of the bugs `task_id` is linked to, sorted: each bug whose
+    `taskId` names it, and the bug its own `bugId` names.
+
+    THE ONE DEFINITION OF "THIS TASK'S BUGS". A test gate withholding a mute
+    (`run-test-gate.withheld_mutes`) and a task gate exempting a high bug
+    (`gate_exemptions`) both ask it, so a link one of them honours the other
+    honours too. Either end of the link alone counts, because each is a link
+    the plan wrote and this does not presume the other end agrees.
+    `[]` for a `task_id` of None."""
+    if task_id is None or not isinstance(manifest, dict):
+        return []
+    task = _mio.tasks_by_id(manifest).get(task_id)
+    own = task.get("bugId") if isinstance(task, dict) else None
+    return sorted(set(
+        str(b["id"]) for b in (manifest.get("bugs") or [])
+        if isinstance(b, dict) and _mio.keyable_id(b.get("id"))
+        and (b.get("taskId") == task_id or b.get("id") == own)))
+
+
+def _phase_of_task(manifest, task_id):
+    """The phase holding `task_id`, or None when no phase does."""
+    for phase, task in _mio.iter_tasks(manifest):
+        if task.get("id") == task_id:
+            return phase
+    return None
+
+
+def gate_exemptions(manifest, task_id):
+    """`{bugId: why}` - the open high-severity bugs the gate of `task_id` does
+    not count under `open-high-bugs`, each with the sentence saying why.
+
+    A task gate is graded BEFORE its task closes, so a high bug the task exists
+    to fix is still open while the gate runs; counting it plan-wide means the
+    fix can never pass its own gate. The exemption covers the bugs linked
+    (`task_bug_ids`) to the task itself and to every sibling in its phase that
+    is not yet terminal: that phase is where they are being fixed. It ends the
+    moment a sibling finishes with its bug still open, because then nothing in
+    the phase is working on it.
+
+    `{}` for no task (sign-off, CI and the release guard count every open high
+    bug; `audit-status.py` takes the task from an explicit `--task` alone, never
+    from the environment) and for a task the plan does not hold - a gate step naming a task by
+    mistake must not read as a gate whose bugs were fixed. A bug already closed,
+    or not high, is never listed: it was not going to be counted."""
+    if task_id is None or not isinstance(manifest, dict):
+        return {}
+    phase = _phase_of_task(manifest, task_id)
+    if phase is None:
+        return {}
+    by_id = _mio.tasks_by_id(manifest)
+    bugs = dict((str(b["id"]), b) for b in (manifest.get("bugs") or [])
+                if isinstance(b, dict) and _mio.keyable_id(b.get("id")))
+    siblings = [t for t in phase.get("tasks") or []
+                if isinstance(t, dict) and t.get("id") != task_id
+                and _mio.keyable_id(t.get("id"))
+                and t.get("status") not in TERMINAL]
+    owners = [(task_id, None)] + [(t["id"], t.get("status")) for t in siblings]
+    exempt = {}
+    for owner, status in owners:
+        for bug_id in task_bug_ids(manifest, owner):
+            bug = bugs.get(bug_id)
+            if (bug_id in exempt or bug is None
+                    or not _is_high_severity(bug.get("severity"))
+                    or _mio.effective_bug_status(bug, by_id) in CLOSED_BUG):
+                continue
+            if status is None:
+                exempt[bug_id] = ("bug %s is linked to task %s, the task this "
+                                  "gate grades, which is open to fix it"
+                                  % (bug_id, owner))
+            else:
+                exempt[bug_id] = ("bug %s is linked to task %s, still %s in "
+                                  "phase %s beside %s, which is open to fix it"
+                                  % (bug_id, owner, status, phase.get("id"),
+                                     task_id))
+    return exempt
+
+
+def open_high_counted(bugs, exempt):
+    """How many open high bugs `open-high-bugs` counts once `exempt`'s are
+    set aside. A summary carrying no `openHighIds` cannot be matched against
+    an exemption, so it keeps its whole count."""
+    total = bugs["openHighSeverity"]
+    ids = bugs.get("openHighIds")
+    if not exempt or not isinstance(ids, list):
+        return total
+    return total - len([i for i in ids if i in exempt])
+
+
+def evaluate_gate(summary, conditions, exempt=None):
+    """Return the list of FAILED condition names.
+
+    `exempt` is `gate_exemptions`' `{bugId: why}` for a task gate, and it is
+    read by `open-high-bugs` ALONE: `open-bugs` and every other condition
+    count as they always have. None - the default every caller but a task's
+    gate passes - exempts nothing."""
     failed = []
     for c in conditions:
         if c == "invalid" and not summary["valid"]:
             failed.append(c)
-        elif c == "open-high-bugs" and summary["bugs"]["openHighSeverity"] > 0:
+        elif c == "open-high-bugs" and open_high_counted(
+                summary["bugs"], exempt) > 0:
             failed.append(c)
         elif c == "open-bugs" and summary["bugs"]["open"] > 0:
             failed.append(c)

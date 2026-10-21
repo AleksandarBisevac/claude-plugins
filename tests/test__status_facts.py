@@ -19,8 +19,9 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 
-import _harness                                    # sets sys.path for scripts/ + hooks/
+import _harness                                   # sets sys.path for scripts/ + hooks/
 import _output                                     # noqa: E402  (PLUGIN_ROOT, for the schema read)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
@@ -43,6 +44,9 @@ import _evidence_io as _ebio                       # noqa: E402
 # disk rather than this file's memory of it - the same argument the `eb` cases
 # make about the evidence boundary one import above.
 import _locks as _lockmod                          # noqa: E402
+# The exemption's end is graded against a bug the PRODUCT's derivation still
+# calls open, not one this file decides is open.
+import _manifest_io as _mio_sf                     # noqa: E402
 
 _CMD = _loader.load_script("audit-status.py", modname="audit_status_boundary")
 
@@ -2053,8 +2057,161 @@ def _left_open_cases(check):
           and M.findings_left_open({"id": "P2"}) == [])
 
 
+def _exempt_plan(sibling_status="pending"):
+    """One running phase whose task P1.1 fixes BUG-1 (linked from the bug's side)
+    while its sibling P1.2 fixes BUG-3 (linked only from the task's side, so a
+    finished P1.2 does NOT derive BUG-3 fixed - the bug stays open, which is the
+    state the exemption's end has to be graded in). BUG-5 is a low bug P1.1 also
+    fixes, which no high-bug exemption may list."""
+    return {
+        "meta": {"version": 2},
+        "phases": [
+            {"id": "P1", "title": "fixes", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "fix one", "status": "in_progress",
+                 "bugId": "BUG-1"},
+                {"id": "P1.2", "title": "fix three", "status": sibling_status,
+                 "bugId": "BUG-3"},
+                {"id": "P1.3", "title": "other", "status": "done"},
+            ]},
+            {"id": "P2", "title": "later", "status": "pending", "tasks": [
+                {"id": "P2.1", "title": "fix nine", "status": "pending"},
+            ]},
+        ],
+        "bugs": [
+            {"id": "BUG-1", "title": "b", "severity": "high", "status": "open",
+             "taskId": "P1.1"},
+            {"id": "BUG-3", "title": "b", "severity": "critical",
+             "status": "open"},
+            {"id": "BUG-5", "title": "b", "severity": "low", "status": "open",
+             "taskId": "P1.1"},
+        ],
+        "fileIndex": {},
+    }
+
+
+# The variable an earlier draft read the task from. Spelled here only so the
+# cases can export it and show that no gate reads it any more.
+_AMBIENT_TASK_VAR = "AUDIT_GATE_TASK"
+
+
+def _gate_cli(plan, task=None, env_task=None):
+    """`(exit, stdout)` of `audit-status.py --gate --fail-on open-high-bugs` over
+    `plan`, written to a scratch directory removed afterwards. `task` is passed
+    as `--task`; `env_task`, when given, is exported in the environment the
+    command inherits, as a shell or a CI job might."""
+    scratch = tempfile.mkdtemp(prefix="gx-")
+    try:
+        path = os.path.join(scratch, "audit-plan.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(plan, fh)
+        argv = [sys.executable,
+                os.path.join(_output.SCRIPTS_DIR, "status", "audit-status.py"),
+                path, "--gate", "--fail-on", "open-high-bugs"]
+        if task is not None:
+            argv += ["--task", task]
+        env = dict((k, v) for k, v in os.environ.items()
+                   if k != _AMBIENT_TASK_VAR)
+        if env_task is not None:
+            env[_AMBIENT_TASK_VAR] = env_task
+        proc = subprocess.run(argv, cwd=scratch, env=env, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, timeout=120)
+        return proc.returncode, proc.stdout.decode("utf-8", "replace")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _gate_exemption_cases(check):
+    """A task gate does not count the high bugs its own phase is open to fix;
+    sign-off and every gate given no task still count each one."""
+    plan = _exempt_plan()
+    summary = M.rollup(plan, [], [])
+    exempt = M.gate_exemptions(plan, "P1.1")
+    check("gx1 the task gate of the task fixing a high bug PASSES on open-high-bugs, "
+          "with that bug and the open sibling's bug exempted; sign-off's gate (no "
+          "task) FAILS on the same plan: exempt=%r" % (sorted(exempt),),
+          sorted(exempt) == ["BUG-1", "BUG-3"]
+          and M.evaluate_gate(summary, ("open-high-bugs",), exempt) == []
+          and M.evaluate_gate(summary, ("open-high-bugs",)) == ["open-high-bugs"]
+          and M.gate_exemptions(plan, None) == {})
+    check("gx2 each exemption says WHY - the task it is linked to, and for a "
+          "sibling's bug the phase it is open in: %r" % (exempt,),
+          "P1.1" in exempt.get("BUG-1", "") and "P1.2" in exempt.get("BUG-3", "")
+          and "P1 " in exempt.get("BUG-3", "") + " ")
+    task_exit, task_out = _gate_cli(plan, task="P1.1")
+    sign_exit, sign_out = _gate_cli(plan)
+    check("gx3 the command's task gate exits 0 and its output NAMES the exempted "
+          "bugs; the same plan with no task exits 1 and exempts nothing: "
+          "task=%r/%r signoff=%r/%r" % (task_exit, task_out, sign_exit, sign_out),
+          task_exit == 0 and "BUG-1" in task_out and "BUG-3" in task_out
+          and "exempt" in task_out.lower()
+          and sign_exit == 1 and "exempt" not in sign_out.lower())
+    env_exit, env_out = _gate_cli(plan, env_task="P1.1")
+    both_exit, both_out = _gate_cli(plan, task="P1.1", env_task="P9.9")
+    check("gx4 the task comes from `--task` ALONE: with a task id exported in the "
+          "environment and no flag, the gate counts every open high bug and "
+          "exempts nothing, as sign-off must; with the flag, the flag decides "
+          "whatever is exported: env-only=%r/%r flag=%r/%r"
+          % (env_exit, env_out, both_exit, both_out),
+          env_exit == 1 and "exempt" not in env_out.lower()
+          and both_exit == 0 and "BUG-1" in both_out and "P9.9" not in both_out)
+    ghost_exit, ghost_out = _gate_cli(plan, task="P9.9")
+    check("gx10 a --task the plan does not hold is SAID to be missing from the "
+          "plan, not reported as a task with no linked bug; the gate counts "
+          "every open high bug: %r/%r" % (ghost_exit, ghost_out),
+          ghost_exit == 1 and "P9.9" in ghost_out
+          and "no task p9.9" in ghost_out.lower()
+          and "none is linked" not in ghost_out)
+
+    stray = _exempt_plan()
+    stray["bugs"] += [
+        {"id": "BUG-8", "title": "b", "severity": "high", "status": "open"},
+        {"id": "BUG-9", "title": "b", "severity": "high", "status": "open",
+         "taskId": "P2.1"}]
+    stray_exempt = M.gate_exemptions(stray, "P1.1")
+    check("gx5 a high bug linked to no task of the phase - one linked to nothing, "
+          "one to a task of ANOTHER phase - still FAILS the task gate: %r"
+          % (sorted(stray_exempt),),
+          "BUG-8" not in stray_exempt and "BUG-9" not in stray_exempt
+          and M.evaluate_gate(M.rollup(stray, [], []), ("open-high-bugs",),
+                              stray_exempt) == ["open-high-bugs"])
+    stray_exit, stray_out = _gate_cli(stray, task="P1.1")
+    check("gx6 ...and the command says so: exit 1 on the task gate over that plan, "
+          "the exempted bugs still named: %r/%r" % (stray_exit, stray_out),
+          stray_exit == 1 and "BUG-1" in stray_out)
+
+    done = _exempt_plan(sibling_status="done")
+    by_id = dict((t["id"], t) for p in done["phases"] for t in p["tasks"])
+    still_open = [b["id"] for b in done["bugs"]
+                  if _mio_sf.effective_bug_status(b, by_id) == "open"]
+    done_exempt = M.gate_exemptions(done, "P1.1")
+    check("gx7 once the sibling fixing BUG-3 is done while BUG-3 is still open, its "
+          "exemption ENDS and the task gate fails: open=%r exempt=%r"
+          % (still_open, sorted(done_exempt)),
+          "BUG-3" in still_open and sorted(done_exempt) == ["BUG-1"]
+          and M.evaluate_gate(M.rollup(done, [], []), ("open-high-bugs",),
+                              done_exempt) == ["open-high-bugs"])
+    check("gx8 SECOND DIRECTION: the exemption is open-high-bugs' alone - "
+          "`open-bugs` still counts the exempted bugs, and a low bug the task "
+          "fixes is never listed as exempted: %r" % (sorted(exempt),),
+          M.evaluate_gate(summary, ("open-bugs",), exempt) == ["open-bugs"]
+          and "BUG-5" not in exempt)
+    # A high bug whose `taskId` names the missing task, so a version that
+    # still exempted the bugs linked to an id it could not find would list it.
+    ghost = _exempt_plan()
+    ghost["bugs"].append({"id": "BUG-7", "title": "b", "severity": "high",
+                          "status": "open", "taskId": "P9.9"})
+    unknown = M.gate_exemptions(ghost, "P9.9")
+    check("gx9 a task id the plan does not hold exempts nothing, not even a bug "
+          "naming that id - a typo in the gate step must not read as a gate "
+          "with its bugs fixed: %r" % (unknown,),
+          unknown == {}
+          and M.evaluate_gate(M.rollup(ghost, [], []), ("open-high-bugs",),
+                              unknown) == ["open-high-bugs"])
+
+
 def _selftest():
     def body(check):
+        _harness.stage(check, "gx", _gate_exemption_cases)
         _harness.stage(check, "iu", _intent_unanswered_cases)
         _harness.stage(check, "lf", _left_open_cases)
         _cases(check)

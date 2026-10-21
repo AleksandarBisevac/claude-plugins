@@ -1,0 +1,27 @@
+{
+ "findings": [
+  {"id": 1, "severity": "med", "file": "plugins/audit/scripts/governance/drive-phase.py:338-340,2186-2194 (WRITER_RULE, advance)",
+   "issue": "Nothing in the drive's state tells a writer session that is still running from one that finished. WRITER_RULE says 'Run the run: line ... in Bash, in the background; then next.' A `next` taken straight after the background launch meets, for a first dispatch, executor None plus the dispatched-executor mark and asks no-executor-return (offering resume/retry while the session runs, so a second session can be started on the same tree); for a resume round it meets a filed executor with no gated mark and runs the task gate on the session's half-written tree, which can record a spurious red and spend a resume round. The record file (session_record) is the only completion signal and advance does not consult it before deciding. ws1-ws7 play each session synchronously (_play_session) before the next `next`, so no case can see this.",
+   "resolution": "Make completion explicit: either word the rule 'run it in the background and take `next` only when it exits', or (better, mechanical) have advance return a `wait` step while a writer session was dispatched for the current round and its record has not appeared (and no record means not finished), and add a case that calls `next` between dispatch and the run."},
+  {"id": 2, "severity": "low", "file": "plugins/audit/scripts/governance/drive-phase.py:268-286 (WRITER_MODEL_KEY, WRITER_BUDGET_KEY) vs the config schema / _config_rules",
+   "issue": "The task reads two new config keys, executor.writerModel and executor.writerBudgetUsd, that the config schema does not know: validate-config.py prints 'WARNING: unknown executor key' for each (the executor's own NOT DONE note (a)). A key the plugin reads but its validator calls unknown is a user-visible false warning on the only way to turn the feature on.",
+   "resolution": "Add both keys to the config schema and _config_rules (here or in a named follow-up task) so the validator accepts what the driver reads."},
+  {"id": 3, "severity": "low", "file": "plugins/audit/commands/run.md, next.md, resume.md, review.md (untouched)",
+   "issue": "These commands drive the same `drive-phase.py next` signal but still describe `dispatch` as 'an Agent'. Under executor.writerModel their dispatch is a `run:` line to run in background Bash, so a /audit:next or /audit:run session reading only its own command file would try an Agent call on a command line (the executor's NOT DONE note (b)). Only phase.md was in scope.",
+   "resolution": "Reword the dispatch step in each of those command files the way phase.md now reads, or point them at one shared sentence."},
+  {"id": 4, "severity": "low", "file": "plugins/audit/scripts/governance/run-agent-session.py:603-634 (write_record, main) / tests/test_run_agent_session.py",
+   "issue": "--record is written for every outcome including a usage refusal (prefixed `usage:`), but no case covers the usage-refusal path or an unwritable record path; only the success path is exercised, indirectly via ws2-ws6 through test_drive_phase.py (executor's NOT DONE note (d)).",
+   "resolution": "Add a case in tests/test_run_agent_session.py: a bad --model with --record leaves {\"line\": \"usage: ...\", \"exit\": 2}, and an unwritable --record changes no exit code."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task: 'dispatch names run-agent-session.py --role writer with the prompt from brief --role writer, instead of an Agent call carrying the executor body, and records the session id and the printed cost on the task' - dispatch() branches on writer_setting, calls audit-lookup.py brief --role writer, prints dispatch-writer and a run: line, and note_sessions writes the session id and total_cost_usd through audit-task.py note. 'red gate ... decision is resume ... spending no attempt' - gate_red_decision asks gate-red-writer and apply_answer routes resume to resume_writer without start_task. 'At most two resume rounds ... note naming both runs ... fresh retry stays available' - MAX_RESUME_ROUNDS, cap_note, and the plain gate-red whose retry starts a fresh session (ws5, ws7). phase.md and orchestrator.md were reworded within the measure-context ceilings (executor's gate output pass). The claim describes the diff accurately, including that nothing files the writer's return yet, so in production a session ends at no-executor-return until a later task; that gap, and finding 1, mean the resume path is not reachable end to end here, which the claim states. Nothing was handed to compare the recorded gate beyond the task's own gates; the claim's sweep line says 'fail' on two history-lookup files the orchestrator allows.",
+  "missing": [],
+  "redFirst": "proved",
+  "redFirstBasis": "Executor's basis holds: `python3 tests/test_drive_phase.py --selftest --stage dd-block --stage ws-block` in a throwaway tree at HEAD exited 1, ws1-ws7 and ws9 failing a house assertion (4/12 passed), each passing with the working tree's implementation; source red-first-helper.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "The gate's `selftests` entry is `python3 tools/sweep-selftests.py`, which runs the whole project, and the other entries (validate, plugin-validate, gate, report, lint, shots, interactive) select no test files, so no bounded set of inherited tests is named; I did not read the whole tree for it."
+ },
+ "verdict": "findings"
+}

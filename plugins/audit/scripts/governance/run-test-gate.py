@@ -3027,6 +3027,41 @@ _tear_down = _proc_group.tear_down
 _drain = _proc_group.drain
 
 
+# Characters after which an appended argument would not land on the command
+# the step starts first: an operator splits the line, a comment swallows the
+# rest of it.
+_NOT_A_LONE_COMMAND = ("|", "&", ";", "<", ">", "(", ")", "`", "#", "\n")
+
+
+def with_gate_task(command, task_id):
+    """`command` with `--task <task_id>` appended when it is ONE invocation of
+    `audit-status.py` carrying `--gate` and no `--task` yet; otherwise
+    `command` exactly as declared, and always so for a `task_id` of None.
+
+    THE ARGV IS THE ONE CHANNEL. The task reaches the plan's gate step as a
+    flag on that step's own command line because anything ambient - an
+    environment variable - is inherited by every other `--gate` run sharing the
+    shell or the CI job, sign-off among them, and would exempt bugs there.
+
+    NARROW ON PURPOSE. A command holding an operator, a subshell or a comment
+    is left alone, since the appended flag could land on a different command
+    or nowhere; that gate then counts every open high bug, which is the
+    direction a wrong guess must fall in. The step's recorded `command` stays
+    the declared one; the task the gate graded is printed by `audit-status.py`
+    (`GATE TASK ...`) in the step's output whenever it grades open-high-bugs."""
+    if task_id is None or any(c in command for c in _NOT_A_LONE_COMMAND):
+        return command
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return command
+    runs_status = any(os.path.basename(a) == "audit-status.py" for a in argv)
+    has_task = any(a == "--task" or a.startswith("--task=") for a in argv)
+    if not runs_status or "--gate" not in argv or has_task:
+        return command
+    return "%s --task %s" % (command, shlex.quote(str(task_id)))
+
+
 def _shell(project, command, timeout=None):
     """`(exit, text, facts)` - one gate command, with its whole tree accounted for.
 
@@ -3092,10 +3127,12 @@ def withheld_mutes(manifest, task_id):
     """`{bugId: why}` - each bug whose mute this run may not honour, and the
     sentence saying why.
 
-    A MUTE NEVER HOLDS INSIDE THE GATE OF ITS OWN BUG'S FIX TASK. The bug
-    whose `taskId` is the task under test (`--task`) is the failure that
-    task exists to clear, and a gate that quarantined it would go green
-    whether the fix worked or not - the one verdict the task is graded on.
+    A MUTE NEVER HOLDS INSIDE THE GATE OF ITS OWN BUG'S FIX TASK. A bug
+    linked to the task under test (`--task`) - by
+    `_status_facts.task_bug_ids`, the one definition of a task's bugs, which
+    a task gate's high-bug exemption reads too - is the failure that task
+    exists to clear, and a gate that quarantined it would go green whether
+    the fix worked or not - the one verdict the task is graded on.
 
     NOR ONCE ITS BUG IS CLOSED. A mute is justified by an open bug; one whose
     EFFECTIVE status (`_manifest_io.effective_bug_status`) is in
@@ -3105,13 +3142,14 @@ def withheld_mutes(manifest, task_id):
     Every other mute is decided exactly as before, by `mute_decision`.
     """
     by_id = _mio.tasks_by_id(manifest if isinstance(manifest, dict) else {})
+    own = set(_status_facts.task_bug_ids(manifest, task_id))
     withheld = {}
     for bug in (manifest or {}).get("bugs") or []:
         if not isinstance(bug, dict) or not bug.get("id"):
             continue
         bug_id = str(bug["id"])
         status = _mio.effective_bug_status(bug, by_id)
-        if task_id is not None and bug.get("taskId") == task_id:
+        if bug_id in own:
             withheld[bug_id] = (
                 "not honoured: bug %s is the one task %s fixes, and a mute "
                 "inside that task's own gate would hide the failure the fix "
@@ -3681,7 +3719,7 @@ def observed_step(name, command, code, text, facts, duration_ms):
 def run_gate(project, commands, runner=None, owns=None, timeout=None,
              recorded=None, task_scope=False, keep_text=False,
              derived_check=None, muted=None, today=None, preamble=None,
-             withheld=None):
+             withheld=None, task=None):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
@@ -3724,6 +3762,9 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     `withheld` is `withheld_mutes`' `{bugId: why}`, the mutes this run may
     not honour whatever their `until`.
     `res["muted"]` is every mute that excused a step, `[]` when none did.
+    `task` is the task a task-scope run grades, or None: each command is run
+    through `with_gate_task`, which is how the plan's own `gate` step learns
+    whose gate it is grading, while the row keeps the declared command.
     """
     runner = runner or _shell
     today = _vocab.mute_today() if today is None else today
@@ -3764,7 +3805,8 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     try:
         for name, command in commands:
             step_started = time.monotonic()
-            code, text, facts = runner(project, command, timeout)
+            code, text, facts = runner(project, with_gate_task(command, task),
+                                       timeout)
             step = observed_step(name, command, code, text, facts,
                                  _elapsed_ms(step_started))
             # ONE SECOND ATTEMPT, AND ONLY FOR A STEP THE OS ENDED. The key read
@@ -3789,7 +3831,8 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
             if step.get("signal"):
                 retry_started = time.monotonic()
                 lowered, change = lowered_parallelism(command)
-                code, text, facts = runner(project, lowered or command, timeout)
+                code, text, facts = runner(
+                    project, with_gate_task(lowered or command, task), timeout)
                 first = step
                 step = observed_step(name, command, code, text, facts,
                                      _elapsed_ms(retry_started))
@@ -5418,7 +5461,8 @@ def main(argv, out=print):
                                if args.task is None else None),
                            muted=declared_mutes(manifest),
                            preamble=declared_preamble(manifest),
-                           withheld=withheld_mutes(manifest, args.task))
+                           withheld=withheld_mutes(manifest, args.task),
+                           task=args.task)
         finally:
             _disarm_interrupt(previous)
         # ON THE MEASURED RUN AND NOT ON THE REPEAT'S SOURCE. `run_gate` takes no

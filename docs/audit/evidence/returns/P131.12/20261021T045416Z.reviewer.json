@@ -1,0 +1,29 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/scripts/status/audit-status.py:2377-2382",
+   "issue": "An ambient $AUDIT_GATE_TASK silently becomes the task for any direct `audit-status.py --gate` run (CI step, release check, a human's shell with the variable exported), so a sign-off-shaped run can exempt bugs while the task text says 'no task'. It is printed ('named by $AUDIT_GATE_TASK ...'), so it is visible, but the task description asked for an explicit argument the gate step passes and for sign-off and the release guard to keep counting every open high bug. run-test-gate clears the variable for its own no-task runs, so that path is safe; a direct invocation is not covered by any case.",
+   "resolution": "Either keep the env channel and add a case that a direct no-task run under an exported variable is reported loudly (it is, by the 'GATE TASK' line) and not read by CI/sign-off callers, or have run-test-gate also pass --task where the plan's gate command is an audit-status call. At minimum document the variable beside --task in commands/status.md."},
+  {"id": 2, "severity": "low", "file": "plugins/audit/scripts/status/audit-status.py:312-324",
+   "issue": "For a task id the plan does not hold (gate_exemptions returns {}), _exemption_lines prints 'no open high bug is exempted - none is linked to this task or to an open task of its phase', which implies the task exists. gx9 checks the facts function but not this output.",
+   "resolution": "When the task is not in the plan, say 'task X is not in the plan, so nothing is exempted', and pin it in gx9."},
+  {"id": 3, "severity": "low", "file": "plugins/audit/commands/status.md; CHANGELOG.md",
+   "issue": "A new public flag --task and an environment variable are added to audit-status.py with no mention in commands/status.md or the changelog; the executor flagged this itself and left it out because the task names no docs.",
+   "resolution": "Add a line for --task / $AUDIT_GATE_TASK to commands/status.md and a changelog entry in this phase's release notes."}
+ ],
+ "preExisting": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/scripts/manifest/audit-task.py:6752-6755",
+   "issue": "The no-change close builds the same both-ends bug set inline, a third copy of what _status_facts.task_bug_ids now defines; the executor left it as outside its files.",
+   "resolution": "Point it at _status_facts.task_bug_ids in a later task."}
+ ],
+ "intent": {
+  "answer": "matches",
+  "note": "Task: 'give the task-gate evaluation the task id (audit-status.py gains a task argument the gate step passes)' - diff adds --task to audit-status.py (build_parser) and defaults it from $AUDIT_GATE_TASK, which run-test-gate's step_env sets for a task run and removes otherwise (the plan's gate step is a plan-written command, so the env is the channel it can inherit; this is a narrowing of 'passes an argument', not a missed clause). 'exempt, for open-high-bugs only, the bugs linked to that task and to the other still-open tasks of the same phase' - gate_exemptions covers the task plus non-TERMINAL siblings, effective_bug_status not in CLOSED_BUG, high only, and evaluate_gate reads exempt in the open-high-bugs arm alone (gx8). 'through the same helper withheld_mutes uses so there is one definition' - withheld_mutes now calls _status_facts.task_bug_ids, as does gate_exemptions (gte2). 'Sign-off and the release guard keep counting every open high bug' - no-task run gives {} exemptions; guard-release.py and render-report do not pass exempt. 'The gate's output names which bugs were exempted and why' - _exemption_lines prints one line per bug on pass and fail paths. The executor's outcome describes this diff accurately; its quoted counts (187 cases, 1172 cases, 189 files) and mutation results m1-m10 I did not re-run and treat as unverified.",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "The executor's filed redFirst is could-not-prove, quoted: '... with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output ...), so the red is not one the fix turns green - SELFTEST FAILED: 178/179 cases passed'. The throwaway at HEAD exited 1 but the basis does not show a gx case failing an assertion, so I echo could-not-prove. The mutation table (m1-m10) is supporting evidence only, not a recorded red-first.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Gate command read: `python3 tools/sweep-selftests.py tests/test__status_facts.py`, selecting that one suite. Its pre-existing evaluate_gate cases (e.g. tests/test__status_facts.py:251-256, 273-284, 348-506) call evaluate_gate without exempt and assert other conditions or the no-task count, so they do not depend on the exemption and would be unaffected by deleting it; the AST-derived reader check at about line 548 walks evaluate_gate's arms and is not about open-high-bugs. I did not run anything."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

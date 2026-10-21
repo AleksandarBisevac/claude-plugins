@@ -575,6 +575,35 @@ def _evidence_excuse_note(summary):
                         "itself a reason not to rely on it"))
 
 
+def _exemption_lines(task_id, exempt, known):
+    """The human lines saying which open high bugs a task gate set aside and
+    why - or that it set aside none, and whether that is because the plan
+    holds no such task, which a reader of a red task gate needs as much as
+    the list. `known` is whether the plan holds `task_id`."""
+    if not known:
+        return ["GATE TASK %s (--task): the plan holds no task %s, so no open "
+                "high bug is exempted" % (task_id, task_id)]
+    if not exempt:
+        return ["GATE TASK %s (--task): no open high bug is exempted - none is "
+                "linked to this task or to an open task of its phase"
+                % (task_id,)]
+    return (["GATE TASK %s (--task): open-high-bugs exempts %d bug(s) its "
+             "phase is fixing; a gate run for no task still counts them:"
+             % (task_id, len(exempt))]
+            + ["  exempted %s: %s" % (bug_id, exempt[bug_id])
+               for bug_id in sorted(exempt)])
+
+
+def _open_high_detail(summary, exempt):
+    """The `open-high-bugs` failure detail: the count the condition read, and
+    how many it set aside when a task gate exempted some."""
+    counted = _status_facts.open_high_counted(summary["bugs"], exempt)
+    if not exempt:
+        return "%d open high-severity bug(s)" % counted
+    return ("%d open high-severity bug(s) after %d exempted for this task"
+            % (counted, len(exempt)))
+
+
 def _budget_detail(summary, threshold_pct):
     """Name the phases and their numbers, never just the count.
 
@@ -1950,6 +1979,18 @@ def build_parser():
                    help="evaluate the fail conditions; exit 1 when any trips")
     p.add_argument("--fail-on", dest="fail_on", default=None, metavar="c1,c2,...",
                    help="override the gate conditions (see the list below)")
+    # --task <id>: the gate of ONE task. Read by `open-high-bugs` alone, which
+    # then sets aside the high bugs that task and its phase's open siblings are
+    # fixing (`_status_facts.gate_exemptions`). THE FLAG IS THE ONLY CHANNEL:
+    # an environment variable would be inherited by every other `--gate` run in
+    # the same shell or CI job - sign-off included - and exempt bugs there.
+    # `run-test-gate.py --task` appends it to the plan's gate step
+    # (`with_gate_task`).
+    p.add_argument("--task", default=None, metavar="ID",
+                   help="with --gate: grade one task's gate - open-high-bugs "
+                        "sets aside the bugs that task and the open tasks of "
+                        "its phase are fixing, and names each; without it, "
+                        "every open high bug counts")
     # --phase <id>: scope the HUMAN render to one phase. /audit:phase and
     # /audit:next need a deterministic entry view; their per-task progress lines are
     # emitted as the work happens and cannot be pre-rendered, so this covers the
@@ -2322,13 +2363,21 @@ def main(argv):
                            boundary=boundary)
         gate_view.update((k, v) for k, v in summary.items()
                          if k not in rolled_keys)
+    gate_task = args.task or None
+    # FROM THIS CHECKOUT'S OWN PLAN, the copy every condition below is graded
+    # over, so a sibling counted as open is open here.
+    exempt = (_status_facts.gate_exemptions(manifest, gate_task)
+              if want_gate and "open-high-bugs" in conditions else {})
     if want_gate:
-        failed = evaluate_gate(gate_view, conditions)
+        failed = evaluate_gate(gate_view, conditions, exempt)
         summary["gate"] = {
             "conditions": conditions,
             "failed": failed,
             "passed": [c for c in conditions if c not in failed],
         }
+        if gate_task is not None:
+            summary["gate"]["task"] = gate_task
+            summary["gate"]["exempted"] = exempt
 
     if want_json and want_section is not None:
         # A KEY THIS PAYLOAD DOES NOT HAVE IS AN ERROR, not a `null`. `usage` is
@@ -2410,13 +2459,19 @@ def main(argv):
             note = _invariant_baseline_note(gv)
             if note:
                 say(note)
+        # SAID ON BOTH PATHS for the boundary note's reason: an exemption is a
+        # fail turned into a pass, so it has to be visible when it decided.
+        if gate_task is not None and "open-high-bugs" in conditions:
+            for line in _exemption_lines(
+                    gate_task, exempt,
+                    gate_task in _mio.tasks_by_id(manifest)):
+                say(line)
         failed = summary["gate"]["failed"]
         if failed:
             for c in failed:
                 detail = {
                     "invalid": "%d validator finding(s)" % gv["findings"],
-                    "open-high-bugs": "%d open high-severity bug(s)"
-                                      % gv["bugs"]["openHighSeverity"],
+                    "open-high-bugs": _open_high_detail(gv, exempt),
                     "open-bugs": "%d open bug(s)" % gv["bugs"]["open"],
                     "blocked-tasks": "%d blocked task(s)"
                                      % gv["tasks"]["byStatus"].get("blocked", 0),

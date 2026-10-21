@@ -10611,8 +10611,96 @@ def _write(path, text):
         fh.write(text)
 
 
+def _gate_task_env_cases(check):
+    """The task a task-scope run grades reaches the plan's `gate` step as an
+    explicit `--task` on that step's own argv - never through the environment,
+    which every other `audit-status.py --gate` (CI, sign-off, a release check)
+    inherits too."""
+    status = "python3 plugins/audit/scripts/status/audit-status.py plan.json --gate"
+    attached = M.with_gate_task(status, "P1.2")
+    left = dict((label, M.with_gate_task(command, "P1.2")) for label, command in (
+        ("compound", status + " && echo done"),
+        ("piped", status + " | tee out.txt"),
+        ("not-status", "npx jest src/cart.test.js"),
+        ("no-gate", status.replace(" --gate", "")),
+        ("has-task", status + " --task P1.3"),
+        ("commented", status + " # the gate")))
+    check("gte1 a lone `audit-status.py ... --gate` step gets `--task <id>` "
+          "appended for a task run; a compound or piped command, a command that "
+          "is not that script, one without --gate, one already carrying --task "
+          "and one ending in a comment are left exactly as declared, and so is "
+          "every command of a run for no task: %r / %r" % (attached, left),
+          attached == status + " --task P1.2"
+          and M.with_gate_task(status, None) == status
+          and all(left[label] == command for label, command in (
+              ("compound", status + " && echo done"),
+              ("piped", status + " | tee out.txt"),
+              ("not-status", "npx jest src/cart.test.js"),
+              ("no-gate", status.replace(" --gate", "")),
+              ("has-task", status + " --task P1.3"),
+              ("commented", status + " # the gate"))))
+    repo = _mini_repo("run-test-gate-task-arg-")
+    seen = []
+
+    def runner(_project, command, _timeout=None):
+        seen.append(command)
+        return 0, "ok\n", {}
+    commands = [("gate", status), ("test", "npx jest")]
+    task_res = M.run_gate(repo, commands, runner=runner, task="P1.2")
+    task_seen, seen[:] = list(seen), []
+    M.run_gate(repo, commands, runner=runner)
+    none_seen = list(seen)
+    check("gte3 run_gate runs the gate step with the task attached and records "
+          "the command the plan declared; the other step and a run for no task "
+          "run as declared: ran=%r recorded=%r no-task=%r"
+          % (task_seen, [st.get("command") for st in task_res["steps"]],
+             none_seen),
+          task_seen == [status + " --task P1.2", "npx jest"]
+          and [st.get("command") for st in task_res["steps"]]
+          == [status, "npx jest"]
+          and none_seen == [status, "npx jest"])
+    # THE WIRING: `main --task` is what hands run_gate the task.
+    mp = os.path.join(repo, "task-arg-plan.json")
+    with open(mp, "w") as fh:
+        json.dump(_mute_plan({"test": "x", "bugId": "B1", "until": "9999-12-31"},
+                             gate_command=status), fh)
+    real_shell = M._shell
+    ran = []
+    M._shell = lambda _project, command, _timeout=None: (
+        ran.append(command) or (0, "GATE PASSED: open-high-bugs\n", {}))
+    try:
+        code = M.main([mp, "P1", "--task", "P1.2", "--project-dir", repo,
+                       "--no-reuse"], out=lambda _line: None)
+    finally:
+        M._shell = real_shell
+    check("gte4 `run-test-gate.py <plan> P1 --task P1.2` runs the plan's gate "
+          "step as `... --gate --task P1.2`: exit=%r ran=%r" % (code, ran),
+          code == M.E_OK and ran == [status + " --task P1.2"])
+
+
+def _task_bug_definition_cases(check):
+    """`withheld_mutes` reads a task's bugs through the one definition a task
+    gate's exemption reads too."""
+    plan = {"meta": {"version": 3},
+            "phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                        "tasks": [{"id": "P1.2", "title": "fix",
+                                   "status": "in_progress", "bugId": "B1"}]}],
+            "bugs": [{"id": "B1", "title": "b", "status": "open",
+                      "severity": "high"}]}
+    check("gte2 THE ONE DEFINITION: a bug linked only from its fix task's own "
+          "`bugId` is that task's bug for a withheld mute exactly as it is "
+          "for a task gate's exemption: %r / %r"
+          % (sorted(M.withheld_mutes(plan, "P1.2")),
+             M._status_facts.task_bug_ids(plan, "P1.2")),
+          sorted(M.withheld_mutes(plan, "P1.2")) == ["B1"]
+          == M._status_facts.task_bug_ids(plan, "P1.2")
+          and M.withheld_mutes(plan, None) == {})
+
+
 def _selftest():
     def body(check):
+        _harness.stage(check, "gte-block", _gate_task_env_cases)
+        _harness.stage(check, "gtd-block", _task_bug_definition_cases)
         _shared_facts_cases(check)
         _harness.stage(check, "fo-block", _follower_cases)
         _harness.stage(check, "br-block", _base_red_cases)
