@@ -589,12 +589,4 @@ def main():
 
 
 if __name__ == "__main__":
-    if "--selftest" in sys.argv[1:]:
-        # Answered rather than fallen through to main(), which would block on stdin
-        # waiting for a hook payload that is never coming. It deliberately does NOT
-        # print the `N/M cases passed` contract - that string is how
-        # `_output.selftest_coverage()` tells an inline suite from a migrated one.
-        print("meter-usage.py has no inline --selftest; its cases moved to "
-              "tests/test_meter_usage.py - run that file instead.")
-        raise SystemExit(0)
     main()

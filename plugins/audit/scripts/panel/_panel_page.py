@@ -141,27 +141,8 @@ UI_TEMPLATE = UI_HTML
 UI_HTML = UI_HTML.replace("/*__THEME_TOKENS__*/", _theme.TOKEN_CSS)
 
 
-# --- stylesheet lints -----------------------------------------------------------
-# The stylesheet lints live in _ui_theme, beside the tokens they police, so the
-# report and the panel are held to exactly the same rules by the same code. They
-# came here with the cases that read them: they judge the assembled page, and
-# panel-server.py no longer has one.
-_undeclared_css_vars = _theme.undeclared_css_vars
-_theme_asymmetric_vars = _theme.theme_asymmetric_vars
-_themes_missing_color_scheme = _theme.themes_missing_color_scheme
-_mangled_css_escapes = _theme.mangled_css_escapes
-
-
 # --- cli ------------------------------------------------------------------------
 if __name__ == "__main__":
-    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if selftest_requested(sys.argv[1:]):
-        # Answers rather than falling through to the docstring dump, which would
-        # exit 0 with no word about the flag. It deliberately does NOT print the
-        # `N/M cases passed` contract - that literal is how
-        # `_output.selftest_coverage()` tells an inline suite from a migrated one.
-        print("_panel_page.py has no inline --selftest; its cases moved to "
-              "tests/test__panel_page.py - run that file instead.")
-        raise SystemExit(0)
     print(__doc__.strip())

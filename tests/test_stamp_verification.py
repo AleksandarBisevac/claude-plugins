@@ -42,6 +42,7 @@ import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 import _output                                     # noqa: E402
+import _output_lints  # noqa: E402  (the lint half, development code)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _tree_stamp                                 # noqa: E402
@@ -613,7 +614,7 @@ def _shape_cases(check):
           "guess this whole command exists to stop: %r" % (bad_verb[0],),
           bad_verb[0] == M.E_USAGE)
 
-    coverage = _output.selftest_coverage()
+    coverage = _output_lints.selftest_coverage()
     mine = ["scripts/governance/stamp-verification.py",
             "scripts/governance/_tree_stamp.py"]
     check("sv15 both new files are classified `covered` - a suite in tests/ and "

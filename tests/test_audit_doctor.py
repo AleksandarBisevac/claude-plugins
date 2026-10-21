@@ -1212,7 +1212,8 @@ def _cases(check):
         os.remove(os.path.join(tmp, "plan.json"))
 
         # sharded layout: intact, then broken
-        gen = M._load("gen_demo_manifest", "gen-demo-manifest.py")
+        gen = _loader.load_script("gen-demo-manifest.py", root=_harness.DEMO_DIR,
+                                modname="gen_demo_manifest")
         shard_dir = os.path.join(tmp, "sharded")
         gen.write_manifest(gen.generate(n_phases=4, n_tasks=2, seed=11), shard_dir)
         with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",

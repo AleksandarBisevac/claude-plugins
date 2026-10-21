@@ -89,6 +89,9 @@ import time
 
 # --- what is compared, and what is deliberately deferred ---------------------
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# The demo generators are development code under `tools/demo/`, not part of the
+# shipped plugin: the committed examples are rendered from what they write.
+DEMO_DIR = os.path.join(REPO, "tools", "demo")
 _STAMP = re.compile(r"generated (\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}) UTC")
 
 # (committed artifact, manifest, project dir, refresh command). The project dir is
@@ -160,8 +163,7 @@ def _fixture_argv(project):
     for a human. Two spellings of those flags is the drift this whole file exists
     to catch, one directory over.
     """
-    scripts = os.path.join(REPO, "plugins", "audit", "scripts")
-    return ([sys.executable, os.path.join(scripts, "demo", "gen-demo-manifest.py"),
+    return ([sys.executable, os.path.join(DEMO_DIR, "gen-demo-manifest.py"),
              project] + list(DEMO_FIXTURE_FLAGS))
 
 
@@ -178,8 +180,8 @@ def demo_refresh_command():
     would leave an untracked file behind every time.
     """
     return ("d=$(mktemp -d)\n"
-            "python3 plugins/audit/scripts/demo/gen-demo-manifest.py \"$d\" %s\n"
-            "python3 plugins/audit/scripts/demo/gen-demo-usage.py"
+            "python3 tools/demo/gen-demo-manifest.py \"$d\" %s\n"
+            "python3 tools/demo/gen-demo-usage.py"
             " \"$d/audit-plan.json\"\n"
             "CLAUDE_PROJECT_DIR=$d python3"
             " plugins/audit/scripts/report/render-report.py \\\n"
@@ -272,10 +274,9 @@ def _build_demo_fixture(work):
     """
     project = os.path.join(work, "demo")
     os.makedirs(project)
-    scripts = os.path.join(REPO, "plugins", "audit", "scripts")
     steps = [
         _fixture_argv(project),
-        [sys.executable, os.path.join(scripts, "demo", "gen-demo-usage.py"),
+        [sys.executable, os.path.join(DEMO_DIR, "gen-demo-usage.py"),
          os.path.join(project, "audit-plan.json")],
     ]
     for step in steps:
@@ -1074,6 +1075,26 @@ def _cases(check):
           _argv[-len(DEMO_FIXTURE_FLAGS):] == list(DEMO_FIXTURE_FLAGS)
           and " ".join(DEMO_FIXTURE_FLAGS) in _recipe
           and "cp \"$d/demo-large.html\" docs/demo-large.html" in _recipe)
+    # THE GENERATORS LEFT THE PLUGIN, and the fresh render this tool compares against
+    # is only the committed example's twin if it is made by the ones that still exist.
+    # Both spendings of their location - the argv that builds the fixture and the
+    # recipe a releaser is told to run - are asked, and so is the disk, so a path
+    # that names a generator which is not there fails here by name instead of as a
+    # fixture that quietly "could not be built".
+    _gen_usage = os.path.join(DEMO_DIR, "gen-demo-usage.py")
+    check("ra12b the committed example is compared with a render made by "
+          "`tools/demo/gen-demo-usage.py` and `gen-demo-manifest.py`: both files "
+          "exist there, the fixture argv and the printed recipe name that "
+          "directory, and neither names the retired `plugins/audit/scripts/demo/`: "
+          "%r" % (_argv[:2],),
+          os.path.isfile(_gen_usage)
+          and os.path.isfile(os.path.join(DEMO_DIR, "gen-demo-manifest.py"))
+          and _argv[1] == os.path.join(DEMO_DIR, "gen-demo-manifest.py")
+          and "python3 tools/demo/gen-demo-usage.py" in _recipe
+          and "python3 tools/demo/gen-demo-manifest.py" in _recipe
+          and "scripts/demo" not in _recipe
+          and not os.path.exists(os.path.join(REPO, "plugins", "audit", "scripts",
+                                              "demo")))
     check("ra13 every artifact in the tables carries the command that refreshes "
           "it, and one that carries none comes back None - a printer renders an "
           "empty string as a blank line and a reader reads that as 'nothing to "

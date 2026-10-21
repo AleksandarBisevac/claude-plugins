@@ -685,11 +685,6 @@ def main(argv, out=print):
 
 
 if __name__ == "__main__":
-    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if selftest_requested(sys.argv[1:]):
-        print("integrate-task.py has no inline --selftest; its cases live in "
-              "tests/test_integrate_task.py - run that file "
-              "instead.")
-        sys.exit(0)
     raise SystemExit(main(sys.argv[1:]))

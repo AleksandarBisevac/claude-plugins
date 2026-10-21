@@ -6,7 +6,7 @@ description: How Python is written in this repo — free functions over classes,
 # Writing Python here
 
 Not a general Python style guide. This repo bans things most guides mandate, and the bans are
-read out of the AST rather than trusted — `_output.house_style_violations()` fails the build, it
+read out of the AST rather than trusted — `_output_lints.house_style_violations()` fails the build, it
 does not warn. Everything below is either enforced or measured from the tree as it stands.
 
 ## The dialect, in one paragraph
@@ -45,7 +45,7 @@ grep -rn '^class \|^ *global ' plugins/audit/scripts plugins/audit/hooks --inclu
 - **Comprehensions over accumulate loops** when the result is a list or dict and the body is one
   expression. Past that, a named function reads better than a nested comprehension.
 - **Push I/O to the edges.** A function that takes values and returns values can be tested by a
-  `--selftest` case with no temp directory and no `git init`; one that reads a file and prints
+  test case with no temp directory and no `git init`; one that reads a file and prints
   cannot. Split the read from the decision — `decide()` taking parsed input is the shape every
   hook already uses, and it is why their logic has cases at all.
 
@@ -115,15 +115,15 @@ The rule is not "never repeat a line". It is **one fact, one home**.
   job reports success over half the work.
 - **Reaching around the layer rule** by importing inside a function to dodge the lint. The lint
   reads the AST; more importantly, the layering is the design.
-- **Adding a file without its five obligations** — `--selftest`, `safe_stdio()` first in
-  `__main__`, a `_deps.LAYERS` entry, a `PLUGIN-BUILD-GUIDE.md` tree line and section, and
-  (under `scripts/`) `_output.PATH_PREAMBLE` pasted byte for byte above the first sibling
-  import. Four of the five fail CI by name.
+- **Adding a file without its five obligations** — a `tests/test_<name>.py`, `safe_stdio()`
+  first in `__main__`, a `_deps.LAYERS` entry, a `PLUGIN-BUILD-GUIDE.md` tree line and section,
+  and (under `scripts/`) `_output_lints.PATH_PREAMBLE` pasted byte for byte above the first
+  sibling import. Four of the five fail CI by name.
 
 ## Testability
 
-A `--selftest` is not an afterthought here; it is the test suite, and CI fails a file without
-one. Design for it:
+A suite in `tests/` is not an afterthought here, and the sweep's coverage verdict fails a module
+without one. Design for it:
 
 - a function whose inputs are arguments and whose output is a return value needs no fixture;
 - where a fixture is unavoidable, build it in a `tempfile.mkdtemp()` and delete it in `finally` —

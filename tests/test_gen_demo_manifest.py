@@ -33,7 +33,7 @@ import _evidence_view                              # noqa: E402
 import _loader                                     # noqa: E402
 import _manifest_vocab                             # noqa: E402
 
-M = _loader.load_script("gen-demo-manifest.py", modname="gen_demo_manifest")
+M = _loader.load_script("gen-demo-manifest.py", root=_harness.DEMO_DIR, modname="gen_demo_manifest")
 
 # Identifiers that could reach the machine the generator runs on, the account
 # running it, the clock, or a random id. A lease carries no host, so none of its
@@ -544,8 +544,7 @@ def _cases(check):
     # has a true match. One area stays ownerless: the no-owner case must render.
     used_tags = {p["area"] for p in m["phases"]}
     reg = m["meta"].get("areas") or {}
-    ledger_authors = set(_loader.load_script(
-        "gen-demo-usage.py", modname="gen_demo_usage").DEFAULT_AUTHORS)
+    ledger_authors = set(_loader.load_script("gen-demo-usage.py", root=_harness.DEMO_DIR, modname="gen_demo_usage").DEFAULT_AUTHORS)
     reg_owners = {k: v.get("owner") for k, v in reg.items() if "owner" in v}
     check("meta.areas registers every tag the phases use",
           used_tags <= set(reg), sorted(used_tags - set(reg)))
@@ -747,7 +746,8 @@ def _cases(check):
 
     # A fixture value read off the machine or the clock would publish whoever
     # ran the generator, and "we were careful" is not a property. Read the source.
-    _gdm_src = open(_loader.script_path("gen-demo-manifest.py"),
+    _gdm_src = open(_loader.script_path("gen-demo-manifest.py",
+                                    root=_harness.DEMO_DIR),
                     encoding="utf-8").read()
     check("the source scanner sees a machine read when there is one, and does "
           "not invent one - the measurement that makes the case below mean "

@@ -23,6 +23,7 @@ import os
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _ui_theme_lints  # noqa: E402  (the lint half, development code)
 from _output import safe_stdio                     # noqa: E402
 import _ui_theme as _theme                         # noqa: E402
 import _panel_ui as M                              # noqa: E402
@@ -36,7 +37,7 @@ def _cases(check):
     # rather than restated: a part this suite does not know about is a part it
     # cannot fail to read.
     names = ("panel.html",) + tuple(M._CSS_PARTS) + tuple(M._JS_PARTS)
-    unreadable = _theme.unreadable_assets(names)
+    unreadable = _ui_theme_lints.unreadable_assets(names)
     for name in names:
         check("%s exists and decodes as utf-8" % name, name not in unreadable)
 
@@ -86,7 +87,7 @@ def _cases(check):
     # from, which is the half that catches a part declared and never joined.
     # `shared/` counts, for the reason above: it is part of what this page is
     # BUILT from, so a shared part nobody joined fails here too.
-    _declared_js = set(n for n in _theme.UI_ASSETS
+    _declared_js = set(n for n in _ui_theme_lints.UI_ASSETS
                        if n.endswith(".js")
                        and (n.startswith("panel/") or n.startswith("shared/")))
     check("every panel part on disk is loaded, and every loaded part is on disk "
@@ -120,7 +121,7 @@ def _cases(check):
     check("the joined panel-css/ parts balance their braces",
           css.count("{") == css.count("}"))
     check("no declaration in the joined panel-css/ parts is left unterminated",
-          not _theme.unterminated_css_decls(css))
+          not _ui_theme_lints.unterminated_css_decls(css))
     # Every part ends with a newline. panel-server.py lints over
     # UI_HTML.splitlines(), so a part without one joins two lines - which can
     # hide a real offender or manufacture a false one, and no other case here

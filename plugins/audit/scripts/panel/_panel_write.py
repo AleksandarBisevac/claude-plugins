@@ -1617,7 +1617,6 @@ def write_config(project, obj=None, mutate=None):
     return out
 
 
-
 # The keys one config patch entry may carry. `pin` is the form's own marker for a
 # list that copies a shipped default into the file; it changes nothing written.
 _PATCH_ENTRY_KEYS = ("path", "value", "remove", "pin")
@@ -2478,14 +2477,6 @@ def _composition_pass(project, config, mpath, patch, vm):
 
 
 if __name__ == "__main__":
-    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if selftest_requested(sys.argv[1:]):
-        # Answers rather than falling through to the docstring dump, which would
-        # exit 0 with no word about the flag. It deliberately does NOT print the
-        # `N/M cases passed` contract - that literal is how
-        # `_output.selftest_coverage()` tells an inline suite from a migrated one.
-        print("_panel_write.py has no inline --selftest; its cases moved to "
-              "tests/test__panel_write.py - run that file instead.")
-        raise SystemExit(0)
     print(__doc__.strip())

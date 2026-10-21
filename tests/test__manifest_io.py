@@ -1534,9 +1534,6 @@ def _corpus_cases(check):
 # Calls of the plan's scrubbing writers that do not write a plan, each with
 # the reason it owes no `plan.redact` row. Keyed by (file, function).
 _NOT_A_PLAN_WRITE = {
-    ("gen-demo-manifest.py", "write_manifest"):
-        "the demo's own fixture plan, generated into an output directory "
-        "with no journal of its own",
     ("read-ado-links.py", "main"):
         "a cache of board items, not a plan",
     ("fetch-ado-items.py", "main"):

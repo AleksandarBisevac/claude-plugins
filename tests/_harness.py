@@ -105,6 +105,10 @@ HOOKS_DIR = os.path.join(_PLUGIN_DIR, "hooks")
 # `_deps` and `_refs` live outside the plugin and `install_path()` never adds this
 # directory, so a suite that imports either gets it from here.
 LINTS_DIR = os.path.join(_REPO_DIR, "tools", "lints")
+# The demo generators and the two benchmarks live under `tools/`, not in the plugin.
+# They are on the path for the same reason `LINTS_DIR` is: nothing else adds them.
+TOOLS_DIR = os.path.join(_REPO_DIR, "tools")
+DEMO_DIR = os.path.join(TOOLS_DIR, "demo")
 
 
 # --- path setup ---------------------------------------------------------------
@@ -123,7 +127,7 @@ def _install_paths(dirs):
     return added
 
 
-_install_paths((LINTS_DIR, HOOKS_DIR, SCRIPTS_DIR))
+_install_paths((DEMO_DIR, TOOLS_DIR, LINTS_DIR, HOOKS_DIR, SCRIPTS_DIR))
 
 import _output  # noqa: E402  (the anchor: reachable now that SCRIPTS_DIR is on the path)
 
@@ -1517,7 +1521,7 @@ def _cases(check):
     # THIS file and the second half of the case would fail on its own text - which
     # is the same self-matching bug that made a panel route check find its
     # own assertion line.
-    _ms_needle = "def " + "covered_repo_paths("
+    _ms_needle = "def " + "write_lf_lines("
     check("m1 module_source() reads the module it is HANDED, and this is the "
           "whole reason it exists: a source-slice case moved to tests/ that kept "
           "reading `__file__` would be asking about this file instead",
@@ -1963,7 +1967,7 @@ def _stage_runner_cases(check):
     with open(wide, "w", encoding="utf-8") as fh:
         fh.write(_STAGED_SUITE % dict(_STAGED_WIDE, tests=TESTS_DIR))
     sweeper = _load_sweep()
-    rows = sweeper.sweep(["wide_suite.py"], set(), jobs=4, repo=work, costs={})
+    rows = sweeper.sweep(["wide_suite.py"], jobs=4, repo=work, costs={})
     out = rows[0].get("output") or ""
     pools = re.findall(r"^stage pool: (\d+) of (\d+) blocks at once, (.+)$",
                        out, re.M)

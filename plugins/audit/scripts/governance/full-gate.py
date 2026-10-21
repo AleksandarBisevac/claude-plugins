@@ -704,10 +704,6 @@ def main(argv, out=print):
 
 
 if __name__ == "__main__":
-    from _output import safe_stdio, selftest_requested
+    from _output import safe_stdio
     safe_stdio()
-    if selftest_requested(sys.argv[1:]):
-        print("full-gate.py: cases live in "
-              "tests/test_full_gate.py")
-        raise SystemExit(0)
     raise SystemExit(main(sys.argv[1:]))

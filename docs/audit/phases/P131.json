@@ -44,9 +44,30 @@
         "file": "task return: gates",
         "issue": "The filed return records only gates.selftests = pass. plugin-validate, gate, report, shots, interactive and vitest are in tests.gate and were not run by the executor (it says 'own-tests reading'). The brief records the gate run as passed (runId 2026-10-21T01:06:24Z.a4ffb1) but I was not handed which commands it ran, and the acceptance item 'installed cache holds no tests/' was not run (tracked-files half verified by me: git ls-files plugins/audit | grep -c /tests/ = 0).",
         "resolution": "Confirm the recorded run covered every tests.gate entry (cat the run's evidence rows), and run the /audit:version install check after the landing."
+      },
+      {
+        "id": "P131-R4",
+        "severity": "med",
+        "file": "CLAUDE.md:31,53,91-93,301-308",
+        "issue": "Task clause (4)/(6) retired --selftest in shipped modules and moved the lint halves, but CLAUDE.md (in the diff's declared scope, unchanged by this diff) still instructs the opposite. Lines 91-93 item 1 say a new .py under hooks/ or scripts/ needs a --selftest and that CI fails a file without one, which now tells a contributor to add a banned stub. Lines 301-308 still describe a migrated class and a file that exits 0 on --selftest, and the line 303 command calls _output.selftest_coverage(), which no longer exists in scripts/_output.py (it is in tools/lints/_output_lints.py), so it raises AttributeError. Lines 31 and 53 name _output.house_style_violations() and _output.prose_number_claims(), now in _output_lints. The executor listed the exact patch in its outcome but did not apply it.",
+        "resolution": "Rewrite item 1 to 'a tests/test_<name>.py or a named COVERAGE_EXEMPT row', replace the 301-308 paragraph and its command with _output_lints.selftest_coverage(), and repoint the _output.<lint> names to _output_lints."
+      },
+      {
+        "id": "P131-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/derive-phase-gate.py:75; plugins/audit/scripts/manifest/migrate-manifest.py:33; plugins/audit/scripts/manifest/merge-manifest.py:42; plugins/audit/scripts/manifest/migrate-json-encoding.py:45; plugins/audit/scripts/manifest/set-priority.py:22; plugins/audit/reference/phase-signoff.md:347",
+        "issue": "Shipped usage blocks and one agent-facing reference still advertise `<script> --selftest` (and phase-signoff.md:347 says 'run it with --selftest', pointing at tests/test_run_test_gate.py), a flag clause (5) turned into an ordinary usage error. Clause (3) asked that every shipped pointer to an unshipped path be repointed or removed. Separately, shipped comments name _output.prose_number_claims() (status/_doctor_hygiene.py:374, status/audit-status.py:1105, governance/propose-gates.py:31), which moved to tools/lints; the executor's carve-out covers only text inside PATH_PREAMBLE.",
+        "resolution": "Delete the `--selftest` usage lines, reword phase-signoff.md:347 to drop 'run it with --selftest', and reword the three _output.prose_number_claims comments to name the source-repository lint."
+      },
+      {
+        "id": "P131-R6",
+        "severity": "low",
+        "file": "docs/audit (plan record for B9)",
+        "issue": "Clause (8) asks for the B9 `code` figure taken on the landing SHA and recorded in the plan with that SHA. The filed outcome gives 75222 measured over the working tree, with the exact command left for later, and a grep of docs/audit finds it only in the executor's return file and the journal, not as a plan field. The byte ceiling is met (9523827 against 10416128 by the executor's own measurement).",
+        "resolution": "Re-take the figure on the landing commit with the clause's git archive command (K-poc is in quality-gates-internal) and record it with the SHA before the phase signs off."
       }
     ],
-    "outcome": "[findings: 3 - 0 high, 1 med, 2 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 6 - 0 high, 2 med, 4 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -854,7 +875,16 @@
         "tools/prove-gates.py",
         "tools/sweep-selftests.py",
         "tools/ui-tests/overview-outcome.test.mjs",
-        "tools/verify.sh"
+        "tools/verify.sh",
+        "tests/test__config_rules_lints.py",
+        "tests/test__help_lints.py",
+        "tests/test__output_lints.py",
+        "tests/test__panel_settings.py",
+        "tests/test__runner_output.py",
+        "tests/test__ui_theme_lints.py",
+        "tests/test_bench_report.py",
+        "tests/test_drive_phase.py",
+        "tests/test_panel_server.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -898,7 +928,12 @@
       "startedAt": "2026-10-21T01:14:54Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-21T03:14:13Z.9dea71",
+        "status": "passed",
+        "at": "2026-10-21T03:14:13Z"
+      }
     },
     {
       "id": "P131.3",

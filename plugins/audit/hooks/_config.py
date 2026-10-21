@@ -4771,13 +4771,3 @@ def running_plugin_stamps(state_dir):
     stamps.sort(key=lambda s: (-s["mtime"], s["session"]))
     return {"stamps": stamps, "unreadable": unreadable}
 
-if __name__ == "__main__":
-    if "--selftest" in sys.argv:
-        # Answered rather than falling through to the library notice below: CI
-        # runs `--selftest` over every file in this directory. It deliberately
-        # does NOT print the `N/M cases passed` contract - that string is how
-        # `_output.selftest_coverage()` tells an inline suite from a migrated one.
-        print("_config.py has no inline --selftest; its cases moved to "
-              "tests/test__config.py - run that file instead.")
-        sys.exit(0)
-    print("This is a library module; run with --selftest to exercise it.")

@@ -27,6 +27,7 @@ import json
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output_lints  # noqa: E402  (the lint half, development code)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _panel_settings as M                        # noqa: E402
@@ -348,7 +349,7 @@ def _retired_rung_cases(check):
           not any(_retired_rung_hits(t) for t in _new),
           "fired on: %r" % [t for t in _new if _retired_rung_hits(t)])
 
-    _scan = M._output.prose_scan_set((".md",), table=_RETIRED_RUNG_ALLOWED)
+    _scan = _output_lints.prose_scan_set((".md",), table=_RETIRED_RUNG_ALLOWED)
     _root = M._output.REPO_ROOT
     check("...the allowances each carry a reason and name a document the walk "
           "still reaches, and the walk read the tree",

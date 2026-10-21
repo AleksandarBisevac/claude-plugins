@@ -235,17 +235,18 @@ Every selftest suite - stdlib only, no deps. Swept, never enumerated: a list dri
 ways once and CI silently stopped running one suite entirely.
 
 ONE RUNNER, and CI runs the same one. This was a `find` loop written out here, a second
-copy of it in ci.yml that checked MORE (the `N/M cases passed` contract and the `--covered`
-skip) and a third in verify.sh that checked LESS (the exit code alone) — so a file that
-exited 0 having asserted nothing was green locally and red in CI. The runner holds the
-union of all three rules and walks hooks/, scripts/, tests/, tools/ AND .claude/hooks/
-recursively through `_output.py_files`, so a file added one directory down is swept
-without anyone editing a glob.
+copy of it in ci.yml that checked MORE (the `N/M cases passed` contract) and a third in
+verify.sh that checked LESS (the exit code alone) — so a file that exited 0 having asserted
+nothing was green locally and red in CI. The runner holds the union of all three rules and
+walks tests/, tools/ AND .claude/hooks/ recursively through `_output.py_files`, so a file
+added one directory down is swept without anyone editing a glob.
 
-IT SWEEPS tests/ TOO, which is why the second `find` loop that used to sit here is gone: it
-re-ran the migrated suites the runner had just run. A migrated file exits 0 printing where
-its cases went, and the runner requires that it NOT print the contract — the net under
-`selftest_coverage()`'s string-literal blind spot.
+IT DOES NOT RUN THE SHIPPED PLUGIN, and says what it asks of it instead. A shipped module
+answers no `--selftest`, so there is nothing to run under `hooks/` or `scripts/`; the
+runner's coverage verdict asks `_output_lints.selftest_coverage()` whether every one of them
+has a `tests/test_<name>.py` or a named exemption, and the same goes for the development
+modules whose cases live in `tests/` (`tools/lints/`, `tools/demo/` and the two benchmarks),
+which it leaves out of the walk.
 
 AND EVERY CHILD RUNS IN EMPTY DIRECTORIES IT IS EXPECTED TO LEAVE EMPTY. A suite runs with
 its cwd AND `TMPDIR` pointed at one scratch directory, its HOME at a second,
@@ -501,10 +502,11 @@ slice is `python3 tools/gate-parity.py --list`.
   a major release.
 - **New behavior ⇒ new selftest cases.** Selftests are the plugin's test suite;
   every decision-core change lands with cases that pin it. **Every `.py` under
-  `hooks/` and `scripts/` must carry a `--selftest`** — CI globs the directories
-  rather than listing them, and fails a file that has none. Adding a file and
-  remembering to register it were once two separate acts, and one suite went
-  unrun for two releases as a result.
+  `hooks/` and `scripts/` must have a `tests/test_<name>.py`** (or a row in
+  `_output_lints.COVERAGE_EXEMPT` saying why not) — the sweep's coverage verdict
+  walks the directories rather than listing them, and fails a module that has
+  neither. Adding a file and remembering to register it were once two separate
+  acts, and one suite went unrun for two releases as a result.
 - **Every `.py` under `hooks/` and `scripts/` is scanned wherever it sits.** The
   selftest sweep — one runner, run by verify.sh's sweep slices here and in CI —
   walks the tree through `_output.py_files()`, the single recursive walk behind
@@ -630,8 +632,9 @@ Checklist for a new `.py` under `hooks/` or `scripts/`:
   directly (by a hook, a command, or CI) takes a hyphenated name
   (`validate-manifest.py`).
 - **Module docstring** stating why the file exists, not just what it does.
-- **`--selftest`** that prints the `N/M cases passed` contract — CI sweeps every
-  `.py` under `hooks/` and `scripts/`, at any depth, and fails one that has none.
+- **A `tests/test_<name>.py`** — the sweep's coverage verdict walks every `.py` under
+  `hooks/` and `scripts/`, at any depth, and fails one with neither a suite nor a named
+  exemption. The module itself carries no `--selftest`.
 - **`safe_stdio()` first in `__main__`**, before any other statement — this
   is AST-enforced by `_output.py`, not a convention.
 - **A layer assignment in `_deps.LAYERS`** — the import-graph lint fails an
@@ -941,7 +944,7 @@ was false in a way nobody had checked, and one survived and was preserved:
   over a partial tree** — a green build over work it never ran.
 - **Every file stays directly runnable** — this one held, and was the constraint
   the migration was built around rather than a cost it paid. A `.py` at any depth
-  still runs: `python3 plugins/audit/scripts/demo/gen-demo-usage.py --selftest`
+  still runs: `python3 plugins/audit/scripts/status/audit-status.py --help`
   exits 0. What makes that true is `_output.py` as a fixed anchor plus a pinned
   path preamble that walks up to find it, so no file computes a path from its own
   depth (`depth_sensitive_paths()` fails one that tries).

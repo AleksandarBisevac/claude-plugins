@@ -35,6 +35,7 @@ import types
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 import _output                                     # noqa: E402  (SCRIPTS_DIR + py_files, for the inline scan)
+import _help_lints  # noqa: E402  (the lint half, development code)
 from _output import safe_stdio                     # noqa: E402
 import _deps                                       # noqa: E402  (the one import graph, for the hook-path premise)
 import _manifest_vocab as M                        # noqa: E402
@@ -248,12 +249,12 @@ def _cases(check):
     # schema walk - mv34 to mv36 below are why the other one cannot answer this
     # question, and why that is counted rather than stated. See this module's
     # SCHEMA_ANCHORS comment.
-    _levels = _help.schema_level_keys()
+    _levels = _help_lints.schema_level_keys()
     _compared = sum(len(v) for v in _levels.values())
     check("mv18 every KNOWN_* set still agrees with audit-plan.schema.json - a "
           "field added to the schema and not here arrives BY NAME: %r"
-          % (_help.schema_vocab_drift(),),
-          _help.schema_vocab_drift() == [])
+          % (_help_lints.schema_vocab_drift(),),
+          _help_lints.schema_vocab_drift() == [])
     # mv18 compares set differences, and a difference against an empty set is
     # empty. Without this the whole check would pass over a renamed $def.
     check("mv19 ...over %d schema properties at %d anchors, none of them zero - "
@@ -265,8 +266,8 @@ def _cases(check):
           repr(sorted((n, len(k)) for n, k in _levels.items())))
     check("mv20 every KNOWN_* set on this module is anchored, so one added later "
           "cannot opt out of mv18 by being forgotten",
-          set(_help.vocab_sets(M)) == {n for n, _ in M.SCHEMA_ANCHORS},
-          repr(sorted(set(_help.vocab_sets(M)) ^
+          set(_help_lints.vocab_sets(M)) == {n for n, _ in M.SCHEMA_ANCHORS},
+          repr(sorted(set(_help_lints.vocab_sets(M)) ^
                       {n for n, _ in M.SCHEMA_ANCHORS})))
     _exempt = [(name, key) for name, keys in M.OFF_SCHEMA.items()
                for key in keys
@@ -281,9 +282,9 @@ def _cases(check):
     # Red-first against the REAL anchors rather than a fixture: the cases in
     # test__help.py prove the comparison, this one proves it is pointed at this
     # schema. Dropping a key from a COPY leaves the shipped set untouched.
-    _cut = dict(_help.vocab_sets(M))
+    _cut = dict(_help_lints.vocab_sets(M))
     _cut["KNOWN_ADO"] = set(M.KNOWN_ADO) - {"stateMap"}
-    _cut_drift = _help.vocab_drift(_levels, _cut, M.SCHEMA_ANCHORS, M.OFF_SCHEMA)
+    _cut_drift = _help_lints.vocab_drift(_levels, _cut, M.SCHEMA_ANCHORS, M.OFF_SCHEMA)
     check("mv22 ...and dropping a real key from a copy of KNOWN_ADO names "
           "`meta.ado.stateMap` - the mutation that would otherwise be silent",
           [p for _, p in _cut_drift if "meta.ado.stateMap is in the schema" in p]
@@ -360,7 +361,7 @@ def _cases(check):
     # the SCHEMA_ANCHORS comment going quietly stale - which is the fault they were
     # written for: that comment claimed there was only one walk in this tree, three
     # times, while the conclusion it supported was still right.
-    _gdm = _loader.load_script("gen-demo-manifest.py", modname="gdm_vocab_walk")
+    _gdm = _loader.load_script("gen-demo-manifest.py", root=_harness.DEMO_DIR, modname="gdm_vocab_walk")
     _schema = _gdm.load_schema()
     _defined = _gdm.schema_fields(_schema)
     _owners = set(f.split(".", 1)[0] for f in _defined)
@@ -408,18 +409,18 @@ def _cases(check):
           repr((sorted(_link), _uncovered, sorted(_defs))))
     # The claim mv34 and mv35 rest on is "this is not the tree's only schema walk",
     # and its opposite is what three comments said while nothing counted. So count.
-    # A `$defs` read under `scripts/` or `tools/lints/` (where `_deps` and `_refs`
-    # went: a walk is a walk wherever the file sits) is one of the two walks or a
+    # A `$defs` read under `scripts/`, `tools/lints/` or `tools/demo/` (where `_deps`,
+    # `_refs` and the demo generators went: a walk is a walk wherever the file sits) is one of the two walks or a
     # comment naming them; a file this table does not know is a third walk or a fourth account of
     # these two, and either way the SCHEMA_ANCHORS comment has to be re-read rather
     # than trusted.
     _isrc = {}
-    for _dir in (_output.SCRIPTS_DIR, _output.LINTS_DIR):
+    for _dir in (_output.SCRIPTS_DIR, _output.LINTS_DIR, _harness.DEMO_DIR):
         for _rel, _path in _output.py_files(_dir):
             with open(_path, "r", encoding="utf-8") as _fh:
                 _isrc[_rel] = _fh.read()
     _walk_files = {"config/_help.py": "the walk this comparison uses, by path",
-                   "demo/gen-demo-manifest.py": "the other walk, by $def name",
+                   "gen-demo-manifest.py": "the other walk, by $def name",
                    # A THIRD WALK, ADDED WITH ITS ROW. `_deps.config_vocabulary()`
                    # reads the meta $def for the key names its configuration-read
                    # rule compares two modules over - a VOCABULARY, not a field
@@ -456,7 +457,7 @@ def _cases(check):
     _defs_readers = sorted(rel for rel, text in _isrc.items() if "$defs" in text)
     check("mv36 ...and the claim both of those rest on - that this is NOT the "
           "tree's only schema walk - is COUNTED rather than written down: every one "
-          "of the %d files under scripts/ and tools/lints/ that reads `$defs` is one this comment "
+          "of the %d files under scripts/, tools/lints/ and tools/demo/ that reads `$defs` is one this comment "
           "accounts for. The opposite claim used to sit in three comments with "
           "nothing counting it, so the symmetric difference is the case: %r"
           % (len(_walk_files), sorted(set(_defs_readers) ^ set(_walk_files))),
@@ -554,13 +555,13 @@ def _cases(check):
     # schema are untouched, so the tree is never one exception away from carrying
     # the mutation. This is the case that fails if mv18 has stopped reaching this
     # key rather than agreeing about it.
-    _te_sets = dict(_help.vocab_sets(M))
+    _te_sets = dict(_help_lints.vocab_sets(M))
     _te_sets["KNOWN_TASK"] = set(M.KNOWN_TASK) - {"testEvidence"}
-    _te_dropped = _help.vocab_drift(_levels, _te_sets, M.SCHEMA_ANCHORS,
+    _te_dropped = _help_lints.vocab_drift(_levels, _te_sets, M.SCHEMA_ANCHORS,
                                     M.OFF_SCHEMA)
     _te_lv = dict(_levels)
     _te_lv["KNOWN_PHASE"] = _te_phase_lv - {"testEvidence"}
-    _te_undeclared = _help.vocab_drift(_te_lv, _help.vocab_sets(M),
+    _te_undeclared = _help_lints.vocab_drift(_te_lv, _help_lints.vocab_sets(M),
                                        M.SCHEMA_ANCHORS, M.OFF_SCHEMA)
     check("mv39 ...and both directions of that agreement really land: dropping the "
           "key from a copy of KNOWN_TASK names `phases[].tasks[].testEvidence`, and "
@@ -659,13 +660,13 @@ def _cases(check):
     # Red-first in BOTH directions, on COPIES - the shipped set and the shipped
     # schema are untouched, so the tree is never one exception away from carrying
     # the mutation.
-    _es_sets = dict(_help.vocab_sets(M))
+    _es_sets = dict(_help_lints.vocab_sets(M))
     _es_sets["KNOWN_META"] = set(M.KNOWN_META) - {"evidenceSince"}
-    _es_dropped = _help.vocab_drift(_levels, _es_sets, M.SCHEMA_ANCHORS,
+    _es_dropped = _help_lints.vocab_drift(_levels, _es_sets, M.SCHEMA_ANCHORS,
                                     M.OFF_SCHEMA)
     _es_lv = dict(_levels)
     _es_lv["KNOWN_META"] = _es_meta_lv - {"evidenceSince"}
-    _es_undeclared = _help.vocab_drift(_es_lv, _help.vocab_sets(M),
+    _es_undeclared = _help_lints.vocab_drift(_es_lv, _help_lints.vocab_sets(M),
                                        M.SCHEMA_ANCHORS, M.OFF_SCHEMA)
     check("mv44 ...and both directions of that agreement really land: dropping "
           "the key from a copy of KNOWN_META names `meta.evidenceSince`, and a "
@@ -831,10 +832,10 @@ def _cases(check):
     # Red-first in BOTH directions, on COPIES - the shipped sets and the
     # shipped schema are untouched, so the tree is never one exception away
     # from carrying the mutation.
-    _fg_sets = dict(_help.vocab_sets(M))
+    _fg_sets = dict(_help_lints.vocab_sets(M))
     _fg_sets["KNOWN_META"] = set(M.KNOWN_META) - {"fullGate"}
     _fg_sets["KNOWN_PHASE"] = set(M.KNOWN_PHASE) - {"mergedHead"}
-    _fg_dropped = _help.vocab_drift(_levels, _fg_sets, M.SCHEMA_ANCHORS,
+    _fg_dropped = _help_lints.vocab_drift(_levels, _fg_sets, M.SCHEMA_ANCHORS,
                                     M.OFF_SCHEMA)
     check("mv57 ...and dropping either key from a copy of its set names "
           "exactly that field - `meta.fullGate` and `phases[].mergedHead` - "

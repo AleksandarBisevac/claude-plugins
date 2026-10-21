@@ -2,44 +2,32 @@
 """
 A timer over the analytics passes, and the fixture it times them on.
 
-This is the sixth piece of `_usage_analytics.py` (U3.2) and the only one that is
-not a `rows -> dict` pass, which is why it does not carry the name: it CALLS the
-four modules the analytics were cut into, so it sits one layer above them,
-beside `usage_ledger`. Nothing imports it - `render-report.py` reaches
-`_time_best` through `_loader` so that the two benches in this tree share one
-definition of best-of-N, and `--bench` is run by a human.
+It sits one layer above the four analytics modules and CALLS them, beside
+`usage_ledger`, and it lives under `tools/` because a benchmark is something the
+repository's maintainers run: nothing the installed plugin runs imports it.
+`tools/bench-report.py` reaches `_time_best` from here, so the two benches in this
+tree share one definition of best-of-N.
 
 The section comment below carries the argument for every choice here (why it
 exists at all, why it is not a CI threshold, why best-of-N rather than the mean,
-and why it opens no file). It moved with the code and is the thing to read
-before changing any of it.
+and why it opens no file); it is the thing to read before changing any of it.
 
-This module carries no `--selftest` of its own; its cases live in
-`tests/test__usage_bench.py`, the moved labels byte-identical - see
-`tests/_harness.py`. `--bench` stayed: the benchmark is production
-code somebody runs, and only the `bn` cases ABOUT it moved.
+    python3 tools/_usage_bench.py --bench
+
+This module carries no `--selftest`; its cases live in `tests/test__usage_bench.py`.
 """
 import os
 import sys
 import time
 
-# The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
-# `_output.path_preamble_violations()`. It walks UP to the directory holding
-# `_output.py` instead of counting `dirname()` calls, so it does not encode how deep
-# this file sits and keeps working if the file is moved into a subdirectory.
-# `install_path()` then adds that directory AND every subdirectory of it holding a
-# `.py`: the folders are LABELS, NOT NAMESPACES, and every sibling below is still
-# reached by a bare basename.
-_anchor_dir = os.path.dirname(os.path.abspath(__file__))
-while not os.path.isfile(os.path.join(_anchor_dir, "_output.py")):
-    _anchor_up = os.path.dirname(_anchor_dir)
-    if _anchor_up == _anchor_dir:
-        raise ImportError("audit plugin: walked to the filesystem root from %s "
-                          "without finding _output.py - the scripts/ anchor is "
-                          "gone and no sibling can be imported" % (__file__,))
-    _anchor_dir = _anchor_up
-if _anchor_dir not in sys.path:
-    sys.path.insert(0, _anchor_dir)
+# The path bootstrap, adapted: this file lives in tools/, outside scripts/, so the
+# anchor is found by the known layout rather than by walking up for `_output.py`
+# (the same shape as `tools/where.py`).
+_here = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(_here)
+_scripts = os.path.join(REPO, "plugins", "audit", "scripts")
+if _scripts not in sys.path:
+    sys.path.insert(0, _scripts)
 
 import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
@@ -313,38 +301,17 @@ def _bench(sizes=None, repeats=None):
 
 
 def _mode(argv):
-    """Which mode the flags ask for: 'selftest', 'bench' or 'usage'.
-
-    `--selftest` WINS over `--bench` when both are given. CI runs `--selftest` on
-    every `.py` in the tree on two platforms; a suite that could turn into a
-    multi-second benchmark run because a stray flag came along would be paid for
-    on every push. A mode that can be entered by accident will be.
-    """
-    if _output.selftest_requested(argv):
-        return "selftest"
+    """Which mode the flags ask for: 'bench' when `--bench` is among them, else 'usage'."""
     if "--bench" in argv:
         return "bench"
     return "usage"
-
 
 
 if __name__ == "__main__":
     from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
     _MODE = _mode(sys.argv[1:])
-    if _MODE == "selftest":
-        # Answers rather than exits silently: `--selftest` is what every other
-        # file here still accepts, so nothing would tell a reader whether this
-        # one ran nothing or has nothing. It deliberately does NOT print the
-        # suite contract - that literal is how `_output.selftest_coverage()`
-        # tells an inline suite from a migrated one. `--bench` still runs the
-        # benchmark: that is production code, not a suite, and only the cases
-        # ABOUT it moved.
-        print("_usage_bench.py has no inline --selftest; its cases live in "
-              "tests/test__usage_bench.py - run that file "
-              "instead. --bench still works here.")
-        raise SystemExit(0)
     if _MODE == "bench":
         raise SystemExit(_bench())
-    sys.stderr.write("usage: _usage_bench.py --selftest | --bench\n")
+    sys.stderr.write("usage: _usage_bench.py --bench\n")
     raise SystemExit(2)

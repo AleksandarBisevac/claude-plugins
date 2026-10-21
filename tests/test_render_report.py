@@ -39,6 +39,7 @@ import sys
 import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _ui_theme_lints  # noqa: E402  (the stylesheet lints, development code)
 from _output import safe_stdio                     # noqa: E402
 import _output                                     # noqa: E402  (REPO_ROOT)
 import _loader                                     # noqa: E402
@@ -124,7 +125,6 @@ def _tables_and_wrappers(markup):
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
-    import tempfile
 
 
     # Substring pins about MARKUP must not read the embedded scripts.
@@ -389,25 +389,25 @@ def _cases(check):
     # Check the rendered ARTIFACT, not just the stylesheet: inline styles emitted
     # from Python land only in the output, and that is exactly where an undeclared
     # token hides.
-    _missing = M._undeclared_css_vars(M._CSS + uh)
+    _missing = _ui_theme_lints.undeclared_css_vars(M._CSS + uh)
     check("u14b every fallback-less var(--token) is declared "
           "(an undeclared one paints transparent and logs nothing)",
           _missing == [], repr(_missing))
-    _asym = M._theme_asymmetric_vars(M._CSS)
+    _asym = _ui_theme_lints.theme_asymmetric_vars(M._CSS)
     check("u14c no colour token exists in only one theme (either direction)",
           _asym == [], repr(_asym))
     # Tokens paint our boxes; the UA paints the checkboxes, selects, spinners,
     # date picker and scrollbars from `color-scheme` alone. A theme that does not
     # restate it leaves those wearing the OS's theme while everything around them
     # follows the toggle — invisible in the stylesheet, obvious on screen.
-    _nocs = M._themes_missing_color_scheme(M._CSS)
+    _nocs = _ui_theme_lints.themes_missing_color_scheme(M._CSS)
     check("u14i every explicit data-theme restates color-scheme, so the toggle "
           "moves the native controls with it", _nocs == [], repr(_nocs))
     # This stylesheet lives in a non-raw Python string, so every CSS escape has to
     # be written twice over. `content:"\2713\a0"` compiled to `¹3<BEL>0` and drew
     # exactly that on the one chip whose whole job was to state its own state
     # without colour — for as long as that chip has existed, with the suite green.
-    _esc = M._mangled_css_escapes(M._CSS)
+    _esc = _ui_theme_lints.mangled_css_escapes(M._CSS)
     check("u14j no CSS escape was eaten by Python before the browser saw it",
           _esc == [], repr(_esc))
     check("u14k the content column itself carries overflow-wrap:anywhere, so every text "
@@ -443,14 +443,14 @@ def _cases(check):
           and "white-space:normal;overflow-wrap:anywhere}" in M._CSS)
     # A missing `;` after a custom property annexes the comment and declarations
     # that follow it. Silent, and it killed every animation in this stylesheet once.
-    _unterm = M._unterminated_css_decls(M._CSS)
+    _unterm = _ui_theme_lints.unterminated_css_decls(M._CSS)
     check("u14d no custom-property declaration runs past its line without a ';' "
           "(it would annex whatever follows)", _unterm == [], repr(_unterm))
     check("u14e the annexing case is detected",
-          M._unterminated_css_decls(
+          _ui_theme_lints.unterminated_css_decls(
               ":root{\n  --ease:linear\n  /* c */\n  --sp-0:.25rem;\n}") != [])
     check("u14f the last declaration in a block may legally omit its ';'",
-          M._unterminated_css_decls(":root{\n  --a:1px;\n  --b:2px\n}") == [])
+          _ui_theme_lints.unterminated_css_decls(":root{\n  --a:1px;\n  --b:2px\n}") == [])
     check("u14g --ease resolves to a single value (its shorthand users depend on it)",
           re.search(r"--ease:\s*cubic-bezier\([^)]*\);", M._CSS) is not None)
     check("u14h --sp-0 survives as its own declaration",
@@ -648,7 +648,7 @@ def _cases(check):
     check("filters: an active chip says so without relying on hue - and the tick "
           "reaches the browser as an escape, not as the octal wreckage of one",
           ".fchip.on::before" in M._CSS
-          and M._mangled_css_escapes(
+          and _ui_theme_lints.mangled_css_escapes(
               M._CSS[M._CSS.index(".fchip.on::before"):][:120]) == [])
     # The markdown twin is a data table read by machines and by GitHub; it keeps
     # the machine spelling on purpose.
@@ -1816,127 +1816,6 @@ def _cases(check):
           "checkable on the page rather than only in the gate's log",
           "the boundary is the earliest recorded run, 2026-08-01T00:00:00Z"
           in _ebhtml)
-
-    # --- bn: the bench harness measures what it claims -------------------------
-    # A bench that silently measures the wrong thing is worse than none. These run
-    # at the smallest scale the fixture supports; the numbers are not asserted (a
-    # threshold on a shared machine is the flaky gate this feature refuses to be),
-    # only that each timed phase does the work its label claims, over the FIXTURE's
-    # ledger rather than this repository's live one.
-    check("bn1 --selftest wins over --bench whichever order they arrive in, so "
-          "CI's per-file sweep can never turn into a benchmark run; anything "
-          "else is still a render",
-          M._mode(["--selftest"]) == "selftest" and M._mode(["--bench"]) == "bench"
-          and M._mode(["--selftest", "--bench"]) == "selftest"
-          and M._mode(["--bench", "--selftest"]) == "selftest"
-          and M._mode(["m.json"]) == "render" and M._mode([]) == "render")
-    _bd = os.path.join(tmp, "bench")
-    os.makedirs(_bd, exist_ok=True)
-    _fx = M._bench_fixture(_bd, 3, 2)
-    # Recounted through the REAL ledger reader, not by running this file's own
-    # counting loop a second time: a count re-derived the same way would agree
-    # with itself however wrong it was, and every per-row figure the bench prints
-    # divides by this number.
-    _fx_rows = _loader.load_script("usage_ledger.py", modname="usage_ledger",
-                                    cache=False).read_ledger(_fx["ledgerDir"])
-    check("bn2 the fixture really is the size the bench prints beside every "
-          "figure - the task count is the plan's own, and the row count agrees "
-          "with what the ledger reader actually finds in the fixture",
-          _fx["tasks"] == 6 and _fx["rows"] > 0
-          and _fx["rows"] == len(_fx_rows),
-          "%r vs reader %d" % (_fx, len(_fx_rows)))
-    _bman = _mio.load_manifest(_fx["manifestPath"])
-    _bphases = M._bench_phases(_bman, _fx["manifestPath"], _bd)
-    check("bn3 every phase named in the printed table has a denominator, and "
-          "the table names no phase that is not timed - a phase added later "
-          "without one fails HERE rather than printing a bare millisecond",
-          set(M._BENCH_PER) == set(lbl for lbl, _ in _bphases)
-          and set(M._BENCH_PER.values()) == {"row", "task"})
-    # Run the phases IN ORDER and keep what each returned: a thunk that quietly
-    # did nothing would still be timed, and would print a very fast number.
-    _art = {}
-    for _lbl, _thunk in _bphases:
-        _art[_lbl] = _thunk()
-    check("bn4 each timed phase produces that phase's own artifact - validate a "
-          "findings list, rollup a summary, the ledger pass a totals dict, and "
-          "the two writers a whole document each",
-          isinstance(_art["validate"], list)
-          and "phases" in _art["rollup"] and "tasks" in _art["rollup"]
-          and isinstance(_art["usage load"], dict)
-          and "totals" in _art["usage load"]
-          and _art["html"].lstrip().lower().startswith("<!doctype html>")
-          and "## " in _art["markdown"],
-          repr(sorted(_art)))
-    # THE trap this bench exists next to: CLAUDE_PROJECT_DIR is set to the real
-    # repository in every Claude Code session, and load_usage falls back to it.
-    # Pointed at the repo, the ledger pass would time a live, growing ledger and
-    # print a number that looks entirely reasonable. Set it to a decoy and prove
-    # the fixture's own ledger is still what got read.
-    _decoy, _prev_pd = os.path.join(tmp, "decoy"), os.environ.get("CLAUDE_PROJECT_DIR")
-    os.makedirs(_decoy, exist_ok=True)
-    os.environ["CLAUDE_PROJECT_DIR"] = _decoy
-    try:
-        _scoped = dict((lbl, fn) for lbl, fn in
-                       M._bench_phases(_bman, _fx["manifestPath"], _bd))["usage load"]()
-    finally:
-        if _prev_pd is None:
-            os.environ.pop("CLAUDE_PROJECT_DIR", None)
-        else:
-            os.environ["CLAUDE_PROJECT_DIR"] = _prev_pd
-    check("bn5 the ledger pass reads the FIXTURE's ledger even when "
-          "CLAUDE_PROJECT_DIR points elsewhere - project_dir is passed "
-          "explicitly, so an ambient env var cannot redirect the bench onto "
-          "this repository's own live ledger",
-          isinstance(_scoped, dict)
-          and _scoped["totals"]["tokens"]
-          == _art["usage load"]["totals"]["tokens"]
-          and _scoped["totals"]["tokens"] > 0,
-          repr(_scoped is None))
-    # DRY, pinned rather than asserted in a comment: best-of-N has one definition,
-    # in _usage_bench. Two copies would let one take the mean.
-    #
-    # `not hasattr(M, "_time_best")`, not `"_time_best" not in globals()`. The
-    # claim is about RENDER-REPORT holding no second copy, and inline that was
-    # what `globals()` meant. From here `globals()` is this test file, which was
-    # never going to define `_time_best` under any circumstances - so the clause
-    # would be true forever and the half of the case that is actually load
-    # bearing would have quietly stopped asking anything.
-    _ua = _loader.load_script("_usage_bench.py", modname="usage_analytics_bench")
-    check("bn6 the report bench times with the ledger bench's harness rather "
-          "than a second copy - one definition of best-of-N, in one place",
-          callable(_ua._time_best) and not hasattr(M, "_time_best"))
-    # Exit code and the printed contract, at the smallest scale. Counted, not
-    # merely found: one timing line per phase plus the sum line.
-    import io
-
-    def _tmp_bench_dirs():
-        return set(d for d in os.listdir(tempfile.gettempdir())
-                   if d.startswith("render-report-bench-"))
-
-    _before_dirs = _tmp_bench_dirs()
-    _bbuf, _bout = io.StringIO(), sys.stdout
-    sys.stdout = _bbuf
-    try:
-        _brc = M._bench(scales=((3, 2),), repeats=2)
-    finally:
-        sys.stdout = _bout
-    _btext = _bbuf.getvalue()
-    _leftover = _tmp_bench_dirs() - _before_dirs
-    _blines = [ln for ln in _btext.splitlines() if " ms " in ln]
-    check("bn7 --bench exits 0 and prints, per phase, the size, a wall time in "
-          "ms and the derived per-row or per-task figure - the three things a "
-          "human needs in order to act on it",
-          _brc == 0 and "best of 2 runs" in _btext and "MINIMUM" in _btext
-          and "3 phases x 2 tasks" in _btext and "ledger rows" in _btext
-          and len(_blines) == len(M._BENCH_PER) + 1
-          and all(any(lbl in ln for ln in _blines) for lbl in M._BENCH_PER)
-          and all(("us/row" in ln or "us/task" in ln) for ln in _blines),
-          repr(_btext[:400]))
-    check("bn8 ...and it leaves no fixture behind - measured as the temp dirs "
-          "that appeared ACROSS the run, so a stale one from some other "
-          "process cannot fail this and a real leak cannot hide behind one",
-          _leftover == set(), repr(sorted(_leftover)))
-
 
     # --- tv: the test gate reaches the page, and stays out of a plan without it
     # THE NEGATIVE HALF FIRST, because it is what keeps every committed artifact

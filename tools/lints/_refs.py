@@ -120,6 +120,7 @@ if _anchor_dir not in sys.path:
     sys.path.insert(0, _anchor_dir)
 
 import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
+import _output_lints  # noqa: E402  (the lint half, development code)
 
 _output.install_path()
 
@@ -304,7 +305,7 @@ def known_suites(repo_root=None):
     for rel in (PLUGIN_REL + "/scripts", PLUGIN_REL + "/hooks", "tools/lints"):
         directory = os.path.join(root, rel.replace("/", os.sep))
         for _dir, _dirnames, filenames in os.walk(directory):
-            names.update(_output._test_name_for(name) for name in filenames
+            names.update(_output_lints._test_name_for(name) for name in filenames
                          if name.endswith((".py", ".sh")))
     return names
 
@@ -2062,9 +2063,9 @@ def sweep_glob_drift(repo_root=None):
 # THE NAMES STAY, as three aliases rather than three wrappers: this module's cases
 # call them, and a wrapper would be a second place for the argument order to be
 # wrong.
-_ignored_dirs = _output._ignored_dirs
-_is_ignored = _output._is_ignored
-_iter_docs = _output.kept_files
+_ignored_dirs = _output_lints._ignored_dirs
+_is_ignored = _output_lints._is_ignored
+_iter_docs = _output_lints.kept_files
 
 
 # --- published raw URLs -------------------------------------------------------
@@ -2259,7 +2260,7 @@ def _stamp_pages(root):
     # this file. A row per generated artifact is a hand list that grows with every
     # new one, and `EXCLUDED` already carries this same path for a DIFFERENT rule -
     # two tables naming one file for two reasons is how they come to disagree.
-    ignored, problem = _output._ignored_files(root)
+    ignored, problem = _output_lints._ignored_files(root)
     if problem is not None:
         return None, problem
     return _iter_docs(root, patterns, STAMP_EXT, drop=ignored), None
@@ -2614,14 +2615,6 @@ def screenshot_capture_drift(repo_root=None, ui=None):
 # --- cli ----------------------------------------------------------------------
 if __name__ == "__main__":
     import sys
-    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if selftest_requested(sys.argv[1:]):
-        # Answers rather than falling through to the docstring dump, which would
-        # exit 0 with no word about the flag. It deliberately does NOT print the
-        # `N/M cases passed` contract - that literal is how
-        # `_output.selftest_coverage()` tells an inline suite from a migrated one.
-        print("_refs.py has no inline --selftest; its cases moved to "
-              "tests/test__refs.py - run that file instead.")
-        raise SystemExit(0)
     print(__doc__.strip())

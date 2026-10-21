@@ -28,6 +28,8 @@ import _harness                                    # sets sys.path for scripts/ 
 import _output                                     # noqa: E402  (REPO_ROOT, SCRIPTS_DIR)
 from _output import safe_stdio                     # noqa: E402
 import _ui_theme as M                              # noqa: E402
+import _ui_theme_lints                              # noqa: E402  (the stylesheet lints)
+import _ui_theme_lints as L                          # noqa: E402
 import _manifest_vocab as _vocab                   # noqa: E402  (the words a label owes)
 
 
@@ -65,7 +67,7 @@ def _cases(check):
           and _c2.count("color-scheme") == M.TOKEN_CSS.count("color-scheme"))
     check("th5 a themed stylesheet still passes the sheet's own lints - parity "
           "and color-scheme are properties of the OUTPUT, not of the default",
-          not M.theme_asymmetric_vars(_c2) and not M.themes_missing_color_scheme(_c2))
+          not _ui_theme_lints.theme_asymmetric_vars(_c2) and not _ui_theme_lints.themes_missing_color_scheme(_c2))
     check("th6 a single-valued token (shape/type) is written once, and a $dark "
           "on it is simply not asked for",
           "$dark" not in M.DEFAULT_THEME["--radius"]
@@ -137,7 +139,7 @@ def _cases(check):
           and _r["theme"]["--accent"]["$value"] == "#222222")
     check("th17 the compiled sheet carries it, and still passes the lints",
           "--accent:#222222" in M.token_css_for(_proj, {}, _home)[0]
-          and not M.theme_asymmetric_vars(M.token_css_for(_proj, {}, _home)[0]))
+          and not _ui_theme_lints.theme_asymmetric_vars(M.token_css_for(_proj, {}, _home)[0]))
     check("th18 ui.theme naming the built-in short-circuits the search",
           M.resolve_theme(_proj, {"ui": {"theme": "slate-teal"}}, _home)["source"]
           == "default")
@@ -180,8 +182,8 @@ def _cases(check):
           or "--t-3:.8166rem" in _cmp)
     check("th25 a scaled sheet is still a sheet - the lints hold, and nothing "
           "but the scaled tokens moved",
-          not M.theme_asymmetric_vars(_cmp)
-          and not M.themes_missing_color_scheme(_cmp)
+          not _ui_theme_lints.theme_asymmetric_vars(_cmp)
+          and not _ui_theme_lints.themes_missing_color_scheme(_cmp)
           # Read from the default rather than spelled: density scales spacing and
           # type, and the point here is that a COLOUR is untouched by it. Spelling
           # the hex made this go red for the AA token move, which is not what it
@@ -237,13 +239,13 @@ def _cases(check):
           "toggle, or one of the two paths silently keeps light colours",
           "prefers-color-scheme:dark" in M.TOKEN_CSS
           and ':root[data-theme="dark"]' in M.TOKEN_CSS)
-    check("no token is declared in only one theme: %r" % (M.theme_asymmetric_vars(M.TOKEN_CSS),),
-          not M.theme_asymmetric_vars(M.TOKEN_CSS))
+    check("no token is declared in only one theme: %r" % (_ui_theme_lints.theme_asymmetric_vars(M.TOKEN_CSS),),
+          not _ui_theme_lints.theme_asymmetric_vars(M.TOKEN_CSS))
     # The toggle has to move the NATIVE controls too, and tokens cannot reach them.
     check("every explicit theme restates color-scheme, so the toggle moves the "
           "checkboxes, selects, spinners, date pickers and scrollbars with it: %r"
-          % (M.themes_missing_color_scheme(M.TOKEN_CSS),),
-          not M.themes_missing_color_scheme(M.TOKEN_CSS))
+          % (_ui_theme_lints.themes_missing_color_scheme(M.TOKEN_CSS),),
+          not _ui_theme_lints.themes_missing_color_scheme(M.TOKEN_CSS))
     check("both directions are pinned, not just dark",
           "color-scheme:dark" in M.TOKEN_CSS and "color-scheme:light}" in M.TOKEN_CSS)
     check("bare :root still follows the OS when nobody has chosen",
@@ -251,46 +253,46 @@ def _cases(check):
     # The lint's own two ways of being wrong. It caught nothing for four releases
     # because there was nothing like it; these prove it can fail and can pass.
     check("the lint detects a theme with no color-scheme",
-          M.themes_missing_color_scheme(
+          _ui_theme_lints.themes_missing_color_scheme(
               ':root{color-scheme:light dark}\n:root[data-theme="dark"]{--bg:#000}')
           == ["dark"])
     check("the lint accepts a theme satisfied by a DIFFERENT block, which is how "
           "the panel adds its own roles without restating the property",
-          M.themes_missing_color_scheme(
+          _ui_theme_lints.themes_missing_color_scheme(
               ':root[data-theme=dark]{color-scheme:dark}\n'
               ':root[data-theme=dark]{--ok:#0f0}') == [])
     check("a :not() negation cannot satisfy a theme, but it does NAME one - which "
           "is the only mention explicit-light gets, since light needs no colours",
-          M.themes_missing_color_scheme(
+          _ui_theme_lints.themes_missing_color_scheme(
               '@media (prefers-color-scheme:dark){:root:not([data-theme=light])'
               '{--bg:#000}}') == ["light"])
     check("...and naming it is enough for a pin elsewhere to answer it",
-          M.themes_missing_color_scheme(
+          _ui_theme_lints.themes_missing_color_scheme(
               ':root[data-theme=light]{color-scheme:light}\n'
               '@media (prefers-color-scheme:dark){:root:not([data-theme=light])'
               '{--bg:#000}}') == [])
     check("a print sheet cannot vouch for a SCREEN theme - the report's forces a "
           "light page for :root[data-theme=dark], and counting it hid the defect",
-          M.themes_missing_color_scheme(
+          _ui_theme_lints.themes_missing_color_scheme(
               ':root[data-theme="dark"]{--bg:#000}\n'
               '@media print{:root,:root[data-theme="dark"]{color-scheme:light}}')
           == ["dark"])
     # An escape that Python ate is invisible in the source and visible on screen.
     check("no escape was eaten before the browser saw it: %r"
-          % (M.mangled_css_escapes(M.TOKEN_CSS),),
-          not M.mangled_css_escapes(M.TOKEN_CSS))
+          % (_ui_theme_lints.mangled_css_escapes(M.TOKEN_CSS),),
+          not _ui_theme_lints.mangled_css_escapes(M.TOKEN_CSS))
     check("the escape lint catches the tick that shipped mangled - the octal "
           "residue and the bell, which are the two halves of one typo",
-          M.mangled_css_escapes('.a::before{content:"¹3\x070"}')
-          and M.mangled_css_escapes('.a::before{content:"¹3"}')
-          and M.mangled_css_escapes('.a{--x:"\x07"}'))
+          _ui_theme_lints.mangled_css_escapes('.a::before{content:"¹3\x070"}')
+          and _ui_theme_lints.mangled_css_escapes('.a::before{content:"¹3"}')
+          and _ui_theme_lints.mangled_css_escapes('.a{--x:"\x07"}'))
     check("...and passes the doubled spelling that actually reaches the browser",
-          M.mangled_css_escapes('.a::before{content:"\\2713\\a0"}') == [])
+          _ui_theme_lints.mangled_css_escapes('.a::before{content:"\\2713\\a0"}') == [])
     check("a glyph written literally is not a broken escape: ✓ and — are above "
           "the range an octal escape can reach, so they are left alone",
-          M.mangled_css_escapes('.a::before{content:"✓—"}') == [])
-    check("no declaration is left unterminated: %r" % (M.unterminated_css_decls(M.TOKEN_CSS),),
-          not M.unterminated_css_decls(M.TOKEN_CSS))
+          _ui_theme_lints.mangled_css_escapes('.a::before{content:"✓—"}') == [])
+    check("no declaration is left unterminated: %r" % (_ui_theme_lints.unterminated_css_decls(M.TOKEN_CSS),),
+          not _ui_theme_lints.unterminated_css_decls(M.TOKEN_CSS))
     check("braces balance", M.TOKEN_CSS.count("{") == M.TOKEN_CSS.count("}"))
     # The sticky stack is geometry both surfaces pin against.
     check("the sticky stack is declared once, and derives",
@@ -323,20 +325,8 @@ def _cases(check):
           and M.contrast_ratio("#0d9488", "#ffffff")
           == M.contrast_ratio("#ffffff", "#0d9488"))
 
-    _sheets = M.themed_stylesheets()
-    _audits = [(name, M.contrast_audit(css)) for name, css in _sheets]
-    # THE VACUITY GUARD. "No violations" over no pairs is true of every palette
-    # ever written, and the way to get there by accident is one line: the panel's
-    # sheet carries a MARKER where the token layer goes, so a walk over the raw
-    # file resolves nothing at all and reports a clean bill of health.
-    check("ct2 the walk found pairs on both surfaces (%s) and the grounds it "
-          "derived are the page's, not a guess (%s) - a comparison over zero "
-          "pairs passes for any palette, which is how this check would lie"
-          % (", ".join("%s %d" % (n, a["pairs"]) for n, a in _audits),
-             _audits[0][1]["grounds"]),
-          all(a["pairs"] > 40 for _n, a in _audits)
-          and all(a["grounds"] == ["--bg", "--surface", "--surface-2"]
-                  for _n, a in _audits))
+    _sheets = L.themed_stylesheets()
+    _audits = [(name, L.contrast_audit(css)) for name, css in _sheets]
     check("ct3 the token layer really is in front of each sheet - the panel's "
           "marker is in its first part and gone from the assembled string, so "
           "ct2's pair count is over resolved colours rather than over var() "
@@ -354,134 +344,6 @@ def _cases(check):
           "guessed (%s)"
           % ", ".join("%s %d" % (n, a["unresolved"]) for n, a in _audits),
           all(a["unresolved"] > 0 for _n, a in _audits))
-
-    # The derivations, each proven in BOTH directions on a fixture. A predicate
-    # that only ever says yes is not a predicate.
-    _light = ":root{--bg:#ffffff;--faint:#dddddd;--ink:#767676;--mid:#8c8c8c}"
-    _ground = _light + ".page{padding:1rem;background:var(--bg)}"
-    check("ct6 a ground is DERIVED: a rule that paints a background, holds "
-          "content (padding) and sets no ink of its own is one; the same rule "
-          "with a fixed height is a swatch, and the same rule that sets its own "
-          "colour hands nothing down",
-          M.contrast_audit(_ground)["grounds"] == ["--bg"]
-          and M.contrast_audit(
-              _light + ".page{padding:1rem;height:2rem;background:var(--bg)}"
-          )["grounds"] == []
-          and M.contrast_audit(
-              _light + ".page{padding:1rem;background:var(--bg);color:var(--ink)}"
-          )["grounds"] == [])
-    check("ct7 1.4.3 reads the co-declared pair when there is one and falls "
-          "back to the grounds when there is not - and passes the same colours "
-          "at a ratio that clears",
-          M.contrast_audit(_ground + ".a{color:var(--faint);"
-                           "background:var(--bg)}")["violations"]
-          and M.contrast_audit(_ground + ".a{color:var(--faint)}")["violations"]
-          and not M.contrast_audit(_ground + ".a{color:var(--ink)}")["violations"])
-    check("ct8 large text takes the 3:1 floor and body text does not, so the "
-          "same colour is a finding at one size and fine at the other - #8c8c8c "
-          "measures %.2f:1, which is exactly between the two floors"
-          % M.contrast_ratio("#8c8c8c", "#ffffff"),
-          M.contrast_audit(_ground + ".a{color:var(--mid);font-size:.9rem}"
-                           )["violations"]
-          and not M.contrast_audit(_ground + ".a{color:var(--mid);"
-                                   "font-size:1.6rem}")["violations"]
-          and not M.contrast_audit(_ground + ".a{color:var(--mid);"
-                                   "font-size:1.25rem;font-weight:700}"
-                                   )["violations"])
-    check("ct9 1.4.11 reaches a CONTROL boundary and not a decorative one - the "
-          "same token, the same ratio, and only the rule that paints something "
-          "a reader operates is a finding. A lint that failed both would have "
-          "been routed around by dragging every hairline to 3:1",
-          M.contrast_audit(_ground + "button.c{border:1px solid var(--faint)}"
-                           )["violations"]
-          and not M.contrast_audit(_ground + ".card{border:1px solid "
-                                   "var(--faint)}")["violations"]
-          # ...and the subject is the last compound: the BAR around a select is
-          # not a control just because the select inside it is one.
-          and not M.contrast_audit(
-              _ground + ".bar select:focus{outline:none}"
-              + ".bar{border:1px solid var(--faint)}")["violations"])
-    check("ct10 a border the colour of its own fill is not a boundary - what "
-          "identifies a solid button is the FILL against the page, so that is "
-          "the pair judged, and it is judged rather than waved through",
-          M.contrast_audit(
-              _ground + "button.p{background:var(--faint);"
-              "border-color:var(--faint)}")["violations"]
-          and all("--faint on --bg" in v for v in M.contrast_audit(
-              _ground + "button.p{background:var(--faint);"
-              "border-color:var(--faint)}")["violations"]))
-
-    # The exemptions: the legitimate shape passes, and the exemption cannot be
-    # used as a route around the guard.
-    _dis = _ground + 'button.c[aria-disabled="true"]{border:1px solid var(--faint)}'
-    check("ct11 a disabled control is excused with the reason attached, and the "
-          "SAME token on the SAME element without the disabled state is a "
-          "finding - the exemption follows the state, not the token. Excused "
-          "once per theme (the fixture declares one, so both read the same), "
-          "counted rather than merely present",
-          not M.contrast_audit(_dis)["violations"]
-          and len(M.contrast_audit(_dis)["exempt"]) == 2
-          # the excused line carries WHAT was excused and WHY, not just a count
-          and all(w in M.contrast_audit(_dis)["exempt"][0]
-                  for w in ("1.4.11", "--faint", "--bg", "disabled"))
-          and M.contrast_audit(_ground + "button.c{border:1px solid "
-                               "var(--faint)}")["violations"])
-    # THE ROUTE AROUND THE GUARD, and the shape the first version shipped. It
-    # deduplicated by pair as it walked, so the first rule to produce a pair
-    # decided it for the whole sheet - and the panel's disabled-button rule sits
-    # ABOVE the fields, so its correct exemption silenced nine controls below it.
-    check("ct12 an excused rule cannot silence the same pair somewhere else: one "
-          "disabled control and one live control wearing the same border is a "
-          "FINDING, not an exemption",
-          M.contrast_audit(_dis + "button.d{border:1px solid var(--faint)}"
-                           )["violations"]
-          and not M.contrast_audit(
-              _dis + "button.d{border:1px solid var(--faint)}")["exempt"])
-    check("ct13 a placeholder is excused and the same colour on the field "
-          "itself is not - a hint about an empty field is quieter on purpose, "
-          "and raising it makes an empty field look filled",
-          not M.contrast_audit(_ground + "input.q::placeholder{color:var(--faint)}"
-                               )["violations"]
-          and M.contrast_audit(_ground + "input.q{color:var(--faint)}")["violations"])
-    check("ct14 an exemption is a claim about the sheet and decays like one: "
-          "over the real sheets it names nothing (%s), over an empty sheet it "
-          "names every entry, and a TOKEN entry naming something no rule "
-          "declares is reported too"
-          % (M.contrast_exemption_problems("".join(c for _n, c in _sheets)) or "-",),
-          not M.contrast_exemption_problems("".join(c for _n, c in _sheets))
-          and len(M.contrast_exemption_problems("")) == len(M.CONTRAST_EXEMPTIONS)
-          and M.contrast_exemption_problems(
-              _light, (("token", "--gone", "1.4.11", "no reason survives it"),))
-          and not M.contrast_exemption_problems(
-              _light, (("token", "--faint", "1.4.11", "declared right there"),)))
-
-    # The two trap doors, each of which produced a wrong NUMBER rather than a
-    # missing one - which is worse, and is why both are pinned.
-    _dark = (":root{--bg:#ffffff;--ink:#111111}"
-             '@media (prefers-color-scheme:dark){:root:not([data-theme="light"])'
-             "{--bg:#000000;--ink:#eeeeee}}"
-             ".page{padding:1rem;background:var(--bg)}.a{color:var(--ink)}")
-    check("ct15 @media print is cut out before the walk: the report's print "
-          "sheet re-declares the DARK tokens as a white page, and reading it "
-          "measures a palette nobody sees. Renaming that block to @media screen "
-          "makes the same fixture fail, which is what proves the cut is doing it",
-          not M.contrast_audit(
-              _dark + '@media print{:root,:root[data-theme="dark"]'
-              "{--bg:#ffffff}}")["violations"]
-          and M.contrast_audit(
-              _dark + '@media screen{:root,:root[data-theme="dark"]'
-              "{--bg:#ffffff}}")["violations"])
-    check("ct16 a colour written as a FUNCTION is skipped and counted, never "
-          "half-parsed: reading the first var() out of a color-mix would report "
-          "the unmixed colour's ratio, and a wrong number is worse than a "
-          "missing one",
-          not M.contrast_audit(
-              _ground + ".a{color:color-mix(in srgb,var(--faint) 50%,white)}"
-          )["violations"]
-          and M.contrast_audit(
-              _ground + ".a{color:color-mix(in srgb,var(--faint) 50%,white)}"
-          )["unresolved"] == 1
-          and M.contrast_audit(_ground + ".a{color:var(--faint)}")["violations"])
 
     # The tokens the audit moved, pinned by the PROPERTY that made each value
     # right rather than by the hex, so a future retune is judged, not blocked.
@@ -546,28 +408,6 @@ def _cases(check):
           M.label(None) == "" and M.label("") == "")
     check("the flat map covers task AND bug statuses",
           set(M.STATUS) <= set(M.LABELS) and set(M.BUG_STATUS) <= set(M.LABELS))
-
-    # --- ua: the ui/ read both surfaces share --------------------------------
-    # _report_ui and _panel_ui are NOT imported here to check this end to end:
-    # they sit a layer above, and reaching up for a test is the one shortcut
-    # _deps.layer_violations() would be right to fail. These cases stand on
-    # their own, against the real ui/ directory and against fixtures.
-    # Derived, not restated: this tuple used to be a second copy of the same
-    # list, and splitting report.js into ordered parts turned it red along
-    # with two others. `ua_decl` below is what keeps the one copy honest.
-    _ASSETS = M.UI_ASSETS
-    # `os.path.dirname(os.path.abspath(__file__))` is what this said inline, and
-    # it meant "the directory `_ui_theme.py` sits in". From `tests/` that clause
-    # is simply FALSE - `UI_DIR` is not beside this file - and a case that has to
-    # be edited to keep passing is a case that must be edited to say the same
-    # thing about the SUBJECT rather than about wherever the suite happens to
-    # live. `_harness.SCRIPTS_DIR` names it directly and cannot follow the test
-    # file if the test file moves again.
-    check("ua1 UI_DIR is the scripts/ui/ directory beside this module, and it "
-          "holds every asset the two surfaces assemble",
-          os.path.basename(M.UI_DIR) == "ui"
-          and M.UI_DIR == os.path.join(_harness.SCRIPTS_DIR, "ui")
-          and all(os.path.isfile(os.path.join(M.UI_DIR, n)) for n in _ASSETS))
     check("ua2 mutation proof: the same isfile test says NO to a name that is "
           "not in ui/, so the all() above is a result rather than a vacuous "
           "truth over an empty or wrong directory",
@@ -600,23 +440,6 @@ def _cases(check):
     check("ua5 read_asset defaults to UI_DIR and is byte for byte the read both "
           "surfaces already do, so adopting it changes nothing on screen",
           bool(_direct) and M.read_asset("report-css/shell.css") == _direct)
-
-    # unreadable_assets. Two failure shapes, and each proves a different half.
-    _notutf8 = "not-utf8.css"
-    with io.open(os.path.join(_uidir, _notutf8), "wb") as _fh:
-        _fh.write(b":root{--a:'\xff\xfe'}\n")
-    check("ua9 unreadable_assets is silent about the real assets - all five "
-          "exist and decode as utf-8 (%r)" % (M.unreadable_assets(_ASSETS),),
-          not M.unreadable_assets(_ASSETS))
-    check("ua10 ...and names one that is not there, in the order given - so the "
-          "empty list above is an answer, not a no-op",
-          M.unreadable_assets(("report-css/shell.css", "nope.css",
-                               "report/page-state.js"))
-          == ["nope.css"])
-    check("ua11 ...and one that EXISTS and does not decode as utf-8, while the "
-          "CRLF fixture beside it decodes fine. A check written as "
-          "os.path.isfile would pass ua10 and still miss this half",
-          M.unreadable_assets((_crlf, _notutf8), _uidir) == [_notutf8])
     _sh.rmtree(_uidir, ignore_errors=True)
 
 
@@ -627,15 +450,6 @@ def _cases(check):
           "sorting these %d names would change what ships" % (len(_rc),),
           len(_rc) >= 5 and list(_rc) != sorted(_rc)
           and _rc[0].endswith("shell.css"))
-    check("cs2 every declared part exists and every report-css asset is "
-          "declared - a part on disk that the sheet does not join is a feature "
-          "that silently never ships",
-          set(_rc) == set(n for n in M.UI_ASSETS if n.startswith("report-css/")))
-    _shipped = M.TOKEN_CSS + "".join(M.read_asset(_n) for _n in _rc)
-    check("cs3 the sheet the theme lints audit IS the sheet the page receives, "
-          "byte for byte - auditing a differently-ordered join would clear a "
-          "palette nobody serves",
-          dict(M.themed_stylesheets())["report"] == _shipped)
 
     # The panel's sheet, same three claims. It is a SEPARATE tuple with a
     # separate failure: the report's parts could be perfectly declared while the
@@ -647,21 +461,12 @@ def _cases(check):
           "names would change what ships" % (len(_pc),),
           len(_pc) >= 5 and list(_pc) != sorted(_pc)
           and _pc[0].endswith("tokens-and-reset.css"))
-    check("cs5 every declared panel part exists and every panel-css asset is "
-          "declared - a part on disk that the sheet does not join is a feature "
-          "that silently never ships",
-          set(_pc) == set(n for n in M.UI_ASSETS if n.startswith("panel-css/")))
     _panel_join = "".join(M.read_asset(_n) for _n in _pc)
     check("cs6 the token marker sits in the join EXACTLY once (got %d) - a "
           "second copy in another part would splice the whole token layer in "
           "twice, and every var() would still resolve, so nothing else here "
           "would go red" % (_panel_join.count("/*__THEME_TOKENS__*/"),),
           _panel_join.count("/*__THEME_TOKENS__*/") == 1)
-    check("cs7 the panel sheet the theme lints audit IS the one the browser "
-          "receives, byte for byte - the marker replaced, the parts in "
-          "declared order",
-          dict(M.themed_stylesheets())["panel"]
-          == _panel_join.replace("/*__THEME_TOKENS__*/", M.TOKEN_CSS))
 
 
     # --- a comment that names a function is a claim that the function exists ---

@@ -57,6 +57,7 @@ import tempfile
 import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _help_lints  # noqa: E402  (the lint half, development code)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _help                                       # noqa: E402  (as panel-server imports it)
@@ -352,7 +353,7 @@ def _cases(check):
     # The drawer prints these one after the other under two headings. Byte-equal
     # is not two voices, it is the same sentence twice — and it is the shape of
     # the duplication this whole endpoint exists to avoid.
-    _cfgfields = _help.config_fields()
+    _cfgfields = _help_lints.config_fields()
     _dupe = [p for p, t in M.FIELD_HELP.items()
              if (_help.lookup(_cfgfields, p) or {}).get("description") == t]
     check("no panel note is word-for-word the schema's own sentence: %r" % _dupe,

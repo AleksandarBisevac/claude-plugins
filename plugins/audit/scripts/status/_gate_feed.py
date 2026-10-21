@@ -449,16 +449,8 @@ def review_asks(manifest):
 
 
 if __name__ == "__main__":
-    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if selftest_requested(sys.argv[1:]):
-        # Answered rather than falling through to the library notice below: CI
-        # runs `--selftest` over every file here. It deliberately does NOT print
-        # the `N/M cases passed` contract - that literal is how
-        # `_output.selftest_coverage()` tells an inline suite from a migrated one.
-        print("_gate_feed.py has no inline --selftest; its cases moved to "
-              "tests/test__gate_feed.py - run that file instead.")
-        raise SystemExit(0)
     if "--list-offered" in sys.argv[1:]:
         # THE ONE PRINTER, so nothing else retypes these sentences. `commands/
         # init.md`'s recon step and `README.md` both point here rather than
@@ -472,4 +464,4 @@ if __name__ == "__main__":
                 print("  runs:  no - the sign-off reviewer reads it; it is "
                       "never a gate command")
         raise SystemExit(0)
-    print("This is a library module; run with --selftest to exercise it.")
+    print(__doc__.strip())

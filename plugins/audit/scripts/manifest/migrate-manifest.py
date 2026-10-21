@@ -468,15 +468,6 @@ def parse_args(argv):
 
 
 def main(argv):
-    if _output.selftest_requested(argv):
-        # Kept, rather than left to fall through to the usage error below: every
-        # other file here still answers `--selftest`, so silence or an exit 2 would
-        # read as a broken flag rather than as a moved suite. It deliberately does
-        # NOT print the `N/M cases passed` contract - that string is how
-        # `_output.selftest_coverage()` tells an inline suite from a migrated one.
-        print("migrate-manifest.py has no inline --selftest; its cases moved to "
-              "tests/test_migrate_manifest.py - run that file instead.")
-        return 0
     opts, err = parse_args(argv)
     if opts is None:
         sys.stderr.write("%s\n%s\n" % (err, _USAGE))

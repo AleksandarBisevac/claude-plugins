@@ -1307,12 +1307,4 @@ def _append_rows(data, rows):
 
 
 if __name__ == "__main__":
-    if "--selftest" in sys.argv:
-        # Answered rather than fallen through to main(), which would block on stdin
-        # waiting for a hook payload that is never coming. It deliberately does NOT
-        # print the `N/M cases passed` contract - that string is how
-        # `_output.selftest_coverage()` tells an inline suite from a migrated one.
-        print("journal-writes.py has no inline --selftest; its cases moved to "
-              "tests/test_journal_writes.py - run that file instead.")
-        sys.exit(0)
     main()

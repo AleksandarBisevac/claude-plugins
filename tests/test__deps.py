@@ -52,6 +52,7 @@ import sys
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _output                                     # noqa: E402  (as _deps imports it)
+import _output_lints  # noqa: E402  (the lint half, development code)
 import _deps as M                                  # noqa: E402
 import _evidence_io as _ev                         # noqa: E402  (follower_line)
 
@@ -1858,7 +1859,7 @@ def _cases(check):
     # the second term is a PLAIN recursive walk for `.md` under the plugin, which
     # needs no `.gitignore` and so cannot fail the way the derivation can. A
     # derivation collapsing is the failure a floor derived from it cannot see.
-    _dpn_scan = M._output.prose_scan_set((".md",))
+    _dpn_scan = _output_lints.prose_scan_set((".md",))
     _dpn_plain = 0
     for _droot, _ddirs, _dfiles in os.walk(M._output.PLUGIN_ROOT):
         _ddirs[:] = [_d for _d in _ddirs if _d != "__pycache__"]
@@ -1868,11 +1869,11 @@ def _cases(check):
           "found under the plugin by a walk that reads no `.gitignore`; the set is "
           "%s"
           % (len(_dpn_scan["paths"]), _dpn_scan["candidates"],
-             M._output.scan_floor(_dpn_scan["candidates"]), _dpn_plain,
+             _output_lints.scan_floor(_dpn_scan["candidates"]), _dpn_plain,
              _dpn_scan["basis"]),
           _dpn_scan["problem"] is None
           and len(_dpn_scan["paths"])
-              >= M._output.scan_floor(_dpn_scan["candidates"])
+              >= _output_lints.scan_floor(_dpn_scan["candidates"])
           and _dpn_scan["candidates"] > _dpn_plain)
     # THE THREE DOCUMENTS THAT USED TO BE THE WHOLE LIST, now the seed of a
     # BLINDNESS check rather than the input. Each claims to be a definition of how
@@ -1937,9 +1938,9 @@ def _cases(check):
         # Tracked in the index and deleted on disk: not a document to read.
         os.remove(os.path.join(_tg_repo, "gone.md"))
         _tg_hits = M.doc_prose_numbers(repo_root=_tg_repo)
-        _tg_scan = _output.prose_scan_set((".md",), _tg_repo)
+        _tg_scan = _output_lints.prose_scan_set((".md",), _tg_repo)
         _ex_hits = M.doc_prose_numbers(repo_root=_tg_export)
-        _ex_scan = _output.prose_scan_set((".md",), _tg_export)
+        _ex_scan = _output_lints.prose_scan_set((".md",), _tg_export)
         _tg_found = sorted(set(h[0] for h in _tg_hits))
         _ex_found = sorted(set(h[0] for h in _ex_hits))
         check("doc_prose_numbers reads only tracked files when git can answer, and "
@@ -1959,7 +1960,7 @@ def _cases(check):
         with open(os.path.join(_tg_repo, "sub", ".gitignore"), "w",
                   encoding="utf-8") as fh:
             fh.write("ignored/\n")
-        _tg_inner = _output.prose_scan_set((".md",), os.path.join(_tg_repo, "sub"))
+        _tg_inner = _output_lints.prose_scan_set((".md",), os.path.join(_tg_repo, "sub"))
         check("dpn8 a directory inside a work tree is not answered with the outer "
               "repository's index: the scan of it falls back to the derivation, "
               "names why, and still reads the document under it: %r %r"
@@ -2444,7 +2445,7 @@ def _cases(check):
     _cs_missing = [p for p, _w in _cs_rows
                    if not os.path.exists(os.path.join(_output.REPO_ROOT,
                                                        p.replace("/", os.sep)))]
-    _cs_declared, _cs_gi_problem = _output._ignored_files(_output.REPO_ROOT)
+    _cs_declared, _cs_gi_problem = _output_lints._ignored_files(_output.REPO_ROOT)
     if _cs_gi_problem is not None:
         _cs_dead = list(_cs_missing)
         _cs_dead_why = ("git could not be asked whether the missing path(s) "
@@ -2462,11 +2463,11 @@ def _cases(check):
           % (_cs_dead_why, _cs_bad + _cs_dead),
           not _cs_bad and not _cs_dead
           and len(_cs_rows) == len(set(p for p, _w in _cs_rows))
-          and _output.prose_scan_exemption(
+          and _output_lints.prose_scan_exemption(
                   "tests/test__deps.py", _cs_rows) is not None
-          and _output.prose_scan_exemption(
+          and _output_lints.prose_scan_exemption(
                   "tests/test__output.py", _cs_rows) is None
-          and _output.prose_scan_exemption("CHANGELOG.md", _cs_rows) is not None)
+          and _output_lints.prose_scan_exemption("CHANGELOG.md", _cs_rows) is not None)
 
 
     # --- the ONE recorded layer debt, and whether its REASON still holds ----------

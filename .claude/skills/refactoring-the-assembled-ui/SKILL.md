@@ -289,7 +289,7 @@ Rules going forward:
   option:
 
   1. add the part to `plugins/audit/scripts/ui/shared/`, at column 0;
-  2. list it in `_ui_theme.UI_ASSETS` (sorted) — nothing checks the list against the directory, so
+  2. list it in `_ui_theme_lints.UI_ASSETS` (sorted) — nothing checks the list against the directory, so
      a part left out assembles into no page;
   3. add it to **both** `_report_ui._SCRIPT_PARTS` and `_panel_ui._JS_PARTS`, before every
      surface part — a case in each assembly suite asserts that precedence, which is what
@@ -378,7 +378,7 @@ node tools/capture-screenshots.mjs --check
 node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html
 ```
 
-`_ui_theme.py`'s five lints — undeclared vars, unterminated declarations, theme asymmetry, mangled
+`_ui_theme_lints.py`'s five lints — undeclared vars, unterminated declarations, theme asymmetry, mangled
 escapes, missing `color-scheme` — all run against the **assembled** string. Keep assembling before
 linting; a part that is valid alone proves nothing.
 

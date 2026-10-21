@@ -9,7 +9,7 @@ file lives inside a submodule, `buildCommands` naming a runner that is not insta
 metering writing nothing. The README covered these as Troubleshooting prose, which
 is help you can only find once you already know the symptom.
 
-    audit-doctor.py [--project DIR] [--json] [--deep] [--selftest]
+    audit-doctor.py [--project DIR] [--json] [--deep]
 
 It reuses the checks that already exist rather than reimplementing them —
 `_config_rules.validate_config`, `_manifest_rules.validate`,
@@ -399,14 +399,6 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if selftest_requested(sys.argv[1:]):
-        # Answers rather than falling through to `main`, which would diagnose the
-        # current directory and exit on its verdict. It deliberately does NOT
-        # print the `N/M cases passed` contract - that literal is how
-        # `_output.selftest_coverage()` tells an inline suite from a migrated one.
-        print("audit-doctor.py has no inline --selftest; its cases moved to "
-              "tests/test_audit_doctor.py - run that file instead.")
-        raise SystemExit(0)
     raise SystemExit(main(sys.argv[1:]))

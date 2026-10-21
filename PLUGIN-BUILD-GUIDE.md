@@ -64,9 +64,19 @@ claude-plugins/                           # this repo (personal, public)
     test_gen_demo_manifest.py
     test_gen_demo_usage.py
     test_validate_config.py
-  tools/lints/                            # development code the installed plugin does not carry: the two lints that read the whole repository
+  tools/lints/                            # development code the installed plugin does not carry: the lints that read the whole repository
     _deps.py                              # the module layer table, checked against the real import graph every run
     _refs.py                              # what one file claims about another: script paths stat'd, and the document link graph
+    _output_lints.py                      # the dialect lints, the preamble check, the prose-number scan and the coverage classifier that were `_output.py`'s second half
+    _ui_theme_lints.py                    # the contrast audit, the stylesheet lints and the asset-read checks that were `_ui_theme.py`'s second half
+    _help_lints.py                        # the drift checks between the help schema and what it describes
+    _config_rules_lints.py                # the drift checks between the config vocabulary and the three places that restate it
+  tools/demo/                             # the two synthetic fixtures the screenshots and CI are built from, and their shared cast
+    _demo_cast.py                         # the identities both fixtures attribute to, so the owner join matches
+    gen-demo-manifest.py                  # synthetic LARGE manifest fixture for demos/screenshots/CI
+    gen-demo-usage.py                     # synthetic usage ledger fixture, consistent with a real manifest
+  tools/bench-report.py                   # the report benchmark that left `render-report.py --bench`
+  tools/_usage_bench.py                   # the timer over the analytics passes, and the fixture it times them on
 .claude-plugin/
     marketplace.json                      # marketplace listing (one plugin: "audit")
   plugins/
@@ -206,7 +216,6 @@ claude-plugins/                           # this repo (personal, public)
           _usage_economics.py             # what the work cost: unit economics, cost bands, budgets, retried vs blocked
           _usage_routing.py               # cost per task per model WITHIN a risk band, and the advice that survives its gates
           _usage_coverage.py              # the ledger seen whole: attribution coverage, the 12-month roll-up
-          _usage_bench.py                 # the timer over those four passes, and the fixture it times them on
           usage_ledger.py                 # token-usage metering core: transcript scan, dedup, attribution
           audit-usage.py                  # /audit:usage: token spend, attributed
         config/                           # the config domain: the config file's validator and the self-description over both schemas
@@ -257,10 +266,6 @@ claude-plugins/                           # this repo (personal, public)
           _panel_usage.py                 # the Usage tab's facts, and the one manifest read per request
           _panel_state.py                 # the panel's READ side: everything GET /api/* answers with
           _panel_write.py                 # the panel's WRITE side: everything PUT /api/* actually does
-        demo/                             # the demo domain: the two synthetic fixtures the screenshots and CI are built from
-          _demo_cast.py                   # the identities both fixtures attribute to, so the owner join matches
-          gen-demo-manifest.py            # synthetic LARGE manifest fixture for demos/screenshots/CI
-          gen-demo-usage.py               # synthetic usage ledger fixture, consistent with a real manifest
         ui/                               # four directories of ordered parts (report/, report-css/, panel/, panel-css/) + panel.html, no .py
       templates/
         audit.config.example.json         # per-repo hook config template
@@ -325,7 +330,6 @@ L3:
   _claude_home -> _output
   _cli_fmt -> _output
   _commit_trail -> _output
-  _demo_cast -> _output
   _filed_returns -> _machine_paths, _output
   _fmt -> _output
   _id_refs -> _output
@@ -350,7 +354,7 @@ L4:
   _doctor_report -> _loader, _output
   _evidence_io -> _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_vocab, _output, _usage_core, _utc_stamp, _worktrees
   _gate_feed -> _journal_io, _loader, _output, _usage_core
-  _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
+  _help -> _areas, _journal_io, _loader, _output, _policy, _ui_theme
   _id_shape -> _branch, _manifest_io, _manifest_vocab, _output
   _manifest_ado -> _ado_conventions, _ado_fields, _manifest_vocab, _output
   _manifest_crossrefs -> _ado_parent, _id_refs, _json_schema, _manifest_io, _manifest_vocab, _output, _priority
@@ -380,7 +384,6 @@ L5:
   _panel_discovery -> _help, _manifest_io, _output, _policy
   _panel_paths -> _config_rules, _loader, _manifest_io, _output, _status_facts
   _panel_settings -> _config_rules, _loader, _output
-  _usage_bench -> _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
   _usage_viz -> _fmt, _output, _report_html
   _verdict_binding -> _evidence_io, _journal_io, _manifest_io, _output, _tree_stamp
   usage_ledger -> _manifest_io, _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
@@ -437,8 +440,6 @@ L9:
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
-  gen-demo-manifest -> _claude_home, _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
-  gen-demo-usage -> _claude_home, _demo_cast, _loader, _output
   import-evidence -> _claude_home, _evidence_io, _journal_io, _loader, _manifest_io, _output, _panel_write
   integrate-task -> _claude_home, _evidence_io, _invariants, _journal_io, _loader, _manifest_io, _output, _task_outputs, _wave, _worktrees
   manage-worktrees -> _branch, _claude_home, _manifest_io, _output, _utc_stamp, _worktrees
@@ -451,7 +452,7 @@ L9:
   read-ado-links -> _ado_drift, _ado_tracked, _manifest_io, _output
   record-outside-run -> _claude_home, _evidence_io, _journal_io, _manifest_io, _output
   record-risk-confirmation -> _claude_home, _journal_io, _manifest_io, _output
-  render-report -> _areas, _evidence_io, _evidence_view, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
+  render-report -> _areas, _evidence_io, _evidence_view, _fmt, _invariants, _live_copy, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output, _panel_write
   repair-tests-add -> _journal_io, _locks, _manifest_io, _manifest_rules, _output, _panel_write
   resolve-ado-parent -> _ado_parent, _manifest_io, _output, _utc_stamp
@@ -1572,7 +1573,7 @@ duplication is deliberate: that lint fails the **build**, in a checkout; this on
 failure the design could otherwise produce silently — the wrong module loaded under the right
 name. `script_path` is deliberately **not** in `_deps._LOADER_FUNCS`: it resolves, it does not
 load, so listing it would invent graph edges out of paths that are handed to `subprocess` or to
-an `open()` (`render-report._bench_fixture` is the worked example).
+an `open()` (`bench-report._bench_fixture` is the worked example).
 
 ### `plugins/audit/scripts/_ui_theme.py`
 The shared visual system — colour tokens (light + both dark forms), spacing, type, motion and
@@ -1621,6 +1622,19 @@ a temp name of their own, which is what a fixed `<target>.tmp` shared between tw
 at once did not. `state_write_sites()` prints the corpus the rule judged. A method of the same name
 on a string or a path is not the `os` module's and is not read — the allow row in
 `tools/prove-gates.py` holds that line.
+
+### `tools/lints/_output_lints.py`, `_ui_theme_lints.py`, `_help_lints.py`, `_config_rules_lints.py`
+The half of four shipped modules that judges the repository rather than serving a user. Each used
+to sit beside the code it polices, which meant an installed plugin carried every dialect lint,
+the preamble check, the prose-number scan, the contrast audit and the drift checks and parsed
+them on every start. They moved here under basenames that collide with nothing in `scripts/`
+(`import` and `_loader` both resolve by basename), and what stayed is exactly what a shipped file
+asks of its neighbour: `_output.py` keeps the anchors, `safe_stdio`, the success line and the file
+walks; `_ui_theme.py` the token layer and the theme compiler; `_help.py` the schema walk and the
+field help; `_config_rules.py` the enumerations and `validate_config`. The split was derived, not
+chosen: a name moved when no shipped file read it, and `tests/test__output_lints.py`,
+`test__ui_theme_lints.py`, `test__help_lints.py` and `test__config_rules_lints.py` hold the cases
+beside each. `install_path()` never puts this directory on `sys.path`, so a development caller adds it.
 
 ### `tools/lints/_refs.py`
 The other half of the same idea, aimed at paths rather than at imports: roughly 150 places
@@ -1836,15 +1850,15 @@ All four are layer-mates and read `_usage_core` and nothing else — which is wh
 share (`task_index`, `_tokens`, `_cost`) went DOWN into `_usage_core` rather than into a shared
 base beside them, because a module may not import a layer-mate. `--selftest` on each.
 
-### `plugins/audit/scripts/usage/_usage_bench.py`
+### `tools/_usage_bench.py`
 The `--bench` mode of the four modules above, and the fixture it runs them on: a computed plan
 and `n` deterministic rows, timed best-of-N at 1k / 10k / 50k so the interesting property (the
 SHAPE of the per-row cost) is visible rather than a single number. It prints; it never fails —
 a shared runner's noise floor is wider than the regressions worth catching, and a gate that flaps
 teaches people to ignore it. It opens no file, so it can neither read nor grow this machine's own
-ledger. It sits a layer above the passes rather than beside them because it calls all four, and
-`render-report.py --bench` loads it through `_loader` for `_time_best` so that the two benches in
-this tree share one definition of best-of-N. `--selftest`.
+ledger. It calls all four passes, and `tools/bench-report.py` imports it for `_time_best` so that
+the two benches in this tree share one definition of best-of-N. Its cases are in
+`tests/test__usage_bench.py`.
 
 ### `plugins/audit/scripts/usage/usage_ledger.py`
 The token-usage metering core `meter-usage.py` and `audit-usage.py --backfill` both call.
@@ -1984,7 +1998,7 @@ marking the file this session wrote. A file with no `envSessionId` on any row is
 meaning either that the writer read the same id from its environment or that the rows predate
 the field, never as the reassuring one of those.
 
-### `plugins/audit/scripts/demo/gen-demo-manifest.py`
+### `tools/demo/gen-demo-manifest.py`
 Generates the synthetic LARGE manifest fixture behind `docs/demo-large.html` and the panel
 screenshots, on demand instead of committing it — the same flags always produce the same
 bytes, so CI builds it, captures from it, and discards it, and nothing drifts the way the
@@ -2029,7 +2043,7 @@ asked before the manifest, the ledger or a single object is written, and accepts
 this history would write. Anything else — a linked worktree's `.git` file, a link, somebody's
 repository — and `gen-demo-manifest.py` exits 2 with the reason, having written nothing.
 
-### `plugins/audit/scripts/demo/gen-demo-usage.py`
+### `tools/demo/gen-demo-usage.py`
 Generates a synthetic usage ledger consistent with a real manifest — task/phase ids that exist,
 timestamps inside each task's own `startedAt`/`completedAt` window — so the report's Usage
 section (and its screenshots) show something worth looking at instead of the empty state a
@@ -2038,7 +2052,7 @@ manifest with no spend produces. `gen-demo-usage.py <manifest> [--out-dir DIR] [
 a manifest's illustrative model tier to the concrete ledger model id the runtime actually
 records. `--selftest` pins determinism and referential integrity against the manifest.
 
-### `plugins/audit/scripts/demo/_demo_cast.py`
+### `tools/demo/_demo_cast.py`
 Three fictional `.example` identities, and the smallest module in the tree. Both
 demo generators must attribute to the SAME people: `gen-demo-usage.py` stamps them on every
 synthetic ledger row and `gen-demo-manifest.py` hands them out as `meta.areas[*].owner`,
@@ -4277,7 +4291,7 @@ place**, meant for a pre-push hook or a CI step that should not have to spell ou
 
 **Delegation, not re-implementation.** An entry point may not import another entry point, so
 this resolves `run-test-gate.py` by basename (`_loader.script_path`, never loaded — see
-`render-report._bench_fixture` for the same shape) and runs it as a **subprocess**, streaming its
+`bench-report._bench_fixture` for the same shape) and runs it as a **subprocess**, streaming its
 combined output line by line and exiting with its **unchanged** code. Nothing here re-derives
 what a green or a red full run means; that verdict is `run-test-gate.py`'s alone.
 
@@ -5986,8 +6000,9 @@ one-minute manifest overview.
 they test, and all 48 files carried their own copy of `check()`. Those blocks moved out, one
 file at a time — three pilots, then batches A through E, then batch F: `_refs.py`, `_deps.py`
 and `_output.py`, the three lints that own this boundary, migrating themselves with themselves.
-**Every one of them has moved**, `tests/test__output.py`'s `sc10`/`sc11` assert that end state by name,
-and no production file carries a suite of its own. This section describes the whole
+**Every one of them has moved**, `tests/test__output_lints.py`'s `sc7` and `sc8` assert that end state by
+name, and no production file carries a suite of its own - and none answers `--selftest` either: a
+shipped entry point handed the flag treats it as any other unknown argument. This section describes the whole
 directory on purpose: §2 exists to answer
 "what does this file decide", and a test file's answer is always "the cases of the file beside
 it" — `_deps.guide_enumeration()` is scoped to `scripts/` + `hooks/` so that this stays one
@@ -6166,13 +6181,15 @@ printed it. (The probe's path is described here rather than written: this docume
 `_refs`' BARE surfaces, and spelling a `scripts/` path that no longer exists is a missing
 reference `c5` reports — which is how this paragraph was caught the first time it was written.)
 
-**What the boundary lints say.** `_output.selftest_coverage()` classifies every production
-file as `inline` / `covered` / `both` / `neither` (plus orphan and colliding test files), and
-`tests/test__output.py` asserts the counts — because a rule with an OR in it (`inline or
-covered`) is exactly the shape that lets a file with NEITHER through. `covered` is now the only
-clean class; `inline`, `both` and `neither` are all defects, and all of them reach the `defects`
-list a caller asserts on. CI's sweep takes its skip list from `_output.py --covered`,
-the same function, so it cannot skip a file nobody is testing. `_deps.tests_import_violations()`
+**What the boundary lints say.** `_output_lints.selftest_coverage()` places every shipped module
+and every development module whose cases live in `tests/` in exactly one class: `covered` (a
+suite in `tests/` named for the module exists), `exempt` (a row in `COVERAGE_EXEMPT` says why it has none), or
+one of four defects - `uncovered`, `stale_exempt`, an orphan test file, two modules wanting one
+test name - and `tests/test__output_lints.py` asserts the classes, because a rule with an OR in it
+is exactly the shape that lets a file with NEITHER through. There is no `migrated` class:
+`tools/sweep-selftests.py` does not run a shipped module at all, so the sweep's half of the rule is
+a coverage verdict (`coverage_findings`) beside its per-file grades.
+`_deps.tests_import_violations()`
 holds the other direction: nothing under `scripts/` or `hooks/` may import from `tests/`, so the
 test tree stays deletable. `tests/` is deliberately absent from `_deps.LAYERS` (a test file has
 no position in the product's import order) but IS in scope for `_output.house_style_violations()`

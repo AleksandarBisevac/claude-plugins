@@ -58,6 +58,7 @@ import time
 
 import _harness                                   # sets sys.path for scripts/ + hooks/
 import _output                                     # noqa: E402  (PLUGIN_ROOT)
+import _output_lints  # noqa: E402  (the lint half, development code)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402  (script_path, load_script)
 import _manifest_io as _mio                        # noqa: E402  (load_manifest, tasks_by_id)
@@ -1531,10 +1532,11 @@ def _submit_cases(check):
           "pointer is not what answered: %r" % ((code, text, red),),
           code == 0 and red.get("status") == "proved" and "has no inline" not in text)
     code, text = _verb(root, DRIVER, ["--selftest"])
-    check("ds7g THE ALLOW TWIN: `--selftest` as the driver's own argument still "
-          "prints its pointer and exits 0: %r" % ((code, text),),
-          code == 0 and "has no inline --selftest" in text
-          and "test_drive_phase.py" in text)
+    check("ds7g THE FLAG IS NO LONGER ANSWERED: `--selftest` as the driver's own "
+          "argument is an ordinary usage error - exit 2, argparse's own complaint - "
+          "and not a pointer to a suite the installed copy does not carry: %r"
+          % ((code, text),),
+          code == 2 and "has no inline" not in text and "usage:" in text)
 
     # No --introduces: the helper is handed the symbols the task's diff adds, so
     # a test red on a name that does not exist at HEAD proves instead of grading
@@ -8157,7 +8159,7 @@ def unencoded_text_opens(source):
     """The line of every text-mode open or subprocess call in `source` that
     names no encoding, sorted - `_output`'s walker, the one the tree-wide lint
     runs over scripts/ and hooks/, asked of this suite's own source too."""
-    return [line for line, _what in _output.unencoded_text_io(source)]
+    return [line for line, _what in _output_lints.unencoded_text_io(source)]
 
 
 # The block re-run under a locale that cannot spell UTF-8: it drives a wave

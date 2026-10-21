@@ -49,6 +49,7 @@ import _evidence_io as _ev                         # noqa: E402  (follower_line)
 # WITHOUT re-recording, so the two sides of the comparison come from two different
 # states of the tree.
 import _output                                     # noqa: E402
+import _output_lints  # noqa: E402  (the lint half, development code)
 import _surface_digest                             # noqa: E402  (the digest sc2 and sc14 read live)
 
 
@@ -1070,18 +1071,21 @@ def _cases(check):
           "Python for the ASSEMBLED page now. This is the case that goes red when a "
           "join creeps back: %r" % (_joins,),
           not _joins)
-    check("d2 ...and THIRTEEN resolver calls are really there, resolving by BASENAME "
+    check("d2 ...and TEN resolver calls are really there, resolving by BASENAME "
           "with no folder argument. Reads vacuous beside d1 and is the half that fails "
           "if the call sites were deleted rather than converted - the ninth arrived "
           "when the polled-state guard stopped reading ui/panel.js by path and started "
           "asking _panel_ui.py for the assembled page, three more when the "
           "report leg grew a PINNED fixture of its own (two set-priority.py writes and "
           "the render that reads them), and the newest when the run started asking "
-          "_surface_digest.py for the digest of each surface's page. The number is "
+          "_surface_digest.py for the digest of each surface's page - and three left "
+          "when the demo generators moved out of the plugin to `tools/demo/`, which "
+          "`resolveScript` (an index of the plugin's scripts) cannot find, so those "
+          "sites call `demoScript`. The number is "
           "exact on purpose - a floor would go on passing while a site was deleted, "
           "which is the only thing this case is for (got %d)"
           % (_mjs.count("resolveScript('"),),
-          _mjs.count("resolveScript('") == 13
+          _mjs.count("resolveScript('") == 10
           and not re.search(r"resolveScript\('[^']*[/\\]", _mjs))
     _gif = _tool_src(_GIF_TOOL)
     check("d3 the Python tool carries no join of the SCRIPTS constant at all - it can "
@@ -1595,8 +1599,8 @@ def _cases(check):
         _write(tmp, _av_page, _av_html % _pv)
         # And the reader itself, both halves: one line must not be read as both, or a
         # rule taking both would prune a path twice for two different reasons.
-        _dirs, _dprob = M._output._ignored_dirs(tmp)
-        _files, _fprob = M._output._ignored_files(tmp)
+        _dirs, _dprob = _output_lints._ignored_dirs(tmp)
+        _files, _fprob = _output_lints._ignored_files(tmp)
         check("av16 a trailing slash decides which half reads a line - `%s/` "
               "is a directory pattern and not a file one, `%s` is a file pattern "
               "and not a directory one: %r / %r"

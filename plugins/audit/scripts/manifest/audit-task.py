@@ -6453,7 +6453,6 @@ def _journal_done(project, config, mpath, task_id, phase_id, was, task,
                         _done_details(task_id, phase_id, was, task, extra_changes))
 
 
-
 def _close_gate(project, mpath, manifest, phase, task):
     """`_verdict_binding.task_binding` in a close's words.
 
@@ -14167,7 +14166,6 @@ VERB_FLAGS = {
 }
 
 
-
 def _list_help(what, example, empties=True):
     """The `--help` text every comma-list flag carries: the separator, that the
     flag repeats, and an example - the separator used to be guessed. `empties`
@@ -14872,14 +14870,6 @@ def _dispatch(args, argv, out):
 
 
 if __name__ == "__main__":
-    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if selftest_requested(sys.argv[1:]):
-        # Answers rather than falling through to `main`, which would read the flag
-        # as an unknown subcommand. It deliberately does NOT print the
-        # `N/M cases passed` contract - that literal is how
-        # `_output.selftest_coverage()` tells an inline suite from a migrated one.
-        print("audit-task.py has no inline --selftest; its cases moved to "
-              "tests/test_audit_task.py - run that file instead.")
-        sys.exit(0)
     sys.exit(_output.terse_cli(main, sys.argv[1:], success_line))

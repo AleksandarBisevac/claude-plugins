@@ -277,17 +277,3 @@ def load_hooks_config(modname=None, cache=True):
     return load(path, modname=modname or "audit_loaded_hooks_config", cache=cache)
 
 
-if __name__ == "__main__":
-    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
-    safe_stdio()
-    if selftest_requested(sys.argv[1:]):
-        # Answers rather than exits silently: `--selftest` is what every other
-        # file here still accepts, so nothing would tell a reader whether this
-        # one ran nothing or has nothing. It deliberately does NOT print the
-        # suite contract - that literal is how `_output.selftest_coverage()`
-        # tells an inline suite from a migrated one.
-        print("_loader.py has no inline --selftest; its cases moved to "
-              "tests/test__loader.py - run that file instead.")
-        raise SystemExit(0)
-    sys.stderr.write("usage: _loader.py --selftest\n")
-    raise SystemExit(2)

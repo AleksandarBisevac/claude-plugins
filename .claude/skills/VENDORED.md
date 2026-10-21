@@ -91,7 +91,7 @@ gh api "repos/mattpocock/skills/contents/skills/productivity/grill-me/SKILL.md?r
 - **`writing-python/`**, **`writing-javascript/`**, **`writing-css/`** — original text, one per
   language, written to fire at *write* time rather than at review time. Nothing off the shelf
   fits: every Python best-practice skill in the registry opens by mandating `typing`,
-  `dataclasses` and annotations — precisely what `_output.house_style_violations()` fails the
+  `dataclasses` and annotations — precisely what `_output_lints.house_style_violations()` fails the
   build for — and the JS/CSS ones assume a bundler, ESM, TypeScript or a framework. Each is
   written from a measurement of this tree rather than from received wisdom: 734 free functions
   against 6 classes in the Python, 590 arrow functions in `panel.js` against 0 in `report.js`,
@@ -118,7 +118,7 @@ gh api "repos/mattpocock/skills/contents/skills/productivity/grill-me/SKILL.md?r
 
 Upstream's Python half assumes a PyPI library: `uv`/`hatch` setup, `ruff` + `mypy`, `pytest` +
 `hypothesis`, Click/Typer, Sphinx, trusted publishing. `typing`/`dataclasses`/annotations are
-AST-enforced bans here (`_output.house_style_violations()`), so `code-quality`'s headline advice
+AST-enforced bans here (`_output_lints.house_style_violations()`), so `code-quality`'s headline advice
 is the thing that fails this build. `rendering-untrusted-content` — the best topical fit for the
 HTML report — rests entirely on `nh3` + `markupsafe`, neither of which may be imported.
 

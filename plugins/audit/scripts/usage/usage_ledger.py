@@ -204,7 +204,6 @@ def resolve_author(repo_root, mode="email"):
     return value
 
 
-
 # --- transcript discovery -------------------------------------------------------
 def main_transcript_path(session_id, home=None):
     """The MAIN-session transcript for `session_id`, or `None` when
@@ -1644,19 +1643,3 @@ def _replace_rows(path, rows):
     _manifest_io.atomic_write_text(path, "".join(_row_line(row) for row in rows))
 
 
-
-if __name__ == "__main__":
-    import sys
-    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
-    safe_stdio()
-    if selftest_requested(sys.argv[1:]):
-        # Answers rather than exits silently: `--selftest` is what every other
-        # file here still accepts, so nothing would tell a reader whether this
-        # one ran nothing or has nothing. It deliberately does NOT print the
-        # suite contract - that literal is how `_output.selftest_coverage()`
-        # tells an inline suite from a migrated one.
-        print("usage_ledger.py has no inline --selftest; its cases moved to "
-              "tests/test_usage_ledger.py - run that file instead.")
-        raise SystemExit(0)
-    sys.stderr.write("usage: usage_ledger.py --selftest\n")
-    raise SystemExit(2)

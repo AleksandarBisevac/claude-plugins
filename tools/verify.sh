@@ -647,13 +647,13 @@ docs_index_is_copy() {
 # return, a signal and a plain exit alike; the explicit removal below is only the
 # early release. gate-parity.py's vsh cases run these two functions under dash.
 ledger_compare() {
-  python3 plugins/audit/scripts/demo/gen-demo-usage.py \
+  python3 tools/demo/gen-demo-usage.py \
     examples/acme-store/audit-plan.json --out-dir "$1" >/dev/null || return 1
   for f in examples/acme-store/.claude/usage/*.jsonl; do
     cmp -s "$f" "$1/$(basename "$f")" && continue
     echo "the committed ledger no longer matches a fresh deterministic run:"
     echo "  $f"
-    echo "fix: python3 plugins/audit/scripts/demo/gen-demo-usage.py \\"
+    echo "fix: python3 tools/demo/gen-demo-usage.py \\"
     echo "       examples/acme-store/audit-plan.json \\"
     echo "       --out-dir examples/acme-store/.claude/usage"
     return 1
@@ -674,7 +674,7 @@ ledger_reproducible() {
 # check-rendered-artifacts.py's question; content assertions cannot see age.
 scale_demo_valid() {
   dl=$(mktemp -d "$WORKDIR/scale-XXXXXX") || return 1
-  python3 plugins/audit/scripts/demo/gen-demo-manifest.py "$dl" --phases 40 --tasks 5 || return 1
+  python3 tools/demo/gen-demo-manifest.py "$dl" --phases 40 --tasks 5 || return 1
   python3 plugins/audit/scripts/manifest/validate-manifest.py "$dl/audit-plan.json" || return 1
   python3 - <<'PYEOF'
 import io, re, sys
@@ -754,7 +754,7 @@ rendered_plan_legs() {
   python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json \
     --out-dir "$lp" --format html || return 1
   node tools/check-report-interactive.mjs "$lp"/*.html || return 1
-  python3 plugins/audit/scripts/demo/gen-demo-manifest.py "$dl" --phases 40 --tasks 5 \
+  python3 tools/demo/gen-demo-manifest.py "$dl" --phases 40 --tasks 5 \
     >/dev/null || return 1
   echo "== one-status plan: every phase done"
   python3 - "$dl" "$one" <<'PYEOF' || return 1
@@ -782,7 +782,7 @@ io.open(path, "w", encoding="utf-8").write(json.dumps(plan, indent=2))
 PYEOF
   python3 plugins/audit/scripts/manifest/validate-manifest.py "$one/audit-plan.json" \
     || return 1
-  python3 plugins/audit/scripts/demo/gen-demo-usage.py "$one/audit-plan.json" \
+  python3 tools/demo/gen-demo-usage.py "$one/audit-plan.json" \
     >/dev/null || return 1
   CLAUDE_PROJECT_DIR="$one" python3 plugins/audit/scripts/report/render-report.py \
     "$one/audit-plan.json" --out-dir "$one" --format html --basename one-status \

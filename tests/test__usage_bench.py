@@ -8,7 +8,7 @@ These nine cases were the `bn` group of `test__usage_analytics.py`. `_bench`,
 `_bench_cases`, `_bench_rows`, `_bench_manifest`, `_time_best` and the `_BENCH_*`
 constants are production code - a benchmark somebody runs, not a test - so only
 the CASES ABOUT them are here, and
-`python3 plugins/audit/scripts/usage/_usage_bench.py --bench` still runs the
+`python3 tools/_usage_bench.py --bench` still runs the
 benchmark itself.
 
 TWO CASES ARE `globals()` REBINDS THAT FAIL IN OPPOSITE DIRECTIONS, and they are
@@ -189,12 +189,12 @@ def _cases(check):
           len(_calls) == 3 and _res == "ok", "%d call(s)" % len(_calls))
     check("bn7 ...and reports the MINIMUM of those runs - never the mean "
           "(2.667) and never the last (3.0)", _sec == 1.0, repr(_sec))
-    check("bn8 --selftest wins over --bench whichever order they arrive in, so "
-          "CI's per-file sweep can never turn into a benchmark run; a bare "
-          "invocation is still a usage error",
-          M._mode(["--selftest"]) == "selftest" and M._mode(["--bench"]) == "bench"
-          and M._mode(["--selftest", "--bench"]) == "selftest"
-          and M._mode(["--bench", "--selftest"]) == "selftest"
+    check("bn8 `--bench` is the only mode switch: the sweep no longer runs this file "
+          "at all, so `--selftest` is an unknown flag like any other and reads as "
+          "usage, and a bare invocation is still a usage error",
+          M._mode(["--bench"]) == "bench"
+          and M._mode(["--selftest"]) == "usage"
+          and M._mode(["--selftest", "--bench"]) == "bench"
           and M._mode([]) == "usage" and M._mode(["--nope"]) == "usage")
     # The printed contract, at a size the suite can afford. Counted, not merely
     # found: one timing line per case plus the two derived lines, so a figure

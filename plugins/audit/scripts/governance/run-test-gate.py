@@ -5609,12 +5609,8 @@ def main(argv, out=print):
 
 
 if __name__ == "__main__":
-    from _output import safe_stdio, selftest_requested
+    from _output import safe_stdio
     safe_stdio()
-    if selftest_requested(sys.argv[1:]):
-        print("run-test-gate.py: cases live in "
-              "tests/test_run_test_gate.py")
-        raise SystemExit(0)
     # `--full` keeps its long form, and streams it: `full-gate.py` hands this
     # run's lines to an operator watching a pre-push hook as they arrive.
     raise SystemExit(_output.terse_cli(main, sys.argv[1:], success_line,

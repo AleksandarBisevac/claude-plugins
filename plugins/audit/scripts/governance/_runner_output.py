@@ -118,7 +118,6 @@ _SUMMARY_READERS = (
 )
 
 
-
 def summary_reader(text):
     """`(name, joined, words)` of the reader whose summary this output carries.
 
@@ -265,25 +264,32 @@ _VITEST_FAIL_LINE = re.compile(r"^[ \t]*FAIL[ \t]+(\S+)", re.M)
 # `tools/sweep-selftests.py` grades FILES, not checks: one `FAIL  <path>: <why>`
 # line per red file - two spaces, which is how it is told from a house case's
 # one-space `FAIL <id> <title>` - and one summary line,
-# `<ok>/<files> files ok, <n> migrated to tests/, <cases> cases`. It is not in
+# `<ok>/<files> files ok, <cases> cases`. The sweep used to count the files whose
+# cases had moved to `tests/` in the middle of that line (`<n> migrated to tests/`);
+# there is no such class now, but a ledger still holds runs that printed it, so the
+# clause is optional on read. It is not in
 # `_SUMMARY_READERS`: its `cases` total is the house suites' own claims added
 # up, not a count of checks this module watched execute. The directory's slash
 # is optional because the ledger's copies of the line carry none.
 SWEEP_RUNNER = "the sweep"
 _SWEEP_SUMMARY = re.compile(
-    r"^(\d+)/(\d+) files ok, (\d+) migrated to tests/?, (\d+) cases[ \t]*$", re.M)
+    r"^(\d+)/(\d+) files ok,(?: (\d+) migrated to tests/?,)? (\d+) cases[ \t]*$",
+    re.M)
 _SWEEP_FAIL = re.compile(r"^FAIL  (\S(?:.*?\S)?): (\S.*?)[ \t]*$", re.M)
 
 
 def sweep_summary(text):
     """`{"ok", "files", "migrated", "cases"}` off the sweep's LAST summary line,
     or None when the output carries none - one run prints one, and a log holding
-    several is read for the run that ended it."""
+    several is read for the run that ended it. `migrated` is 0 for a line that
+    names no such clause, which is every line the sweep prints now."""
     found = _SWEEP_SUMMARY.findall(plain_text(text))
     if not found:
         return None
-    ok, files, migrated, cases = (int(n) for n in found[-1])
-    return {"ok": ok, "files": files, "migrated": migrated, "cases": cases}
+    ok, files, migrated, cases = found[-1]
+    clause = int(migrated) if migrated else 0
+    return {"ok": int(ok), "files": int(files), "migrated": clause,
+            "cases": int(cases)}
 
 
 def sweep_failures(text):
@@ -875,10 +881,6 @@ def run_failing_cases(text, runner):
 
 
 if __name__ == "__main__":
-    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if selftest_requested(sys.argv[1:]):
-        print("_runner_output.py has no inline --selftest; its cases live in "
-              "tests/test__runner_output.py - run that file instead.")
-        sys.exit(0)
     print(__doc__.strip())

@@ -1077,10 +1077,6 @@ AUDITED_EXEMPTIONS = {
     # reports a reach of the raw writer from a site no row names, and a row whose
     # site no longer reaches it; whether its reason is true it does not judge.
     "RAW_JSON_WRITERS": ("live", "raw_json_writer_violations"),
-    # `ts_order_violations` reports a site that orders evidence or journal rows by
-    # their `ts` text instead of the moment reader, and a row whose site no
-    # longer does; whether its reason is true it does not judge.
-    "TS_ORDER_SITES": ("live", "ts_order_violations"),
     # `git_path_base_violations` reports a git listing site that neither routes
     # through the path pair nor has a row here, a row whose function no longer makes
     # a listing call, and a row with a blank reason; whether a reason is true it does

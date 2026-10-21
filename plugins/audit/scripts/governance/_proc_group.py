@@ -472,10 +472,6 @@ def disarm_interrupt(previous):
 
 # --- cli ----------------------------------------------------------------------
 if __name__ == "__main__":
-    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if selftest_requested(sys.argv[1:]):
-        print("_proc_group.py has no inline --selftest; its cases live in "
-              "tests/test__proc_group.py - run that file instead.")
-        sys.exit(0)
     print(__doc__.strip())

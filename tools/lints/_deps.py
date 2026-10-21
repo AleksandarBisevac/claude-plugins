@@ -127,6 +127,7 @@ if _anchor_dir not in sys.path:
     sys.path.insert(0, _anchor_dir)
 
 import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
+import _output_lints  # noqa: E402  (the lint half, development code)
 
 _output.install_path()
 
@@ -235,10 +236,6 @@ LAYERS = (
      # every tool call. It reaches nothing but `_output`, and it had to be this low
      # because `_help` needs it too.
      "_journal_io",
-     # `_demo_cast` is three fictional identities the two demo generators must
-     # agree on - the smallest module here, and the right size for the fact: the
-     # alternative was not a bigger module but a second copy nothing would compare.
-     "_demo_cast",
      # `_manifest_vocab` is the manifest's words - the status/risk/tests enums, the
      # known-key sets per level, and the four shape checks every level shares. It
      # holds no rule and reaches nothing but `_output`, which is exactly why it can
@@ -469,13 +466,6 @@ LAYERS = (
     # renumbered every entry in KNOWN_LAYER_DEBT below without a single edge changing.
     # `_report_usage` reaches nothing in its own layer or above, and only the entry
     # point render-report reaches it, so the move is free.
-    # `_usage_bench` sits HERE rather than with the passes it times, and that is
-    # the whole structural cost of cutting `_usage_analytics` into five: it calls all
-    # four of them, so it has to be above them. It reaches nothing in this layer and
-    # nothing here reaches it - `render-report` loads it for `_time_best` and is the only
-    # thing that names it - so sharing this layer with `usage_ledger` costs nothing,
-    # where a new layer would have renumbered every entry in KNOWN_LAYER_DEBT below
-    # without a single edge changing.
     # `_panel_settings` sits here rather than one layer down, and the move was forced
     # by `_config_rules`: it reads the four enum tuples off the module that ENFORCES
     # them, and a consumer at the same layer is still not strictly downward. It
@@ -530,9 +520,6 @@ LAYERS = (
      # aliases, and `derive-phase-gate`, which reaches its arm helpers
      # directly to REPORT the breakdown `derive()` itself does not expose.
      "_gate_derive",
-     # `_usage_bench` drives all four analytics passes (each one layer down), so
-     # this is the lowest layer that can reach them; `render-report` loads it for `_time_best`.
-     "_usage_bench",
      "_usage_viz", "_doctor_ado", "_doctor_hygiene",
      # `_ado_fetch` reads the linked side of a board in ONE query per chunk, with a
      # bound on each. It lands here for one edge: it reuses `_ado_drift`'s
@@ -956,7 +943,7 @@ LAYERS = (
      # the one JSON spelling and the layout reading, and `_manifest_rules` to
      # revalidate what it merged - the same three edges every manifest writer has.
      "merge-manifest",
-     "gen-demo-manifest", "gen-demo-usage", "migrate-manifest", "audit-task", "materialize-proposal"),
+     "migrate-manifest", "audit-task", "materialize-proposal"),
 )
 
 # No allow-list. There was one, for exactly one import, and it is gone with the import;
@@ -1894,7 +1881,7 @@ _SAME_CHECKOUT = ("paths a tree lists are read back as bytes from that same "
 _DOCTOR = ("a doctor check names repository files in its finding; nothing it "
            "lists is compared with a plan entry")
 GIT_PATH_BASE_EXEMPT = (
-    ("_output.py", "tracked_files",
+    ("_output_lints.py", "tracked_files",
      "this repository's own lint over its own tree: a repository-relative "
      "listing compared with repository-relative paths, no plan entry"),
     ("_worktrees.py", "dirtiness",
@@ -2749,8 +2736,6 @@ def hooks_rule_drift(guide_path=None):
     return out
 
 
-
-
 # --- explorer_contract_drift: agent contract vs its fallback restatement -------
 # `/audit:init` spawns `audit:audit-explorer` and parses a JSON array back, and the
 # SHAPE of one element is written by hand in two places: the agent's own contract
@@ -3191,7 +3176,7 @@ def doc_prose_numbers(doc_paths=None, repo_root=None):
     """
     root = repo_root if repo_root is not None else _output.REPO_ROOT
     if doc_paths is None:
-        scan = _output.prose_scan_set((".md",), root)
+        scan = _output_lints.prose_scan_set((".md",), root)
         if scan["problem"] is not None:
             return [(".gitignore", 0, scan["problem"])]
         names = tuple(scan["paths"])
@@ -3211,7 +3196,7 @@ def doc_prose_numbers(doc_paths=None, repo_root=None):
         for lineno, line in enumerate(lines, 1):
             nxt = lines[lineno] if lineno < len(lines) else ""
             prv = lines[lineno - 2] if lineno >= 2 else ""
-            claim = _output._prose_number_claim(line, nxt, prv)
+            claim = _output_lints._prose_number_claim(line, nxt, prv)
             if claim is not None:
                 out.append((label, lineno, claim))
     return out
@@ -3760,7 +3745,7 @@ def register_citation_violations(repo_root=None, table=None):
     root = repo_root if repo_root is not None else _output.REPO_ROOT
     rows = CITATION_SCAN_EXEMPT if table is None else table
     out = []
-    py_scan = _output.prose_scan_set((".py",), root, rows)
+    py_scan = _output_lints.prose_scan_set((".py",), root, rows)
     if py_scan["problem"] is not None:
         return [(".gitignore", 0, py_scan["problem"])]
     for rel in py_scan["paths"]:
@@ -3787,7 +3772,7 @@ def register_citation_violations(repo_root=None, table=None):
         others = _py_other_literal_citations(text)
         if others is not None:
             out.extend((rel, ln, tok) for ln, tok in others)
-    src_scan = _output.prose_scan_set(tuple(sorted(COMMENT_SYNTAXES)), root,
+    src_scan = _output_lints.prose_scan_set(tuple(sorted(COMMENT_SYNTAXES)), root,
                                       rows)
     if src_scan["problem"] is not None:
         out.append((".gitignore", 0, src_scan["problem"]))
@@ -3803,7 +3788,7 @@ def register_citation_violations(repo_root=None, table=None):
             ext = os.path.splitext(rel)[1]
             out.extend((rel, ln, tok)
                        for ln, tok in _source_comment_citations(text, ext))
-    md_scan = _output.prose_scan_set((".md",), root, rows)
+    md_scan = _output_lints.prose_scan_set((".md",), root, rows)
     if md_scan["problem"] is not None:
         out.append((".gitignore", 0, md_scan["problem"]))
     else:
@@ -4093,12 +4078,6 @@ def navigability_violations(script_dir=None, hooks_dir=None):
                                 "(# --- name ---); needs >= 2 to be navigable"
                                 % (len(lines), headers)))
     return violations
-
-
-
-
-
-
 
 
 # --- one config key, one interpretation -------------------------------------------
@@ -5534,16 +5513,8 @@ KNOWN_LAYER_DEBT = (
 
 # --- cli ----------------------------------------------------------------------
 if __name__ == "__main__":
-    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if selftest_requested(sys.argv[1:]):
-        # Answers rather than falling through to `--render`'s usage line, which
-        # would exit 2 with no word about the flag. It deliberately does NOT print
-        # the `N/M cases passed` contract - that literal is how
-        # `_output.selftest_coverage()` tells an inline suite from a migrated one.
-        print("_deps.py has no inline --selftest; its cases moved to "
-              "tests/test__deps.py - run that file instead.")
-        raise SystemExit(0)
     if "--render" in sys.argv[1:]:
         sys.stdout.write(render())
         raise SystemExit(0)

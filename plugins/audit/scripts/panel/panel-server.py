@@ -53,9 +53,8 @@ indistinguishable from an oversight. Both entries are about /audit:sync.
 
 Usage:
   python3 panel-server.py --project <dir> [--port N] [--no-open]
-  python3 panel-server.py --selftest
 
-Exit: Ctrl-C stops the server. --selftest reports where its cases went.
+Exit: Ctrl-C stops the server.
 
 This module carries no `--selftest` of its own any more; its cases live in
 `tests/test_panel_server.py`, byte-identical labels and all - see
@@ -1072,7 +1071,6 @@ def main(argv):
     ap.add_argument("--no-open", action="store_true")
     ap.add_argument("--stop", action="store_true", help="stop a running panel for --project")
     ap.add_argument("--status", action="store_true", help="report whether a panel is running")
-    ap.add_argument("--selftest", action="store_true")
     # Read by tools/capture-screenshots.mjs, which then asserts the live page has a
     # control for each one. The list is derived from SETTINGS_GROUPS rather than
     # restated in the checker, so the browser check cannot go stale against it.
@@ -1080,15 +1078,6 @@ def main(argv):
                     help="print the config paths the Settings form binds, as JSON")
     _claude_home.attach_usage_hint(ap)
     args = ap.parse_args(argv)
-    if args.selftest:
-        # Answers rather than exits silently: `--selftest` is what every other
-        # file here still accepts, so nothing would tell a reader whether this
-        # one ran nothing or has nothing. It deliberately does NOT print the
-        # `N/M cases passed` contract - that literal is how
-        # `_output.selftest_coverage()` tells an inline suite from a migrated one.
-        print("panel-server.py has no inline --selftest; its cases moved to "
-              "tests/test_panel_server.py - run that file instead.")
-        return 0
     if args.settings_paths:
         print(json.dumps(_settings_paths()))
         return 0

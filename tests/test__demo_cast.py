@@ -26,8 +26,8 @@ from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _demo_cast as M                             # noqa: E402
 
-_USAGE = _loader.load_script("gen-demo-usage.py", modname="gen_demo_usage_cast")
-_MANIFEST = _loader.load_script("gen-demo-manifest.py",
+_USAGE = _loader.load_script("gen-demo-usage.py", root=_harness.DEMO_DIR, modname="gen_demo_usage_cast")
+_MANIFEST = _loader.load_script("gen-demo-manifest.py", root=_harness.DEMO_DIR,
                                 modname="gen_demo_manifest_cast")
 
 

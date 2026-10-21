@@ -945,7 +945,7 @@ def _resolver_cases(check):
                              cache=False)
     pu = _loader.load_script("_panel_usage.py", modname="rp_panel_usage",
                              cache=False)
-    gd = _loader.load_script("gen-demo-usage.py", modname="rp_gen_demo_usage",
+    gd = _loader.load_script("gen-demo-usage.py", root=_harness.DEMO_DIR, modname="rp_gen_demo_usage",
                              cache=False)
     mu = _loader.load(os.path.join(_harness.HOOKS_DIR, "meter-usage.py"),
                       "rp_meter_usage")

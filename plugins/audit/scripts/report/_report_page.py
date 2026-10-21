@@ -1110,15 +1110,3 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
             .replace("@@TOOLBAR@@", _doc_actions(fragment)))
 
 # --- cli ------------------------------------------------------------------------
-if __name__ == "__main__":
-    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
-    safe_stdio()
-    if selftest_requested(sys.argv[1:]):
-        # Answers rather than exits silently: `--selftest` is what every other
-        # file here still accepts, so nothing would tell a reader whether this
-        # one ran nothing or has nothing. It deliberately does NOT print the
-        # suite contract - that literal is how `_output.selftest_coverage()`
-        # tells an inline suite from a migrated one.
-        print("_report_page.py has no inline --selftest; its cases moved to "
-              "tests/test__report_page.py - run that file instead.")
-    raise SystemExit(0)

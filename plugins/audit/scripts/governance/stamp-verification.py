@@ -3812,17 +3812,8 @@ def main(argv, out=print, stdin=None):
 
 
 if __name__ == "__main__":
-    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
     # Only this command's own flags: after `--` a `--selftest` belongs to the red
     # run's test command, which `selftest_requested` already leaves alone.
-    if selftest_requested(sys.argv[1:]):
-        # Answers rather than falling through to a usage error, which would read
-        # as a broken flag rather than as a moved suite. It deliberately does NOT
-        # print the `N/M cases passed` contract - that literal is how
-        # `_output.selftest_coverage()` tells an inline suite from a migrated one.
-        print("stamp-verification.py has no inline --selftest; its cases live in "
-              "tests/test_stamp_verification.py - run that file "
-              "instead.")
-        sys.exit(0)
     sys.exit(_output.terse_cli(main, sys.argv[1:], success_line))

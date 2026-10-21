@@ -534,12 +534,6 @@ def build_parser():
 
 
 def main(argv):
-    if _output.selftest_requested(argv):
-        # It deliberately does NOT print the `N/M cases passed` contract - that string
-        # is how `_output.selftest_coverage()` tells an inline suite from a moved one.
-        print("merge-manifest.py has no inline --selftest; its cases live in "
-              "tests/test_merge_manifest.py - run that file instead.")
-        return 0
     if argv and argv[0] == "driver":
         return driver_main(argv[1:])
     try:

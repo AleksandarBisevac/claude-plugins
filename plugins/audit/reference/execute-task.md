@@ -5,7 +5,7 @@ by hand any more.** The step driver, `scripts/governance/drive-phase.py`, perfor
 below that needs no judgement - the start, the computed brief, the recorded gate, the stamp
 grade, the commit and the close - as the existing verbs, in this order, and prints the rule a
 step needs at that step; the agents file their returns through `drive-phase.py submit`.
-`tools/measure-context.py --gate` holds that no pipeline command reads a reference file first.
+`tools/measure-context.py --gate` (in the source repository) holds that no pipeline command reads a reference file first.
 This file is the reference for what each step does and why, for the guide agent and for a
 reader who asks: where it says "you", read the step the driver runs. What each `/audit:task`
 verb writes and refuses, and what the run commands leave behind, is
@@ -190,14 +190,14 @@ verb writes and refuses, and what the run commands leave behind, is
      **One vocabulary, checked.** The schema enum is the one source: the executor's return
      offers exactly its words, and the reviewer's offers those plus its declared
      reviewer-only `not-proved` — `red_first_vocabulary_drift()` in
-     `tools/lints/_refs.py` fails the build otherwise, and `red_first_drift()`
+     `tools/lints/_refs.py` (in the source repository) fails the build otherwise, and `red_first_drift()`
      beside it holds that every document naming a red-first proof offers the third word.
      **A FILED return carries the block, and the filing verb is what checks it**:
      `audit-task.py file-return` refuses an executor return whose `redFirst` is missing, has
      no basis, or holds a word outside the schema enum, writing nothing. A return the
      executor handed back without filing is checked by nothing — the `redFirst` enum refuses
      a fourth spelling only once one is written down and only under the `ajv` step CI and
-     `tools/verify.sh` run — so asking for the filing is yours, and a block that did not
+     `tools/verify.sh` (in the source repository) run — so asking for the filing is yours, and a block that did not
      come back is recorded as absent rather than filled in.
    - **A reported verification carries the tree it was taken on.** Evidence names a command and
      an exit code; it does not say *which tree*, and a claim about a tree that has since moved
@@ -231,7 +231,7 @@ verb writes and refuses, and what the run commands leave behind, is
      when a skill asked for one, `claims`. The
      brief holds the wording of each, including
      the pass/fail/could-not-run distinction the arms in step 4 turn on;
-     `return_shape_drift()` in `tools/lints/_refs.py` fails the build when this list
+     `return_shape_drift()` in `tools/lints/_refs.py` (in the source repository) fails the build when this list
      falls behind the brief's. **The executor files that object through `drive-phase.py
      submit <taskId> --role executor`** (the object on stdin, the test command after `--` on a
      `tdd` task): `submit` checks the shape and writes nothing when a field is missing, runs
@@ -313,7 +313,7 @@ verb writes and refuses, and what the run commands leave behind, is
      prints its own limit (`says:`) beside it. **A filed return carries a stamp, because
      `file-return` refuses one without it**; a return handed back without filing is checked
      by nothing. `return_shape_drift()` in
-     `tools/lints/_refs.py` holds only that this document asks for every field
+     `tools/lints/_refs.py` (in the source repository) holds only that this document asks for every field
      `agents/audit-executor.md` declares — it cannot see whether an executor filled one in. The
      command makes a stamp checkable once it is there; asking for the filing, and re-asking when
      it is absent, is yours.

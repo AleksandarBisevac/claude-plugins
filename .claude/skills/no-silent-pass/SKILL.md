@@ -9,7 +9,8 @@ Two halves of one rule. Code must not produce normal-looking output when somethi
 and a check must not look green while asserting nothing. Both fail the same way: everything
 reports fine and nobody learns anything for months.
 
-This repo's test suite is the `--selftest` block inside each file, printing `N/M cases passed`.
+This repo's test suite is the files under `tests/`, each run with `--selftest` and printing
+`N/M cases passed`.
 Everything below is about those cases and the code they guard.
 
 ## Fail loud
@@ -108,7 +109,7 @@ filter that silently deletes the whole field passes.
 ## A lint that reads text will read yours
 
 Several guards here scan source as TEXT rather than as code: `_refs` looks for a `.py` basename
-anywhere under `tools/`, `_output.prose_number_claims()` and `_deps.doc_prose_numbers()` look for a
+anywhere under `tools/`, `_output_lints.prose_number_claims()` and `_deps.doc_prose_numbers()` look for a
 cardinality in prose, `_ui_theme` looks for an undeclared `var(--…)`, and the shared layer forbids
 naming a scheme it must not depend on. **None of them can tell your code from your comment about
 your code**, and the usual way to meet one is to explain it — the explanation contains the shape.

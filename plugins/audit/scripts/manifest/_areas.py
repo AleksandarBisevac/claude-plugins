@@ -1281,7 +1281,7 @@ def render_coverage(plugin_root=None):
 # --- cli ----------------------------------------------------------------------
 if __name__ == "__main__":
     import sys
-    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
     if "--coverage" in sys.argv[1:]:
         # DERIVED, so it cannot be the kind of coverage claim that rots. The
@@ -1294,13 +1294,4 @@ if __name__ == "__main__":
         for subject, problem in drift:
             print("  %s\n      %s" % (subject, problem))
         sys.exit(1 if drift else 0)
-    if selftest_requested(sys.argv[1:]):
-        # Answers rather than exits silently: `--selftest` is what every other
-        # file here still accepts, so nothing would tell a reader whether this
-        # one ran nothing or has nothing. It deliberately does NOT print the
-        # suite contract - that literal is how `_output.selftest_coverage()`
-        # tells an inline suite from a migrated one.
-        print("_areas.py has no inline --selftest; its cases moved to "
-              "tests/test__areas.py - run that file instead.")
-        sys.exit(0)
     print(__doc__.strip())

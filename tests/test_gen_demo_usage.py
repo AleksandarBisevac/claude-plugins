@@ -29,7 +29,7 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 
-M = _loader.load_script("gen-demo-usage.py", modname="gen_demo_usage")
+M = _loader.load_script("gen-demo-usage.py", root=_harness.DEMO_DIR, modname="gen_demo_usage")
 
 
 # --- cases --------------------------------------------------------------------
@@ -93,7 +93,7 @@ def _cases(check):
     # scope is attached rather than the number refreshed, because the measurement
     # is history and re-running it would prove a different thing. The cast has
     # `_demo_cast` and a case; the vocabulary had neither.
-    gdm = _loader.load_script("gen-demo-manifest.py",
+    gdm = _loader.load_script("gen-demo-manifest.py", root=_harness.DEMO_DIR,
                               modname="gen_demo_manifest_tiers")
     demo_manifest = gdm.generate(n_phases=8, n_tasks=3, seed=11)
     tiers = sorted({t.get("model") for p in demo_manifest["phases"]

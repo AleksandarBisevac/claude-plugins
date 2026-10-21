@@ -4184,15 +4184,3 @@ def new_run_id():
     return "%s.%s" % (_utc_stamp.utc_stamp(), binascii.hexlify(os.urandom(3)).decode("ascii"))
 
 
-if __name__ == "__main__":
-    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
-    safe_stdio()
-    if selftest_requested(sys.argv[1:]):
-        # Answered rather than falling through to the library notice below: CI
-        # runs `--selftest` over every file here. It deliberately does NOT print
-        # the `N/M cases passed` contract - that literal is how
-        # `_output.selftest_coverage()` tells an inline suite from a migrated one.
-        print("_evidence_io.py has no inline --selftest; its cases moved to "
-              "tests/test__evidence_io.py - run that file instead.")
-        raise SystemExit(0)
-    print("This is a library module; run with --selftest to exercise it.")

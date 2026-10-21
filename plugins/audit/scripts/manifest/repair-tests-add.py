@@ -382,11 +382,6 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if selftest_requested(sys.argv[1:]):
-        print("repair-tests-add.py has no inline --selftest; its cases live in "
-              "tests/test_repair_tests_add.py - run that file "
-              "instead.")
-        sys.exit(0)
     sys.exit(main(sys.argv[1:]))

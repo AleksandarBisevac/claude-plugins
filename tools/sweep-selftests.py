@@ -101,6 +101,14 @@ import _output  # noqa: E402
 
 _output.install_path()
 
+# The coverage classifier is development code under `tools/lints/`, which
+# `install_path()` never puts on the path.
+_lints = os.path.join(REPO, "tools", "lints")
+if _lints not in sys.path:
+    sys.path.insert(0, _lints)
+
+import _output_lints  # noqa: E402  (selftest_coverage: which modules have a suite)
+
 # The directories a sweep covers. A tuple so nothing can append to it at runtime.
 #
 # `tools/` IS ONE OF THEM, and that was the fix for a class rather than a file.
@@ -120,17 +128,19 @@ _output.install_path()
 # `tools/`, so a change that broke either shipped green. Nothing compares this
 # tuple with the documents that enumerate the roots; a root added here owes its
 # mention in each of them to its author.
+#
+# THE SHIPPED PLUGIN IS NOT ONE OF THEM ANY MORE, and that is the point of this tuple
+# losing two rows: a shipped module answers no `--selftest`, so there is nothing to run
+# there. What the sweep asks of `hooks/` and `scripts/` is the question that stays
+# true - does every module have a suite in `tests/`, or a named exemption - and
+# `coverage_findings` asks it.
 SWEEP_DIRS = (
-    os.path.join("plugins", "audit", "hooks"),
-    os.path.join("plugins", "audit", "scripts"),
     "tests",
     "tools",
     os.path.join(".claude", "hooks"),
 )
 
-# The contract every non-migrated suite must print. Kept as ONE pattern because the
-# grader reads it twice with opposite expectations - present for a live suite,
-# ABSENT for a migrated one - and two spellings of it would be two rules.
+# The contract every swept suite must print.
 CONTRACT = re.compile(r"(\d+)/(\d+) cases passed")
 
 # A file that has not finished by then is reported as a TIMEOUT rather than waited
@@ -215,12 +225,17 @@ SPACED_EXEMPT = {}
 
 # --- discovery ----------------------------------------------------------------
 def sweep_files(repo=None):
-    """Every `.py` under the swept directories, repo-relative, sorted.
+    """Every `.py` under the swept directories that carries its own suite, repo-relative,
+    sorted.
 
     Delegates to `_output.py_files`, which is the same recursive walk the lints and
     `selftest_coverage()` use. A second implementation here is how CI's old flat
     glob came to disagree with the classifier about which files exist - a file in a
     subdirectory stopped being swept and nothing went red.
+
+    The development modules whose cases live in `tests/` (`tools/lints/`, the demo
+    generators and the two benchmarks) are left out: they answer no `--selftest`, and
+    `coverage_findings` is what accounts for them.
     """
     repo = repo or REPO
     out = []
@@ -230,7 +245,8 @@ def sweep_files(repo=None):
             continue
         for rel, _path in _output.py_files(directory):
             out.append("%s/%s" % (rel_dir.replace(os.sep, "/"), rel))
-    return sorted(out)
+    elsewhere = set(_output_lints.suite_elsewhere_paths(repo))
+    return sorted(p for p in out if p not in elsewhere)
 
 
 # WHERE A SUITE USED TO LIVE, and may not again. The suites left the plugin because the
@@ -278,14 +294,21 @@ def retired_suite_refusal(retired):
                 d.replace(os.sep, "/") for d in SWEEP_DIRS)))
 
 
-def covered_paths():
-    """The migrated set, from the classifier CI already asks - not a name transform.
+def coverage_findings(coverage=None):
+    """`(findings, total)`: one line per module the repository carries without a suite
+    of its own and without a named exemption, and how many modules were looked at.
 
-    `covered_repo_paths()` is what `_output.py --covered` prints, so this runner and
-    CI's old shell loop cannot disagree about which files are skipped. Returned as a
-    set because the only question asked of it is membership.
+    THIS IS THE SWEEP'S HALF OF THE SHIPPED PLUGIN. It does not run a shipped module
+    and does not read one for a contract line; it asks `selftest_coverage()` - the one
+    classifier - and reports every defect class it names (`uncovered`, `stale_exempt`,
+    `orphans`, `collisions`). `total` rides with the findings so that "no findings"
+    and "looked at nothing" cannot read the same: `main` refuses a total of zero.
+
+    `coverage` is the classifier's answer, handed in by a case that builds a tree of
+    its own; None asks about this checkout.
     """
-    return set(_output.covered_repo_paths())
+    found = coverage if coverage is not None else _output_lints.selftest_coverage()
+    return list(found["defects"]), found["total"]
 
 
 # --- the scratch directory a child is run in ----------------------------------
@@ -854,17 +877,16 @@ def cases_in(output):
     return int(found[-1][0])
 
 
-def grade(rel_path, code, output, covered, debris=()):
+def grade(rel_path, code, output, debris=()):
     """The verdict for one run, as a pure function of what the run produced.
 
     ONE GRADE FOR EVERY LEG. A forced codec or a spaced path changes what a child
     runs under, never the rules its run is read by, so this takes no word about
-    the leg. The codec leg used to drop the contract and the migrated-file rule,
-    on the reasoning that it asked only whether a file could print; but a suite
-    that catches its own `UnicodeEncodeError` and exits 0 without its contract IS
-    that failure, and a grade without the contract called it green. Every file is
-    run on every leg - a migrated one included - so the stricter grade narrows
-    nothing the codec leg reached.
+    the leg. The codec leg used to drop the contract, on the reasoning that it asked
+    only whether a file could print; but a suite that catches its own
+    `UnicodeEncodeError` and exits 0 without its contract IS that failure, and a
+    grade without the contract called it green. Every file is run on every leg, so
+    the stricter grade narrows nothing the codec leg reached.
 
     The rules, and the strictest reading of each of the two old copies:
 
@@ -876,15 +898,11 @@ def grade(rel_path, code, output, covered, debris=()):
         printed in full and a developer fixes that first; the leak is still waiting
         on the next run and this line still names it, and names WHICH of the two
         directories it landed in.
-      * a MIGRATED file (in `covered`) must exit 0 and must NOT print the contract.
-        `selftest_coverage()` classifies by STRING LITERAL, so a file that assembles
-        the line (`"0/0 cases " + "passed"`) reads as migrated while still printing
-        it; this is the net under that blind spot.
-      * every other file must exit 0 AND print the contract. This is the rule
+      * every file must exit 0 AND print the contract. This is the rule
         `verify.sh` did not have, and the reason a suite could be deleted from a
         file without anything going red locally.
     """
-    def row(ok, why, cases=0, skipped=False):
+    def row(ok, why, cases=0):
         """One shape, built in one place, and it CARRIES the output it graded.
 
         Written as six dict literals first, and `render` then read an `output` key
@@ -893,7 +911,7 @@ def grade(rel_path, code, output, covered, debris=()):
         its evidence behind cannot develop that gap.
         """
         return {"path": rel_path, "ok": ok, "why": why, "cases": cases,
-                "skipped": skipped, "output": output}
+                "output": output}
 
     if code is None:
         return row(False, output)
@@ -903,13 +921,9 @@ def grade(rel_path, code, output, covered, debris=()):
         return row(False, "wrote outside the fixtures it makes for itself: %s"
                           % ("; ".join(debris),))
     claimed = cases_in(output)
-    if rel_path in covered:
-        if claimed is not None:
-            return row(False, "listed as migrated but still prints the suite "
-                              "contract")
-        return row(True, None, skipped=True)
     if claimed is None:
-        return row(False, "no --selftest (every hook, script, test and tool must carry one)")
+        return row(False, "no --selftest (every test and tool the sweep runs must "
+                          "carry one)")
     return row(True, None, cases=claimed)
 
 
@@ -1206,10 +1220,10 @@ def record_costs(path, rows, swept, jobs, platform=None):
 def exempt_row(rel_path, reason):
     """The row for a file the spaced leg does not run: ok, no cases, the reason."""
     return {"path": rel_path, "ok": True, "why": None, "cases": 0,
-            "skipped": False, "output": "", "exempt": reason}
+            "output": "", "exempt": reason}
 
 
-def sweep(paths, covered, jobs=None, repo=None, encoding=None,
+def sweep(paths, jobs=None, repo=None, encoding=None,
           timeout=DEFAULT_TIMEOUT, spaced=False, exempt=None, costs=None,
           deadline=None, locale_vars=None, os_name=None):
     """Run every path and return one graded row per file, sorted by path.
@@ -1273,7 +1287,7 @@ def sweep(paths, covered, jobs=None, repo=None, encoding=None,
             pending = [pool.submit(admitted, i, p) for i, p in enumerate(order)]
             for fut in futures.as_completed(pending):
                 ran = fut.result()
-                graded = grade(ran["path"], ran["code"], ran["output"], covered,
+                graded = grade(ran["path"], ran["code"], ran["output"],
                                debris=ran["debris"])
                 rows.append(dict(graded, seconds=ran.get("seconds"),
                                  grant=ran.get("grant"),
@@ -1283,7 +1297,7 @@ def sweep(paths, covered, jobs=None, repo=None, encoding=None,
     return sorted(rows, key=lambda r: r["path"])
 
 
-def _render_tail(rows, bad, skipped, total_cases, out):
+def _render_tail(rows, bad, total_cases, out):
     """Every failure IN FULL, the fail list, then the one-line summary.
 
     Shared by `render` and `render_quiet`: both grade the same rows, and this
@@ -1307,8 +1321,8 @@ def _render_tail(rows, bad, skipped, total_cases, out):
     for row in rows:
         if row.get("exempt"):
             out.write("EXEMPT %s: %s\n" % (row["path"], row["exempt"]))
-    out.write("%d/%d files ok, %d migrated to tests/, %d cases\n"
-              % (len(rows) - len(bad), len(rows), len(skipped), total_cases))
+    out.write("%d/%d files ok, %d cases\n"
+              % (len(rows) - len(bad), len(rows), total_cases))
     return 1 if bad else 0
 
 
@@ -1337,23 +1351,19 @@ def render(rows, jobs, encoding=None, stream=None, spaced=False):
     out = stream if stream is not None else sys.stdout
     bad = [r for r in rows if not r["ok"]]
     total_cases = sum(r["cases"] for r in rows)
-    skipped = [r for r in rows if r["skipped"]]
 
     label = _leg_label(encoding, spaced)
     out.write("%s: %d files, %d workers\n" % (label, len(rows), jobs))
     for row in rows:
         if row.get("exempt"):
             out.write("  exempt  %-58s not run on this leg\n" % (row["path"],))
-        elif row["skipped"]:
-            out.write("  ok      %-58s cases live in tests/%s\n"
-                      % (row["path"], timing(row)))
         elif row["ok"]:
             out.write("  ok      %-58s %d cases%s\n"
                       % (row["path"], row["cases"], timing(row)))
         else:
             out.write("  FAILED  %-58s %s%s\n"
                       % (row["path"], row["why"], timing(row)))
-    return _render_tail(rows, bad, skipped, total_cases, out)
+    return _render_tail(rows, bad, total_cases, out)
 
 
 # The suffix `timing()` writes, as a pattern `costs_from_render()` reads back.
@@ -1410,11 +1420,35 @@ def render_quiet(rows, jobs, encoding=None, stream=None, spaced=False):
     out = stream if stream is not None else sys.stdout
     bad = [r for r in rows if not r["ok"]]
     total_cases = sum(r["cases"] for r in rows)
-    skipped = [r for r in rows if r["skipped"]]
 
     label = _leg_label(encoding, spaced)
     out.write("%s: %d files, %d workers\n" % (label, len(rows), jobs))
-    return _render_tail(rows, bad, skipped, total_cases, out)
+    return _render_tail(rows, bad, total_cases, out)
+
+
+def report_coverage(findings, accounted, named=None, out=None):
+    """Print the coverage verdict and return its exit code: 1 when a module has no
+    suite and no named exemption, else 0.
+
+    ONE LINE WHEN CLEAN - what it looked at, so a pass names its subject - and one per
+    finding otherwise, in the `FAIL  <what>: <why>` spelling the gate runner reads a red
+    file by. A run NAMED to a handful of files asks nothing of the rest of the tree, so
+    a path argument skips this verdict instead of failing a one-file run over a gap
+    elsewhere; the full sweep, which is what CI and `verify.sh` run, always asks.
+    """
+    out = out if out is not None else sys.stdout
+    if named:
+        return 0
+    if not findings:
+        out.write("coverage: %d shipped and development modules, each with a suite "
+                  "in tests/ or a named exemption\n" % (accounted,))
+        return 0
+    for line in findings:
+        out.write("FAIL  coverage: %s\n" % (line,))
+    out.write("coverage: %d finding(s) over %d modules - a module needs "
+              "tests/test_<name>.py or a row in `COVERAGE_EXEMPT` saying why not\n"
+              % (len(findings), accounted))
+    return 1
 
 
 # --- entry point --------------------------------------------------------------
@@ -1590,16 +1624,16 @@ def main(argv):
         sys.stderr.write(refusal + "\n")
         return 2
     paths = sweep_files()
-    covered = covered_paths()
+    findings, accounted = coverage_findings()
     if not paths:
         sys.stderr.write("sweep-selftests: found no .py under %s - refusing to "
                          "report a green sweep over nothing\n"
                          % (", ".join(SWEEP_DIRS),))
         return 2
-    if not covered:
-        sys.stderr.write("sweep-selftests: the migrated set is EMPTY, so the "
-                         "migrated-file rules below would assert nothing. Run "
-                         "`_output.py --covered` and find out why.\n")
+    if not accounted:
+        sys.stderr.write("sweep-selftests: the coverage classifier looked at NO "
+                         "module, so a clean answer from it would assert nothing. "
+                         "Ask `_output_lints.selftest_coverage()` why.\n")
         return 2
     named, refusal = named_suites(argv, paths)
     if refusal:
@@ -1641,13 +1675,14 @@ def main(argv):
         locale_vars = verdict["locale"]
     deadline = sweep_deadline()
     sys.stdout.write(budget_line(paths, jobs, costs, timeout, deadline=deadline))
-    rows = sweep(paths, covered, jobs=jobs, encoding=encoding, timeout=timeout,
+    rows = sweep(paths, jobs=jobs, encoding=encoding, timeout=timeout,
                  spaced=spaced, costs=costs, deadline=deadline,
                  locale_vars=locale_vars, os_name=os_name)
     if record:
         record_costs(record, rows, swept, jobs)
-    return (render_quiet if quiet else render)(rows, jobs, encoding=encoding,
+    code = (render_quiet if quiet else render)(rows, jobs, encoding=encoding,
                                                spaced=spaced)
+    return max(code, report_coverage(findings, accounted, named))
 
 
 # --- selftest -----------------------------------------------------------------
@@ -1706,37 +1741,86 @@ def _suite_root_cases(check):
 def _cases(check):
     """Every branch of `grade` plus the two refusals, driven without a subprocess."""
     _suite_root_cases(check)
-    covered = set(["plugins/audit/scripts/_output.py"])
     live = "tests/test__output.py"
-    migrated = "plugins/audit/scripts/_output.py"
 
-    g = grade(live, 0, "ALL PASS: 7/7 cases passed\n", covered)
+    g = grade(live, 0, "ALL PASS: 7/7 cases passed\n")
     check("g0 a live suite that exits 0 and prints the contract is ok, and its "
           "case count is READ rather than assumed: %r" % (g,),
-          g["ok"] and g["cases"] == 7 and not g["skipped"])
+          g["ok"] and g["cases"] == 7)
 
-    g = grade(live, 0, "ran some things\n", covered)
+    g = grade(live, 0, "ran some things\n")
     check("g1 THE RULE verify.sh DID NOT HAVE: exit 0 with no contract is a "
           "FAILURE, not a pass - this is the case that let a suite be "
           "deleted with nothing going red locally: %r" % (g,),
           (not g["ok"]) and "no --selftest" in g["why"])
 
-    # A NAMED LOCAL, because the prose scan reads this file now: a positional `0`
-    # immediately in front of a string that opens with the noun reads as a
-    # cardinality claim. Reworded rather than the pattern widened.
+    # NO FILE IS CLASSIFIED MIGRATED. A development module whose cases live in
+    # `tests/` used to be graded "ok, skipped" when it printed a pointer and no
+    # contract; the sweep no longer runs such a file at all (`sweep_files` leaves it
+    # out and `coverage_findings` accounts for it), so one that reaches `grade` with
+    # a pointer and no contract is a file the sweep was never meant to run and is
+    # red like any other. Named locals, because the prose scan reads this file.
     _moved = "cases moved to tests/\n"
-    g = grade(migrated, 0, _moved, covered)
-    check("g2 a migrated file exits 0, prints a pointer, contributes no cases "
-          "and is NOT required to print the contract: %r" % (g,),
-          g["ok"] and g["skipped"] and g["cases"] == 0)
+    g = grade("tools/lints/_deps.py", 0, _moved)
+    check("g2 a file with a pointer and no contract is RED and carries no `skipped` "
+          "word - the `migrated` grade is gone, so a file that is not in the "
+          "development-module set cannot hide behind it: %r" % (g,),
+          (not g["ok"]) and "no --selftest" in g["why"] and "skipped" not in g)
 
-    g = grade(migrated, 0, "ALL PASS: 0/0 cases passed\n", covered)
-    check("g3 the trap under selftest_coverage()'s string-literal blind spot: a "
-          "file listed as migrated that STILL prints the contract is red: "
-          "%r" % (g,),
-          (not g["ok"]) and "still prints" in g["why"])
+    # THE SWEEP'S HALF OF THE SHIPPED PLUGIN, driven over trees of its own. A tree is
+    # built per case and the classifier is asked about IT through its keyword
+    # arguments, so the real checkout's answer cannot make a case green.
+    # The fixture's module names are BUILT: `tool_basename_drift` reads a `.py` basename
+    # written under `tools/` as a reference to a file that must exist.
+    _ext = "." + "py"
+    _na, _nl, _nh = "_a" + _ext, "lonely" + _ext, "h" + _ext
+    _cov_root = tempfile.mkdtemp(prefix="sweep-coverage-")
+    try:
+        def _tree(shipped, hooks, tests):
+            for sub_dir, names in (("scripts", shipped), ("hooks", hooks),
+                                   ("tests", tests)):
+                os.makedirs(os.path.join(_cov_root, sub_dir), exist_ok=True)
+                for name in names:
+                    with open(os.path.join(_cov_root, sub_dir, name), "w") as fh:
+                        fh.write("\n")
+            return dict(script_dir=os.path.join(_cov_root, "scripts"),
+                        hooks_dir=os.path.join(_cov_root, "hooks"),
+                        tests_dir=os.path.join(_cov_root, "tests"))
+        _kw = _tree([_na, _nl], [_nh], ["test_" + _na, "test_" + _nh])
+        _found, _total = coverage_findings(_output_lints.selftest_coverage(**_kw))
+        _buf = io.StringIO()
+        _code = report_coverage(_found, _total, out=_buf)
+        _kw_ok = dict(_kw, exempt={"scripts/" + _nl: "no logic of its own"})
+        _found_ok, _total_ok = coverage_findings(
+            _output_lints.selftest_coverage(**_kw_ok))
+        _buf_ok = io.StringIO()
+        _code_ok = report_coverage(_found_ok, _total_ok, out=_buf_ok)
+        _code_named = report_coverage(_found, _total, named=["tests/x" + _ext],
+                                      out=io.StringIO())
+    finally:
+        shutil.rmtree(_cov_root, ignore_errors=True)
+    check("g3 A SHIPPED MODULE WITH NEITHER tests/test_<name>.py NOR A NAMED "
+          "EXEMPTION IS RED: the finding names the file in the `FAIL  <what>: <why>` "
+          "spelling the gate runner reads, the exit is 1, and the tally rides along "
+          "so a clean answer is not an empty one: %r" % (_buf.getvalue(),),
+          _found == ["uncovered scripts/" + _nl] and _total == 3
+          and _code == 1
+          and "FAIL  coverage: uncovered scripts/" + _nl in _buf.getvalue())
+    check("g3b ...the allow direction, which is the half that fails if the check "
+          "were made to fire on everything: the same module with a NAMED exemption "
+          "is clean, exits 0 and says how many modules it looked at - and a run "
+          "NAMED to a few files asks nothing of the rest of the tree: %r"
+          % (_buf_ok.getvalue(),),
+          _found_ok == [] and _total_ok == 3 and _code_ok == 0
+          and "FAIL" not in _buf_ok.getvalue()
+          and ("%d shipped" % 3) in _buf_ok.getvalue()
+          and _code_named == 0)
+    _real_found, _real_total = coverage_findings()
+    check("g3c the real checkout: every shipped and development module has a suite "
+          "or a named exemption, and the classifier looked at more than a handful "
+          "- %r" % (_real_found,), _real_found == [] and _real_total > 100)
 
-    g = grade(live, 1, "Traceback\n", covered)
+    g = grade(live, 1, "Traceback\n")
     check("g4 a non-zero exit is red and the code is NAMED, so the summary line "
           "says what happened: %r" % (g,),
           (not g["ok"]) and g["why"] == "exited 1")
@@ -1745,7 +1829,7 @@ def _cases(check):
     # children: the codec is forced in `run_one`, so they have to go through
     # `sweep`.
 
-    g = grade(live, None, "did not finish within 300s", covered)
+    g = grade(live, None, "did not finish within 300s")
     check("g6 a timeout is a NAMED failure, not a wait - neither old copy had "
           "one, so a hung suite and a slow machine printed the same nothing: "
           "%r" % (g,),
@@ -1762,30 +1846,47 @@ def _cases(check):
           cases_in("nothing here") is None)
 
     found = sweep_files()
-    subdir = [p for p in found if p.count("/") > 3]
+    # RECURSION IS PROVEN ON A TREE OF ITS OWN: the real swept directories are flat
+    # now that the plugin's nested domains are not among them, so a real tree could
+    # no longer tell a recursive walk from a flat glob.
+    _d_root = tempfile.mkdtemp(prefix="sweep-discovery-")
+    try:
+        for _rel in ("tests/test_flat" + _ext, "tests/deep/er/test_nested" + _ext,
+                     "tools/lints/_not_swept" + _ext):
+            os.makedirs(os.path.dirname(os.path.join(_d_root, _rel)), exist_ok=True)
+            with open(os.path.join(_d_root, _rel), "w") as _fh:
+                _fh.write("\n")
+        _nested = sweep_files(_d_root)
+    finally:
+        shutil.rmtree(_d_root, ignore_errors=True)
     check("d0 discovery is RECURSIVE and reaches files in subdirectories - a "
           "flat glob is how CI's old loop silently stopped running a whole "
-          "directory (%d files, %d of them nested)"
-          % (len(found), len(subdir)),
-          len(found) > 100 and len(subdir) > 20)
+          "directory: %r, over a real walk that found %d files"
+          % (_nested, len(found)),
+          "tests/deep/er/test_nested" + _ext in _nested
+          and "tests/test_flat" + _ext in _nested and len(found) > 100)
 
     check("d1 the list is sorted and carries no duplicate, so two green runs "
           "produce byte-identical logs and a path is swept once",
           found == sorted(found) and len(found) == len(set(found)))
 
-    cov = covered_paths()
-    check("d2 the migrated set is non-empty and repo-relative, in the SAME "
-          "spelling discovery produces - a set that never matches would make "
-          "g2 and g3 vacuous and the sweep would silently weaken to the old "
-          "exit-code-only rule (%d paths)" % (len(cov),),
-          len(cov) > 50 and all(p.startswith(("plugins/audit/", "tools/lints/"))
-                                for p in cov))
+    _elsewhere = set(_output_lints.suite_elsewhere_paths())
+    check("d2 the sweep runs no shipped module and none of the development modules "
+          "whose cases live in tests/: nothing under the plugin, `tools/lints/`, "
+          "`tools/demo/` or either benchmark is listed, and the suites and tools "
+          "that DO carry a suite still are - a path left in would be graded for a "
+          "contract it never prints",
+          not [p for p in found if p.startswith("plugins/")]
+          and not [p for p in found if p in _elsewhere]
+          and "tools/sweep-selftests.py" in found
+          and "tests/test__output.py" in found)
 
-    overlap = cov & set(found)
-    check("d3 ...and every migrated path IS one of the swept paths, which is "
-          "the assertion that the two spellings agree rather than merely "
-          "look alike (%d of %d matched)" % (len(overlap), len(cov)),
-          len(overlap) == len(cov))
+    check("d3 ...and what it leaves out is real and spelled the way discovery spells "
+          "paths, which is the assertion that the two agree rather than merely look "
+          "alike: every omitted path exists, and none of them is in the walk (%d "
+          "omitted)" % (len(_elsewhere),),
+          _elsewhere and all(os.path.isfile(os.path.join(REPO, p)) for p in _elsewhere)
+          and "tools/lints/_deps.py" in _elsewhere and not (_elsewhere & set(found)))
 
     check("j0 worker count leaves two cores and never drops below one, so a "
           "single-core runner still runs",
@@ -1800,8 +1901,8 @@ def _cases(check):
           _flag_value([], "--jobs", 99) == 99)
 
     buf = io.StringIO()
-    code = render([grade(live, 0, "1/1 cases passed\n", covered),
-                   grade("tools/lints/_deps.py", 1, "boom\n", covered)], 4,
+    code = render([grade(live, 0, "1/1 cases passed\n"),
+                   grade("tools/lints/_deps.py", 1, "boom\n")], 4,
                   stream=buf)
     text = buf.getvalue()
     check("r0 a red render exits 1, names the file twice (table and summary), "
@@ -1811,20 +1912,23 @@ def _cases(check):
           and "boom" in text and text.rstrip().endswith("%d cases" % 1))
 
     buf = io.StringIO()
-    code = render([grade(live, 0, "5/5 cases passed\n", covered)], 4, stream=buf)
+    code = render([grade(live, 0, "5/5 cases passed\n")], 4, stream=buf)
     check("r1 a green render exits 0, says FAIL nowhere, and still prints the "
           "count - so 'all ok' and 'nothing ran' cannot read the same",
           code == 0 and "FAIL" not in buf.getvalue()
           and ("%d cases" % 5) in buf.getvalue())
     buf = io.StringIO()
-    render([grade(migrated, 0, "moved\n", covered)], 4, stream=buf)
-    check("r2 a migrated file is reported as SKIPPED with its reason rather "
-          "than as a silent zero, which is the row CI printed by hand",
-          "cases live in tests/" in buf.getvalue())
+    render([grade(live, 0, "5/5 cases passed\n")], 4, stream=buf)
+    check("r2 the summary line says how many files were ok and how many cases ran, "
+          "and carries no `migrated` clause - there is no such class to count, and "
+          "the gate runner reads the line with that clause optional: %r"
+          % (buf.getvalue().splitlines()[-1],),
+          buf.getvalue().splitlines()[-1] == "%d/%d files ok, %d cases" % (1, 1, 5)
+          and "migrated" not in buf.getvalue())
 
     # -- render_quiet prints failures and totals, never a passing file --------
-    _rows_mix = [grade(live, 0, "1/1 cases passed\n", covered),
-                 grade("tools/lints/_deps.py", 1, "boom\n", covered)]
+    _rows_mix = [grade(live, 0, "1/1 cases passed\n"),
+                 grade("tools/lints/_deps.py", 1, "boom\n")]
     buf_rq = io.StringIO()
     code_rq = render_quiet(_rows_mix, 4, stream=buf_rq)
     text_rq = buf_rq.getvalue()
@@ -1839,7 +1943,7 @@ def _cases(check):
           live not in text_rq)
 
     buf_rq_green = io.StringIO()
-    render_quiet([grade(live, 0, "5/5 cases passed\n", covered)], 4,
+    render_quiet([grade(live, 0, "5/5 cases passed\n")], 4,
                  stream=buf_rq_green)
     check("rq2 a wholly green quiet render names no file at all - not even the "
           "one that passed - and still prints the count, so a caller reading "
@@ -1849,18 +1953,15 @@ def _cases(check):
           and "FAIL" not in buf_rq_green.getvalue()
           and ("%d cases" % 5) in buf_rq_green.getvalue())
 
-    buf_rq_skip = io.StringIO()
-    render_quiet([grade(migrated, 0, "moved\n", covered)], 4,
-                 stream=buf_rq_skip)
-    check("rq3 OVER-FIRE GUARD: a SKIPPED file is not a failure either, so the "
-          "quiet form drops its row too rather than keeping every non-red row "
-          "by some looser rule than 'ok' - and it still must not hide a red "
-          "row, which rq0 already covers: %r" % (buf_rq_skip.getvalue(),),
-          "cases live in tests/" not in buf_rq_skip.getvalue()
-          and migrated not in buf_rq_skip.getvalue())
+    buf_rq_two = io.StringIO()
+    render_quiet(_rows_mix, 4, stream=buf_rq_two)
+    check("rq3 the quiet form's summary line is the loud form's: the gate runner "
+          "reads one spelling of it: %r" % (buf_rq_two.getvalue().splitlines()[-1],),
+          buf_rq_two.getvalue().splitlines()[-1]
+          == "%d/%d files ok, %d cases" % (1, 2, 1))
 
     # -- the scratch-directory rule, without a subprocess ----------------------
-    g = grade(live, 0, "ALL PASS: 9/9 cases passed\n", covered,
+    g = grade(live, 0, "ALL PASS: 9/9 cases passed\n",
               debris=["working directory: left behind: probe-fixture-a1b2"])
     check("h0 a suite that exits 0, prints the contract AND changed the "
           "directory it ran in is RED, and the row NAMES what it left - the "
@@ -1869,12 +1970,12 @@ def _cases(check):
           (not g["ok"]) and "probe-fixture-a1b2" in g["why"]
           and "wrote outside the fixtures" in g["why"])
 
-    g = grade(migrated, 0, "moved\n", covered,
+    g = grade("tools/lints/_deps.py", 0, "ALL PASS: 1/1 cases passed\n",
               debris=["working directory: DELETED left-by-the-runner, which was "
                       "there before it ran"])
-    check("h1 ...and a MIGRATED file is graded by the same rule, the row whose "
-          "only other demand is a clean exit - a file does not stop leaking "
-          "because its cases moved: %r" % (g,),
+    check("h1 ...and every file is graded by the same rule, a pointer-only one "
+          "included - a file does not stop leaking because its cases live "
+          "elsewhere: %r" % (g,),
           (not g["ok"]) and "DELETED" in g["why"])
 
     # -- the home directory, which is the second watched one ------------
@@ -2337,7 +2438,7 @@ def _cases(check):
         # The WIRING, at the level that actually runs in CI. Everything above
         # proves `run_one` observes and `grade` judges; this is the only case that
         # fails if `sweep()` stops carrying the observation from one to the other.
-        rows = sweep([leaks], covered, jobs=1, repo=work, timeout=30)
+        rows = sweep([leaks], jobs=1, repo=work, timeout=30)
         check("x3 sweep() carries the observation into the graded row - the case "
               "that fails if run_one and grade are both right and nothing hands "
               "the answer across: %r" % (rows,),
@@ -2429,9 +2530,9 @@ def _cases(check):
         sp_exempt = "/".join(("tests", "absent" + ".py"))
         sp_table = {sp_exempt: "a scratch row: the file does not exist in this "
                                "scratch repository, so running it is red"}
-        sp_rows = sweep([sp_exempt], covered, jobs=1, repo=sp_work, timeout=30,
+        sp_rows = sweep([sp_exempt], jobs=1, repo=sp_work, timeout=30,
                         spaced=True, exempt=sp_table)
-        sp_plain = sweep([sp_exempt], covered, jobs=1, repo=sp_work, timeout=30,
+        sp_plain = sweep([sp_exempt], jobs=1, repo=sp_work, timeout=30,
                          exempt=sp_table)
         check("sp4 a file the spaced leg exempts is reported as exempt with its "
               "reason and is not run there (it does not exist in this scratch "
@@ -2492,18 +2593,16 @@ def _cases(check):
                        "except UnicodeEncodeError:\n"
                        "    sys.exit(0)\n"
                        "sys.stdout.write('fixture: 1/1 cases passed\\n')\n")
-        en_moved = _en("scripts/_en_moved",
-                       _says + "sys.stdout.write('fixture: 2/2 cases passed\\n')\n")
-        # A migrated file that behaves: prints a pointer and no contract.
-        en_pointer = _en("scripts/_en_pointer",
+        # A pointer-only file: there is no migrated grade to excuse it, so it is red
+        # on this leg exactly as it is on the plain one.
+        en_pointer = _en("tools/_en_pointer",
                          _says + "sys.stdout.write('cases moved to tests/\\n')\n")
-        en_paths = [en_live, en_mute, en_glyph, en_moved, en_pointer]
-        en_cov = set([en_moved, en_pointer])
+        en_paths = [en_live, en_mute, en_glyph, en_pointer]
 
         def _en_rows(spaced):
             """{path: row} for the fixtures, swept under cp1252 (and `spaced`)."""
             return dict((r["path"], r) for r in sweep(
-                en_paths, en_cov, jobs=2, repo=en_work, timeout=60,
+                en_paths, jobs=2, repo=en_work, timeout=60,
                 encoding="cp1252", spaced=spaced))
 
         def _en_tmp(row):
@@ -2515,15 +2614,15 @@ def _cases(check):
 
         en_rows = _en_rows(False)
         en_l, en_m, en_g, en_v = [en_rows.get(p) or {} for p in en_paths[:4]]
-        check("a cp1252 leg reds a contract-free suite and a migrated file that "
-              "prints the contract, and counts a live suite's cases, exactly as "
+        check("a cp1252 leg reds a contract-free suite and a pointer-only file, and "
+              "counts a live suite's cases, exactly as "
               "the plain leg does: the codec really reached the child (%r), the "
               "live suite's cases are COUNTED rather than zeroed (%r), a suite "
               "that exits 0 without its contract is red (%r), so is one that "
               "swallowed its own UnicodeEncodeError and exited 0 - the codec "
               "failure a grade without the contract called green (%r) - and a "
-              "file listed as MIGRATED that still prints the contract is red "
-              "(%r)"
+              "file that prints a pointer and no contract is red too, there being "
+              "no migrated grade to excuse it (%r)"
               % ("ENC=cp1252" in (en_l.get("output") or ""), en_l.get("cases"),
                  en_m.get("why"), en_g.get("why"), en_v.get("why")),
               "ENC=cp1252" in (en_l.get("output") or "")
@@ -2533,33 +2632,29 @@ def _cases(check):
               and en_g.get("ok") is False
               and "no --selftest" in (en_g.get("why") or "")
               and en_v.get("ok") is False
-              and "still prints" in (en_v.get("why") or ""))
+              and "no --selftest" in (en_v.get("why") or ""))
 
         # THE SUMMARY SAYS WHAT WAS GRADED. The codec leg is rendered off the
         # rows it really produced, so the line it prints is the count it took:
-        # the live suite's own cases, and the one migrated file that behaves (the
-        # other, which prints the contract, is red and counts as neither). The
-        # plain leg's line is rendered off rows whose answer is known
-        # independently.
+        # the live suite's own cases and nothing else (three files are red and
+        # count as none). The plain leg's line is rendered off rows whose answer
+        # is known independently.
         en_sum = io.StringIO()
         render_quiet([en_rows[p] for p in sorted(en_rows)], 2,
                      encoding="cp1252", stream=en_sum)
         en_sum_line = [ln for ln in en_sum.getvalue().splitlines()
                        if "files ok" in ln]
         en_plain = io.StringIO()
-        render_quiet([grade(live, 0, "ALL PASS: 7/7 cases passed\n", covered),
-                      grade(migrated, 0, "moved\n", covered)], 2,
+        render_quiet([grade(live, 0, "ALL PASS: 7/7 cases passed\n")], 2,
                      stream=en_plain)
         en_plain_line = [ln for ln in en_plain.getvalue().splitlines()
                          if "files ok" in ln]
-        check("the codec leg's summary line carries the case and migrated-file "
-              "counts it took, and the plain leg's summary is unchanged: the "
+        check("the codec leg's summary line carries the file and case counts it "
+              "took, and the plain leg's summary is unchanged: the "
               "codec leg's reads %r and the plain leg's %r"
               % (en_sum_line, en_plain_line),
-              en_sum_line == ["2/5 files ok, 1 migrated to tests/, %d cases"
-                              % (3,)]
-              and en_plain_line == ["2/2 files ok, 1 migrated to tests/, "
-                                    "%d cases" % (7,)])
+              en_sum_line == ["1/4 files ok, %d cases" % (3,)]
+              and en_plain_line == ["1/1 files ok, %d cases" % (7,)])
 
         en_both = _en_rows(True)
         en_bl, en_bm, en_bg = [en_both.get(p) or {} for p in en_paths[:3]]
@@ -2821,7 +2916,7 @@ def _cases(check):
               "grant the caller's environment carried: %r" % (bg_one["output"],),
               "grant=3 timeout=77" in bg_one["output"])
         bg_rows = dict((r["path"], r) for r in sweep(
-            ["plain-suite", "staged-suite"], set(), jobs=4, repo=bg_box,
+            ["plain-suite", "staged-suite"], jobs=4, repo=bg_box,
             costs={"staged-suite": 900.0}))
         check("bg6 the sweep holds `stage_grant(jobs)` slots for a staged suite "
               "and one for any other file, gives the timed-heavy one its "
@@ -2901,7 +2996,7 @@ def _cases(check):
         # any factor of one or more, so the floor and the calibrated figure
         # cannot coincide.
         tt_rows = dict((r["path"], r) for r in sweep(
-            ["plain-suite", "staged-suite"], set(), jobs=4, repo=tt_box,
+            ["plain-suite", "staged-suite"], jobs=4, repo=tt_box,
             costs={"renamed-away": 1000.0}))
         tt_want = int(-(-TIMEOUT_PER_COST * 1000.0 // 3))
         check("tt0 a STAGED suite the cost table does not time gets the largest "
@@ -2929,7 +3024,7 @@ def _cases(check):
               and tt_to[0] > DEFAULT_TIMEOUT)
 
         tt_late = dict((r["path"], r) for r in sweep(
-            ["a-slow", "b-quick"], set(), jobs=1, repo=tt_box,
+            ["a-slow", "b-quick"], jobs=1, repo=tt_box,
             costs={"a-slow": 100.0}, deadline=60))
         check("tt2 under a deadline a file started late is given only what is "
               "left of it - one worker, so `b-quick` starts after `a-slow`'s "
@@ -2939,7 +3034,7 @@ def _cases(check):
               and tt_late["b-quick"].get("timeout") < 60
               and all(r["ok"] for r in tt_late.values()))
         tt_t0 = time.time()
-        tt_hung = sweep(["hung"], set(), jobs=1, repo=tt_box, deadline=3)[0]
+        tt_hung = sweep(["hung"], jobs=1, repo=tt_box, deadline=3)[0]
         tt_took = time.time() - tt_t0
         check("tt3 a file that hangs past the deadline is NAMED as a timeout "
               "when the deadline falls, not waited on until its own calibrated "
@@ -3050,7 +3145,7 @@ def _cases(check):
         nl_named, nl_why = named_suites(["leaky", "silent", "ok"],
                                         sorted(nl_bodies))
         nl_rows = dict((r["path"], r) for r in sweep(
-            nl_named or [], set(), jobs=2, repo=nl_box, timeout=30))
+            nl_named or [], jobs=2, repo=nl_box, timeout=30))
     finally:
         remove_tree(nl_box)
     nl_refused = subprocess.run(
@@ -3131,7 +3226,7 @@ def _cases(check):
         ll_plain = dict((n, run_one(n, repo=ll_box, timeout=30, environ=ll_utf8))
                         for n in ("bare", "named"))
         ll_legacy = dict((r["path"], r) for r in sweep(
-            ["bare", "named"], set(), jobs=2, repo=ll_box, timeout=30,
+            ["bare", "named"], jobs=2, repo=ll_box, timeout=30,
             encoding="cp1252", locale_vars=ll_verdict["locale"]))
     finally:
         remove_tree(ll_box)

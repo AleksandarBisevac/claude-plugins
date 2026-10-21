@@ -380,8 +380,8 @@ more: the step driver (`scripts/governance/drive-phase.py`) prints each rule at 
 applies to - its `STEPS` table, the "step" anchors below - and each agent reads its own in its
 prompt, the bulleted rules the `agents/*.md` anchors below open with.
 `_refs.followed_anchor_drift()` fails the build when a row names anything else, or a step that
-prints no rule; `tools/measure-context.py --gate` holds that no pipeline command makes the main
-loop read a reference file first. Nothing returns a decision when one of these rules is broken,
+prints no rule; `tools/measure-context.py --gate` (in the source repository) holds that no pipeline
+command makes the main loop read a reference file first. Nothing returns a decision when one of these rules is broken,
 so the last column names the evidence that would show it afterwards — and where there is none,
 it says so. An invariant with no basis is exactly what this table exists to stop presenting as
 a guarantee.

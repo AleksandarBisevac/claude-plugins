@@ -1772,9 +1772,4 @@ def main():
 
 
 if __name__ == "__main__":
-    if "--selftest" in sys.argv:
-        print("guard-history-rewrite.py has no inline --selftest; its cases live "
-              "in tests/test_guard_history_rewrite.py - run that "
-              "file instead.")
-        sys.exit(0)
     main()

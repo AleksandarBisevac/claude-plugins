@@ -5,7 +5,7 @@
 which performs every step that needs no judgement as the existing verbs and prints each step that
 does as one signal line, with the rule it applies behind `--explain` (**Progress output** below);
 the agents carry their own rules in their prompts.
-`tools/measure-context.py --gate` holds that no pipeline command reads a reference file first,
+`tools/measure-context.py --gate` (in the source repository) holds that no pipeline command reads a reference file first,
 and `_refs.followed_anchor_drift()` that every followed rule in the README names the step or the
 prompt that states it. What stays here is the shared logic as documentation - config
 resolution, preflight, guardrails, readiness, the lock, branch-per-phase, resume - for the guide

@@ -74,8 +74,8 @@ const W = 64;
 
 describe('the fixture is the demo generator\'s own outcome', () => {
   it('both halves of it are still in gen-demo-manifest.py', () => {
-    const py = fs.readFileSync(path.join(REPO_ROOT, 'plugins', 'audit', 'scripts',
-      'demo', 'gen-demo-manifest.py'), 'utf8');
+    const py = fs.readFileSync(path.join(REPO_ROOT, 'tools', 'demo',
+      'gen-demo-manifest.py'), 'utf8');
     expect(py).toContain('Everything under src/%s that this phase touches is validated and ');
     expect(py).toContain('covered by a test that would fail without the fix.');
   });

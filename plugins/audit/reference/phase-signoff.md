@@ -5,7 +5,7 @@ hand any more.** Once every task is closed, the step driver (`scripts/governance
 dispatches the phase reviewer, records its findings in one write, prints one `decide triage`,
 and on `sign-off` runs the phase gate, the invariants check, the verdict, the commit, the
 landing and the lock release as one step, in that order, printing the rule each step needs at
-that step. `tools/measure-context.py --gate` holds that no pipeline command reads a reference
+that step. `tools/measure-context.py --gate` (in the source repository) holds that no pipeline command reads a reference
 file first. This file is the reference for what each step checks and why, for the guide agent
 and for a reader who asks: where it says "you", read the step the driver runs. What each
 `/audit:phase` verb does and refuses, and what a re-run of sign-off meets, is
@@ -369,8 +369,8 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    the exposure to a flaky suite while adding no assurance. `SAME COUNT, SAME SUITE NOT
    ESTABLISHED` means a step named no suite file, so the two are ADDED and the total is an upper
    bound. **Neither is a refusal and neither moves the exit code** — they correct the number, and
-   `run-test-gate.shared_counts` is what decides between them, with `sc3` and `sc5` pinning both
-   directions. Report the line to the human with the verdict; do not spend a retry on it and do
+   `run-test-gate.shared_counts` is what decides between them, and both directions are pinned by cases
+   in the source repository's suite for that script. Report the line to the human with the verdict; do not spend a retry on it and do
    not edit `meta.buildCommands` on your own account, because which of two entries a project
    wants kept is not a question this run answers. **Every step's line now carries what that step
    cost**, so a doubled run is visible on a green gate without anyone deciding to measure it.

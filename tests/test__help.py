@@ -39,8 +39,8 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _areas                                      # noqa: E402  (as _help imports it)
 import _policy                                     # noqa: E402  (as _help imports it)
-import _manifest_vocab as _vocab                   # noqa: E402  (as _help imports it)
 import _help as M                                  # noqa: E402
+import _help_lints as L                          # noqa: E402
 
 
 # --- the payload under another platform's conventions --------------------------
@@ -150,12 +150,8 @@ def _run_with_nt_join(fn):
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     # --- extraction ---------------------------------------------------------------
-    cfg = M.config_fields()
-    man = M.manifest_fields()
-    check("s1 the config schema yields dotted paths with their own words",
-          cfg["usage.pricingAsOf"]["description"].startswith("Date the pricing")
-          or "pricing" in cfg["usage.pricingAsOf"]["description"],
-          repr(cfg.get("usage.pricingAsOf")))
+    cfg = L.config_fields()
+    man = L.manifest_fields()
     check("s2 nested containers are walked, not just the top level",
           "tddReminder.throttleMinutes" in cfg and "usage.bands.highUSD" in cfg)
     check("s3 an array's items are spelled path[]",
@@ -412,28 +408,6 @@ def _cases(check):
     check("pr2 ...and an explicit root still wins, which is what lets the two "
           "drift lints below be pointed at a fixture",
           M.plugin_root("/nowhere") == "/nowhere")
-
-    # --- the manifest vocabulary against the schema -------------------------------
-    # `_manifest_vocab`'s KNOWN_* sets restate vocabulary this schema owns, and the
-    # comparison lives here because the walk does: the vocabulary is at layer 1 and
-    # `fields()` is at layer 2, so it could not reach up for it. The cases that
-    # assert the SHIPPED sets agree are in `test__manifest_vocab.py`, beside the
-    # thing a reader is editing; these prove the comparison itself can fail, which
-    # a green-only lint never does.
-    check("v1 an anchor yields the properties ONE level under it - `types` and "
-          "not `types.bug`, which belongs to a different question",
-          M._direct_children(man, "meta.ado") >= {"organization", "types",
-                                                  "stateMap"}
-          and "types.bug" not in M._direct_children(man, "meta.ado")
-          and "bug" not in M._direct_children(man, "meta.ado"),
-          repr(sorted(M._direct_children(man, "meta.ado"))))
-    check("v2 ...the document root is the empty anchor, and `<name>` is a SHAPE "
-          "rather than a key anybody writes, so it is dropped",
-          M._direct_children(man, "") == {"$schema", "meta", "phases", "bugs",
-                                          "decisions", "deferred", "fileIndex",
-                                          "proposals"}
-          and "<name>" not in M._direct_children(man, "fileIndex"),
-          repr(sorted(M._direct_children(man, ""))))
     # Nine fixtures, one per thing the lint can say. Fixtures rather than the real
     # module: mutating the shipped vocabulary to prove a lint would leave the tree
     # one exception away from shipping the mutation.
@@ -442,13 +416,7 @@ def _cases(check):
     def _probe(levels, sets, off):
         """Just the problems, against one anchor — the set name is `KNOWN_X` in
         every fixture, so carrying it into each expected list is noise."""
-        return [p for _, p in M.vocab_drift(levels, sets, _anch, off)]
-
-    check("v3 a property the schema declares and the set does not is named, with "
-          "its anchor - the failure that prompted this whole check",
-          _probe({"KNOWN_X": {"a", "b"}}, {"KNOWN_X": {"a"}}, {}) ==
-          ["meta.b is in the schema and not in the set - add it, or the "
-           "typo-catcher warns about a real key"])
+        return [p for _, p in L.vocab_drift(levels, sets, _anch, off)]
     check("v4 ...and a key the set holds that the schema does not, unexcused - a "
           "typo in the vocabulary is otherwise invisible",
           len(_probe({"KNOWN_X": {"a"}}, {"KNOWN_X": {"a", "z"}}, {})) == 1
@@ -490,17 +458,6 @@ def _cases(check):
           and _probe({"KNOWN_X": {"a"}}, {}, {}) ==
           ["SCHEMA_ANCHORS anchors it at 'meta', but the vocabulary has no such "
            "set"])
-    check("v11 ...and an agreeing table says nothing at all - the case that fails "
-          "if any of v3-v10 is firing on everything",
-          M.vocab_drift({"KNOWN_X": {"a"}}, {"KNOWN_X": {"a"}}, _anch, {}) == [])
-    check("v12 `vocab_sets()` reads the sets OFF the module rather than listing "
-          "them, so v9 has something to catch",
-          M.vocab_sets(_vocab) == dict((n, getattr(_vocab, n)) for n in
-                                       ("KNOWN_ROOT", "KNOWN_META", "KNOWN_ADO",
-                                        "KNOWN_BRANCH", "KNOWN_MERGE",
-                                        "KNOWN_PHASE", "KNOWN_TASK", "KNOWN_BUG",
-                                        "KNOWN_DECISION", "KNOWN_PROPOSAL")),
-          repr(sorted(M.vocab_sets(_vocab))))
 
     # --- the guide agent ----------------------------------------------------------
     cards = {c["name"]: c for c in M.agent_cards()}
@@ -512,9 +469,6 @@ def _cases(check):
           "cannot advertise a capability it does not have",
           guide and sorted(guide["tools"]) == sorted(M.READ_ONLY_TOOLS),
           repr(guide and guide["tools"]))
-    check("g3 the guide is mechanically read-only - an answering agent with an "
-          "edit tool would be a writer with no plan, no lock and no journal row",
-          M.guide_is_read_only() and (guide or {}).get("readOnly") is True)
     # `(guide or {})`, not `guide[...]`: an install with no guide is exactly what a
     # deleted agent file looks like, and a check that dies subscripting None exits 1
     # with a traceback instead of naming the defect — which is how a mutation that
@@ -684,63 +638,6 @@ def _cases(check):
           % (_sim_out, _sim_err, _control))
     check("p6 it names where the field text came from, so a reader can go read "
           "the source", pay["schemas"]["config"].endswith(".json"))
-
-    # --- (ch) a documented flag's VALUES against the parser that takes them -----
-    # `/audit:status --view pending` was advertised by the command doc and
-    # refused by the parser, and the whole gate set was green: `command_flag_drift`
-    # compares flag NAMES between two documents and asks no parser anything. These
-    # cases are the instrument, and they are pure so the failure modes can be
-    # driven without a repository.
-    check("ch1 the hint is read for VALUE LISTS, not for flags: `--view a|b|c` "
-          "yields its three, and a flag with a free-form metavar yields nothing "
-          "because there is nothing to compare",
-          M.advertised_choices(
-              "'[--gate] [--phase <id>] [--view active|archived|all] "
-              "[--color auto|always|never]'")
-          == {"--view": ["active", "archived", "all"],
-              "--color": ["auto", "always", "never"]})
-    check("ch2 THE DEFECT THAT SHIPPED: a value the doc advertises and the "
-          "parser refuses is a finding that names both sides",
-          [p for _s, p in M.choice_drift(
-              "status.md", {"--view": ["active", "pending", "archived", "all"]},
-              {"--view": set(("active", "archived", "all"))}, {})]
-          == ["--view: the doc advertises 'pending', which the parser refuses "
-              "(it takes active, all, archived)"])
-    check("ch3 ...and the SAME FAULT FACING THE OTHER WAY is reported too - a "
-          "value the parser takes that the doc never mentions is a capability "
-          "nobody can find, which is this repo's oldest defect",
-          [p for _s, p in M.choice_drift(
-              "status.md", {"--view": ["active", "all"]},
-              {"--view": set(("active", "archived", "all"))}, {})]
-          == ["--view: the parser accepts 'archived', which the doc never "
-              "advertises"])
-    check("ch4 agreement is silence - a rule that fired on a correct pair would "
-          "be routed around by the first person who read it",
-          M.choice_drift("status.md", {"--view": ["active", "archived", "all"]},
-                         {"--view": set(("active", "archived", "all"))}, {}) == [])
-    check("ch5 A FLAG NO PARSER OWNS IS A FINDING, NOT A SKIP: a doc could "
-          "otherwise opt out of this check by advertising a flag nothing "
-          "implements, and silence would read exactly like agreement",
-          [p for _s, p in M.choice_drift(
-              "status.md", {"--view": ["active"]}, {},
-              {"audit-status.py": "exposes no build_parser()"})]
-          == ["--view: no parser named by this command declares it "
-              "(audit-status.py: exposes no build_parser())"])
-    check("ch6 ...but an unreadable script is CONTEXT, not a finding of its own: "
-          "with the flag matched, a doc that merely PRINTS another tool's command "
-          "in its prose is silent. This was got wrong first and convicted "
-          "`doctor.md` for showing a `run-test-gate.py` invocation - a guard that "
-          "fires on a correct document is one somebody routes around",
-          M.choice_drift("status.md", {"--view": ["active"]},
-                         {"--view": set(("active",))},
-                         {"helper.py": "exposes no build_parser()"}) == [])
-    # THE LIVE ONE. Everything above is a fixture; this is the tree, and it is
-    # what makes the rule shippable rather than an argument written on the day it
-    # landed.
-    _ch_live = M.command_choice_drift()
-    check("ch7 ...and the real command surface agrees with its own parsers "
-          "right now, in both directions: %r" % (_ch_live,),
-          _ch_live == [])
 
 
 def _selftest():

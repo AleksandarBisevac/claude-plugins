@@ -122,6 +122,10 @@ export { csvFields, firstNonRawNumberLine, scriptIndex, resolveScript,
          assertLadderMeasuredSomething, newLadderTally };
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+// The demo generators are development code under `tools/demo/`, outside the plugin, so
+// `resolveScript` (which indexes the plugin's `scripts/`) cannot find them.
+const demoScript = (name) => path.join(REPO, 'tools', 'demo', name);
 const PY = process.env.PYTHON || 'python3';
 
 const argv = process.argv.slice(2);
@@ -5772,7 +5776,7 @@ const POLICY_DENIED_USER_SKILL = 'shell-runner';
 function writePolicyFixture(work) {
   const project = path.join(work, 'pol');
   const home = path.join(work, 'polhome');
-  py([resolveScript('gen-demo-manifest.py'), project, '--phases', '6', '--tasks', '3']);
+  py([demoScript('gen-demo-manifest.py'), project, '--phases', '6', '--tasks', '3']);
   writeDiscoveryTree(home, { skills: POL_SKILLS, agents: POL_AGENTS,
                              plugin: POL_PLUGIN });
   writeFixtureMcp(project, POL_MCP);
@@ -7859,8 +7863,8 @@ async function main() {
     if (wanted('panel')) {
       legsRun.push('panel');
       const big = path.join(work, 'big');
-      py([resolveScript('gen-demo-manifest.py'), big, '--phases', '50', '--tasks', '20']);
-      py([resolveScript('gen-demo-usage.py'), path.join(big, 'audit-plan.json')]);
+      py([demoScript('gen-demo-manifest.py'), big, '--phases', '50', '--tasks', '20']);
+      py([demoScript('gen-demo-usage.py'), path.join(big, 'audit-plan.json')]);
 
       // The panel names the identity it writes as, in the topbar and again in the
       // confirm dialog — resolved by usage_ledger.resolve_author, which asks git.

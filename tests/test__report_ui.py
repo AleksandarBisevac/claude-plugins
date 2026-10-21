@@ -19,6 +19,7 @@ import os
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _ui_theme_lints  # noqa: E402  (the lint half, development code)
 from _output import safe_stdio                     # noqa: E402
 import _ui_theme as _theme                         # noqa: E402
 import _report_ui as M                             # noqa: E402
@@ -28,7 +29,7 @@ import _report_ui as M                             # noqa: E402
 def _cases(check):
     # --- the two asset files exist and decode as utf-8 ---------------------------
     names = M._CSS_PARTS + M._SCRIPT_PARTS
-    unreadable = _theme.unreadable_assets(names)
+    unreadable = _ui_theme_lints.unreadable_assets(names)
     for name in names:
         check("%s exists and decodes as utf-8" % name, name not in unreadable)
 
@@ -74,7 +75,7 @@ def _cases(check):
     # `shared/` counts: it is part of what this page is BUILT from, and a shared
     # part nobody joined would be the same silent failure as a report part nobody
     # joined - the page assembles, the pins pass, the helper never ships.
-    _declared_js = set(n for n in _theme.UI_ASSETS
+    _declared_js = set(n for n in _ui_theme_lints.UI_ASSETS
                        if n.endswith(".js")
                        and (n.startswith("report/") or n.startswith("shared/")))
     check("every report part on disk is loaded, and every loaded part is on "
@@ -118,7 +119,7 @@ def _cases(check):
     # --- CSS lints, via _ui_theme's existing helpers (same ones panel/_panel_ui use)
     check("report.css braces balance", css_file.count("{") == css_file.count("}"))
     check("no declaration in report.css is left unterminated",
-          not _theme.unterminated_css_decls(css_file))
+          not _ui_theme_lints.unterminated_css_decls(css_file))
 
     # --- nothing in ui/ escapes the flat CI selftest glob (scripts/*.py) --------
     ui_pyfiles = sorted(

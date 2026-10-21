@@ -3,7 +3,7 @@
 What each pipeline command's verbs write, refuse and why - the explanation behind
 `commands/run.md`, `next.md`, `resume.md`, `review.md`, `phase.md` and `task.md`, whose bodies
 carry only the step driver's loop and each verb's command line. **No command reads this file
-first** - `tools/measure-context.py --gate` holds that no pipeline command makes the main loop
+first** - `tools/measure-context.py --gate` (in the source repository) holds that no pipeline command makes the main loop
 read a reference file before its work - and the rule a step needs is printed by the step
 driver (`scripts/governance/drive-phase.py`) at that step, or stated in the prompt of the agent
 that acts on it. This file is for `/audit:guide` and for a reader who asks how a verb behaves.
@@ -637,7 +637,7 @@ aside under that task's name with `git stash push -m <its id> -- <path>`. Nothin
   the phase's, `at` the start's own instant. Two machines entering one phase then meet a merge
   conflict in that shard rather than running it twice. Sign-off releases it. It carries no
   `host`: the shard is committed, so a machine name there would be published, which is why
-  the journal drops `actor.host` too and `tools/check-committed-pii.py` reports a `host` under
+  the journal drops `actor.host` too and `tools/check-committed-pii.py` (in the source repository) reports a `host` under
   a claim. A claim this session already holds is left exactly as it was; a single-file
   plan gets none (it has no shard to conflict in); and with `$CLAUDE_CODE_SESSION_ID` unset no
   claim is written and the output says so, because a claim naming no session is one no later

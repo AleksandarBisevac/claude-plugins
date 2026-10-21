@@ -42,6 +42,7 @@ import re
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _ui_theme_lints  # noqa: E402  (the stylesheet lints, development code)
 import _output                                     # noqa: E402  (PLUGIN_ROOT: the schema this page's words must agree with)
 from _output import safe_stdio                     # noqa: E402
 import _help                                       # noqa: E402  (topic ids + COMPOSITION_PATHS)
@@ -2741,25 +2742,25 @@ def _cases(check):
     # UI_HTML carries the stylesheet AND the JS that writes inline styles, which
     # is where an undeclared token actually hides.
     _css = M.UI_HTML[M.UI_HTML.index("<style>"):M.UI_HTML.index("</style>")]
-    _missing = M._undeclared_css_vars(M.UI_HTML)
+    _missing = _ui_theme_lints.undeclared_css_vars(M.UI_HTML)
     check("every var(--token) in the panel CSS is declared "
           "(an undeclared one paints transparent and logs nothing): %r" % _missing,
           _missing == [])
-    _asym = M._theme_asymmetric_vars(_css)
+    _asym = _ui_theme_lints.theme_asymmetric_vars(_css)
     check("no colour token exists in only one theme (either direction): %r"
           % _asym, _asym == [])
     # Settings alone ships a <select>, an <input type=date> and four number
     # inputs; all six are painted by the UA from `color-scheme`, which no custom
     # property can reach. A theme that does not restate it renders our dark cards
     # with the OS's light spinners and menu.
-    _nocs = M._themes_missing_color_scheme(_css)
+    _nocs = _ui_theme_lints.themes_missing_color_scheme(_css)
     check("every explicit data-theme restates color-scheme, so the toggle moves "
           "the selects, spinners, date picker and scrollbars too: %r" % _nocs,
           _nocs == [])
     # This sheet is a non-raw Python string too. The report's copy of the filter
     # chip's tick shipped as `¹3<BEL>0` for want of a doubled backslash; this one
     # was written correctly, and neither suite could see that they differed.
-    _esc = M._mangled_css_escapes(_css)
+    _esc = _ui_theme_lints.mangled_css_escapes(_css)
     check("no CSS escape was eaten by Python before the browser saw it: %r" % _esc,
           _esc == [])
     check("usage colours come from the same validated palette as the report",

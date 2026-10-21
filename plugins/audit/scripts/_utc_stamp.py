@@ -23,7 +23,6 @@ with its offset, a different spelling on purpose). A format that is not this one
 helper and its own name for the same reason.
 
 The cases for this file live in `tests/test__utc_stamp.py`.
-Exit codes (as a command): 0 selftest pointer printed - 2 usage error.
 """
 import os
 import sys
@@ -67,10 +66,6 @@ def utc_stamp(epoch=None):
 
 
 if __name__ == "__main__":
-    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if selftest_requested(sys.argv[1:]):
-        print("_utc_stamp.py has no inline --selftest; its cases live in "
-              "tests/test__utc_stamp.py - run that file instead.")
-        sys.exit(0)
     print(__doc__.strip())

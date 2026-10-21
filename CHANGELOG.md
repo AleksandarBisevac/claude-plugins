@@ -4,6 +4,23 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [Unreleased]
+
+### Removed
+- **`--selftest` on every shipped module.** A hook, script or entry point under `hooks/` or
+  `scripts/` no longer answers the flag with a pointer to a suite it does not carry: given
+  `--selftest` it treats it as any other unknown argument, which for an entry point is an ordinary
+  usage error. The cases are unchanged and live in the source repository's `tests/`; the sweep
+  that runs them now asks of every shipped module only whether a suite or a named exemption
+  exists for it.
+- **`render-report.py --bench`.** The report benchmark is a maintainer's tool, not part of the
+  renderer, and it is `tools/bench-report.py` in the source repository now. Handed `--bench`,
+  `render-report.py` reads it as a manifest path that does not resolve.
+- **Development code from the installed plugin.** The demo fixture generators, the ledger
+  benchmark and the lint half of `_output.py`, `_ui_theme.py`, `_help.py` and `_config_rules.py`
+  moved out of `plugins/audit/` to `tools/demo/`, `tools/_usage_bench.py` and `tools/lints/`, so
+  an install no longer carries them.
+
 ## [3.5.0]
 
 ### Added

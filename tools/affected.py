@@ -73,6 +73,7 @@ if _output.LINTS_DIR not in sys.path:
     sys.path.insert(0, _output.LINTS_DIR)
 
 import _deps  # noqa: E402  (the import graph this selection is derived from)
+import _output_lints  # noqa: E402  (which development modules have their cases in tests/)
 import _refs  # noqa: E402  (the surfaces and sweep documents it reads)
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -131,13 +132,13 @@ WORKFLOW_READERS = ("tools/gate-parity.py", "tools/sweep-selftests.py",
 # wrong by a tool whose whole subject is what a narrowed run leaves out.
 #
 # DERIVED, not a list. `sweep-selftests.py` walks `tools/` and demands the
-# `N/M cases passed` contract from every file it is not told is migrated, so a `.py`
-# outside the migrated set HAS a suite by construction - and the migrated set is read
-# off the same classifier the sweep asks rather than name-transformed here. The path
-# is substituted whole: a format string spelling a module basename is what
-# `_refs.tool_basename_drift()` reads as a reference to a file that does not exist.
+# `N/M cases passed` contract from every file except the development modules whose
+# cases live in `tests/`, so a `.py` outside that set HAS a suite by construction - and
+# the set is read off the same function the sweep asks rather than name-transformed
+# here. The path is substituted whole: a format string spelling a module basename is
+# what `_refs.tool_basename_drift()` reads as a reference to a file that does not exist.
 TOOL_SELFTEST = "python3 %s --selftest"
-MIGRATED = frozenset(_output.covered_repo_paths(REPO))
+MIGRATED = frozenset(_output_lints.suite_elsewhere_paths(REPO))
 
 # The documents `_refs.sweep_glob_drift()` pins, READ OFF `_refs` rather than listed
 # again here. Two of them start with a dot and were unreachable by every rule below;
@@ -483,6 +484,16 @@ def select(paths):
             # sweep runner - the one file every other suite is run BY - selectable
             # only through an arm written for it by name.
             own = posix.endswith(".py") and posix not in MIGRATED
+            if posix in MIGRATED:
+                # A DEVELOPMENT MODULE UNDER `tools/` THAT ISN'T A LINT (a demo
+                # generator, a benchmark): its cases are a suite in `tests/`, named
+                # for it with the hyphens read as underscores, and the sweep never
+                # runs the file itself.
+                suite = _suite_for(os.path.basename(posix)[:-3].replace("-", "_"))
+                if suite:
+                    suites.add(suite)
+                    reasons.append("%s - a development module: its suite %s"
+                                   % (posix, suite))
             if own:
                 gates.append(TOOL_SELFTEST % (posix,))
                 reasons.append("%s - a tool, so its own cases run" % (posix,))

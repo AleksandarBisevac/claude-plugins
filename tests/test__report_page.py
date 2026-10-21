@@ -36,7 +36,7 @@ import re
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
-import _output                                     # noqa: E402  (PATH_PREAMBLE, for pg2c)
+import _output_lints  # noqa: E402  (the lint half, development code)
 from _output import safe_stdio                     # noqa: E402
 import _report_page as M                           # noqa: E402
 import _fmt                                        # noqa: E402  (where the plural rule lives now)
@@ -168,7 +168,7 @@ def _cases(check):
     # target - is what keeps the case about `_report_page.py`'s own reach.
     with open(os.path.abspath(M.__file__), "r", encoding="utf-8") as _fh:
         _src = _fh.read()
-    _src = _src.replace(_output.PATH_PREAMBLE, "")
+    _src = _src.replace(_output_lints.PATH_PREAMBLE, "")
     _tree = ast.parse(_src)
     _imported = set()
     for _n in ast.walk(_tree):

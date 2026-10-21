@@ -17,7 +17,6 @@ failed. `_output.bare_output_cut_violations()` fails a head-only cut of a name
 bound from such output, so the next site cannot choose an end again.
 
 The cases for this file live in `tests/test__excerpt.py`.
-Exit codes (as a command): 0 selftest pointer printed - 2 usage error.
 """
 import os
 import re
@@ -113,10 +112,6 @@ def reason_of(*streams):
 
 
 if __name__ == "__main__":
-    from _output import safe_stdio, selftest_requested  # same dir; sys.path[0] when run as a command
+    from _output import safe_stdio  # same dir; sys.path[0] when run as a command
     safe_stdio()
-    if selftest_requested(sys.argv[1:]):
-        print("_excerpt.py has no inline --selftest; its cases live in "
-              "tests/test__excerpt.py - run that file instead.")
-        sys.exit(0)
     print(__doc__.strip())

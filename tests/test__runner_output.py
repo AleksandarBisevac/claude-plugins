@@ -289,6 +289,17 @@ def _sweep_cases(check):
                         "did not finish within 674s")]
           and tally == {"ok": 338, "files": 340, "migrated": 155,
                         "cases": 15755})
+    # THE LINE AS THE SWEEP SPELLS IT NOW: no `migrated` clause, because no file is
+    # classed that way any more. Built from parts, as the others are, so the prose scan
+    # does not read it as a claim; the old spelling above is what the ledger keeps.
+    _now = "%d/%d files ok, %d cases" % (3, 4, 120)
+    _no_clause = len(())
+    check("rs1b the sweep's summary without the retired `migrated` clause is read "
+          "too, with `migrated` 0, and its FAIL line still accounts for the one "
+          "red file: %r" % (summary(_now),),
+          summary(_now) == {"ok": 3, "files": 4, "migrated": _no_clause, "cases": 120}
+          and failures("FAIL  tests/test__refs.py: exited 1\n" + _now)
+          == [("tests/test__refs.py", "exited 1")])
     # The summary as the sweep spells it today, with the directory's slash; the
     # ledger's copies above carry none.
     green = "\n".join(("  ok      tools/where.py   %d cases" % (7,),

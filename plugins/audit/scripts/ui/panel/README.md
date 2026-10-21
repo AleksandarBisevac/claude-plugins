@@ -9,7 +9,7 @@ built once at import and re-substituted per request for the session token.
 old single-file `panel.js` in its original sequence, which is what makes the
 assembled page byte-for-byte what it was — the whole safety argument for the split.
 Substring assertions and index-bounded slices over `UI_HTML` are pinned to that
-order; print how many of each before you start (`python3 tools/count-ui-pins.py`,
+order; print how many of each before you start (`python3 tools/count-ui-pins.py` in the source repository,
 `--json` for a machine-readable shape). Both figures used to be written out here and
 had rotted well below the live ones by the time anybody re-derived them, which is the
 defect this repo's own rule about numbers in prose exists for — and the repair it
@@ -81,5 +81,5 @@ views, the CSV export after the usage metrics). Moving either would be a regroup
   renaming a class cannot silently break behaviour.
 - **A selftest cannot see a dead page.** A syntax error kills the whole inline script
   while every `'…' in UI_HTML` pin still passes, so
-  `node tools/capture-screenshots.mjs --check` is what proves the panel comes up. It
+  `node tools/capture-screenshots.mjs --check` (in the source repository) is what proves the panel comes up. It
   is not optional after any edit here.
