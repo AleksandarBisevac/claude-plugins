@@ -850,6 +850,12 @@
       "title": "The writer is a plain Claude Code session, and scripts verify around it",
       "status": "done",
       "shard": "phases/P131.json"
+    },
+    {
+      "id": "P132",
+      "title": "Fix what the S1 phase code review found on the writer-session path",
+      "status": "pending",
+      "shard": "phases/P132.json"
     }
   ],
   "fileIndex": {
@@ -3106,7 +3112,8 @@
       "P129.8-izt",
       "P128.2-0h5",
       "P128.41-izt",
-      "P131.5"
+      "P131.5",
+      "P132.4"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -3398,7 +3405,8 @@
       "P130.9",
       "P131.1",
       "P131.2",
-      "P131.5"
+      "P131.5",
+      "P132.4"
     ],
     "plugins/audit/scripts/config/_help.py": [
       "P10.2",
@@ -4612,7 +4620,8 @@
       "BF3.1",
       "P131.1",
       "P131.2",
-      "P131.13"
+      "P131.13",
+      "P132.3"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -4799,7 +4808,8 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P131.5"
+      "P131.5",
+      "P132.4"
     ],
     "plugins/audit/scripts/panel/_panel_state.py": [
       "P12.3",
@@ -5332,7 +5342,9 @@
       "P131.9",
       "P131.6",
       "P131.7",
-      "P131.18-dau"
+      "P131.18-dau",
+      "P132.3",
+      "P132.4"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -9817,7 +9829,10 @@
       "P131.9",
       "P131.13",
       "P131.17-dau",
-      "P131.20-dau"
+      "P131.20-dau",
+      "P132.1",
+      "P132.2",
+      "P132.3"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -10870,7 +10885,8 @@
     "tests/test__config_rules.py": [
       "P131.1",
       "P131.2",
-      "P131.5"
+      "P131.5",
+      "P132.4"
     ],
     "tests/test__demo_cast.py": [
       "P131.1",
@@ -11019,7 +11035,8 @@
     ],
     "tests/test__panel_settings.py": [
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P132.4"
     ],
     "tests/test__panel_state.py": [
       "P131.1"
@@ -11177,7 +11194,9 @@
       "P131.9",
       "P131.6",
       "P131.7",
-      "P131.18-dau"
+      "P131.18-dau",
+      "P132.3",
+      "P132.4"
     ],
     "tests/test_audit_status.py": [
       "P131.1",
@@ -11231,7 +11250,10 @@
       "P129.7-izt",
       "P129.8-izt",
       "P131.17-dau",
-      "P131.20-dau"
+      "P131.20-dau",
+      "P132.1",
+      "P132.2",
+      "P132.3"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -11440,6 +11462,9 @@
     ],
     "tests/test__impact.py": [
       "P131.18-dau"
+    ],
+    ".claude/audit.config.json": [
+      "P132.4"
     ]
   },
   "bugs": [
