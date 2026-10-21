@@ -1004,9 +1004,9 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-21T04:07:00Z.22b9b9",
+        "runId": "2026-10-21T04:53:56Z.040020",
         "status": "passed",
-        "at": "2026-10-21T04:07:00Z"
+        "at": "2026-10-21T04:53:56Z"
       }
     },
     {
@@ -1345,7 +1345,7 @@
     {
       "id": "P131.10",
       "title": "Red-first on an inline suite pulls in the imports and helpers the applied test hunks reference, so a new case goes red on its assertion rather than on a NameError",
-      "status": "in_progress",
+      "status": "done",
       "description": "stamp-verification.py `inline_test_text` builds the red copy of an inline suite (test and implementation in one file) as HEAD plus only the hunks inside a test definition (`_test_spans`), holding every other hunk at HEAD. A new case that needs a new top-level import or helper then crashes the throwaway with NameError, so red-first answers could-not-prove and the case binding reports the case as not printed although it was red in the writer's tree (seen on tools/gate-parity.py: `import signal` and `_default_sigint` stayed at HEAD while the case using them was applied). Do: apply a hunk outside a test definition when it only adds imports or defines a name the applied test hunks reference and HEAD lacks (a name-reference closure over the applied hunks), and say which hunks were pulled in; where the closure cannot be computed, keep could-not-prove but name the unresolved symbol from the NameError instead of 'no test was collected'.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -1375,19 +1375,38 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f26def62ef57",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py: inline_test_text(head, now, pull=True) now returns (text, held, applied, problem, pulled). After choosing the test-definition hunks it pulls in a hunk outside them, one top-level statement at a time, when the hunk changes no HEAD line (_hunk_units: old side all blank/comment, every added non-neutral line inside a whole top-level statement) and the statement is an import/def/class/plain or annotated assignment (_stmt_binds) binding a name HEAD does not bind (_module_binds, imports and if/try/with blocks included) and an applied hunk or an already pulled unit references (_closure, fixed point over _loads_by_line). A hunk pulled in whole is not counted as held; partly pulled hunks keep HEAD's lines plus the pulled statements. inline_overlays keeps a suite split when anything was pulled (held or pulled) and carries the plain copy too; run_red, when the pulled-in run is GREEN, runs again with the plain copy (tag task-held) and records run['withdrawn'], because a pulled-in new def may be the fix itself, so the old --introduces proof stays reachable. red_verdict: inline_clause() names the pulled-in statements ('pulled in for the names its test hunks reference: import json (line 2); ...'), withdrawn_clause() says when they were held back, and a V_COLLECT inline run whose output carries a NameError now says the name stays unresolved (unresolved_name()) in place of 'no test was collected'. Payload 'inline' gains pulledIn/heldBack. tests: new stage si-inline-closure (si9-si14); si3 asserts pulled == [] and unpacks the 5-tuple; si5-7 slice [:4]. Gate: `python3 tools/sweep-selftests.py tests/test_stamp_verification.py` exit 0, 306 cases. ruff exit 0; vermin -t=3.8- exit 0; every no-argument lint in _output_lints plus _deps.navigability_violations: 0 hits. Mutation probe on a scratch copy of the tree (scratchpad/mutations.py, every anchor asserted to land exactly once): 9 of 9 mutations killed, each in exactly the expected cases - closure off (si9,si12,si13), partial hunk pulled whole (si13), no transitive reach (si9,si13), head-binds check dropped (si13), unresolved wording never (si10,si11) / not inline-only (si14), no held-back retry (si12) / retry on every verdict (si9), tangled hunk split (si11).",
+        "descriptive": "Red-first on an inline suite now pulls in the new imports and helpers a new case needs, so the case goes red on its assertion; an unresolvable name is named off the NameError."
       },
       "startedAt": "2026-10-21T03:14:59Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-21T04:07:02Z",
+      "verifiedBy": [
+        "si9: an inline suite whose new case needs a new import and a helper calling a second helper is proved on its assertion, and the basis names the pulled-in statements and not an unreferenced helper in the same hunk",
+        "si10: a name bound at run time (globals()) stays could-not-prove with the unresolved symbol named, never 'no test was collected'",
+        "si11: a new helper written in the hunk that carries the fix is not pulled in; could-not-prove names it unresolved",
+        "si12: when the pulled-in definition is the fix itself the run passes, is made again with it held back, and is proved via --introduces as before",
+        "si13: the copy holds exactly the import and both helpers (counted), not the unreferenced one nor the fix; pull=False gives the plain split; a new statement rebinding a HEAD name is never pulled in",
+        "si14: a NameError in a non-inline suite keeps the collection reason"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-21T03:50:34Z.b01cf1",
         "status": "passed",
         "at": "2026-10-21T03:50:34Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "f26def62ef57",
+        "at": "2026-10-21T04:07:02Z",
+        "return": "docs/audit/evidence/returns/P131.10/20261021T031459Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-21T03:35:48Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 with failing cases si9 (house FAIL), si10 (house FAIL), si11 (house FAIL), si12 (house FAIL), tests/test_stamp_verification.py: exited 1 (house FAIL), but the fix run could not be made: the run timed out after 156 s and its process group was torn down - SELFTEST FAILED: 295/301 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {

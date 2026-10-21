@@ -876,6 +876,16 @@ LAYERS = (
      # `_manifest_io` to take a task's declared files off the plan instead
      # of off a hand-typed list, which is the held model of state it is about.
      "stamp-verification",
+     # `run-agent-session` runs one role - the writer or the reviewer - as a
+     # headless top-level `claude -p` session and prints its cost from the
+     # session's own result event, so a task's spend is a figure the session
+     # reported rather than a share of the main loop's. An entry point for this
+     # layer's usual reason, the caller being the drive or orchestrator prose
+     # reaching Python through Bash. It reaches `_proc_group` for the session's
+     # own process group and the interrupt pair, `_claude_home` for the usage
+     # hint every entry point attaches, and `_help` for `front_matter`,
+     # the one frontmatter parser, to build the reviewer's `--agents` file.
+     "run-agent-session",
      # `derive-phase-gate` computes a PHASE's sign-off gate from
      # `_gate_derive.derive` rather than deriving it itself: it gathers the
      # observations that pure function needs -- the version answer, the two

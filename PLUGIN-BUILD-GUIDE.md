@@ -200,6 +200,7 @@ claude-plugins/                           # this repo (personal, public)
           _wave.py                        # which ready tasks may run together (declared files provably disjoint; an empty declaration runs alone) and what an overlap between two is - mergeable, or a lockfile that is not
           _verdict_binding.py             # the ONE rule for whether a recorded gate verdict binds the declared work now - a task commit's, a sign-off's, and whether `done` or close-phase may close over the newest verdict (one that no longer holds refuses)
           stamp-verification.py           # the CLI over it: take a stamp, or grade one - current / stale (naming the field) / unestablished; `red` proves a red-first in a throwaway tree
+          run-agent-session.py            # one role (writer or reviewer) as a headless `claude -p` session in the task's tree - full model id, budget, prompt on stdin, own process group - printing the session id and the session's own total_cost_usd, or could-not-run naming the stream
           derive-phase-gate.py            # observes a phase's version answer, its two importer listings, changed/red-suite paths and the plan gate's exempt verdict, hands them to _gate_derive.derive, and records phase.testGateDerived (+ testGate in enforce mode) under the index lock
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
         _excerpt.py                       # how a failing tool's output is quoted in a sentence - head, tail, the failure lines of the middle and a count of what was dropped, so no site chooses an end
@@ -458,6 +459,7 @@ L9:
   resolve-ado-parent -> _ado_parent, _manifest_io, _output, _utc_stamp
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
+  run-agent-session -> _claude_home, _help, _output, _proc_group
   run-test-gate -> _affected_tests, _claude_home, _evidence_io, _fmt, _gate_derive, _invariants, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _task_outputs, _tree_stamp, _worktrees
   set-priority -> _claude_home, _manifest_io, _output, _panel_write, _priority, _warning_groups
   stamp-verification -> _claude_home, _evidence_io, _filed_returns, _invariants, _locks, _manifest_io, _output, _proc_group, _runner_output, _task_outputs, _tree_stamp, _worktrees
@@ -4990,6 +4992,42 @@ not read is `no-tally`, also `could-not-prove`. A green run
 gets no word at all (exit `1`): a test that passes without the fix is work left, not an outcome to
 record. The block it prints is the executor's own `redFirst` shape, `{status, basis, at}`, and
 every word it can print is one the schema's enum declares.
+
+### `plugins/audit/scripts/governance/run-agent-session.py`
+One role run as a headless top-level Claude Code session in a task's tree, priced by the session's
+own result. A writer dispatched as a subagent arrived with its spend folded into the main loop's;
+a `claude -p` session reports its own `total_cost_usd`, and that figure is what this prints.
+
+**The argv, and what each part is for.** `--model` takes a full model id and refuses an alias
+(`FULL_MODEL_ID`), because an alias names whatever is newest on the day and two runs under one plan
+would not compare. `--effort`, `--permission-mode auto` and `--max-budget-usd` come from the caller,
+the budget being a per-session ceiling the CLI enforces. `--output-format stream-json` goes with
+`--verbose`, which the CLI requires in print mode. `--plugin-dir` names the plugin this file sits
+in, so its hooks act on the session. The writer gets no agent flag and no agent body; the reviewer
+gets `--agents <file>`, built from `agents/audit-reviewer.md` through `_help.front_matter`, and
+`--agent audit-reviewer`. `--resume <id>` appends the recorded session id and nothing else
+(`session_argv`), and an id that is not a UUID is refused (`SESSION_ID`), so a value beginning
+with `--` cannot reach the argv as a flag. The budget must be a finite positive number, since
+`float()` also reads `inf` and `nan`.
+
+**The prompt goes on stdin, never in argv**, because a sibling session's `pkill -f` matches command
+lines; the script reads its own prompt off stdin or `--prompt-file` for the same reason. The child
+runs in a process group of its own (`_proc_group.group_kwargs`, torn down whole on SIGINT/SIGTERM)
+with a TMPDIR of its own under the task's scratch, and its stream is saved under
+`<state-dir>/sessions/`, one file per run, with stderr beside it.
+
+**What it prints**: one line, `session=<id> subtype=<subtype> is_error=<is_error>
+total_cost_usd=<cost> exit=<claude's exit> stream=<path>`, `absent` standing for a field the result
+does not carry. The cost is the last result event's, since a resumed session's results each carry
+the session's figure so far. A stream with no result event, or a result missing its id or cost, is
+`could-not-run` naming the stream (exit `3`) — never a zero cost. `exit_for` maps the rest: `0` a
+result with `is_error: false` from a claude that exited 0, `1` any other result, `4` a budget stop
+(subtype `error_max_budget_usd`, whatever claude exited with — the spelling comes from a review and
+was not probed, since a probe means overspending on purpose), and `2` a usage error. A directory or
+file the run needs that cannot be made or read prints `io-error:` naming the path and exits `5`,
+before claude starts. Its cases are in
+`tests/test_run_agent_session.py`, run against a stub `claude` on PATH; whether a live run's printed
+cost equals a transcript re-price is checked by a confirming run, not by the suite.
 
 ### `plugins/audit/scripts/governance/derive-phase-gate.py`
 Observe, derive, record: a PHASE's sign-off gate, computed rather than declared. `_gate_derive.derive()`

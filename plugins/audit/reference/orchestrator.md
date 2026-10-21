@@ -12,6 +12,7 @@ resolution, preflight, guardrails, readiness, the lock, branch-per-phase, resume
 agent, for a reader who asks, and for the commands outside the pipeline (`/audit:report`,
 `/audit:worktree`, `/audit:layout`) that still read it first. **Execute the task** and **Phase
 sign-off** are in `reference/execute-task.md` and `reference/phase-signoff.md`.
+A headless role run: `run-agent-session.py`.
 
 ## At a glance
 
