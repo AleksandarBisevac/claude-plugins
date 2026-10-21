@@ -233,9 +233,30 @@
         "file": "plugins/audit/scripts/status/_impact.py:251-252",
         "issue": "The private-name rule keeps a leading-underscore name when the file 'also references the module'. A document that mentions the module (PLUGIN-BUILD-GUIDE.md, a research note) therefore counts for every private name of it: the probe lists `_norm in PLUGIN-BUILD-GUIDE.md` for _impact.py and `_borrowed_wrapper_names in PLUGIN-BUILD-GUIDE.md` for _deps.py. Names sorted fewest-files-first put these single-file noise hits ahead of real callers.",
         "resolution": "Apply the private-name rule only to files whose reference kind is path or import, not basename, or only to code files."
+      },
+      {
+        "id": "P131-R31",
+        "severity": "med",
+        "file": "PLUGIN-BUILD-GUIDE.md:1453-1454; CLAUDE.md:55",
+        "issue": "Two documents still state the behaviour this diff reverses. PLUGIN-BUILD-GUIDE.md says the scanned set is every .py and .md git TRACKS, 'so an agent's untracked scratch file is nobody's finding'; CLAUDE.md:55 says both sets are derived 'off what git tracks'. After the widening, an untracked not-ignored .py/.md IS a finding. The diff fixed the same sentence in tools/lints/_deps.py, tests/test__deps.py, tests/test__output.py and _output_lints.py but not these two.",
+        "resolution": "Reword both to 'what git lists (tracked, plus untracked and not ignored)' and drop the 'nobody's finding' clause; quote _output_lints.GIT_LISTED_BASIS rather than paraphrasing it."
+      },
+      {
+        "id": "P131-R32",
+        "severity": "low",
+        "file": "tests/test__output.py:113-126 (_command_files -> chunks_of, ast.parse / json.loads)",
+        "issue": "_command_files now also reads untracked-not-ignored .py/.sh/.yml/.md/.json outside docs/ and tests/. chunks_of calls ast.parse on every .py and json.loads on every .json with no guard, so a half-written or syntactically invalid untracked scratch file under tools/ or plugins/ makes this suite raise instead of being ignored. Before the diff only committed files could do that. The executor's note lists this caller only as 'now also reads untracked shipped literals; full sweep green' and the sweep was green only because no such file existed.",
+        "resolution": "Decide that this caller wants the wider set and say why in its docstring, or guard chunks_of (report an unparseable file as a finding naming the path rather than a traceback)."
+      },
+      {
+        "id": "P131-R33",
+        "severity": "low",
+        "file": "tools/lints/_output_lints.py:2977-2982",
+        "issue": "The new PROSE_SCAN_EXEMPT row exempts the whole of tools/measure-affected-miss.py to cover six fixture lines. The table's other self-fixture rows (tests/test__output_lints.py) state the cost of that choice ('a genuinely stale count in this one suite is unguarded'); this row's reason does not, so a real stale count in that tool's prose or docstrings is now silently unread.",
+        "resolution": "Append the cost to the reason in one clause (the tool's own prose is unguarded), as the neighbouring rows do. The task said not to rewrite the fixtures, so the row itself is correct."
       }
     ],
-    "outcome": "[findings: 30 - 0 high, 9 med, 21 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 33 - 0 high, 10 med, 23 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1517,7 +1538,7 @@
     {
       "id": "P131.8",
       "title": "A reviewer session that opened no file is not accepted as a review",
-      "status": "in_progress",
+      "status": "cancelled",
       "description": "Reviewers run through run-agent-session.py with their agent body. The drive counts the reviewer session's tool calls from its saved stream; a return from a session with zero tool calls is recorded as cannot-tell and the reviewer is dispatched once more. agents/audit-reviewer.md gains one line, open each changed function in the tree before judging, and stays within its 7000-byte ceiling by removing as many bytes elsewhere. Acceptance: (1) a reviewer return whose saved stream holds no tool call is recorded cannot-tell and re-dispatched once; (2) a second zero-tool return stops with a note instead of a third dispatch; (3) a return whose session read files is accepted as before; (4) tools/measure-context.py --gate stays green with the reviewer body at or under its ceiling.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1559,16 +1580,16 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: Deadlocked, not abandoned: its gate is red only on pn0, a red the base carries (b52ba79a) that P131.19-dau fixes, and the drive judges P131.8 first so P131.19 cannot land; no base run can be recorded while the drive keeps the journal dirty. The work is saved as quality-gates-internal/plans/2026-10-17-redesign-implementation/patches/P131.8-review-reads.patch (base 1b6f120c, also refs/audit/carry/P131.8) and the task is re-added depending on P131.19-dau."
       },
       "startedAt": "2026-10-21T15:15:56Z",
-      "completedAt": null,
+      "completedAt": "2026-10-21T16:49:54Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-21T15:58:48Z.de3074",
+        "runId": "2026-10-21T16:49:11Z.59fbc5",
         "status": "failed",
-        "at": "2026-10-21T15:58:48Z"
+        "at": "2026-10-21T16:49:11Z"
       }
     },
     {
@@ -1613,7 +1634,7 @@
       "dependsOn": [
         "P131.18-dau",
         "P131.5",
-        "P131.8"
+        "P131.20-dau"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -2203,7 +2224,8 @@
         "tests/test__output_lints.py",
         "tools/lints/_deps.py",
         "tests/test__output.py",
-        "tests/test__deps.py"
+        "tests/test__deps.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -2235,7 +2257,57 @@
       "startedAt": "2026-10-21T15:15:59Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-21T16:54:53Z.e678c1",
+        "status": "passed",
+        "at": "2026-10-21T16:54:53Z"
+      }
+    },
+    {
+      "id": "P131.20-dau",
+      "title": "A reviewer session that opened no file is not accepted as a review",
+      "status": "pending",
+      "description": "Reviewers run through run-agent-session.py with their agent body. The drive counts the reviewer session's tool calls from its saved stream; a return from a session with zero tool calls is recorded as cannot-tell and the reviewer is dispatched once more. agents/audit-reviewer.md gains one line, open each changed function in the tree before judging, and stays within its 7000-byte ceiling by removing as many bytes elsewhere. Acceptance: (1) a reviewer return whose saved stream holds no tool call is recorded cannot-tell and re-dispatched once; (2) a second zero-tool return stops with a note instead of a third dispatch; (3) a return whose session read files is accepted as before; (4) tools/measure-context.py --gate stays green with the reviewer body at or under its ceiling. RE-ADDED 2026-10-21 for the cancelled P131.8 (deadlocked on a base red its own gate could not get past): its finished work is the patch quality-gates-internal/plans/2026-10-17-redesign-implementation/patches/P131.8-review-reads.patch (base 1b6f120c; `git apply --check` is clean on e7d6dd09) - apply it first, verify, and only then change anything.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/agents/audit-reviewer.md",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a reviewer return whose saved session stream holds no tool call is recorded as cannot-tell and the reviewer is dispatched once more, and a second such return stops with a note; and a reviewer return whose session read files is accepted as before"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P131.19-dau",
+        "P131.3",
+        "P131.18-dau"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "da potvrdjujem (owner 2026-10-21, confirming S1 = P130.8/9 + the seven redesign S1 tasks + F747-F750 + one D9 low cleanup task)",
@@ -2253,5 +2325,10 @@
     "branch": "audit/p131-the-writer-is-a-plain-claude-c",
     "at": "2026-10-21T11:23:46Z"
   },
-  "startedAt": "2026-10-20T23:08:34Z"
+  "startedAt": "2026-10-20T23:08:34Z",
+  "testEvidence": {
+    "runId": "2026-10-21T16:31:29Z.871b7f",
+    "status": "failed",
+    "at": "2026-10-21T16:31:29Z"
+  }
 }

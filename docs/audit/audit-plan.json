@@ -1556,7 +1556,8 @@
       "P131.3",
       "P131.7",
       "P131.15-dau",
-      "P131.18-dau"
+      "P131.18-dau",
+      "P131.19-dau"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2113,7 +2114,8 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P131.8"
+      "P131.8",
+      "P131.20-dau"
     ],
     "plugins/audit/commands/audit.md": [
       "P1.6",
@@ -9811,7 +9813,8 @@
       "P131.8",
       "P131.9",
       "P131.13",
-      "P131.17-dau"
+      "P131.17-dau",
+      "P131.20-dau"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11222,7 +11225,8 @@
       "P131.2",
       "P129.7-izt",
       "P129.8-izt",
-      "P131.17-dau"
+      "P131.17-dau",
+      "P131.20-dau"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
