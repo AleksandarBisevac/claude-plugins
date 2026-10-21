@@ -1517,7 +1517,7 @@
     {
       "id": "P131.8",
       "title": "A reviewer session that opened no file is not accepted as a review",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Reviewers run through run-agent-session.py with their agent body. The drive counts the reviewer session's tool calls from its saved stream; a return from a session with zero tool calls is recorded as cannot-tell and the reviewer is dispatched once more. agents/audit-reviewer.md gains one line, open each changed function in the tree before judging, and stays within its 7000-byte ceiling by removing as many bytes elsewhere. Acceptance: (1) a reviewer return whose saved stream holds no tool call is recorded cannot-tell and re-dispatched once; (2) a second zero-tool return stops with a note instead of a third dispatch; (3) a return whose session read files is accepted as before; (4) tools/measure-context.py --gate stays green with the reviewer body at or under its ceiling.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1554,16 +1554,22 @@
         "P131.18-dau",
         "P131.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-21T15:15:56Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-21T15:58:48Z.de3074",
+        "status": "failed",
+        "at": "2026-10-21T15:58:48Z"
+      }
     },
     {
       "id": "P131.9",
@@ -2122,7 +2128,7 @@
     {
       "id": "P131.18-dau",
       "title": "Every brief names who depends on the task's files - the tracked files that import, call or name them - and the executor answers for each one before it submits",
-      "status": "in_progress",
+      "status": "done",
       "description": "Tonight's defects in new code (seven of twelve tasks, all caught before commit) share one shape: the change did not account for another part of the system that reads what it changed - a shell heredoc importing a moved module, a lint scoped by git ls-files, an env var read by the release check, another session committing in the shared checkout, a record file a second dispatch overwrote. The brief gives the task text and its files but not who depends on them. Add plugins/audit/scripts/status/_impact.py (stdlib, shipped, language-agnostic, git-backed): for each declared file it lists the tracked files that reference it - by path, by basename, by Python module name in an import, and for Python files by each top-level def/class name the file defines (word match via git grep) - excluding the file itself, untracked and ignored files, capped with the total printed. audit-lookup.py's executor brief and writer prompt gain a 'Who depends on this' section from it and one closing instruction: answer every listed dependant in the outcome as still-correct-and-why or changed. The reviewer brief gets the same list so the review can check the answers. Owner 2026-10-21: 'da, stavi ga u S1' - placed before the remaining drive-phase tasks so they run with it.",
       "files": [
         "plugins/audit/scripts/status/_impact.py",
@@ -2155,31 +2161,49 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1b6f120c34cb",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "NEW plugins/audit/scripts/status/_impact.py (stdlib + git, no __main__, cases in tests/test__impact.py). dependants(root, paths, cap=8, exclude=(), git=None) -> per declared file {path, files:[{file, via}] capped, total, symbols:[{name, files, total}], defined, error, namesError}. A reference is one git grep -z -I -w -F over TRACKED files for path/basename/(.py) module name, each line classified in Python as path > import (regex over import/from statements) > basename, with word boundaries; the declared file and the `exclude` pathspecs are left out. For .py files, top-level def/class names (ast) are found by ONE git grep -o -P alternation, with a fixed-string -F -w retry, made once per scan, when git refuses PCRE. A leading-underscore name counts only in files that also reference the module, so homonyms such as _write and _norm are dropped. A failing git grep is the file's `error`, never an empty list. render(results) gives the brief lines with 'N of M files shown' on every cut, and a single NONE_LINE when nothing names any file. audit-lookup.py: dependant_lines(ctx, task, ask) searches from the checkout top (_top), maps entries through plan_to_git, and excludes docs/audit plus the manifest's directory: the plan's own fileIndex names every file and reads none. A section 'Who depends on this' now sits in the executor brief after Files with DEPENDANTS_ASK ('Answer each listed dependant in your outcome: still correct, and why - or changed, and what changed ...'), in the writer prompt after the declared files with DEPENDANTS_ASK_WRITER (before the closing JSON line, so wp7's last-line closing still holds), and in the reviewer brief before The diff with DEPENDANTS_CHECK. The ask is omitted when nothing is listed. compose_writer_prompt gained dependants=None, and write_brief always passes it. tools/lints/_deps.py: '_impact' added to the _clause_coverage layer. PLUGIN-BUILD-GUIDE.md: tree line, an _impact.py section, a paragraph in the audit-lookup section, and the module map regenerated by `python3 tools/lints/_deps.py --write-map` (rc 0). Tests: tests/test__impact.py has 9 cases im1-im8 + im3b. tests/test_audit_lookup.py gains block di (di1-di5); wp12 now expects the CLI prompt to equal the composition with the same dependants section and, with it removed, the baseline text; di4's 'check' match is now case-insensitive. Mutation proof in a scratch git-archive export (never the shared tree), each mutation restored with __pycache__ purged. Removing self-exclusion turns im1/im2/im4 red; dropping the private filter, im3b; dropping the cap count, im4 (after tightening im4 to the first line, since '(2 of 4 defined)' had masked it); reading a grep error as empty, im6; removing the PCRE retry, im8; an unbounded basename, im1/im2/im4; never reading the import kind, im1/im3b/im4; not excluding the plan dir, di1/di5; always asking, di5; never asking, di2/di3/di4; no writer section, di3/di5/wp12; no reviewer section, di4. Every restored run is green. Gate: `python3 tools/sweep-selftests.py tests/test__impact.py tests/test_audit_lookup.py` exit 0, 143 cases; rerun after the last edit with tests/test__deps.py added: 3/3 files ok, 397 cases, exit 0. ruff check plugins/audit tools + both test files: All checks passed. vermin -t=3.8- over the 5 .py files: exit 0. measure-context --gate: exit 0, executor 8872/9000, reviewer 6985/7000, unchanged. Full sweep over a committed copy (git archive HEAD + my 6 files, git init + one commit): 191/194 files ok, 16605 cases. Red: tools/check-example-ledgers.py el1 (fixedIn commits do not resolve in a history-less copy), tools/measure-context.py mc18 (reference commit 7b489337c06d does not resolve, same cause), and tests/test__output_lints.py pn0, which flags prose numbers in tools/measure-affected-miss.py lines 798/908/912/929/932/935. That file was committed at HEAD by b52ba79a (P131.16-dau), has no local edits and is not in my files, so I did not touch it; it is also red on the project tree. Section size and time on this task's 6 files: 2762 bytes, 0.57s / 0.41s / 0.41s across three runs minutes apart (the first ran while the sweep loaded the machine); on P131.7's 8 files: 4028 bytes, 1.09s (under sweep load) / 0.76s / 0.82s. Before the PCRE change the 6-file run took 2.30s. DEPENDANTS (the orchestrator's list): (1) drive-phase.py - still correct: the brief verb's stdout stays `written: <path>` (bf1/bf1a pass) and red_command is untouched (rq1 pass). (2) commands/*.md - still correct: no verb or flag changed. (3) tests/test_audit_lookup.py - changed: the di block and wp12 as above; wp1-wp11 still compare against the unchanged baseline because compose_writer_prompt without dependants is byte-identical. (4) tools/measure-context.py - still correct: AGENT_CEILINGS measures agents/audit-executor.md and agents/audit-reviewer.md (lines 98-113), not the computed briefs, so the new section costs those ceilings nothing; gate exit 0 with numbers unchanged. (5) _clause_coverage.task_clauses - still correct: untouched, and wp7-wp10 and wp8b pass. (6) _deps LAYERS, the guide's tree line, section and module map - changed: all added and the map regenerated. (7) Other projects (JS/TS) - non-.py files get path and basename references only (im5 covers .js/.md/.json), stdlib + git only, at most two git grep calls per file plus one PCRE retry per scan (im7, im8); an extensionless JS import is not seen and the docstring's WHAT IT CANNOT SEE says so.",
+        "descriptive": "Every executor brief, writer prompt and reviewer brief now lists the tracked files that read the task's files, capped and counted. The executor and writer are asked to answer each one; the reviewer is asked to check those answers."
       },
       "startedAt": "2026-10-21T14:26:08Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-21T15:15:55Z",
+      "verifiedBy": [
+        "tests/test__impact.py im1-im8 + im3b: on a git fixture, a .py module's dependants by kind (import incl. .sh heredoc, path in .yml, basename in fenced .md); over-fire twin (one-char-off near misses, self, untracked, gitignored); a defined name with exactly its callers, and private names only in referencing files; cap with total printed; .js/.md/.json path and basename with no name scan; empty vs could-not-read sentinels; bounded git calls; same answer on a git without PCRE with one retry",
+        "tests/test_audit_lookup.py di1-di5: the executor brief, writer prompt and reviewer brief carry one 'Who depends on this' section from _impact (the plan file excluded), the executor and writer get a one-line ask for still-correct-and-why or changed, the reviewer is asked to check the answers, and a task with no dependants gets a one-line section with no ask"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-21T15:15:53Z.e3f464",
         "status": "passed",
         "at": "2026-10-21T15:15:53Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1b6f120c34cb",
+        "at": "2026-10-21T15:15:55Z",
+        "return": "docs/audit/evidence/returns/P131.18-dau/20261021T142608Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-21T14:49:58Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__impact.py tests/test_audit_lookup.py` in a throwaway tree at HEAD exited 1 with failing cases di1 (house FAIL), di2 (house FAIL), di3 (house FAIL), di4 (house FAIL), di5 (house FAIL), tests/test__impact.py: exited 1 (house FAIL) and 1 more, but HEAD's own tests on HEAD's code are not green (no tally or error reader matched its output, so no line of it is quoted as decisive) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 128/134 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P131.19-dau",
       "title": "HEAD is green again: the miss-rate tool's sweep-output fixtures are exempt from the prose-number lint with a reason",
-      "status": "pending",
+      "status": "in_progress",
       "description": "HEAD (b52ba79a) is red: tests/test__output_lints.py pn0 flags six lines of tools/measure-affected-miss.py (798, 908, 912, 929, 932, 935). Each is a test fixture string imitating the sweep's own output ('1/2 files ok, 3 cases', '%d/%d files ok, 0 cases'), not prose. The file was untracked during P131.16's gate, so the lint (scoped by git ls-files) never read it; it went red the moment it was committed. Add a PROSE_SCAN_EXEMPT row for the file with that reason, the same shape the table's other fixture rows use; do not rewrite the fixtures.  AND close the class (second time in this phase, after P131.2): the shared file walk the lints scope by (tools/lints/_output_lints.py, the function that runs `git ls-files -z`, ~:258) lists only tracked files, so a file a task creates is invisible to every ls-files-scoped lint until the close commit, which then lands a red tree. Make it list tracked plus untracked-not-ignored files (`git ls-files -z --cached --others --exclude-standard`), keeping the drop of index entries that are not on disk; check every other caller of that walk still wants that set (grep its name across tools/ and tests/).",
       "files": [
         "tools/lints/_output_lints.py",
         "tools/measure-affected-miss.py",
         "tests/test__output_lints.py",
-        "tests/test__output_lints.py"
+        "tests/test__output_lints.py",
+        "tools/lints/_deps.py",
+        "tests/test__output.py",
+        "tests/test__deps.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -2201,16 +2225,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-21T15:15:59Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     }
   ],
   "request": "da potvrdjujem (owner 2026-10-21, confirming S1 = P130.8/9 + the seven redesign S1 tasks + F747-F750 + one D9 low cleanup task)",

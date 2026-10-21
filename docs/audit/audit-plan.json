@@ -10662,7 +10662,8 @@
       "P109.9",
       "P86.4",
       "P131.15-dau",
-      "P131.18-dau"
+      "P131.18-dau",
+      "P131.19-dau"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -10871,7 +10872,8 @@
     "tests/test__deps.py": [
       "P131.1",
       "P131.2",
-      "P86.4"
+      "P86.4",
+      "P131.19-dau"
     ],
     "tests/test__doctor_ado.py": [
       "P131.1"
@@ -10985,7 +10987,8 @@
     "tests/test__output.py": [
       "P131.1",
       "P131.2",
-      "P131.15-dau"
+      "P131.15-dau",
+      "P131.19-dau"
     ],
     "tests/test__panel_composition.py": [
       "P131.1"
@@ -11383,7 +11386,8 @@
       "P131.2"
     ],
     "tools/lints/_output_lints.py": [
-      "P131.2"
+      "P131.2",
+      "P131.19-dau"
     ],
     "tools/lints/_ui_theme_lints.py": [
       "P131.2"
@@ -11409,7 +11413,8 @@
       "P131.2"
     ],
     "tests/test__output_lints.py": [
-      "P131.2"
+      "P131.2",
+      "P131.19-dau"
     ],
     "tests/test__ui_theme_lints.py": [
       "P131.2"
@@ -11418,7 +11423,8 @@
       "P131.2"
     ],
     "tools/measure-affected-miss.py": [
-      "P131.16-dau"
+      "P131.16-dau",
+      "P131.19-dau"
     ],
     "plugins/audit/scripts/status/_impact.py": [
       "P131.18-dau"
