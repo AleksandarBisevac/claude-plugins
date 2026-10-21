@@ -1,7 +1,7 @@
 {
   "id": "P131",
   "title": "The writer is a plain Claude Code session, and scripts verify around it",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Rewrites F2 of the cost/code/CI plan: the writer stops being a subagent with a brief and becomes the measured plain reference itself, and the plugin's verification moves out of the session into scripts the drive runs. Measured on this repository: the task text is 1 to 2 percent of an executor's opening context, no executor of 114 read the cache on its first request, and cache rebuilds after a five-minute pause were 26 to 38 percent of executor spend. The confirming run measures what this costs against plain at the same model and effort before any claim is written; its first stage runs after the clause-coverage task and its second stage is this phase's exit. Every task here lands before the phase that removes the old path, so the old path stays available as a rollback for one release. This phase also carries the two moves cancelled out of P130 (tests and development code leave the shipped plugin), the four medium faults scheduled to this release, and one task for the low findings carried from BF4 under D9.",
   "desiredOutcome": "Every task's writer runs as a headless top-level Claude Code session the drive launches on plain's own prompt, on a model pinned by full id at high effort, under a per-session budget, priced by the session's own total_cost_usd, and returning one JSON answer per acceptance clause. After the session the drive proves red-first through a throwaway git tree and locks the digest of the task's test files, checks clause coverage, and runs the task gate; a red gate or an uncovered clause resumes the same session for at most two rounds. A reviewer session that opened no file is not a review, and a phase-review finding blocks only after a second pass validates it, going back to the writer's session while its cache is warm.",
   "testGate": [
@@ -16,21 +16,44 @@
     "vitest"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "f2f103a20ad00f927195976188686e20c4bf3b8a",
+  "branch": "audit/p131-the-writer-is-a-plain-claude-c",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P131-R1",
+        "severity": "med",
+        "file": "whole diff (git diff HEAD -M --numstat): tools/gate-parity.py, tools/lints/_refs.py, plugins/audit/scripts/_output.py, tools/sweep-selftests.py, tools/prove-gates.py, tools/affected.py",
+        "issue": "contradicts task clause: the acceptance line 'the whole repo changes by less than 0.5k lines' is not met. Excluding docs/audit and .github/sweep-costs.json the diff is 1655 insertions and 862 deletions (git diff HEAD -M --numstat); the executor's own outcome lists it under NOT MET (a). Most of it is the mechanical repoint plus new logic (_output LINTS_DIR/moved_file_target, _refs suite anchor, gate-parity ld1-ld7, sweep sr1-sr3), so the clause as written is probably unachievable, but the filed return does not say the clause is wrong, only that it is unmet.",
+        "resolution": "Either the orchestrator amends the clause (state the real bound, e.g. 'the mechanical repoint plus the named new logic, measured as numstat outside docs/audit') with the measurement recorded, or the task is reopened to split the new logic out. Do not leave it silently passing."
+      },
+      {
+        "id": "P131-R2",
+        "severity": "low",
+        "file": "CLAUDE.md:150,205,301",
+        "issue": "Item (7) is by design left to the owner: CLAUDE.md still names plugins/audit/tests/ in three places, and .claude/skills/writing-python/SKILL.md (not in the task's files) does not mention LINTS_DIR. The tree is therefore internally stale until the owner applies the drafted lines; the draft is in the outcome.",
+        "resolution": "Owner applies the drafted CLAUDE.md edits in the same landing; the orchestrator adds writing-python/SKILL.md LINTS_DIR to the follow-up."
+      },
+      {
+        "id": "P131-R3",
+        "severity": "low",
+        "file": "task return: gates",
+        "issue": "The filed return records only gates.selftests = pass. plugin-validate, gate, report, shots, interactive and vitest are in tests.gate and were not run by the executor (it says 'own-tests reading'). The brief records the gate run as passed (runId 2026-10-21T01:06:24Z.a4ffb1) but I was not handed which commands it ran, and the acceptance item 'installed cache holds no tests/' was not run (tracked-files half verified by me: git ls-files plugins/audit | grep -c /tests/ = 0).",
+        "resolution": "Confirm the recorded run covered every tests.gate entry (cat the run's evidence rows), and run the /audit:version install check after the landing."
+      }
+    ],
+    "outcome": "[findings: 3 - 0 high, 1 med, 2 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P131.1",
       "title": "Tests and the two lint modules leave the shipped plugin: plugins/audit/tests/ becomes tests/, _deps and _refs become tools/lints/",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Plan F1.4 (S1a), invariant I11. Lands after every task that edits plugins/audit/tests/. (1) `git mv plugins/audit/tests tests` (157 files, 10,776,898 bytes at 571becfd; 157 and 10,194,666 at edbbb86e) and `git mv` of plugins/audit/scripts/_deps.py and _refs.py to tools/lints/. (2) A new anchor `_output.LINTS_DIR` that the product never puts on sys.path, beside TESTS_DIR, which now points at the repo root's tests/; `_refs` gains an anchor by suite name. (3) The ruff and vermin directory lists exist only in verify.sh (a consequence of F1.2), and name tests/ and tools/lints/. (4) .github/sweep-costs.json's keys under plugins/audit/tests/ (155 at 571becfd, a table last recorded at P127) are re-keyed to tests/ with their values unchanged, so the shard split keeps its costs (the plan put this in F1.5). (5) Every file outside the moved tree that names the old path is repointed (179 outside the history paths at 571becfd: `git grep -l 'plugins/audit/tests' HEAD -- . ':!plugins/audit/tests' ':!docs/audit' ':!CHANGELOG.md' ':!docs/research'`, the same count at edbbb86e); a shipped document or agent body that points at a suite (reference/phase-signoff.md:370, reference/execute-task.md, reference/verbs-in-full.md, agents/audit-reviewer.md) names it as `tests/<file>` in the source repository, because the installed copy no longer has it. (6) docs/audit/**, CHANGELOG.md's released sections and docs/research/ stay untouched: they are history and a hash chain. (7) CLAUDE.md is the owner's: the task drafts its new paths in the outcome. (8) This repo's meta.buildCommands.lint names plugins/audit/tests for vermin; the owner repoints it through the panel in the same landing, since no verb writes buildCommands. (9) P129's pending tasks name plugins/audit/tests/ paths; the orchestrator repoints them with `/audit:task scope` after the landing. Acceptance: the full sweep on a clean `git archive` export is green, allowing only the red places known to exist on an export alone; `python3 tools/prove-gates.py --list | awk '{print $2}' | sort -u` is the same set before and after; no lint checks fewer references than before without a named reason (the POC caught `_refs` dropping from 453 to 0); `git ls-tree -r --name-only <sha> plugins/audit | grep -c /tests/` gives 0; the whole repo changes by less than 0.5k lines; the installed cache after `/audit:version` update holds no tests/. NEW PATHS (absent at 571becfd, created by this task): tests/ (the moved suites), tools/lints/, tools/lints/_deps.py, tools/lints/_refs.py. CARRIED from the cancelled P130.8 into S1 (owner, 2026-10-20). Item (8) is now done by the orchestrator in the same landing with `audit-task.py build-command lint`, since that verb exists; item (7) stays a drafted proposal for the owner.",
       "files": [
         ".claude/hooks/arm-release-bypass.py",
@@ -568,16 +591,22 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-20T23:08:34Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-21T01:06:24Z.a4ffb1",
+        "status": "passed",
+        "at": "2026-10-21T01:06:24Z"
+      }
     },
     {
       "id": "P131.2",
@@ -1452,5 +1481,12 @@
     "The subagent writer path stays in this phase's release as a rollback lever and is removed in the next phase, after the confirming run has passed",
     "The confirming run's optional third arm (the minimal executor frame with the drive's gate) runs only if the two-arm cost ratio misses the target",
     "Writers run under the plan gate's deny tier with the drive's scope-gap path (owner, 2026-10-21: confirmed the recommended option)"
-  ]
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "6a842230-e291-45bb-b30a-a357d700bcd0",
+    "branch": "audit/p131-the-writer-is-a-plain-claude-c",
+    "at": "2026-10-20T23:08:34Z"
+  },
+  "startedAt": "2026-10-20T23:08:34Z"
 }

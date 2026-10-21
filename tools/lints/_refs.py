@@ -78,8 +78,8 @@ is not read; nor is any file that is not Python. Those spellings stay outside ev
 lint here, so a green run says no LITERAL split hides a path, and nothing more.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test__refs.py`, byte-identical labels and all — see
-`plugins/audit/tests/_harness.py`. The fixture CONSTANTS went with them, and that is
+`tests/test__refs.py`, byte-identical labels and all — see
+`tests/_harness.py`. The fixture CONSTANTS went with them, and that is
 the one thing about this move worth knowing: a lint that scans the tree lives in the
 tree it scans, so a fixture path spelled with an anchor in front of it is a REAL
 reference to a file that exists for four milliseconds, and `c5` reports it. Every
@@ -97,21 +97,25 @@ import subprocess
 import sys
 import tokenize
 
-# The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
-# `_output.path_preamble_violations()`. It walks UP to the directory holding
-# `_output.py` instead of counting `dirname()` calls, so it does not encode how deep
-# this file sits and keeps working if the file is moved into a subdirectory.
-# `install_path()` then adds that directory AND every subdirectory of it holding a
-# `.py`: the folders are LABELS, NOT NAMESPACES, and every sibling below is still
-# reached by a bare basename.
-_anchor_dir = os.path.dirname(os.path.abspath(__file__))
-while not os.path.isfile(os.path.join(_anchor_dir, "_output.py")):
-    _anchor_up = os.path.dirname(_anchor_dir)
-    if _anchor_up == _anchor_dir:
-        raise ImportError("audit plugin: walked to the filesystem root from %s "
-                          "without finding _output.py - the scripts/ anchor is "
-                          "gone and no sibling can be imported" % (__file__,))
-    _anchor_dir = _anchor_up
+# The path bootstrap for a development module that lives OUTSIDE the plugin: it
+# walks UP to the directory that holds `plugins/audit/scripts/_output.py` instead
+# of counting `dirname()` calls, so it does not encode how deep this file sits.
+# The shipped scripts carry `_output.PATH_PREAMBLE`, which walks up to `_output.py`
+# itself and would run off the filesystem root from here, because this directory
+# is not under `scripts/`. `install_path()` then adds `scripts/` and every
+# subdirectory of it holding a `.py`, so every sibling below is reached by a bare
+# basename - and `tools/lints/` itself is NOT put on the path by it, by design.
+_anchor_root = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_anchor_root, "plugins", "audit", "scripts",
+                                      "_output.py")):
+    _anchor_up = os.path.dirname(_anchor_root)
+    if _anchor_up == _anchor_root:
+        raise ImportError("audit lints: walked to the filesystem root from %s "
+                          "without finding plugins/audit/scripts/_output.py - the "
+                          "repository root is gone and no sibling can be imported"
+                          % (__file__,))
+    _anchor_root = _anchor_up
+_anchor_dir = os.path.join(_anchor_root, "plugins", "audit", "scripts")
 if _anchor_dir not in sys.path:
     sys.path.insert(0, _anchor_dir)
 
@@ -126,7 +130,7 @@ _output.install_path()
 # derived again from this file's own `__file__` — two derivations of one directory is
 # one directory and one place for it to go wrong.
 REPO_ROOT = _output.REPO_ROOT
-PLUGIN_REL = "plugins/audit"
+PLUGIN_REL = _output.PLUGIN_REL
 
 
 # --- what is scanned ----------------------------------------------------------
@@ -159,17 +163,19 @@ SURFACES = (
     # somebody else's repo rather than a reference to ours. See the module docstring.
     ("plugins/audit/hooks", ANCHORED),
     ("plugins/audit/scripts", ANCHORED),
-    # `tests/` is the plugin's Python too, and ANCHORED for a reason that is already
-    # visible rather than anticipated: `hooks/_config.py` carries `"tests/test_cart.py"`
-    # and `"tests/cart_test.py"` as fixtures for a CONSUMER repo's test globs, and when
-    # that file's suite migrates those fixtures move into this directory. A bare match
-    # here would then look for that consumer-repo filename inside the plugin's own
-    # tests/ and report this tree as broken because a hook knows what a Python test is
-    # usually called. (The path is described rather than written: this file is itself
-    # an anchored surface, and spelling it here would BE a reference to a file that
-    # does not exist - which is the trap the header warns about, and which the first
-    # run of this very change walked into twice.)
-    ("plugins/audit/tests", ANCHORED),
+    # `tests/` is the repository's Python too, and ANCHORED because a bare `tests/`
+    # means somebody else's repo as often as ours: `hooks/_config.py` carries two
+    # `tests/`-rooted file names as fixtures for a CONSUMER repo's test globs, and a
+    # bare match would look for those inside this tree and report it as broken
+    # because a hook knows what a Python test is usually called. The anchor is the
+    # SUITE NAME - see `_suite_anchored` - since the old `plugins/audit/` prefix is
+    # gone from every honest spelling. (The paths are described rather than written:
+    # this file is itself an anchored surface, and spelling one here would BE a
+    # reference to a file that does not exist - the trap the header warns about.)
+    ("tests", ANCHORED),
+    # The two lint modules were `scripts/` files and were scanned anchored there;
+    # leaving them under `tools`' bare walk would read their fixtures as references.
+    ("tools/lints", ANCHORED),
 )
 
 # Excluded on purpose, with the reason attached rather than left to a commit message.
@@ -204,26 +210,49 @@ _ROOT_ANCHOR = r"(?:plugins/audit/|\$\{CLAUDE_PLUGIN_ROOT\}/|\$CLAUDE_PLUGIN_ROO
 # the alternation above and needs its own branch and its own group.
 _SCRIPTS_VAR = r"\$scripts/"
 
-# `tests/` gets its own branch instead of joining `_DIR`, and the anchor is REQUIRED on
-# it in both modes — this is the only directory whose bare name means somebody else's
-# repo more often than it means ours. `scripts/x.py` in a document is unambiguous;
-# `tests/test_cart.py` is what half the prose about testing a CONSUMER project says, and
-# `hooks/_config.py` already carries two of those as fixtures. Requiring the anchor
-# removes that whole class rather than asking each future document to phrase itself
-# around a lint, and it costs nothing real: every reference to this plugin's own test
-# tree from outside it is written `plugins/audit/tests/...` anyway.
+# `tests/` gets its own branch instead of joining `_DIR`, and a reference to it must
+# be ANCHORED in both modes - this is the only directory whose bare name means
+# somebody else's repo more often than it means ours. `scripts/x.py` in a document
+# is unambiguous; a `tests/`-rooted file name is what half the prose about testing a
+# CONSUMER project says, and `hooks/_config.py` already carries two as fixtures.
+#
+# THE ANCHOR USED TO BE THE `plugins/audit/` PREFIX AND IS NOW THE SUITE'S NAME. The
+# suites left the plugin, so the honest spelling of a reference to one is a bare
+# `tests/<suite>.py`, which carries no prefix to anchor on. What still tells our
+# suite from a consumer's is the NAME: a suite here is `_harness` or `test_<module>`
+# for a module this repository keeps (`known_suites`, `_suite_anchored`). The old
+# prefix is still MATCHED, and always counts - a document that still says
+# `plugins/audit/tests/...` is stale, and the stat of the path it names reports
+# exactly that.
+#
+# A placeholder (`tests/*.py`, `tests/<name>.py`) is matched too, as it always was,
+# and is classified rather than stat'd.
 _TESTS_DIR = r"tests/"
+_TESTS_NAME = (r"(?:_harness|test_%s|[A-Za-z0-9_.-]*[<*>][A-Za-z0-9_.<>*-]*)\.py"
+               % _SEG)
+_TESTS_OLD_PREFIX = "plugins/audit/"
+# Its own `(?:old prefix | not-after-a-path-character)` rather than `_ROOT_ANCHOR`:
+# a bare spelling must not start in the middle of a longer path.
+_TESTS_BRANCH = r"(?:%s|(?<![A-Za-z0-9_./$}-]))(%s%s)" % (
+    re.escape(_TESTS_OLD_PREFIX), _TESTS_DIR, _TESTS_NAME)
 
 # This repository's OWN configuration tree, which shares `hooks/` and `skills/`
 # with the plugin's product and means something else entirely. See `_match_rel`.
 _REPO_DIR_PREFIX = ".claude/"
 
-_BARE_RE = re.compile(r"%s?(%s%s)|%s(%s)|%s(%s%s)"
+# THE LINT MODULES' OWN ROOT, as a fourth arm. A document pointing at `_deps.py` or
+# `_refs.py` named `plugins/audit/scripts/...` and was stat'd; with the file moved,
+# `tools/lints/<name>.py` matches no other arm, and the references to it would have
+# stopped being checked with nothing said. The prefix is its own anchor in both
+# modes, as `plugins/audit/` is for the others.
+_LINTS_ARM = r"(?<![A-Za-z0-9_./$}-])(tools/lints/%s)" % _TAIL
+
+_BARE_RE = re.compile(r"%s?(%s%s)|%s(%s)|%s|%s"
                       % (_ROOT_ANCHOR, _DIR, _TAIL, _SCRIPTS_VAR, _TAIL,
-                         _ROOT_ANCHOR, _TESTS_DIR, _TAIL))
-_ANCHORED_RE = re.compile(r"%s(%s%s)|%s(%s)|%s(%s%s)"
+                         _TESTS_BRANCH, _LINTS_ARM))
+_ANCHORED_RE = re.compile(r"%s(%s%s)|%s(%s)|%s|%s"
                           % (_ROOT_ANCHOR, _DIR, _TAIL, _SCRIPTS_VAR, _TAIL,
-                             _ROOT_ANCHOR, _TESTS_DIR, _TAIL))
+                             _TESTS_BRANCH, _LINTS_ARM))
 
 
 def _match_rel(match):
@@ -246,8 +275,54 @@ def _match_rel(match):
             return "%s%s" % (_REPO_DIR_PREFIX, match.group(1))
         return "%s/%s" % (PLUGIN_REL, match.group(1))
     if match.group(3):
-        return "%s/%s" % (PLUGIN_REL, match.group(3))
+        if match.string[match.start():match.start(3)] == _TESTS_OLD_PREFIX:
+            return _TESTS_OLD_PREFIX + match.group(3)
+        return match.group(3)
+    if match.group(4):
+        return match.group(4)
     return "%s/scripts/%s" % (PLUGIN_REL, match.group(2))
+
+
+def known_suites(repo_root=None):
+    """The `tests/` file names a reference may honestly mean: what is there, plus
+    what a module this repository keeps WOULD be covered by.
+
+    The second half is what makes a stale reference visible: a suite deleted while
+    its module stays is still a name a document can wrongly keep, and a set read off
+    the directory alone would say nothing about it. `_output._test_name_for` is the
+    one place that maps a module to its suite's name.
+
+    Only a `.py` or `.sh` MODULE names a suite. `_output._coverable_test_names`
+    reads every file under a directory, and the front-end parts under `scripts/ui/`
+    would then make a consumer repository's `boot` test read as ours.
+    """
+    root = repo_root if repo_root is not None else REPO_ROOT
+    names = set()
+    tests = os.path.join(root, "tests")
+    if os.path.isdir(tests):
+        names.update(os.listdir(tests))
+    for rel in (PLUGIN_REL + "/scripts", PLUGIN_REL + "/hooks", "tools/lints"):
+        directory = os.path.join(root, rel.replace("/", os.sep))
+        for _dir, _dirnames, filenames in os.walk(directory):
+            names.update(_output._test_name_for(name) for name in filenames
+                         if name.endswith((".py", ".sh")))
+    return names
+
+
+def _suite_anchored(match, suites):
+    """Whether `match` counts as a reference to something of ours.
+
+    Every non-`tests/` branch is anchored by its own text. A `tests/` match counts
+    when it carries the old plugin prefix (stale, and reported by the stat), is a
+    placeholder, or names a suite in `suites` - anything else is a consumer
+    repository's file name that this tree merely happens to spell.
+    """
+    if not match.group(3):
+        return True
+    rel = _match_rel(match)
+    name = os.path.basename(rel)
+    return (rel.startswith(_TESTS_OLD_PREFIX) or is_placeholder(rel)
+            or name == "_harness.py" or name in suites)
 
 
 # The one spelling that declares a fixture path; see the module docstring. Read per
@@ -279,11 +354,18 @@ def _surface_files(surface_root, surface, mode):
     path = os.path.join(surface_root, surface.replace("/", os.sep))
     if os.path.isfile(path):
         return [surface]
+    own = set(s for s, _m in SURFACES if s != surface)
     found = []
     for root, dirnames, filenames in os.walk(path):
         dirnames.sort()
         if "__pycache__" in dirnames:
             dirnames.remove("__pycache__")
+        # A directory that is a surface of its own is read in ITS mode, once: the
+        # lint modules under `tools/lints/` hold the same unanchored fixtures the
+        # plugin's own sources do, so they are scanned anchored, and a parent's
+        # bare walk must not read them a second time in the wrong mode.
+        dirnames[:] = [d for d in dirnames if _output.posix_rel(
+            os.path.join(root, d), surface_root) not in own]
         for name in sorted(filenames):
             if not name.endswith(exts):
                 continue
@@ -312,6 +394,7 @@ def _scanned_hits(surface_root):
     """`referenced_paths()`'s tuples with a fifth field: whether the line declares
     its references fixtures by carrying `FIXTURE_MARKER`."""
     root = surface_root if surface_root is not None else REPO_ROOT
+    suites = known_suites(root)
     hits = []
     for surface, mode in SURFACES:
         pattern = _ANCHORED_RE if mode == ANCHORED else _BARE_RE
@@ -322,6 +405,8 @@ def _scanned_hits(surface_root):
             for lineno, line in enumerate(lines, 1):
                 marked = FIXTURE_MARKER in line
                 for match in pattern.finditer(line):
+                    if not _suite_anchored(match, suites):
+                        continue
                     hits.append((rel_file, lineno, match.group(0), _match_rel(match),
                                  marked))
     return hits
@@ -340,10 +425,12 @@ def counts_by_surface(hits=None, surface_root=None):
     hits = referenced_paths(surface_root) if hits is None else hits
     counts = dict((surface, 0) for surface, _mode in SURFACES)
     for rel_file, _lineno, _raw, _rel in hits:
-        for surface, _mode in SURFACES:
-            if rel_file == surface or rel_file.startswith(surface + "/"):
-                counts[surface] += 1
-                break
+        # The MOST SPECIFIC surface wins: `tools/lints` is nested in `tools`, and
+        # first-match would credit every lint-module hit to the parent.
+        owners = [surface for surface, _mode in SURFACES
+                  if rel_file == surface or rel_file.startswith(surface + "/")]
+        if owners:
+            counts[max(owners, key=len)] += 1
     return counts
 
 
@@ -436,7 +523,7 @@ def _literal_runs(text):
 _ANCHOR_RE = re.compile(_ROOT_ANCHOR)
 
 
-def _split_matches(run, pattern):
+def _split_matches(run, pattern, suites):
     """[(lineno, joined text), ...] for every path match in the joined run, and every
     bare anchor, that crosses a boundary between two of its pieces. An anchor inside
     a path already reported is not reported a second time."""
@@ -453,7 +540,8 @@ def _split_matches(run, pattern):
     def line_of(match):
         return [ln for start, ln in starts if start <= match.start()][-1]
 
-    paths = [m for m in pattern.finditer(joined) if crosses(m)]
+    paths = [m for m in pattern.finditer(joined)
+             if crosses(m) and _suite_anchored(m, suites)]
     anchors = [m for m in _ANCHOR_RE.finditer(joined) if crosses(m)
                and not any(p.start() <= m.start() < p.end() for p in paths)]
     return sorted((line_of(m), m.group(0)) for m in paths + anchors)
@@ -470,6 +558,7 @@ def split_literal_violations(repo_root=None):
     tokenized: an empty `violations` over zero runs is a tokenizer that read nothing,
     not a clean tree. A file that will not tokenize is NAMED, never skipped."""
     root = repo_root if repo_root is not None else REPO_ROOT
+    suites = known_suites(root)
     violations = []
     checked = 0
     files = 0
@@ -489,7 +578,7 @@ def split_literal_violations(repo_root=None):
             files += 1
             checked += len(runs)
             for run in runs:
-                for lineno, joined in _split_matches(run, pattern):
+                for lineno, joined in _split_matches(run, pattern, suites):
                     violations.append((rel_file, lineno, joined))
     return {"violations": violations, "checked": checked, "files": files}
 
@@ -504,30 +593,11 @@ def _read_json(path):
         return json.load(fh)
 
 
-def _py_index(repo_root, rel_root=None):
-    """{basename: [repo-relative path, ...]} for every `.py` under one tree.
-
-    Basename-keyed because that is the question a moved file poses: the recorded path is
-    gone, is the FILE gone too or did it just move? `_deps` already forbids two `.py`
-    sharing a basename, so a list with more than one entry means the tree is broken in a
-    way that lint reports by name.
-
-    `rel_root` defaults to the plugin, which is what `manifest_moved_files()` asks about;
-    `tool_basename_drift()` asks the same question of each of TOOL_NAME_TREES's narrower
-    trees in turn, and one walk answering for both is a walk that cannot drift from
-    itself."""
-    index = {}
-    base = os.path.join(repo_root, (rel_root or PLUGIN_REL).replace("/", os.sep))
-    for root, dirnames, filenames in os.walk(base):
-        dirnames.sort()
-        if "__pycache__" in dirnames:
-            dirnames.remove("__pycache__")
-        for name in sorted(filenames):
-            if not name.endswith(".py"):
-                continue
-            index.setdefault(name, []).append(
-                _output.posix_rel(os.path.join(root, name), repo_root))
-    return index
+# The three questions about "did this `.py` move" are answered by the anchor, not
+# here: `audit-task.py` is shipped and asks one of them, and this module is not.
+_py_index = _output.py_index
+is_plugin_py_path = _output.is_plugin_py_path
+moved_file_target = _output.moved_file_target
 
 
 def _recorded_paths(repo_root):
@@ -570,41 +640,6 @@ def _recorded_paths(repo_root):
             for path in task.get("files") or []:
                 recorded.append(("%s task %s" % (rel, task.get("id") or "?"), path))
     return recorded, unreadable
-
-
-def is_plugin_py_path(path):
-    """Whether `path` is a `.py` path under `plugins/audit/` at all — the one
-    reading of "is this this lint's business" `manifest_moved_files` and
-    `moved_file_target` share, so a caller outside this module asking the
-    SAME question (`audit-task.py`'s `add`/`scope`) never writes a second one.
-    """
-    prefix = PLUGIN_REL + "/"
-    return isinstance(path, str) and path.endswith(".py") and path.startswith(prefix)
-
-
-def moved_file_target(path, repo_root=None, index=None):
-    """The new home `path` moved to, or None.
-
-    None covers every reading that is NOT a move: `path` still exists there, it
-    is not a plugin `.py` path (`is_plugin_py_path`), or no `.py` anywhere in
-    the plugin shares its basename — a deletion, not a move, and
-    `manifest_moved_files` files that as `gone` rather than here.
-
-    THE ONE READER OF THE QUESTION. `manifest_moved_files` asks this once per
-    recorded path and `audit-task.py`'s `add`/`scope` ask it once per `--files`
-    entry about to be written — both read the same basename map so a file that
-    moved is reported the same way whether the plan already recorded it or an
-    operator is about to. `index`, when given, is `_py_index`'s map, so a caller
-    asking about many paths at once builds it a single time.
-    """
-    if not is_plugin_py_path(path):
-        return None
-    root = repo_root if repo_root is not None else REPO_ROOT
-    if os.path.isfile(os.path.join(root, path.replace("/", os.sep))):
-        return None
-    idx = index if index is not None else _py_index(root)
-    elsewhere = [p for p in idx.get(os.path.basename(path), ()) if p != path]
-    return ", ".join(elsewhere) if elsewhere else None
 
 
 def manifest_moved_files(repo_root=None):
@@ -677,7 +712,7 @@ TOOLS_REL = "tools"
 # it in its own prose, and that is this repository's configuration, not the plugin's
 # product - the same reason `_tool_known_basenames` must look there too.
 TOOL_NAME_TREES = (PLUGIN_REL + "/scripts", PLUGIN_REL + "/hooks",
-                   PLUGIN_REL + "/tests", TOOLS_REL, ".claude/hooks")
+                   "tests", TOOLS_REL, ".claude/hooks")
 
 # A basename, not a path: at least one leading word character (so `*.py` and the `.py`
 # in a bare `.py file(s)` are not tokens), then the name, then `.py` not followed by a
@@ -1263,7 +1298,7 @@ def phase_return_key_drift(repo_root=None):
 # A RETURN THE AGENT FILES IS CHECKED AT THE BOUNDARY; ONE IT DOES NOT IS PROSE.
 # `audit-task.py file-return` parses a filed return and refuses one missing a
 # field the brief declares (`_filed_returns.return_problems`), and `fr6` in
-# `plugins/audit/tests/test__filed_returns.py` deletes each declared field in
+# `tests/test__filed_returns.py` deletes each declared field in
 # turn and holds that the check names it - so the
 # brief and the verb cannot drift apart. A return handed back without filing is
 # still prose nothing parses, and the orchestrator -- the one actor that could
@@ -2587,6 +2622,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_refs.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__refs.py - run that file instead.")
+              "tests/test__refs.py - run that file instead.")
         raise SystemExit(0)
     print(__doc__.strip())

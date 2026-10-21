@@ -22,7 +22,7 @@ with its offset, a different spelling on purpose). A format that is not this one
 - the compact `%Y%m%dT%H%M%SZ` a migration backup is named with - keeps its own
 helper and its own name for the same reason.
 
-The cases for this file live in `plugins/audit/tests/test__utc_stamp.py`.
+The cases for this file live in `tests/test__utc_stamp.py`.
 Exit codes (as a command): 0 selftest pointer printed - 2 usage error.
 """
 import os
@@ -71,6 +71,6 @@ if __name__ == "__main__":
     safe_stdio()
     if selftest_requested(sys.argv[1:]):
         print("_utc_stamp.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__utc_stamp.py - run that file instead.")
+              "tests/test__utc_stamp.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

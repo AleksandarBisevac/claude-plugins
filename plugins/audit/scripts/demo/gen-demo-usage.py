@@ -15,7 +15,7 @@ actually there, rather than only asserting the output file is non-empty.
 DETERMINISTIC BY CONSTRUCTION. A fixed seed, no wall-clock, no unseeded random.
 Two runs produce byte-identical output, so the committed ledger is reviewable in a
 diff and a regeneration that changes nothing shows as no change.
-`plugins/audit/tests/test_gen_demo_usage.py` pins that, along with referential
+`tests/test_gen_demo_usage.py` pins that, along with referential
 integrity against the manifest - this file carries no inline `--selftest` any
 more, and its cases live there with byte-identical labels. The count they once
 stood at is deliberately not written here, because a count in prose rots.
@@ -338,6 +338,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("gen-demo-usage.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_gen_demo_usage.py - run that file instead.")
+              "tests/test_gen_demo_usage.py - run that file instead.")
         raise SystemExit(0)
     raise SystemExit(main(sys.argv[1:]))

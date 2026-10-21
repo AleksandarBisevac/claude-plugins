@@ -27,8 +27,8 @@ cannot - and renders nothing at all when no phase declares a budget, because an
 empty frame reading "0 of 0" is worse than silence.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__usage_overview.py` - see
-`plugins/audit/tests/_harness.py`.
+`tests/test__usage_overview.py` - see
+`tests/_harness.py`.
 """
 import os
 import sys
@@ -467,6 +467,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_usage_overview.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__usage_overview.py - run that file instead.")
+              "tests/test__usage_overview.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

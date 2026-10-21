@@ -14,7 +14,7 @@ produce a file no tool wrote - so an overlap that reaches one is refused
 whatever else it reaches.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__wave.py` - see `plugins/audit/tests/_harness.py`.
+`tests/test__wave.py` - see `tests/_harness.py`.
 
 Stdlib only, Python 3.8 compatible.
 """

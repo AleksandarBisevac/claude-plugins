@@ -25,7 +25,7 @@ does not hold is therefore its own state, `Pointer without evidence`, and not a
 silence: the plan is referring to a record that is not here, and that is news.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__evidence_view.py` - see `plugins/audit/tests/_harness.py`.
+`tests/test__evidence_view.py` - see `tests/_harness.py`.
 """
 import os
 import sys
@@ -329,6 +329,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_evidence_view.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__evidence_view.py - run that file instead.")
+              "tests/test__evidence_view.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

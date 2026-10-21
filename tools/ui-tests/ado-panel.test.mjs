@@ -265,7 +265,7 @@ describe('what a phase-cell option is allowed to show', () => {
 
   // That BOTH phase-cell selects are actually filled through the bound is a
   // property of the assembled page's TEXT, not of a function's behaviour, so it
-  // is pinned in `plugins/audit/tests/test__panel_page.py` (case at13) where the
+  // is pinned in `tests/test__panel_page.py` (case at13) where the
   // other text pins live. Asserting it here would mean re-reading the source in
   // a suite whose whole point is running the code instead.
 });

@@ -114,7 +114,7 @@ naming a scheme it must not depend on. **None of them can tell your code from yo
 your code**, and the usual way to meet one is to explain it — the explanation contains the shape.
 
 **The two prose scanners read EVERY `.py` and EVERY `.md` this repo keeps**, this file included, so
-`tools/`, `plugins/audit/tests/` and the plugin's own product documents are all inside them now.
+`tools/`, `tests/` and the plugin's own product documents are all inside them now.
 There is no directory left where a shape can be spelled out safely; the way out is a row in
 `_output.PROSE_SCAN_EXEMPT` with a reason, and there are very few of those.
 

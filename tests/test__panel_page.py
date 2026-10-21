@@ -6,7 +6,7 @@ The cases for `_panel_page.py`, moved out of it - an importable helper.
 `from ... import` list. This is the biggest single move in the migration: 1,636 of
 that file's 1,759 lines were this suite, and what stayed behind is the module rather
 than its cases. Nearly every read in these cases is of one string, `M.UI_HTML` - the
-panel's assembled page - and `grep -c "M.UI_HTML" plugins/audit/tests/test__panel_page.py`
+panel's assembled page - and `grep -c "M.UI_HTML" tests/test__panel_page.py`
 counts them rather than this docstring claiming a figure that moves with every case
 added.
 

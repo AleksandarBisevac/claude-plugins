@@ -36,8 +36,8 @@ than dragging half the server down here. The `_help` edge this file used to carr
 went with the suite: it was imported inside `_selftest()` and nowhere else.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test__panel_page.py`, byte-identical labels and all - see
-`plugins/audit/tests/_harness.py`. One of them, `pg2`, parses THIS file and fails
+`tests/test__panel_page.py`, byte-identical labels and all - see
+`tests/_harness.py`. One of them, `pg2`, parses THIS file and fails
 if it ever grows one of those four imports.
 """
 import json
@@ -162,6 +162,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_panel_page.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__panel_page.py - run that file instead.")
+              "tests/test__panel_page.py - run that file instead.")
         raise SystemExit(0)
     print(__doc__.strip())

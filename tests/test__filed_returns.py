@@ -878,11 +878,11 @@ def _case_binding_cases(check):
     phase's own filed returns drew false gaps over: three entries sharing the id
     `gx1` in three suites, an entry covering several ids (`sv35 sv36`), and a
     clause no title carries."""
-    add = ["plugins/audit/tests/test__manifest_phases.py: the gate-entry shape "
+    add = ["tests/test__manifest_phases.py: the gate-entry shape "
            "predicate reports an entry naming one path twice",
-           "plugins/audit/tests/test_audit_task.py: add, add --from-file and "
+           "tests/test_audit_task.py: add, add --from-file and "
            "scope --gate refuse a malformed gate entry",
-           "plugins/audit/tests/test_stamp_verification.py: (clause + detail)"]
+           "tests/test_stamp_verification.py: (clause + detail)"]
     task = {"tests": {"add": add}}
     printed = ["gx1 the gate-entry shape predicate reports an entry whose first "
                "path word is a suite file", "gx2 ...and the reason names the paths",
@@ -921,14 +921,14 @@ def _case_binding_cases(check):
     # A's ids are graded against A's labels; B's are not checked, whatever the
     # labels say, and the reason is that the suite was not run - never that the
     # suite "did not print" it.
-    two = {"tests": {"add": ["plugins/audit/tests/test_audit_task.py: first suite case",
-                             "plugins/audit/tests/test_commit_task_work.py: second suite case"]}}
-    ran = ["python3", "plugins/audit/tests/test_audit_task.py", "--selftest"]
+    two = {"tests": {"add": ["tests/test_audit_task.py: first suite case",
+                             "tests/test_commit_task_work.py: second suite case"]}}
+    ran = ["python3", "tests/test_audit_task.py", "--selftest"]
     seen_a = ["aa1 first suite case"]
     graded = M.case_binding_gaps(two, ["aa1", "bb1"], seen_a, ran)
     wrong_a = M.case_binding_gaps(two, ["aa9", "bb1"], seen_a, ran)
     skipped = M.case_binding_unchecked(two, ran)
-    both = M.case_binding_unchecked(two, ran + ["plugins/audit/tests/test_commit_task_work.py"])
+    both = M.case_binding_unchecked(two, ran + ["tests/test_commit_task_work.py"])
     blind = M.case_binding_unchecked(two, ["python3", "tools/sweep-selftests.py"])
     check("cb4 an id bound to a case in a suite the submit did not run is "
           "reported not checked, while an id in the suite it ran is graded "

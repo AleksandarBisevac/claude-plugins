@@ -34,7 +34,7 @@ on every tool call, so the SMALLER the module it loads, the better - and a path
 rule is not vocabulary in any case.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__task_outputs.py` - see `plugins/audit/tests/_harness.py`.
+`tests/test__task_outputs.py` - see `tests/_harness.py`.
 
 Stdlib only, Python 3.8 compatible.
 """

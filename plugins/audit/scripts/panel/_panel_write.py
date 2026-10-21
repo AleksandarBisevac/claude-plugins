@@ -23,8 +23,8 @@ panel-server.py keeps a thin module-level alias for every name moved here, so it
 PUT/POST routes and the rest of the suite keep referring to them unchanged.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test__panel_write.py`, byte-identical labels and all - see
-`plugins/audit/tests/_harness.py`. One of them reads panel-server.py's source
+`tests/test__panel_write.py`, byte-identical labels and all - see
+`tests/_harness.py`. One of them reads panel-server.py's source
 and pins all 17 alias lines this module's names are re-exported through, exactly
 as written, so a rename on either side is caught rather than absorbed.
 
@@ -2486,6 +2486,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_panel_write.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__panel_write.py - run that file instead.")
+              "tests/test__panel_write.py - run that file instead.")
         raise SystemExit(0)
     print(__doc__.strip())

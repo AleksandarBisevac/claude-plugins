@@ -28,8 +28,8 @@ import _help or panel-server, so nothing that imports THIS module (both of them
 do) can ever form a cycle through it.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test__panel_settings.py`, byte-identical labels and all -
-see `plugins/audit/tests/_harness.py`.
+`tests/test__panel_settings.py`, byte-identical labels and all -
+see `tests/_harness.py`.
 """
 import os
 import sys
@@ -772,7 +772,7 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_panel_settings.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__panel_settings.py - run that file "
+              "tests/test__panel_settings.py - run that file "
               "instead.")
         raise SystemExit(0)
     print(__doc__.strip())

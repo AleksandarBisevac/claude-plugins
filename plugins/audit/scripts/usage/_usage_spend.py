@@ -22,8 +22,8 @@ the layer of its three sibling passes; `usage_ledger.py` re-exports every
 public name defined here, so no call site names this module.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__usage_spend.py`, the moved labels byte-identical - see
-`plugins/audit/tests/_harness.py`.
+`tests/test__usage_spend.py`, the moved labels byte-identical - see
+`tests/_harness.py`.
 """
 import os
 import sys
@@ -197,6 +197,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_usage_spend.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__usage_spend.py - run that file instead.")
+              "tests/test__usage_spend.py - run that file instead.")
         raise SystemExit(0)
     print(__doc__.strip())

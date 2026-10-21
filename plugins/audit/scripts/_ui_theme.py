@@ -28,8 +28,8 @@ and cannot import each other, so this is the lowest layer both can reach:
 one io.open contract for the assets, instead of two copies kept in step by hand.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test__ui_theme.py`, byte-identical labels and all - see
-`plugins/audit/tests/_harness.py`. Both surfaces still depend on this module, so
+`tests/test__ui_theme.py`, byte-identical labels and all - see
+`tests/_harness.py`. Both surfaces still depend on this module, so
 that suite is still the gate; it just runs from one directory over.
 """
 import io
@@ -1788,6 +1788,6 @@ if __name__ == "__main__":
         # suite contract - that literal is how `_output.selftest_coverage()`
         # tells an inline suite from a migrated one.
         print("_ui_theme.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__ui_theme.py - run that file instead.")
+              "tests/test__ui_theme.py - run that file instead.")
         raise SystemExit(0)
     print(__doc__.strip())

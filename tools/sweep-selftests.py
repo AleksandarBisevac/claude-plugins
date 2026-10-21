@@ -123,7 +123,7 @@ _output.install_path()
 SWEEP_DIRS = (
     os.path.join("plugins", "audit", "hooks"),
     os.path.join("plugins", "audit", "scripts"),
-    os.path.join("plugins", "audit", "tests"),
+    "tests",
     "tools",
     os.path.join(".claude", "hooks"),
 )
@@ -231,6 +231,51 @@ def sweep_files(repo=None):
         for rel, _path in _output.py_files(directory):
             out.append("%s/%s" % (rel_dir.replace(os.sep, "/"), rel))
     return sorted(out)
+
+
+# WHERE A SUITE USED TO LIVE, and may not again. The suites left the plugin because the
+# installed copy of it must carry none, so a `.py` that reappears under the old
+# directory is a suite that ships in every install AND one this sweep no longer
+# walks: green, and not run. A directory that is only listed in `SWEEP_DIRS` cannot
+# say that - a walk that does not look somewhere reports nothing about it - so the
+# retired roots are named and asked about directly.
+RETIRED_SUITE_DIRS = (
+    os.path.join("plugins", "audit", "tests"),
+)
+
+
+def retired_suite_files(repo):
+    """Every `.py` still (or again) under a `RETIRED_SUITE_DIRS` root, repo-relative.
+
+    A retired directory that is merely EMPTY is not a finding: an installed copy
+    left behind by a checkout that predates the move holds `__pycache__` and
+    nothing else, and a lint that fired on it would be one the next maintainer
+    deletes.
+
+    `repo` is REQUIRED, and not for tidiness: a function that takes no argument
+    and walks the tree is read by `prove-gates.py` as a load-bearing gate owing
+    rows in both of its tables, and this is a precondition `main()` refuses on,
+    not a lint the tree's own rules grade.
+    """
+    out = []
+    for rel_dir in RETIRED_SUITE_DIRS:
+        directory = os.path.join(repo, rel_dir)
+        if not os.path.isdir(directory):
+            continue
+        for rel, _path in _output.py_files(directory):
+            out.append("%s/%s" % (rel_dir.replace(os.sep, "/"), rel))
+    return sorted(out)
+
+
+def retired_suite_refusal(retired):
+    """The refusal naming `retired` (`retired_suite_files()`'s answer), or None
+    when there is nothing under a retired directory."""
+    if not retired:
+        return None
+    return ("sweep-selftests: %s - a `.py` under a directory suites left, which "
+            "this sweep does not walk, so it would be green and never run; move "
+            "it under %s" % (", ".join(retired), ", ".join(
+                d.replace(os.sep, "/") for d in SWEEP_DIRS)))
 
 
 def covered_paths():
@@ -1540,6 +1585,10 @@ def main(argv):
                          "a leg that did not run\n")
         return 2
 
+    refusal = retired_suite_refusal(retired_suite_files(REPO))
+    if refusal:
+        sys.stderr.write(refusal + "\n")
+        return 2
     paths = sweep_files()
     covered = covered_paths()
     if not paths:
@@ -1602,10 +1651,63 @@ def main(argv):
 
 
 # --- selftest -----------------------------------------------------------------
+def _suite_root_cases(check):
+    """Where the sweep looks for suites, and the directory it must never be asked to
+    forget: the suites sit at the repository root, and a `.py` that shows up again
+    under the retired plugin directory is refused by name."""
+    swept = sweep_files()
+    retired_prefix = "/".join(("plugins", "audit", "tests")) + "/"
+    check("sr1 the sweep walks the suites at the repository root: `tests` is a "
+          "swept directory, a real suite and the harness are in what it "
+          "lists, and nothing it lists sits under the old plugin directory - "
+          "a root that was renamed in SWEEP_DIRS but not on disk would list "
+          "none of them: %r" % (SWEEP_DIRS,),
+          "tests" in SWEEP_DIRS and retired_prefix.rstrip("/") not in
+          [d.replace(os.sep, "/") for d in SWEEP_DIRS]
+          and "tests/test__output.py" in swept and "tests/_harness.py" in swept
+          and not [p for p in swept if p.startswith(retired_prefix)])
+
+    # BUILT, NOT SPELLED: `tool_basename_drift` reads a `.py` basename literal under
+    # `tools/` as a reference to a file that must exist, and this one exists only
+    # for the width of the `try`.
+    back_name = "test_back" + ".py"
+    scratch = tempfile.mkdtemp(prefix="sweep-retired-")
+    try:
+        retired_dir = os.path.join(scratch, *retired_prefix.rstrip("/").split("/"))
+        os.makedirs(os.path.join(retired_dir, "__pycache__"))
+        with open(os.path.join(retired_dir, "__pycache__", "x.pyc"), "wb") as fh:
+            fh.write(b"")
+        quiet = retired_suite_files(scratch)
+        with open(os.path.join(retired_dir, back_name), "w") as fh:
+            fh.write("print('1/1 cases passed')\n")
+        back = retired_suite_files(scratch)
+        refusal = retired_suite_refusal(back)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    # THE ALLOW TWIN comes first in the label's logic: a directory that holds only
+    # bytecode is an old checkout's leftover and must not be refused, or the rule
+    # would be one a maintainer deletes the first time it fires on a stale cache.
+    check("sr2 a retired suite directory that holds no `.py` is quiet, and one "
+          "that holds a suite is REFUSED BY NAME - the file and the directories "
+          "the suite belongs under are both in the message, and the sweep exits "
+          "2 on it rather than running green over a file it never walks: "
+          "%r / %r / %r" % (quiet, back, refusal),
+          quiet == [] and retired_suite_refusal(quiet) is None
+          and back == [retired_prefix + back_name]
+          and refusal is not None and retired_prefix + back_name in refusal
+          and "tests" in refusal and "never run" in refusal)
+
+    real = retired_suite_files(REPO)
+    check("sr3 THE LIVE CLAIM: this checkout holds no `.py` under the retired "
+          "suite directory, so the refusal above is not already firing on the "
+          "tree it protects: %r" % (real,), real == [])
+
+
 def _cases(check):
     """Every branch of `grade` plus the two refusals, driven without a subprocess."""
+    _suite_root_cases(check)
     covered = set(["plugins/audit/scripts/_output.py"])
-    live = "plugins/audit/tests/test__output.py"
+    live = "tests/test__output.py"
     migrated = "plugins/audit/scripts/_output.py"
 
     g = grade(live, 0, "ALL PASS: 7/7 cases passed\n", covered)
@@ -1622,7 +1724,7 @@ def _cases(check):
     # A NAMED LOCAL, because the prose scan reads this file now: a positional `0`
     # immediately in front of a string that opens with the noun reads as a
     # cardinality claim. Reworded rather than the pattern widened.
-    _moved = "cases moved to plugins/audit/tests/\n"
+    _moved = "cases moved to tests/\n"
     g = grade(migrated, 0, _moved, covered)
     check("g2 a migrated file exits 0, prints a pointer, contributes no cases "
           "and is NOT required to print the contract: %r" % (g,),
@@ -1676,7 +1778,7 @@ def _cases(check):
           "spelling discovery produces - a set that never matches would make "
           "g2 and g3 vacuous and the sweep would silently weaken to the old "
           "exit-code-only rule (%d paths)" % (len(cov),),
-          len(cov) > 50 and all(p.startswith("plugins/audit/")
+          len(cov) > 50 and all(p.startswith(("plugins/audit/", "tools/lints/"))
                                 for p in cov))
 
     overlap = cov & set(found)
@@ -1699,7 +1801,7 @@ def _cases(check):
 
     buf = io.StringIO()
     code = render([grade(live, 0, "1/1 cases passed\n", covered),
-                   grade("plugins/audit/scripts/_deps.py", 1, "boom\n", covered)], 4,
+                   grade("tools/lints/_deps.py", 1, "boom\n", covered)], 4,
                   stream=buf)
     text = buf.getvalue()
     check("r0 a red render exits 1, names the file twice (table and summary), "
@@ -1722,7 +1824,7 @@ def _cases(check):
 
     # -- render_quiet prints failures and totals, never a passing file --------
     _rows_mix = [grade(live, 0, "1/1 cases passed\n", covered),
-                 grade("plugins/audit/scripts/_deps.py", 1, "boom\n", covered)]
+                 grade("tools/lints/_deps.py", 1, "boom\n", covered)]
     buf_rq = io.StringIO()
     code_rq = render_quiet(_rows_mix, 4, stream=buf_rq)
     text_rq = buf_rq.getvalue()
@@ -2253,7 +2355,7 @@ def _cases(check):
     # somebody else maintains. It is also the case `tools/prove-gates.py` reddens
     # by planting a leak in that suite, which is what makes this guard proven
     # rather than merely seen passing.
-    _real = "plugins/audit/tests/test__cli_fmt.py"
+    _real = "tests/test__cli_fmt.py"
     ran = run_one(_real, timeout=60)
     check("x4 a suite this repo actually ships leaves its scratch directory "
           "exactly as it found it (%s: exit %r, %r)"
@@ -2324,7 +2426,7 @@ def _cases(check):
 
         # A TABLE OF THE CASE'S OWN, because the shipped one may be empty and
         # a case that borrowed its first row would then assert nothing.
-        sp_exempt = "/".join(("plugins", "audit", "tests", "absent" + ".py"))
+        sp_exempt = "/".join(("tests", "absent" + ".py"))
         sp_table = {sp_exempt: "a scratch row: the file does not exist in this "
                                "scratch repository, so running it is red"}
         sp_rows = sweep([sp_exempt], covered, jobs=1, repo=sp_work, timeout=30,
@@ -2338,13 +2440,13 @@ def _cases(check):
               len(sp_rows) == 1 and sp_rows[0]["ok"]
               and sp_rows[0].get("exempt") == sp_table[sp_exempt]
               and len(sp_plain) == 1 and not sp_plain[0]["ok"])
-        sp_repaired = ("plugins/audit/tests/test__machine_paths.py",
-                       "plugins/audit/tests/test__journal_io.py",
-                       "plugins/audit/tests/test__evidence_io.py",
-                       "plugins/audit/tests/test__manifest_io.py",
-                       "plugins/audit/tests/test_audit_task.py",
-                       "plugins/audit/tests/test_stamp_verification.py",
-                       "plugins/audit/tests/_harness.py")
+        sp_repaired = ("tests/test__machine_paths.py",
+                       "tests/test__journal_io.py",
+                       "tests/test__evidence_io.py",
+                       "tests/test__manifest_io.py",
+                       "tests/test_audit_task.py",
+                       "tests/test_stamp_verification.py",
+                       "tests/_harness.py")
         check("sp6 the spaced leg runs the scrub, stamp-verification and "
               "harness suites - the machine-path scrub, NODE_OPTIONS reading "
               "and the harness fixtures read a path holding a space as one "
@@ -2614,8 +2716,7 @@ def _cases(check):
     # --- one concurrency budget: staged suites hold several slots ------------
     import importlib.util
     bg_spec = importlib.util.spec_from_file_location(
-        "sweep_harness_bg", os.path.join(REPO, "plugins", "audit", "tests",
-                                         "_harness.py"))
+        "sweep_harness_bg", os.path.join(REPO, "tests", "_harness.py"))
     bg_h = importlib.util.module_from_spec(bg_spec)
     bg_spec.loader.exec_module(bg_h)
     check("bg0 the grant's variable names and cap are the ones `_harness.py` "
@@ -2662,8 +2763,8 @@ def _cases(check):
     bg_live = staged_paths(sweep_files())
     check("bg2b ...and over the live tree the staged suites are found and the "
           "harness that defines the runner is not: %r" % (sorted(bg_live),),
-          "plugins/audit/tests/test_drive_phase.py" in bg_live
-          and "plugins/audit/tests/_harness.py" not in bg_live)
+          "tests/test_drive_phase.py" in bg_live
+          and "tests/_harness.py" not in bg_live)
     bg_costs = {"heavy": 450.0, "light": 10.0}
     bg_to = [file_timeout("heavy", bg_costs), file_timeout("light", bg_costs),
              file_timeout("never", bg_costs),
@@ -2923,10 +3024,10 @@ def _cases(check):
                 "that is not a suite in the tree, naming it")
     # Fixture names carry no extension: the interpreter runs a path whatever it
     # is called, and a name ending in the Python one would read as a reference.
-    nl_swept = ["plugins/audit/tests/test_a", "tools/b", "tools/c",
+    nl_swept = ["tests/test_a", "tools/b", "tools/c",
                 "tools/d"]
     nl_read = named_suites(["--jobs", "3", "tools/c", "--quiet",
-                            "plugins/audit/tests/test_a", "--timeout=9",
+                            "tests/test_a", "--timeout=9",
                             "--encoding", "cp1252", "tools/c"], nl_swept)
     nl_whole = named_suites(["--jobs", "3", "--record-costs", "tools/b",
                              "--quiet"], nl_swept)
@@ -2956,7 +3057,7 @@ def _cases(check):
         [sys.executable, os.path.abspath(__file__), "--jobs", "2",
          "tools/not-a-suite"], stdout=subprocess.PIPE,
         stderr=subprocess.PIPE, timeout=120)
-    nl_real = "plugins/audit/tests/test__cli_fmt.py"
+    nl_real = "tests/test__cli_fmt.py"
     nl_ran = subprocess.run(
         [sys.executable, os.path.abspath(__file__), "--jobs", "2", nl_real],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=300)
@@ -2971,7 +3072,7 @@ def _cases(check):
              nl_refused.returncode, nl_err[-200:],
              nl_refused.stdout.decode("utf-8", "replace")[-120:],
              nl_ran.returncode, nl_rowlines, nl_text[-160:]),
-          nl_read == (["plugins/audit/tests/test_a", "tools/c"], None)
+          nl_read == (["tests/test_a", "tools/c"], None)
           and nl_whole == ([], None)
           and nl_unknown[0] is None
           and "README.md" in (nl_unknown[1] or "")

@@ -284,7 +284,7 @@ describe('shares', () => {
     // THE ONE CASE THE BRIDGE CANNOT CARRY. Everything else in this file is
     // answered by live Python, but the calls cross as JSON and JSON has no NaN -
     // so the two sides state the same answer separately, and the Python half is
-    // `share_pct: a NaN whole is unmeasurable` in plugins/audit/tests/test__fmt.py.
+    // `share_pct: a NaN whole is unmeasurable` in tests/test__fmt.py.
     // They disagreed here until that case was written: NaN is TRUTHY in Python,
     // so `not whole` let it through and fmt_share rendered a percentage of NaN.
     expect(panel.uShare(5, NaN)).toBe(null);

@@ -84,7 +84,7 @@ Exit codes:
      confirmed
 
 This module carries no inline `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_derive_phase_gate.py`.
+`tests/test_derive_phase_gate.py`.
 
 Stdlib only, Python 3.8 compatible.
 """
@@ -752,7 +752,7 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("derive-phase-gate.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test_derive_phase_gate.py - run that file "
+              "tests/test_derive_phase_gate.py - run that file "
               "instead.")
         sys.exit(0)
     sys.exit(main(sys.argv[1:]))

@@ -71,7 +71,7 @@ that reported a translation and wrote nothing is one flag away from handing the
 UNSTAMPED payload downstream, which is the defect this command exists to end.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_read_ado_links.py`.
+`tests/test_read_ado_links.py`.
 """
 import json
 import os
@@ -790,7 +790,7 @@ if __name__ == "__main__":
         # print the `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("read-ado-links.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test_read_ado_links.py - run that file "
+              "tests/test_read_ado_links.py - run that file "
               "instead.")
         sys.exit(0)
     sys.exit(main(sys.argv[1:]))

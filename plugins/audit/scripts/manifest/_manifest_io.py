@@ -37,8 +37,8 @@ index/shard, so existing callers' `try/except -> exit 2` keeps working. Hooks th
 never raise use `load_manifest_safe` (returns {} on any error).
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test__manifest_io.py`, byte-identical labels and all - see
-`plugins/audit/tests/_harness.py`.
+`tests/test__manifest_io.py`, byte-identical labels and all - see
+`tests/_harness.py`.
 """
 import json
 import os
@@ -1653,7 +1653,7 @@ if __name__ == "__main__":
         # suite contract - that literal is how `_output.selftest_coverage()`
         # tells an inline suite from a migrated one.
         print("_manifest_io.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__manifest_io.py - run that file instead.")
+              "tests/test__manifest_io.py - run that file instead.")
         raise SystemExit(0)
     sys.stderr.write("usage: _manifest_io.py --selftest\n")
     raise SystemExit(2)

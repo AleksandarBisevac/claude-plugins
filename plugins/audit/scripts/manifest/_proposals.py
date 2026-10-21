@@ -37,7 +37,7 @@ is undecided, because a rule that stops to interview cannot be called from an HT
 endpoint and a rule that guesses is worse than one that refuses.
 
 This file carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__proposals.py`, which is what `--selftest` here points
+`tests/test__proposals.py`, which is what `--selftest` here points
 at. They were in `test_materialize_proposal.py` while this module was part of that
 file and this sentence went on naming it afterwards -- the door's suite still tests
 the door, and the two are no longer one.
@@ -778,6 +778,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_proposals.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__proposals.py - run that file instead.")
+              "tests/test__proposals.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

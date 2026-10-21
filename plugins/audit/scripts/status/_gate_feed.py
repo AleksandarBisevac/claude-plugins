@@ -69,7 +69,7 @@ naming the machine", and a second one written to resemble it would be a second
 answer to a question with one right answer.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__gate_feed.py` - see `plugins/audit/tests/_harness.py`.
+`tests/test__gate_feed.py` - see `tests/_harness.py`.
 """
 import json
 import os
@@ -457,7 +457,7 @@ if __name__ == "__main__":
         # the `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_gate_feed.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__gate_feed.py - run that file instead.")
+              "tests/test__gate_feed.py - run that file instead.")
         raise SystemExit(0)
     if "--list-offered" in sys.argv[1:]:
         # THE ONE PRINTER, so nothing else retypes these sentences. `commands/

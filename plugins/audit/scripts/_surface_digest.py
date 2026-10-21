@@ -32,7 +32,7 @@ shape the old digest had (`digests`, `unassigned`, `error`), so a caller that
 compared against it still reads one answer.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__surface_digest.py`. Run as a command it prints the answer
+`tests/test__surface_digest.py`. Run as a command it prints the answer
 as JSON (`--json`), which is how `_refs` - a lower layer, forbidden the import -
 asks for it.
 
@@ -144,7 +144,7 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_surface_digest.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__surface_digest.py - run that file instead.")
+              "tests/test__surface_digest.py - run that file instead.")
         raise SystemExit(0)
     if "--json" in sys.argv[1:]:
         answer = surface_digests()

@@ -85,9 +85,9 @@ stderr channel is indistinguishable from a hook crash). PostToolUse always
 exits 0 silently. Any unexpected input / exception exits 0.
 
 This hook carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test_require_plan.py` (hyphens become underscores - a
+`tests/test_require_plan.py` (hyphens become underscores - a
 hyphenated name is not importable). A test of a hook may import from `scripts/`
-even though the hook itself may not; see `plugins/audit/tests/_harness.py`.
+even though the hook itself may not; see `tests/_harness.py`.
 """
 import json
 import os
@@ -127,7 +127,7 @@ import _config  # noqa: E402
 # permission-decision message alone, and adding it here would be a wording this
 # hook can never produce as a row - the over-fire half of the same floor below.
 #
-# `plugins/audit/tests/test_require_plan.py` holds the floor in both directions,
+# `tests/test_require_plan.py` holds the floor in both directions,
 # as cases rather than as this paragraph: a sentence this hook writes that the
 # table does not carry, and a table entry this hook cannot produce, each turn it
 # red. A published set that quietly stops covering its subject is the defect the
@@ -1132,7 +1132,7 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
         # WHILE THIS TIER HOLDS, IT DOES NOT FALL QUIET. One proposal was to
         # stop relaying after enough uncovered edits and say so once - silence
         # with a counter in front of it - so the repair here is VOLUME, not
-        # silence. `plugins/audit/tests/test_require_plan.py` holds that as a
+        # silence. `tests/test_require_plan.py` holds that as a
         # case: a mutation letting this branch fall quiet once the session has
         # already warned turns it red.
         #
@@ -1322,6 +1322,6 @@ if __name__ == "__main__":
         # print the `N/M cases passed` contract - that string is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("require-plan.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_require_plan.py - run that file instead.")
+              "tests/test_require_plan.py - run that file instead.")
         sys.exit(0)
     main()

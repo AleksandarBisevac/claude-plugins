@@ -25,7 +25,7 @@ Exit codes belong to the command, not here: `verify()` returns a dict with `ok`
 and `findings`, and `audit-journal.py` turns that into 0 or 1.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__journal_io.py` -- see `plugins/audit/tests/_harness.py`.
+`tests/test__journal_io.py` -- see `tests/_harness.py`.
 Four of them (k5-k8) SWAP `_git_anchor_finding` for a counting stub to prove the
 batched git-anchor pass is O(1 + dirty); they set it on the module object, so
 renaming that function breaks them loudly rather than leaving them measuring a
@@ -3077,7 +3077,7 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_journal_io.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__journal_io.py - run that file instead.")
+              "tests/test__journal_io.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())
 

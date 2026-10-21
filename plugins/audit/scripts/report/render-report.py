@@ -41,8 +41,8 @@ splitting those cases by whichever function happens to emit each string would
 have left two suites and no complete one.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test_render_report.py`, byte-identical labels and all - see
-`plugins/audit/tests/_harness.py`. `import re` and `import time` went with them:
+`tests/test_render_report.py`, byte-identical labels and all - see
+`tests/_harness.py`. `import re` and `import time` went with them:
 every use of either in this file was inside that suite. `--bench` stayed - the
 benchmark is production code somebody runs, and only the `bn` cases moved.
 """
@@ -747,7 +747,7 @@ if __name__ == "__main__":
         # tells an inline suite from a migrated one. `--bench` still runs the
         # benchmark: that is production code, not a suite.
         print("render-report.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_render_report.py - run that file "
+              "tests/test_render_report.py - run that file "
               "instead. --bench still works here.")
         raise SystemExit(0)
     if _MODE == "bench":

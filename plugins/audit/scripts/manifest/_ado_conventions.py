@@ -48,8 +48,8 @@ sentence to print, not a check to skip. `parent_rule_exemption` is that door;
 `conformance_violations` asks it too, so the reason and the skip cannot drift.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__ado_conventions.py` - see
-`plugins/audit/tests/_harness.py`.
+`tests/test__ado_conventions.py` - see
+`tests/_harness.py`.
 """
 import os
 import sys
@@ -668,6 +668,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_ado_conventions.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__ado_conventions.py - run that file instead.")
+              "tests/test__ado_conventions.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

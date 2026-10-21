@@ -21,7 +21,7 @@ clock, so a committed example report is byte-stable across re-renders and a
 stale price table does not rot into a warning on its own.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__usage_load.py` - see `plugins/audit/tests/_harness.py`.
+`tests/test__usage_load.py` - see `tests/_harness.py`.
 """
 import os
 import sys
@@ -331,6 +331,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_usage_load.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__usage_load.py - run that file instead.")
+              "tests/test__usage_load.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

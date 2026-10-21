@@ -566,7 +566,7 @@ if __name__ == "__main__":
         # print the `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("check-ado-item.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test_check_ado_item.py - run that file "
+              "tests/test_check_ado_item.py - run that file "
               "instead.")
         sys.exit(0)
     sys.exit(main(sys.argv[1:]))

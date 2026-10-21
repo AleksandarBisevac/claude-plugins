@@ -45,7 +45,7 @@ what actually covers them, and would catch a hook that started printing prose wi
 in it.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test__output.py`, and it was the last of the forty-eight to move —
+`tests/test__output.py`, and it was the last of the forty-eight to move —
 `selftest_coverage()` below is what classified the other forty-seven on the way. Two
 things had to change for it to classify ITSELF correctly, both recorded where they were
 made: `_CONTRACT` is assembled rather than spelled, and every docstring (not only the
@@ -74,26 +74,36 @@ import time
 # file's own depth, hard-coded, and it is wrong the moment the file is moved.
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# scripts -> audit. `hooks/`, `tests/`, `commands/`, `agents/`, `schema/` and
+# scripts -> audit. `hooks/`, `commands/`, `agents/`, `schema/` and
 # `.claude-plugin/plugin.json` all hang off this one; six files derived it for
 # themselves before, each spelling its own distance from the plugin root.
 PLUGIN_ROOT = os.path.dirname(SCRIPTS_DIR)
 
 HOOKS_DIR = os.path.join(PLUGIN_ROOT, "hooks")
 
-# `tests/` is a sibling of scripts/ and hooks/, not a subdirectory of either, so no
-# existing walk reaches it and every lint that should cover it has to say so. The
-# scope decision, recorded once here and again on each function: the DIALECT rules
-# apply to tests too (`house_style_violations`, `entries_missing_guard`), because a
-# test written with `typing` or a walrus is exactly as unrunnable on 3.8 as a script
-# written that way, and a test that crashes on a cp1252 stream hides its own result.
-TESTS_DIR = os.path.join(PLUGIN_ROOT, "tests")
-
 # audit -> plugins -> the repo root. `covered_repo_paths()` needs it because CI's
 # sweep speaks repo-relative paths, and `_refs` needs it because every `rel` it
 # produces already starts with `plugins/audit/`. Both used to derive it separately,
 # from their own `__file__`, which is two answers to a question with one.
 REPO_ROOT = os.path.dirname(os.path.dirname(PLUGIN_ROOT))
+
+# `tests/` is at the REPOSITORY root, not inside the plugin: the installed copy of
+# the plugin carries no suite, so a path the product derives from `PLUGIN_ROOT`
+# can never reach one. No walk of `scripts/` or `hooks/` reaches it either, so every
+# lint that should cover it has to say so. The scope decision, recorded once here
+# and again on each function: the DIALECT rules apply to tests too
+# (`house_style_violations`, `entries_missing_guard`), because a test written with
+# `typing` or a walrus is exactly as unrunnable on 3.8 as a script written that way,
+# and a test that crashes on a cp1252 stream hides its own result.
+TESTS_DIR = os.path.join(REPO_ROOT, "tests")
+
+# The two lint modules (`_deps`, `_refs`) are development code: they read the whole
+# repository to judge it, and nothing the installed plugin runs imports them.
+# `install_path()` NEVER puts this directory on `sys.path` - that is the point of
+# keeping it out of `scripts/` - so a development caller (the harness, a tool) adds
+# it itself, and the dialect lints below name it beside `TESTS_DIR` so moving the
+# two modules out of `scripts/` did not take them out of the dialect rules.
+LINTS_DIR = os.path.join(REPO_ROOT, "tools", "lints")
 
 
 # --- safe stdio ---------------------------------------------------------------
@@ -608,6 +618,74 @@ def lint_py_files(directory):
     return [(rel, path) for rel, path in py_files(directory)
             if not rel.startswith(LOADER_PROBE_DIR)
             and "/" + LOADER_PROBE_DIR not in rel]
+
+
+# --- where a plugin `.py` moved to ----------------------------------------------
+# `audit-task.py add` / `scope` refuse a `--files` entry naming a `.py` under the
+# plugin that has moved, and `_refs.manifest_moved_files` asks the same question of
+# the whole plan. They live HERE because the first is shipped and the second is
+# development code: `_refs` left `scripts/` with the rest of the lint modules, and
+# a shipped script importing it would have been an `ImportError` in every installed
+# copy. The anchor is the one place both may reach.
+PLUGIN_REL = "plugins/audit"
+
+
+def py_index(repo_root, rel_root=None):
+    """{basename: [repo-relative path, ...]} for every `.py` under one tree.
+
+    Basename-keyed because that is the question a moved file poses: the recorded path
+    is gone, is the FILE gone too or did it just move? `_deps` forbids two `.py`
+    sharing a basename, so a list with more than one entry means the tree is broken
+    in a way that lint reports by name.
+
+    `rel_root` defaults to the plugin; `_refs.tool_basename_drift` asks the same
+    question of each of its narrower trees in turn, and one walk answering for both
+    is a walk that cannot drift from itself.
+    """
+    index = {}
+    base = os.path.join(repo_root, (rel_root or PLUGIN_REL).replace("/", os.sep))
+    for root, dirnames, filenames in os.walk(base):
+        dirnames.sort()
+        if "__pycache__" in dirnames:
+            dirnames.remove("__pycache__")
+        for name in sorted(filenames):
+            if not name.endswith(".py"):
+                continue
+            index.setdefault(name, []).append(
+                posix_rel(os.path.join(root, name), repo_root))
+    return index
+
+
+def is_plugin_py_path(path):
+    """Whether `path` is a `.py` path under `plugins/audit/` at all - the one reading
+    of "is this the plugin's business" `moved_file_target` and `_refs`'
+    `manifest_moved_files` share."""
+    prefix = PLUGIN_REL + "/"
+    return isinstance(path, str) and path.endswith(".py") and path.startswith(prefix)
+
+
+def moved_file_target(path, repo_root=None, index=None):
+    """The new home `path` moved to, or None.
+
+    None covers every reading that is NOT a move: `path` still exists there, it is
+    not a plugin `.py` path (`is_plugin_py_path`), or no `.py` anywhere in the plugin
+    shares its basename - a deletion, not a move, which `manifest_moved_files` files
+    as `gone` rather than here.
+
+    THE ONE READER OF THE QUESTION: `manifest_moved_files` asks it once per recorded
+    path and `audit-task.py`'s `add`/`scope` once per `--files` entry about to be
+    written, so a file that moved is reported the same way whether the plan already
+    recorded it or an operator is about to. `index`, when given, is `py_index`'s
+    map, so a caller asking about many paths builds it once.
+    """
+    if not is_plugin_py_path(path):
+        return None
+    root = repo_root if repo_root is not None else REPO_ROOT
+    if os.path.isfile(os.path.join(root, path.replace("/", os.sep))):
+        return None
+    idx = index if index is not None else py_index(root)
+    elsewhere = [p for p in idx.get(os.path.basename(path), ()) if p != path]
+    return ", ".join(elsewhere) if elsewhere else None
 
 
 # --- the files this repo KEEPS -------------------------------------------------
@@ -1273,7 +1351,7 @@ def depth_sensitive_paths(script_dir=None):
     cut out before the scan — replaced by blank lines rather than deleted, so a
     violation still reports the line number the reader will open. Anything a file
     genuinely needs is on `_output`: `SCRIPTS_DIR`, `PLUGIN_ROOT`, `HOOKS_DIR`,
-    `TESTS_DIR`, `REPO_ROOT`.
+    `TESTS_DIR`, `LINTS_DIR`, `REPO_ROOT`.
 
     `hooks/` IS NOT SCANNED. Hooks may not import `scripts/` (`_deps` r5/r6), so
     the anchors are out of their reach by design and `hooks/_config.find_script()`
@@ -1481,7 +1559,7 @@ def entries_missing_guard(dirs=None):
     `safe_stdio()` call. A file that cannot be parsed is reported rather than skipped,
     since a syntax error is a worse thing to pass over in silence.
     """
-    dirs = dirs if dirs is not None else (SCRIPTS_DIR, TESTS_DIR)
+    dirs = dirs if dirs is not None else (SCRIPTS_DIR, TESTS_DIR, LINTS_DIR)
     missing = []
     for d in dirs:
         for name, path in lint_py_files(d):
@@ -1619,7 +1697,7 @@ def usage_hint_violations(dirs=None):
     `parse_args` for `parser_sites()` to find. A caller asking an older cached
     copy for a verb only a newer one knows must be told the same thing either way,
     so both shapes are read here."""
-    dirs = dirs if dirs is not None else (SCRIPTS_DIR,)
+    dirs = dirs if dirs is not None else (SCRIPTS_DIR, LINTS_DIR)
     found = []
     seen = set()
     for d in dirs:
@@ -1838,7 +1916,7 @@ def house_style_violations(dirs=None):
     violation costs most: the suite that would have caught the regression is itself
     the thing that will not start.
     """
-    dirs = dirs if dirs is not None else (SCRIPTS_DIR, HOOKS_DIR, TESTS_DIR)
+    dirs = dirs if dirs is not None else (SCRIPTS_DIR, HOOKS_DIR, TESTS_DIR, LINTS_DIR)
     violations = []
     for d in dirs:
         for name, path in lint_py_files(d):
@@ -1954,7 +2032,7 @@ def truncated_evidence_violations(dirs=None):
     and adding a third to widen a scope is a decision of its own. So a clean
     result means "none of this shape here", not "no truncated evidence".
     """
-    dirs = dirs if dirs is not None else (SCRIPTS_DIR, HOOKS_DIR, TESTS_DIR)
+    dirs = dirs if dirs is not None else (SCRIPTS_DIR, HOOKS_DIR, TESTS_DIR, LINTS_DIR)
     violations = []
     for d in dirs:
         for name, path in lint_py_files(d):
@@ -2084,7 +2162,7 @@ def bare_output_cut_violations(dirs=None, pending=None):
     because a hook may not import `scripts/` and cannot reach `_excerpt`. So a
     clean result means "none of this shape here", not "no output is cut".
     """
-    dirs = dirs if dirs is not None else (SCRIPTS_DIR,)
+    dirs = dirs if dirs is not None else (SCRIPTS_DIR, LINTS_DIR)
     pending = set(BARE_CUT_PENDING if pending is None else pending)
     violations, cut = [], set()
     for d in dirs:
@@ -2121,11 +2199,11 @@ _NEWLINE_POSITION = {"open": 4, "fdopen": 5}
 # only shrink. Everything the plan, its shards, the journal, evidence or a filed
 # return is written through already names its newline.
 NEWLINE_PENDING = ()
-# The directories the lint walks: the plugin's scripts and its hooks, plus the
-# repository's own project hooks when that directory exists (an installed copy
-# of the plugin has no such sibling).
+# The directories the lint walks: the plugin's scripts and its hooks, the two lint
+# modules that used to be scripts, plus the repository's own project hooks when
+# that directory exists (an installed copy of the plugin has no such sibling).
 _PROJECT_HOOKS_DIR = os.path.join(REPO_ROOT, ".claude", "hooks")
-NEWLINE_DIRS = (SCRIPTS_DIR, HOOKS_DIR) + (
+NEWLINE_DIRS = (SCRIPTS_DIR, HOOKS_DIR, LINTS_DIR) + (
     (_PROJECT_HOOKS_DIR,) if os.path.isdir(_PROJECT_HOOKS_DIR) else ())
 _NEWLINE_WRITE = ("a text-mode open for writing that names no `newline` - on "
                   "Windows it writes CRLF into a file other machines write "
@@ -2837,7 +2915,7 @@ def selftest_argv_violations(dirs=None):
     comparison built from a variable holding the flag. A clean result means
     "none of these spellings here".
     """
-    dirs = dirs if dirs is not None else (SCRIPTS_DIR,)
+    dirs = dirs if dirs is not None else (SCRIPTS_DIR, LINTS_DIR)
     violations = []
     for d in dirs:
         for name, path in lint_py_files(d):
@@ -2984,7 +3062,7 @@ def _carries_inline_selftest(path):
             and any("--selftest" in t for t in texts))
 
 
-def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
+def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None, lints_dir=None):
     """Where every production suite lives right now — a classification, not a verdict.
 
     Returns a dict of sorted lists, keyed by what is true of a file rather than by
@@ -3012,7 +3090,8 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
       total       how many production files were classified — `checked`, so that
                   "no defects" and "nothing was looked at" cannot print the same way
 
-    Production names are kind-prefixed (`scripts/_cli_fmt.py`, `hooks/remind-tdd.py`)
+    Production names are kind-prefixed (`scripts/_cli_fmt.py`, `hooks/remind-tdd.py`,
+    and `lints/_deps.py` for the two development modules under `tools/lints/`)
     so a violation names a path the reader can open; orphans are named `tests/x.py`.
     `tests/_harness.py` is not a test file and is not an orphan candidate: the rule is
     about `test_*.py`, and the harness is the thing they all import.
@@ -3021,6 +3100,11 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
     production file under `covered`, and the case that pins the `covered` list is the
     one that had to be edited to say so.
     """
+    # A caller that hands in its own `script_dir` is classifying a fixture, and
+    # the real lint modules must not leak into the fixture's answer: `lints_dir`
+    # defaults to the real directory only when the real `scripts/` is the subject.
+    lints_dir = lints_dir if lints_dir is not None else (
+        LINTS_DIR if script_dir is None else None)
     script_dir = script_dir or SCRIPTS_DIR
     hooks_dir = hooks_dir if hooks_dir is not None else HOOKS_DIR
     tests_dir = tests_dir if tests_dir is not None else TESTS_DIR
@@ -3032,8 +3116,9 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
            "orphans": [], "collisions": [], "unreadable": [], "defects": [],
            "total": 0}
     claimed = {}
-    for kind, directory in (("scripts", script_dir), ("hooks", hooks_dir)):
-        if not os.path.isdir(directory):
+    for kind, directory in (("scripts", script_dir), ("hooks", hooks_dir),
+                            ("lints", lints_dir)):
+        if directory is None or not os.path.isdir(directory):
             continue
         for rel, path in lint_py_files(directory):
             named = "%s/%s" % (kind, rel)
@@ -3055,8 +3140,8 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None):
                 out["neither"].append(named)
 
     coverable = set(claimed)
-    for directory in (script_dir, hooks_dir):
-        if os.path.isdir(directory):
+    for directory in (script_dir, hooks_dir, lints_dir):
+        if directory is not None and os.path.isdir(directory):
             coverable |= _coverable_test_names(directory)
     for name in sorted(test_files - coverable):
         out["orphans"].append("tests/%s" % name)
@@ -3838,7 +3923,7 @@ PROSE_SCAN_EXEMPT = (
      "rather than written. It is also gitignored as a FILE, which this walk does "
      "not read, so without this row the finding set would move with whether "
      "anybody had rendered a report in this checkout"),
-    ("plugins/audit/tests/test__output.py",
+    ("tests/test__output.py",
      "holds THIS scanner's own fixtures: every shape it recognises appears there "
      "as an argument spelled on purpose, because a text scanner can only be shown "
      "to fire by handing it the literal it must recognise. The house rule is to "
@@ -3846,7 +3931,7 @@ PROSE_SCAN_EXEMPT = (
      "the argument under test - building it would move the needle out of the "
      "fixture and into the assertion. The cost is the thing to disagree with: a "
      "genuinely stale count in this one suite is unguarded"),
-    ("plugins/audit/tests/test__deps.py",
+    ("tests/test__deps.py",
      "the same, for the document half - its cases hand the shapes to "
      "`_deps.doc_prose_numbers()` as fixture documents"),
 )
@@ -4065,6 +4150,14 @@ def prose_number_claims(repo_root=None):
     return sorted(prose_claims_in(root, scan["paths"]))
 
 
+def _coverage_path(named):
+    """The file a `selftest_coverage()` name stands for: `lints/` is `LINTS_DIR`,
+    every other kind prefix (`scripts/`, `hooks/`) hangs off the plugin root."""
+    if named.startswith("lints/"):
+        return os.path.join(LINTS_DIR, named[len("lints/"):])
+    return os.path.join(PLUGIN_ROOT, named)
+
+
 def covered_repo_paths(repo_root=None):
     """Repo-relative paths of the production files whose cases have moved to `tests/`.
 
@@ -4074,7 +4167,7 @@ def covered_repo_paths(repo_root=None):
     sweep cannot skip a file this lint has not accounted for.
     """
     root = repo_root if repo_root is not None else REPO_ROOT
-    return [posix_rel(os.path.join(PLUGIN_ROOT, rel), root)
+    return [posix_rel(_coverage_path(rel), root)
             for rel in selftest_coverage()["covered"]]
 
 
@@ -4119,7 +4212,7 @@ if __name__ == "__main__":
         # one file in the tree where getting that wrong would misclassify every
         # other file as well.
         print("_output.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__output.py - run that file instead.")
+              "tests/test__output.py - run that file instead.")
         raise SystemExit(0)
     if "--covered" in sys.argv[1:]:
         # CI's sweep asks this, one line per path, so its skip list comes from the

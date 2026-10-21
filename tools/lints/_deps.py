@@ -69,6 +69,13 @@ existing layer whose only rule is "nothing may point here". That rule is worth h
 product is never allowed to reach into its tests, because the day it does, the tests stop
 being removable and start being a dependency a consumer has to install.
 
+THIS MODULE AND `_refs` ARE NOT IN `LAYERS` EITHER, FOR THE SAME REASON ONE STEP FURTHER ON.
+They sit under `tools/lints/`, which the installed plugin does not carry, so they read
+the whole repository to judge it and nothing the product runs may import them -
+`tests_import_violations()` holds that direction for them as it does for `tests/`. An
+import the other way (these files reaching into `scripts/`) is ordinary development
+code using the product, and needs no row.
+
 THE ONE EXCEPTION THIS FILE USED TO CARRY IS GONE. Its first run found exactly one violation of
 "hooks import nothing from scripts": `hooks/_config.py`'s guarded, static `import _manifest_io`,
 reached by inserting scripts/ at the FRONT of `sys.path`. It was named in an allow-list here
@@ -80,8 +87,8 @@ second place the rule lives, and the next violation would be argued against the 
 against the rule.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test__deps.py`, byte-identical labels and all — see
-`plugins/audit/tests/_harness.py`. The move retired NO edge, and that was measured per
+`tests/test__deps.py`, byte-identical labels and all — see
+`tests/_harness.py`. The move retired NO edge, and that was measured per
 call site rather than assumed: this file makes no `_loader` call at all, and its only
 static sibling import (`_output`, twice) is production both times. `KNOWN_LAYER_DEBT`
 therefore did not change across that move, and `--render`'s output is byte-identical —
@@ -97,21 +104,25 @@ import re
 import sys
 import tokenize
 
-# The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
-# `_output.path_preamble_violations()`. It walks UP to the directory holding
-# `_output.py` instead of counting `dirname()` calls, so it does not encode how deep
-# this file sits and keeps working if the file is moved into a subdirectory.
-# `install_path()` then adds that directory AND every subdirectory of it holding a
-# `.py`: the folders are LABELS, NOT NAMESPACES, and every sibling below is still
-# reached by a bare basename.
-_anchor_dir = os.path.dirname(os.path.abspath(__file__))
-while not os.path.isfile(os.path.join(_anchor_dir, "_output.py")):
-    _anchor_up = os.path.dirname(_anchor_dir)
-    if _anchor_up == _anchor_dir:
-        raise ImportError("audit plugin: walked to the filesystem root from %s "
-                          "without finding _output.py - the scripts/ anchor is "
-                          "gone and no sibling can be imported" % (__file__,))
-    _anchor_dir = _anchor_up
+# The path bootstrap for a development module that lives OUTSIDE the plugin: it
+# walks UP to the directory that holds `plugins/audit/scripts/_output.py` instead
+# of counting `dirname()` calls, so it does not encode how deep this file sits.
+# The shipped scripts carry `_output.PATH_PREAMBLE`, which walks up to `_output.py`
+# itself and would run off the filesystem root from here, because this directory
+# is not under `scripts/`. `install_path()` then adds `scripts/` and every
+# subdirectory of it holding a `.py`, so every sibling below is reached by a bare
+# basename - and `tools/lints/` itself is NOT put on the path by it, by design.
+_anchor_root = os.path.dirname(os.path.abspath(__file__))
+while not os.path.isfile(os.path.join(_anchor_root, "plugins", "audit", "scripts",
+                                      "_output.py")):
+    _anchor_up = os.path.dirname(_anchor_root)
+    if _anchor_up == _anchor_root:
+        raise ImportError("audit lints: walked to the filesystem root from %s "
+                          "without finding plugins/audit/scripts/_output.py - the "
+                          "repository root is gone and no sibling can be imported"
+                          % (__file__,))
+    _anchor_root = _anchor_up
+_anchor_dir = os.path.join(_anchor_root, "plugins", "audit", "scripts")
 if _anchor_dir not in sys.path:
     sys.path.insert(0, _anchor_dir)
 
@@ -158,10 +169,11 @@ LAYERS = (
     # writers on several layers above (the evidence layer, the proposals library,
     # the doors) all stamp, and none may import a sibling's helper to do it.
     ("_machine_paths", "_excerpt", "_usage_core", "_utc_stamp"),
-    # _deps (this module) imports only _output, the safe_stdio guard - same as every
-    # other member of this layer - so it belongs beside them, not in a layer of its own.
+    # `_deps` (this module) and `_refs` are NOT here: they live under `tools/lints/`,
+    # outside the plugin, and import only `_output`. A layer table orders what a user
+    # installs, so development code has no row in it - `tests_import_violations()`
+    # states the one rule that applies to it, that nothing shipped may import it.
     ("_ui_theme", "_fmt", "_cli_fmt", "_manifest_io", "_areas", "_policy",
-     "_deps", "_refs",
      # `_branch` answers where a phase's branch forks from and what it is called.
      # It reaches nothing but `_output` - it is arithmetic over the manifest dict
      # plus a git-ref regex - and it sits in this layer because the validator, the
@@ -1574,8 +1586,17 @@ def layer_violations(script_dir=None, hooks_dir=None, layers=None):
 
 
 # --- the tests/ boundary ------------------------------------------------------
-def tests_import_violations(script_dir=None, hooks_dir=None, tests_dir=None):
-    """(file, what) for every scripts/ or hooks/ file that reaches into `tests/`.
+def tests_import_violations(script_dir=None, hooks_dir=None, tests_dir=None,
+                            lints_dir=None):
+    """(file, what) for every scripts/ or hooks/ file that reaches into `tests/`
+    or `tools/lints/`.
+
+    `tools/lints/` is the same boundary for the same reason: `_deps` and `_refs`
+    left `scripts/` because the installed plugin must run without them, so a shipped
+    file that imports one - or loads it through `_loader` - works in this checkout and
+    is an `ImportError` in every install. `lints_dir` defaults to the real directory
+    only when `script_dir` is the real one, because a caller handing in a fixture
+    `scripts/` is asking about the fixture.
 
     The rule `LAYERS` cannot express (see the module docstring): the product may not
     depend on its tests. It is not a style preference — `tests/` is where the suites
@@ -1600,12 +1621,18 @@ def tests_import_violations(script_dir=None, hooks_dir=None, tests_dir=None):
     script_dir = script_dir or _output.SCRIPTS_DIR
     hooks_dir = hooks_dir if hooks_dir is not None else _output.HOOKS_DIR
     tests_dir = tests_dir if tests_dir is not None else _output.TESTS_DIR
+    if lints_dir is None and script_dir == _output.SCRIPTS_DIR:
+        lints_dir = _output.LINTS_DIR
 
-    if not os.path.isdir(tests_dir):
-        return []
-    test_names = set(os.path.basename(rel)[:-3]
-                     for rel, _path in _output.lint_py_files(tests_dir))
-    if not test_names:
+    names_by_tree = []
+    for label, directory in (("tests/", tests_dir), ("tools/lints/", lints_dir)):
+        if directory is None or not os.path.isdir(directory):
+            continue
+        found = set(os.path.basename(rel)[:-3]
+                    for rel, _path in _output.lint_py_files(directory))
+        if found:
+            names_by_tree.append((label, found))
+    if not names_by_tree:
         return []
 
     violations = []
@@ -1621,13 +1648,16 @@ def tests_import_violations(script_dir=None, hooks_dir=None, tests_dir=None):
                 violations.append((named, "file does not parse; cannot be scanned "
                                           "for tests/ imports"))
                 continue
-            for name in sorted(set(_imported_sibling_names(tree, test_names, None))):
-                violations.append((named, "imports %s from tests/ - the product may "
-                                          "not depend on its own test tree" % name))
-            for name in sorted(set(_runtime_loaded_sibling_names(tree, test_names,
-                                                                 None))):
-                violations.append((named, "runtime-loads %s from tests/ - the product "
-                                          "may not depend on its own test tree" % name))
+            for label, found in names_by_tree:
+                for name in sorted(set(_imported_sibling_names(tree, found, None))):
+                    violations.append((named, "imports %s from %s - the product may "
+                                              "not depend on its own development "
+                                              "code" % (name, label)))
+                for name in sorted(set(_runtime_loaded_sibling_names(tree, found,
+                                                                     None))):
+                    violations.append((named, "runtime-loads %s from %s - the "
+                                              "product may not depend on its own "
+                                              "development code" % (name, label)))
     return violations
 
 
@@ -2084,7 +2114,7 @@ def git_path_base_violations(script_dir=None, hooks_dir=None, exempt=None):
     rows = GIT_PATH_BASE_EXEMPT if exempt is None else exempt
     table = dict(((f, fn), why) for f, fn, why in rows)
     violations, seen = [], {}
-    for label, directory in (("scripts", script_dir), ("hooks", hooks_dir)):
+    for label, directory in _source_roots(script_dir, hooks_dir):
         if not os.path.isdir(directory):
             continue
         for rel, path in _output.lint_py_files(directory):
@@ -2227,7 +2257,7 @@ def json_encoding_violations(script_dir=None, hooks_dir=None):
 
     violations = []
     defined = 0
-    for kind, directory in (("scripts", script_dir), ("hooks", hooks_dir)):
+    for kind, directory in _source_roots(script_dir, hooks_dir):
         if not os.path.isdir(directory):
             continue
         for rel, path in _output.lint_py_files(directory):
@@ -2425,7 +2455,7 @@ def _state_write_scan(script_dir, hooks_dir):
     script_dir = script_dir or _output.SCRIPTS_DIR
     hooks_dir = hooks_dir if hooks_dir is not None else _output.HOOKS_DIR
     sites, unreadable = [], []
-    for kind, directory in (("scripts", script_dir), ("hooks", hooks_dir)):
+    for kind, directory in _source_roots(script_dir, hooks_dir):
         if not os.path.isdir(directory):
             continue
         for rel, path in _output.lint_py_files(directory):
@@ -2603,7 +2633,7 @@ def _fenced_block_after(text, heading):
 
 # The command that rewrites the guide's fence from `render()`, run from the repo
 # root - the recipe `map_follower` names, so the drive can regenerate the map.
-MAP_RECIPE = "python3 plugins/audit/scripts/_deps.py --write-map"
+MAP_RECIPE = "python3 tools/lints/_deps.py --write-map"
 _MAP_STALE = ("the guide's module map fence does not match `_deps.py --render` "
               "output byte-for-byte (stale - regenerate with `%s`)" % (MAP_RECIPE,))
 
@@ -3050,8 +3080,30 @@ def _section_text(text, heading):
     return rest if nxt == -1 else rest[:nxt]
 
 
-def _real_source_files(script_dir=None, hooks_dir=None):
+def _source_roots(script_dir, hooks_dir):
+    """`(kind, directory)` for every tree the source lints read: scripts, hooks, and
+    the two lint modules under `tools/lints/` - the last ONLY when `script_dir` is
+    the real `scripts/`.
+
+    The lint modules were `scripts/` files, so every hygiene rule below covered
+    them; leaving them out of the walk after the move would have made each of those
+    rules check fewer files with nothing said. They are named here once, and not
+    added to `LAYERS` or the guide's enumeration, which are about what is shipped.
+    A fixture `scripts/` handed in is asking about the fixture, so the real lints
+    directory is not added to its answer.
+    """
+    roots = [("scripts", script_dir), ("hooks", hooks_dir)]
+    if script_dir == _output.SCRIPTS_DIR:
+        roots.append(("lints", _output.LINTS_DIR))
+    return roots
+
+
+def _real_source_files(script_dir=None, hooks_dir=None, lints=False):
     """Sorted `(relname, kind, path)` for every hooks/**.py and scripts/**.py file.
+
+    `lints=True` adds the modules under `tools/lints/` as kind `"lints"` (see
+    `_source_roots`); the guide's enumeration leaves them out because it describes
+    what ships.
 
     `relname` is relative to its OWN directory and forward-slashed
     (`usage/core.py`), which is what a violation should print; `kind` is
@@ -3070,6 +3122,9 @@ def _real_source_files(script_dir=None, hooks_dir=None):
     out = [(rel, "scripts", path) for rel, path in _output.lint_py_files(script_dir)]
     if os.path.isdir(hooks_dir):
         out.extend((rel, "hooks", path) for rel, path in _output.lint_py_files(hooks_dir))
+    if lints and script_dir == _output.SCRIPTS_DIR and os.path.isdir(_output.LINTS_DIR):
+        out.extend((rel, "lints", path)
+                   for rel, path in _output.lint_py_files(_output.LINTS_DIR))
     return out
 
 
@@ -3626,7 +3681,7 @@ def _py_other_literal_citations(text):
 # table (`CHANGELOG.md`) say so in their own sentence rather than pointing at
 # the other one's.
 #
-# `plugins/audit/tests/test__output.py` earns no row here: it holds the
+# `tests/test__output.py` earns no row here: it holds the
 # prose-number scanner's OWN fixtures, and a fixture built for one scan's
 # vocabulary is not thereby a fixture for the other's. That absence is the
 # whole repair -- it is what lets this scan see the file at all. A row
@@ -3648,7 +3703,7 @@ CITATION_SCAN_EXEMPT = (
      "does not read, so without this row the answer moves with whether "
      "anybody happened to render a report in this checkout -- which is the "
      "same reason the number scan's table carries it, stated for this scan"),
-    ("plugins/audit/tests/test__deps.py",
+    ("tests/test__deps.py",
      "holds THIS scanner's own fixtures: `_fault_hits`, `_phase_paragraph_hit` "
      "and the helpers built on them are proven by handing them the exact "
      "shapes they must recognise, spelled as arguments on purpose -- the same "
@@ -4015,7 +4070,7 @@ def navigability_violations(script_dir=None, hooks_dir=None):
     script_dir = script_dir or _output.SCRIPTS_DIR
     hooks_dir = hooks_dir if hooks_dir is not None else _output.HOOKS_DIR
     violations = []
-    for rel, _kind, path in _real_source_files(script_dir, hooks_dir):
+    for rel, _kind, path in _real_source_files(script_dir, hooks_dir, lints=True):
         try:
             with open(path, "r", encoding="utf-8") as fh:
                 lines = fh.readlines()
@@ -4535,7 +4590,7 @@ def _config_key_reads_once(script_dir, hooks_dir, vocabulary):
     roots, names = config_vocabulary() if vocabulary is None else vocabulary
     reads = {}
     unreadable = []
-    for rel, _kind, path in _real_source_files(script_dir, hooks_dir):
+    for rel, _kind, path in _real_source_files(script_dir, hooks_dir, lints=True):
         try:
             with open(path, "r", encoding="utf-8") as fh:
                 tree = ast.parse(fh.read(), filename=rel)
@@ -5187,7 +5242,7 @@ def dict_key_contracts(script_dir=None, hooks_dir=None):
     """
     trees = {}
     unreadable = []
-    for rel, _kind, path in _real_source_files(script_dir, hooks_dir):
+    for rel, _kind, path in _real_source_files(script_dir, hooks_dir, lints=True):
         try:
             with open(path, "r", encoding="utf-8") as fh:
                 trees[rel] = ast.parse(fh.read(), filename=rel)
@@ -5487,7 +5542,7 @@ if __name__ == "__main__":
         # the `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_deps.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__deps.py - run that file instead.")
+              "tests/test__deps.py - run that file instead.")
         raise SystemExit(0)
     if "--render" in sys.argv[1:]:
         sys.stdout.write(render())

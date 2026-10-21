@@ -689,7 +689,7 @@ if __name__ == "__main__":
     safe_stdio()
     if selftest_requested(sys.argv[1:]):
         print("integrate-task.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test_integrate_task.py - run that file "
+              "tests/test_integrate_task.py - run that file "
               "instead.")
         sys.exit(0)
     raise SystemExit(main(sys.argv[1:]))

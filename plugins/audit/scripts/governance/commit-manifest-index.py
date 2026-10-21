@@ -672,7 +672,7 @@ if __name__ == "__main__":
         # print the `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("commit-manifest-index.py has no inline --selftest; its cases live "
-              "in plugins/audit/tests/test_commit_manifest_index.py - run that "
+              "in tests/test_commit_manifest_index.py - run that "
               "file instead.")
         sys.exit(0)
     sys.exit(main(sys.argv[1:]))

@@ -35,7 +35,7 @@ question `/audit:init`'s recon step asks before drafting `meta.buildCommands`,
 not a step that mutates anything a validator would need to re-check.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_propose_gates.py` - see `plugins/audit/tests/_harness.py`.
+`tests/test_propose_gates.py` - see `tests/_harness.py`.
 """
 import argparse
 import json
@@ -206,7 +206,7 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("propose-gates.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_propose_gates.py - run that file "
+              "tests/test_propose_gates.py - run that file "
               "instead.")
         sys.exit(0)
     sys.exit(main(sys.argv[1:]))

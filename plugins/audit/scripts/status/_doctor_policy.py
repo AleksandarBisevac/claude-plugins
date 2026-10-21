@@ -28,8 +28,8 @@ worse than no argument. The table is the answer:
     print([i for i,t in enumerate(_deps.LAYERS) if '_doctor_policy' in t])"
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__doctor_policy.py` - see
-`plugins/audit/tests/_harness.py`.
+`tests/test__doctor_policy.py` - see
+`tests/_harness.py`.
 """
 import os
 import pathlib
@@ -666,7 +666,7 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_doctor_policy.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__doctor_policy.py - run that file "
+              "tests/test__doctor_policy.py - run that file "
               "instead.")
         raise SystemExit(0)
     print(__doc__.strip())

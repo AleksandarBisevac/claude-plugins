@@ -77,9 +77,9 @@ Contract: ALWAYS exits 0. Any unexpected input / exception also exits 0 —
 a reminder must never break legitimate work.
 
 This hook carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test_remind_tdd.py` (hyphens become underscores - a hyphenated
+`tests/test_remind_tdd.py` (hyphens become underscores - a hyphenated
 name is not importable). It is one of the three pilots of that migration; see
-`plugins/audit/tests/_harness.py`. A test of a hook may import from `scripts/` even
+`tests/_harness.py`. A test of a hook may import from `scripts/` even
 though the hook itself may not - the isolation rule is about what a hook costs at
 import time under a launcher, and a test has no launcher above it.
 """
@@ -334,6 +334,6 @@ if __name__ == "__main__":
         # print the `N/M cases passed` contract - that string is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("remind-tdd.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_remind_tdd.py - run that file instead.")
+              "tests/test_remind_tdd.py - run that file instead.")
         sys.exit(0)
     main()

@@ -6,7 +6,7 @@
 // `||` fallback written beside the read was unreachable for exactly those keys.
 // `label()`, documented `@returns {string}`, returned a FUNCTION.
 //
-// The source pins in plugins/audit/tests/ could not see this and never will:
+// The source pins in tests/ could not see this and never will:
 // they read the text of the page, and the text was always right. The bug is in
 // what the text DOES, which is what this file runs.
 //

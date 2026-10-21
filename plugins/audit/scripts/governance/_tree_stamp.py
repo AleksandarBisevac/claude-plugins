@@ -56,7 +56,7 @@ path; `CONTENT_LIMIT` says what that field does not reach. A version-1 stamp has
 no content field, and its comparison says so rather than reading as complete.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__tree_stamp.py`.
+`tests/test__tree_stamp.py`.
 """
 
 import hashlib

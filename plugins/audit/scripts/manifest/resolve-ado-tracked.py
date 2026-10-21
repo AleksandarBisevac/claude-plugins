@@ -39,7 +39,7 @@ Exit codes, and the missing one is the load-bearing one:
   written to record.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_resolve_ado_tracked.py`.
+`tests/test_resolve_ado_tracked.py`.
 """
 import json
 import os
@@ -211,7 +211,7 @@ if __name__ == "__main__":
         # print the `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("resolve-ado-tracked.py has no inline --selftest; its cases live "
-              "in plugins/audit/tests/test_resolve_ado_tracked.py - run that "
+              "in tests/test_resolve_ado_tracked.py - run that "
               "file instead.")
         sys.exit(0)
     sys.exit(main(sys.argv[1:]))

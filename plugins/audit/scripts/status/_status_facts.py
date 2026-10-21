@@ -34,7 +34,7 @@ and `discovery_block` do read the world, so they stayed in `audit-status.py`
 where a command can own their failure modes.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__status_facts.py` — see `plugins/audit/tests/_harness.py`.
+`tests/test__status_facts.py` — see `tests/_harness.py`.
 """
 import re
 import os
@@ -1843,6 +1843,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_status_facts.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__status_facts.py - run that file instead.")
+              "tests/test__status_facts.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

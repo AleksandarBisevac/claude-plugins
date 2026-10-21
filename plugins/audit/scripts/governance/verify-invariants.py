@@ -393,7 +393,7 @@ if __name__ == "__main__":
         # print the `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("verify-invariants.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test_verify_invariants.py - run that file "
+              "tests/test_verify_invariants.py - run that file "
               "instead.")
         sys.exit(0)
     sys.exit(_output.terse_cli(main, sys.argv[1:], success_line))

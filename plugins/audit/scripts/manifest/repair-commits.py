@@ -288,7 +288,7 @@ if __name__ == "__main__":
     safe_stdio()
     if selftest_requested(sys.argv[1:]):
         print("repair-commits.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test_repair_commits.py - run that file "
+              "tests/test_repair_commits.py - run that file "
               "instead.")
         sys.exit(0)
     sys.exit(main(sys.argv[1:]))

@@ -48,8 +48,8 @@ environment, the probe - arrives as an argument, which is what lets the entry
 point be the only part that touches a machine.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__ado_connect.py` - see
-`plugins/audit/tests/_harness.py`.
+`tests/test__ado_connect.py` - see
+`tests/_harness.py`.
 """
 import os
 import sys

@@ -225,7 +225,7 @@ commands, so there is no such description left to read. It also holds the rules 
 To run one suite, or a few, without a whole slice:
 
 ```bash
-python3 tools/sweep-selftests.py plugins/audit/tests/test__refs.py tools/where.py
+python3 tools/sweep-selftests.py tests/test__refs.py tools/where.py
 python3 tools/sweep-selftests.py --jobs 1      # the old serial shape, for a bisect
 ```
 
@@ -473,7 +473,7 @@ Without them every task gate here widened to the whole phase gate.
 `audit-task.py record-listing` is the field's one writer — a hand edit of the plan is refused —
 and it runs the version command and stores its answer, so a machine that answers differently
 widens to the phase gate rather than trusting a listing verified somewhere else. This repository records exactly
-these, and `plugins/audit/tests/test_derive_phase_gate.py` reads them off this list:
+these, and `tests/test_derive_phase_gate.py` reads them off this list:
 
 - `--listing-all 'python3 tools/affected.py --list-all'`
 - `--listing-related 'python3 tools/affected.py --list-related {paths}'`
@@ -1023,7 +1023,7 @@ reader needs, a threshold an argument turns on. The command may sit on the follo
 prose wraps, and the scanner joins one line each way to find it:
 
 > Roughly a third of the suites reach the browser gates:
-> `grep -rln capture-screenshots plugins/audit/tests | wc -l`
+> `grep -rln capture-screenshots tests | wc -l`
 
 A basis makes a claim checkable. It does not make it true, and nothing runs a command on a
 reader's behalf — which is why this is the second choice and not the first.
@@ -1402,7 +1402,7 @@ requests it" is the bar for every other optional module too — the cost-truth w
 state-truth fixes and the requested ADO feature are already past that bar, not a license
 to add more without it.
 
-**(b) No new UI shape pins.** `plugins/audit/tests/` already carries byte-level substring
+**(b) No new UI shape pins.** `tests/` already carries byte-level substring
 pins against the assembled report and panel (counted by `tools/count-ui-pins.py`); that
 count is the budget and it does not grow. When a UI part changes, the pin that used to
 guard it moves to a `vitest` unit test or a browser behaviour check instead of being

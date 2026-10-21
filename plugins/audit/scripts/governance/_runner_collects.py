@@ -68,7 +68,7 @@ Semantics relied on, and where each came from:
     collects a file given by name on the command line whatever its name.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__runner_collects.py`.
+`tests/test__runner_collects.py`.
 """
 
 import ast
@@ -777,7 +777,7 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_runner_collects.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__runner_collects.py - run that file "
+              "tests/test__runner_collects.py - run that file "
               "instead.")
         sys.exit(0)
     print(__doc__.strip())

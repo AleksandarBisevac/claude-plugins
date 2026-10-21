@@ -39,8 +39,8 @@ Roles - the minimal set the three consumers actually use:
   dim                   footnote-ish caveats (faint)
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test__cli_fmt.py`, byte-identical labels and all. It is one of
-the three pilots of that migration - see `plugins/audit/tests/_harness.py`.
+`tests/test__cli_fmt.py`, byte-identical labels and all. It is one of
+the three pilots of that migration - see `tests/_harness.py`.
 
 Exit codes (as a command): 0 the pointer above - 2 usage error.
 """
@@ -156,7 +156,7 @@ if __name__ == "__main__":
         # suite contract - that literal is how `_output.selftest_coverage()`
         # tells an inline suite from a migrated one.
         print("_cli_fmt.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__cli_fmt.py - run that file instead.")
+              "tests/test__cli_fmt.py - run that file instead.")
         raise SystemExit(0)
     sys.stderr.write("usage: _cli_fmt.py --selftest\n")
     raise SystemExit(2)

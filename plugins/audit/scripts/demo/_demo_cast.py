@@ -22,7 +22,7 @@ Fictional, and `.example` on purpose: RFC 2606 reserves that TLD precisely so a
 fixture can carry an address that can never route to a real person.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__demo_cast.py` — see `plugins/audit/tests/_harness.py`.
+`tests/test__demo_cast.py` — see `tests/_harness.py`.
 """
 import os
 import sys
@@ -63,6 +63,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_demo_cast.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__demo_cast.py - run that file instead.")
+              "tests/test__demo_cast.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

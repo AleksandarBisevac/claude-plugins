@@ -59,9 +59,9 @@ Exit codes: 0 ok / already in that layout - 1 refused or validation failure -
 2 usage/unreadable.
 
 This script carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test_migrate_manifest.py` (hyphens become underscores - a
+`tests/test_migrate_manifest.py` (hyphens become underscores - a
 hyphenated name is not importable). It is one of the three pilots of that migration;
-see `plugins/audit/tests/_harness.py`.
+see `tests/_harness.py`.
 """
 import datetime
 import os
@@ -475,7 +475,7 @@ def main(argv):
         # NOT print the `N/M cases passed` contract - that string is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("migrate-manifest.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_migrate_manifest.py - run that file instead.")
+              "tests/test_migrate_manifest.py - run that file instead.")
         return 0
     opts, err = parse_args(argv)
     if opts is None:

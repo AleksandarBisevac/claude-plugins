@@ -14,7 +14,7 @@ One fact, one home: the shapes `tools/check-committed-pii.py` flags, the
 refusal at a verb's door, and the redaction of the plugin's own text are all
 this file's patterns. `_journal_io` re-exports the names its callers use.
 
-The cases for this file live in `plugins/audit/tests/test__machine_paths.py`.
+The cases for this file live in `tests/test__machine_paths.py`.
 Exit codes (as a command): 0 selftest pointer printed - 2 usage error.
 """
 
@@ -777,6 +777,6 @@ if __name__ == "__main__":
     safe_stdio()
     if selftest_requested(sys.argv[1:]):
         print("_machine_paths.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__machine_paths.py - run that file instead.")
+              "tests/test__machine_paths.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

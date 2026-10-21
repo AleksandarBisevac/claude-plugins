@@ -15,8 +15,8 @@ Usage:
   audit-lock.py status         [--project DIR] [--json]
 
 This module carries no inline `--selftest` any more; its cases live in
-`plugins/audit/tests/test_audit_lock.py`, byte-identical labels and all - see
-`plugins/audit/tests/_harness.py`. The flag is still accepted and still exits
+`tests/test_audit_lock.py`, byte-identical labels and all - see
+`tests/_harness.py`. The flag is still accepted and still exits
 0, pointing there.
 
   <name> is `phase-<phaseId>` or one of `_locks.FIXED_NAMES` -- `index` for a
@@ -272,6 +272,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("audit-lock.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_audit_lock.py - run that file instead.")
+              "tests/test_audit_lock.py - run that file instead.")
         sys.exit(0)
     sys.exit(shell_code(_output.terse_cli(main, sys.argv[1:], success_line)))

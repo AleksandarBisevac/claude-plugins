@@ -50,8 +50,8 @@ JSON with a trailing sentence glued on. Without --json nothing moves: stdout is
 byte-for-byte what it has always been, which is what CI reads.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test_audit_status.py`, byte-identical labels and all - see
-`plugins/audit/tests/_harness.py`. The `_fixture()` most of them start from went
+`tests/test_audit_status.py`, byte-identical labels and all - see
+`tests/_harness.py`. The `_fixture()` most of them start from went
 with them (no caller outside the suite), and so did the guard that keeps two case
 groups from claiming one id letter.
 """
@@ -2447,6 +2447,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("audit-status.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_audit_status.py - run that file instead.")
+              "tests/test_audit_status.py - run that file instead.")
         sys.exit(0)
     sys.exit(_output.terse_cli(main, sys.argv[1:], success_line))

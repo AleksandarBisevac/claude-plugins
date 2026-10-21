@@ -25,7 +25,7 @@ Only a definite `NOT_COLLECTED` from `_runner_collects` adds a runner config.
 `derive(intent, repo, lister=None)` returns
 `{"companions": [{"path", "kind", "basis"}], "notes": [sentence]}`, paths relative
 to `repo` with `/` separators. A path already in `intent["files"]` is not returned
-again. Its cases are in `plugins/audit/tests/test__scope_companions.py`.
+again. Its cases are in `tests/test__scope_companions.py`.
 """
 
 import os
@@ -258,7 +258,7 @@ if __name__ == "__main__":
         # Deliberately does NOT print the `N/M cases passed` contract - that literal
         # is how `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_scope_companions.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__scope_companions.py - run that file "
+              "tests/test__scope_companions.py - run that file "
               "instead.")
         sys.exit(0)
     print(__doc__.strip())

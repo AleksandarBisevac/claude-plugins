@@ -357,6 +357,8 @@ def _seed_map_owner(proj):
     shutil.copytree(M._output.SCRIPTS_DIR,
                     os.path.join(proj, "plugins", "audit", "scripts"),
                     ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(M._output.LINTS_DIR, os.path.join(proj, "tools", "lints"),
+                    ignore=shutil.ignore_patterns("__pycache__"))
     with open(os.path.join(M._output.REPO_ROOT, GUIDE), encoding="utf-8") as fh:
         text = fh.read()
     block = _deps._fenced_block_after(text, _deps._GUIDE_HEADING)
@@ -365,7 +367,7 @@ def _seed_map_owner(proj):
 
 
 def _write_map(tree):
-    subprocess.run([sys.executable, os.path.join(tree, "plugins", "audit", "scripts",
+    subprocess.run([sys.executable, os.path.join(tree, "tools", "lints",
                                                  "_deps.py"), "--write-map"],
                    cwd=tree, check=True, capture_output=True, timeout=120)
 

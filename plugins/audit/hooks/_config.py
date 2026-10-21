@@ -164,10 +164,10 @@ module's own manifest read, which the checker's first run found and which
 was the only thing standing between the rule and being true.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test__config.py`. A test of a hook may import from `scripts/`
+`tests/test__config.py`. A test of a hook may import from `scripts/`
 even though the hook itself may not — the isolation rule is about what a hook costs
 at import time under a launcher, and a test has no launcher above it; see
-`plugins/audit/tests/_harness.py`. That is also why this file is the one entry point
+`tests/_harness.py`. That is also why this file is the one entry point
 in the tree with no `safe_stdio()` call: it would have to come from `scripts/`.
 """
 import copy
@@ -4778,6 +4778,6 @@ if __name__ == "__main__":
         # does NOT print the `N/M cases passed` contract - that string is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_config.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__config.py - run that file instead.")
+              "tests/test__config.py - run that file instead.")
         sys.exit(0)
     print("This is a library module; run with --selftest to exercise it.")

@@ -40,7 +40,7 @@ And `maxTier` is a CONFIG value, so `over_max` takes it as an argument rather th
 carrying a default that would be a second copy of `hooks/_config.py`'s.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__priority.py`.
+`tests/test__priority.py`.
 """
 import os
 import sys
@@ -321,6 +321,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_priority.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__priority.py - run that file instead.")
+              "tests/test__priority.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

@@ -42,7 +42,7 @@ import sys
 # started running every suite from a scratch directory. Same shape as `tools/where.py`.
 _HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(_HERE)
-TESTS = os.path.join(REPO, "plugins", "audit", "tests")
+TESTS = os.path.join(REPO, "tests")
 TARGETS = ("UI_HTML", "_SCRIPT", "_CSS", "TOKEN_CSS")
 CODE_DIRS = (os.path.join(REPO, "plugins", "audit", "scripts"),
              os.path.join(REPO, "plugins", "audit", "hooks"))

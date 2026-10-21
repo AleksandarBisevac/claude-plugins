@@ -51,7 +51,7 @@ to be this file's body, and moving it was not tidying: `_help` and
 directory path.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test_audit_journal.py` - see `plugins/audit/tests/_harness.py`.
+`tests/test_audit_journal.py` - see `tests/_harness.py`.
 """
 import argparse
 import json
@@ -1118,6 +1118,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("audit-journal.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_audit_journal.py - run that file instead.")
+              "tests/test_audit_journal.py - run that file instead.")
         sys.exit(0)
     sys.exit(main(sys.argv[1:]))

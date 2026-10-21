@@ -20,7 +20,7 @@ Exit codes: 0 = valid (warnings allowed) · 1 = findings · 2 = usage error or
 unreadable/unparseable file.
 
 This module carries no inline `--selftest` any more; its cases live in
-`plugins/audit/tests/test_validate_config.py` — see `plugins/audit/tests/_harness.py`.
+`tests/test_validate_config.py` — see `tests/_harness.py`.
 The flag is still accepted and still exits 0, pointing there.
 """
 import json
@@ -97,7 +97,7 @@ if __name__ == "__main__":
         # print the `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("validate-config.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_validate_config.py - run that file "
+              "tests/test_validate_config.py - run that file "
               "instead.")
         sys.exit(0)
     sys.exit(main(sys.argv[1:]))

@@ -329,8 +329,8 @@ Design decisions, each mirroring a precedent rather than inventing one:
     see _journal_add for why the journal-writes hook cannot see this write.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test_audit_task.py`, byte-identical labels and all - see
-`plugins/audit/tests/_harness.py`. The note on which id LETTERS the suite has
+`tests/test_audit_task.py`, byte-identical labels and all - see
+`tests/_harness.py`. The note on which id LETTERS the suite has
 already taken went with them, because it is advice to whoever adds the next case.
 
 Stdlib only, Python 3.8 compatible.
@@ -463,12 +463,6 @@ import _worktrees             # noqa: E402  (which worktree the caller is standi
 #                                            `manage-worktrees.py` already read rather than
 #                                            a second `git worktree list` walk of this
 #                                            command's own)
-import _refs                  # noqa: E402  (moved_file_target: the one reading of
-#                                            "did this `.py` path move elsewhere in the
-#                                            plugin" -- the same question
-#                                            `manifest_moved_files` asks of the whole
-#                                            plan, asked here of one `--files` entry
-#                                            before it is written)
 import _proc_group            # noqa: E402  (shell_invocation: `record-listing` runs
 #                                            its version command under the shell a
 #                                            plan command runs under)
@@ -617,8 +611,8 @@ def _files_refusal(values, project=None):
     mistake is the shape an operator learns to skip.
 
     A `.py` ENTRY THAT MOVED IS THE SAME REFUSAL, asked through
-    `_refs.moved_file_target` — the one reading `manifest_moved_files` (`q1`,
-    `test__refs.py`) already gives the whole plan, asked here of one entry
+    `_output.moved_file_target` — the one reading `_refs.manifest_moved_files`
+    (`q1`, `test__refs.py`) already gives the whole plan, asked here of one entry
     before it reaches `files` or `fileIndex` at all. `project` is None only
     from the one caller (`_path_problems`'s own doc comment) that has no
     project root yet to check against; every verb that writes `files` passes
@@ -630,7 +624,7 @@ def _files_refusal(values, project=None):
     bad = _path_problems(values)
     if not bad and project:
         for value in values or []:
-            target = _refs.moved_file_target(value, project)
+            target = _output.moved_file_target(value, project)
             if target is not None:
                 bad.append("%r: moved to %s -- scope the new path instead"
                            % (value, target))
@@ -4496,7 +4490,7 @@ def _journal_cancel(project, config, mpath, kind, tid, phase_id, reason,
 # `testsMode`) and `_config.in_progress_files` -- so one edit there would open, in
 # one move, every file declared by every pending task in the running phase. That
 # deletes the per-task narrowing the plan gate's decision order exists for, which
-# `plugins/audit/tests/test_require_plan.py` pins and `require-plan.py` reasons
+# `tests/test_require_plan.py` pins and `require-plan.py` reasons
 # from. The narrowing is the guard; the missing half was a verb.
 _DEFAULT_MAX_ATTEMPTS = 3           # conventions' New task template
 
@@ -6698,7 +6692,7 @@ def _locked_done(args, project, config, mpath, tid, out):
     task closed would be asserting every one of those happened: the status IS the
     claim that sign-off passed, and this verb holds no basis for it. So the last
     close says sign-off is due and leaves the field alone, which the `pd` group in
-    `plugins/audit/tests/test_audit_task.py` pins in both directions.
+    `tests/test_audit_task.py` pins in both directions.
     """
     try:
         raw_index = _mio.read_json(mpath)
@@ -14057,7 +14051,7 @@ UNIVERSAL_FLAGS = ("project_dir", "takeover", "as_json")
 # ...and the rest, per verb, as DESTS rather than option strings: a dest is what the
 # code reads and what the AST derivation below sees, and the option string is
 # recovered from the parser for the message. Graded against the real dispatch by
-# `plugins/audit/tests/test_audit_task.py`'s `vf` group, which walks this file's own
+# `tests/test_audit_task.py`'s `vf` group, which walks this file's own
 # call graph from `main`'s `doors` map -- a hand-written table nothing compares to
 # the code is the same defect one level up.
 VERB_FLAGS = {
@@ -14649,7 +14643,7 @@ def misplaced_flag_refusal(verb, supplied, flags=None):
     A FLAG NO VERB READS IS SAID DIFFERENTLY, and loudly. It is not a mistake in
     the call -- the caller cannot have got it right -- so the sentence points at
     the table rather than at them. What stops that line being reachable is the
-    `vf` group in `plugins/audit/tests/test_audit_task.py`, which derives each
+    `vf` group in `tests/test_audit_task.py`, which derives each
     verb's reads off this file's own call graph and demands equality with
     `VERB_FLAGS` -- and the line exists anyway, because a check with no output
     for its own broken state is how a table stops meaning anything.
@@ -14886,6 +14880,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("audit-task.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_audit_task.py - run that file instead.")
+              "tests/test_audit_task.py - run that file instead.")
         sys.exit(0)
     sys.exit(_output.terse_cli(main, sys.argv[1:], success_line))

@@ -95,7 +95,7 @@ the history guard; the rest rests on you.
 - A review skill named (`mode: phase`): invoke it FIRST. Otherwise look for bugs the
   tests miss, desired-outcome violations, security regressions, dead or debug code.
 - Charge findings to the DIFF; problems outside the changed lines go in `preExisting`,
-  which nothing reads — `ih9` in `plugins/audit/tests/test__refs.py` fails the build if
+  which nothing reads — `ih9` in `tests/test__refs.py` (in the source repository) fails the build if
   `reference/execute-task.md` grows a reader of it.
 - An untouched file is charged to the diff when the change alters a shape crossing a
   boundary (a column, a response field, a generated type): name both sides.

@@ -69,7 +69,7 @@ WRITES binds the schema instead. Who the consumers are is derived, not listed:
     e,_=_deps.import_graph();print(sorted(a for a,b in e if b=='_manifest_rules'))"
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__manifest_rules.py` — see `plugins/audit/tests/_harness.py`.
+`tests/test__manifest_rules.py` — see `tests/_harness.py`.
 """
 import os
 import re
@@ -819,7 +819,7 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_manifest_rules.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__manifest_rules.py - run that file "
+              "tests/test__manifest_rules.py - run that file "
               "instead.")
         sys.exit(0)
     print(__doc__.strip())

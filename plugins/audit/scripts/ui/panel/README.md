@@ -19,7 +19,7 @@ load-bearing source — print the live list rather than trusting one, because a 
 can be taken over an intermediate variable and a scan that looks only for
 `UI_HTML[...]` misses it:
 
-    grep -rn '\.index("//' plugins/audit/tests/
+    grep -rn '\.index("//' tests/
 
 **Order is behaviour.** `core.js` declares `$`, `el`, `api` and `TOKEN`, which
 statements further down read at load time; every top-level `const`/`let` is in TDZ

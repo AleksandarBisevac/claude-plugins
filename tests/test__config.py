@@ -44,7 +44,7 @@ own directory.
 THE CONSUMER-REPO FIXTURES NOW LIVE HERE, AND `_refs` IS SILENT ABOUT THEM BY DESIGN.
 `g1` asserts that a consumer project's Python test filenames are exempt, and two of
 those literals name a `tests/` directory that is somebody else's, not this plugin's.
-`plugins/audit/tests` is an ANCHORED surface in `_refs.SURFACES` written for exactly
+`tests` is an ANCHORED surface in `_refs.SURFACES` written for exactly
 this arrival - a plugin path counts as a reference only with the `plugins/audit/`
 anchor - and `_refs`' own `a6` is the case that goes red if that ever changes.
 

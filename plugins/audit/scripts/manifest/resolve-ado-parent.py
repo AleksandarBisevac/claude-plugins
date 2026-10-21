@@ -54,7 +54,7 @@ Exit codes, and the third one is the load-bearing one:
      confident wrong answer this door exists to avoid.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_resolve_ado_parent.py`.
+`tests/test_resolve_ado_parent.py`.
 """
 import json
 import os
@@ -403,7 +403,7 @@ if __name__ == "__main__":
         # print the `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("resolve-ado-parent.py has no inline --selftest; its cases live "
-              "in plugins/audit/tests/test_resolve_ado_parent.py - run that "
+              "in tests/test_resolve_ado_parent.py - run that "
               "file instead.")
         sys.exit(0)
     sys.exit(main(sys.argv[1:]))

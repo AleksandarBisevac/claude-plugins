@@ -75,7 +75,7 @@ is reported as unanswered, naming the shard and the loader, because a stub is a
 missing basis and a missing basis is the thing to say.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__ado_tracked.py`.
+`tests/test__ado_tracked.py`.
 """
 import os
 import sys
@@ -520,6 +520,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_ado_tracked.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__ado_tracked.py - run that file instead.")
+              "tests/test__ado_tracked.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

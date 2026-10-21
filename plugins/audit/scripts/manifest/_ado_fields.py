@@ -58,8 +58,8 @@ returned identical sets; the organization-wide list adds the link/form internals
 below, which are read-only everywhere.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__ado_fields.py` - see
-`plugins/audit/tests/_harness.py`.
+`tests/test__ado_fields.py` - see
+`tests/_harness.py`.
 """
 import os
 import sys
@@ -408,6 +408,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_ado_fields.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__ado_fields.py - run that file instead.")
+              "tests/test__ado_fields.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

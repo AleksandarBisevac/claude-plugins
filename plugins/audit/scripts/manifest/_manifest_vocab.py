@@ -43,8 +43,8 @@ RECOMMENDED subset, and a nested level whose vocabulary is a set literal at its
 `_unknown_keys()` call rather than a set on this module at all.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__manifest_vocab.py` - see
-`plugins/audit/tests/_harness.py`.
+`tests/test__manifest_vocab.py` - see
+`tests/_harness.py`.
 """
 import datetime
 import os
@@ -748,7 +748,7 @@ KNOWN_PROPOSAL = {"id", "name", "status", "origin", "scope", "benefit",
 #    THAT IS ASSERTED, NOT STATED. This comment said the opposite — one walk, only
 #    walk — in three places at once for as long as nothing counted, and a uniqueness
 #    claim with nothing counting is how it got there. `mv34` and `mv35` in
-#    `plugins/audit/tests/test__manifest_vocab.py` print the owners and the counts
+#    `tests/test__manifest_vocab.py` print the owners and the counts
 #    and go red the day the other walk COULD answer this question, and `mv36` fails
 #    if a file arrives that this paragraph does not account for:
 #
@@ -794,7 +794,7 @@ KNOWN_PROPOSAL = {"id", "name", "status", "origin", "scope", "benefit",
 #    `_deps.layer_violations()` refuses the edge as not strictly downward; the
 #    exception is `usage_ledger.py`, higher up, which `meter-usage.py` loads on every
 #    tool call, so an `import _manifest_vocab` there would be legal, downward and
-#    silent. `mv37` in `plugins/audit/tests/test__manifest_vocab.py` walks the real
+#    silent. `mv37` in `tests/test__manifest_vocab.py` walks the real
 #    import graph out of those roots and goes red the day one of them reaches here.
 #
 # `SCHEMA_ANCHORS` says where each set is defined, spelled as the dotted path
@@ -1065,6 +1065,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_manifest_vocab.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__manifest_vocab.py - run that file instead.")
+              "tests/test__manifest_vocab.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

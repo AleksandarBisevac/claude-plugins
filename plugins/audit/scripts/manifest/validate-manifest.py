@@ -41,8 +41,8 @@ Exit codes: 0 = valid (warnings allowed) · 1 = findings · 2 = usage error or
 unreadable/unparseable file.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test_validate_manifest.py`, byte-identical labels and all —
-see `plugins/audit/tests/_harness.py`.
+`tests/test_validate_manifest.py`, byte-identical labels and all —
+see `tests/_harness.py`.
 """
 import os
 import sys
@@ -273,7 +273,7 @@ if __name__ == "__main__":
         # print the `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("validate-manifest.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_validate_manifest.py - run that file "
+              "tests/test_validate_manifest.py - run that file "
               "instead.")
         sys.exit(0)
     sys.exit(_output.terse_cli(main, sys.argv[1:], success_line,

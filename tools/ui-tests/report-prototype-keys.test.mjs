@@ -23,7 +23,7 @@
 //   object `TASKS['constructor']` answered with `Object` itself, whose `.push`
 //   is undefined, which threw while the page was still loading.
 //
-// A substring pin in plugins/audit/tests/ cannot see any of this and never
+// A substring pin in tests/ cannot see any of this and never
 // will: it reads the text of the page, and the text was always right. What was
 // wrong is what the text DOES, which is what this file runs.
 

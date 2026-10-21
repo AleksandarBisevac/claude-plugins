@@ -88,7 +88,7 @@ lost. What the row says is then bounded by what happened: a holder that let go o
 its own was displaced by nobody.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__locks.py` — see `plugins/audit/tests/_harness.py`.
+`tests/test__locks.py` — see `tests/_harness.py`.
 """
 import calendar
 import json
@@ -1466,6 +1466,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_locks.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__locks.py - run that file instead.")
+              "tests/test__locks.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

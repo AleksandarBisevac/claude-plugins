@@ -65,24 +65,30 @@ if _scripts not in sys.path:
 import _output  # noqa: E402
 
 _output.install_path()
+# `_deps` lives outside the plugin, and `install_path()` never adds that directory.
+if _output.LINTS_DIR not in sys.path:
+    sys.path.insert(0, _output.LINTS_DIR)
 
 import _deps  # noqa: E402  (the rule string one row mutates)
 
 S = "plugins/audit/scripts/"
-OUT = "plugins/audit/tests/test__output.py"
-DEP = "plugins/audit/tests/test__deps.py"
-REF = "plugins/audit/tests/test__refs.py"
-CFG = "plugins/audit/tests/test__config_rules.py"
-ADP = "plugins/audit/tests/test__ado_parent.py"
-ADC = "plugins/audit/tests/test__ado_conventions.py"
+# The two lint modules (`_deps`, `_refs`) sit outside the plugin, so their rows name a
+# prefix of their own.
+L = "tools/lints/"
+OUT = "tests/test__output.py"
+DEP = "tests/test__deps.py"
+REF = "tests/test__refs.py"
+CFG = "tests/test__config_rules.py"
+ADP = "tests/test__ado_parent.py"
+ADC = "tests/test__ado_conventions.py"
 # The suites the derived remainder answers to. Every one of these lints was outside the
 # hand-written source list, so none of them had a row until the list became a walk.
-HLP = "plugins/audit/tests/test__help.py"
-MVO = "plugins/audit/tests/test__manifest_vocab.py"
-BRN = "plugins/audit/tests/test__branch.py"
-ARE = "plugins/audit/tests/test__areas.py"
-TRL = "plugins/audit/tests/test__doctor_trail.py"
-FRT = "plugins/audit/tests/test__filed_returns.py"
+HLP = "tests/test__help.py"
+MVO = "tests/test__manifest_vocab.py"
+BRN = "tests/test__branch.py"
+ARE = "tests/test__areas.py"
+TRL = "tests/test__doctor_trail.py"
+FRT = "tests/test__filed_returns.py"
 BEN = "tools/bench-hooks.py"          # its cases are inline, like every tools/ file
 
 # The anchor every scripts/ row appends after: present once in every module, and
@@ -115,11 +121,16 @@ _GATE_NAMED = ("selftest_coverage", "entries_missing_guard",
 # carries no numeral in front of the noun. `doc_prose_numbers()` reads every `.md`,
 # which is why the CLAUDE.md payload gets the same treatment.
 
+# The lint modules that left `scripts/` for `tools/lints/`, relative to it. `_GATE_ROOTS`
+# reaches them through `tools`, so listing them here is only what `a3b` compares the
+# derived guard files against.
+_GATE_LINT_MODULES = ("_deps.py", "_refs.py")
+
 # Where those lints live, relative to `scripts/`. A list, because it is what
 # `coverage()` under-claims by if a module holding one is left off it - and that
 # happened: `config/_config_rules.py` grew the config-vocabulary comparison and its
 # `*_drift` names were invisible here until this tuple named the directory.
-_GATE_MODULES = ("_output.py", "_deps.py", "_refs.py",
+_GATE_MODULES = ("_output.py",
                  os.path.join("config", "_config_rules.py"),
                  os.path.join("manifest", "_ado_parent.py"),
                  # ADDED WITH ITS ROWS, WHICH IS THE ONLY WAY IT MAY BE ADDED.
@@ -260,7 +271,7 @@ def _truncated_payload(sliced):
 # (`pp1`, `sc10`) is one; a sentence is the other, and the suites that open theirs
 # with `the`, `a`, `no`, `every` or a colon-suffixed group tag are most of them:
 #
-#   grep -hoE 'check\("[^ "]+' plugins/audit/tests/*.py | sed 's/check("//' \
+#   grep -hoE 'check\("[^ "]+' tests/*.py | sed 's/check("//' \
 #     | grep -vE '^[a-z]+[0-9]' | sort -u
 #
 # Reading the first token was the only way in, so no row could point into any of
@@ -424,14 +435,14 @@ TABLE = (
  # The one-encoding rule, crippled. It is the whole mechanism keeping a second
  # escaping from coming back into the manifest writers, and a version reporting
  # nothing reads exactly like a tree that decides the escaping in one place.
- ("json_encoding_violations", S + "_deps.py", "replace",
+ ("json_encoding_violations", L + "_deps.py", "replace",
   "def json_encoding_violations(script_dir=None, hooks_dir=None):",
   "def json_encoding_violations(script_dir=None, hooks_dir=None):\n    return []",
   DEP, "je2"),
  # The one-way-to-replace rule, crippled. It is what keeps a state file from being
  # replaced by code that shares its temp name with another writer, and a version
  # reporting nothing reads exactly like a tree that replaces only at its writers.
- ("state_write_violations", S + "_deps.py", "replace",
+ ("state_write_violations", L + "_deps.py", "replace",
   "def state_write_violations(script_dir=None, hooks_dir=None, table=None):",
   "def state_write_violations(script_dir=None, hooks_dir=None, table=None):\n"
   "    return []",
@@ -509,26 +520,26 @@ TABLE = (
  # The one-tree rule, crippled. It is what keeps a hook from reading the main
  # checkout's plan for work in a linked worktree, and a version reporting
  # nothing reads exactly like hooks that all ask `_config.tree_for`.
- ("hook_tree_violations", S + "_deps.py", "replace",
+ ("hook_tree_violations", L + "_deps.py", "replace",
   "def hook_tree_violations(hooks_dir=None):",
   "def hook_tree_violations(hooks_dir=None):\n    return []",
   DEP, "ht1"),
  # ...and its second rule, the same defect spelled `tree_for(PROJECT_ONLY)`.
- ("hook_tree_violations", S + "_deps.py", "replace",
+ ("hook_tree_violations", L + "_deps.py", "replace",
   "            elif project_only and name in reads and name not in places:",
   "            elif False:",
   DEP, "ht7"),
  # The one-door rule for git's path base, crippled. A listing call that skips
  # the pair reads exactly like a tree where every call passes through it, and
  # `gb2` is the reverted site the lint must name.
- ("git_path_base_violations", S + "_deps.py", "replace",
+ ("git_path_base_violations", L + "_deps.py", "replace",
   "def git_path_base_violations(script_dir=None, hooks_dir=None, exempt=None):",
   "def git_path_base_violations(script_dir=None, hooks_dir=None, exempt=None):\n"
   "    return []",
   DEP, "gb2"),
  # ...and its table, honouring a blank reason: a row with nothing to say would
  # then excuse the call it names.
- ("git_path_base_violations", S + "_deps.py", "replace",
+ ("git_path_base_violations", L + "_deps.py", "replace",
   "                if why is not None and why.strip():",
   "                if why is not None:",
   DEP, "gb4"),
@@ -536,7 +547,7 @@ TABLE = (
  # the private register is a claim nobody can check on the far side of it, and
  # a version reporting nothing reads exactly like a tree with no citations left
  # to find.
- ("register_citation_violations", S + "_deps.py", "replace",
+ ("register_citation_violations", L + "_deps.py", "replace",
   "def register_citation_violations(repo_root=None, table=None):",
   "def register_citation_violations(repo_root=None, table=None):\n    return []",
   DEP, "rc15"),
@@ -574,7 +585,7 @@ TABLE = (
   _doc_claim_payload(12), DEP, "dpn0"),
  ("doc_prose_numbers", "CLAUDE.md", "after", "\n## Tests\n",
   _doc_claim_payload("thirteen"), DEP, "dpn0"),
- ("map_drift", S + "_deps.py", "replace", '    ("_output",),\n',
+ ("map_drift", L + "_deps.py", "replace", '    ("_output",),\n',
   '    ("_output", "_probe_layer_name"),\n', DEP, "r3"),
  ("hooks_rule_drift", "PLUGIN-BUILD-GUIDE.md", "replace", None, None, DEP, "g0"),
  ("tool_basename_drift", "tools/where.py", "after", "\nSOURCE_EXT = ",
@@ -585,10 +596,12 @@ TABLE = (
  # that crosses a piece boundary, and the anchor alone split with the rest finished
  # through a name. Each is switched off on its own, so neither row can stay green
  # on the strength of the other.
- ("split_literal_violations", S + "_refs.py", "replace",
-  "    paths = [m for m in pattern.finditer(joined) if crosses(m)]",
-  "    paths = [m for m in pattern.finditer(joined) if False]", REF, "sl2"),
- ("split_literal_violations", S + "_refs.py", "replace",
+ ("split_literal_violations", L + "_refs.py", "replace",
+  "    paths = [m for m in pattern.finditer(joined)\n"
+  "             if crosses(m) and _suite_anchored(m, suites)]",
+  "    paths = [m for m in pattern.finditer(joined)\n"
+  "             if False]", REF, "sl2"),
+ ("split_literal_violations", L + "_refs.py", "replace",
   "    anchors = [m for m in _ANCHOR_RE.finditer(joined) if crosses(m)",
   "    anchors = [m for m in _ANCHOR_RE.finditer(joined) if False", REF, "sl2b"),
  # BOTH ROWS BELOW USED TO NAME NO CASE, and the coarse verdict was the only
@@ -792,7 +805,7 @@ TABLE = (
  # what it left. It is anchored on `def _selftest():` rather than on an import, so
  # the leak happens when the suite RUNS: a payload at module scope would leak while
  # the file was merely imported, which is not the shape being proven.
- ("scratch_debris", "plugins/audit/tests/test__cli_fmt.py", "after",
+ ("scratch_debris", "tests/test__cli_fmt.py", "after",
   "def _selftest():\n",
   '    import tempfile as _leak\n    _leak.mkdtemp(prefix="probe-leak-")\n',
   "tools/sweep-selftests.py", "x4"),
@@ -819,7 +832,7 @@ TABLE = (
  # expression and the repaired module reads as normalising NOTHING, so the rule
  # goes quiet about the very copy it exists to catch. `ck3` is the pre-fix pair
  # reconstructed as a fixture.
- ("config_read_violations", S + "_deps.py", "replace",
+ ("config_read_violations", L + "_deps.py", "replace",
   "            normalisers = normalisers | _name_normalisers(scope, local)",
   "            normalisers = normalisers", DEP, "ck3"),
  # --- The two lints the name-shaped derivation could not see ------------------
@@ -836,7 +849,7 @@ TABLE = (
  # resolves to nothing and the module holding them is absent from the key's reader
  # list entirely - which is how a padded date slipped past a rule added the
  # same round to catch one key read two ways. `ck18` is that pair as a fixture.
- ("config_read_violations", S + "_deps.py", "replace",
+ ("config_read_violations", L + "_deps.py", "replace",
   "    block = _block_accessor(node, roots)",
   "    block = None", DEP, "ck18"),
  # THE READER, NOT THE PRODUCER. This row used to delete the producer's own
@@ -1005,7 +1018,7 @@ TABLE = (
  # Then the DERIVATION, which is what makes it a class rather than two rows: drop a
  # writer out of the discovery and the lint goes quiet about it. This is the shape
  # that would let a third writer ship undocumented.
- ("commit_spelling_drift", S + "_deps.py", "after",
+ ("commit_spelling_drift", L + "_deps.py", "after",
   "        found = _commit_constants_in(tree)",
   '\n        if name == "commit-manifest-index.py":\n            found = {}',
   DEP, "cs1b"),
@@ -1083,12 +1096,12 @@ ALLOW = (
  # The one-door rule for git's path base, widened past the door: a function
  # that rebases its listing through the pair would be convicted anyway, and
  # `gb1` reads the whole tree, where every routed site is such a function.
- ("git_path_base_violations", S + "_deps.py", "replace",
+ ("git_path_base_violations", L + "_deps.py", "replace",
   "                if name in reach:\n                    continue\n",
   "", DEP, "gb1"),
  # ...and its table ignored: a single-base site the table names with its reason
  # would be convicted, and `gb3`'s excused fixture is one.
- ("git_path_base_violations", S + "_deps.py", "replace",
+ ("git_path_base_violations", L + "_deps.py", "replace",
   "                if why is not None and why.strip():\n"
   "                    continue\n",
   "", DEP, "gb3"),
@@ -1214,21 +1227,21 @@ ALLOW = (
   OUT, "te7"),
  # A file may import a sibling in a LOWER layer. Flag every edge and the legal
  # downward import - the shape most of this tree is built from - is a violation.
- ("layer_violations", S + "_deps.py", "replace",
+ ("layer_violations", L + "_deps.py", "replace",
   "        if not (li > lj):", "        if True:", DEP, "w3"),
  # EVERY migrated file names its test file in prose, twice. Swap the AST edge
  # reader for the string-literal one and the whole tree reaches into `tests/`,
  # which is the looser scan the docstring says it refuses to be.
- ("tests_import_violations", S + "_deps.py", "replace",
-  "            for name in sorted(set(_imported_sibling_names(tree, test_names, None))):",
-  "            for name in sorted(set(_py_literal_basenames(tree)) & test_names):",
+ ("tests_import_violations", L + "_deps.py", "replace",
+  "                for name in sorted(set(_imported_sibling_names(tree, found, None))):",
+  "                for name in sorted(set(_py_literal_basenames(tree)) & found):",
   DEP, "tb4"),
  # The one-encoding rule, widened past the manifest writer to every `json.dump`
  # that carries an escaping. The journal's canonical row and the hook that appends
  # to it both spell one, because the string is a sha256 INPUT chaining one row to
  # the next rather than a document anybody diffs - so the widened rule convicts
  # honest code, and a lint that convicts honest code is one people route around.
- ("json_encoding_violations", S + "_deps.py", "replace",
+ ("json_encoding_violations", L + "_deps.py", "replace",
   "                if _called_name(node) not in JSON_WRITER_NAMES:",
   "                if _called_name(node) not in JSON_WRITER_NAMES "
   "+ _JSON_DUMP_NAMES:",
@@ -1237,7 +1250,7 @@ ALLOW = (
  # method of those names. A string's `.replace` is the commonest call in the tree
  # and replaces no file, so the widened rule convicts every string edit - `sw4`'s
  # fixture holds a string's, a path's and an unbound str method's.
- ("state_write_violations", S + "_deps.py", "replace",
+ ("state_write_violations", L + "_deps.py", "replace",
   "            and isinstance(func.value, ast.Name) and func.value.id in modules:",
   "            and isinstance(func.value, (ast.Name, ast.Attribute)):",
   DEP, "sw4"),
@@ -1327,7 +1340,7 @@ ALLOW = (
  # the project for those alone is honest code this would convict. The message
  # reads `reads` with a default, because indexing it raised KeyError on the
  # very fixture the allow case names and the suite died before printing it.
- ("hook_tree_violations", S + "_deps.py", "replace",
+ ("hook_tree_violations", L + "_deps.py", "replace",
   "            if uses_root and name in reads:\n"
   "                violations.append((rel, \"%s resolves `_config.repo_root` and reads \"\n"
   "                                        \"the plan's tree through %s - ask \"\n"
@@ -1341,37 +1354,37 @@ ALLOW = (
   DEP, "ht3"),
  # The exemption table, ignored: the one scope that reads the project's plan
  # on purpose, with its reason declared, would be convicted anyway.
- ("hook_tree_violations", S + "_deps.py", "replace",
+ ("hook_tree_violations", L + "_deps.py", "replace",
   '                if exempt.pop(key, "").strip():',
   "                if False:", DEP, "ht10"),
  # `reference/tracker-sync.md` names its own live-network probes "live-gate
  # F<n>", which resolves inside that same document and is not the private
  # register - drop the narrowing and the lint convicts the document for
  # naming its own evidence.
- ("register_citation_violations", S + "_deps.py", "replace",
+ ("register_citation_violations", L + "_deps.py", "replace",
   "        if before.endswith(_LIVE_GATE_MARKER):\n            continue",
   "        if False:\n            continue", DEP, "rc2"),
  # A byte-for-byte comparison that stops honouring the fence's trailing newline
  # reports drift on a guide that is exactly right, which is the direction a
  # regenerate-and-commit instruction cannot fix.
- ("map_drift", S + "_deps.py", "replace",
+ ("map_drift", L + "_deps.py", "replace",
   "    if block != expected:", "    if block != expected.rstrip():", DEP, "g1"),
  # The excuse pattern, widened to the word it is about. The guide has to STATE the
  # hooks rule to satisfy the other half of this lint, so a pattern that matches the
  # subject convicts the document for complying.
- ("hooks_rule_drift", S + "_deps.py", "replace",
+ ("hooks_rule_drift", L + "_deps.py", "replace",
   "    hit = _GUIDE_HOOKS_EXCUSE.search(text)",
   '    hit = re.search("hooks", text)', DEP, "g0"),
  # Two markers is the floor the house rule sets, so a file carrying exactly two is
  # the legitimate minimum. Raise the bar by one and the rule convicts the shape it
  # asks for.
- ("navigability_violations", S + "_deps.py", "replace",
+ ("navigability_violations", L + "_deps.py", "replace",
   "        if headers < 2:", "        if headers < 3:", DEP, "n6"),
  # The region scope, at the format each rule's own allow case is written in. A
  # document may QUOTE the retired sweep while telling a reader to run the current
  # one - a warning against it is the commonest way - and only the runnable region
  # separates the two.
- ("sweep_glob_drift", S + "_refs.py", "replace",
+ ("sweep_glob_drift", L + "_refs.py", "replace",
   "        return _yaml_run_scripts(text), None",
   "        return text, None", REF, "s5"),
  # The fence scope again, in the rule that spares the changelog's historical URL.
@@ -1383,40 +1396,40 @@ ALLOW = (
  # fence at all, so the outer loop never ran and `p11` stayed green over a rule
  # that had stopped scoping anything. The over-fire has to reach a document with
  # nothing fenced in it, which is precisely the document the scope exists for.
- ("raw_url_pin_drift", S + "_refs.py", "replace",
+ ("raw_url_pin_drift", L + "_refs.py", "replace",
   "    for fence in _FENCE_RE.finditer(text):",
   '    for fence in re.finditer(r"(?s)\\A(.*)\\Z", text):', REF, "p11"),
  # A page stamped with the current release is the whole point of the rule. Compare
  # nothing and every committed page is stale, including the one a release just
  # re-rendered.
- ("artifact_version_drift", S + "_refs.py", "replace",
+ ("artifact_version_drift", L + "_refs.py", "replace",
   "            if stamp != version:", "            if True:", REF, "av5"),
  # ...and the same for the pictures: a sidecar that agrees about the bytes, the
  # version and the sources is the clean state, so a comparison that always
  # disagrees demands a re-capture that cannot help.
- ("screenshot_capture_drift", S + "_refs.py", "replace",
+ ("screenshot_capture_drift", L + "_refs.py", "replace",
   '        if entry.get("sha256") != digest:', "        if True:", REF, "sc3"),
  # A tool may name itself, a hook and a test file. Ask the wrong set and all three
  # legitimate spellings are reported as references to files that are gone.
- ("tool_basename_drift", S + "_refs.py", "replace",
+ ("tool_basename_drift", L + "_refs.py", "replace",
   "                if name not in known:", "                if name not in fixtures:",
   REF, "tb5"),
  # A run of literals is a split only where a path crosses a boundary between
  # pieces. Call every match a crossing and each long message that merely wraps
  # beside a whole path is reported.
- ("split_literal_violations", S + "_refs.py", "replace",
+ ("split_literal_violations", L + "_refs.py", "replace",
   "        return any(match.start() < start < match.end() for start, _ln in starts)",
   "        return True", REF, "sl3"),
  # The README row is where a declared flag has to appear. Read no row at all and
  # every command that documents its flags correctly is reported for omitting them.
- ("command_flag_drift", S + "_refs.py", "replace",
+ ("command_flag_drift", L + "_refs.py", "replace",
   "        row_flags = set(_FLAG.findall(rows[cmd]))",
   "        row_flags = set()", REF, "cf1"),
  # The needle narrowed back to a flag. `bug close` names none - it asks for "a
  # one-line `notes` justification" - so a flag-only census read three docs and
  # treated the fourth as having nothing to discharge, which is a clean sheet over
  # the one thing it could not see.
- ("verbatim_rule_drift", S + "_refs.py", "replace",
+ ("verbatim_rule_drift", L + "_refs.py", "replace",
   'VERBATIM_FLAGS = ("--reason", "justification", "--confirm-high-risk")',
   'VERBATIM_FLAGS = ("--reason",)', REF, "vb3"),
  # The published vocabulary, minus one key the plugin really does publish. `cv1`
@@ -1468,7 +1481,7 @@ ALLOW = (
  # one of the two schemas; without it any dict carrying a `types` key is a config
  # block, and a BOARD's answer to a probe is convicted as a configured value in a
  # file that reads no configuration on that line at all. `ck7` is the fixture.
- ("config_read_violations", S + "_deps.py", "replace",
+ ("config_read_violations", L + "_deps.py", "replace",
   "        return ((key,) if key in roots else None), normalisers",
   "        return (key,), normalisers", DEP, "ck7"),
  ("scratch_debris", "tools/sweep-selftests.py", "replace",
@@ -1503,7 +1516,7 @@ ALLOW = (
  # is in the vocabulary as a NESTED key, so an accessor test that took any name
  # invents a path in a file that configures nothing on that line. `ck21` is the
  # fixture.
- ("config_read_violations", S + "_deps.py", "replace",
+ ("config_read_violations", L + "_deps.py", "replace",
   "    return block if block in roots else None",
   "    return block or None", DEP, "ck21"),
  # THE OVER-FIRE THIS RULE IS ONE CHARACTER AWAY FROM. The whole guard is the
@@ -1513,7 +1526,7 @@ ALLOW = (
  # the pair written for exactly this - the same producer and reader as `dk3` with
  # the key WRITTEN - so it fails on a rule that fires unconditionally while `dk3`
  # goes on passing.
- ("dict_key_violations", S + "_deps.py", "replace",
+ ("dict_key_violations", L + "_deps.py", "replace",
   "                if key in carried:", "                if False:", DEP, "dk4"),
  # --- The quiet half for the meta-gate ------------------------------------------
  # THE OVER-FIRE IS CONVICTING A MATRIX THAT RUNS EVERY PART. Report the missing
@@ -1604,20 +1617,20 @@ ALLOW = (
  # the narrowing was chosen against: the scan is deliberately WIDE (whole
  # directories, so a new document arriving without the word is reported) and the
  # trigger is the only thing keeping the width from becoming noise.
- ("red_first_drift", S + "_refs.py", "replace",
+ ("red_first_drift", L + "_refs.py", "replace",
   "            if RED_FIRST_TRIGGER not in text:",
   '            if "" not in text:', REF, "rf7"),
  # The declared reviewer-only grade dropped from what the reviewer may say, so
  # the lint refuses `not-proved` - the reviewer's honest answer when nothing names
  # a red run. A lint that convicts the one grade the design keeps on purpose is
  # the kind that gets deleted rather than believed.
- ("red_first_vocabulary_drift", S + "_refs.py", "replace",
+ ("red_first_vocabulary_drift", L + "_refs.py", "replace",
   "    allowed = set(schema) | set(RED_FIRST_REVIEWER_ONLY)\n",
   "    allowed = set(schema)\n", REF, "rv3"),
  # The comparison made unconditional: every key the verb reads is reported as
  # omitted whether the format names it or not, so a format and a verb that
  # agree are convicted - the over-fire that gets a check deleted.
- ("phase_return_key_drift", S + "_refs.py", "replace",
+ ("phase_return_key_drift", L + "_refs.py", "replace",
   "                        for k in verb if k not in brief)\n",
   "                        for k in verb)\n", REF, "prk3"),
  # The TOP-LEVEL restriction dropped, so every nested key of the declared
@@ -1626,24 +1639,24 @@ ALLOW = (
  # halves in one breath, which is honest prose and the ordinary way to write it.
  # The restriction is the only thing keeping this check's width from becoming
  # noise, which is the same argument `rf7` makes for its trigger.
- ("return_shape_drift", S + "_refs.py", "replace",
+ ("return_shape_drift", L + "_refs.py", "replace",
   "            if (depth == 1\n", "            if (True\n", REF, "rs6"),
  # The list sentence's end dropped, so every backticked word after it in the
  # document reads as a runner - `could-not-prove`, a flag, a file name - and a
  # document naming exactly the table's runners is convicted for the sentences
  # that follow it. The full stop is the narrowing that keeps the list the list.
- ("runner_list_drift", S + "_refs.py", "replace",
+ ("runner_list_drift", L + "_refs.py", "replace",
   '    stop = text.find(".", start)\n', "    stop = -1\n", REF, "rl3"),
  # The empty-rule test made unconditional: every step a row names is reported as
  # printing no rule, so a table whose every anchor resolves is convicted - the
  # over-fire that gets a check deleted rather than believed.
- ("followed_anchor_drift", S + "_refs.py", "replace",
+ ("followed_anchor_drift", L + "_refs.py", "replace",
   "            elif not steps[name]:\n", "            elif True:\n", REF, "fa2"),
  # The filter to scripts that resolve the manifest themselves, dropped. A
  # placeholder handed to a script that does NOT resolve it is still needed
  # (`status.md` hands `verify-invariants.py` one), so a lint that read every
  # placeholder convicts a line the model genuinely has to fill in.
- ("manifest_placeholder_drift", S + "_refs.py", "replace",
+ ("manifest_placeholder_drift", L + "_refs.py", "replace",
   "                if script not in resolving:\n                    continue\n",
   "", REF, "mp1"),
  # The needle widened from a BOLDED prohibition to any sentence carrying the word.
@@ -1706,14 +1719,14 @@ ALLOW = (
  # identifier-shaped cannot be read as a field name. Reverse the regex to
  # key-colon only and every bare identifier in either block becomes a field, so
  # the two agreeing copies start disagreeing about the tree as it stands.
- ("explorer_contract_drift", S + "_deps.py", "replace",
+ ("explorer_contract_drift", L + "_deps.py", "replace",
   '    r\':\\s*"[A-Za-z_][A-Za-z0-9_]*"|"([A-Za-z_][A-Za-z0-9_]*)"\')',
   '    r\'"([A-Za-z_][A-Za-z0-9_]*)"\\s*:\')', DEP, "ec1"),
  # This lint's over-fire, and it is the reason the subsection bound reads the heading
  # LEVEL rather than a literal `## `. Bound it on `## ` and one script's
  # subsection swallows the next sibling script's paragraph, so every writer is
  # convicted of claiming its neighbour's commit spelling.
- ("commit_spelling_drift", S + "_deps.py", "replace",
+ ("commit_spelling_drift", L + "_deps.py", "replace",
   '    pattern = re.compile(r"\\n#{1,%d} " % (level,))',
   '    pattern = re.compile(r"\\n## ")', DEP, "cs1"),
  # This lint's over-fire. Anchors are section-SCOPED: drop the
@@ -2935,7 +2948,8 @@ def _cases(check):
     # to get a row past a3 without that being visible as a second, named guard.
     _missing_guard = [p for p in GUARD_FILES
                       if not os.path.isfile(os.path.join(REPO, p))]
-    _derived = [S + m.replace(os.sep, "/") for m in _GATE_MODULES]
+    _derived = ([S + m.replace(os.sep, "/") for m in _GATE_MODULES]
+                + [L + m for m in _GATE_LINT_MODULES])
     check("a3b ...and the list of guard-holding files names real files, and "
           "still carries every module `gate_names()` derives its lints from: "
           "%r" % (_missing_guard,),

@@ -35,7 +35,7 @@ Exit codes: 0 = done (or a clean plan) - 1 = refused, with the reason - 2 = usag
 error or unreadable input.
 
 This file carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_materialize_proposal.py`.
+`tests/test_materialize_proposal.py`.
 """
 import json
 import os
@@ -311,7 +311,7 @@ if __name__ == "__main__":
     safe_stdio()
     if selftest_requested(sys.argv[1:]):
         print("materialize-proposal.py has no inline --selftest; its cases live "
-              "in plugins/audit/tests/test_materialize_proposal.py - run that "
+              "in tests/test_materialize_proposal.py - run that "
               "file instead.")
         sys.exit(0)
     sys.exit(main(sys.argv[1:]))

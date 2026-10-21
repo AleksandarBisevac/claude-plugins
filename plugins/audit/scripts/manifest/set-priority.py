@@ -55,7 +55,7 @@ Decisions, each mirroring a precedent in this directory rather than inventing on
     point is the edge `_deps.KNOWN_LAYER_DEBT` exists to keep at zero new ones.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_set_priority.py`.
+`tests/test_set_priority.py`.
 
 Stdlib only, Python 3.8 compatible.
 """
@@ -440,6 +440,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("set-priority.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test_set_priority.py - run that file instead.")
+              "tests/test_set_priority.py - run that file instead.")
         sys.exit(0)
     sys.exit(main(sys.argv[1:]))

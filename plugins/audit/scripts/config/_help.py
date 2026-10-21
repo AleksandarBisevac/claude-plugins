@@ -37,14 +37,14 @@ cannot advertise tools the agent does not have — and `guide_is_read_only()` fa
 the build if that agent ever gains one that writes.
 
 Consumers: `panel-server.py` (`GET /api/help`, and the help drawer that consumes
-it), and the cases in `plugins/audit/tests/test__help.py`, which are the reason
+it), and the cases in `tests/test__help.py`, which are the reason
 none of this is untested code while the drawer is still being built.
 
 This module carries no `--selftest` of its own any more; its cases live in
-that file, byte-identical labels and all - see `plugins/audit/tests/_harness.py`.
+that file, byte-identical labels and all - see `tests/_harness.py`.
 (That figure read 67 against a real 70 before the twelve `schema_vocab_drift`
 cases landed, so it was already rotting; print it rather than trust it -
-`python3 plugins/audit/tests/test__help.py --selftest | tail -1`.)
+`python3 tests/test__help.py --selftest | tail -1`.)
 Nothing checks that a topic's citation still resolves to a heading, or that a
 document enumerating the agents names them all: the two checks that did were
 retired, so the sources in `topics()` and the agents a document lists are kept true
@@ -902,7 +902,7 @@ def schema_vocab_drift(root=None):
     puts `KNOWN_ADO`, the level this check exists for, outside that walk's reach by
     construction rather than by accident. `fields()` keys by DOCUMENT PATH
     (`meta.ado.conventions`), which is the shape a per-LEVEL known-key set needs.
-    `mv34` and `mv35` in `plugins/audit/tests/test__manifest_vocab.py` assert that
+    `mv34` and `mv35` in `tests/test__manifest_vocab.py` assert that
     and print the figures, because "reuse the other walk" is the obvious suggestion
     and acting on it drops a whole level in silence.
 
@@ -1171,6 +1171,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_help.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__help.py - run that file instead.")
+              "tests/test__help.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

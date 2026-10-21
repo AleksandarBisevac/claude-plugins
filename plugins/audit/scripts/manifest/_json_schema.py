@@ -34,7 +34,7 @@ callers whose findings must stay apart (`_manifest_crossrefs`' bug values and
 `_manifest_rules`' whole plan).
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__json_schema.py` - see `plugins/audit/tests/_harness.py`.
+`tests/test__json_schema.py` - see `tests/_harness.py`.
 """
 import json
 import os
@@ -489,6 +489,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_json_schema.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__json_schema.py - run that file instead.")
+              "tests/test__json_schema.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

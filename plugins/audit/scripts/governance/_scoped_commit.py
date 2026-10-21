@@ -45,7 +45,7 @@ because the first cannot be taken back and must not be read as a commit that
 exists.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__scoped_commit.py`.
+`tests/test__scoped_commit.py`.
 """
 import binascii
 import calendar
@@ -1508,7 +1508,7 @@ if __name__ == "__main__":
     safe_stdio()
     if selftest_requested(sys.argv[1:]):
         print("_scoped_commit.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__scoped_commit.py - run that file "
+              "tests/test__scoped_commit.py - run that file "
               "instead.")
         sys.exit(0)
     print(__doc__.strip())

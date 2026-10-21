@@ -761,14 +761,14 @@ def _brief_cases(check):
     proj_n, mpath_n = project("bf-exec-none", none_task)
     brief(proj_n, mpath_n, "P1.1", "executor")
     text_none = read(brief_file(proj_n, "P1.1", "20260101T000000Z.executor.md")) or ""
-    check("plugins/audit/tests/test_audit_lookup.py: an executor brief for a task "
+    check("tests/test_audit_lookup.py: an executor brief for a task "
           "with tests.add states, beside the list, that each entry is bound by "
           "returning `casesAdded`, and a brief for a task with no tests.add "
           "does not",
           len(rule_lines) == 1 and "by index" in rule_lines[0]
           and text.index("tests.add:") < text.index(rule_lines[0])
           and _fr.CASES_FIELD not in text_none and "tests.add:" in text_none)
-    check("plugins/audit/tests/test_audit_lookup.py: the sentence the brief prints "
+    check("tests/test_audit_lookup.py: the sentence the brief prints "
           "names the binding case_binding_gaps grades (an id per entry, checked "
           "against what the suite printed) and no title or addMap route - read off "
           "the function's behaviour, not a second copy of the wording",
@@ -983,12 +983,12 @@ def _brief_cases(check):
     # left inside its kept head/tail - `run-test-gate.py` already bounds a
     # step's `failing` to `MAX_FAILING` lines before it ever reaches the row,
     # so re-excerpting that bounded list drops names the row still carries.
-    pad_before = ["FAIL  plugins/audit/tests/test_pad%02d.py: exited 1 - a long "
+    pad_before = ["FAIL  tests/test_pad%02d.py: exited 1 - a long "
                   "padding reason so the joined text crosses the excerpt's "
                   "own head and tail bound before the real target is reached"
                   % (i,) for i in range(1, 4)]
-    target_line = "FAIL  plugins/audit/tests/test__deps.py: exited 1 (rc16)"
-    pad_after = ["FAIL  plugins/audit/tests/test_pad%02d.py: exited 1 - more "
+    target_line = "FAIL  tests/test__deps.py: exited 1 (rc16)"
+    pad_after = ["FAIL  tests/test_pad%02d.py: exited 1 - more "
                  "trailing padding so the target sits well inside the middle "
                  "a single excerpt call would have elided, not its kept tail"
                  % (i,) for i in range(4, 8)]
@@ -1022,7 +1022,7 @@ def _brief_cases(check):
     # bf54 variant: more failing lines than the row's bound, over many files.
     # The row cuts `failing` to MAX_FAILING lines but keeps the file list, so
     # the files are read from `failingSuites`; the last files have no line.
-    many = ["plugins/audit/tests/test_many%02d.py" % (i,)
+    many = ["tests/test_many%02d.py" % (i,)
             for i in range(1, _evio.MAX_FAILING + 6)]
     many_failing = ["FAIL  %s: rc1 at a%d" % (p, i)
                     for i, p in enumerate(many)]
@@ -1882,7 +1882,7 @@ def _brief_cases(check):
             read_w = "%s: %s" % (type(exc).__name__, exc)
     console.flush()
     printed_w = raw_w.getvalue()
-    check("plugins/audit/tests/test_audit_lookup.py: a reviewer brief carrying "
+    check("tests/test_audit_lookup.py: a reviewer brief carrying "
           "non-cp1252 characters and CRLF-prone text, read back through brief "
           "--read under a cp1252 stdout, prints exactly the bytes that were "
           "written (the brief holds both, and the bytes printed are the "

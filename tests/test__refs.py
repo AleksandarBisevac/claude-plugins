@@ -9,7 +9,7 @@ inside the tree it scans.
 THE ONE SHAPE THIS MOVE HAD TO CARRY WITH IT, AND IT IS THE UNUSUAL ONE. Nothing here
 patches a module global, reads `globals()` or slices a source file - the three hazards
 the earlier batches were about are all absent. What this suite has instead is a hazard
-of its own, and it did not go away by moving: `_refs` scans `plugins/audit/tests` as an
+of its own, and it did not go away by moving: `_refs` scans `tests` as an
 ANCHORED surface, so THIS FILE is one of the documents it reads. An anchor written
 immediately in front of a `scripts/…py` inside a case would be a REAL reference to a
 fixture that exists for four milliseconds, and `c5` - a case in this very file - would
@@ -59,7 +59,12 @@ _FX_HOOKS = M.PLUGIN_REL + "/hooks/"
 _FX_COMMANDS = M.PLUGIN_REL + "/commands/"
 _FX_AGENTS = M.PLUGIN_REL + "/agents/"
 _FX_REFERENCE = M.PLUGIN_REL + "/reference/"
-_FX_TESTS = M.PLUGIN_REL + "/tests/"
+# The suites are at the repository root, so a reference to one is repo-relative and
+# carries no plugin prefix; `_FX_TESTS_OLD` is the spelling that is stale on sight.
+_FX_TESTS = "tests/"
+_FX_TESTS_OLD = M.PLUGIN_REL + "/tests/"
+# The two lint modules left `scripts/`; their own root is anchor enough.
+_FX_LINTS = "tools/lints/"
 
 # A brief that declares a return shape, written the way the real one is: the block
 # is the paragraph after the trigger, nested keys sit inside the objects that name
@@ -116,7 +121,7 @@ def _tool_src(name):
 
 def _tool_src_refs():
     """`_refs.py`'s own source, the file under test."""
-    with open(os.path.join(M.REPO_ROOT, M.PLUGIN_REL, "scripts", "_refs.py"),
+    with open(os.path.join(M.REPO_ROOT, "tools", "lints", "_refs.py"),
               "r", encoding="utf-8") as fh:
         return fh.read()
 
@@ -372,11 +377,11 @@ def _cases(check):
     import _output as _out
     check("rr1 REPO_ROOT is the one in `_output`, not a second walk that happens "
           "to agree: %r" % (M.REPO_ROOT,), M.REPO_ROOT is _out.REPO_ROOT)
-    check("rr2 ...and it is exactly what the old "
-          "`dirname(dirname(dirname(_HERE)))` produced, with `plugins/audit` "
-          "under it where every `rel` this module emits expects to find it",
+    check("rr2 ...and it is the directory three levels above this module, which "
+          "now sits under `tools/lints/` - with `plugins/audit` under it where "
+          "every `rel` this module emits expects to find it",
           M.REPO_ROOT == os.path.dirname(os.path.dirname(os.path.dirname(
-              os.path.dirname(os.path.abspath(M.__file__)))))
+              os.path.abspath(M.__file__))))
           and os.path.isdir(os.path.join(M.REPO_ROOT, M.PLUGIN_REL.replace("/", os.sep))))
 
     # --- the tables ----------------------------------------------------------------
@@ -452,7 +457,7 @@ def _cases(check):
         check("ph2 is_placeholder is the one rule, and it answers for both shapes",
               M.is_placeholder("plugins/audit/scripts/<n>.py")
               and M.is_placeholder("plugins/audit/scripts/*.py")
-              and not M.is_placeholder("plugins/audit/scripts/_refs.py"))
+              and not M.is_placeholder("tools/lints/_refs.py"))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -534,25 +539,106 @@ def _cases(check):
         base = os.path.basename(hook_rel)[:-3].replace("-", "_")
         return _FX_TESTS + "test_%s.py" % base
 
-    check("a5 an ANCHORED tests/ path in the plugin's own source is a reference, is "
-          "resolved into plugins/audit/tests/, and names that file's OWN suite (or "
-          "the harness): %d hits over %d hooks"
+    # A hook's prose may name ANOTHER hook's suite when it is explaining what that
+    # suite holds, and with the suites unprefixed that is now seen and stat'd like
+    # any other - which is why it is declared here, by the pair, rather than the
+    # claim being loosened to "any suite that exists".
+    _cross_named = (("plugins/audit/hooks/_config.py",
+                     _FX_TESTS + "test__usage_core.py"),)
+    check("a5 a suite-named tests/ path in the plugin's own source is a reference, "
+          "is resolved into tests/, and names that file's OWN suite (or the "
+          "harness) - bar the declared cross-reference: %d hits over %d hooks"
           % (len(hook_test_hits),
              len(set(h[0] for h in hook_test_hits))),
           len(set(h[0] for h in hook_test_hits)) == 11
           and all(h[3] in (_FX_TESTS + "_harness.py", _own_suite(h[0]))
-                  for h in hook_test_hits), repr(hook_test_hits))
+                  or (h[0], h[3]) in _cross_named
+                  for h in hook_test_hits)
+          and all(any(h[0] == hook and h[3] == _own_suite(hook)
+                      for h in hook_test_hits)
+                  for hook in set(h[0] for h in hook_test_hits)),
+          repr(hook_test_hits))
     # The two consumer-repo glob fixtures moved WITH `_config.py`'s suite, from
     # `hooks/_config.py` into `tests/test__config.py` - which is the arrival this
     # surface was made ANCHORED for, and the reason the case now names the file they
     # live in rather than the file they came from.
     _consumer = (_FX_TESTS + "test_cart.py", _FX_TESTS + "cart_test.py")
-    check("a6 ...and an UNanchored one is not - `tests/test__config.py` carries two "
-          "consumer-repo test filenames as glob fixtures, and neither may be looked "
-          "for in this plugin. Reads vacuous, and is the only case that fails if "
-          "`tests` ever joins the bare alternation: %r"
+    check("a6 ...and a consumer repo's file name is not - `tests/test__config.py` "
+          "carries two as glob fixtures, and neither may be looked for in this "
+          "plugin. Reads vacuous, and is the case that fails if the suite-name "
+          "anchor is ever loosened to any `tests/` path: %r"
           % ([h for h in real if h[3] in _consumer],),
           not any(h[3] in _consumer for h in real))
+
+    # --- the suite-name anchor, on a tree of its own -----------------------------------
+    # The suites left the plugin, so a reference to one has no `plugins/audit/` prefix
+    # to be anchored by and the SUITE'S NAME is the anchor: `_harness`, or `test_<module>`
+    # for a module the tree keeps. Fixtures, because the real tree has no deleted suite
+    # and no consumer-repo name in its documents to try the rule on.
+    sa_root = tempfile.mkdtemp(prefix="refs-suite-anchor-")
+    try:
+        _write(sa_root, _FX_SCRIPTS + "widget.py", "# a module\n")
+        _write(sa_root, _FX_TESTS + "test_present.py", "# a suite that is there\n")
+        _write(sa_root, _FX_TESTS + "_harness.py", "# the harness\n")
+        _write(sa_root, _FX_LINTS + "widget_lint.py", "# a lint module\n")
+        _write(sa_root, "README.md",
+               "own suite, present: " + _FX_TESTS + "test_present.py\n"
+               "own module's suite, DELETED: " + _FX_TESTS + "test_widget.py\n"
+               "a consumer repo's file: " + _FX_TESTS + "test_cart.py\n"
+               "the harness: " + _FX_TESTS + "_harness.py\n"
+               "a placeholder: " + _FX_TESTS + "<name>.py\n"
+               "the old spelling: " + _FX_TESTS_OLD + "test_present.py\n"
+               "inside a longer path: other/" + _FX_TESTS + "test_widget.py\n"
+               "a lint module, present: " + _FX_LINTS + "widget_lint.py\n"
+               "a lint module, GONE: " + _FX_LINTS + "gone_lint.py\n"
+               "inside a longer path: other/" + _FX_LINTS + "widget_lint.py\n")
+        sa = M.missing_references(sa_root, sa_root)
+        sa_all = [h[3] for h in M.referenced_paths(sa_root)]
+        sa_missing = sorted(h[3] for h in sa["missing"])
+    finally:
+        shutil.rmtree(sa_root, ignore_errors=True)
+    check("sa1 a bare tests/ path counts as a reference exactly when it names a "
+          "suite: one that is there, the harness, the DELETED suite of a module "
+          "the tree keeps, a placeholder and the old plugin-prefixed spelling are "
+          "all read, as are a lint module that is there and one that is gone "
+          "(the lint modules' own root is an anchor), and a consumer repo's "
+          "file name is not (it would be "
+          "reported missing for a file this tree never had to carry): %r"
+          % (sa_all,),
+          sorted(sa_all) == sorted([_FX_TESTS + "test_present.py",
+                                    _FX_TESTS + "test_widget.py",
+                                    _FX_TESTS + "_harness.py",
+                                    _FX_TESTS + "<name>.py",
+                                    _FX_TESTS_OLD + "test_present.py",
+                                    _FX_LINTS + "widget_lint.py",
+                                    _FX_LINTS + "gone_lint.py"])
+          and _FX_TESTS + "test_cart.py" not in sa_all)
+    check("sa2 ...and of those, the deleted suite, the old spelling and the "
+          "lint module that is gone are what is MISSING - a reference to a suite "
+          "or lint module that is gone is still caught, "
+          "which is what keeping a name-derived half in the anchor buys; the "
+          "path that merely sits inside a longer one is not read at all: %r"
+          % (sa_missing,),
+          sa_missing == sorted([_FX_TESTS + "test_widget.py",
+                                _FX_TESTS_OLD + "test_present.py",
+                                _FX_LINTS + "gone_lint.py"])
+          and sa["placeholders"] and len(sa["placeholders"]) == 1)
+
+    # The surface that holds the lint modules is read ANCHORED and once: `tools` is a
+    # bare surface and `tools/lints` is nested in it, so a parent's walk that did not
+    # prune it would read the fixtures in `_deps` and `_refs` unanchored a second time.
+    sa_tools = set(M._surface_files(M.REPO_ROOT, "tools", M.BARE))
+    sa_lints = set(M._surface_files(M.REPO_ROOT, "tools/lints", M.ANCHORED))
+    sa_counts = M.counts_by_surface(surface_root=M.REPO_ROOT)
+    check("sa3 `tools/lints` is a surface of its own and the bare `tools` walk "
+          "does not enter it: the two file sets do not overlap, the lint modules "
+          "are in the nested one, and the nested surface's hits are counted "
+          "against IT and not against its parent: %d / %d"
+          % (len(sa_tools), len(sa_lints)),
+          not (sa_tools & sa_lints) and "tools/lints/_refs.py" in sa_lints
+          and "tools/lints/_deps.py" in sa_lints
+          and not [p for p in sa_tools if p.startswith("tools/lints/")]
+          and sa_counts["tools/lints"] > 0)
 
     # --- anti-vacuity ----------------------------------------------------------------
     tmp = tempfile.mkdtemp()

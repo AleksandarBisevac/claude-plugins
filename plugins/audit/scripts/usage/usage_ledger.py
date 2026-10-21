@@ -94,8 +94,8 @@ by path and reads attributes off the module object, so the module object has to 
 serving all of them. The `rx` selftest cases are what say so.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test_usage_ledger.py`, byte-identical labels and all - see
-`plugins/audit/tests/_harness.py`. `rx1`/`rx2` still count the re-export, now
+`tests/test_usage_ledger.py`, byte-identical labels and all - see
+`tests/_harness.py`. `rx1`/`rx2` still count the re-export, now
 against the module object a by-path loader hands back, which is what every
 consumer actually holds.
 """
@@ -1656,7 +1656,7 @@ if __name__ == "__main__":
         # suite contract - that literal is how `_output.selftest_coverage()`
         # tells an inline suite from a migrated one.
         print("usage_ledger.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_usage_ledger.py - run that file instead.")
+              "tests/test_usage_ledger.py - run that file instead.")
         raise SystemExit(0)
     sys.stderr.write("usage: usage_ledger.py --selftest\n")
     raise SystemExit(2)

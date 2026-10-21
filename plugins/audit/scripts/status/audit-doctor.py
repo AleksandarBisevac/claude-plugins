@@ -68,8 +68,8 @@ reason; the alternative was making every caller learn which of six files a check
 now sits in, for a check that has not changed.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_audit_doctor.py`, byte-identical labels and all — see
-`plugins/audit/tests/_harness.py`. They moved WHOLE: 53 of them re-`diagnose()` one
+`tests/test_audit_doctor.py`, byte-identical labels and all — see
+`tests/_harness.py`. They moved WHOLE: 53 of them re-`diagnose()` one
 temp repository that the suite mutates step by step, so the sequence is the test.
 `_json_ok()` went with them (its only caller was one case). `_load()` stayed in the
 product — it is how the checks reach `_config` and `guard-capabilities` in
@@ -407,6 +407,6 @@ if __name__ == "__main__":
         # print the `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("audit-doctor.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_audit_doctor.py - run that file instead.")
+              "tests/test_audit_doctor.py - run that file instead.")
         raise SystemExit(0)
     raise SystemExit(main(sys.argv[1:]))

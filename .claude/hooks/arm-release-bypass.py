@@ -226,7 +226,7 @@ def main():
 
 
 def _selftest():
-    """Cases: plugins/audit/tests/ is the PLUGIN's suite and this is not the
+    """Cases: tests/ is the PLUGIN's suite and this is not the
     plugin, so the cases live beside the file they test."""
     import shutil
     import tempfile

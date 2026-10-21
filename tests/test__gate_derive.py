@@ -686,7 +686,7 @@ def _cases(check):
                                       "python3 tools/sweep-selftests.py {paths}"}}},
         phase=_phase(tasks=[_task(
             "P1.1", files=["tools/affected.py"],
-            tests={"gate": ["python3 plugins/audit/tests/test__affected_tests.py"],
+            tests={"gate": ["python3 tests/test__affected_tests.py"],
                    "gateBasis": "tests.add"})]))
     rec_result = M.derive(rec_manifest, rec_manifest["phases"][0], {})
     check("with a recorded spelling and a sibling path-scoped entry, a task "
@@ -696,7 +696,7 @@ def _cases(check):
           and rec_result["shapeSource"] == M.SPELLING_SOURCE
           and rec_result["entries"] == [
               "python3 tools/sweep-selftests.py "
-              "plugins/audit/tests/test__affected_tests.py"])
+              "tests/test__affected_tests.py"])
 
     # --- dg-spelling-nopaths: a spelling with no {paths} placeholder is -------
     # ignored, with a printed reason.

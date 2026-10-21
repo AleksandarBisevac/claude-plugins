@@ -69,7 +69,7 @@ verb writes and refuses, and what the run commands leave behind, is
      the gate resolved, the `executor.runsGate` reading with its command, the stamp and red-first
      helpers resolved against this plugin copy, the filing command, and the retry context when
      `attempts > 1`. A brief typed by hand instead is checked by nothing; the computed one is
-     held by `audit-lookup.py`'s cases in `plugins/audit/tests/test_audit_lookup.py`.
+     held by `audit-lookup.py`'s cases in `tests/test_audit_lookup.py` (in the source repository).
    - Tell it to **first invoke each resolved skill** via the `Skill` tool (load conventions before coding).
      Resolve them as **each tag's `meta.areas[tag].skills` first, then `task.skills`, deduped, area
      first** — house conventions before task specifics, because a subagent that reads the specifics
@@ -180,7 +180,7 @@ verb writes and refuses, and what the run commands leave behind, is
      `unittest`, `jest` and `vitest`. The output decides rather than the command, so a
      wrapper counts when the runner it wraps prints its own tally, and a run printing
      none of theirs is `could-not-prove` whatever was linked in. `runner_list_drift()`
-     in `plugins/audit/scripts/_refs.py` reads that list off `TALLY_READERS` and fails
+     in `tools/lints/_refs.py` (in the source repository) reads that list off `TALLY_READERS` and fails
      the build when this sentence or the executor's drifts from it. The executor used to be
      told to undo its fix in the shared tree for the length of the run, which is a write
      over ground siblings are editing; a host refused it beside a sibling's uncommitted
@@ -190,7 +190,7 @@ verb writes and refuses, and what the run commands leave behind, is
      **One vocabulary, checked.** The schema enum is the one source: the executor's return
      offers exactly its words, and the reviewer's offers those plus its declared
      reviewer-only `not-proved` — `red_first_vocabulary_drift()` in
-     `plugins/audit/scripts/_refs.py` fails the build otherwise, and `red_first_drift()`
+     `tools/lints/_refs.py` fails the build otherwise, and `red_first_drift()`
      beside it holds that every document naming a red-first proof offers the third word.
      **A FILED return carries the block, and the filing verb is what checks it**:
      `audit-task.py file-return` refuses an executor return whose `redFirst` is missing, has
@@ -231,7 +231,7 @@ verb writes and refuses, and what the run commands leave behind, is
      when a skill asked for one, `claims`. The
      brief holds the wording of each, including
      the pass/fail/could-not-run distinction the arms in step 4 turn on;
-     `return_shape_drift()` in `plugins/audit/scripts/_refs.py` fails the build when this list
+     `return_shape_drift()` in `tools/lints/_refs.py` fails the build when this list
      falls behind the brief's. **The executor files that object through `drive-phase.py
      submit <taskId> --role executor`** (the object on stdin, the test command after `--` on a
      `tdd` task): `submit` checks the shape and writes nothing when a field is missing, runs
@@ -313,7 +313,7 @@ verb writes and refuses, and what the run commands leave behind, is
      prints its own limit (`says:`) beside it. **A filed return carries a stamp, because
      `file-return` refuses one without it**; a return handed back without filing is checked
      by nothing. `return_shape_drift()` in
-     `plugins/audit/scripts/_refs.py` holds only that this document asks for every field
+     `tools/lints/_refs.py` holds only that this document asks for every field
      `agents/audit-executor.md` declares — it cannot see whether an executor filled one in. The
      command makes a stamp checkable once it is there; asking for the filing, and re-asking when
      it is absent, is yours.
@@ -539,7 +539,7 @@ verb writes and refuses, and what the run commands leave behind, is
 
      **The computed brief carries this when `attempts > 1`**: `audit-lookup.py brief
      --role executor` puts `outcome.technical` verbatim, `testEvidence` and `redFirst` in a
-     retry section, and `bf3` in `plugins/audit/tests/test_audit_lookup.py` holds it. The
+     retry section, and `bf3` in `tests/test_audit_lookup.py` (in the source repository) holds it. The
      gate's own output and the `raw log:` path are this session's, not the record's, so adding
      them to the prompt beside the path is still yours; and a retry briefed by hand instead of
      by the script is checked by nothing — no gate reads a prompt.

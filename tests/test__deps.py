@@ -1062,7 +1062,7 @@ def _cases(check):
               _claims == [dict(_followers[0], path=M._GUIDE_REL_PATH), None, None])
         import subprocess
         _said = subprocess.run(
-            [sys.executable, os.path.join(_output.SCRIPTS_DIR, "_deps.py"),
+            [sys.executable, os.path.join(_output.LINTS_DIR, "_deps.py"),
              "--follower-for", "README.md", M._GUIDE_REL_PATH],
             capture_output=True, text=True, timeout=120).stdout
         check("g11 ...and as a command, the way an integration asks it, in the line "
@@ -1647,6 +1647,69 @@ def _cases(check):
                                                   M._output.TESTS_DIR))),),
           not (set(M._all_names()) & set(os.path.basename(r)[:-3]
                                          for r, _p in _output.py_files(M._output.TESTS_DIR))))
+
+    # ---- the tools/lints/ boundary: the product may not depend on development code
+    # `_deps` and `_refs` left `scripts/`, so a shipped file importing one works here
+    # and is an ImportError in every install. Fixtures in both directions, for the
+    # reason the tests/ block above gives.
+    lb_s = tempfile.mkdtemp(prefix="deps-lintsboundary-s-")
+    lb_h = tempfile.mkdtemp(prefix="deps-lintsboundary-h-")
+    lb_t = tempfile.mkdtemp(prefix="deps-lintsboundary-t-")
+    lb_l = tempfile.mkdtemp(prefix="deps-lintsboundary-l-")
+    try:
+        def _wlb(root, name, text):
+            with open(os.path.join(root, name), "w", encoding="utf-8") as fh:
+                fh.write(text)
+
+        _wlb(lb_l, "_fake_lint.py", "def judge():\n    return []\n")
+        _wlb(lb_s, "imports_lint.py", "import _fake_lint\nx = 1\n")
+        _wlb(lb_s, "loads_lint.py",
+             'import _loader\n\n\ndef f():\n'
+             '    return _loader.load_script("_fake_lint.py")\n')
+        _wlb(lb_s, "clean.py", "import json\nx = 1\n")
+        _wlb(lb_h, "hook_imports_lint.py", "import _fake_lint\nx = 1\n")
+        lb = M.tests_import_violations(lb_s, lb_h, lb_t, lb_l)
+        lb_named = sorted(n for n, _w in lb)
+        check("lb1 a scripts/ file that imports a lint module, one that loads it "
+              "through `_loader`, and a HOOK that imports it are each reported, "
+              "naming tools/lints/ as where the edge points: %r" % (lb,),
+              lb_named == ["hooks/hook_imports_lint.py", "scripts/imports_lint.py",
+                           "scripts/loads_lint.py"]
+              and all("tools/lints/" in w for _n, w in lb))
+        # The default: `script_dir` left at the real `scripts/`, so the real lints
+        # directory is the one asked about - rebound to the fixture for the call,
+        # because the real tree has no shipped file importing a lint module to plant.
+        _lb_real = M._output.LINTS_DIR
+        M._output.LINTS_DIR = lb_l
+        try:
+            lb_default = M.tests_import_violations(None, lb_h, lb_t)
+        finally:
+            M._output.LINTS_DIR = _lb_real
+        check("lb1b ...and with `script_dir` and `lints_dir` both left at their "
+              "defaults the directory asked about is `_output.LINTS_DIR`, so the "
+              "hook that imports a lint module is reported without the caller "
+              "naming it: %r" % (lb_default,),
+              [n for n, _w in lb_default] == ["hooks/hook_imports_lint.py"])
+        check("lb2 ...and a file that touches neither is not reported, and a "
+              "fixture `scripts/` handed in WITHOUT a lints directory is not "
+              "asked about the real one - the two directions of one rule, so a "
+              "check that fired on everything or on nothing fails here: %r"
+              % (M.tests_import_violations(lb_s, lb_h, lb_t),),
+              "scripts/clean.py" not in lb_named
+              and M.tests_import_violations(lb_s, lb_h, lb_t) == [])
+    finally:
+        for _d in (lb_s, lb_h, lb_t, lb_l):
+            shutil.rmtree(_d, ignore_errors=True)
+    check("lb3 the two lint modules are deliberately absent from LAYERS, and "
+          "`tests_import_violations()` over the real tree - which now reads "
+          "tools/lints/ as well - is the rule that replaces a position: %r"
+          % (sorted(set(M._all_names()) & set(os.path.basename(r)[:-3]
+                                              for r, _p in _output.py_files(
+                                                  M._output.LINTS_DIR))),),
+          not (set(M._all_names()) & set(os.path.basename(r)[:-3]
+                                         for r, _p in _output.py_files(
+                                             M._output.LINTS_DIR)))
+          and os.path.isfile(os.path.join(M._output.LINTS_DIR, "_deps.py")))
 
     # ---- which tree a hook reads the plan from (`ht*`) ------------------------
     # Fixtures in both directions: the shapes the hooks had (a reader beside
@@ -2339,19 +2402,19 @@ def _cases(check):
         with open(os.path.join(_disc_tmp, ".gitignore"), "w",
                   encoding="utf-8") as fh:
             fh.write("__pycache__/\n")
-        _disc_dir = os.path.join(_disc_tmp, "plugins", "audit", "tests")
+        _disc_dir = os.path.join(_disc_tmp, "tests")
         os.makedirs(_disc_dir)
         with open(os.path.join(_disc_dir, "test__output.py"), "w",
                   encoding="utf-8") as fh:
             fh.write("# F909 a real citation, not this scanner's own fixture\n")
         _disc_hits = M.register_citation_violations(_disc_tmp)
         check("rc17 a path the prose-number scan exempts for ITS OWN reason - "
-              "`plugins/audit/tests/test__output.py` - carries no row of its own "
+              "`tests/test__output.py` - carries no row of its own "
               "in `CITATION_SCAN_EXEMPT`, so a real citation placed there is "
               "still found. This is the case that goes red the day the citation "
               "scan is made to read `_output.PROSE_SCAN_EXEMPT` again instead of "
               "its own table: %r" % (_disc_hits,),
-              _disc_hits == [("plugins/audit/tests/test__output.py", 1,
+              _disc_hits == [("tests/test__output.py", 1,
                               "F909")])
     finally:
         shutil.rmtree(_disc_tmp, ignore_errors=True)
@@ -2400,9 +2463,9 @@ def _cases(check):
           not _cs_bad and not _cs_dead
           and len(_cs_rows) == len(set(p for p, _w in _cs_rows))
           and _output.prose_scan_exemption(
-                  "plugins/audit/tests/test__deps.py", _cs_rows) is not None
+                  "tests/test__deps.py", _cs_rows) is not None
           and _output.prose_scan_exemption(
-                  "plugins/audit/tests/test__output.py", _cs_rows) is None
+                  "tests/test__output.py", _cs_rows) is None
           and _output.prose_scan_exemption("CHANGELOG.md", _cs_rows) is not None)
 
 

@@ -71,7 +71,7 @@ Hard rules (non-negotiable):
   verbatim. It is not a failed proof and costs no retry. `proved` is a red you
   watched; `not-attempted` says why none was owed. These three words are the schema's
   `redFirst.status` enum, held by `red_first_vocabulary_drift()` in
-  `plugins/audit/scripts/_refs.py`; the reviewer's `not-proved` is never yours.
+  `tools/lints/_refs.py` (in the source repository, which the installed copy does not carry); the reviewer's `not-proved` is never yours.
 - **You never commit, push, tag or amend**, never run `git reset`, `rebase` or `clean`
   (those need a human's confirmation), and **NEVER run `git stash`** — the tree is
   shared and a stash destroys siblings' work. Read a baseline with `git diff` or

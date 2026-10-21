@@ -175,7 +175,7 @@ Exit codes:
      explain for the id
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_drive_phase.py`.
+`tests/test_drive_phase.py`.
 
 Stdlib only, Python 3.8 compatible.
 """
@@ -1222,7 +1222,7 @@ def _carries(base, token):
 def can_run_tests(command):
     """Whether an unclassified gate entry could run tests: it carries a known
     test-runner token, or names a suite FILE (a word whose last segment has an
-    extension and reads as a suite - a directory such as `plugins/audit/tests`
+    extension and reads as a suite - a directory such as `tests`
     handed to a linter is not one)."""
     words, base = _bases(command)
     if any(_carries(base, token) for token in TEST_RUNNER_TOKENS):
@@ -5628,7 +5628,7 @@ if __name__ == "__main__":
         # does NOT print the `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("drive-phase.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test_drive_phase.py - run that file instead.")
+              "tests/test_drive_phase.py - run that file instead.")
         sys.exit(0)
     if _output.own_args(sys.argv[1:])[:1] == ["brief"]:
         # A record, not a step: `terse_cli` would hold it and print it again

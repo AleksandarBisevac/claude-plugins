@@ -3,7 +3,7 @@
 The house helpers `tools/` may not copy, as reached from here - and the rules that
 keep them here.
 
-WHY A BRIDGE RATHER THAN A SECOND RUNNER. `plugins/audit/tests/_harness.py` owns
+WHY A BRIDGE RATHER THAN A SECOND RUNNER. `tests/_harness.py` owns
 `run()`: the `N/M cases passed` contract, the escape guard that turns a raised fixture
 into a named failing case with every case already recorded still printed, and the
 case-id uniqueness check. Every suite under `tests/` inherited all of it and every tool
@@ -65,7 +65,7 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(_HERE)
 TOOLS_DIR = _HERE
-TESTS_DIR = os.path.join(REPO, "plugins", "audit", "tests")
+TESTS_DIR = os.path.join(REPO, "tests")
 
 if TESTS_DIR not in sys.path:
     sys.path.insert(0, TESTS_DIR)

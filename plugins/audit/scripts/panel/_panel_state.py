@@ -46,7 +46,7 @@ half of that promise: a name that moved into one of the six modules is bound her
 too, so `_panel_state.<name>` still resolves.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__panel_state.py` - see `plugins/audit/tests/_harness.py`.
+`tests/test__panel_state.py` - see `tests/_harness.py`.
 The `--name-only` SECURITY case moved with `_git_config_origins` and now slices
 `_panel_viewer.py` from `tests/test__panel_viewer.py`.
 
@@ -629,6 +629,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_panel_state.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__panel_state.py - run that file instead.")
+              "tests/test__panel_state.py - run that file instead.")
         raise SystemExit(0)
     print(__doc__.strip())

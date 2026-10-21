@@ -75,7 +75,7 @@ only one it reports. With --learn-from there is no runner's verdict, so a
 failed verb is the answer.
 
 This module carries no `--selftest` of its own; its cases live in
-plugins/audit/tests/test_full_gate.py.
+tests/test_full_gate.py.
 
 Stdlib only, Python 3.8 compatible.
 """
@@ -708,6 +708,6 @@ if __name__ == "__main__":
     safe_stdio()
     if selftest_requested(sys.argv[1:]):
         print("full-gate.py: cases live in "
-              "plugins/audit/tests/test_full_gate.py")
+              "tests/test_full_gate.py")
         raise SystemExit(0)
     raise SystemExit(main(sys.argv[1:]))

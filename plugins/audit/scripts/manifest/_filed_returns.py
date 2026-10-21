@@ -56,7 +56,7 @@ WHAT NOTHING HERE CHECKS: the task id, the role and the head are the caller's
 word.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__filed_returns.py` - see `plugins/audit/tests/_harness.py`.
+`tests/test__filed_returns.py` - see `tests/_harness.py`.
 
 Stdlib only, Python 3.8 compatible.
 """
@@ -109,7 +109,7 @@ REVIEW_VERDICTS = ("clean", "findings")
 # The executor's red-first words: the schema's `redFirst.status` enum, which is
 # the one source. Written here because the plugin runs from an installed copy,
 # where the schema is not where the repository's lint reads it;
-# `fr7` in `plugins/audit/tests/test__filed_returns.py` holds this tuple equal to
+# `fr7` in `tests/test__filed_returns.py` holds this tuple equal to
 # the enum.
 RED_FIRST_WORDS = ("proved", "could-not-prove", "not-attempted")
 
@@ -743,7 +743,7 @@ def return_digest(path):
     """sha256:<hex> of `path`'s bytes, spelled exactly as `_journal_io.file_hash`
     spells a row's `stateHash` - duplicated rather than imported, for the layer
     reason `RETURN_FILED_ACTION`'s note states, and pinned equal to it by a case
-    in `plugins/audit/tests/test__filed_returns.py` so the two spellings cannot
+    in `tests/test__filed_returns.py` so the two spellings cannot
     drift apart in silence. None when `path` cannot be read."""
     try:
         h = hashlib.sha256()

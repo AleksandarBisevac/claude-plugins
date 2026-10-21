@@ -24,8 +24,8 @@ names nothing can never be satisfied, and a reference that names something in a
 cycle can never be satisfied either.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__manifest_crossrefs.py` - see
-`plugins/audit/tests/_harness.py`.
+`tests/test__manifest_crossrefs.py` - see
+`tests/_harness.py`.
 """
 import os
 import sys
@@ -1062,6 +1062,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_manifest_crossrefs.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__manifest_crossrefs.py - run that file instead.")
+              "tests/test__manifest_crossrefs.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

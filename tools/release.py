@@ -112,7 +112,7 @@ DEFAULT_POLL_INTERVAL = 15
 # --- loading the files this script reads rather than restates -----------------
 def _load_module(name, path):
     """A module loaded by file path - the same pattern `tools/sweep-selftests.py`
-    uses to drive `plugins/audit/tests/_harness.py` without putting it on
+    uses to drive `tests/_harness.py` without putting it on
     `sys.path` for every caller."""
     import importlib.util
     spec = importlib.util.spec_from_file_location(name, path)

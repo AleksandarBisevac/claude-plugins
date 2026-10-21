@@ -10496,9 +10496,9 @@ def _base_red_cases(check):
         # on one file and 05:41:28Z.21bec2, at the same head, on that file and
         # one more - each tail verbatim from the evidence ledger.
         sweep = [("selftests", "python3 tools/sweep-selftests.py")]
-        refs, drive = ("plugins/audit/tests/test__refs.py",
-                       "plugins/audit/tests/test_drive_phase.py")
-        tail = ("PASS plugins/audit/tests/test_drive_phase.py: every file the "
+        refs, drive = ("tests/test__refs.py",
+                       "tests/test_drive_phase.py")
+        tail = ("PASS tests/test_drive_phase.py: every file the "
                 "drive and its fixtures write in text mode names [truncated]\n"
                 "SELFTEST FAILED: %s/%s cases passed\n%s"
                 "%s/340 files ok, 155 migrated to tests, %s cases\n")

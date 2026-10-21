@@ -257,18 +257,18 @@ def _sweep_line(ok, files, migrated, cases, slash=""):
 _SWEEP_EXITED = "\n".join((
     "PASS sb1m RED TWIN: a block lifted into a stage while its caller still "
     "calls it reads as doubled, a block no [truncated]",
-    "PASS plugins/audit/tests/test_drive_phase.py: every file the drive and "
+    "PASS tests/test_drive_phase.py: every file the drive and "
     "its fixtures write in text mode names [truncated]",
     "SELFTEST FAILED: 378/379 cases passed",
-    "FAIL  plugins/audit/tests/test__refs.py: exited 1",
-    "FAIL  plugins/audit/tests/test_drive_phase.py: exited 1",
+    "FAIL  tests/test__refs.py: exited 1",
+    "FAIL  tests/test_drive_phase.py: exited 1",
     _sweep_line(338, 340, 155, 15755))) + "\n"
 _SWEEP_TIMEOUT = "\n".join((
     "  ok      tools/sweep-selftests.py                                   "
     "%d cases  [30.0s]" % (100,),
-    "--- plugins/audit/tests/test_drive_phase.py: did not finish within 674s ---",
+    "--- tests/test_drive_phase.py: did not finish within 674s ---",
     "did not finish within 674s",
-    "FAIL  plugins/audit/tests/test_drive_phase.py: did not finish within 674s",
+    "FAIL  tests/test_drive_phase.py: did not finish within 674s",
     _sweep_line(339, 340, 155, 16016))) + "\n"
 
 
@@ -283,9 +283,9 @@ def _sweep_cases(check):
           "order, and its summary line is read for the files it graded - the "
           "PASS line, the house tally and the `--- <path>: <why> ---` header "
           "name none: %r / %r / %r" % (exited, hung, tally),
-          exited == [("plugins/audit/tests/test__refs.py", "exited 1"),
-                     ("plugins/audit/tests/test_drive_phase.py", "exited 1")]
-          and hung == [("plugins/audit/tests/test_drive_phase.py",
+          exited == [("tests/test__refs.py", "exited 1"),
+                     ("tests/test_drive_phase.py", "exited 1")]
+          and hung == [("tests/test_drive_phase.py",
                         "did not finish within 674s")]
           and tally == {"ok": 338, "files": 340, "migrated": 155,
                         "cases": 15755})
@@ -293,7 +293,7 @@ def _sweep_cases(check):
     # ledger's copies above carry none.
     green = "\n".join(("  ok      tools/where.py   %d cases" % (7,),
                        _sweep_line(341, 341, 155, 16040, "/")))
-    cut = "\n".join(("FAIL  plugins/audit/tests/test__refs.py: exited 1",
+    cut = "\n".join(("FAIL  tests/test__refs.py: exited 1",
                      _sweep_line(338, 340, 155, 15755, "/")))
     house = ("PASS pl1 first case\nFAIL  pl2 second case: why\n"
              "SELFTEST FAILED: 1/2 cases passed\n")

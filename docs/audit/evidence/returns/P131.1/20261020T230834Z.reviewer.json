@@ -1,0 +1,25 @@
+{
+ "findings": [
+  {"id": 1, "severity": "med", "file": "whole diff (git diff HEAD -M --numstat): tools/gate-parity.py, tools/lints/_refs.py, plugins/audit/scripts/_output.py, tools/sweep-selftests.py, tools/prove-gates.py, tools/affected.py",
+   "issue": "contradicts task clause: the acceptance line 'the whole repo changes by less than 0.5k lines' is not met. Excluding docs/audit and .github/sweep-costs.json the diff is 1655 insertions and 862 deletions (git diff HEAD -M --numstat); the executor's own outcome lists it under NOT MET (a). Most of it is the mechanical repoint plus new logic (_output LINTS_DIR/moved_file_target, _refs suite anchor, gate-parity ld1-ld7, sweep sr1-sr3), so the clause as written is probably unachievable, but the filed return does not say the clause is wrong, only that it is unmet.",
+   "resolution": "Either the orchestrator amends the clause (state the real bound, e.g. 'the mechanical repoint plus the named new logic, measured as numstat outside docs/audit') with the measurement recorded, or the task is reopened to split the new logic out. Do not leave it silently passing."},
+  {"id": 2, "severity": "low", "file": "CLAUDE.md:150,205,301",
+   "issue": "Item (7) is by design left to the owner: CLAUDE.md still names plugins/audit/tests/ in three places, and .claude/skills/writing-python/SKILL.md (not in the task's files) does not mention LINTS_DIR. The tree is therefore internally stale until the owner applies the drafted lines; the draft is in the outcome.",
+   "resolution": "Owner applies the drafted CLAUDE.md edits in the same landing; the orchestrator adds writing-python/SKILL.md LINTS_DIR to the follow-up."},
+  {"id": 3, "severity": "low", "file": "task return: gates",
+   "issue": "The filed return records only gates.selftests = pass. plugin-validate, gate, report, shots, interactive and vitest are in tests.gate and were not run by the executor (it says 'own-tests reading'). The brief records the gate run as passed (runId 2026-10-21T01:06:24Z.a4ffb1) but I was not handed which commands it ran, and the acceptance item 'installed cache holds no tests/' was not run (tracked-files half verified by me: git ls-files plugins/audit | grep -c /tests/ = 0).",
+   "resolution": "Confirm the recorded run covered every tests.gate entry (cat the run's evidence rows), and run the /audit:version install check after the landing."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "diverges",
+  "note": "The diff does items (1)-(6): git mv of the suites to tests/ (159 tracked files; git ls-files plugins/audit | grep -c /tests/ = 0, plugins/audit/tests absent on disk), _deps.py and _refs.py to tools/lints/, _output.LINTS_DIR beside TESTS_DIR, a suite-name anchor in _refs, verify.sh ruff/vermin lists 'ruff check plugins/audit tools tests' and 'vermin ... tests tools/lints', sweep-costs.json re-keyed (I flattened old and new: 334 keys each, identical after the two path substitutions, values unchanged), docs/audit, CHANGELOG and docs/research untouched, CLAUDE.md not edited and drafted in the outcome. It also fixes a hazard the description did not name and that matters: audit-task.py, a shipped script, imported _refs, which would raise ImportError in an installed copy once _refs left the plugin; the diff moves moved_file_target into _output and audit-task asks _output (git grep finds no remaining shipped importer of _deps/_refs). Divergence: clause 'the whole repo changes by less than 0.5k lines' is unmet (1655/862 outside docs/audit and sweep-costs), which the executor discloses; and 'the installed cache ... holds no tests/' was not run. The executor's outcome otherwise describes the diff I read (counts of files, anchors, LINTS_DIR default scopes, retired_suite_files, lint_dir_findings). Stamp: stamp-verification.py compare on the filed stamp gives VERDICT stale (scopeDigest moved; head, dirtyDigest, content agree), most likely the plan/shard files in the declared scope moving after the gate, so claims resting on that stamp are unverified by me.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "tests.mode is regression with expectRedFirst false, so no red-first is owed; the executor's basis (inline suites hold the cases beside the fix, a throwaway tree cannot go red) is quoted from its filed return and holds. It reports mutation evidence in a copy (sr1, sr2, ld1, ld2, ld6 each red with baseline exit 0) - not a proved, and I did not rerun it.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate's selftests entry is 'python3 tools/sweep-selftests.py', a whole-project run, and the other entries are validate, plugin-validate, gate, report, lint, shots, interactive and vitest, none a bounded selection of test files, so the question has no bounded set of tests to ask about."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

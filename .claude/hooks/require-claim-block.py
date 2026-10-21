@@ -55,7 +55,7 @@ COVERED = (
     lambda p: p.endswith(".md"),
     lambda p: p.endswith(".py") and (
         p.startswith("plugins/audit/hooks/") or p.startswith("plugins/audit/scripts/")
-        or p.startswith("plugins/audit/tests/") or p.startswith("tools/")
+        or p.startswith("tests/") or p.startswith("tools/")
         or p.startswith(".claude/hooks/")),
 )
 

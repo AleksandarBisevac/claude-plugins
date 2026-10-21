@@ -52,7 +52,7 @@ DETERMINISTIC BY CONSTRUCTION. A fixed seed, a fixed base date, no wall-clock. T
 validator's rules are respected by construction rather than by luck — in
 particular a `done` phase never contains an unfinished task, which is the
 constraint that makes naive random status assignment produce an invalid manifest.
-`plugins/audit/tests/test_gen_demo_manifest.py` pins determinism, referential
+`tests/test_gen_demo_manifest.py` pins determinism, referential
 integrity, schema coverage and that constraint - this file carries no inline
 `--selftest` any more, and its cases live there with byte-identical labels. The
 count they once stood at is deliberately not written here: it rots, and this
@@ -2454,7 +2454,7 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("gen-demo-manifest.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_gen_demo_manifest.py - run that file "
+              "tests/test_gen_demo_manifest.py - run that file "
               "instead.")
         raise SystemExit(0)
     raise SystemExit(main(sys.argv[1:]))

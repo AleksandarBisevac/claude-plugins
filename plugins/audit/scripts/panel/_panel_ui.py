@@ -44,8 +44,8 @@ other, so the directory, the `newline=""` open, the CR check and the
 is the panel's own half: the markers, the splice, and what it pins about them.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test__panel_ui.py`, byte-identical labels and all - see
-`plugins/audit/tests/_harness.py`.
+`tests/test__panel_ui.py`, byte-identical labels and all - see
+`tests/_harness.py`.
 """
 import os
 import sys
@@ -202,6 +202,6 @@ if __name__ == "__main__":
         # suite contract - that literal is how `_output.selftest_coverage()`
         # tells an inline suite from a migrated one.
         print("_panel_ui.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__panel_ui.py - run that file instead.")
+              "tests/test__panel_ui.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

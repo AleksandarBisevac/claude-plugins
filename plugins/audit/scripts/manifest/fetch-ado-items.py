@@ -14,7 +14,7 @@ work-item show`, which takes a single `--id`. The instruction asked for a batch
 and named a per-item command, so the implementation looped: 62 linked items,
 eleven minutes, one CLI start-up each. A sentence cannot be held to a chunk size,
 a field list or a time bound; a module can, and
-`plugins/audit/tests/test_fetch_ado_items.py` holds it to all three.
+`tests/test_fetch_ado_items.py` holds it to all three.
 
 WHY IT IS A GATE, UNLIKE `explain-ado-drift.py`. That command exits 0 whatever the
 answer, because "somebody else moved this card" is the normal state of a shared
@@ -40,7 +40,7 @@ reads, minus `mapped` - that field is the manifest status translated through
 would be a second answer.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_fetch_ado_items.py`.
+`tests/test_fetch_ado_items.py`.
 """
 import json
 import os
@@ -229,7 +229,7 @@ if __name__ == "__main__":
         # print the `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("fetch-ado-items.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test_fetch_ado_items.py - run that file "
+              "tests/test_fetch_ado_items.py - run that file "
               "instead.")
         sys.exit(0)
     sys.exit(main(sys.argv[1:]))

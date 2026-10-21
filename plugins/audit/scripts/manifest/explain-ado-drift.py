@@ -53,7 +53,7 @@ here; the loader is where the two layouts are made to read the same, and going
 around it is how a consumer stops being layout-agnostic without anything saying so.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_explain_ado_drift.py`.
+`tests/test_explain_ado_drift.py`.
 """
 import json
 import os
@@ -276,7 +276,7 @@ if __name__ == "__main__":
         # print the `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("explain-ado-drift.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test_explain_ado_drift.py - run that file "
+              "tests/test_explain_ado_drift.py - run that file "
               "instead.")
         sys.exit(0)
     sys.exit(main(sys.argv[1:]))

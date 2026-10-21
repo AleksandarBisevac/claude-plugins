@@ -644,10 +644,10 @@ A promise nothing checks is a sentence. These run on every push:
   validates two real manifests with it — the starter template, which is single-file,
   and this repository's own dogfooded plan, which is sharded. One release cannot
   quietly stop reading one shape.
-- `plugins/audit/tests/test__manifest_io.py` pins the round-trip: a single-file
+- `tests/test__manifest_io.py` pins the round-trip: a single-file
   manifest split into an index plus shards and reassembled is the manifest it started
   as.
-- `plugins/audit/tests/test__manifest_rules.py` pins that `meta` keys from named
+- `tests/test__manifest_rules.py` pins that `meta` keys from named
   earlier releases stay silent, and that an unrecognised key warns rather than fails.
 - The config key sets are owned in one place, and the control panel's Settings
   coverage is **derived** from them rather than hand-listed — so a key the plugin

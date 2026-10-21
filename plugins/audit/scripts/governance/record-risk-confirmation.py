@@ -81,7 +81,7 @@ Exit codes:
      open high-risk task for an answer to be about
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_record_risk_confirmation.py`.
+`tests/test_record_risk_confirmation.py`.
 
 Stdlib only, Python 3.8 compatible.
 """
@@ -319,7 +319,7 @@ if __name__ == "__main__":
     safe_stdio()
     if selftest_requested(sys.argv[1:]):
         print("record-risk-confirmation.py has no inline --selftest; its cases live "
-              "in plugins/audit/tests/test_record_risk_confirmation.py - run that "
+              "in tests/test_record_risk_confirmation.py - run that "
               "file instead.")
         sys.exit(0)
     raise SystemExit(main(sys.argv[1:]))

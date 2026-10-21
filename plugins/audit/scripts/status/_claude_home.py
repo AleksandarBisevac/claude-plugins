@@ -419,6 +419,6 @@ if __name__ == "__main__":
     safe_stdio()
     if selftest_requested(sys.argv[1:]):
         print("_claude_home.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__claude_home.py - run that file instead.")
+              "tests/test__claude_home.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

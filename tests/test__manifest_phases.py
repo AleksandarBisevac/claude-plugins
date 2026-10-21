@@ -218,8 +218,8 @@ def _cases(check):
          "in_progress task", "test_audit_task.py"),
         ("check-git-pipeline.py: the route against a real git repository",
          "check-git-pipeline.py"),
-        ("plugins/audit/tests/test__refs.py: a doc telling you to print output "
-         "verbatim", "plugins/audit/tests/test__refs.py"),
+        ("tests/test__refs.py: a doc telling you to print output "
+         "verbatim", "tests/test__refs.py"),
         ("tests/q.test.ts", "tests/q.test.ts"),
         # Both live `files` entries in this repository's plan, and neither
         # carries an extension - which is the whole reason the dotfile arm
@@ -671,8 +671,8 @@ def _cases(check):
     _tr_mentions = [
         ("a case in tests/cart.spec.ts for stacked discounts",
          ["tests/cart.spec.ts"]),
-        ("covers `plugins/audit/tests/test__refs.py` end to end",
-         ["plugins/audit/tests/test__refs.py"]),
+        ("covers `tests/test__refs.py` end to end",
+         ["tests/test__refs.py"]),
         ("see (src/cart/total.ts), which rounds half-up",
          ["src/cart/total.ts"]),
         ("tests/a.spec.ts asserts what src/a.ts computes",
@@ -1264,10 +1264,10 @@ def _cases(check):
     # paths: a spelled sweep entry names suites too, and a suite may be given a
     # non-suite argument.
     _gx_ask = getattr(M, "gate_entry_shape_problem", lambda *a: "missing")
-    _gx_two = ("python3 plugins/audit/tests/test__config.py "
-               "plugins/audit/tests/test_commit_task_work.py")
-    _gx_twice = "python3 plugins/audit/tests/test__config.py " \
-                "plugins/audit/tests/test__config.py"
+    _gx_two = ("python3 tests/test__config.py "
+               "tests/test_commit_task_work.py")
+    _gx_twice = "python3 tests/test__config.py " \
+                "tests/test__config.py"
     _gx_repeat = ("python3 tools/sweep-selftests.py a/test_x.py a/test_y.py "
                   "a/test_x.py")
     _gx_bad = [_gx_ask(e) for e in (_gx_two, _gx_twice, _gx_repeat)]
@@ -1275,8 +1275,8 @@ def _cases(check):
     _gx_quiet = [(e, _gx_ask(e, _gx_keys)) for e in (
         "python3 a/test_x.py a/test_y.py",
         "python3 tools/sweep-selftests.py a/test_x.py a/test_y.py",
-        "python3 plugins/audit/tests/test__config.py",
-        "python3 plugins/audit/tests/test__config.py --selftest",
+        "python3 tests/test__config.py",
+        "python3 tests/test__config.py --selftest",
         "python3 a/test_x.py --out report.json",
         "node tools/check.mjs a/test_x.py a/test_y.py", "lint", "npm test", "")]
     check("gx1 the gate-entry shape predicate reports an entry whose first path "

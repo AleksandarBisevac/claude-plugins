@@ -26,7 +26,7 @@ and decides the verdict - and the harness docstring says such a wrapper stays wi
 the cases that need it rather than moving into the shared runner. It cannot ALSO be
 called `check`, because the rest are direct verdicts, so the harness's own callback
 is `record(label, cond, detail)` here and the wrapper calls it. Re-derive the split
-with `grep -c '^    check(' plugins/audit/tests/test__manifest_rules.py`. The direct
+with `grep -c '^    check(' tests/test__manifest_rules.py`. The direct
 ones used to spell `results.append(ok)` followed by a hand-rolled `print`; they are
 `record(...)` calls now, with the label and the detail split exactly where the
 format string split them.

@@ -143,7 +143,7 @@ already bound to one task. The index lock exists for the file every structural
 command in the repository writes, and this commit refuses that file.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_commit_task_work.py`.
+`tests/test_commit_task_work.py`.
 
 Stdlib only, Python 3.8 compatible.
 """
@@ -1150,7 +1150,7 @@ if __name__ == "__main__":
         # print the `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("commit-task-work.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test_commit_task_work.py - run that file "
+              "tests/test_commit_task_work.py - run that file "
               "instead.")
         sys.exit(0)
     sys.exit(_output.terse_cli(main, sys.argv[1:], success_line))

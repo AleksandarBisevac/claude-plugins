@@ -344,7 +344,7 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    meets it first.
 
    **Two things this never does, and the cases that hold them are in
-   `plugins/audit/tests/test_run_test_gate.py` — run it with `--selftest`.** It never retries a
+   `tests/test_run_test_gate.py` (in the source repository; the installed copy carries no suite) — run it with `--selftest`.** It never retries a
    step that exited non-zero **having printed its own end-of-run report**, whatever the exit code:
    a suite that reported has measured, and re-running a measurement until it comes back green is
    how a real failure becomes an infrastructure excuse. One report is the exception, and it is

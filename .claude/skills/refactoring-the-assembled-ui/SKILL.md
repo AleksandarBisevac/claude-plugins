@@ -1,6 +1,6 @@
 ---
 name: refactoring-the-assembled-ui
-description: Edit, split or share the CSS and JavaScript under plugins/audit/scripts/ui/ — files Python concatenates into one inline <style> and one inline <script> carrying code, in a self-contained page opened over file://. Covers the assembly contract and the byte-level pins in plugins/audit/tests/ that guard it, why the split must be an order-preserving cut rather than a regrouping, the index-slice assertions that make section-marker comments load-bearing, the counts that currently enforce duplication, choosing a feature a report may use (Baseline plus a file:// gate), one dialect and one shared layer across both surfaces, CSS token and naming conventions, and the browser gates that must stay green. Use when touching anything under scripts/ui/ or _ui_theme.py, when extracting a shared partial or module, when a rule or helper exists twice, or when a selftest pin goes red after a UI edit.
+description: Edit, split or share the CSS and JavaScript under plugins/audit/scripts/ui/ — files Python concatenates into one inline <style> and one inline <script> carrying code, in a self-contained page opened over file://. Covers the assembly contract and the byte-level pins in tests/ that guard it, why the split must be an order-preserving cut rather than a regrouping, the index-slice assertions that make section-marker comments load-bearing, the counts that currently enforce duplication, choosing a feature a report may use (Baseline plus a file:// gate), one dialect and one shared layer across both surfaces, CSS token and naming conventions, and the browser gates that must stay green. Use when touching anything under scripts/ui/ or _ui_theme.py, when extracting a shared partial or module, when a rule or helper exists twice, or when a selftest pin goes red after a UI edit.
 ---
 
 # Refactoring the assembled UI
@@ -55,7 +55,7 @@ single self-contained HTML page. Almost every surprise in this area comes from f
 ## Splitting: cut, never regroup
 
 The current statement order is a **machine-checked contract**, and the suites that hold it now
-live in `plugins/audit/tests/`, not in the scripts that build the page — index-bounded slices,
+live in `tests/`, not in the scripts that build the page — index-bounded slices,
 counted per file by `python3 tools/count-ui-pins.py`. A figure here once read "47 and 39" because
 it counted `.index()` CALLS, of which a slice takes two, so the count stays in the tool.
 
@@ -70,7 +70,7 @@ load-bearing source — they are the reason a marker cannot be reworded casually
 rather than trusting a count**, and use this query rather than writing your own:
 
 ```bash
-grep -rn '\.index("//' plugins/audit/tests/
+grep -rn '\.index("//' tests/
 ```
 
 An AST scan written for this was worse than the grep and under-reported, because it filtered on
@@ -128,7 +128,7 @@ pass untouched. That makes the cut provably behaviour-free.
 
 ## The pins are the budget
 
-Substring assertions guard the assembled artifacts, and they live in `plugins/audit/tests/`.
+Substring assertions guard the assembled artifacts, and they live in `tests/`.
 The split across targets is very uneven, so **budget by printing it, not by reading it here**:
 
 ```bash
@@ -215,7 +215,7 @@ Date()`), which constrains what a shared date helper may contain.
 
 ### Some pins currently enforce the duplication
 
-`plugins/audit/tests/test__panel_page.py:501` asserts `UI_HTML.count("'data-discard':'") == 4` and
+`tests/test__panel_page.py:501` asserts `UI_HTML.count("'data-discard':'") == 4` and
 `count("discard.disabled=!n;") == 3`. The five copy-pasted save/discard footers are therefore
 *required to be five*. Factoring them into one helper turns the suite red — correctly, because the
 pin is doing its job. **Deduplication here is always a paired change with `test__panel_page.py`,

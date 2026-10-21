@@ -31,8 +31,8 @@ Exit codes: 0 ok - 1 a backfill left a month file not rewritten cleanly -
 2 usage error / unreadable ledger.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test_audit_usage.py`, byte-identical labels and all - see
-`plugins/audit/tests/_harness.py`.
+`tests/test_audit_usage.py`, byte-identical labels and all - see
+`tests/_harness.py`.
 """
 import argparse
 import json
@@ -1257,6 +1257,6 @@ if __name__ == "__main__":
         # suite contract - that literal is how `_output.selftest_coverage()`
         # tells an inline suite from a migrated one.
         print("audit-usage.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_audit_usage.py - run that file instead.")
+              "tests/test_audit_usage.py - run that file instead.")
         raise SystemExit(0)
     raise SystemExit(main(sys.argv[1:]))

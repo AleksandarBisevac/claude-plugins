@@ -16,7 +16,7 @@ constant against a per-CALL one, so the gap widens with the board and never clos
 WHY THIS IS A MODULE AND NOT A PARAGRAPH IN `sync.md`. The chunk size, the field
 list and the bound are the three things a prose instruction cannot be held to - and
 the defect above was precisely a prose instruction nothing could check. Here they
-are values with cases against them: `plugins/audit/tests/test__ado_fetch.py` walks
+are values with cases against them: `tests/test__ado_fetch.py` walks
 the chunk boundary AT the size rather than under it, and proves the bound produces a
 NAMED outcome instead of a hang.
 
@@ -49,7 +49,7 @@ existing steps already depend on them:
     answers.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__ado_fetch.py`.
+`tests/test__ado_fetch.py`.
 """
 import json
 import os

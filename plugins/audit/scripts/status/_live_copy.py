@@ -25,7 +25,7 @@ checkout's own copy, because they certify or advise about it. This module only
 reads, and names the copy it read.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__live_copy.py` - see `plugins/audit/tests/_harness.py`.
+`tests/test__live_copy.py` - see `tests/_harness.py`.
 The cases that drive it through `/audit:status` stay in `test_audit_status.py`.
 """
 import json
@@ -622,6 +622,6 @@ if __name__ == "__main__":
         # print the cases-passed contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_live_copy.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__live_copy.py - run that file instead.")
+              "tests/test__live_copy.py - run that file instead.")
         raise SystemExit(0)
     print(__doc__.strip())

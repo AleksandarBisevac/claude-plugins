@@ -32,7 +32,7 @@ could prune it would be a command that could edit the evidence.
 Exit: 0 the prune ran (whatever the counts) - 1 it could not - 2 a usage error.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_audit_logs.py` - see `plugins/audit/tests/_harness.py`.
+`tests/test_audit_logs.py` - see `tests/_harness.py`.
 """
 import argparse
 import json
@@ -232,6 +232,6 @@ if __name__ == "__main__":
         # contract - that literal is how `_output.selftest_coverage()` tells an
         # inline suite from a migrated one.
         print("audit-logs.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_audit_logs.py - run that file instead.")
+              "tests/test_audit_logs.py - run that file instead.")
         raise SystemExit(0)
     raise SystemExit(main(sys.argv[1:]))

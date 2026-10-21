@@ -63,8 +63,8 @@ are still strictly above; `_report_md` stays beside this file, with no edge
 either way.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test__report_usage.py` - see
-`plugins/audit/tests/_harness.py`.
+`tests/test__report_usage.py` - see
+`tests/_harness.py`.
 """
 import json
 import os
@@ -298,5 +298,5 @@ if __name__ == "__main__":
         # suite contract - that literal is how `_output.selftest_coverage()`
         # tells an inline suite from a migrated one.
         print("_report_usage.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__report_usage.py - run that file instead.")
+              "tests/test__report_usage.py - run that file instead.")
     raise SystemExit(0)

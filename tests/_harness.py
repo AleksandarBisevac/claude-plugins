@@ -92,11 +92,19 @@ import time
 import traceback
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_PLUGIN_DIR = os.path.dirname(_HERE)
+# The suites sit at the repository root, beside the plugin and not inside it, so
+# the plugin is one level down from here. This is the one place a suite derives the
+# plugin's location from its own file: `_output` cannot be asked yet, because
+# finding it is what this block is for.
+_REPO_DIR = os.path.dirname(_HERE)
+_PLUGIN_DIR = os.path.join(_REPO_DIR, "plugins", "audit")
 
 TESTS_DIR = _HERE
 SCRIPTS_DIR = os.path.join(_PLUGIN_DIR, "scripts")
 HOOKS_DIR = os.path.join(_PLUGIN_DIR, "hooks")
+# `_deps` and `_refs` live outside the plugin and `install_path()` never adds this
+# directory, so a suite that imports either gets it from here.
+LINTS_DIR = os.path.join(_REPO_DIR, "tools", "lints")
 
 
 # --- path setup ---------------------------------------------------------------
@@ -115,7 +123,7 @@ def _install_paths(dirs):
     return added
 
 
-_install_paths((HOOKS_DIR, SCRIPTS_DIR))
+_install_paths((LINTS_DIR, HOOKS_DIR, SCRIPTS_DIR))
 
 import _output  # noqa: E402  (the anchor: reachable now that SCRIPTS_DIR is on the path)
 

@@ -269,7 +269,7 @@ def hook_files(hooks_dir=None):
     """The hooks whose import weight is gated: entry points, not the shared helper.
 
     `_config.py` is excluded because it is not invoked — it is what they all import,
-    and its own weight is asserted by `plugins/audit/tests/test__config.py`.
+    and its own weight is asserted by `tests/test__config.py`.
     """
     d = hooks_dir or HOOKS_DIR
     try:

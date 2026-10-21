@@ -47,6 +47,9 @@ here was a second reader of the same files:
     `longest` line records (`untimed_jobs()`, `job_bound_evidence()`).
   * every CI job pins its runner image: no `runs-on`, and no value of a matrix it
     reads, is a floating `*-latest` label (`floating_runners()`).
+  * ruff and vermin are pointed at the directories the code lives in: the suites
+    at the repository root and the two lint modules under `tools/lints/`, never
+    the directory the suites left (`lint_dir_findings()`, `lint_dir_verdict()`).
   * every reason-carrying exemption table names who audits it
     (`exemption_audit_drift()`).
 """
@@ -1087,8 +1090,8 @@ AUDITED_EXEMPTIONS = {
     # suites lint other files' source, so an auditor living in one is not a lesser
     # auditor - `r2` is the strongest row in this table, refusing a NEW debt and a
     # RETIRED one alike so the list may only shrink and only deliberately.
-    "KNOWN_LAYER_DEBT": ("reason", "plugins/audit/tests/test__deps.py r2"),
-    "EXCLUDED": ("live", "plugins/audit/tests/test__refs.py t2"),
+    "KNOWN_LAYER_DEBT": ("reason", "tests/test__deps.py r2"),
+    "EXCLUDED": ("live", "tests/test__refs.py t2"),
 }
 
 # ...and the tables the shape reaches that excuse nothing. `{subject: sentence}` is
@@ -1309,7 +1312,7 @@ def _instrument_missing(repo, who):
                     % (case, rel))
         return ""
     needle = "def %s(" % (who,)
-    for sub in _EXEMPTION_ROOTS + ("plugins/audit/tests",):
+    for sub in _EXEMPTION_ROOTS + ("tests",):
         base = os.path.join(root, sub.replace("/", os.sep))
         for dirpath, _dirs, files in os.walk(base):
             for fname in files:
@@ -1689,6 +1692,98 @@ def runner_image_verdict(repo=None):
     return got["findings"]
 
 
+# --- the directories ruff and vermin are pointed at -----------------------------
+# THE DIRECTORY LISTS LIVE IN ONE PLACE, `verify.sh`, and what that place says is a
+# claim about where the code is. The suites and the two lint modules left the
+# plugin, so a list still naming the old suite directory lints a directory that is
+# gone and silently stops linting the suites that moved - the cheap failure being
+# a `ruff` or `vermin` that exits 0 over fewer files than it did.
+#
+# `required` is by COVERAGE, not spelling: `tools` covers `tools/lints`, which is
+# why ruff's list does not have to name it. `retired` is a spelling that must not
+# come back, matched as a prefix so a subdirectory of it does not slip through.
+LINT_DIR_RULES = (
+    ("ruff", ("ruff", "check"), ("plugins/audit", "tools", "tests")),
+    ("vermin", ("vermin",), ("plugins/audit/scripts", "plugins/audit/hooks",
+                             "tests", "tools/lints")),
+)
+RETIRED_LINT_DIRS = ("plugins/audit/tests",)
+
+
+def _joined_commands(text):
+    """The command lines of a shell script with each `\\` continuation joined, so
+    an invocation spread over two lines is one string to read."""
+    out, pending = [], ""
+    for line in _shell_command_lines(text):
+        pending = (pending + " " + line).strip() if pending else line
+        if pending.endswith("\\"):
+            pending = pending[:-1].rstrip()
+            continue
+        out.append(pending)
+        pending = ""
+    if pending:
+        out.append(pending)
+    return out
+
+
+def _covers(listed, wanted):
+    """True when `wanted` is one of `listed` or sits under one of them."""
+    return any(wanted == one or wanted.startswith(one.rstrip("/") + "/")
+               for one in listed)
+
+
+def lint_dir_findings(text):
+    """{"findings": [(tool, why)], "read": [tool, ...]} for a `verify.sh` text.
+
+    Each rule in `LINT_DIR_RULES` names a tool whose command line must be found
+    and must cover every directory the rule requires; a command that is not there
+    is a finding rather than a pass, because a list nobody could read is not a
+    list somebody checked. A directory in `RETIRED_LINT_DIRS` named by any of the
+    commands is a finding, whatever else is listed beside it.
+    """
+    commands = _joined_commands(text)
+    findings, read = [], []
+    for tool, words, required in LINT_DIR_RULES:
+        found = None
+        for command in commands:
+            tokens = command.split()
+            for i in range(len(tokens) - len(words) + 1):
+                if tuple(tokens[i:i + len(words)]) == words:
+                    found = tokens[i + len(words):]
+                    break
+            if found is not None:
+                break
+        if found is None:
+            findings.append((tool, "verify.sh has no `%s` command, so the "
+                                   "directories it lints cannot be read"
+                             % " ".join(words)))
+            continue
+        read.append(tool)
+        listed = [w.strip("'\"") for w in found
+                  if not w.startswith("-") and w not in ("&&", "||", ";")]
+        for want in required:
+            if not _covers(listed, want):
+                findings.append((tool, "its directory list %r does not cover `%s`"
+                                 % (listed, want)))
+        for old in RETIRED_LINT_DIRS:
+            if any(_covers([old], one) for one in listed):
+                findings.append((tool, "its directory list still names `%s`, "
+                                       "a directory the suites left" % old))
+    return {"findings": findings, "read": read}
+
+
+def lint_dir_verdict(repo=None):
+    """`lint_dir_findings()` over the tree's `verify.sh` as [(tool, why)], an
+    unreadable runner AS a finding."""
+    path = os.path.join(repo or REPO, VERIFY_REL)
+    try:
+        with io.open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except (IOError, OSError, UnicodeDecodeError) as exc:
+        return [("verify.sh", "could not be read: %s" % (exc,))]
+    return lint_dir_findings(text)["findings"]
+
+
 def slice_verdict(repo=None):
     """`(slice findings, the parsed list or None, job count)` for the tree.
 
@@ -1709,7 +1804,7 @@ def slice_verdict(repo=None):
 
 
 def parity(repo=None):
-    """{"slices", "failmodes", "job_timeouts", "runner_images",
+    """{"slices", "failmodes", "job_timeouts", "runner_images", "lint_dirs",
     "stale_exemptions", "counts"}.
 
     The rules that are not slice questions ride here because this command is
@@ -1721,6 +1816,7 @@ def parity(repo=None):
             "failmodes": failmode_table_verdict(repo),
             "job_timeouts": job_timeout_verdict(repo),
             "runner_images": runner_image_verdict(repo),
+            "lint_dirs": lint_dir_verdict(repo),
             "stale_exemptions": exemption_audit_drift(repo),
             "counts": {"slices": len(listed["order"]) if listed else 0,
                        "jobs": jobs}}
@@ -1730,7 +1826,8 @@ def render(result, stream=None):
     """Print the verdict. Returns the exit code."""
     out = stream if stream is not None else sys.stdout
     bad = (result["slices"] + result["failmodes"] + result["job_timeouts"]
-           + result["runner_images"] + result["stale_exemptions"])
+           + result["runner_images"] + result["lint_dirs"]
+           + result["stale_exemptions"])
     out.write("gate parity: %d slice(s) listed by verify.sh --list, %d job(s) in "
               "ci.yml\n" % (result["counts"].get("slices", 0),
                             result["counts"].get("jobs", 0)))
@@ -1742,6 +1839,8 @@ def render(result, stream=None):
         out.write("  CI job bound (%s): %s\n" % (job, note))
     for job, note in result["runner_images"]:
         out.write("  CI runner image (%s): %s\n" % (job, note))
+    for tool, note in result["lint_dirs"]:
+        out.write("  lint directories (%s): %s\n" % (tool, note))
     for name, note in result["stale_exemptions"]:
         out.write("  exemption table (%s): %s\n" % (name, note))
     if not bad:
@@ -1751,8 +1850,9 @@ def render(result, stream=None):
                   "registers, every CI job carries a time bound two to three "
                   "times its longest recorded run (or the floor for a "
                   "sub-minute job), every CI job pins its runner image "
-                  "instead of a floating `-latest` label, and every exemption "
-                  "table names who audits it\n")
+                  "instead of a floating `-latest` label, ruff and vermin are "
+                  "pointed at the directories the code now lives in, and every "
+                  "exemption table names who audits it\n")
     return 1 if bad else 0
 
 
@@ -2219,13 +2319,14 @@ def _slice_cases(check):
                   for _s, why in absent["slices"]))
 
     clean = {"slices": [], "failmodes": [], "job_timeouts": [],
-             "runner_images": [],
+             "runner_images": [], "lint_dirs": [],
              "stale_exemptions": [], "counts": {"slices": 3, "jobs": 2}}
     for key, row, needle in (("slices", ("js", "no job runs it"), "js"),
                              ("failmodes", ("guard-edits / PreToolUse", "why"),
                               "guard-edits / PreToolUse"),
                              ("job_timeouts", ("lint", "no bound"), "lint"),
                              ("runner_images", ("e2e", "floats"), "e2e"),
+                             ("lint_dirs", ("vermin", "no tests"), "vermin"),
                              ("stale_exemptions", ("GONE", "outlived"), "GONE")):
         buf = io.StringIO()
         code = render(dict(clean, **{key: [row]}), stream=buf)
@@ -2435,6 +2536,80 @@ def _runner_image_cases(check):
           len(absent) == 1 and "could not be read" in absent[0][1])
 
 
+# A `verify.sh` fragment in the two shapes the real one has: `ruff` on one line and
+# `vermin` spread over two with a `\\` continuation, between comment lines that name
+# both tools and so must not be read as an invocation.
+_LD_GOOD = (
+    "# ruff check is run below, and vermin -t=3.8- after it\n"
+    "slice_lint() {\n"
+    "  run \"ruff\" ruff check plugins/audit tools tests\n"
+    "  run \"vermin (3.8 floor)\" vermin -t=3.8- --no-tips --violations \\\n"
+    "    plugins/audit/scripts plugins/audit/hooks tests tools/lints\n"
+    "}\n")
+_LD_OLD = _LD_GOOD.replace("tests tools/lints", "plugins/audit/tests")
+
+
+def _lint_dir_cases(check):
+    good = lint_dir_findings(_LD_GOOD)
+    check("ld1 the two directory lists name the suites at the repository root and "
+          "the lint modules under tools/lints, and a `\\` continuation is read as "
+          "part of its command: %r" % (good,),
+          good == {"findings": [], "read": ["ruff", "vermin"]})
+
+    old = lint_dir_findings(_LD_OLD)
+    check("ld2 the lists as they stood before the move - vermin naming the "
+          "suite directory inside the plugin and no tools/lints - are findings "
+          "that name the tool and the directory, one for what is missing and "
+          "one for the spelling that must not come back: %r" % (old,),
+          [tool for tool, _why in old["findings"]] == ["vermin", "vermin", "vermin"]
+          and any("tests" in why and "does not cover" in why
+                  for _tool, why in old["findings"])
+          and any("tools/lints" in why and "does not cover" in why
+                  for _tool, why in old["findings"])
+          and any("the suites left" in why for _tool, why in old["findings"]))
+
+    # The over-fire direction: a check that demanded every directory be SPELLED,
+    # or that flagged the repository root's `tests` for sharing a word with the
+    # retired path, goes red on this text and on nothing else here.
+    covered = lint_dir_findings(_LD_GOOD.replace("tests tools/lints", "tests tools"))
+    check("ld3 `tools` covers `tools/lints`, and `tests` is not the retired "
+          "`plugins/audit/tests`: a list that names the parent directory is "
+          "clean for vermin, and this names no finding: %r" % (covered,),
+          covered["findings"] == [])
+
+    missing = lint_dir_findings(_LD_GOOD.replace("run \"ruff\" ruff check", "run \"ruff\" echo"))
+    absent = lint_dir_findings("slice_lint() {\n  run x true\n}\n")
+    check("ld4 a runner with no `ruff check` command, or with neither tool, is a "
+          "NAMED finding per tool and the tool is not in `read` - an empty list "
+          "over a command nobody found would read as a clean one: %r / %r"
+          % (missing, absent),
+          [t for t, _w in missing["findings"]] == ["ruff"]
+          and missing["read"] == ["vermin"]
+          and [t for t, _w in absent["findings"]] == ["ruff", "vermin"]
+          and absent["read"] == [])
+
+    ruff_old = lint_dir_findings(_LD_GOOD.replace("plugins/audit tools tests",
+                                                  "plugins/audit tools"))
+    check("ld5 ruff's list without `tests` is a finding of its own, so the check "
+          "is not satisfied by vermin's list alone: %r" % (ruff_old,),
+          [t for t, _w in ruff_old["findings"]] == ["ruff"]
+          and "`tests`" in ruff_old["findings"][0][1])
+
+    check("ld6 THE LIVE CLAIM: this repository's verify.sh points ruff and vermin "
+          "at the directories the code lives in, and `parity()` renders that "
+          "verdict instead of omitting it: %r" % (lint_dir_verdict(),),
+          lint_dir_verdict() == [] and parity()["lint_dirs"] == []
+          and lint_dir_findings(io.open(os.path.join(REPO, VERIFY_REL),
+                                        encoding="utf-8").read())["read"]
+          == ["ruff", "vermin"])
+
+    gone = lint_dir_verdict(os.path.join(REPO, "no-such-repo-dir"))
+    check("ld7 a tree with no verify.sh is a NAMED finding, so the verdict "
+          "`parity()` renders cannot come back clean over a file nobody read: %r"
+          % (gone,),
+          len(gone) == 1 and "could not be read" in gone[0][1])
+
+
 # --- selftest -----------------------------------------------------------------
 def _cases(check):
     # --- the runner really runs what the selector names -----------------------
@@ -2585,7 +2760,7 @@ def _cases(check):
     _ea_case = exemption_audit_drift(
         audited=dict(AUDITED_EXEMPTIONS,
                      KNOWN_LAYER_DEBT=("reason",
-                                       "plugins/audit/tests/test__deps.py zz9")),
+                                       "tests/test__deps.py zz9")),
         not_exemptions=NOT_AN_EXEMPTION)
     check("ea6 ...and the same for an auditor named as a CASE, because half this "
           "tree's rules are cases in suites that lint another file's source - a "
@@ -2912,6 +3087,7 @@ def _cases(check):
     _slice_cases(check)
     _verify_slice_run_cases(check)
     _runner_image_cases(check)
+    _lint_dir_cases(check)
 
     # The verdict behind vsh5, in all its corners. The dash rows are the ones
     # that must stay red: a dash that left nothing is a control that stopped

@@ -16,7 +16,7 @@ for the output of a subprocess that is being quoted as the reason something
 failed. `_output.bare_output_cut_violations()` fails a head-only cut of a name
 bound from such output, so the next site cannot choose an end again.
 
-The cases for this file live in `plugins/audit/tests/test__excerpt.py`.
+The cases for this file live in `tests/test__excerpt.py`.
 Exit codes (as a command): 0 selftest pointer printed - 2 usage error.
 """
 import os
@@ -117,6 +117,6 @@ if __name__ == "__main__":
     safe_stdio()
     if selftest_requested(sys.argv[1:]):
         print("_excerpt.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__excerpt.py - run that file instead.")
+              "tests/test__excerpt.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

@@ -56,7 +56,7 @@ only. A task commit stages its declared files alone, so an undeclared file is
 not part of the work the verdict is bound to.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__verdict_binding.py`.
+`tests/test__verdict_binding.py`.
 """
 
 import json
@@ -704,7 +704,7 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_verdict_binding.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__verdict_binding.py - run that file "
+              "tests/test__verdict_binding.py - run that file "
               "instead.")
         sys.exit(0)
     print(__doc__.strip())

@@ -43,7 +43,7 @@ Exit codes: 0 every graded entry names a file (nothing owed, or the repair left
 none owed) - 1 entries still need a hand, or a refused apply - 2 usage/read error.
 
 This script carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_repair_tests_add.py` (hyphens become underscores - a
+`tests/test_repair_tests_add.py` (hyphens become underscores - a
 hyphenated name is not importable).
 """
 import json
@@ -386,7 +386,7 @@ if __name__ == "__main__":
     safe_stdio()
     if selftest_requested(sys.argv[1:]):
         print("repair-tests-add.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test_repair_tests_add.py - run that file "
+              "tests/test_repair_tests_add.py - run that file "
               "instead.")
         sys.exit(0)
     sys.exit(main(sys.argv[1:]))

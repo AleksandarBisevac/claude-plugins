@@ -44,7 +44,7 @@
     },
     {
       "id": 3,
-      "prompt": "Some projects wire a filesystem MCP server. In the repository, plugins/audit/hooks/guard-secrets-read.py does not refuse a `mcp__filesystem__read_text_file` call whose `path` is a `.env.production` file. Drive the hook with such a payload on stdin to confirm what happens today, then fix it. Keep the repo's rules (stdlib only, Python 3.8, no f-strings, selftest cases live in plugins/audit/tests/, plugins/audit/hooks/hooks.json is the wiring).",
+      "prompt": "Some projects wire a filesystem MCP server. In the repository, plugins/audit/hooks/guard-secrets-read.py does not refuse a `mcp__filesystem__read_text_file` call whose `path` is a `.env.production` file. Drive the hook with such a payload on stdin to confirm what happens today, then fix it. Keep the repo's rules (stdlib only, Python 3.8, no f-strings, selftest cases live in tests/, plugins/audit/hooks/hooks.json is the wiring).",
       "expected_output": "Driven before any edit; the fix decides from the operation (mcp__.* routed, path-shaped field resolved against the secret-path rule), not a branch keyed to one literal tool name; an allow case shown quiet; the deny case proven red-first.",
       "files": [],
       "expectations": [

@@ -61,7 +61,7 @@ through it. A sibling import added here would lift this module above the modules
 that depend on it, and the import-layer lint would refuse the tree by name.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test__loader.py` - see `plugins/audit/tests/_harness.py`. The
+`tests/test__loader.py` - see `tests/_harness.py`. The
 eleven that migrated kept byte-identical labels; the block that proves the basename
 index (depth, both refusals, and the fixture that puts a real `.py` one directory
 down) was added there, because a claim about resolution at depth cannot be tested
@@ -287,7 +287,7 @@ if __name__ == "__main__":
         # suite contract - that literal is how `_output.selftest_coverage()`
         # tells an inline suite from a migrated one.
         print("_loader.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__loader.py - run that file instead.")
+              "tests/test__loader.py - run that file instead.")
         raise SystemExit(0)
     sys.stderr.write("usage: _loader.py --selftest\n")
     raise SystemExit(2)

@@ -5090,7 +5090,7 @@ export function trivialLineDefault() {
  * quietly stopped covering part of what the hook writes would read as complete
  * from here, so the floor in both directions — a sentence the hook writes that
  * the table does not carry, and a table entry the hook cannot produce — is held
- * by cases in `plugins/audit/tests/test_require_plan.py`, beside the writer they
+ * by cases in `tests/test_require_plan.py`, beside the writer they
  * can see the whole of. This side keeps the half it can see: a table that is
  * empty, or an entry with no usable template in it, is a refusal and never a
  * shrug.

@@ -46,7 +46,7 @@ uninstall - 0 done, 1 refused, 2 usage. status - 0 installed and current, 1 not
 installed or stale, 2 usage.
 
 This script carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_merge_manifest.py`.
+`tests/test_merge_manifest.py`.
 """
 import argparse
 import json
@@ -538,7 +538,7 @@ def main(argv):
         # It deliberately does NOT print the `N/M cases passed` contract - that string
         # is how `_output.selftest_coverage()` tells an inline suite from a moved one.
         print("merge-manifest.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test_merge_manifest.py - run that file instead.")
+              "tests/test_merge_manifest.py - run that file instead.")
         return 0
     if argv and argv[0] == "driver":
         return driver_main(argv[1:])

@@ -68,7 +68,7 @@ Without `--project-dir` the project is the manifest's own
 typed in.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_import_evidence.py`.
+`tests/test_import_evidence.py`.
 
 Stdlib only, Python 3.8 compatible.
 """
@@ -547,7 +547,7 @@ if __name__ == "__main__":
         # print the `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("import-evidence.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test_import_evidence.py - run that file "
+              "tests/test_import_evidence.py - run that file "
               "instead.")
         sys.exit(0)
     sys.exit(main(sys.argv[1:]))

@@ -37,8 +37,8 @@ and the migration cannot disagree about which entries the rule reaches.
 `_manifest_rules` re-exports the group, so no call site knows where it sits.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__manifest_phases.py` - see
-`plugins/audit/tests/_harness.py`.
+`tests/test__manifest_phases.py` - see
+`tests/_harness.py`.
 """
 import json
 import os
@@ -1851,6 +1851,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_manifest_phases.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__manifest_phases.py - run that file instead.")
+              "tests/test__manifest_phases.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

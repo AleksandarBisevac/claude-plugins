@@ -879,6 +879,6 @@ if __name__ == "__main__":
     safe_stdio()
     if selftest_requested(sys.argv[1:]):
         print("_runner_output.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__runner_output.py - run that file instead.")
+              "tests/test__runner_output.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

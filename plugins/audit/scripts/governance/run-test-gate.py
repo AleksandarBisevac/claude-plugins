@@ -1605,7 +1605,7 @@ def ended_by_signal(exit_code, text, command=None):
     upper reaches of that band name no signal at all) and narrower INSIDE it -
     `SIGCHLD`, `SIGCONT`, `SIGURG` and `SIGWINCH` all live in there and nothing
     is ever killed by one. `TERMINATING_SIGNALS` above is the whole of that
-    judgement and `sk6` in `plugins/audit/tests/test_run_test_gate.py` is what
+    judgement and `sk6` in `tests/test_run_test_gate.py` is what
     prints the accepted codes, so neither has to be taken on trust from a
     sentence here.
 
@@ -5613,7 +5613,7 @@ if __name__ == "__main__":
     safe_stdio()
     if selftest_requested(sys.argv[1:]):
         print("run-test-gate.py: cases live in "
-              "plugins/audit/tests/test_run_test_gate.py")
+              "tests/test_run_test_gate.py")
         raise SystemExit(0)
     # `--full` keeps its long form, and streams it: `full-gate.py` hands this
     # run's lines to an operator watching a pre-push hook as they arrive.

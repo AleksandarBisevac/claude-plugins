@@ -21,7 +21,7 @@ and the same "never render real spend as $0.00" rule were typed out three times:
     was retired with it.
 
 Differences tabled BEFORE unifying (golden values run against the two originals,
-frozen in `plugins/audit/tests/test__fmt.py`, before either call site was touched):
+frozen in `tests/test__fmt.py`, before either call site was touched):
 
   fmt_tokens(942)                == "942"    (below 1000: both variants agree)
   fmt_tokens(1000)               == "1.0K"   (both variants: one decimal default)
@@ -108,8 +108,8 @@ Only the whole-is-0 inputs deliberately diverge from the originals, and that
 divergence is the point.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test__fmt.py`, byte-identical labels and all - see
-`plugins/audit/tests/_harness.py`.
+`tests/test__fmt.py`, byte-identical labels and all - see
+`tests/_harness.py`.
 """
 import os
 import sys
@@ -329,7 +329,7 @@ if __name__ == "__main__":
         # suite contract - that literal is how `_output.selftest_coverage()`
         # tells an inline suite from a migrated one.
         print("_fmt.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__fmt.py - run that file instead.")
+              "tests/test__fmt.py - run that file instead.")
         raise SystemExit(0)
     sys.stderr.write("usage: _fmt.py --selftest\n")
     raise SystemExit(2)

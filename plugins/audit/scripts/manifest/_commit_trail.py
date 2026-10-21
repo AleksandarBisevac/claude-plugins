@@ -27,7 +27,7 @@ Reads git, never writes it. The caller owns the lock, the journal row and the
 revalidation — this module answers and returns.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__commit_trail.py`.
+`tests/test__commit_trail.py`.
 """
 import os
 import shutil
@@ -383,6 +383,6 @@ if __name__ == "__main__":
     safe_stdio()
     if selftest_requested(sys.argv[1:]):
         print("_commit_trail.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__commit_trail.py - run that file instead.")
+              "tests/test__commit_trail.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

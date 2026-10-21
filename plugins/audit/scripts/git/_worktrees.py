@@ -35,7 +35,7 @@ running it is `close-phase.py`'s and `manage-worktrees.py`'s job, and the lock, 
 journal row and the revalidation are theirs too.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__worktrees.py`.
+`tests/test__worktrees.py`.
 """
 import json
 import os
@@ -1337,6 +1337,6 @@ if __name__ == "__main__":
     safe_stdio()
     if selftest_requested(sys.argv[1:]):
         print("_worktrees.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__worktrees.py - run that file instead.")
+              "tests/test__worktrees.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

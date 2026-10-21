@@ -58,8 +58,8 @@ Usage:
 Exit: Ctrl-C stops the server. --selftest reports where its cases went.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test_panel_server.py`, byte-identical labels and all - see
-`plugins/audit/tests/_harness.py`. Three of them slice THIS file's source at the
+`tests/test_panel_server.py`, byte-identical labels and all - see
+`tests/_harness.py`. Three of them slice THIS file's source at the
 handler's own method boundaries and at the first top-level def after the class, to
 tell a read route from a write one. Those boundaries are a contract, and
 `_harness.between()` raises rather than widening a slice when one moves. The
@@ -1087,7 +1087,7 @@ def main(argv):
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("panel-server.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_panel_server.py - run that file instead.")
+              "tests/test_panel_server.py - run that file instead.")
         return 0
     if args.settings_paths:
         print(json.dumps(_settings_paths()))

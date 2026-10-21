@@ -73,7 +73,7 @@ nobody has fetched it, every item reports `not verified` and the create proceeds
 because a missing basis is a thing to SAY and never a thing to guess around.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__ado_parent.py`.
+`tests/test__ado_parent.py`.
 """
 import os
 import sys
@@ -1053,6 +1053,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_ado_parent.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__ado_parent.py - run that file instead.")
+              "tests/test__ado_parent.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

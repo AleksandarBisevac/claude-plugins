@@ -58,7 +58,7 @@ invariant-breach` - and a baseline one of them honoured would let the same histo
 pass one and fail the other. Both ask `apply_baseline` which breaches count.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__invariants.py`.
+`tests/test__invariants.py`.
 """
 import json
 import os
@@ -2524,6 +2524,6 @@ if __name__ == "__main__":
     safe_stdio()
     if selftest_requested(sys.argv[1:]):
         print("_invariants.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__invariants.py - run that file instead.")
+              "tests/test__invariants.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

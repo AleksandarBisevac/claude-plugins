@@ -316,7 +316,7 @@ def _pytest(check, tmp):
           and _answer(quiet, "tests/helpers.py", "pytest") == M.NOT_COLLECTED)
 
 
-LANGUAGE_CLAUSE = ("plugins/audit/tests/test__runner_collects.py: the language split "
+LANGUAGE_CLAUSE = ("tests/test__runner_collects.py: the language split "
                    "the preflight uses sends a .py path to the sweep or pytest and a "
                    ".js/.mjs/.ts path to vitest or jest, and names no runner for a "
                    "path none of the gate's runners can take")

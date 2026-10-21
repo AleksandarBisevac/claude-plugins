@@ -55,7 +55,7 @@ Exit codes:
      confirmed (audit-lock's standard message)
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_migrate_json_encoding.py`.
+`tests/test_migrate_json_encoding.py`.
 
 Stdlib only, Python 3.8 compatible.
 """
@@ -367,7 +367,7 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("migrate-json-encoding.py has no inline --selftest; its cases live "
-              "in plugins/audit/tests/test_migrate_json_encoding.py - run that "
+              "in tests/test_migrate_json_encoding.py - run that "
               "file instead.")
         sys.exit(0)
     sys.exit(main(sys.argv[1:]))

@@ -18,8 +18,8 @@ derivation note, because the twin must not know months the page does not.
 below the Usage section's assembly instead of beside it.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__usage_markdown.py` - see
-`plugins/audit/tests/_harness.py`.
+`tests/test__usage_markdown.py` - see
+`tests/_harness.py`.
 """
 import os
 import sys
@@ -291,6 +291,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_usage_markdown.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__usage_markdown.py - run that file instead.")
+              "tests/test__usage_markdown.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

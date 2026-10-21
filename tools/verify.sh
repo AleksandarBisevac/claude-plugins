@@ -552,11 +552,11 @@ slice_lint() {
   # What each pipeline entry makes the main loop read before any work, against the
   # pipeline-cost design's ceilings.
   run "pipeline context ceilings" python3 tools/measure-context.py --gate
-  run "ruff" ruff check plugins/audit tools
+  run "ruff" ruff check plugins/audit tools tests
   # `-t=3.8-` carries the trailing dash on purpose: "the detected floor must not
   # exceed 3.8". A bare `-t=3.8` demands the floor EQUAL it.
   run "vermin (3.8 floor)" vermin -t=3.8- --no-tips --violations \
-    plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
+    plugins/audit/scripts plugins/audit/hooks tests tools/lints
   # Reads what git tracks and never prints what it matched: a public CI log echoing a
   # leak would be the same bug one layer out.
   run "committed artifacts carry no machine identity" python3 tools/check-committed-pii.py
@@ -1008,13 +1008,13 @@ slice_release() {
 # is re-derived when a suite's record changes. A suite leaves the list when the record
 # shows its class fixed, not when a draw happens to pass. A red draw on a green SHA is a
 # finding to file with /audit:bug: nothing files it automatically yet.
-RESAMPLE="plugins/audit/tests/test__journal_io.py:15
-plugins/audit/tests/test_panel_server.py:20
-plugins/audit/tests/test__locks.py:20
-plugins/audit/tests/test_audit_usage.py:10
+RESAMPLE="tests/test__journal_io.py:15
+tests/test_panel_server.py:20
+tests/test__locks.py:20
+tests/test_audit_usage.py:10
 .claude/hooks/guard-release.py:10
-plugins/audit/tests/test_run_test_gate.py:5
-plugins/audit/tests/test_stamp_verification.py:5"
+tests/test_run_test_gate.py:5
+tests/test_stamp_verification.py:5"
 
 # One pass sweeps every listed suite still owed a draw. A sweep that ran a different
 # number of files than it was handed is refused: a runner that ignored the list and

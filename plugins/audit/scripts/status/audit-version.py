@@ -290,6 +290,6 @@ if __name__ == "__main__":
     safe_stdio()
     if selftest_requested(sys.argv[1:]):
         print("audit-version.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test_audit_version.py - run that file instead.")
+              "tests/test_audit_version.py - run that file instead.")
         sys.exit(0)
     sys.exit(main(sys.argv[1:]))

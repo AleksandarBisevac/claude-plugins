@@ -40,8 +40,8 @@ verdict it also holds still arrives as the injected `verdict` callable, for the
 reason above: who owns the word, not which way an edge points.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test__report_page.py`, byte-identical labels and all - see
-`plugins/audit/tests/_harness.py`. One of them, `pg2c`, parses THIS file and
+`tests/test__report_page.py`, byte-identical labels and all - see
+`tests/_harness.py`. One of them, `pg2c`, parses THIS file and
 fails if it ever grows an `import _loader` or a `".py"` literal.
 """
 import base64
@@ -1120,5 +1120,5 @@ if __name__ == "__main__":
         # suite contract - that literal is how `_output.selftest_coverage()`
         # tells an inline suite from a migrated one.
         print("_report_page.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__report_page.py - run that file instead.")
+              "tests/test__report_page.py - run that file instead.")
     raise SystemExit(0)

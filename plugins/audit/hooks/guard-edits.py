@@ -75,9 +75,9 @@ PreToolUse protocol (the exit-2 + stderr channel is deprecated).
 Unexpected input exits 0 (never break legitimate work).
 
 This hook carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test_guard_edits.py` (hyphens become underscores - a
+`tests/test_guard_edits.py` (hyphens become underscores - a
 hyphenated name is not importable). A test of a hook may import from `scripts/`
-even though the hook itself may not; see `plugins/audit/tests/_harness.py`.
+even though the hook itself may not; see `tests/_harness.py`.
 """
 import json
 import os
@@ -386,7 +386,7 @@ def decide(data, *, cfg=None):
             if not prefix or not pattern:
                 continue
             # SUBSTRING, not a prefix — see the module docstring. Pinned by c3/c4
-            # in `plugins/audit/tests/test_guard_edits.py`, because four documents
+            # in `tests/test_guard_edits.py`, because four documents
             # said "starts with" while this line said something else for the whole
             # life of the hook.
             if prefix in path and re.search(pattern, text):
@@ -435,6 +435,6 @@ if __name__ == "__main__":
         # print the `N/M cases passed` contract - that string is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("guard-edits.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_guard_edits.py - run that file instead.")
+              "tests/test_guard_edits.py - run that file instead.")
         sys.exit(0)
     main()

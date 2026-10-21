@@ -26,7 +26,7 @@ decided three levels away is otherwise a branch nobody can explain. That is the
 house rule about a claim carrying what makes it true, applied to a name.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__branch.py`.
+`tests/test__branch.py`.
 """
 import os
 import re
@@ -418,6 +418,6 @@ if __name__ == "__main__":
     safe_stdio()
     if selftest_requested(sys.argv[1:]):
         print("_branch.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__branch.py - run that file instead.")
+              "tests/test__branch.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

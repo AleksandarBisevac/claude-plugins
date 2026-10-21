@@ -1783,7 +1783,7 @@ def _stdin_bytes_case(check):
     the driver's own copy of `subprocess` here translates the way Windows' text
     wrapper does, so a POSIX run sees what a Windows run files."""
     M, why = _load("drive_phase_windows_stdin")
-    label = ("plugins/audit/tests/test_drive_phase.py: a verb's stdin reaches "
+    label = ("tests/test_drive_phase.py: a verb's stdin reaches "
              "it as the exact UTF-8 bytes it was given, with no newline "
              "translation, so a return filed through submit is byte-identical "
              "on every platform (%r)")
@@ -4910,6 +4910,8 @@ def _drive_follower_map(M, prefix, sharded=False):
     shutil.copytree(_output.SCRIPTS_DIR,
                     os.path.join(root, "plugins", "audit", "scripts"),
                     ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(_output.LINTS_DIR, os.path.join(root, "tools", "lints"),
+                    ignore=shutil.ignore_patterns("__pycache__"))
     guide = "PLUGIN-BUILD-GUIDE.md"
     with open(os.path.join(_output.REPO_ROOT, guide), encoding="utf-8") as fh:
         text = fh.read()
@@ -4924,7 +4926,7 @@ def _drive_follower_map(M, prefix, sharded=False):
     tree, fresh = _tree_of(root, "P1.2"), None
     if tree:
         subprocess.run([sys.executable, os.path.join(
-            tree, "plugins", "audit", "scripts", "_deps.py"), "--write-map"],
+            tree, "tools", "lints", "_deps.py"), "--write-map"],
             cwd=tree, check=True, capture_output=True, timeout=120)
         fresh = _read(os.path.join(tree, guide)).decode("utf-8")
     for t in _dispatched(first):
@@ -5035,10 +5037,10 @@ def _shot_owner_wave(M, prefix):
     root, mpath = _wave_repo(prefix, 2)
     recipe = _SHOT_RECIPE
     _write_lf(os.path.join(root, "map.fresh"), "captured\n")
-    os.makedirs(os.path.join(root, "tools"))
     os.makedirs(os.path.join(root, "docs"), exist_ok=True)
     owner = [o for o in _evio.FOLLOWER_OWNERS if o.startswith("tools/")
              and o.endswith(".py")][0]
+    os.makedirs(os.path.join(root, *owner.split("/")[:-1]), exist_ok=True)
     _write_lf(os.path.join(root, *owner.split("/")), (
         "import json, sys\n"
         "for rel in sys.argv[2:]:\n"
@@ -6302,7 +6304,7 @@ def _signal_cases(check):
                  for (step, _said, extra), (_s, line) in zip(corpus, lines)]
     lost = [(step, line, got) for step, line, got, want in read_back
             if got != want]
-    check("plugins/audit/tests/test_drive_phase.py: every event stream-cost reads "
+    check("tests/test_drive_phase.py: every event stream-cost reads "
           "survives on the signal line, at the longest task ids the corpus holds "
           "(sn8: each of %d line(s) reads back every start, close, fix task, "
           "sign-off, landing and release its did-line holds; lost on %r)"
@@ -6455,7 +6457,7 @@ def _brief_difference_case(check):
     at = wrote.index("\r")
     said = _brief_difference("reviewer", wrote, shown)
     same = _brief_difference("executor", shown, shown)
-    check("plugins/audit/tests/test_drive_phase.py: a brief read back that "
+    check("tests/test_drive_phase.py: a brief read back that "
           "differs from the written brief is reported with its role, the first "
           "differing offset and both sides around it (%r)" % ((said, same),),
           same is None and isinstance(said, tuple) and len(said) == 4
@@ -6540,7 +6542,7 @@ def _signal_drive_cases(check):
                 wrote = fh.read().decode("utf-8", "replace")
             differ.append(_brief_difference(role, wrote.rstrip("\n"),
                                             shown.rstrip("\n")))
-        check("plugins/audit/tests/test_drive_phase.py: the brief command parsed out "
+        check("tests/test_drive_phase.py: the brief command parsed out "
               "of the printed dispatch prompt, run from a wave tree with no "
               "CLAUDE_PROJECT_DIR, prints that task's brief (sn6: the brief the "
               "drive wrote for that dispatch, byte for byte, for every agent of "
@@ -6656,7 +6658,7 @@ def _house_suite(cases):
     return "\n".join(body) + "\n"
 
 
-CARRY_CLAUSE = ("plugins/audit/tests/test_drive_phase.py: a pause with a filed "
+CARRY_CLAUSE = ("tests/test_drive_phase.py: a pause with a filed "
                 "wave member, its tree deleted and the drive resumed on a fresh "
                 "clone, finds the member's work")
 
@@ -6761,7 +6763,7 @@ def _carry_cases(check):
           and _carry_refs(solo) == ["P1.1"])
 
 
-CARRY_LOCAL_CLAUSE = ("plugins/audit/tests/test_drive_phase.py: with no carry "
+CARRY_LOCAL_CLAUSE = ("tests/test_drive_phase.py: with no carry "
                       "setting a filed wave member writes refs/audit/carry/<taskId> "
                       "locally and makes no push to any remote, and only an "
                       "explicit opt-in pushes it to origin")
@@ -6939,8 +6941,8 @@ def _nested_project_cases(check):
         _harness.remove_tree(scratch)
 
 SCOPE_LANGUAGE_CLAUSE = (
-    "plugins/audit/tests/test_drive_phase.py: scope_gap on a task whose tests.add "
-    "is a plugins/audit/tests/test_*.py path and whose gate holds selftests and "
+    "tests/test_drive_phase.py: scope_gap on a task whose tests.add "
+    "is a tests/test_*.py path and whose gate holds selftests and "
     "vitest returns no decision; a .mjs path vitest does not collect still returns "
     "the scope-gap decision naming vitest.config.mjs; a Python path under a gate "
     "with neither the sweep nor pytest is still reported")
@@ -7085,7 +7087,7 @@ REALISTIC_GATE = (
     "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json "
     "--out-dir /tmp/audit-report",
     "ruff check plugins/audit tools && vermin -t=3.8- --no-tips --violations "
-    "plugins/audit/scripts plugins/audit/hooks plugins/audit/tests",
+    "plugins/audit/scripts plugins/audit/hooks tests",
     "node tools/capture-screenshots.mjs --check",
     "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html",
 )
@@ -7299,7 +7301,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("sb-block", "_stage_cases"))
 
 
-CI_CADENCE_CLAUSE = ("plugins/audit/tests/test_drive_phase.py: with ci.cadence "
+CI_CADENCE_CLAUSE = ("tests/test_drive_phase.py: with ci.cadence "
                      "every 3 closes the drive dispatches CI on the third close "
                      "and not before, never waits on it, and reads its verdict "
                      "at the next close; absent, it dispatches only at landing")
@@ -7900,7 +7902,7 @@ def _machine_text_cases(check):
 
 
 EMPTY_BLOB = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
-GIT_STDIN_CLAUSE = ("plugins/audit/tests/test_drive_phase.py: a fixture git call "
+GIT_STDIN_CLAUSE = ("tests/test_drive_phase.py: a fixture git call "
                     "runs with stdin closed, and one that times out reports the "
                     "tail of its GIT_TRACE2 trace, so a hang names the step it "
                     "stopped in")
@@ -8181,7 +8183,7 @@ def _ascii_coverage_case(check):
     nt = sweep.locale_decision("nt", None, "cp1252")
     names = [name for name, _fn in STAGES]
     doc = " ".join(_ascii_locale_cases.__doc__.split())
-    check("plugins/audit/tests/test_drive_phase.py: the case P125-R147 asks "
+    check("tests/test_drive_phase.py: the case P125-R147 asks "
           "for, locking the behaviour at HEAD (ASCII_BLOCK names a stage other "
           "than the one that re-runs it, the docstring states the macOS, "
           "Linux and Windows coverage, and the sweep's encoding pass pins the "
@@ -8196,7 +8198,7 @@ def _ascii_coverage_case(check):
           and "on Windows the sweep pins no locale, so nothing re-runs "
               "them under a non-UTF-8 locale" in doc
           and bool(posix["locale"]) and nt["locale"] == {})
-    check("plugins/audit/tests/test_drive_phase.py: the case P125-R165 asks "
+    check("tests/test_drive_phase.py: the case P125-R165 asks "
           "for, locking the behaviour at HEAD (a Linux-shaped report, "
           "ANSI_X3.4-1968 with an ASCII filesystem, leaves the locale "
           "unpinned and sets only the stdio codec): %r"
@@ -8231,7 +8233,7 @@ def _ascii_locale_cases(check):
         encoding="utf-8", errors="replace", timeout=60)
     preferred = probe.stdout.strip()
     if preferred.lower().replace("_", "-") in _UTF8_NAMES or not preferred:
-        check("plugins/audit/tests/test_drive_phase.py: under a locale whose "
+        check("tests/test_drive_phase.py: under a locale whose "
               "preferred encoding is ASCII, a drive whose verbs print non-ASCII "
               "text integrates and closes as it does under UTF-8 (COULD NOT "
               "SET UP: the child's preferred encoding under %r is %r, so this "
@@ -8257,7 +8259,7 @@ def _ascii_locale_cases(check):
         _harness.remove_tree(out_dir)
     cases = (res["report"] or {}).get("cases") or []
     failed = [label[:120] for label, ok, _detail in cases if not ok]
-    check("plugins/audit/tests/test_drive_phase.py: under a locale whose "
+    check("tests/test_drive_phase.py: under a locale whose "
           "preferred encoding is ASCII, a drive whose verbs print non-ASCII "
           "text integrates and closes as it does under UTF-8 (%s re-run with "
           "%r, preferred encoding %r: it reports its cases, and every one "
@@ -8282,7 +8284,7 @@ def _integrate_ascii_verdict(argv, preferred):
     tally = re.findall(r"(\d+)/(\d+) cases passed", done.stdout)
     passed, total = (int(tally[-1][0]), int(tally[-1][1])) if tally else (0, 0)
     err = _harness.tail_bytes(done.stderr, 600)
-    label = ("plugins/audit/tests/test_drive_phase.py: under a locale whose "
+    label = ("tests/test_drive_phase.py: under a locale whose "
              "preferred encoding is ASCII, the integrate suite runs whole and "
              "every case it reports passes (%s, %r, preferred encoding %r): %r"
              % (INTEGRATE_SUITE, ASCII_ENV, preferred,
@@ -8338,7 +8340,7 @@ def _integrate_tail_case(check, preferred):
              os.path.dirname(os.path.abspath(__file__)), scratch], preferred)
     finally:
         _harness.remove_tree(scratch)
-    check("plugins/audit/tests/test_drive_phase.py: a child suite that fails "
+    check("tests/test_drive_phase.py: a child suite that fails "
           "under the pinned locale is reported by the tail of its stderr, so "
           "the raised error's own line is in the message: %r"
           % ((ok, err[-300:]),),
@@ -8479,7 +8481,7 @@ def _fixture_git_case(check, preferred):
                                   "def _stage_cases(")
     heads = pinned.count(_HEAD_CLIP)
     tails = [r for r in _TAIL_REPORTERS if r not in pinned]
-    check("plugins/audit/tests/test_drive_phase.py: a fixture git call that "
+    check("tests/test_drive_phase.py: a fixture git call that "
           "fails raises with git's own decoded message, and every "
           "locale-pinned child case reports the tail of the child's stderr, "
           "through one helper each (the failing call's message, the hung "
@@ -8535,7 +8537,7 @@ def _fixture_git_case(check, preferred):
 
 
 # --- a phase brief past the reader's budget ------------------------------------
-SLICE_CLAUSE = ("plugins/audit/tests/test_drive_phase.py: a phase brief past the "
+SLICE_CLAUSE = ("tests/test_drive_phase.py: a phase brief past the "
                 "reader budget is written as task-boundary slices with the header "
                 "and owed lines each, one reviewer is dispatched per slice, and "
                 "their returns aggregate into the one filed return")
@@ -8834,7 +8836,7 @@ def _stage_cases(check):
             "f = io.open(p, mode='w')\n"
             "g = io.open(p, 'r', encoding='utf-8', newline='')\n")
     twin_lines = unencoded_text_opens(twin)
-    check("plugins/audit/tests/test_drive_phase.py: every file the drive and its "
+    check("tests/test_drive_phase.py: every file the drive and its "
           "fixtures write in text mode names its encoding (a write without one "
           "is reported by file and line) (and a text-mode read too, which "
           "misreads UTF-8 the same way): %r" % ((found, twin_lines),),

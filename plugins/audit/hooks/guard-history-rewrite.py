@@ -91,7 +91,7 @@ Contract: a block emits {"hookSpecificOutput": {"permissionDecision": "deny",
 PreToolUse protocol. Unexpected input exits 0 (never break legitimate work).
 
 This hook carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_guard_history_rewrite.py`.
+`tests/test_guard_history_rewrite.py`.
 """
 import json
 import os
@@ -1774,7 +1774,7 @@ def main():
 if __name__ == "__main__":
     if "--selftest" in sys.argv:
         print("guard-history-rewrite.py has no inline --selftest; its cases live "
-              "in plugins/audit/tests/test_guard_history_rewrite.py - run that "
+              "in tests/test_guard_history_rewrite.py - run that "
               "file instead.")
         sys.exit(0)
     main()

@@ -139,9 +139,9 @@ Contract: a block emits {"hookSpecificOutput": {"permissionDecision": "deny",
 PreToolUse protocol (the exit-2 + stderr channel is deprecated). Any
 unexpected input exits 0.
 This hook carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test_guard_secrets_read.py` (hyphens become underscores - a
+`tests/test_guard_secrets_read.py` (hyphens become underscores - a
 hyphenated name is not importable). A test of a hook may import from `scripts/`
-even though the hook itself may not; see `plugins/audit/tests/_harness.py`.
+even though the hook itself may not; see `tests/_harness.py`.
 """
 import json
 import os
@@ -3098,7 +3098,7 @@ def _decide_core(data, root, cfg):
         # below may be used to weaken anything above it — a secret read is
         # refused at every tier, manifest or not, and the cases that would go
         # red if a tier ever reached one of those branches are the `pg` group in
-        # plugins/audit/tests/test_guard_secrets_read.py.
+        # tests/test_guard_secrets_read.py.
         #
         # THE SHELL'S OWN STARTING POINT, READ HERE FOR THE FIRST TIME. Every
         # write arm below used to hand a relative target straight to
@@ -3276,7 +3276,7 @@ if __name__ == "__main__":
         # print the `N/M cases passed` contract - that string is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("guard-secrets-read.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_guard_secrets_read.py - run that file "
+              "tests/test_guard_secrets_read.py - run that file "
               "instead.")
         sys.exit(0)
     main()

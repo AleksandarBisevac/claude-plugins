@@ -906,7 +906,7 @@ that happened, and this verb saw none of it. So the last close reports that sign
 due (`/audit:review <phaseId>`, then `/audit:phase signoff <phaseId>`) and writes nothing
 on the phase. **Nothing refuses a close that leaves a phase
 complete-but-unsigned**; the line is the whole of it, and the `pd` group in
-`plugins/audit/tests/test_audit_task.py` is what keeps the field untouched in both
+`tests/test_audit_task.py` (in the source repository) is what keeps the field untouched in both
 directions.
 
 #### `file-return <taskId> --role executor|reviewer` — the one write a returning agent makes

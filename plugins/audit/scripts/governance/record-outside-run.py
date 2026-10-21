@@ -46,7 +46,7 @@ Exit codes:
   2  usage error - the manifest will not load, or the window will not parse
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_record_outside_run.py`.
+`tests/test_record_outside_run.py`.
 
 Stdlib only, Python 3.8 compatible.
 """
@@ -336,7 +336,7 @@ if __name__ == "__main__":
         # print the `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("record-outside-run.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test_record_outside_run.py - run that file "
+              "tests/test_record_outside_run.py - run that file "
               "instead.")
         sys.exit(0)
     sys.exit(main(sys.argv[1:]))

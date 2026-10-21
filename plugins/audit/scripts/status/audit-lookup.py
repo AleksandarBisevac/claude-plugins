@@ -83,7 +83,7 @@ READ-ONLY OVER THE RECORD. This never writes the manifest, the ledger or the
 journal; the one file it writes is a brief, under `stateDir`.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test_audit_lookup.py` - see `plugins/audit/tests/_harness.py`.
+`tests/test_audit_lookup.py` - see `tests/_harness.py`.
 """
 import argparse
 import json
@@ -2187,7 +2187,7 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("audit-lookup.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_audit_lookup.py - run that file "
+              "tests/test_audit_lookup.py - run that file "
               "instead.")
         sys.exit(0)
     # `--read` prints a record through `write_exact`, and only reaches stdout's

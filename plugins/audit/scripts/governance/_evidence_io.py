@@ -49,7 +49,7 @@ unclaimed row made the NEXT Bash command draw `guard-bash-writes`' notice about 
 write this plugin had just made itself.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__evidence_io.py` -- see `plugins/audit/tests/_harness.py`.
+`tests/test__evidence_io.py` -- see `tests/_harness.py`.
 """
 import binascii
 import calendar
@@ -876,7 +876,7 @@ def followers_in(text):
 # follower line for every path it owns and nothing for the rest. Asked by
 # command, never imported, so the tree's own copy answers and a script the tree
 # does not hold is no owner there.
-FOLLOWER_OWNERS = ("plugins/audit/scripts/_deps.py", "tools/check-rendered-artifacts.py",
+FOLLOWER_OWNERS = ("tools/lints/_deps.py", "tools/check-rendered-artifacts.py",
                    "tools/capture-screenshots.mjs")
 # A recipe is a regeneration, not a suite: bounded so a hung one ends the run.
 RECIPE_TIMEOUT = 600
@@ -4193,6 +4193,6 @@ if __name__ == "__main__":
         # the `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_evidence_io.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__evidence_io.py - run that file instead.")
+              "tests/test__evidence_io.py - run that file instead.")
         raise SystemExit(0)
     print("This is a library module; run with --selftest to exercise it.")

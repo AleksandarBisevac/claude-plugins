@@ -375,6 +375,6 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_affected_tests.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__affected_tests.py - run that file instead.")
+              "tests/test__affected_tests.py - run that file instead.")
         sys.exit(0)
     print(__doc__.strip())

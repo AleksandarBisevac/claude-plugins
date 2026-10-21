@@ -15,8 +15,8 @@ and why it opens no file). It moved with the code and is the thing to read
 before changing any of it.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__usage_bench.py`, the moved labels byte-identical - see
-`plugins/audit/tests/_harness.py`. `--bench` stayed: the benchmark is production
+`tests/test__usage_bench.py`, the moved labels byte-identical - see
+`tests/_harness.py`. `--bench` stayed: the benchmark is production
 code somebody runs, and only the `bn` cases ABOUT it moved.
 """
 import os
@@ -341,7 +341,7 @@ if __name__ == "__main__":
         # benchmark: that is production code, not a suite, and only the cases
         # ABOUT it moved.
         print("_usage_bench.py has no inline --selftest; its cases live in "
-              "plugins/audit/tests/test__usage_bench.py - run that file "
+              "tests/test__usage_bench.py - run that file "
               "instead. --bench still works here.")
         raise SystemExit(0)
     if _MODE == "bench":

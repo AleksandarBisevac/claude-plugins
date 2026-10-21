@@ -40,6 +40,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -67,12 +68,16 @@ if _anchor_dir not in sys.path:
 import _output  # noqa: E402
 
 _output.install_path()
+# `_deps` and `_refs` live outside the plugin, and `install_path()` never adds them.
+if _output.LINTS_DIR not in sys.path:
+    sys.path.insert(0, _output.LINTS_DIR)
 
 import _deps  # noqa: E402  (the import graph this selection is derived from)
 import _refs  # noqa: E402  (the surfaces and sweep documents it reads)
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TESTS = os.path.join("plugins", "audit", "tests")
+TESTS = "tests"
+LINTS = "tools/lints/"
 
 # Suites that read the WHOLE tree rather than one module, so any `.py` edit can
 # turn them red. Derived by grep once and listed here because the list is the
@@ -248,6 +253,27 @@ def _suite_for(module_basename):
     return None
 
 
+def _suites_importing(module_basename):
+    """The suites under `tests` that `import` this module by bare name.
+
+    The reverse-import closure is read off the SHIPPED import graph, and a lint
+    module is not in it - nothing shipped may import one - so the only importers
+    left to ask are the suites and the tools, and a suite is a file here.
+    """
+    pattern = re.compile(r"^\s*(?:import|from)\s+%s\b" % re.escape(module_basename),
+                         re.MULTILINE)
+    found = set()
+    directory = os.path.join(REPO, TESTS)
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith(".py"):
+            continue
+        with open(os.path.join(directory, name), encoding="utf-8",
+                  errors="replace") as fh:
+            if pattern.search(fh.read()):
+                found.add(name)
+    return found
+
+
 # --- the selection rules ------------------------------------------------------
 def _suite_path(name):
     """A suite's repo-relative POSIX path -- what a listing mode prints,
@@ -256,7 +282,7 @@ def _suite_path(name):
 
 
 def _all_suite_paths():
-    """Every suite file the runner would collect under `plugins/audit/tests`,
+    """Every suite file the runner would collect under `tests`,
     one per line and never executed -- the FULL listing
     `meta.phaseGate.derived.listing.all` records. Read off `_output.py_files`
     (the same recursive walk `sweep-selftests.py` trusts) rather than a
@@ -362,7 +388,7 @@ def select(paths):
             suites.add("test__deps.py")
             reasons.append("%s - root prose, linted by _deps" % (posix,))
             continue
-        if posix.startswith(TESTS.replace(os.sep, "/")):
+        if posix.startswith(TESTS.replace(os.sep, "/") + "/"):
             name = os.path.basename(posix)
             if name.endswith(".py"):
                 suites.add(name)
@@ -434,6 +460,21 @@ def select(paths):
             suites.update(("test__refs.py", "test__deps.py"))
             reasons.append("%s - the plugin README, read by _refs and _deps"
                            % (posix,))
+            continue
+        if posix.startswith(LINTS) and posix.endswith(".py"):
+            # A LINT MODULE IS NO TOOL, though it sits under `tools/`: its cases are
+            # a suite beside the rest and it is `MIGRATED`, so the tool arm below
+            # answered "no rule matches" for the two files that used to take the
+            # plugin `.py` arm. Same selection as that arm: its own suite, every
+            # suite that imports it, and the suites that lint the whole tree.
+            touched_py = True
+            base = os.path.basename(posix)[:-3]
+            own = _suite_for(base)
+            if own:
+                suites.add(own)
+            suites.update(_suites_importing(base))
+            reasons.append("%s - a lint module: its suite plus every suite that "
+                           "imports it" % (posix,))
             continue
         if posix.startswith("tools/"):
             # THE TOOL'S OWN CASES FIRST, and outside the chain below rather than as
@@ -728,6 +769,19 @@ def _cases(check):
           "them (%d suites)" % (len(py["suites"]),),
           "test__output.py" in py["suites"]
           and "test__deps.py" in py["suites"] and not py["full"])
+
+    lint = sel("tools/lints/_deps.py")
+    lint_why = why("tools/lints/_deps.py")
+    check("a10a a lint module under tools/lints is selected like the plugin `.py` "
+          "it used to be - its own suite, the suites that import it by name, and "
+          "the suites that lint the whole tree - and is NOT left in the tool arm's "
+          "'no rule here matches it' gap, which is where a migrated file under "
+          "tools/ fell: %r" % (lint["suites"],),
+          "test__deps.py" in lint["suites"]
+          and "test__panel_paths.py" in lint["suites"]
+          and "test__output.py" in lint["suites"]
+          and "NO RULE HERE MATCHES" not in lint_why and not lint["full"]
+          and "test__refs.py" in sel("tools/lints/_refs.py")["suites"])
 
     page = sel("docs/demo-large.html")
     check("a10b a published report selects the version-stamp rule as well as the "

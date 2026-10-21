@@ -1134,14 +1134,14 @@ def _cases(check):
                                   "hooks/meter-usage.py",
                                   "hooks/remind-tdd.py",
                                   "hooks/require-plan.py",
+                                  "lints/_deps.py",
+                                  "lints/_refs.py",
                                   "scripts/_cli_fmt.py",
-                                  "scripts/_deps.py",
                                   "scripts/_excerpt.py",
                                   "scripts/_fmt.py",
                                   "scripts/_loader.py",
                                   "scripts/_machine_paths.py",
                                   "scripts/_output.py",
-                                  "scripts/_refs.py",
                                   "scripts/_surface_digest.py",
                                   "scripts/_ui_theme.py",
                                   "scripts/_utc_stamp.py",
@@ -1297,14 +1297,14 @@ def _cases(check):
                                      "plugins/audit/hooks/meter-usage.py",
                                      "plugins/audit/hooks/remind-tdd.py",
                                      "plugins/audit/hooks/require-plan.py",
+                                     "tools/lints/_deps.py",
+                                     "tools/lints/_refs.py",
                                      "plugins/audit/scripts/_cli_fmt.py",
-                                     "plugins/audit/scripts/_deps.py",
                                      "plugins/audit/scripts/_excerpt.py",
                                      "plugins/audit/scripts/_fmt.py",
                                      "plugins/audit/scripts/_loader.py",
                                      "plugins/audit/scripts/_machine_paths.py",
                                      "plugins/audit/scripts/_output.py",
-                                     "plugins/audit/scripts/_refs.py",
                                      "plugins/audit/scripts/_surface_digest.py",
                                      "plugins/audit/scripts/_ui_theme.py",
                                      "plugins/audit/scripts/_utc_stamp.py",
@@ -1485,10 +1485,23 @@ def _cases(check):
           "`join(dirname(_HERE), 'hooks')` produced: %r" % (M.HOOKS_DIR,),
           set(os.path.join(d, "hooks") for d in _ab2) == set([M.HOOKS_DIR])
           and os.path.isdir(M.HOOKS_DIR))
-    check("an4 TESTS_DIR is what the old `join(dirname(_HERE), 'tests')` produced, "
-          "and it is the directory this file is in: %r" % (M.TESTS_DIR,),
-          set(os.path.join(d, "tests") for d in _ab2) == set([M.TESTS_DIR])
+    check("an4 TESTS_DIR is the `tests` directory beside the plugin, at the "
+          "repository root - the old `join(dirname(_HERE), 'tests')` one level "
+          "too deep now - and it is the directory this file is in: %r"
+          % (M.TESTS_DIR,),
+          set(os.path.join(d, "tests") for d in _ab4) == set([M.TESTS_DIR])
           and os.path.dirname(os.path.abspath(__file__)) == M.TESTS_DIR)
+    check("an4b LINTS_DIR is `tools/lints` at the repository root, holds the two "
+          "lint modules, and is NOT among the directories `install_path()` puts "
+          "on sys.path - the product never reaches them by basename, which is "
+          "the property that makes moving them out of scripts/ mean something: %r"
+          % (M.LINTS_DIR,),
+          set(os.path.join(d, "tools", "lints") for d in _ab4) == set([M.LINTS_DIR])
+          and os.path.isfile(os.path.join(M.LINTS_DIR, "_deps.py"))
+          and os.path.isfile(os.path.join(M.LINTS_DIR, "_refs.py"))
+          and M.LINTS_DIR not in M.install_path()
+          and not [r for r, _p in M.py_files(M.SCRIPTS_DIR)
+                   if os.path.basename(r) in ("_deps.py", "_refs.py")])
     check("an5 REPO_ROOT is what `_output`'s and `_refs`' old three-deep "
           "`dirname(dirname(dirname(_HERE)))` produced - the duplicate derivation "
           "that is now one: %r" % (M.REPO_ROOT,),
@@ -1538,6 +1551,89 @@ def _cases(check):
           "failure here rather than an empty scan somewhere downstream",
           all(os.path.isdir(d) for d in (M.SCRIPTS_DIR, M.PLUGIN_ROOT, M.HOOKS_DIR,
                                          M.TESTS_DIR, M.REPO_ROOT)))
+
+    # ------------- the two lint modules are still read by the dialect rules (`ln*`)
+    # They were `scripts/` files, so every default-scope lint covered them; after the
+    # move each of those defaults has to NAME the directory or the rule quietly checks
+    # fewer files. A fixture directory stands in for `LINTS_DIR` - the functions read
+    # the module global at CALL time, so rebinding it is how a violation is planted
+    # where only the new scope would look - and each lint is run twice, once over a
+    # clean file and once over a planted one, so a lint that fires on any file in the
+    # directory (or on none) fails one of the two.
+    ln_dir = tempfile.mkdtemp(prefix="audit-lints-scope-")
+    ln_real = M.LINTS_DIR
+    try:
+        with open(os.path.join(ln_dir, "clean_lint.py"), "w", encoding="utf-8") as fh:
+            fh.write('"""A lint module with nothing wrong."""\n'
+                     "from _output import safe_stdio\n\n\n"
+                     'if __name__ == "__main__":\n    safe_stdio()\n')
+        M.LINTS_DIR = ln_dir
+        ln_clean = (M.house_style_violations(), M.entries_missing_guard(),
+                    M.truncated_evidence_violations(),
+                    M.usage_hint_violations(), M.bare_output_cut_violations())
+        with open(os.path.join(ln_dir, "planted_lint.py"), "w", encoding="utf-8") as fh:
+            fh.write("def f(x: int):\n    return x\n\n\n"
+                     'if __name__ == "__main__":\n    print("no guard first")\n')
+        ln_planted = (M.house_style_violations(), M.entries_missing_guard())
+    finally:
+        M.LINTS_DIR = ln_real
+        shutil.rmtree(ln_dir, ignore_errors=True)
+    check("ln1 a clean module in the lints directory is reported by NONE of the "
+          "default-scope dialect and hygiene rules - the allow direction: %r"
+          % (ln_clean,), all(r == [] for r in ln_clean))
+    check("ln2 ...and a module there that carries an annotation and prints before "
+          "`safe_stdio()` is reported by the dialect rule AND the guard rule, by "
+          "name - so the directory is in their default scope, not just on disk: %r"
+          % (ln_planted,),
+          any(name.endswith("planted_lint.py") for name, _l, _w in ln_planted[0])
+          and "planted_lint.py" in ln_planted[1])
+    check("ln3 the newline and encoding rules read the directory too, through the "
+          "tuples they walk: %r" % ((M.NEWLINE_DIRS, M.ENCODING_DIRS),),
+          M.LINTS_DIR in M.NEWLINE_DIRS and M.LINTS_DIR in M.ENCODING_DIRS)
+
+    # ------------------------------------- where a plugin `.py` moved to (`mv*`)
+    # These three lived in `_refs` until it left `scripts/`; `audit-task.py` is
+    # shipped and asks one of them, so they sit in the anchor. Fixture root, because
+    # the real tree has no moved file to ask about - and BOTH answers are needed:
+    # a check that said "moved" for everything, or for nothing, fails one of them.
+    mv_root = tempfile.mkdtemp(prefix="audit-moved-")
+    try:
+        mv_plugin = os.path.join(mv_root, *M.PLUGIN_REL.split("/"))
+        os.makedirs(os.path.join(mv_plugin, "scripts", "sub"))
+        for _name in ("scripts/sub/relocated.py", "scripts/stays.py"):
+            with open(os.path.join(mv_plugin, *_name.split("/")), "w",
+                      encoding="utf-8") as fh:
+                fh.write("x = 1\n")
+        mv_idx = M.py_index(mv_root)
+        mv_moved = M.moved_file_target(M.PLUGIN_REL + "/scripts/relocated.py", mv_root)
+        mv_there = M.moved_file_target(M.PLUGIN_REL + "/scripts/stays.py", mv_root)
+        mv_gone = M.moved_file_target(M.PLUGIN_REL + "/scripts/never_was.py", mv_root)
+        mv_other = M.moved_file_target("elsewhere/scripts/relocated.py", mv_root)
+        mv_given = M.moved_file_target(M.PLUGIN_REL + "/scripts/relocated.py",
+                                       mv_root, index={})
+    finally:
+        shutil.rmtree(mv_root, ignore_errors=True)
+    check("mv1 the index is keyed by BASENAME and lists the repo-relative path with "
+          "forward slashes: %r" % (mv_idx,),
+          mv_idx == {"relocated.py": [M.PLUGIN_REL + "/scripts/sub/relocated.py"],
+                     "stays.py": [M.PLUGIN_REL + "/scripts/stays.py"]})
+    check("mv2 a recorded path whose file moved answers with its new home; a path "
+          "that is still there, one whose basename exists nowhere (a deletion) and "
+          "one outside the plugin answer None - four different readings of "
+          "'not a move' that one `is None` would have to tell apart: %r"
+          % ((mv_moved, mv_there, mv_gone, mv_other),),
+          mv_moved == M.PLUGIN_REL + "/scripts/sub/relocated.py"
+          and mv_there is None and mv_gone is None and mv_other is None)
+    check("mv3 a caller that hands in the index is answered from IT, not from a "
+          "walk of its own - the empty one proves it: %r" % (mv_given,),
+          mv_given is None)
+    check("mv4 `is_plugin_py_path` is a prefix-and-extension question: a plugin "
+          ".py is one; the same name outside the plugin, a non-.py file under "
+          "it and a non-string are not",
+          M.is_plugin_py_path(M.PLUGIN_REL + "/scripts/x.py")
+          and not M.is_plugin_py_path("tools/x.py")
+          and not M.is_plugin_py_path(M.PLUGIN_REL + "/README.md")
+          and not M.is_plugin_py_path(None))
 
     # ------------------------------------------------------------- script_files()
     check("sf1 script_files() is py_files(SCRIPTS_DIR) - the same list, not a "
@@ -2131,7 +2227,7 @@ def _cases(check):
     # docstring, a file count in the prover, a part count per assembled surface.
     _pn_reach = dict(
         (_d, len([r for r in _pn_scan["paths"] if r.startswith(_d)]))
-        for _d in ("tools/", "plugins/audit/tests/", "plugins/audit/hooks/",
+        for _d in ("tools/", "tests/", "plugins/audit/hooks/",
                    "plugins/audit/scripts/"))
     check("pn18 the scanned set is DERIVED from the tree, so it reaches the "
           "directories no hand-written list held - `tools/`, which holds the "
@@ -2415,7 +2511,7 @@ def _cases(check):
           and M._prose_number_claim("Roughly a third of the suites reach the "
                                     "browser gates:",
                                     "`grep -rln capture-screenshots "
-                                    "plugins/audit/tests | wc -l`") is None
+                                    "tests | wc -l`") is None
           and M._prose_number_claim("Two consecutive captures agreed on every "
                                     "image the day this shipped.") is None
           and M._prose_number_claim("it anchored the sections `_areas.py "
@@ -2729,21 +2825,21 @@ def _cases(check):
     # unsound in both directions - so a file earns a row here by what it does
     # with the value, and that is read by a person, not a walk.
     _publishers = (
-        "../scripts/_output.py",
-        "../scripts/_refs.py",
-        "../scripts/_deps.py",
-        "../scripts/_ui_theme.py",
-        "../scripts/manifest/audit-task.py",
-        "../scripts/manifest/set-priority.py",
-        "../scripts/manifest/repair-commits.py",
-        "../scripts/manifest/repair-tests-add.py",
-        "../scripts/panel/_panel_write.py",
-        "../scripts/panel/_panel_state.py",
-        "../scripts/panel/_panel_composition.py",
-        "../scripts/status/_doctor_completions.py",
-        "../scripts/status/_doctor_trail.py",
-        "../scripts/governance/_invariants.py",
-        "../scripts/governance/_evidence_io.py",
+        "../plugins/audit/scripts/_output.py",
+        "../tools/lints/_refs.py",
+        "../tools/lints/_deps.py",
+        "../plugins/audit/scripts/_ui_theme.py",
+        "../plugins/audit/scripts/manifest/audit-task.py",
+        "../plugins/audit/scripts/manifest/set-priority.py",
+        "../plugins/audit/scripts/manifest/repair-commits.py",
+        "../plugins/audit/scripts/manifest/repair-tests-add.py",
+        "../plugins/audit/scripts/panel/_panel_write.py",
+        "../plugins/audit/scripts/panel/_panel_state.py",
+        "../plugins/audit/scripts/panel/_panel_composition.py",
+        "../plugins/audit/scripts/status/_doctor_completions.py",
+        "../plugins/audit/scripts/status/_doctor_trail.py",
+        "../plugins/audit/scripts/governance/_invariants.py",
+        "../plugins/audit/scripts/governance/_evidence_io.py",
         # THESE TWO NEVER CALLED IT AND THAT IS A DECISION, not an accident. Both
         # say so in their own words: across Windows drives `os.path.relpath`
         # RAISES, and a redactor or a log renderer that raises hands its caller an
@@ -2751,8 +2847,8 @@ def _cases(check):
         # prefixes instead. Listing them here is what stops that being
         # "simplified" back - the value they publish is a journal row and a log
         # path, so the cost of the raise is paid by the reader.
-        "../scripts/governance/_journal_io.py",
-        "../scripts/status/audit-logs.py",
+        "../plugins/audit/scripts/governance/_journal_io.py",
+        "../plugins/audit/scripts/status/audit-logs.py",
         # THE READERS, all of them. `test__panel_write.py` came first because CI
         # named it; these three retyped the same idiom against the same writer and
         # nothing was looking. The value they compare is a field of a CHAINED
@@ -3790,7 +3886,7 @@ def _encoding_cases(check):
         by_file = {}
         for name, line, _what in found:
             by_file.setdefault(name, []).append(line)
-        check("plugins/audit/tests/test__output.py: a text-mode open or a "
+        check("tests/test__output.py: a text-mode open or a "
               "text-mode subprocess call with no encoding anywhere under "
               "scripts/ or hooks/ is reported by file and line, and one that "
               "names its encoding is not (open, io.open, os.fdopen, "

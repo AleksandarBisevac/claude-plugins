@@ -24,8 +24,8 @@ It sits above `_locks` and `_doctor_report`, and this module loads nothing at
 runtime at all.
 
 This module carries no `--selftest` of its own; its cases live in
-`plugins/audit/tests/test__doctor_hygiene.py` - see
-`plugins/audit/tests/_harness.py`.
+`tests/test__doctor_hygiene.py` - see
+`tests/_harness.py`.
 """
 import fnmatch
 import glob
@@ -592,7 +592,7 @@ if __name__ == "__main__":
         # `N/M cases passed` contract - that literal is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("_doctor_hygiene.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__doctor_hygiene.py - run that file "
+              "tests/test__doctor_hygiene.py - run that file "
               "instead.")
         raise SystemExit(0)
     print(__doc__.strip())

@@ -146,7 +146,7 @@ nonzero without reading stdin — and a hook script that is not beside the launc
 reach the same cell by the same route, each with its own sentence saying which it
 is. Both used to end in an unhandled hook error, which the *On internal error*
 column grades as **allow**: a blocking guard disarmed with nothing said, which is
-worse than one that is missing. `plugins/audit/tests/test_py_launch.py` drives
+worse than one that is missing. `tests/test_py_launch.py` drives
 every shape against real shims on `PATH`, including the allow direction — a
 working interpreter must reach the hook with the launcher adding nothing, or this
 runs ahead of every tool call and prompts on all of them. What the launcher cannot
@@ -1095,7 +1095,7 @@ point:
     established.
 
   The verdict of each at every tier is not left to this paragraph: each is a
-  known-divergence row in `plugins/audit/tests/test_hooks.py` (`r01` and
+  known-divergence row in `tests/test_hooks.py` (`r01` and
   `r02`), asserted as observed, which goes red the day either verdict moves. The hash-chained
   journal is what catches either write, after the fact: `audit-journal.py
   verify` reports a row that does not chain onto the one before it, and
@@ -1124,7 +1124,7 @@ point:
   editor or pager variable naming a bare shell runs the commit message or the
   log output as a script, and that message is read as text. Its verdict at
   every tier is written down the same way, as the known-divergence row `r03`
-  in `plugins/audit/tests/test_hooks.py`. Every other
+  in `tests/test_hooks.py`. Every other
   program's quoted redirect or `tee` still reads as a write — and that reading is not
   shared with `guard-history-rewrite`'s older reader for a shell's `-c` and
   for `eval` elsewhere in this document — that reader still takes `eval`'s

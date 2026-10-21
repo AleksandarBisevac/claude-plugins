@@ -46,6 +46,27 @@ claude-plugins/                           # this repo (personal, public)
   docs/examples/azure-pipelines.yml       # CI recipe: validate → gate → publish report artifact
   docs/ado-connector.md                   # ADO connector field guide (user-facing; tracker-sync.md stays the contract)
   examples/                               # worked acme-store example (manifest + rendered report)
+  tests/                                  # the suites, at the repository root: selftest blocks moved OUT of the modules they test, and out of the plugin
+    _harness.py                       # sys.path setup + the one check()/tally runner, was written 48 times
+    test__cli_fmt.py                  # pilot 1: an importable helper
+    test_migrate_manifest.py          # pilot 2: a hyphenated entry point (hyphen -> underscore)
+    test_remind_tdd.py                # pilot 3: a hook (a test may import scripts/; the hook may not)
+    test__areas.py                    # batch A: 13 more suites, same three shapes, one file each
+    test__fmt.py                      #   (one test_<name>.py per migrated production file; see §2)
+    test__loader.py
+    test__manifest_io.py
+    test__panel_ui.py
+    test__policy.py
+    test__report_md.py
+    test__report_ui.py
+    test__usage_core.py
+    test_audit_lock.py
+    test_gen_demo_manifest.py
+    test_gen_demo_usage.py
+    test_validate_config.py
+  tools/lints/                            # development code the installed plugin does not carry: the two lints that read the whole repository
+    _deps.py                              # the module layer table, checked against the real import graph every run
+    _refs.py                              # what one file claims about another: script paths stat'd, and the document link graph
 .claude-plugin/
     marketplace.json                      # marketplace listing (one plugin: "audit")
   plugins/
@@ -178,8 +199,6 @@ claude-plugins/                           # this repo (personal, public)
         _cli_fmt.py                       # the one place CLI color lives: --color resolution + paint roles
         _loader.py                        # the one way scripts/ loads a sibling script as a library, one cache policy
         _ui_theme.py                      # shared visual tokens (colour/spacing/type/labels) for report + panel
-        _deps.py                          # the module layer table, checked against the real import graph every run
-        _refs.py                          # what one file claims about another: script paths stat'd, and the document link graph
         _surface_digest.py                # which UI a committed screenshot is a picture of: one digest per surface, over the page it receives
         usage/                            # the usage domain: the ledger, the arithmetic over it, the CLI
           _usage_core.py                  # usage arithmetic: the price table, the hour bucket, the roll-ups, the row readers
@@ -243,24 +262,6 @@ claude-plugins/                           # this repo (personal, public)
           gen-demo-manifest.py            # synthetic LARGE manifest fixture for demos/screenshots/CI
           gen-demo-usage.py               # synthetic usage ledger fixture, consistent with a real manifest
         ui/                               # four directories of ordered parts (report/, report-css/, panel/, panel-css/) + panel.html, no .py
-      tests/                              # selftest blocks moved OUT of the modules they test (all of them)
-        _harness.py                       # sys.path setup + the one check()/tally runner, was written 48 times
-        test__cli_fmt.py                  # pilot 1: an importable helper
-        test_migrate_manifest.py          # pilot 2: a hyphenated entry point (hyphen -> underscore)
-        test_remind_tdd.py                # pilot 3: a hook (a test may import scripts/; the hook may not)
-        test__areas.py                    # batch A: 13 more suites, same three shapes, one file each
-        test__fmt.py                      #   (one test_<name>.py per migrated production file; see §2)
-        test__loader.py
-        test__manifest_io.py
-        test__panel_ui.py
-        test__policy.py
-        test__report_md.py
-        test__report_ui.py
-        test__usage_core.py
-        test_audit_lock.py
-        test_gen_demo_manifest.py
-        test_gen_demo_usage.py
-        test_validate_config.py
       templates/
         audit.config.example.json         # per-repo hook config template
         audit-plan.starter.json           # minimal manifest skeleton with $schema
@@ -288,7 +289,7 @@ Claude Code plugin mechanics used here (all confirmed against the plugin docs):
 The map below is the real static import graph of `scripts/*.py`, grouped into the layers
 `_deps.py` defines — generator output, not hand-maintained prose, kept honest by a drift
 lint in `_deps.py`'s own selftest. Rewrite it in place with
-`python3 plugins/audit/scripts/_deps.py --write-map` (`--render` prints it). A stale map is a
+`python3 tools/lints/_deps.py --write-map` (`--render` prints it). A stale map is a
 *follower*: the lint prints `_evidence_io.follower_line` naming this file and that recipe,
 `run-test-gate.py` records it on the evidence row as `followersOwed`, and on a red task gate
 `drive-phase.py` widens the task's files with it, runs the recipe in the task's tree and gates
@@ -325,7 +326,6 @@ L3:
   _cli_fmt -> _output
   _commit_trail -> _output
   _demo_cast -> _output
-  _deps -> _output
   _filed_returns -> _machine_paths, _output
   _fmt -> _output
   _id_refs -> _output
@@ -338,7 +338,6 @@ L3:
   _merge_install -> _output
   _policy -> _output
   _priority -> _output
-  _refs -> _output
   _runner_collects -> _output
   _runner_output -> _output
   _task_outputs -> _output
@@ -425,7 +424,7 @@ L9:
   audit-logs -> _claude_home, _gate_feed, _output
   audit-lookup -> _areas, _claude_home, _config_rules, _evidence_io, _excerpt, _filed_returns, _gate_feed, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output
   audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _filed_returns, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _affected_tests, _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _refs, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
+  audit-task -> _affected_tests, _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
@@ -577,7 +576,7 @@ branch keyed on that variable would not recover it and would prompt on every
 healthy tool call, since a healthy hook has no such variable in its environment
 either; the observable half is the not-beside-the-launcher case above, and the
 reader for the other half is `/audit:doctor`, which reports hooks that have never
-fired. `plugins/audit/tests/test_py_launch.py` drives all of this against real
+fired. `tests/test_py_launch.py` drives all of this against real
 shims on `PATH`.
 
 ### `plugins/audit/hooks/_config.py`
@@ -1119,7 +1118,7 @@ digest-moved refusal whose declared files hold uncommitted changes in the worktr
 branch names them (`uncommitted_declared`) and says to commit or revert them before recording,
 since a run recorded over them is refused again (`cr19b`, `cr19c`). A re-run
 over a landed phase - its branch gone or not - commits a stamp an earlier landing left as an
-edit, and commits nothing when there is none. `lt` in `plugins/audit/tests/test_close_phase.py`
+edit, and commits nothing when there is none. `lt` in `tests/test_close_phase.py`
 and `g17`/`g17b` in `tools/check-git-pipeline.py` hold it against real git. Each of the three plan writes here — the stamp, the
 `mergedHead` backfill (`record_merged_head`) and the mirror — reads the plan and writes it while
 holding the index lock every other plan writer takes (`under_index_lock`, through
@@ -1189,7 +1188,7 @@ with `regate: true`. Every refusal is reached before the first write.
 A second run says "already integrated", from the state file or, if that is lost, from the bytes
 (then `regate` is `null`: unknown). Exit codes: 0 integrated, 1 refused, 2 usage, 3 decision owed,
 4 git could not be asked. Id order among green tasks is the caller's — the driver runs this once
-per task. Its cases are `plugins/audit/tests/test_integrate_task.py`.
+per task. Its cases are `tests/test_integrate_task.py`.
 
 ### `plugins/audit/scripts/git/manage-worktrees.py`
 `list`, `add`, `remove`, `sweep`, `task-add`, `task-remove` — the account of what `/audit:worktree` created, which the prose
@@ -1483,7 +1482,7 @@ value allowed to carry an excerpt (`reason`) from `MAX_CHARS`, and a row's `summ
 long reason is clipped. `_output.bare_output_cut_violations()` fails a head-only slice of a name
 bound from a subprocess's output; its `BARE_CUT_PENDING` rows are debts, reported once the file no
 longer holds such a cut. `tools/verify.sh`'s `show_failure` applies the same rule to a screen.
-Cases in `plugins/audit/tests/test__excerpt.py`.
+Cases in `tests/test__excerpt.py`.
 
 ### `plugins/audit/scripts/_utc_stamp.py`
 The one spelling of "this moment" - `%Y-%m-%dT%H:%M:%SZ` in UTC - that the plan, a shard, an
@@ -1495,7 +1494,7 @@ explicit epoch so a case pins the spelling to a known instant, and tests `is Non
 a moment rather than "now". **It shares `_machine_paths`' layer** because it reaches nothing but
 `_output`. The hooks cannot import it - a hook may not import `scripts/` - so their stamp is
 `hooks/_config.py`'s `local_stamp`, local time with its offset, a different spelling under a name
-that says so. Cases in `plugins/audit/tests/test__utc_stamp.py`.
+that says so. Cases in `tests/test__utc_stamp.py`.
 
 ### `plugins/audit/scripts/_machine_paths.py`
 What counts as machine identity in a string, and how the plugin's own text is scrubbed of it
@@ -1517,7 +1516,7 @@ directory and the temp directory, each as given and resolved - are matched as li
 (`_rooted`), because every token grammar ends a path at a space: a root holding one is replaced
 whole, a path under the checkout is spelled repo-relative, and under any other root a following
 word that carries a separator is taken as the rest of the path. Cases in
-`plugins/audit/tests/test__machine_paths.py`.
+`tests/test__machine_paths.py`.
 
 ### `plugins/audit/scripts/_fmt.py`
 The one token/cost/count formatter, unifying three copies that had drifted (`audit-usage.py`,
@@ -1583,7 +1582,7 @@ gap between their nav-column widths, one example). `label()` maps a machine valu
 `in_progress` to the words a person reads, with a graceful fallback for anything unknown. The
 CSS lint helpers that police the stylesheet live alongside it.
 
-### `plugins/audit/scripts/_deps.py` (P15.1)
+### `tools/lints/_deps.py` (P15.1)
 The module import-layer table, checked against the real graph instead of trusted as prose:
 `LAYERS` groups every `scripts/*.py` basename so a file may import a sibling only in a strictly
 LOWER layer, and hooks/ may import nothing from scripts/ at all. `import_graph()` reads the real
@@ -1594,7 +1593,7 @@ out from under the code it documents. The hooks rule has **no allow-list** — i
 this module's first run found it (`hooks/_config.py` reached `_manifest_io` by putting `scripts/`
 at the front of `sys.path`), and it was fixed rather than kept, so `hooks_rule_drift()` now fails
 the build on any document that states the rule and then carves an exception out of it.
-A layer NUMBER lives in `LAYERS` and in what `python3 plugins/audit/scripts/_deps.py --render`
+A layer NUMBER lives in `LAYERS` and in what `python3 tools/lints/_deps.py --render`
 prints, and nowhere else. Prose is where the copies rotted - one module given a layer of its own
 moved everything above it up by one, and every sentence that had written a number went stale at
 once - and nothing checks that any more: the lint that refused the numeral in a docstring or
@@ -1623,7 +1622,7 @@ at once did not. `state_write_sites()` prints the corpus the rule judged. A meth
 on a string or a path is not the `os` module's and is not read — the allow row in
 `tools/prove-gates.py` holds that line.
 
-### `plugins/audit/scripts/_refs.py`
+### `tools/lints/_refs.py`
 The other half of the same idea, aimed at paths rather than at imports: roughly 150 places
 spell a route to a `.py` under `plugins/audit/` — the command files, CI's own steps, this
 guide, the plugin README, the schema descriptions, the worked example's shell scripts — and
@@ -1644,6 +1643,19 @@ that shows the selftest sweep to the RUNNER — scoped to the runnable region, s
 this guide writes the flat glob as prose stay legal. That sentence said "the recursive `find`
 form" for a while after the runner replaced it, and named a count that had since grown: two
 rotted claims about one rule, in the file that documents it.
+
+The suites and this module left the plugin, and the lint followed them; what changed is worth
+knowing before touching a surface. A reference to a suite is now a bare path under `tests/`
+with no prefix to anchor on, so the anchor is the NAME: `_harness`, or `test_<module>` for a module
+the tree keeps (`known_suites()`), which spares a consumer repo's `tests/`-rooted file name that
+a hook or a document merely spells, and still reports a suite that was deleted while its module
+stayed. The old `plugins/audit/tests/` spelling is still matched and always stat'd, so a document
+that never moved with the suites is reported missing. `tools/lints/` is a fourth arm with its own
+root as the anchor, and a surface of its own: read anchored, once, because the bare `tools` walk
+prunes any directory that is a surface in its own right and `counts_by_surface()` credits the
+most specific one. `audit-task.py` is shipped and asks "did this `.py` move" through
+`_output.moved_file_target`, since a shipped script importing `_refs` would be an `ImportError`
+in every install.
 
 `raw_url_pin_drift()`, which holds a published `curl` to a
 TAG rather than to a moving ref, once had a prune list of its own — a handful of directory names
@@ -2162,7 +2174,7 @@ never where it sits - `read_record` the `review.readReturns` rows a sign-off wri
 their signatures or None for a verdict recording none, and `ref_phase_returns` /
 `tip_phase_returns` read the returns a branch commits straight off git, the one command this
 module runs (`rd1`-`rd4`). What it cannot hold: the task
-id and role a caller files under are the caller's word. Cases in `plugins/audit/tests/test__filed_returns.py`.
+id and role a caller files under are the caller's word. Cases in `tests/test__filed_returns.py`.
 
 ### `plugins/audit/scripts/manifest/_task_outputs.py`
 What a task's **`outputs`** pattern may be, and what an honoured one reaches.
@@ -2217,7 +2229,7 @@ bring every file of the one locale directory the layout shows (`messages/<tag>.j
 `locales/<tag>/...`); two candidate directories or none add nothing. A test path for which
 `_runner_collects.collects` answers `NOT_COLLECTED` brings the runner config; `COLLECTED` and
 `COULD_NOT_TELL` add nothing and say which. Its cases are in
-`plugins/audit/tests/test__scope_companions.py`.
+`tests/test__scope_companions.py`.
 
 ### `plugins/audit/scripts/manifest/_proposals.py`
 The proposal lifecycle itself: the refusals in `commands/propose.md`'s own order,
@@ -3184,7 +3196,7 @@ only outbound call, one unauthenticated GET to the GitHub API with a short timeo
 "could not be asked", never "up to date"; the update commands (`claude plugin marketplace
 update`, `claude plugin update`, a restart) print only when a newer release is known and the
 marketplace is. Exit 0, 1 when a newer release is published, 2 a usage error. An entry
-point; its cases are in `plugins/audit/tests/test_audit_version.py`.
+point; its cases are in `tests/test_audit_version.py`.
 
 ### `plugins/audit/scripts/status/_claude_home.py`
 The readers of Claude Code's own install records, moved down from `audit-version.py` so
@@ -3202,7 +3214,7 @@ parser's `error` so every usage error also names this copy's version and path an
 local scope recorded for it before user scope, another project's never) when that copy is
 newer, with `/reload-plugins` as the way to it; an unreadable record is said to be unreadable.
 It sits here, beside the shared base modules, so every entry point can reach the one hook;
-`stamp-verification.py` carries it. Its cases are in `plugins/audit/tests/test__claude_home.py`.
+`stamp-verification.py` carries it. Its cases are in `tests/test__claude_home.py`.
 
 ### `plugins/audit/scripts/status/audit-lookup.py`
 One question, one answer, with the pointer that lets a reader check it — instead of the
@@ -3686,7 +3698,7 @@ differs is a breach naming the file and both values - the landing's stamp left a
 compares the stamp, never the file's dirtiness, so other edits to the plan are not this breach;
 a phase that has not landed is `not-applicable`. It is the one check that reads the working
 tree, so its answer is about the tree it runs in. The `ln` cases in
-`plugins/audit/tests/test__invariants.py` hold it at the library, and `lc` in
+`tests/test__invariants.py` hold it at the library, and `lc` in
 `test_verify_invariants.py` through the CLI.
 
 ### `plugins/audit/scripts/governance/_scoped_commit.py`
@@ -4348,7 +4360,7 @@ instruction: `dispatch` (an agent type, the task, its model and the brief file `
 brief` wrote), `decide` (a named decision with its options), or `done`. The command body is the
 loop — run `next`, do what it prints, run `next` again — so a task costs the main loop four
 requests: dispatch the executor, `next`, dispatch the reviewer, `next`. `dp2` in
-`plugins/audit/tests/test_drive_phase.py` counts them over a drive of a fixture plan.
+`tests/test_drive_phase.py` counts them over a drive of a fixture plan.
 
 **Every step is an existing verb, run as a subprocess.** An entry point may not import another,
 so each verb is resolved by basename through `_loader.script_path` and run: `audit-lock.py
@@ -4511,7 +4523,7 @@ because the stamp is taken after the last claim, refused as a missing stamp when
 `audit-stamp:` line or git put no HEAD in it (`take_stamp`); and last `audit-task.py
 file-return`, the write-once door, which a reviewer's return and a phase review's (`--head`)
 reach unchanged. Exit 0 filed, 1 refused with nothing written, 2 a usage error. The `ds` cases
-in `plugins/audit/tests/test_drive_phase.py` hold each refusal beside the twin that files, and
+in `tests/test_drive_phase.py` hold each refusal beside the twin that files, and
 the drive's own cases play every agent through `submit`.
 
 ### `plugins/audit/scripts/governance/propose-gates.py`
@@ -4605,7 +4617,7 @@ cannot be found. The way past a refusal is `--override-verdict`, journaled as
 off or the row will not write. The digest reads
 the declared files' content and nothing wider: a gate row records no content digest of undeclared
 paths, which is the stamp's `content` field alone. Its cases are
-`plugins/audit/tests/test__verdict_binding.py`.
+`tests/test__verdict_binding.py`.
 
 ### `plugins/audit/scripts/governance/_wave.py`
 Which ready tasks may run together, and what an overlap between two is.
@@ -4620,7 +4632,7 @@ because `"auto"` is the caller's to resolve and a zero must not read as "run not
 `overlap(a, b)` is `None` or a record naming both tasks, the paths both reach and whether the
 overlap is mergeable; a lockfile among them (`is_non_mergeable`) makes it refused whatever else is
 shared. Whether two paths touch is `_task_outputs.covers` and nowhere here. Its cases are
-`plugins/audit/tests/test__wave.py`.
+`tests/test__wave.py`.
 
 ### `plugins/audit/scripts/governance/_tree_stamp.py`
 Which tree was this, and is it still that one.
@@ -4668,7 +4680,7 @@ group SIGTERM then SIGKILL and says whether that could be confirmed (`shares_our
 from aiming at its own caller), `drain` reads what was written after the group is gone, and
 `arm_interrupt`/`disarm_interrupt` install and restore handlers that raise `KeyboardInterrupt`
 naming the signal. What it cannot cover is SIGKILL, which no handler sees. Its cases are
-in `plugins/audit/tests/test__proc_group.py`, and `run-test-gate.py`'s names are this module's
+in `tests/test__proc_group.py`, and `run-test-gate.py`'s names are this module's
 objects.
 
 **It also owns the shell a plan command runs under.** A plan's commands are POSIX shell, and
@@ -4699,7 +4711,7 @@ translate) is `COULD_NOT_TELL`. The runner's own listing is asked first - `vites
 pytest's list can prove a file collected but never that one is not); otherwise a literal `include`, `testMatch`/`roots`
 or pytest default is read from the config TEXT, which is tokenised and never executed. `match_glob`
 holds the picomatch forms it translates and answers `None` for the rest. It reaches
-nothing but `_output`. Its cases are in `plugins/audit/tests/test__runner_collects.py`.
+nothing but `_output`. Its cases are in `tests/test__runner_collects.py`.
 
 ### `plugins/audit/scripts/governance/_runner_output.py`
 Every reading of what a test runner printed: `_SUMMARY_READERS` and `summary_count` for how many
@@ -4709,7 +4721,7 @@ written in `run-test-gate.py`; `stamp-verification.py red` asks the same output 
 and an entry point may not import another, so they moved here rather than being written twice.
 `failing_suites` and its path filters stayed in the gate, because they read `_evidence_io`'s
 limits and that module sits above this one. It reaches nothing but `_output`. Its cases
-are in `plugins/audit/tests/test__runner_output.py`, and `run-test-gate.py`'s names are this
+are in `tests/test__runner_output.py`, and `run-test-gate.py`'s names are this
 module's objects.
 
 **The selftest sweep is read for files, not checks.** `sweep_summary` and `sweep_failures` read
@@ -5955,7 +5967,7 @@ set the `$schema` URL to your published raw path and fill `repo`/`createdISO`.
 Byte-for-byte the JSON block `docs/research/guard-ownership-design.md` derives. An optional
 `.claude/settings.json` fragment for users who also want Claude Code's own sandbox and
 `permissions.deny` layer to refuse secret reads — it sits alongside this plugin's guards and
-replaces no rule in them. `plugins/audit/tests/test_guard_secrets_read.py` parses `SECRET_PATH`'s
+replaces no rule in them. `tests/test_guard_secrets_read.py` parses `SECRET_PATH`'s
 own compiled alternation rather than reading it by line, so a grouped extension or two
 alternatives written on one source line are not merged or dropped; it pins that the template
 parses and is byte-identical to the design doc's block, that every top-level alternative is
@@ -5968,7 +5980,7 @@ in the template, individually.
 End-user docs: install, run, the config table, the three-layer extensibility model, and a
 one-minute manifest overview.
 
-### `plugins/audit/tests/` — ONE section, not one per file (v0.40.0, done)
+### `tests/` — ONE section, not one per file (v0.40.0, done)
 
 45% of this tree (22,363 of 49,393 lines) was `--selftest` blocks living inside the modules
 they test, and all 48 files carried their own copy of `check()`. Those blocks moved out, one
@@ -6200,7 +6212,7 @@ sh tools/verify.sh
 sh tools/verify.sh --list
 # ...or one suite, or a few, without a whole slice: the sweep runner takes paths,
 # grades each the way a whole sweep does, and refuses one it does not sweep
-python3 tools/sweep-selftests.py plugins/audit/tests/test__refs.py
+python3 tools/sweep-selftests.py tests/test__refs.py
 
 # 2. IP scrub — must print nothing (substitute your source project's identifiers)
 grep -riE '<client-name>|<internal-lib>|<bundle-id>' .

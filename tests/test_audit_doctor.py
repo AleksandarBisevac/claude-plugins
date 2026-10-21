@@ -11,8 +11,8 @@ ONE fixture directory that is mutated step by step - a config written, a manifes
 broken, a lock aged, a journal row appended, a hook marker touched - so each case
 asks what the doctor says about the repo AS IT NOW STANDS. Only two call a check
 function directly (`check_policy`, `check_ado`); the split is
-`grep -c 'M.diagnose(' plugins/audit/tests/test_audit_doctor.py` against
-`python3 plugins/audit/tests/test_audit_doctor.py --selftest | tail -1`. It is an
+`grep -c 'M.diagnose(' tests/test_audit_doctor.py` against
+`python3 tests/test_audit_doctor.py --selftest | tail -1`. It is an
 integration suite, not that many unit cases wearing one prefix, and splitting it
 or re-shaping the cases would change WHAT is tested rather than where it lives.
 The sequence, the fixture and the ordering are byte-identical to what

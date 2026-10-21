@@ -408,14 +408,16 @@ def _cases(check):
           repr((sorted(_link), _uncovered, sorted(_defs))))
     # The claim mv34 and mv35 rest on is "this is not the tree's only schema walk",
     # and its opposite is what three comments said while nothing counted. So count.
-    # A `$defs` read under `scripts/` is one of the two walks or a comment naming
-    # them; a file this table does not know is a third walk or a fourth account of
+    # A `$defs` read under `scripts/` or `tools/lints/` (where `_deps` and `_refs`
+    # went: a walk is a walk wherever the file sits) is one of the two walks or a
+    # comment naming them; a file this table does not know is a third walk or a fourth account of
     # these two, and either way the SCHEMA_ANCHORS comment has to be re-read rather
     # than trusted.
     _isrc = {}
-    for _rel, _path in _output.py_files(_output.SCRIPTS_DIR):
-        with open(_path, "r", encoding="utf-8") as _fh:
-            _isrc[_rel] = _fh.read()
+    for _dir in (_output.SCRIPTS_DIR, _output.LINTS_DIR):
+        for _rel, _path in _output.py_files(_dir):
+            with open(_path, "r", encoding="utf-8") as _fh:
+                _isrc[_rel] = _fh.read()
     _walk_files = {"config/_help.py": "the walk this comparison uses, by path",
                    "demo/gen-demo-manifest.py": "the other walk, by $def name",
                    # A THIRD WALK, ADDED WITH ITS ROW. `_deps.config_vocabulary()`
@@ -454,7 +456,7 @@ def _cases(check):
     _defs_readers = sorted(rel for rel, text in _isrc.items() if "$defs" in text)
     check("mv36 ...and the claim both of those rest on - that this is NOT the "
           "tree's only schema walk - is COUNTED rather than written down: every one "
-          "of the %d files under scripts/ that reads `$defs` is one this comment "
+          "of the %d files under scripts/ and tools/lints/ that reads `$defs` is one this comment "
           "accounts for. The opposite claim used to sit in three comments with "
           "nothing counting it, so the symmetric difference is the case: %r"
           % (len(_walk_files), sorted(set(_defs_readers) ^ set(_walk_files))),

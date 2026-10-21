@@ -138,9 +138,9 @@ Config: `.claude/audit.config.json` → bashWriteCheck.enabled (default true).
 Non-git repos, git errors/timeouts (5 s) → silent. ALWAYS exits 0.
 
 This hook carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test_guard_bash_writes.py` (hyphens become underscores - a
+`tests/test_guard_bash_writes.py` (hyphens become underscores - a
 hyphenated name is not importable). A test of a hook may import from `scripts/`
-even though the hook itself may not; see `plugins/audit/tests/_harness.py`.
+even though the hook itself may not; see `tests/_harness.py`.
 """
 import json
 import os
@@ -2276,6 +2276,6 @@ if __name__ == "__main__":
         # print the `N/M cases passed` contract - that string is how
         # `_output.selftest_coverage()` tells an inline suite from a migrated one.
         print("guard-bash-writes.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test_guard_bash_writes.py - run that file instead.")
+              "tests/test_guard_bash_writes.py - run that file instead.")
         sys.exit(0)
     main()

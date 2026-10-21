@@ -32,8 +32,8 @@ sentence: the report's Markdown renderer calls the Usage section's Markdown
 renderer.
 
 This module carries no `--selftest` of its own any more; its cases live in
-`plugins/audit/tests/test__report_md.py`, byte-identical labels and all - see
-`plugins/audit/tests/_harness.py`.
+`tests/test__report_md.py`, byte-identical labels and all - see
+`tests/_harness.py`.
 """
 import os
 import sys
@@ -249,5 +249,5 @@ if __name__ == "__main__":
         # suite contract - that literal is how `_output.selftest_coverage()`
         # tells an inline suite from a migrated one.
         print("_report_md.py has no inline --selftest; its cases moved to "
-              "plugins/audit/tests/test__report_md.py - run that file instead.")
+              "tests/test__report_md.py - run that file instead.")
     sys.exit(0)
