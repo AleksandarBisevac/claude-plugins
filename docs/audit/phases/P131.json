@@ -1151,7 +1151,7 @@
     {
       "id": "P131.5",
       "title": "The drive dispatches the writer through the session runner on the plain prompt, and a red task gate resumes the session that wrote the task",
-      "status": "in_progress",
+      "status": "done",
       "description": "drive-phase.py's dispatch names run-agent-session.py --role writer with the prompt from brief --role writer, instead of an Agent call carrying the executor body, and records the session id and the printed cost on the task. When the drive's own task gate is red (browser gates included, run under the orchestrator as today) the decision is resume: run-agent-session.py --resume <session id> with the gate's failing lines as the prompt, spending no attempt, so the writer that holds the task's context fixes it. At most two resume rounds per task; after the second the task stops with a note naming both runs, and a fresh retry stays available. Update commands/phase.md's dispatch step (it is at its byte ceiling, so the step is reworded within it) and reference/orchestrator.md. Acceptance: (1) the dispatch line for a writer names run-agent-session.py with the writer role, the task id and a full model id, and names no executor agent; (2) a red task gate on a task with a recorded session recommends resume of that session carrying the failing lines and spends no attempt; (3) a third red after two resumes stops with a note naming both runs; (4) the recorded cost of every session the task ran is on the task; (5) commands/phase.md stays within its byte ceiling.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1209,32 +1209,58 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7cf2a9cdf63f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: with executor.writerModel (passed as given; the runner refuses an alias) and executor.writerBudgetUsd set, the executor dispatch becomes step dispatch-writer: audit-lookup.py brief --role writer writes the plain prompt, the line reads `dispatch run-agent-session.py --role writer --task <id> --model <id> prompt=<path>`, the signal basis names `run-agent-session.py --role writer model=<id>`, and --explain prints the whole command as a `run:` line (signal_of gained `runs`; wave_said carries them). The command passes --record <stateDir>/sessions/drive/<task>.<start>.<round>.json; note_sessions (top of advance) reads each record once and writes `audit-task.py note` with the session id and total_cost_usd from the session's own result (or, for a run with no result, the runner's words and no cost). A red task gate goes through gate_red_decision: with a recorded session and fewer than MAX_RESUME_ROUNDS (2) resumes spent it asks gate-red-writer (resume|retry|rerun|block, rule recommends resume and says no attempt is spent), storing the gate's failing lines; --answer resume writes them as a prompt file and prints step resume-writer with --resume <session>, no start_task, so no attempt. After the second resume a still-red gate writes one note naming each resumed run's stream and cost, then asks the plain gate-red (retry|rerun|block), whose retry starts a fresh session. Without writerModel the executor Agent dispatch is unchanged (rollback path); writerModel without a positive budget stops naming executor.writerBudgetUsd. run-agent-session.py gained --record PATH: writes {line, exit} for every outcome after argument parsing (usage refusals as `usage: ...`), via a refuse callback, no module state; written in place because the driver's reader treats an unparsable record as not yet written (an os.replace was refused by _deps sw1, and the sanctioned atomic writer would add an import edge PLUGIN-BUILD-GUIDE.md lists). commands/phase.md step 3 reworded (run form 3979/3980); orchestrator.md line 15 extended and the rerun bullet compacted (61996/62000). tests/test_drive_phase.py: new ws-block (ws1-ws9), runs the real run-agent-session.py against a stub claude on PATH (POSIX sh wrapper / Windows .cmd), _repo gained executor=, the two dispatch wrappers forward the new optional tree argument, the signal corpus gained dispatch-writer and resume-writer. Own command exit 0, 12/12; full test_drive_phase.py earlier 416/418 with the two wrapper arity failures since fixed (dp/dpm re-run 11/11). Mutations in a scratch copy, each asserted applied, restored by git checkout there: cap 99 -> ws5 red; resume calls start_task -> ws4-ws7 red; note_sessions no-op -> ws2-ws6 red; session ignored -> ws3-ws6 red; over-fire (resume offered with no session) -> dd1, dd2 red; runner record write skipped -> ws2-ws6 red. Committed-copy sweep (git ls-files -co into a temp repo, CLAUDE_* and AUDIT_LOCK_TOKENS unset): exit 1, 189/191 files, failing only tools/check-example-ledgers.py (el1: fixedIn 27859f9 unresolvable) and tools/measure-context.py (mc18: ref 7b489337c06d unresolvable), the two the orchestrator allows, both history lookups a single-commit copy cannot answer. NOT DONE, outside this task's files: (a) the config schema and _config_rules do not know executor.writerModel/writerBudgetUsd - validate-config.py prints `WARNING: unknown executor key` for each (exit 0); (b) commands/run.md, next.md, resume.md, review.md still say `dispatch -> an Agent`; (c) the writer files no return yet, so in production a session ends at no-executor-return until the drive files the return itself; (d) the runner's --record on a usage refusal has no case (tests/test_run_agent_session.py is not in this task's files).",
+        "descriptive": "Under executor.writerModel the drive dispatches the writer as a run-agent-session.py command, notes each session's own cost on the task, and resumes that session on a red task gate for at most two rounds before a fresh retry."
       },
       "startedAt": "2026-10-21T04:54:11Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-21T07:02:39Z",
+      "verifiedBy": [
+        "ws1 the writer dispatch line names run-agent-session.py, --role writer, the task and the full model id, no executor agent; its run: line runs the runner on the brief --role writer prompt with no --resume",
+        "ws2 the session the runner ran is noted on the task once with its session id and cost",
+        "ws3 a red gate with a recorded session is gate-red-writer, resume first, no attempt spent",
+        "ws4 each resume runs --resume <session> with the gate's failing lines as the prompt, reaching the stub claude, no attempt spent",
+        "ws5 the third red after two resumes is the plain gate-red with no resume, and one note names both resumed runs",
+        "ws6 every session's own cost is on the task, each once",
+        "ws7 retry after the cap spends one attempt and dispatches a fresh session",
+        "ws8 rollback twin: no writerModel keeps the executor Agent dispatch",
+        "ws9 writerModel without writerBudgetUsd stops naming the key"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-21T07:02:36Z.07b059",
         "status": "passed",
         "at": "2026-10-21T07:02:36Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7cf2a9cdf63f",
+        "at": "2026-10-21T07:02:39Z",
+        "return": "docs/audit/evidence/returns/P131.5/20261021T045411Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-21T05:34:46Z",
+        "basis": "`python3 tests/test_drive_phase.py --selftest --stage dd-block --stage ws-block` in a throwaway tree at HEAD exited 1 with 8 of 12 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `ws-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - ws1 (house FAIL), ws2 (house FAIL), ws3 (house FAIL), ws4 (house FAIL), ws5 (house FAIL), ws6 (house FAIL), ws7 (house FAIL), ws9 (house FAIL): SELFTEST FAILED: 4/12 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P131.6",
       "title": "After a writer session the drive proves red-first through git, locks the test digest, takes the stamp and files the return itself",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The writer no longer runs submit, so the drive runs the same verbs after the session ends: stamp-verification.py red with the own-tests command the drive already resolves for executor.runsGate own-tests, in a throwaway tree at HEAD with only the task's test files copied over it (so it proves red on an uncommitted change); it records the sha256 digest of those test files at the proof. Then stamp-verification.py take, then audit-task.py file-return with a return the drive builds: the diff's paths, the red-first block with its test digest, the stamp, and the writer's last message quoted verbatim as the writer's claim, never as a verdict. Where no test command can be derived, the red-first block is could-not-prove with that basis, never proved. The digest is locked: a resume round that changes a test file after the proof re-proves red and lists the changed test files for the reviewer, and the commit is refused while the test files differ from the locked digest with no re-proof on record. A session that left a commit past the task's start stops with a decision naming the commit, and nothing is filed. reference/execute-task.md states the drive-side order. Acceptance: (1) on a fixture tree whose new test fails without the change, the filed return's red-first block is proved, carries the test digest, and quotes the writer's last message as its claim; (2) a task whose tests yield no derivable command is filed with red-first could-not-prove naming the basis; (3) a test file edited after the proof without a re-proof makes the commit refuse, naming the file; (4) a writer session that left a commit stops with a decision naming the commit and files nothing; (5) red run by the drive proves red exactly as when an executor ran it.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
         "plugins/audit/scripts/governance/stamp-verification.py",
         "plugins/audit/reference/execute-task.md",
         "tests/test_drive_phase.py",
-        "tests/test_stamp_verification.py"
+        "tests/test_stamp_verification.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "tests/test_audit_lookup.py",
+        "tests/test__filed_returns.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1266,16 +1292,22 @@
       "dependsOn": [
         "P131.5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-21T07:02:41Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-21T08:54:42Z.66c7f4",
+        "status": "passed",
+        "at": "2026-10-21T08:54:42Z"
+      }
     },
     {
       "id": "P131.7",
@@ -1644,7 +1676,7 @@
       "id": "P131.13",
       "title": "A fix task made at triage derives its gate only from the suite paths among the finding's files, and takes the phase gate when none is a suite",
       "status": "pending",
-      "description": "A fix task the drive makes from `next <phase> --answer fix --fix <id>` derived its gate (`gateBasis: files`) from every file the finding names, so a non-suite path (.github/workflows/ci.yml) was handed to the sweep and the gate was red on every run regardless of the work (seen on BF4.3). Do: the fix-task builder derives a gate only from paths `_manifest_phases.is_suite_path` accepts, and falls back to the phase gate when none is a suite; the write-time shape check refuses a files-derived gate entry that names a non-suite path, and the task records why such an entry got past it before.",
+      "description": "A fix task the drive makes from `next <phase> --answer fix --fix <id>` derived its gate (`gateBasis: files`) from every file the finding names, so a non-suite path (.github/workflows/ci.yml) was handed to the sweep and the gate was red on every run regardless of the work (seen on BF4.3). Do: the fix-task builder derives a gate only from paths `_manifest_phases.is_suite_path` accepts, and falls back to the phase gate when none is a suite; the write-time shape check refuses a files-derived gate entry that names a non-suite path, and the task records why such an entry got past it before. ALSO (register F674 reopened, seen on another project 2026-10-21): a fix task made from a finding whose files are all documentation or comments, or whose resolution says no code change, is born tdd with expectRedFirst and an empty tests.add, so its submit owes a test command it cannot have (drive-phase.py ~4362-4375, audit-task.py ~3094). Default such a fix task to gate-only, and never write expectRedFirst true beside an empty tests.add.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1657,7 +1689,8 @@
         "mode": "tdd",
         "add": [
           "tests/test_drive_phase.py: a fix task made from a finding naming a workflow file and a suite gets a gate naming only the suite, and one naming no suite gets the phase gate with gateBasis saying so",
-          "tests/test_audit_task.py: adding a task whose files-derived gate names a non-suite path is refused by name"
+          "tests/test_audit_task.py: adding a task whose files-derived gate names a non-suite path is refused by name",
+          "tests/test_drive_phase.py: a fix task made from a finding whose files are only a .md and a comment-only edit is gate-only with expectRedFirst false, and a finding naming a source file stays tdd"
         ],
         "expectRedFirst": true,
         "gate": [
@@ -1690,7 +1723,7 @@
     {
       "id": "P131.14",
       "title": "The low findings carried from BF4: CI check names without the image, a block-list matrix axis read by gate-parity, and a history sentence in ci.yml corrected",
-      "status": "pending",
+      "status": "in_progress",
       "description": "One batched task for the lows carried under D9. (1) BF4-R4: the pinned runner image appears in reported check names (selftests, e2e, lint + e2e, resample), so the next image move renames the checks; drop the image from the display names where the matrix allows, keep tools/ci-verified.py's prefixes matching, and state in the outcome that the repository's required-check list must be checked by the owner. (2) BF4-R5: tools/gate-parity.py `_matrix_key_values` reads only an inline list or scalar; a block-sequence axis yields nothing and, mixed with an include row naming the key, passes a floating value silently - read the block sequence (or report the job unreadable) and add a case beside ri4. (3) BF4-R6: .github/workflows/ci.yml's header comment says the pinned images are what the last green run logged, but that run logged windows-2025-vs2026 for the windows-2025 label; reword it as present-tense fact.",
       "files": [
         ".github/workflows/ci.yml",
@@ -1719,21 +1752,27 @@
       "dependsOn": [
         "P131.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-21T07:02:43Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-21T08:55:26Z.5563f4",
+        "status": "passed",
+        "at": "2026-10-21T08:55:26Z"
+      }
     },
     {
       "id": "P131.15-dau",
       "title": "The moved-file guard sees the move to tests/ and tools/lints/, and no command in a docstring or eval imports _deps or _refs from scripts/",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Found by the adversarial review of P131.1 (two medium findings). (1) _output.moved_file_target and _refs.manifest_moved_files index only files under plugins/audit/, so a suite moved to tests/ or a lint moved to tools/lints/ reads as gone (quiet history) instead of moved: manifest_moved_files()['gone'] went 25 -> 2647, and /audit:task add --files plugins/audit/tests/... is accepted. Widen the index to tests/ and tools/lints/ so the move is recognised, keeping done tasks as history. Then the orchestrator repoints the pending tasks that still name old paths (P129.7-.11-izt, P109.1-.7 and .9, P86.1/.3/.4) with /audit:task scope. (2) Docstring commands in _manifest_rules.py:68, _manifest_vocab.py:13, _doctor_policy.py:27 and the before-you-claim eval prompt (evals.json:18) run sys.path.insert(0,'plugins/audit/scripts');import _deps, which now raises ModuleNotFoundError; repoint them to tools/lints and add the lint that keeps the class closed. Find them with: git grep -nE 'import _(deps|refs)' -- . ':!tests' ':!tools' ':!docs/audit'.",
       "files": [
         "plugins/audit/scripts/_output.py",
@@ -1762,6 +1801,55 @@
         "writing-python",
         "no-silent-pass",
         "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-21T07:02:46Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-21T09:05:54Z.5fe3a7",
+        "status": "failed",
+        "at": "2026-10-21T09:05:54Z"
+      }
+    },
+    {
+      "id": "P131.16-dau",
+      "title": "The affected selection's miss rate is measured on this repository's history before any task gate trusts it",
+      "status": "pending",
+      "description": "Add tools/measure-affected-miss.py. Mutation half: for each of the last N task commits (default 20), in a scratch worktree at that commit, apply each of two mutations to every changed .py (an import-time raise, and a house-style violation the tree lints read), run the full sweep, and count the suites that went red that tools/affected.py --base <parent> did not select. CI half: for each failed CI run in the window, read its failing suites (gh run view --log-failed) and check them against the selection for that SHA's diff. It prints 'misses M of N commits (mutation); K of J runs (CI)' with every miss named; a CI half that could not ask prints could-not-ask and is never read as zero. It never edits the checkout: every mutation happens in its own scratch worktree, removed in finally. Acceptance: (1) on a fixture repository where a suite depends on a changed module the selection omits, the miss is counted and named; (2) a selection that includes every red suite counts zero misses; (3) no gh, or no network, prints could-not-ask for the CI half; (4) the checkout's status is unchanged after a run; (5) the measured result over 20 commits is recorded in the task outcome with the commit range. MOVED from S3 into S1 by the owner (2026-10-21: \"zameni S2 i S3 i pokreni miss-rate odmah\"); it measures and changes no gate, so S3.2 still owns trusting the selection.",
+      "files": [
+        "tools/measure-affected-miss.py",
+        "tools/affected.py",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/measure-affected-miss.py: on a fixture repository a suite that depends on a changed module the selection omits is counted as a miss and named, and a selection holding every red suite counts zero; and with no gh on PATH the CI half prints could-not-ask and is never counted as zero misses, and the checkout's git status is unchanged after a run"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/measure-affected-miss.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim",
+        "choosing-what-to-optimize",
+        "verifying-external-behavior"
       ],
       "risk": "med",
       "blockedBy": [],

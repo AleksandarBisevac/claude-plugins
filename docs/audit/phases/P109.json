@@ -35,8 +35,8 @@
         "plugins/audit/scripts/_ui_theme.py",
         "plugins/audit/scripts/ui/panel-css/tokens-and-reset.css",
         "plugins/audit/scripts/ui/panel-css/status-colours.css",
-        "plugins/audit/tests/test__ui_theme.py",
-        "plugins/audit/tests/test__panel_ui.py",
+        "tests/test__ui_theme.py",
+        "tests/test__panel_ui.py",
         "examples/acme-store/acme-store-audit.html",
         "docs/index.html",
         "docs/demo-large.html"
@@ -44,8 +44,8 @@
       "tests": {
         "mode": "tdd",
         "add": [
-          "plugins/audit/tests/test__ui_theme.py: every --st-*-ink token, light and dark, measures at least 4.5:1 by contrast_ratio against each surface token a status pill sits on in the panel and in the report",
-          "plugins/audit/tests/test__panel_ui.py: the assembled panel CSS defines --ok, --warn and --err only as var() references to the shared --st-*-ink tokens, with no raw hex for any of them"
+          "tests/test__ui_theme.py: every --st-*-ink token, light and dark, measures at least 4.5:1 by contrast_ratio against each surface token a status pill sits on in the panel and in the report",
+          "tests/test__panel_ui.py: the assembled panel CSS defines --ok, --warn and --err only as var() references to the shared --st-*-ink tokens, with no raw hex for any of them"
         ],
         "expectRedFirst": true,
         "gate": [
@@ -80,14 +80,14 @@
       "files": [
         "plugins/audit/scripts/status/_claude_home.py",
         "plugins/audit/scripts/status/_doctor_setup.py",
-        "plugins/audit/tests/test__claude_home.py",
-        "plugins/audit/tests/test__doctor_setup.py"
+        "tests/test__claude_home.py",
+        "tests/test__doctor_setup.py"
       ],
       "tests": {
         "mode": "tdd",
         "add": [
-          "plugins/audit/tests/test__claude_home.py: with two install records for one cache folder naming different commits, install_record returns both rather than the first",
-          "plugins/audit/tests/test__doctor_setup.py: cache_integrity answers clean when the cache is byte-identical to one of several recorded commits, clean for a single correct record, and unverifiable only when no recorded commit is present in a shallow marketplace clone"
+          "tests/test__claude_home.py: with two install records for one cache folder naming different commits, install_record returns both rather than the first",
+          "tests/test__doctor_setup.py: cache_integrity answers clean when the cache is byte-identical to one of several recorded commits, clean for a single correct record, and unverifiable only when no recorded commit is present in a shallow marketplace clone"
         ],
         "expectRedFirst": true,
         "gate": [
@@ -122,7 +122,7 @@
         "package-lock.json",
         "tools/verify.sh",
         "CONTRIBUTING.md",
-        "plugins/audit/tests/_harness.py"
+        "tests/_harness.py"
       ],
       "tests": {
         "mode": "gate-only",
@@ -159,14 +159,14 @@
         "plugins/audit/hooks/hooks.json",
         "plugins/audit/hooks/detect-plan-skip.py",
         "plugins/audit/hooks/_config.py",
-        "plugins/audit/tests/test_detect_plan_skip.py",
+        "tests/test_detect_plan_skip.py",
         "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
         "add": [
-          "plugins/audit/tests/test_detect_plan_skip.py: a PermissionDenied payload appends exactly one log line carrying the tool and the denial reason verbatim, with empty stdout and exit 0",
-          "plugins/audit/tests/test_detect_plan_skip.py: a PermissionDenied payload never yields a retry answer or any decision field"
+          "tests/test_detect_plan_skip.py: a PermissionDenied payload appends exactly one log line carrying the tool and the denial reason verbatim, with empty stdout and exit 0",
+          "tests/test_detect_plan_skip.py: a PermissionDenied payload never yields a retry answer or any decision field"
         ],
         "expectRedFirst": true,
         "gate": [
@@ -199,14 +199,14 @@
         "plugins/audit/hooks/hooks.json",
         "plugins/audit/hooks/detect-plan-skip.py",
         "plugins/audit/hooks/_config.py",
-        "plugins/audit/tests/test_detect_plan_skip.py",
+        "tests/test_detect_plan_skip.py",
         "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
         "add": [
-          "plugins/audit/tests/test_detect_plan_skip.py: a SessionStart payload prunes stale files of every state family the plugin writes, including one today's prefix tuple misses, keeps fresh ones and prints nothing",
-          "plugins/audit/tests/test_detect_plan_skip.py: a UserPromptSubmit payload no longer runs the GC"
+          "tests/test_detect_plan_skip.py: a SessionStart payload prunes stale files of every state family the plugin writes, including one today's prefix tuple misses, keeps fresh ones and prints nothing",
+          "tests/test_detect_plan_skip.py: a UserPromptSubmit payload no longer runs the GC"
         ],
         "expectRedFirst": true,
         "gate": [
@@ -237,14 +237,14 @@
       "description": "On a session's first call, the Bash and MCP sweep in journal-writes.py stores a full copy of every swept target (manifest, shards, config), even in sessions that never write those files. This task makes that content lazy: a session keeps no preimage content for a target it never writes. A session's first write must still get its derived rows, which is the regression pre_cache's docstring guards against. The executor picks the mechanism; the candidate is a digest-only slot, with content kept only for a target that is dirty at Pre time. The task outcome records the measurement: preimage files and bytes in stateDir before and after, for a read-only session and for a manifest-writing session, plus the Bash hook latency from tools/bench-hooks.py. One native pilot per release.",
       "files": [
         "plugins/audit/hooks/journal-writes.py",
-        "plugins/audit/tests/test_journal_writes.py",
+        "tests/test_journal_writes.py",
         "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
         "add": [
-          "plugins/audit/tests/test_journal_writes.py: a session whose Bash calls write no swept target leaves no preimage content in stateDir",
-          "plugins/audit/tests/test_journal_writes.py: a session's first Bash write to a manifest shard still produces its derived rows"
+          "tests/test_journal_writes.py: a session whose Bash calls write no swept target leaves no preimage content in stateDir",
+          "tests/test_journal_writes.py: a session's first Bash write to a manifest shard still produces its derived rows"
         ],
         "expectRedFirst": true,
         "gate": [
@@ -278,12 +278,12 @@
         "plugins/audit/agents/audit-reviewer.md",
         "plugins/audit/reference/orchestrator.md",
         "plugins/audit/reference/execute-task.md",
-        "plugins/audit/tests/test__refs.py"
+        "tests/test__refs.py"
       ],
       "tests": {
         "mode": "regression",
         "add": [
-          "plugins/audit/tests/test__refs.py: the executor and reviewer agent files each declare maxTurns as a positive integer in their frontmatter"
+          "tests/test__refs.py: the executor and reviewer agent files each declare maxTurns as a positive integer in their frontmatter"
         ],
         "expectRedFirst": false,
         "gate": [
@@ -355,8 +355,8 @@
       "description": "plugins/audit/tests/ moves to tests/audit/ at the repository root, and _deps.py and _refs.py move to tools/, so the installed payload carries no test suite and no dev-only lint. _output.py stays the anchor, with TESTS_DIR repointed. Everything that names the old paths follows: every walk, the sweep, CI's paths, verify.sh, prove-gates, affected.py, the repo's require-claim-block hook and the documents. This is the phase's last task, and it waits on P100 and P102 to P108 because it touches every test file those phases edit. Before start, the orchestrator widens files to the full git mv list, because commit_scope matches exact paths. Pending tasks elsewhere that name a moved path (P110's guard tests) and the vermin path in meta.buildCommands.lint are re-pointed through the manifest verbs in audit-state commits. They are never changed in the task commit, which may not stage the index. Verify with a full sweep over a git archive export of the result, not the working tree. COMPATIBILITY.md already leaves these paths outside the promise.",
       "files": [
         "plugins/audit/scripts/_output.py",
-        "plugins/audit/scripts/_deps.py",
-        "plugins/audit/scripts/_refs.py",
+        "tools/lints/_deps.py",
+        "tools/lints/_refs.py",
         "tools/_deps.py",
         "tools/_refs.py",
         "tests/audit/_harness.py",

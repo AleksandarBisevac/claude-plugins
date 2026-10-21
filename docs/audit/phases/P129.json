@@ -377,14 +377,14 @@
       "description": "Held: the end of F3, held on the owner. Supersedes P129.1-izt (moved from P128.9-0h5).\n\nF634 (owner-raised, measured on the testbed): `audit-task._model_floor` routes opus only for `risk: high`, and risk is blast radius, not difficulty - nearly every testbed task ran on Sonnet, including the plan's hardest code (an astronomy core, a WebGL sky layer), because each was low risk; no planning step asks about difficulty. (1) A task records `complexity` (low/med/high) with a one-line basis, separate from risk, written by planning (init synthesis, `/audit:phase add`, `audit-task add`/`scope`) and validated by the manifest schema and rules (additive: a plan without it stays valid and reads as unrecorded, never defaulted). (2) Routing: opus when risk is high OR complexity is high, else sonnet; the caller's explicit `--model` still wins; a config key (`executor.modelByComplexity`, documented in COMPATIBILITY.md as added) can turn the complexity arm off. (3) The plan preview and `/audit:status` show each task's model and the reason it was chosen (risk, complexity, or the caller). (4) Escalation: after a retry, or a med+ finding on a Sonnet attempt, the next attempt of that task runs on opus, journaled with the reason. Red-first: two low-risk fixture tasks - a WebGL scene marked complexity high and a copy edit marked low - route to opus and sonnet; a retried Sonnet task's next dispatch names opus and the journal row says why. Faults: F634.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
-        "plugins/audit/tests/test_audit_task.py",
+        "tests/test_audit_task.py",
         "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/tests/test_drive_phase.py",
+        "tests/test_drive_phase.py",
         "plugins/audit/scripts/manifest/_manifest_vocab.py",
-        "plugins/audit/tests/test__manifest_vocab.py",
+        "tests/test__manifest_vocab.py",
         "plugins/audit/schema/audit-plan.schema.json",
         "plugins/audit/scripts/status/audit-status.py",
-        "plugins/audit/tests/test_audit_status.py",
+        "tests/test_audit_status.py",
         "plugins/audit/commands/init.md",
         "plugins/audit/commands/phase.md",
         "plugins/audit/reference/verbs-in-full.md",
@@ -396,8 +396,8 @@
       "tests": {
         "mode": "tdd",
         "add": [
-          "plugins/audit/tests/test_audit_task.py: a low-risk task with complexity high routes to opus and one with complexity low to sonnet; an explicit --model wins; a plan without complexity stays valid and reads as unrecorded",
-          "plugins/audit/tests/test_drive_phase.py: after a retry on a sonnet attempt the next dispatch names opus and the journal row records why"
+          "tests/test_audit_task.py: a low-risk task with complexity high routes to opus and one with complexity low to sonnet; an explicit --model wins; a plan without complexity stays valid and reads as unrecorded",
+          "tests/test_drive_phase.py: after a retry on a sonnet attempt the next dispatch names opus and the journal row records why"
         ],
         "expectRedFirst": true,
         "gate": [
@@ -437,21 +437,21 @@
       "description": "Held: the end of F5. Supersedes P129.2-izt (moved from P128.10-0h5).\n\nF508 (deferred feature; its revisit trigger - a waves verb - has fired with P124's waves). Today parallel safety is disjoint `files` plus `dependsOn` only, so two tasks that each start a dev server on one port, or hit one rate-limited API, run side by side (the testbed's port 3100 collision is the live shape). Add `resources: {name: capacity}` to audit.config.json (schema + config rules, additive, documented in COMPATIBILITY.md), `needs: [name]` on a task (plan schema + rules, additive), cap wave membership where waves are computed so a wave never holds more tasks needing a resource than its capacity, and have status/the drive say which task was held and for which resource. In the scheduler, not in executor prose. Red-first: two ready tasks both needing `port3100` with capacity 1 never share a wave, the held one is named with the resource; without `resources` the waves are unchanged. Faults: F508.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/tests/test_drive_phase.py",
+        "tests/test_drive_phase.py",
         "plugins/audit/scripts/status/_status_facts.py",
-        "plugins/audit/tests/test__status_facts.py",
+        "tests/test__status_facts.py",
         "plugins/audit/schema/audit-config.schema.json",
         "plugins/audit/schema/audit-plan.schema.json",
         "plugins/audit/scripts/config/_config_rules.py",
         "plugins/audit/scripts/manifest/_manifest_vocab.py",
-        "plugins/audit/tests/test__manifest_vocab.py",
+        "tests/test__manifest_vocab.py",
         "COMPATIBILITY.md",
         "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
         "add": [
-          "plugins/audit/tests/test__status_facts.py: two ready tasks needing one capacity-1 resource never share a wave and the held one names the resource; no resources config leaves waves unchanged"
+          "tests/test__status_facts.py: two ready tasks needing one capacity-1 resource never share a wave and the held one names the resource; no resources config leaves waves unchanged"
         ],
         "expectRedFirst": true,
         "gate": [
@@ -490,12 +490,12 @@
       "files": [
         "plugins/audit/hooks/guard-bash-writes.py",
         "plugins/audit/hooks/_config.py",
-        "plugins/audit/tests/test_guard_bash_writes.py"
+        "tests/test_guard_bash_writes.py"
       ],
       "tests": {
         "mode": "tdd",
         "add": [
-          "plugins/audit/tests/test_guard_bash_writes.py: patch -p0 < f writing an out-of-plan source file gets the same verdict as python3 - <<EOF writing it"
+          "tests/test_guard_bash_writes.py: patch -p0 < f writing an out-of-plan source file gets the same verdict as python3 - <<EOF writing it"
         ],
         "expectRedFirst": true,
         "gate": [
@@ -533,12 +533,12 @@
       "description": "Held: the S5 guard lexer (F4). Owner decision 2026-10-16. Supersedes P129.4-izt (moved from P128.28-0h5).\n\nRegister F684 (fail-open, present at v3.3.0). _eval_write_targets sees only direct-call writes; p = Path(x); p.write_text(...) and loops pass ungraded. Orchestrator writes this guard code.\n\nNote (2026-10-16T18:45:26Z): Owner decision 2026-10-16: deferred to the S5 guard lexer (F4); not patched before it.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
-        "plugins/audit/tests/test_guard_secrets_read.py"
+        "tests/test_guard_secrets_read.py"
       ],
       "tests": {
         "mode": "tdd",
         "add": [
-          "plugins/audit/tests/test_guard_secrets_read.py: a heredoc body that writes through a variable-held path or a loop is refused in a governed tree as an unresolved write, and a read-only body stays allowed"
+          "tests/test_guard_secrets_read.py: a heredoc body that writes through a variable-held path or a loop is refused in a governed tree as an unresolved write, and a read-only body stays allowed"
         ],
         "expectRedFirst": true,
         "gate": [
@@ -576,12 +576,12 @@
       "description": "Held: the S5 guard lexer (F4). Owner decision 2026-10-16. Supersedes P129.5-izt (moved from P128.29-0h5).\n\nRegister F685 (present at v3.3.0). guard-secrets-read's _ungoverned_write_target reads the worktree's stale shard instead of _config.task_binding, so one file gets two verdicts by tool and undeclared shell writes pass on the free slot in a bound tree. Orchestrator writes this guard code.\n\nNote (2026-10-16T18:45:27Z): Owner decision 2026-10-16: deferred to the S5 guard lexer (F4); not patched before it.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
-        "plugins/audit/tests/test_guard_secrets_read.py"
+        "tests/test_guard_secrets_read.py"
       ],
       "tests": {
         "mode": "tdd",
         "add": [
-          "plugins/audit/tests/test_guard_secrets_read.py: in a tree bound to a task, a shell write to a declared file is allowed and one to an undeclared file is refused, with no free slot, matching the edit arm"
+          "tests/test_guard_secrets_read.py: in a tree bound to a task, a shell write to a declared file is allowed and one to an undeclared file is refused, with no free slot, matching the edit arm"
         ],
         "expectRedFirst": true,
         "gate": [
