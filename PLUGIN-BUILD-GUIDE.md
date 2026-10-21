@@ -239,6 +239,7 @@ claude-plugins/                           # this repo (personal, public)
           _gate_feed.py                   # the plan-gate events feed's prune rule: which rows no longer belong
           audit-logs.py                   # /audit:logs: the door onto that rule - parse, render, exit code
           audit-lookup.py                 # one question, one pointer: why cancelled, a bug's conclusion, fileIndex's last declarer; computed spawn briefs
+          _impact.py                      # who reads a declared file: the tracked files naming its path, import or basename, and those naming a name it defines, via git grep
           audit-version.py                # /audit:version: the running build, the marketplace and installed copies, the newest release
           _claude_home.py                 # Claude Code's own install records (installed_plugins.json, known_marketplaces.json), read fail-open
         report/                           # the report domain: the FIRST subdirectory under scripts/
@@ -318,6 +319,7 @@ L1:
 L2:
   _clause_coverage -> _output
   _excerpt -> _output
+  _impact -> _output
   _machine_paths -> _output
   _usage_core -> _loader, _output
   _utc_stamp -> _output
@@ -428,7 +430,7 @@ L9:
   audit-journal -> _claude_home, _evidence_io, _journal_io, _output
   audit-lock -> _claude_home, _locks, _output
   audit-logs -> _claude_home, _gate_feed, _output
-  audit-lookup -> _areas, _claude_home, _clause_coverage, _config_rules, _evidence_io, _excerpt, _filed_returns, _gate_feed, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output
+  audit-lookup -> _areas, _claude_home, _clause_coverage, _config_rules, _evidence_io, _excerpt, _filed_returns, _gate_feed, _impact, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output
   audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _filed_returns, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
   audit-task -> _affected_tests, _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
@@ -3296,6 +3298,37 @@ a miss, 2 a usage error, 3 a config `brief` refuses to read, 4 a brief whose inp
 the record yet. An entry point (reaching `_manifest_io`/`_journal_io`/`_loader`/`_areas`
 and `_evidence_io`, for the project/config resolution `boundary_for` already
 shares). `--selftest`.
+
+The executor's brief, the writer's prompt and the reviewer's brief each carry a
+`Who depends on this` section (`dependant_lines`): `_impact.section` over the declared files,
+searched from the checkout's top with the plan's own directory left out, followed by one line
+asking the executor and the writer to answer each listed dependant as still correct and why,
+or changed — and asking the reviewer to check those answers. The section is bounded by
+`_impact`'s file and line budgets; a cut ends with how many of the declared files it shows and
+the command that lists them all, `dependants <taskId>`, the one verb here that lists every
+declared file's dependants unbounded. A task whose files nothing names gets the section as one
+line saying what was searched, and no ask. Nothing grades the answers mechanically; the
+reviewer's verdict is the check.
+
+### `plugins/audit/scripts/status/_impact.py`
+Who, among a repository's tracked files, reads a file a task is about to change — the reader
+a task gate cannot see because it is not among the task's files: a heredoc importing a module,
+a CI step naming a script, a fenced command in a document. `dependants(root, paths, cap,
+exclude)` runs `git grep` over TRACKED files only and, for each declared path, lists the files
+whose lines carry its Python module name inside an `import`/`from` statement, its path, or its
+basename, each as a whole word; a JS/TS file is also found through a relative specifier written
+without its extension (or with the `.js` an ESM build resolves, or as its directory for an index
+file), resolved against the importing file's directory. Each dependant is listed under its
+strongest kind, importers first and prose last within a kind, so a cap keeps the callers; for a
+`.py` file it also lists, per top-level `def`/`class` name, the files naming it. The declared
+file is never its own dependant, the list is capped with its total kept beside it, and a
+`git grep` that fails is the file's `error`, never an empty list. At most two `git grep` calls
+per declared file, each with a timeout. `section(...)` is a brief's bounded form: it scans at
+most `FILE_BUDGET` files in `scan_order` (those the description names, then source, then
+documents), renders at most `LINE_BUDGET` lines, and closes a cut with the counts and the
+command it is given. `render(results)` is the unbounded text. A file nothing names says what it
+was searched by — and, for JS/TS, that aliased or dynamic imports are not seen. What else it
+cannot see is listed in its docstring. Stdlib and git only. Its cases are `tests/test__impact.py`.
 
 ### `plugins/audit/scripts/governance/_locks.py`
 The lock library: where a lock lives (`lock_dir`), what it may be called

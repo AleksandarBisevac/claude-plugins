@@ -2245,17 +2245,200 @@ def _writer_prompt_cases(check):
             on_disk = fh.read()
     except OSError:
         on_disk = None
+    # The command adds the dependants section the composition alone leaves out;
+    # the expected prompt is that composition with the same section, so every
+    # other byte is still the measured baseline's (`wp1`).
+    phase_one = man["phases"][0]
+    deps = M.dependant_lines(M._brief_context(mpath, proj), phase_one["tasks"][0],
+                             M.DEPENDANTS_ASK_WRITER)
+    expected = "\n".join(M.compose_writer_prompt(
+        man, phase_one, phase_one["tasks"][0], deps)) + "\n"
     check("wp12 `brief P1.1 --role writer` exits 0 and writes exactly the "
-          "prompt, to a file of its own beside the executor's: code=%r file=%s"
+          "prompt, with the dependants section, to a file of its own beside "
+          "the executor's: code=%r file=%s"
           % (code, "found" if on_disk is not None else "missing"),
-          code == M.E_OK and on_disk == text
+          code == M.E_OK and on_disk == expected
+          and on_disk.replace("\n\nWho depends on this:\n%s" % (
+              "\n".join(deps),), "") == text
           and written in out.getvalue())
+    shutil.rmtree(root, ignore_errors=True)
+
+
+_DI_FILES = {
+    "src/refund.py": "def split_refund(total, lines):\n    return total\n",
+    "tests/test_refund.py": "import refund\n",
+    "tools/check.sh": "python3 src/refund.py --check\n",
+    "src/app.py": "print(split_refund(9, 3))\n",
+}
+_DI_ASK = "still correct"
+
+
+def _di_project(root, name, manifest, files):
+    """A git checkout holding the plan and `files`, all tracked - the plan too,
+    so a scan that read the plan's own fileIndex as a dependant is visible."""
+    proj = os.path.join(root, name)
+    os.makedirs(os.path.join(proj, ".claude"))
+    with open(os.path.join(proj, ".claude", "audit.config.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+    os.makedirs(os.path.dirname(mpath))
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh)
+    for rel, text in files.items():
+        path = os.path.join(proj, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+    _harness.git(proj, "init", "-q")
+    _harness.git(proj, "add", "-A")
+    _harness.git(proj, "commit", "-q", "-m", "fixture")
+    return proj, mpath
+
+
+def _di_brief(proj, mpath, role):
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            code = M.main([mpath, "brief", "P1.1", "--role", role,
+                           "--project", proj])
+        except SystemExit as exc:
+            code = exc.code
+    name = {"writer": "writer", "executor": "executor",
+            "reviewer": "reviewer"}[role]
+    path = os.path.join(proj, ".claude", "state", "briefs", "P1.1",
+                        "20260101T000000Z.%s.md" % name)
+    try:
+        with open(path, "r", encoding="utf-8", newline="") as fh:
+            return code, fh.read()
+    except OSError:
+        return code, ""
+
+
+def _di_section(text):
+    """The `Who depends on this` section's lines, heading excluded - `None`
+    when the heading is absent, so an absent section and an empty one differ."""
+    lines = text.split("\n")
+    # The briefs title it as a `##` heading, the writer's prose prompt as a
+    # `Files the task declares:`-style line.
+    heads = [i for i, ln in enumerate(lines)
+             if ln.lstrip("#").strip().rstrip(":") == "Who depends on this"]
+    if len(heads) != 1:
+        return None
+    body = []
+    for ln in lines[heads[0] + 1:]:
+        if ln.startswith("#") or (body and not ln.strip()):
+            break
+        if ln.strip():
+            body.append(ln)
+    return body
+
+
+def _dependants_cases(check):
+    """The executor's brief, the writer's prompt and the reviewer's brief name
+    who depends on the task's files, and the first two ask for an answer per
+    dependant."""
+    root = _harness.fixture_root("audit-lookup-di-")
+    proj, mpath = _di_project(root, "di", _bf_manifest(), _DI_FILES)
+    code, text = _di_brief(proj, mpath, "executor")
+    body = _di_section(text) or []
+    joined = "\n".join(body)
+    refund_at = [i for i, ln in enumerate(body) if "src/refund.py" in ln
+                 and not ln.startswith(" ")]
+    check("di1 the executor brief carries ONE 'Who depends on this' section "
+          "listing src/refund.py's tracked dependants from _impact - the shell "
+          "step naming its path, the test importing it, the file calling its "
+          "function - and NOT the plan that merely indexes it: code=%r %r"
+          % (code, body),
+          code == M.E_OK and _di_section(text) is not None
+          and len(refund_at) == 1
+          and "tools/check.sh" in joined and "tests/test_refund.py" in joined
+          and "src/app.py" in joined and "split_refund" in joined
+          and "audit-plan.json" not in joined)
+    asks = [ln for ln in body if _DI_ASK in ln]
+    check("di2 the executor brief asks for an answer per listed dependant in "
+          "the outcome - still correct (and why) or changed - in ONE line of "
+          "the section: %r" % (asks,),
+          len(asks) == 1 and "changed" in asks[0] and "why" in asks[0]
+          and "outcome" in asks[0])
+
+    wcode, wtext = _di_brief(proj, mpath, "writer")
+    wbody = _di_section(wtext) or []
+    check("di3 the writer prompt carries the same dependant list and the same "
+          "one-line ask: code=%r %r" % (wcode, wbody),
+          wcode == M.E_OK and _di_section(wtext) is not None
+          and "tools/check.sh" in "\n".join(wbody)
+          and "src/app.py" in "\n".join(wbody)
+          and sum(1 for ln in wbody if _DI_ASK in ln) == 1)
+
+    rpath = os.path.join(proj, "docs", "audit", "evidence", "returns", "P1.1",
+                         "20260101T000000Z.executor.json")
+    os.makedirs(os.path.dirname(rpath))
+    with open(rpath, "w", encoding="utf-8", newline="") as fh:
+        fh.write(_BF_EXEC)
+    rcode, rtext = _di_brief(proj, mpath, "reviewer")
+    rbody = _di_section(rtext) or []
+    check("di4 the reviewer brief carries the same list, so the review can "
+          "check each answer, and asks the reviewer to check them rather than "
+          "to give them: code=%r %r" % (rcode, rbody),
+          rcode == M.E_OK and _di_section(rtext) is not None
+          and "tools/check.sh" in "\n".join(rbody)
+          and any("check" in ln.lower() and "answer" in ln for ln in rbody))
+
+    alone = _bf_manifest()
+    proj_n, mpath_n = _di_project(root, "di-none", alone, {
+        "src/refund.py": "X = 1\n", "tests/test_refund.py": "Y = 2\n"})
+    ncode, ntext = _di_brief(proj_n, mpath_n, "executor")
+    nbody = _di_section(ntext)
+    wn_code, wn_text = _di_brief(proj_n, mpath_n, "writer")
+    check("di5 a task whose files no tracked file names keeps the section and "
+          "says so in ONE line, asking nothing - in the brief and the prompt: "
+          "%r / %r" % (nbody, _di_section(wn_text)),
+          ncode == M.E_OK and wn_code == M.E_OK
+          and nbody is not None and len(nbody) == 1
+          and _DI_ASK not in nbody[0] and "could not" not in nbody[0]
+          and _di_section(wn_text) == nbody)
+
+    # A task declaring more files than the brief's budget scans.
+    many = _bf_manifest()
+    count = 30
+    pages = ["docs/p%02d.md" % n for n in range(count)]
+    many_task = many["phases"][0]["tasks"][0]
+    many_task["files"] = pages
+    many_task["description"] = "Rewrite the last page, p29.md, first."
+    page_files = dict((p, "page\n") for p in pages)
+    page_files.update(dict(("refs/r%02d.txt" % n, "see p%02d.md\n" % n)
+                           for n in range(count)))
+    proj_m, mpath_m = _di_project(root, "di-many", many, page_files)
+    mcode, mtext = _di_brief(proj_m, mpath_m, "executor")
+    mbody = _di_section(mtext) or []
+    cuts = [ln for ln in mbody if "declared files shown; the rest: " in ln]
+    command = cuts[0].split("the rest: ", 1)[1] if cuts else ""
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+        try:
+            lcode = M.main([mpath_m, "dependants", "P1.1", "--project", proj_m])
+        except SystemExit as exc:
+            lcode = exc.code
+    listed = [ln for ln in out.getvalue().splitlines() if ln.startswith("- docs/p")]
+    check("di6 a task past the brief's budget gets a bounded section that "
+          "names the description's file, says how many of the declared files "
+          "it shows and gives the command listing the rest; that command (the "
+          "`dependants` verb) lists every declared file: code=%r cut=%r "
+          "listed=%d" % (mcode, cuts, len(listed)),
+          mcode == M.E_OK and len(cuts) == 1
+          and ("of %d declared files shown" % (count,)) in cuts[0]
+          and "dependants P1.1" in command and mpath_m in command
+          and any(ln.startswith("- docs/p29.md") for ln in mbody)
+          and lcode == M.E_OK and len(listed) == count
+          and len(set(ln.split(":")[0] for ln in listed)) == count)
     shutil.rmtree(root, ignore_errors=True)
 
 
 def _selftest():
     def body(check):
         # Each block staged, so one that raises still lets the other run.
+        _harness.stage(check, "di-block", _dependants_cases)
         _harness.stage(check, "al-block", _cases)
         _harness.stage(check, "sl-block", _success_line_cases)
         _harness.stage(check, "bf-block", _brief_cases)

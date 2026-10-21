@@ -15,6 +15,11 @@ already keeps it and handed back with the pointer that lets a reader check it:
     audit-lookup.py <manifest> brief <taskId> [--json]
     audit-lookup.py <manifest> run <runId> [--json]
     audit-lookup.py <manifest> run latest (--phase <id> | --task <id>) [--json]
+    audit-lookup.py <manifest> dependants <taskId>
+
+`dependants` is the one search here, and it is git's, not the manifest's: every
+tracked file that reads each file the task declares (`_impact`), unbounded. A
+brief carries the same list bounded, and its cut line names this command.
 
 THE FILE QUESTION IS A LOOKUP, NOT A SEARCH. `fileIndex` already records which
 tasks declared a path, in the order they were added - `manifest-conventions.md`'s
@@ -92,6 +97,7 @@ import argparse
 import json
 import os
 import pathlib
+import posixpath
 import shlex
 import subprocess
 import sys
@@ -135,6 +141,7 @@ import _filed_returns as _fr  # noqa: E402  (where `submit` filed a return, and
 #                                            which tasks a phase review owes)
 import _config_rules  # noqa: E402  (review_per_task_mode: the config's reading now)
 import _gate_feed  # noqa: E402  (review_asks: what the plan asks a reviewer to refuse)
+import _impact  # noqa: E402  (who among the tracked files reads a task's files)
 
 E_OK = 0
 E_NOMATCH = 1
@@ -655,6 +662,8 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
     else:
         flines = ["The task declares no files yet."]
     lines += _section("Files", flines)
+    lines += _section(DEPENDANTS_TITLE,
+                      dependant_lines(ctx, task, DEPENDANTS_ASK))
     docs = [d for d in (task.get("docs") or []) if isinstance(d, str)]
     lines += _section("Docs", ["- %s" % (d,) for d in docs]
                       or ["The task names no docs."])
@@ -705,6 +714,76 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
     lines += _section(SUBMIT_SECTION,
                       executor_submit_lines(manifest, phase, task, ctx))
     return lines
+
+
+# --- who depends on this ---------------------------------------------------------
+# The tracked files that read a task's files, from `_impact`, in the executor's
+# brief, the writer's prompt and the reviewer's brief. The two writing roles are
+# asked to answer each one; the reviewer is asked to check those answers. Nothing
+# grades the answers mechanically - the reviewer's verdict is the check.
+DEPENDANTS_TITLE = "Who depends on this"
+_DEPENDANT_ANSWER = ("still correct, and why - or changed, and what changed in "
+                     "it or in this task's change.")
+DEPENDANTS_ASK = ("Answer each listed dependant in your outcome: %s"
+                  % (_DEPENDANT_ANSWER,))
+DEPENDANTS_ASK_WRITER = ("Answer each listed dependant in your last message, "
+                         "before its JSON object: %s" % (_DEPENDANT_ANSWER,))
+DEPENDANTS_CHECK = ("Check that the executor's outcome answers each listed "
+                    "dependant - still correct and why, or changed - and that "
+                    "each answer holds against the diff.")
+
+
+def _dependant_scope(ctx, task):
+    """`(top, inside, outside, exclude)` for a task's dependant search: the
+    checkout's top it runs from, the declared entries as git paths, the
+    entries outside the checkout, and the plan's own directory left out (it
+    names every file it indexes and reads none)."""
+    hc = hooks_config()
+    top = _top(ctx)
+    declared = [_vocab._strip_line_suffix(f) for f in task.get("files") or []
+                if isinstance(f, str)]
+    specs = [(f, hc.plan_to_git(f, top, ctx["project"])) for f in declared]
+    planned = sorted(set(d for d in (DOCS_AUDIT, posixpath.dirname(ctx["manifest"]))
+                         if d))
+    exclude = [spec for spec in (hc.plan_to_git(d, top, ctx["project"])
+                                 for d in planned) if spec]
+    return (top, [spec for _f, spec in specs if spec],
+            [f for f, spec in specs if spec is None], exclude)
+
+
+def dependants_command(ctx, task_id):
+    """The command that lists every declared file's dependants, unbounded."""
+    return "%s %s dependants %s --project %s" % (
+        _script(ctx, "status/audit-lookup.py"),
+        shlex.quote(absolute_manifest(ctx["project"], ctx["manifest"])),
+        task_id, shlex.quote(ctx["project"]))
+
+
+def dependant_lines(ctx, task, ask):
+    """The section's lines: `_impact.section` over the declared files - bounded
+    by its file and line budgets, a cut closing with the command that lists the
+    rest - then `ask`, which a section naming nothing to answer for does not
+    get. A declared entry outside the checkout is named as such, not dropped."""
+    top, inside, outside, exclude = _dependant_scope(ctx, task)
+    if not inside and not outside:
+        return ["The task declares no files, so nothing is searched for."]
+    got = _impact.section(top, inside, task.get("description") or "",
+                          dependants_command(ctx, task.get("id")),
+                          exclude=exclude)
+    lines = got["lines"] if inside else []
+    lines += ["- %s: outside the checkout, not searched" % (f,) for f in outside]
+    return lines + [ask] if got["answerable"] else lines
+
+
+def dependants_listing(ctx, task):
+    """Every declared file's dependants, with no budget - what the cut line of a
+    bounded section points at."""
+    top, inside, outside, exclude = _dependant_scope(ctx, task)
+    lines = _impact.render(_impact.dependants(top, inside, exclude=exclude)) \
+        if inside else []
+    return lines + ["- %s: outside the checkout, not searched" % (f,)
+                    for f in outside] or [
+        "The task declares no files, so nothing is searched for."]
 
 
 # --- the writer's prompt ---------------------------------------------------------
@@ -780,10 +859,15 @@ def _or_list(items):
         "%s or %s" % (", ".join(items[:-1]), items[-1]))
 
 
-def compose_writer_prompt(manifest, phase, task):
+def compose_writer_prompt(manifest, phase, task, dependants=None):
     """The writer session's whole prompt, as lines: plain's own text for the
     task, composed from the task alone - no brief path, no rules, no skills, no
     submit - so two calls on the same task are the same bytes.
+
+    `dependants` is `dependant_lines`' answer for the task, placed after the
+    declared files; `write_brief` always passes it, and None leaves the section
+    out - the composition from the task alone, which is what the measured
+    baseline the selftests compare against holds.
 
     A gate entry that names no `meta.buildCommands` key is a literal command, as
     the gate itself runs it (`_evio.resolved_commands`); a browser entry is left
@@ -802,6 +886,8 @@ def compose_writer_prompt(manifest, phase, task):
     lines += _verbatim(task.get("description"), "The task records no description.")
     lines += ["", "Files the task declares:"]
     lines += ["- %s" % (f,) for f in files] or ["- none declared"]
+    if dependants is not None:
+        lines += ["", "%s:" % (DEPENDANTS_TITLE,)] + list(dependants)
     lines += ["", "Tests to add:"]
     lines += ["- %s" % (a,) for a in added] or ["- none"]
     lines += ["", "Before you finish, check that everything passes:"]
@@ -1278,6 +1364,8 @@ def compose_reviewer_brief(manifest, phase, task, ctx, filed):
             "This task ran in a tree of its own and its bytes are not in the "
             "phase tree yet; the diff below is read in that tree against that "
             "base. Read its files there, not in the project."])
+    lines += _section(DEPENDANTS_TITLE,
+                      dependant_lines(ctx, task, DEPENDANTS_CHECK))
     lines += _section("The diff", _diff_lines(ctx, task.get("files"), tree, base))
     lines += [""] + _fr.claim_section(task, filed[1]).split("\n")
     lines += _section("Your return", [
@@ -1861,7 +1949,9 @@ def write_brief(manifest, manifest_path, project_arg, node_id, role):
                 "written." % (node_id, filed[0], node_id))
         lines = compose_reviewer_brief(manifest, phase, task, ctx, filed)
     elif role == "writer":
-        lines = compose_writer_prompt(manifest, phase, task)
+        lines = compose_writer_prompt(
+            manifest, phase, task,
+            dependant_lines(ctx, task, DEPENDANTS_ASK_WRITER))
     else:
         ok, gate = runs_gate_reading(ctx["project"], ctx["hc"])
         if not ok:
@@ -2147,6 +2237,11 @@ def build_parser():
         "--slice", dest="slice", type=int, default=None, metavar="N",
         help="with --read --role phase: print slice N of a phase brief that "
              "outgrew the reader budget and was written as slices")
+    deps_p = sub.add_parser(
+        "dependants", parents=[common],
+        help="every tracked file that reads each file this task declares, "
+             "unbounded - the list a brief's bounded section points at")
+    deps_p.add_argument("id")
     run_p = sub.add_parser(
         "run", parents=[common],
         help="the evidence ledger row a background gate is read from")
@@ -2193,6 +2288,15 @@ def main(argv):
     elif args.question == "bug":
         found, payload = bug_lookup(manifest, args.id)
         node_id = args.id
+    elif args.question == "dependants":
+        target = brief_target(manifest, args.id, "executor")
+        if target is None:
+            print("no task %r in this manifest" % (args.id,))
+            return E_NOMATCH
+        ctx = _brief_context(args.manifest, args.project)
+        for line in dependants_listing(ctx, target[1]):
+            print(line)
+        return E_OK
     elif args.question == "brief" and args.read:
         code, said = read_brief(manifest, args.manifest, args.project, args.id,
                                 args.role, args.slice)

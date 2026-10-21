@@ -212,9 +212,30 @@
         "file": "tools/measure-affected-miss.py:391-393",
         "issue": "inert is computed as 'the mutated sweep had no red', not 'the mutation changed no verdict'. If the commit already holds a suite red unmutated, an inert mutation is reported as 'ran' with red N, so a mutation that did nothing reads as evidence. Not a false miss (the baseline check filters those), but the inert signal is lost exactly when the tree is not green.",
         "resolution": "Compare against the unmutated sweep's red set (or treat reds that the baseline check later lists as baseline_red as not counting toward inert)."
+      },
+      {
+        "id": "P131-R28",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/audit-lookup.py:148-171 and plugins/audit/scripts/status/_impact.py:289-297",
+        "issue": "The scan is bounded per declared file (two git grep calls, a cap of 8 files, the total printed) but not per brief. dependant_lines passes every declared entry to _impact.dependants with no limit on how many files are searched or how many lines are rendered, and the section goes into three artifacts (executor brief, writer prompt, reviewer brief). Measured read-only on this repo with the declared files of the 184-file task P130.8: 8.8 s for one scan, 337 lines, about 121 KB of section text. Tasks with 504 and 235 files exist in this plan (P131.1, P131.2). The per-call 20 s timeout times two times N files has no ceiling either. Test im7 pins only the per-file figure, with three files, so nothing fails if the per-brief figure is unbounded. A large rename task would get a section that is slow to build and swamps the brief, which is the opposite of a bounded brief.",
+        "resolution": "Give dependants()/render() a per-brief budget: search at most K declared files (or stop at a wall-clock deadline), render at most M lines, and print 'N of M declared files searched / lines shown' so the cut is counted, not silent. Add an im7 case with more declared files than the budget that asserts the git-call count and the printed totals."
+      },
+      {
+        "id": "P131-R29",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/_impact.py:123-140 and :301-302",
+        "issue": "For a JS/TS file the dominant importer is invisible, and the brief then states it positively. Probed on a throwaway fixture: src/api.ts imported by src/main.ts as `import {fmt} from './api'` and src/util.js required as `require('./util')` - the importer is matched only when it spells the extension. src/api.ts rendered as 'c.json (path)' alone (main.ts missing). When nothing else names the file the section prints NONE_LINE, 'No tracked file names any of this task's files', which asserts a negative the scan cannot support. The docstring's WHAT IT CANNOT SEE admits the gap, but the brief the agent reads does not. The task asked for a language-agnostic helper; the Python module-name reading has no JS/TS counterpart, and im5 covers .js/.md/.json by path and basename only, no extensionless import.",
+        "resolution": "For JS/TS-family files (.js .mjs .cjs .jsx .ts .tsx) also search the extensionless stem and classify a line as an import when it is a quoted relative specifier ending in the stem (`from './api'`, `require('../x/api')`). Add a fixture case for it. Independently, soften NONE_LINE to 'No tracked file names ... by path, basename, or (Python) module name' so the one-line result states what was searched."
+      },
+      {
+        "id": "P131-R30",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/_impact.py:251-252",
+        "issue": "The private-name rule keeps a leading-underscore name when the file 'also references the module'. A document that mentions the module (PLUGIN-BUILD-GUIDE.md, a research note) therefore counts for every private name of it: the probe lists `_norm in PLUGIN-BUILD-GUIDE.md` for _impact.py and `_borrowed_wrapper_names in PLUGIN-BUILD-GUIDE.md` for _deps.py. Names sorted fewest-files-first put these single-file noise hits ahead of real callers.",
+        "resolution": "Apply the private-name rule only to files whose reference kind is path or import, not basename, or only to code files."
       }
     ],
-    "outcome": "[findings: 27 - 0 high, 7 med, 20 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 30 - 0 high, 9 med, 21 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1995,7 +2016,7 @@
     {
       "id": "P131.16-dau",
       "title": "The affected selection's miss rate is measured on this repository's history before any task gate trusts it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Add tools/measure-affected-miss.py. Mutation half: for each of the last N task commits (default 20), in a scratch worktree at that commit, apply each of two mutations to every changed .py (an import-time raise, and a house-style violation the tree lints read), run the full sweep, and count the suites that went red that tools/affected.py --base <parent> did not select. CI half: for each failed CI run in the window, read its failing suites (gh run view --log-failed) and check them against the selection for that SHA's diff. It prints 'misses M of N commits (mutation); K of J runs (CI)' with every miss named; a CI half that could not ask prints could-not-ask and is never read as zero. It never edits the checkout: every mutation happens in its own scratch worktree, removed in finally. Acceptance: (1) on a fixture repository where a suite depends on a changed module the selection omits, the miss is counted and named; (2) a selection that includes every red suite counts zero misses; (3) no gh, or no network, prints could-not-ask for the CI half; (4) the checkout's status is unchanged after a run; (5) the measured result over 20 commits is recorded in the task outcome with the commit range. MOVED from S3 into S1 by the owner (2026-10-21: \"zameni S2 i S3 i pokreni miss-rate odmah\"); it measures and changes no gate, so S3.2 still owns trusting the selection.",
       "files": [
         "tools/measure-affected-miss.py",
@@ -2026,19 +2047,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b52ba79a1013",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added tools/measure-affected-miss.py (inline suite, 20 cases via tools/_suite.run) and pointers in tools/affected.py (docstring) and CONTRIBUTING.md. Mutation half: for each of the last task commits, scratch worktree at that commit (hooks pointed at nothing, removed in finally), tools/affected.py --json --base <parent> run in it, then each of two mutations (import-time raise; annotation the AST lint reads) applied to every changed .py, the full sweep run, reds not selected collected; each is rerun alone under the mutation (not flaky) and alone on the unmutated commit (not already red) before it counts; a mutation turning nothing red prints inert; a commit with no Python, a full-set selection, or an unreadable selector/sweep is named and never counted as a zero. CI half: gh run list --status failure, gh run view --log-failed per run in the window, failing suites (final summary block per job) checked against the selection for that run's own SHA; gh missing/unanswering prints could-not-ask with the reason; unreadable runs named. Flags: --commits --rev --repo --sweep-cmd --affected-cmd --budget-minutes --no-ci --ci-only --ci-since --ci-limit --json. Gate: python3 tools/sweep-selftests.py tools/measure-affected-miss.py exit 0, 20 cases; full python3 tools/sweep-selftests.py --quiet exit 0, 192/192 files ok; ruff check clean; vermin -t=3.8- clean. Acceptance (4): fixture case m13 (status, HEAD, worktree list, scratch dirs identical before/after) and the real runs left git status of the tree identical (diffed against a pre-run snapshot). MEASURED RESULT (acceptance 5), NOT 20 commits: the time budget ran out. Range measured: 9 consecutive task commits ea05966b7..260b2c732 (newest 260b2c732 = P131.15-dau, oldest ea05966b7 = P131.4), requested 20, 11 not examined. One sweep (the whole tree) is roughly 7 to 12 minutes under load and each non-full-set commit needs two, so the run stopped starting commits after 105 minutes. Result: misses 3 of 9 commits (mutation). Of the 9, 4 had a full-set selection (cannot miss) and 5 were mutated: P131.12 b2405c56f 49 raise misses (a raise in audit-status.py, _status_facts.py or run-test-gate.py reddens 71 suites, the selection named 22 of them; confirmed by hand on test__doctor_hygiene: unselected, green clean, red mutated) plus 1 style miss; P131.10 f26def62e 6 raise misses plus 1 style; P131.4 ea05966b7 2 raise (test__filed_returns, test_drive_phase) plus 1 style; P131.14 3 and P131.11 6 had 0 misses (raise red 2 each, all selected; style inert). 60 miss rows in all, 3 distinct commits; the style miss is always tests/test__output_lints.py, a suite the selector does not pick for a changed .py (it picks test__output.py). Commit f26def62e was first NOT MEASURED (the sweep's own nested fixture FAIL lines were misread), the parser was fixed to read only the final summary block, and that commit was re-measured alone: the other eight commits were measured before the fix, and their confirmed misses were real paths. CI half over the same window found 0 failed runs (asked, answered). CI half over a wider window --ci-only --ci-since 2026-10-09: 27 of 39 runs name a failing suite their SHA's own selection did not pick (77 suite rows, 27 distinct suites); this is an UPPER bound, since a suite already red before the commit, platform-only and flaky reds are counted. Both selections are the one each commit carried (that commit's own affected.py). Logs: /tmp/mam-real.log /tmp/mam-real-c8.log /tmp/mam-real-ci.log. The brief said run in the foreground; the Bash tool caps a foreground call at ten minutes, so the long runs were backgrounded and waited on. Not run: the verify.sh slices other than the sweep, so check-example-ledgers and measure-context were not exercised.",
+        "descriptive": "A measurement tool for how often the affected-test selection misses a red suite, and a first reading: 3 of 9 recent task commits missed (mutation), 27 of 39 failed CI runs since 2026-10-09 named a suite not selected."
       },
       "startedAt": "2026-10-21T11:23:48Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-21T14:26:00Z",
+      "verifiedBy": [
+        "inline suite in tools/measure-affected-miss.py: readers (m1 sweep output incl. nested block and incomplete run, m2 CI log, m3 mutations, m4 selection, m5 task log), fixture-repository cases (m6 miss counted and named, m6b no-python commit, m7 already-red suite not a miss, m8 selection holding every red counts zero, m8b full set, m9 inert mutation, m12 unreadable sweep, m13 checkout unchanged, m14 scratch dir inside checkout refused, m15 CLI, m16 second-run-green not a miss), CI half (m10 no gh prints could-not-ask, m11 stub gh counts K of J and names misses, m17 --ci-only, m18 answered-but-empty wording)"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-21T14:23:55Z.ba16a4",
         "status": "passed",
         "at": "2026-10-21T14:23:55Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "b52ba79a1013",
+        "at": "2026-10-21T14:26:00Z",
+        "return": "docs/audit/evidence/returns/P131.16-dau/20261021T112348Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-21T14:20:46Z",
+        "basis": "`python3 tools/sweep-selftests.py tools/measure-affected-miss.py` in a throwaway tree at HEAD: inline suite tools/measure-affected-miss.py (its test file is its implementation file): it is new at HEAD, so there is no HEAD copy to hold its implementation at; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2087,7 +2122,7 @@
     {
       "id": "P131.18-dau",
       "title": "Every brief names who depends on the task's files - the tracked files that import, call or name them - and the executor answers for each one before it submits",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Tonight's defects in new code (seven of twelve tasks, all caught before commit) share one shape: the change did not account for another part of the system that reads what it changed - a shell heredoc importing a moved module, a lint scoped by git ls-files, an env var read by the release check, another session committing in the shared checkout, a record file a second dispatch overwrote. The brief gives the task text and its files but not who depends on them. Add plugins/audit/scripts/status/_impact.py (stdlib, shipped, language-agnostic, git-backed): for each declared file it lists the tracked files that reference it - by path, by basename, by Python module name in an import, and for Python files by each top-level def/class name the file defines (word match via git grep) - excluding the file itself, untracked and ignored files, capped with the total printed. audit-lookup.py's executor brief and writer prompt gain a 'Who depends on this' section from it and one closing instruction: answer every listed dependant in the outcome as still-correct-and-why or changed. The reviewer brief gets the same list so the review can check the answers. Owner 2026-10-21: 'da, stavi ga u S1' - placed before the remaining drive-phase tasks so they run with it.",
       "files": [
         "plugins/audit/scripts/status/_impact.py",
@@ -2116,6 +2151,54 @@
         "before-you-claim"
       ],
       "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-21T14:26:08Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-21T15:15:53Z.e3f464",
+        "status": "passed",
+        "at": "2026-10-21T15:15:53Z"
+      }
+    },
+    {
+      "id": "P131.19-dau",
+      "title": "HEAD is green again: the miss-rate tool's sweep-output fixtures are exempt from the prose-number lint with a reason",
+      "status": "pending",
+      "description": "HEAD (b52ba79a) is red: tests/test__output_lints.py pn0 flags six lines of tools/measure-affected-miss.py (798, 908, 912, 929, 932, 935). Each is a test fixture string imitating the sweep's own output ('1/2 files ok, 3 cases', '%d/%d files ok, 0 cases'), not prose. The file was untracked during P131.16's gate, so the lint (scoped by git ls-files) never read it; it went red the moment it was committed. Add a PROSE_SCAN_EXEMPT row for the file with that reason, the same shape the table's other fixture rows use; do not rewrite the fixtures.  AND close the class (second time in this phase, after P131.2): the shared file walk the lints scope by (tools/lints/_output_lints.py, the function that runs `git ls-files -z`, ~:258) lists only tracked files, so a file a task creates is invisible to every ls-files-scoped lint until the close commit, which then lands a red tree. Make it list tracked plus untracked-not-ignored files (`git ls-files -z --cached --others --exclude-standard`), keeping the drop of index entries that are not on disk; check every other caller of that walk still wants that set (grep its name across tools/ and tests/).",
+      "files": [
+        "tools/lints/_output_lints.py",
+        "tools/measure-affected-miss.py",
+        "tests/test__output_lints.py",
+        "tests/test__output_lints.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__output_lints.py: pn0 is green on the tree, and tools/measure-affected-miss.py has a PROSE_SCAN_EXEMPT row whose reason names the fixtures (strings that imitate the sweep's own summary line, e.g. 'N/M files ok, K cases'); and in a fixture repository a new, untracked, not-ignored .py carrying a present-tense number is reported by the lint before any commit while an ignored one is not"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__output_lints.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
       "attempts": 0,
