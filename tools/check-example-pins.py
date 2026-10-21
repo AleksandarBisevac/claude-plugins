@@ -34,6 +34,13 @@ unavailable, so the example can be repinned in the release commit itself. The
 selftest's live case asks with the lag question off, since "the pin trails the
 newest tag" is true of a release moment and not of every later commit.
 
+THE SAME READER NAMES WHAT A RELEASE MUST REPIN. `pinned_examples()` is the set of
+example files this checker reads that pin a tag, and `repin_examples()` rewrites
+them; `tools/release.py` repins and stages from those two, so a pinned example
+added under `docs/examples/` is followed by the release with no edit to the
+release script. `--list` prints that set, one path per line, for a person or a
+script that wants the same answer.
+
 Exit codes: 0 clean - 1 a finding or a refusal - 2 usage error.
 """
 
@@ -58,7 +65,7 @@ TAG_PATTERNS = (
 SCRIPT_PATTERN = re.compile(r"plugins/audit/scripts/[A-Za-z0-9_./-]+\.py")
 
 USAGE = ("usage: check-example-pins.py [--repo <path>] [--pending <vX.Y.Z>] "
-         "[--selftest]\n")
+         "[--list] [--selftest]\n")
 
 FINDINGS = {
     "script-missing-at-tag": ("the example invokes a plugin script the pinned "
@@ -135,6 +142,55 @@ def example_files(root):
         return []
     return [os.path.join(folder, n) for n in sorted(os.listdir(folder))
             if n.endswith(EXAMPLE_SUFFIXES)]
+
+
+def repin_text(text, tag):
+    """`text` with every pin on a code line rewritten to `tag`. PURE.
+
+    The pins are the ones `read_pins` reads - the same patterns, code lines only -
+    so a comment that mentions an old tag is left as written."""
+    def rewrite(line):
+        if line.strip().startswith("#"):
+            return line
+        for pattern in TAG_PATTERNS:
+            line = pattern.sub(
+                lambda m: m.group(0).replace(m.group(1), tag), line)
+        return line
+    return "".join(rewrite(line) for line in text.splitlines(True))
+
+
+def _read_text(path):
+    with io.open(path, encoding="utf-8", newline="") as handle:
+        return handle.read()
+
+
+def pinned_examples(root=None):
+    """The repo-relative, `/`-separated paths of the examples that pin a tag.
+
+    The files are the ones `check()` reads (`example_files`), narrowed by the
+    reader `check_example` asks (`read_pins`), so the set a release repins and
+    stages cannot differ from the set this checker holds to a tag."""
+    return sorted(
+        "/".join(EXAMPLES_DIR.split(os.sep) + [os.path.basename(path)])
+        for path in example_files(root)
+        if read_pins(_read_text(path)))
+
+
+def repin_examples(root, tag):
+    """Rewrites every pinned example under `root` to `tag`; the paths that
+    changed, in `pinned_examples` order. A file already on `tag` is not
+    rewritten and is not named."""
+    changed = []
+    for rel in pinned_examples(root):
+        path = os.path.join(root or REPO, *rel.split("/"))
+        text = _read_text(path)
+        updated = repin_text(text, tag)
+        if updated == text:
+            continue
+        with io.open(path, "w", encoding="utf-8", newline="") as handle:
+            handle.write(updated)
+        changed.append(rel)
+    return changed
 
 
 def check_example(name, text, git, tags, pending=None, lag=True):
@@ -245,11 +301,20 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else list(argv)
     if "--selftest" in argv:
         return _selftest()
-    root, pending, problem = parse_argv(argv)
+    listing = "--list" in argv
+    root, pending, problem = parse_argv([a for a in argv if a != "--list"])
     if problem is not None:
         sys.stderr.write("check-example-pins.py: %s\n" % (problem,))
         sys.stderr.write(USAGE)
         return 2
+    if listing:
+        found = pinned_examples(root)
+        for rel in found:
+            sys.stdout.write(rel + "\n")
+        if not found:
+            sys.stderr.write("check-example-pins.py: no example pins a tag, "
+                             "so there is nothing to list\n")
+        return 0 if found else 1
     code, lines = report(check(root, pending=pending))
     for line in lines:
         sys.stdout.write(line + "\n")
@@ -385,6 +450,88 @@ def _cases(check_case):
     check_case("p4 with the lag question off an older pin that holds the script "
                "is clean: %r" % (rows,), rows == [])
 
+    # --- the pinned set release.py repins and stages -------------------------
+    from _suite import remove_tree
+    pin_root = tempfile.mkdtemp()
+    try:
+        folder = os.path.join(pin_root, "docs", "examples")
+        os.makedirs(folder)
+        bodies = {
+            "a-branch.yml": _OLD_EXAMPLE,
+            "b-url.yaml": "run: curl https://x/claude-plugins/v0.5.0/s.sh\n",
+            "c-nopin.yml": "steps:\n  - script: echo hi\n",
+            "d-comment-only.yml": "# git clone --branch v0.5.0 somewhere\nx: 1\n",
+            "e-notes.md": "git clone --branch v0.5.0 x\n",
+        }
+        for name, body in bodies.items():
+            with io.open(os.path.join(folder, name), "w", encoding="utf-8") as h:
+                h.write(body)
+        found = pinned_examples(pin_root)
+        seen = check(pin_root, git=_fake_git({"v0.5.0": [_GATE]}))["examples"]
+        checked_and_pinned = []
+        for name in seen:
+            with io.open(os.path.join(folder, name), encoding="utf-8") as h:
+                if read_pins(h.read()):
+                    checked_and_pinned.append("docs/examples/" + name)
+        check_case("x1 pinned_examples names exactly the examples the checker "
+                   "reads that pin a tag - the .yml and the .yaml, never the "
+                   "unpinned one, the comment-only one or the .md - and the two "
+                   "sets are compared: %r vs %r" % (found, checked_and_pinned),
+                   found == ["docs/examples/a-branch.yml",
+                             "docs/examples/b-url.yaml"]
+                   and found == sorted(checked_and_pinned))
+        live_pinned = pinned_examples()
+        live_seen = [os.path.join(EXAMPLES_DIR, n).replace(os.sep, "/")
+                     for n in (os.path.basename(f) for f in example_files(None))
+                     if read_pins(io.open(os.path.join(REPO, EXAMPLES_DIR, n),
+                                          encoding="utf-8").read())]
+        check_case("x2 THE LIVE SET: this repository's own pinned examples, as "
+                   "the function release.py reads returns them, are the ones "
+                   "the checker's own listing finds, and it finds at least one: "
+                   "%r vs %r" % (live_pinned, live_seen),
+                   live_pinned == sorted(live_seen) and bool(live_pinned))
+        listed = io.StringIO()
+        held, sys.stdout = sys.stdout, listed
+        try:
+            list_code = main(["--repo", pin_root, "--list"])
+        finally:
+            sys.stdout = held
+        check_case("x5 `--list` prints the pinned set one path per line and "
+                   "exits 0: %r" % (listed.getvalue(),),
+                   list_code == 0
+                   and listed.getvalue().split() == found)
+        bare = tempfile.mkdtemp()
+        try:
+            check_case("x6 `--list` over a repository whose examples pin "
+                       "nothing is a refusal (exit 1), never an empty "
+                       "all-clear",
+                       _quietly(["--repo", bare, "--list"]) == 1)
+        finally:
+            remove_tree(bare)
+        retext = repin_text(_OLD_EXAMPLE + "# --branch v0.5.0 in a comment\n",
+                            "v4.0.0")
+        check_case("x3 repin_text rewrites every code-line pin and leaves a "
+                   "comment line alone: %r" % (retext,),
+                   read_pins(retext) == ["v4.0.0"]
+                   and "# --branch v0.5.0 in a comment" in retext
+                   and retext.count("v4.0.0") == 1
+                   and read_pins(repin_text(bodies["b-url.yaml"], "v4.0.0"))
+                   == ["v4.0.0"])
+        changed = repin_examples(pin_root, "v4.0.0")
+        after = {n: io.open(os.path.join(folder, n), encoding="utf-8").read()
+                 for n in bodies}
+        check_case("x4 repin_examples rewrites the pinned examples on disk, "
+                   "returns exactly those paths, and leaves every other file "
+                   "byte for byte as it was: %r" % (changed,),
+                   changed == found
+                   and read_pins(after["a-branch.yml"]) == ["v4.0.0"]
+                   and read_pins(after["b-url.yaml"]) == ["v4.0.0"]
+                   and all(after[n] == bodies[n] for n in
+                           ("c-nopin.yml", "d-comment-only.yml", "e-notes.md"))
+                   and repin_examples(pin_root, "v4.0.0") == [])
+    finally:
+        remove_tree(pin_root)
+
     live = check(lag=False)
     check_case("l1 THE LIVE CLAIM: the committed examples, asked of this "
                "repository's own tags, name no missing script. A checkout without "
@@ -394,7 +541,6 @@ def _cases(check_case):
                and all(is_refusal(n) for n, _d in live["rows"]))
 
     # The real reader against a real repository: a file path in a tag's tree.
-    from _suite import remove_tree
     scratch = tempfile.mkdtemp()
     try:
         env = dict(os.environ, GIT_CONFIG_NOSYSTEM="1")

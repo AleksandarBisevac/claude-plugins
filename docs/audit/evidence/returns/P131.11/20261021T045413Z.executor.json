@@ -1,0 +1,30 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tools/release.py tools/check-example-pins.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-21T05:03:46Z",
+    "basis": "`python3 tools/sweep-selftests.py tools/release.py tools/check-example-pins.py` in a throwaway tree at HEAD exited 1 with failing cases x5 (house FAIL), x6 (house FAIL), rl16 (house FAIL), tools/check-example-pins.py: exited 1 (house FAIL), tools/release.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 42/43 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/check-example-pins.py: added repin_text (pure, code lines only, same TAG_PATTERNS as read_pins), pinned_examples(root) (the example_files the checker reads, narrowed by read_pins; repo-relative '/' paths), repin_examples(root, tag), and a --list flag (exit 1 with a stderr message when nothing is pinned). tools/release.py: load_example_pins(); step_followers repins every pinned example to v<version> after the README pins and names the files in its note; step_commit appends pinned_examples(ctx.repo) to its git add paths; docstring updated. tools/verify.sh: follower 4b #R text corrected (repin to the tag about to be cut, since the lag row and --pending require it; the old text said previous release) and slice_release prints the live set from check-example-pins.py --list under the #R list. Sweep gate: 2/2 files ok, 67 cases (24 + 43); ruff clean; vermin ok. Committed-copy full sweep (CLAUDE_*/AUDIT_LOCK_TOKENS unset): 189/191 files ok, only tools/check-example-ledgers.py and tools/measure-context.py red, as allowed. Not done: a full machine-readable follower table that verify.sh prints from and release.py runs from for ALL followers; only the pinned-example follower is table-driven (the description says 'prefer'); the other followers stay hand-sequenced in release.py.",
+    "descriptive": "A pinned example added under docs/examples/ is now repinned by the release followers and staged by the release commit with no edit to release.py, and the release no longer stops at verify-release over docs/examples/azure-pipelines.yml."
+  },
+  "testsAdded": [
+    "release.py: a fixture repo with two pinned examples (--branch and URL forms) and one unpinned (comment-only pin) goes through step_followers and step_commit; pins become v9.9.9, git add names the pinned ones and not the unpinned",
+    "check-example-pins.py: pinned_examples compared against the checker's own check() examples filtered by read_pins in a scratch repo and live; repin_text/repin_examples/--list cases incl. empty-set refusal"
+  ],
+  "casesAdded": [
+    "rl16",
+    [
+      "x1",
+      "x2"
+    ]
+  ],
+  "claims": "claims:\n1 check-example-pins.py pinned_examples/repin_examples/repin_text and release.py step_followers/step_commit are the lines the new docstrings describe; verify.sh 4b text rewritten to what --pending and the lag row do\n2 not mutated by me in the shared tree; over-fire directions are in the cases themselves (unpinned, comment-only and .md files must be neither repinned nor staged: x1, x4, rl16); the submit helper proves red on HEAD\n3 grep of hand-kept example lists: release.py step_commit paths and step_followers were the only restatements; verify.sh #R text was the third and is now printed from --list; other followers left hand-sequenced because this task scopes the example pin\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written in prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:6c3703bf9a826646f8f1dae8657dcc5e12f640476900ca74b0ab8e13f5947e73\",\"dirtyDigest\":\"sha256:68eed911f1bad6dfbf4e870fd8a7610952035e91acbf626be763c3fc8eabb0c9\",\"dirtyPaths\":{\"tools/check-example-pins.py\":\"c6e6ebfa95314be1\",\"tools/release.py\":\"2842ab9c3023cae2\",\"tools/verify.sh\":\"db431e9ebee61da2\"},\"head\":\"aa534bb1\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/check-example-pins.py\",\"tools/release.py\",\"tools/verify.sh\"],\"scopeDigest\":\"sha256:63b55e92af5b1c92bb3755f0e357499e405d036e11b316db8c9f44524dd1c73d\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

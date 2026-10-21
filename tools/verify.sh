@@ -913,9 +913,13 @@ slice_panel() {
 #R
 #R   4b. docs/examples/ — an example that clones the plugin pins a release tag, and
 #R      a bump that leaves it behind sends a reader to scripts the tag may not have.
-#R        repin each example to the newest tag that exists (at preflight that is
-#R        the previous release, since the new tag is cut afterwards); the row
-#R        below asks each pinned tag's tree for every script the example calls
+#R        repin each example to the tag this release is about to cut: the row
+#R        below counts a pin behind the newest tag as a finding, and it reads a
+#R        pin naming the pending tag against HEAD (--pending), so the example
+#R        can be repinned in the release commit itself. The row also asks each
+#R        pinned tag's tree for every script the example calls. `tools/release.py`
+#R        repins and stages exactly the examples this prints, one per line:
+#R          python3 tools/check-example-pins.py --list
 #R
 #R CAPTURE FOLLOWS THE BUMP. Capturing first and bumping afterwards invalidates
 #R every picture and the shutter runs twice. That is not a hypothetical.
@@ -976,6 +980,12 @@ slice_release() {
     echo ""
     # The list, printed from the comment block above so there is exactly one copy.
     sed -n '/^#R/{s/^#R //;s/^#R$//;p;}' "$0" | sed '/./s/^/  /'
+    echo ""
+    # Follower 4b's set, asked of the reader that release.py repins from. Its exit
+    # status is not this run's: a repository whose examples pin nothing says so on
+    # stderr, and the 4b row below is what judges the pins.
+    echo "  examples follower 4b repins (check-example-pins.py --list):"
+    python3 tools/check-example-pins.py --list | sed 's/^/    /'
     echo ""
   fi
   run "follower 1: fetch pins name v$version" refs_rule raw_url_pin_drift

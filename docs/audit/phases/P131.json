@@ -65,9 +65,16 @@
         "file": "docs/audit (plan record for B9)",
         "issue": "Clause (8) asks for the B9 `code` figure taken on the landing SHA and recorded in the plan with that SHA. The filed outcome gives 75222 measured over the working tree, with the exact command left for later, and a grep of docs/audit finds it only in the executor's return file and the journal, not as a plan field. The byte ceiling is met (9523827 against 10416128 by the executor's own measurement).",
         "resolution": "Re-take the figure on the landing commit with the clause's git archive command (K-poc is in quality-gates-internal) and record it with the SHA before the phase signs off."
+      },
+      {
+        "id": "P131-R7",
+        "severity": "low",
+        "file": "tools/check-example-pins.py:480-489",
+        "issue": "x2 (the live-set case) recomputes the expected set with the same two ingredients pinned_examples uses (example_files filtered by read_pins), so it can only fail if the two diverge in plumbing, not if the filter itself is wrong; x1 over the scratch repo carries the real discriminating power. The io.open(...).read() calls in x2 and in x4/rl16 also leave file handles to the GC.",
+        "resolution": "Optional: have x2 assert the live set equals the paths named in the example files by a literal expectation (docs/examples/azure-pipelines.yml is in it) and read files via a with block."
       }
     ],
-    "outcome": "[findings: 6 - 0 high, 2 med, 4 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 7 - 0 high, 2 med, 5 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -953,7 +960,7 @@
     {
       "id": "P131.3",
       "title": "One script runs a writer or a reviewer as a headless top-level session under a per-session budget and prints its cost from the session's own result",
-      "status": "in_progress",
+      "status": "done",
       "description": "Add plugins/audit/scripts/governance/run-agent-session.py, an entry point that runs one role as a headless top-level Claude Code session in the task's tree: claude -p with --model given as a full model id (never an alias), --effort, --permission-mode auto, --output-format stream-json, --max-budget-usd from the caller, and --plugin-dir naming the running plugin so its hooks act on the session. The writer role passes no --agents or --agent and sends no agent body. The reviewer role passes --agents built from agents/audit-reviewer.md and --agent audit-reviewer. --resume <session id> continues a recorded session. The prompt goes on stdin, never in argv: a sibling session's pkill -f matches command lines. The session runs in its own process group with its own TMPDIR under the task's scratch, and its stream is saved under the state dir. It prints one line: the session id, the stream result's total_cost_usd, and the exit. A stream that ends with no result event is could-not-run naming the stream path. A new entry point owes a selftest in tests/, safe_stdio first in __main__, a layer in tools/lints/_deps.py LAYERS, a tree line and a section in PLUGIN-BUILD-GUIDE.md, and the PATH_PREAMBLE. Acceptance: (1) the writer argv carries the full model id, the effort, permission mode auto, the budget and the plugin dir, and neither --agents nor --agent; (2) the reviewer argv carries --agents built from audit-reviewer.md and --agent audit-reviewer; (3) on both roles the prompt arrives on stdin and is absent from argv; (4) the printed cost is the stream result's total_cost_usd and the printed id is the stream's session id; (5) a stream with no result event prints could-not-run naming the stream and exits non-zero; (6) --resume adds the recorded session id and changes nothing else in the argv; (7) the child runs in a process group of its own; (8) one live run's printed cost equals the transcript re-price (checked in the confirming run's first stage, not by the suite). It also closes the per-session pricing half of the headless-versus-interactive ruler fault: each session is priced from its own result's total_cost_usd, and the run prints that figure beside a transcript re-price so a difference is visible rather than averaged away.",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
@@ -994,19 +1001,33 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "aa534bb1e206",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added plugins/audit/scripts/governance/run-agent-session.py (entry point, PATH_PREAMBLE, safe_stdio first in __main__, attach_usage_hint). session_argv() builds: -p --model <full id> --effort <e> --permission-mode auto --output-format stream-json --verbose --max-budget-usd <b> --plugin-dir <_output.PLUGIN_ROOT>; reviewer adds --agents <file> --agent audit-reviewer, the file built from agents/audit-reviewer.md through _help.front_matter (body = prompt, description, tools); --resume appends one pair. A model id not matching FULL_MODEL_ID (an alias) is exit 2 before claude starts; a blank --resume is exit 2. Prompt read from the script's stdin or --prompt-file and written to claude's stdin, never argv. Child started with _proc_group.group_kwargs() (own group), cwd = --tree, TMPDIR/TEMP/TMP = a mkdtemp under --scratch, interrupt pair armed and the group torn down on SIGINT/SIGTERM. Stream saved to <state-dir>/sessions/<task>.<role>.<utc>.<pid>.jsonl with .stderr (and .agents.json for the reviewer) beside it. Prints one line 'session=<id> total_cost_usd=<cost> exit=<claude exit> stream=<path>' from the LAST result event; no result event, or a result missing session_id or a numeric total_cost_usd, prints 'could-not-run: ... stream <path> ...' and exits 3. Exit 0 result + claude 0, 1 result + claude non-zero. tools/lints/_deps.py: run-agent-session placed in the entry-point layer beside stamp-verification, with its edges named; PLUGIN-BUILD-GUIDE.md: tree line, a section, and the module map regenerated by `python3 tools/lints/_deps.py --write-map` (exit 0; adds 'run-agent-session -> _claude_home, _help, _output, _proc_group'). tests/test_run_agent_session.py: 19 cases (ras0-ras18) against a stub claude on PATH (sh wrapper on POSIX, .cmd on Windows), the script run as a subprocess. Before implementing: `python3 tests/test_run_agent_session.py --selftest` exit 1, 'FAIL ras0 the script exists ...', 0/1. After: exit 0, ALL PASS 19/19. Mutation probe over a scratch copy (pycache purged per cycle, restore verified True): group_kwargs dropped -> ras10 red; first result read -> ras6, ras16; prompt appended to argv -> ras5, ras13; --agent on the writer -> ras4; resume drops a flag -> ras17; no-result returns cost 0 -> ras15; alias accepted -> ras18; TMPDIR not set -> ras9; --verbose dropped -> ras2; exit always 0 -> ras16. A mutation that only moved the --resume pair to the front survived ras17, by design: the clause is that nothing ELSE changes, and position is not asserted. External probes (claude 2.1.305, 2026-10-21): `echo hi | claude -p --output-format stream-json --model no-such-model-probe` -> 'Error: When using --print, --output-format=stream-json requires --verbose', exit 1; a live reviewer run of this script with model claude-nosuch-9 (no billable call: total_cost_usd 0) showed the real CLI accepting --agents <file> + --agent audit-reviewer (init.agents lists 'audit-reviewer'), --plugin-dir loading this tree's plugin as audit@inline, permissionMode auto, and the script printing 'session=ed8af8a0-... total_cost_usd=0 exit=1 stream=...', exit 1. Beyond own-tests, run ad hoc for lint safety: in the tree, test__deps 254/254, test__output_lints 166/166 (first run red on two of my own lines - no attach_usage_hint, open() without newline - both fixed), test__output 84/84, test__refs 289/289, ruff clean, vermin clean. Because ls-files-scoped lints cannot see untracked files, the tree was also copied into a throwaway git repo in the scratchpad and committed there: tools/sweep-selftests.py 189/191 files ok; the two red ones (tools/check-example-ledgers.py el1, tools/measure-context.py mc18) fail because that one-commit repo cannot resolve historical commits ('which this repository cannot resolve' / 'ref 7b489337c06d does not resolve'), not on any file of this task; test__output_lints, test__deps and the own suite re-run there on the final bytes: all pass. plugins/audit/reference/orchestrator.md is in files but the description asks nothing of it; left untouched. Acceptance (8), live cost equal to a transcript re-price, is the confirming run's, not this suite's. The two edits to _deps.py's layer comment and the script's imports were made through Bash (a sed and a python replace) rather than Edit; no tool refused, and both files are in this task's files.",
+        "descriptive": "A writer or reviewer can now be run as a headless claude -p session under a per-session budget, with its cost printed from the session's own result event."
       },
       "startedAt": "2026-10-21T03:14:54Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-21T04:54:09Z",
+      "verifiedBy": [
+        "tests/test_run_agent_session.py: stub claude on PATH; writer argv (full model id, effort, auto, stream-json + --verbose, budget, plugin dir, no agent flags); reviewer argv (--agents file built from audit-reviewer.md, --agent audit-reviewer); prompt on stdin and absent from argv for both roles; cost = last result's total_cost_usd and id = stream's session id; stream saved under the state dir; cwd = tree, TMPDIR under scratch; own process group; no result -> could-not-run naming the stream, non-zero; result + exit 1 -> exit=1 printed, non-zero; --resume adds only the id; alias refused with exit 2"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-21T04:53:56Z.040020",
         "status": "passed",
         "at": "2026-10-21T04:53:56Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "aa534bb1e206",
+        "at": "2026-10-21T04:54:09Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-10-21T03:43:36Z",
+        "basis": "`python3 tests/test_run_agent_session.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 1 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, its declared test files new at HEAD (tests/test_run_agent_session.py) laid over as empty files), each passing with the working tree's implementation - ras0 (house FAIL): SELFTEST FAILED: 0/1 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1081,7 +1102,7 @@
     {
       "id": "P131.5",
       "title": "The drive dispatches the writer through the session runner on the plain prompt, and a red task gate resumes the session that wrote the task",
-      "status": "pending",
+      "status": "in_progress",
       "description": "drive-phase.py's dispatch names run-agent-session.py --role writer with the prompt from brief --role writer, instead of an Agent call carrying the executor body, and records the session id and the printed cost on the task. When the drive's own task gate is red (browser gates included, run under the orchestrator as today) the decision is resume: run-agent-session.py --resume <session id> with the gate's failing lines as the prompt, spending no attempt, so the writer that holds the task's context fixes it. At most two resume rounds per task; after the second the task stops with a note naming both runs, and a fresh retry stays available. Update commands/phase.md's dispatch step (it is at its byte ceiling, so the step is reworded within it) and reference/orchestrator.md. Acceptance: (1) the dispatch line for a writer names run-agent-session.py with the writer role, the task id and a full model id, and names no executor agent; (2) a red task gate on a task with a recorded session recommends resume of that session carrying the failing lines and spends no attempt; (3) a third red after two resumes stops with a note naming both runs; (4) the recorded cost of every session the task ran is on the task; (5) commands/phase.md stays within its byte ceiling.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1120,16 +1141,17 @@
         "P131.3",
         "P131.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-21T04:54:11Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P131.6",
@@ -1412,7 +1434,7 @@
     {
       "id": "P131.11",
       "title": "The release followers and the release commit take the pinned-example paths from the one reader that checks them, so a new pinned example is repinned with no edit to release.py",
-      "status": "pending",
+      "status": "in_progress",
       "description": "tools/release.py `step_followers` and `step_commit` are hand-kept sequences that restate verify.sh's follower list; neither repins docs/examples/azure-pipelines.yml's `git clone --branch vX.Y.Z`, so every release run stops at verify-release (tools/check-example-pins.py: pin behind the newest tag) and is repinned by hand and amended. Do: derive the pin rewrites from the examples tools/check-example-pins.py reads (every pinned example it finds), expose that set from one function, and have step_followers and step_commit take their paths from it; prefer one machine-readable follower table that verify.sh prints from and release.py runs from over two hand-kept lists.",
       "files": [
         "tools/release.py",
@@ -1442,21 +1464,27 @@
       "dependsOn": [
         "P131.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-21T04:54:13Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-21T05:04:29Z.b49e5d",
+        "status": "passed",
+        "at": "2026-10-21T05:04:29Z"
+      }
     },
     {
       "id": "P131.12",
       "title": "A task gate's open-high-bugs condition exempts the bugs its own task and that phase's open sibling tasks are fixing, while sign-off and the release guard still count every one",
-      "status": "pending",
+      "status": "in_progress",
       "description": "`_status_facts.evaluate_gate` fails `open-high-bugs` on a plan-wide count, so a task fixing a high bug can never pass a task gate carrying the plan's `gate` step: the gate counts the very bug the task exists to close (seen on BF4.1). Do: give the task-gate evaluation the task id (audit-status.py gains a task argument the gate step passes), and exempt, for open-high-bugs only, the bugs linked to that task and to the other still-open tasks of the same phase, reading it through the same helper `withheld_mutes` in run-test-gate.py uses so there is one definition of 'this task's bugs'. Sign-off (`--gate` with no task) and the release guard keep counting every open high bug. The gate's output names which bugs were exempted and why.",
       "files": [
         "plugins/audit/scripts/status/_status_facts.py",
@@ -1488,16 +1516,17 @@
       "dependsOn": [
         "P131.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-21T04:54:16Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P131.13",

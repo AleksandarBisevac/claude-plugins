@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "tools/check-example-pins.py:480-489",
+   "issue": "x2 (the live-set case) recomputes the expected set with the same two ingredients pinned_examples uses (example_files filtered by read_pins), so it can only fail if the two diverge in plumbing, not if the filter itself is wrong; x1 over the scratch repo carries the real discriminating power. The io.open(...).read() calls in x2 and in x4/rl16 also leave file handles to the GC.",
+   "resolution": "Optional: have x2 assert the live set equals the paths named in the example files by a literal expectation (docs/examples/azure-pipelines.yml is in it) and read files via a with block."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause 'derive the pin rewrites from the examples tools/check-example-pins.py reads (every pinned example it finds), expose that set from one function, and have step_followers and step_commit take their paths from it': check-example-pins.py adds pinned_examples(root) (example_files narrowed by read_pins), repin_examples/repin_text (same TAG_PATTERNS, code lines only), step_followers calls load_example_pins().repin_examples(ctx.repo, v<version>) and step_commit appends pinned_examples(ctx.repo) to its git add paths. That removes the stop at verify-release over the azure-pipelines pin. The clause's 'prefer one machine-readable follower table that verify.sh prints from and release.py runs from' is only done for the pinned-example follower (verify.sh now prints --list; the #R prose list and the other followers stay hand-sequenced); the executor's outcome states this plainly and the clause is a preference, so not a divergence. The claim describes the diff: verify.sh #R 4b text was rewritten to say repin to the pending tag, which matches --pending/lag logic in check-example-pins.py and the existing verify.sh row at line 999.",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "Executor's redFirst status could-not-prove, quoted: throwaway tree at HEAD exited 1 with x5, x6, rl16 failing, 'but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green'. The basis holds as a stated refusal; I did not re-run it. The recorded gate run (2026-10-21T05:04:29Z.b49e5d) is passed.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Gate is the literal `python3 tools/sweep-selftests.py tools/release.py tools/check-example-pins.py`, which selects both files' whole selftests. Read: grep of tools/release.py shows step_followers/step_commit are called directly only by the new rl16 (tools/release.py:933-934) and otherwise only through the STEPS table (582-584) in pipeline cases; I did not read every pipeline case body, so a pipeline case that would survive deleting the repin is not ruled out beyond that grep. In check-example-pins.py the live case l1 and p1-p4 exercise check_example, not the repin path."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

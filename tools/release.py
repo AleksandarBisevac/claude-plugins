@@ -20,8 +20,10 @@ reads "done":
   bump-version          plugins/audit/.claude-plugin/plugin.json
   finalize-changelog    CHANGELOG.md's `## [Unreleased]` becomes the version
   followers             `tools/verify.sh --release`'s `#R` list, in its order:
-                        README pins, the rendered example (+ docs/index.html),
-                        the scale demo, the screenshots
+                        README pins, the pinned examples under docs/examples/
+                        (the set `tools/check-example-pins.py` reads), the
+                        rendered example (+ docs/index.html), the scale demo,
+                        the screenshots
   commit                the release commit
   verify-release        `sh tools/verify.sh --release`, AFTER the commit:
                         its last arm asks whether HEAD carries the pages
@@ -172,6 +174,17 @@ def load_rendered_artifacts(repo=None):
     repo = repo or REPO
     path = os.path.join(repo, "tools", "check-rendered-artifacts.py")
     return _load_module("release_rendered_artifacts", path)
+
+
+def load_example_pins(repo=None):
+    """`tools/check-example-pins.py`, loaded by path: the reader that decides
+    which examples pin a tag. `step_followers` repins and `step_commit` stages
+    what its `pinned_examples` names, so a pinned example added under
+    `docs/examples/` is followed with no edit here and the two steps cannot
+    disagree with the check that fails the release over a stale pin."""
+    repo = repo or REPO
+    path = os.path.join(repo, "tools", "check-example-pins.py")
+    return _load_module("release_example_pins", path)
 
 
 def excerpt(text, limit=600):
@@ -346,6 +359,11 @@ def step_followers(ctx):
         return False, note
     notes.append(note)
 
+    repinned = load_example_pins().repin_examples(ctx.repo,
+                                                  "v%s" % (ctx.version,))
+    notes.append("example pins repinned to v%s: %s"
+                 % (ctx.version, ", ".join(repinned) or "none needed"))
+
     crt = load_rendered_artifacts()
     for rel in ("examples/acme-store/acme-store-audit.html",
                 "examples/acme-store/acme-store-audit.md"):
@@ -387,6 +405,7 @@ def step_commit(ctx):
              "examples/acme-store/acme-store-audit.md",
              "docs/index.html", "docs/demo-large.html",
              "docs/screenshots"]
+    paths += load_example_pins().pinned_examples(ctx.repo)
     rc, out = ctx.run(["git", "add"] + paths)
     if rc != 0:
         return False, "git add failed: %s" % (excerpt(out),)
@@ -895,6 +914,41 @@ def _fixture_repo(bugs=None):
 
 def _cases(check):
     from _suite import remove_tree          # tools/_suite.py says why here
+
+    # --- a pinned example is repinned and staged with no edit to this file -----
+    tmp = _fixture_repo()
+    try:
+        folder = os.path.join(tmp, "docs", "examples")
+        os.makedirs(folder)
+        pinned = {"zz-new-pipeline.yml": "run: git clone --branch v1.0.0 u s\n",
+                  "zz-other.yaml": "run: curl https://x/claude-plugins/v1.0.0/a\n"}
+        unpinned = {"zz-plain.yml": "# --branch v1.0.0\nrun: echo hi\n"}
+        for name, body in dict(pinned, **unpinned).items():
+            with io.open(os.path.join(folder, name), "w", encoding="utf-8") as fh:
+                fh.write(body)
+        runner = FakeRunner(default=(0, ""))
+        ctx = Context(tmp, "9.9.9", push=False, runner=runner,
+                     state={"steps": {}, "version": "9.9.9"},
+                     state_path=os.path.join(tmp, "state.json"))
+        ok_f, detail_f = step_followers(ctx)
+        ok_c, detail_c = step_commit(ctx)
+        texts = {n: io.open(os.path.join(folder, n), encoding="utf-8").read()
+                 for n in list(pinned) + list(unpinned)}
+        adds = [c for c in runner.calls if c.startswith("git add")]
+        staged = adds[0].split(" ") if adds else []
+        check("rl16 a pinned example dropped under docs/examples/ is repinned "
+              "to the release tag by the followers step and staged by the "
+              "commit step, with no edit to release.py; an unpinned one is "
+              "neither: %r / %r / %r" % (detail_f, texts, adds),
+              ok_f and ok_c and len(adds) == 1
+              and all("v9.9.9" in texts[n] and "v1.0.0" not in texts[n]
+                      for n in pinned)
+              and texts["zz-plain.yml"] == unpinned["zz-plain.yml"]
+              and all("docs/examples/%s" % n in staged for n in pinned)
+              and "docs/examples/zz-plain.yml" not in staged
+              and "zz-new-pipeline.yml" in detail_f)
+    finally:
+        remove_tree(tmp)
 
     # --- preflight refuses before any file is written -------------------------
     tmp = _fixture_repo(bugs=[{"id": "BUG-1", "status": "open",
