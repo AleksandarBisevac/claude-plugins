@@ -56,6 +56,14 @@ result lacks a session id or a numeric cost, is `could-not-run` naming the strea
 never a zero cost. A directory or file the run needs that cannot be made or read
 prints `io-error:` naming the path, before claude is started.
 
+`--record <path>` ALSO APPENDS THAT OUTCOME TO A FILE, one JSON line `{"line",
+"exit"}` per run: the line printed (a usage refusal's message prefixed `usage:`)
+and this script's exit code. It is how the step driver learns which session ran and what it cost without
+the main loop retyping the line: the driver names the path in the command it
+prints and reads each line once at its next steps, taking a last line that
+does not parse as not written yet. A record that cannot be written is reported on stderr and
+changes no exit code.
+
 Exit codes (`exit_for`): 0 a result with `is_error: false` and claude exited 0 -
 1 any other result - 2 usage error - 3 could-not-run - 4 a budget stop (result
 subtype `error_max_budget_usd`, whatever claude exited with) - 5 io-error.
@@ -332,6 +340,9 @@ def build_parser():
     parser.add_argument("--resume", default=None, help="a recorded session id to continue")
     parser.add_argument("--prompt-file", dest="prompt_file", default=None,
                         help="read the prompt from this file instead of stdin")
+    parser.add_argument("--record", default=None,
+                        help="also append the printed outcome and the exit code "
+                             "to this file, one JSON line per run")
     return _claude_home.attach_usage_hint(parser)
 
 
@@ -357,27 +368,62 @@ def _read_prompt(args, stdin):
     return stdin.buffer.read().decode("utf-8") if hasattr(stdin, "buffer") else stdin.read()
 
 
+def write_record(path, line, code):
+    """Append `{"line", "exit"}` to `path` as one JSON line, making its
+    directory. None, or why it could not be written. Appended, so the same
+    command run twice keeps both outcomes; the one reader takes a last line
+    that does not parse as one not written yet."""
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, "a", encoding="utf-8", newline="\n") as fh:
+            fh.write(json.dumps({"line": line, "exit": code}, ensure_ascii=False)
+                     + "\n")
+    except OSError as exc:
+        return "the record %s could not be written: %s" % (path, exc)
+    return None
+
+
 def main(argv, stdin=None, out=print):
     try:
         args = build_parser().parse_args(argv)
     except SystemExit as exc:
         return E_USAGE if exc.code else E_OK
+    said = []
+
+    def tell(line):
+        said.append(line)
+        out(line)
+
+    def refuse(message):
+        said.append("usage: %s" % message)
+        return _usage(message)
+    code = _run(args, stdin, tell, refuse)
+    if args.record:
+        problem = write_record(args.record, said[-1] if said else "", code)
+        if problem:
+            sys.stderr.write("ERROR: %s\n" % problem)
+    return code
+
+
+def _run(args, stdin, out, refuse):
+    """The run itself, once the arguments parsed: every outcome is one `out`
+    line, or one `refuse` - a usage refusal, which goes to stderr."""
     if not is_full_model_id(args.model):
-        return _usage("--model %r is not a full model id (claude-<family>-<version>); "
+        return refuse("--model %r is not a full model id (claude-<family>-<version>); "
                       "an alias resolves to whatever is newest on the day" % args.model)
     if not _budget_ok(args.budget):
-        return _usage("--budget-usd %r is not a finite positive amount" % args.budget)
+        return refuse("--budget-usd %r is not a finite positive amount" % args.budget)
     if not os.path.isdir(args.tree):
-        return _usage("--tree %s is not a directory" % args.tree)
+        return refuse("--tree %s is not a directory" % args.tree)
     if args.resume is not None and not SESSION_ID.match(args.resume):
-        return _usage("--resume %r is not a recorded session id (a UUID, as the "
+        return refuse("--resume %r is not a recorded session id (a UUID, as the "
                       "stream's session_id is)" % args.resume)
     try:
         prompt = _read_prompt(args, stdin if stdin is not None else sys.stdin)
     except (OSError, UnicodeDecodeError) as exc:
-        return _usage("the prompt could not be read: %s" % exc)
+        return refuse("the prompt could not be read: %s" % exc)
     if not prompt.strip():
-        return _usage("the prompt is empty - it is read from stdin or --prompt-file")
+        return refuse("the prompt is empty - it is read from stdin or --prompt-file")
 
     claude = shutil.which("claude")
     stream = _stream_path(args.state_dir, args.task, args.role)

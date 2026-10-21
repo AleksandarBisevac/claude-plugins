@@ -150,6 +150,27 @@ it, runs the same steps and prints `done <taskId>` once it is closed, leaving
 its siblings and the phase's sign-off alone - the run `/audit:run` and
 `/audit:next` make, which execute exactly one task.
 
+THE WRITER MAY BE A HEADLESS SESSION INSTEAD OF AN AGENT. With
+`executor.writerModel` and `executor.writerBudgetUsd` set, the executor's
+dispatch is `dispatch-writer`: `brief --role writer` writes the plain prompt, the
+print names `run-agent-session.py --role writer`, the task and the model, and
+`--explain` prints the whole command as its `run:` line. Each dispatch names a
+record file of its own (`session_record`) the runner appends its one line to on
+every run, and each step notes every outcome it has not seen once on the task
+through `audit-task.py note` - the session id and the cost the session's own
+result printed, every path spelled as a committed row may say it
+(`note_sessions`); a note the verb refuses is said on the step and not asked
+again, since no step waits on a note. While the latest dispatch's record holds
+nothing the step is `wait-writer`: the session is running or was never
+started, and only the main loop knows which. A red task gate on a task with a
+recorded session asks `gate-red-writer`, whose recommended `resume` sends the
+gate's failing lines to the latest session and spends no attempt; once
+`MAX_RESUME_ROUNDS` are spent the plain `gate-red` is asked, after a note naming
+each resumed run, and its `retry` starts a fresh session.
+The writer's prompt asks for no `submit`, and nothing here files its return
+yet, so a session that ends without one meets `no-executor-return`. Without
+`executor.writerModel` the executor Agent is dispatched as before.
+
 Usage:
   drive-phase.py next <phaseId|taskId> [manifest] [--project-dir DIR]
                  [--answer OPTION] [--reason TEXT] [--fix FINDING[,FINDING]]
@@ -185,6 +206,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -248,6 +270,26 @@ INSTRUCTION_BYTES = 300
 EXECUTOR_AGENT = "audit:audit-executor"
 REVIEWER_AGENT = "audit:audit-reviewer"
 
+# THE WRITER AS A HEADLESS SESSION. With `executor.writerModel` set, a task's
+# writer is not an Agent carrying the executor body: the main loop runs
+# `run-agent-session.py --role writer` on the prompt `brief --role writer` wrote,
+# and the session's own result prices it. Without the key the executor Agent is
+# dispatched as before - the rollback path while the session path is new.
+# The effort is one value for every writer, so two writers' costs compare like
+# with like; routing it by task is not done here.
+WRITER_RUNNER = "run-agent-session.py"
+WRITER_EFFORT = "high"
+WRITER_MODEL_KEY = "writerModel"
+# How often a red task gate goes back to the session that wrote the task before
+# the plain gate-red is asked, whose `retry` starts a fresh one.
+MAX_RESUME_ROUNDS = 2
+# The one line the runner prints for a session that produced a result; anything
+# else it prints (could-not-run, io-error, a usage refusal) carries no session.
+_SESSION_LINE = re.compile(r"^session=(\S+) subtype=(\S+) is_error=(\S+) "
+                           r"total_cost_usd=(\S+) exit=(\S+) stream=(.*)$")
+# The most failing lines a resume prompt carries, and the width of each.
+RESUME_LINES, RESUME_LINE_BYTES = 40, 300
+
 # The words the did-line uses for a task the driver started or closed. They are
 # what `did_tasks` reads back, and what `tools/stream-cost.py` reads a driver
 # session's task cycle from - the driver's own start and close happen in its
@@ -300,7 +342,26 @@ DECLINE_REMEDY = ("Add the task that answers it: audit-task.py add \"<the fix>\"
 ADVANCE_ANSWER = "sign-off"
 ADVANCE_LINE = "then: next %(phase)s --answer sign-off --reason <the summary>"
 ADVANCE_NOT_APPLIED = "sign-off answered in advance, not applied: %s"
+WRITER_RULE = ("Run the run: line --explain prints in Bash, in the background, "
+               "and call next after it exits.")
 STEPS = {
+    "dispatch-writer": {
+        "line": "dispatch run-agent-session.py --role writer --task %(task)s "
+                "--model %(model)s prompt=%(prompt)s",
+        "rule": (WRITER_RULE,)},
+    "resume-writer": {
+        "line": "dispatch run-agent-session.py --role writer --task %(task)s "
+                "--model %(model)s --resume %(session)s prompt=%(prompt)s",
+        "rule": (WRITER_RULE,)},
+    "wait-writer": {
+        "line": "wait %(task)s: the writer session has written no record at "
+                "%(record)s yet",
+        "rule": ("Started: wait for it to exit, then next. Not started: run the "
+                 "run: line --explain prints, in the background.",)},
+    "decide-gate-red-writer": {
+        "line": "decide gate-red-writer %(task)s: recorded gate red (%(why)s)",
+        "rule": ("recommended: resume - the session that wrote it gets the "
+                 "failing lines and no attempt is spent; retry spends one.",)},
     "dispatch-executor": {
         "line": "dispatch %(agent)s %(task)s model=%(model)s brief=%(brief)s",
         "rule": (DISPATCH_RULE,)},
@@ -450,6 +511,9 @@ STEPS = {
 # options is one only the plan can change; nothing here answers it.
 DECISIONS = {
     "gate-red": (("retry", "rerun", "block"), ("block",)),
+    # A red gate on a task whose writer session is recorded, with a resume
+    # round left: `resume` sends the failing lines to that session.
+    "gate-red-writer": (("resume", "retry", "rerun", "block"), ("block",)),
     "no-executor-return": (("resume", "retry", "block"), ("block",)),
     "no-reviewer-return": (("redispatch", "not-asked"), ("not-asked",)),
     # A filed executor return whose stamp holds a file list other than the one
@@ -513,7 +577,9 @@ VERBS = ("dispatch", "wait", "ask", "judge", "review", "done", "stop")
 SIGNAL_VERBS = {
     "dispatch-executor": "dispatch", "dispatch-reviewer": "dispatch",
     "dispatch-wave": "dispatch", "dispatch-phase-review": "dispatch",
-    "resume-executor": "dispatch",
+    "resume-executor": "dispatch", "dispatch-writer": "dispatch",
+    "resume-writer": "dispatch", "decide-gate-red-writer": "judge",
+    "wait-writer": "wait",
     "decide-integration-refused": "judge", "decide-undeclared-change": "judge",
     "decide-scope-gap": "judge", "decide-gate-red": "judge",
     "decide-no-executor-return": "judge", "decide-scope-changed": "judge",
@@ -1027,12 +1093,14 @@ def instruction(kind, lines, signal_fields=None):
     return out
 
 
-def signal_of(step, subject, basis, nxt, prompts=(), subjects=()):
+def signal_of(step, subject, basis, nxt, prompts=(), subjects=(), runs=()):
     """The fields of one signal line: the step (its verb is `SIGNAL_VERBS`'),
     what it is about, the basis, the one command to run next, the prompts a
-    dispatch sends and every other id `--explain` answers for it."""
+    dispatch sends, the commands it runs instead (a writer session's) and every
+    other id `--explain` answers for it."""
     return {"step": step, "subject": subject, "basis": basis, "next": nxt,
-            "prompts": list(prompts), "subjects": list(subjects)}
+            "prompts": list(prompts), "subjects": list(subjects),
+            "runs": list(runs)}
 
 
 def drive_target(ctx):
@@ -1097,6 +1165,23 @@ def dispatch_said(ctx, role, node_id, agent, model, brief):
         prompts=[dispatch_prompt(ctx, role, node_id)]))
 
 
+def writer_said(ctx, task_id, model, prompt, argv, resume=None, round_n=0):
+    """The dispatch of a writer session for `task_id`: the line naming the
+    runner, the role, the task and the full model id, and the command itself,
+    whole, as the `run:` line `--explain` prints - too long for any line the
+    bound allows. `resume` is the recorded session a red gate goes back to, in
+    round `round_n`."""
+    step = "resume-writer" if resume else "dispatch-writer"
+    lines = step_text(step, task=task_id, model=model, prompt=prompt,
+                      session=resume or "")
+    basis = "%s --role writer model=%s%s" % (
+        WRITER_RUNNER, model, " --resume %s round %d/%d" % (
+            resume[:8], round_n, MAX_RESUME_ROUNDS) if resume else "")
+    command = " ".join(shlex.quote(word) for word in argv)
+    return instruction("dispatch", lines, signal_of(
+        step, task_id, basis, command, runs=[command]))
+
+
 def wave_said(ctx, members):
     """One print of every member dispatch that is due, sent together."""
     ids = [m["signal"]["subject"] for m in members]
@@ -1111,7 +1196,8 @@ def wave_said(ctx, members):
         signal_of("dispatch-wave", subject, basis,
                   "one Agent per member, in one message: brief --role <role> <id>",
                   prompts=[p for m in members for p in m["signal"]["prompts"]],
-                  subjects=ids))
+                  subjects=ids,
+                  runs=[r for m in members for r in m["signal"].get("runs") or []]))
 
 
 def follow_said(ctx, task_id, recipes, tree):
@@ -1337,11 +1423,17 @@ def start_task(ctx, task):
     return stop
 
 
-def dispatch(ctx, state, phase, task, role):
-    """Write `role`'s brief through `audit-lookup.py` and hand back the dispatch."""
+def dispatch(ctx, state, phase, task, role, tree=None):
+    """Write `role`'s brief through `audit-lookup.py` and hand back the dispatch:
+    for the executor under `executor.writerModel`, the writer session's, run in
+    `tree` when the task has one of its own."""
+    writer, problem = writer_setting(ctx["config"]) if role == "executor" \
+        else (None, None)
+    if problem:
+        return _stopped(ctx, problem)
     out, stop = _verb_or_stop(ctx, "audit-lookup.py", [
-        ctx["manifest"], "brief", task["id"], "--role", role,
-        "--project", ctx["project"]])
+        ctx["manifest"], "brief", task["id"], "--role",
+        "writer" if writer else role, "--project", ctx["project"]])
     if stop is not None:
         return stop
     found = re.search(r"written: (.+)$", out.strip())
@@ -1352,11 +1444,300 @@ def dispatch(ctx, state, phase, task, role):
     _mark(state, "dispatched-%s" % (role,), task,
           {"scope": brief_scope(task)} if role == "executor" else True)
     write_state(ctx, state)
+    brief = project_relative(ctx, found.group(1).strip())
+    if writer:
+        prompt = os.path.abspath(os.path.join(ctx["project"], found.group(1).strip()))
+        _record, argv = open_dispatch(ctx, state, task, 0, lambda record: writer_argv(
+            ctx, task, writer, prompt, record, tree))
+        return writer_said(ctx, task["id"], writer["model"], brief, argv)
     model = (task.get("model") if role == "executor"
              else (phase.get("review") or {}).get("model")) or "unset"
     agent = EXECUTOR_AGENT if role == "executor" else REVIEWER_AGENT
-    return dispatch_said(ctx, role, task["id"], agent, model,
-                         project_relative(ctx, found.group(1).strip()))
+    return dispatch_said(ctx, role, task["id"], agent, model, brief)
+
+
+# --- the writer's session ----------------------------------------------------------
+def writer_setting(config):
+    """`(setting, problem)` - `_config_rules.writer_session_setting`, the one
+    reading of `executor.writerModel` and `executor.writerBudgetUsd`."""
+    return _config_rules.writer_session_setting(config)
+
+
+def sessions_dir(ctx):
+    """Where the runner keeps each session's stream, under `stateDir`."""
+    return os.path.join(ctx["stateDir"], "sessions")
+
+
+def session_record(ctx, task, seq):
+    """The file the runner appends its outcome to for dispatch `seq` of `task`'s
+    current start - one per dispatch, so a brief issued again or a resume never
+    shares a file with the dispatch before it."""
+    return os.path.join(sessions_dir(ctx), "drive", "%s.%s.%d.jsonl" % (
+        re.sub(r"[^A-Za-z0-9._-]", "_", task["id"]), start_key(task), seq))
+
+
+def writer_argv(ctx, task, writer, prompt, record, tree=None, resume=None):
+    """The command that runs `task`'s writer session: in the task's own tree when
+    it has one, else the project; its scratch and its stream under `stateDir`."""
+    argv = ["python3", _loader.script_path(WRITER_RUNNER), "--role", "writer",
+            "--task", task["id"],
+            "--tree", member_project(ctx, tree) or ctx["project"],
+            "--scratch", os.path.join(sessions_dir(ctx), "scratch", task["id"]),
+            "--state-dir", ctx["stateDir"], "--model", writer["model"],
+            "--effort", WRITER_EFFORT, "--budget-usd", writer["budget"],
+            "--prompt-file", prompt, "--record", record]
+    return argv + (["--resume", resume] if resume else [])
+
+
+def writer_state(state, task):
+    """The writer-session record for `task`'s current start: every dispatch
+    (its sequence number, resume round, record file and command), the lines of
+    each record already noted, the runs read back, the resume rounds spent and
+    whether the cap's note was asked for."""
+    held = _marked(state, "writer", task)
+    base = {"seq": 0, "dispatches": [], "noted": {}, "runs": [], "resumes": 0,
+            "capNoted": False}
+    return dict(base, **(held if isinstance(held, dict) else {}))
+
+
+def open_dispatch(ctx, state, task, round_n, build):
+    """Allocate the next dispatch of `task`'s writer: its record file, and the
+    command `build(record)` makes for it, kept so a wait can print it again.
+    Returns `(record, argv)`."""
+    held = writer_state(state, task)
+    seq = held["seq"]
+    record = session_record(ctx, task, seq)
+    argv = build(record)
+    held["seq"] = seq + 1
+    held["dispatches"] = list(held["dispatches"]) + [
+        {"seq": seq, "round": round_n, "record": record, "argv": argv}]
+    _mark(state, "writer", task, held)
+    write_state(ctx, state)
+    return record, argv
+
+
+def read_sessions(path):
+    """Each outcome the runner appended to one record, in order, as `{"session",
+    "cost", "stream", "line", "exit"}` - `session` and `cost` None for an
+    outcome that carries no session. Reading stops at a line that does not
+    parse: the runner may be part-way through writing it. `[]` when there is no
+    record yet (the run has not happened, or is running)."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            raw = fh.read()
+    except OSError:
+        return []
+    runs = []
+    for text in raw.split("\n"):
+        if not text.strip():
+            continue
+        try:
+            body = json.loads(text)
+        except ValueError:
+            break
+        if not isinstance(body, dict):
+            break
+        line = str(body.get("line") or "")
+        hit = _SESSION_LINE.match(line)
+        runs.append({"session": hit.group(1) if hit else None,
+                     "cost": hit.group(4) if hit else None,
+                     "stream": hit.group(6).strip() if hit else None,
+                     "line": line, "exit": body.get("exit")})
+    return runs
+
+
+def session_note(round_n, run):
+    """The note one session leaves on its task: the cost its own result printed,
+    or - for a run that produced no result - the runner's words, with no cost.
+    `note_task` scrubs any path it still holds."""
+    if run["session"]:
+        return ("writer session %s round %d: total_cost_usd=%s (from its own "
+                "result; stream %s, runner exit %s)" % (
+                    run["session"], round_n, run["cost"],
+                    os.path.basename(run["stream"]), run["exit"]))
+    return ("writer session round %d produced no result, so no cost is recorded: "
+            "%s (runner exit %s)" % (round_n, _clip(run["line"], 200), run["exit"]))
+
+
+def note_task(ctx, task, text):
+    """Note `text` on `task` through the verb, every path in it spelled the way
+    a committed row may say it (`redacted_free_text`: project-relative inside
+    the project, a token outside it), since the verb refuses a machine path.
+    None, or the verb's refusal - which the caller records and goes past: a
+    note is a record of a session, and no step waits on it."""
+    clean = _journal_io.redacted_free_text(ctx["project"], text)
+    code, out, err = run_verb(ctx, "audit-task.py", _task_args(
+        ctx, "note", task["id"]) + ["--text", "-"], stdin=clean)
+    if code == 0:
+        return None
+    return _clip(" ".join((out + err).split()) or "exit %d" % (code,), 160)
+
+
+def note_sessions(ctx, state, task):
+    """Note each outcome the task's writer records hold that the last step had
+    not seen - once, whether the verb took the note or refused it."""
+    held = writer_state(state, task)
+    for each in held["dispatches"]:
+        seen = int(held["noted"].get(str(each["seq"])) or 0)
+        runs = read_sessions(each["record"])
+        for run in runs[seen:]:
+            refused = note_task(ctx, task, session_note(each["round"], run))
+            held["runs"] = list(held["runs"]) + [dict(run, round=each["round"],
+                                                      seq=each["seq"])]
+            held["noted"] = dict(held["noted"], **{str(each["seq"]): seen + 1})
+            seen += 1
+            _mark(state, "writer", task, held)
+            write_state(ctx, state)
+            label = (run["session"] or "with no result")[:13]
+            ctx["did"].append("writer session %s round %d %s" % (
+                label, each["round"], "noted" if refused is None
+                else "not noted (%s)" % (refused,)))
+
+
+def writer_wait(ctx, state, task):
+    """The wait printed while the latest writer dispatch has written no record:
+    the session is running, or has not been started. Its command is printed
+    again, since only the main loop knows which of the two it is. None once a
+    record holds an outcome, or when no writer was dispatched."""
+    held = writer_state(state, task)
+    if not held["dispatches"]:
+        return None
+    last = held["dispatches"][-1]
+    if read_sessions(last["record"]):
+        return None
+    return wait_said(ctx, task["id"], project_relative(ctx, last["record"]),
+                     last.get("argv") or [])
+
+
+def wait_said(ctx, task_id, record, argv):
+    """The wait on a writer session that has written no record at `record`,
+    with its command printed again as the `run:` line."""
+    command = " ".join(shlex.quote(word) for word in argv)
+    return instruction("wait", step_text("wait-writer", task=task_id,
+                                         record=record), signal_of(
+        "wait-writer", task_id, "no record at %s yet" % (record,),
+        "wait for the session to exit, then next %s --signal" % (
+            drive_target(ctx),), runs=[command] if command else []))
+
+
+def recorded_session(state, task):
+    """The session id a resume goes to: the latest outcome that carried one.
+    None when no session produced a result."""
+    for run in reversed(writer_state(state, task)["runs"]):
+        if run.get("session"):
+            return run["session"]
+    return None
+
+
+def failing_lines(text):
+    """The lines of a red gate's output a writer acts on: every verdict line,
+    every step line that exited non-zero and the lines indented under it. When
+    the output holds none of those shapes, its last lines, so a resume prompt
+    is never empty."""
+    kept, under = [], False
+    for line in (text or "").splitlines():
+        step = re.match(r"^  \S+\s+exit (-?\d+)\s", line)
+        if step:
+            under = step.group(1) != "0"
+            if under:
+                kept.append(line)
+        elif under and line.startswith("      "):
+            kept.append(line)
+        elif "GATE " in line:
+            under = False
+            kept.append(line)
+        else:
+            under = False
+    lines = kept or [ln for ln in (text or "").splitlines() if ln.strip()][-RESUME_LINES:]
+    return [_clip(ln.rstrip(), RESUME_LINE_BYTES) for ln in lines[:RESUME_LINES]]
+
+
+def resume_prompt(lines):
+    return "\n".join(["The task gate the drive ran after your session is red. Its "
+                      "failing lines:", ""] + list(lines) + [
+                         "", "Fix what fails. Leave the changes uncommitted: the "
+                         "drive commits them. End with the same JSON object, one "
+                         "entry per acceptance clause."]) + "\n"
+
+
+def resume_writer(ctx, state, task, pending, tree=None):
+    """`--answer resume` on a red gate: the failing lines go to the recorded
+    session as its prompt, in the next round, and no attempt is spent."""
+    writer, problem = writer_setting(ctx["config"])
+    if problem or not writer:
+        return _stopped(ctx, problem or "executor.%s is no longer set, so there "
+                        "is no writer session to resume; answer retry"
+                        % (WRITER_MODEL_KEY,))
+    held = writer_state(state, task)
+    round_n = held["resumes"] + 1
+    prompt = session_record(ctx, task, held["seq"])[:-len(".jsonl")] + ".prompt.md"
+    try:
+        os.makedirs(os.path.dirname(prompt), exist_ok=True)
+        with open(prompt, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(resume_prompt(pending.get("failing") or []))
+    except OSError as exc:
+        return _stopped(ctx, "the resume prompt could not be written to %s (%s)"
+                        % (prompt, exc))
+    _record, argv = open_dispatch(ctx, state, task, round_n, lambda record: writer_argv(
+        ctx, task, writer, prompt, record, tree, resume=pending["session"]))
+    held = writer_state(state, task)
+    held["resumes"] = round_n
+    _mark(state, "writer", task, held)
+    write_state(ctx, state)
+    return writer_said(ctx, task["id"], writer["model"],
+                       project_relative(ctx, prompt), argv,
+                       resume=pending["session"], round_n=round_n)
+
+
+def gate_red_decision(ctx, state, manifest, phase, task, text):
+    """The decision a red task gate asks: resume of the recorded writer session
+    while a round is left, carrying the failing lines; past the last round, the
+    plain gate-red, after a note on the task naming each resumed run."""
+    said = [ln for ln in (text or "").splitlines() if "GATE" in ln]
+    why = ((said[0].strip() if said else "exit 1")[:80]
+           + base_red_why(ctx, text, manifest, phase, task))
+    session = recorded_session(state, task)
+    if session is None:
+        return decision(ctx, state, "gate-red", task, why)
+    held = writer_state(state, task)
+    if held["resumes"] < MAX_RESUME_ROUNDS:
+        return decision(ctx, state, "gate-red-writer", task, "%s; session %s, "
+                        "round %d/%d" % (why, session[:8], held["resumes"] + 1,
+                                         MAX_RESUME_ROUNDS),
+                        extra={"session": session, "failing": failing_lines(text)})
+    if not held["capNoted"]:
+        refused = note_task(ctx, task, cap_note(ctx, held, session))
+        if refused is not None:
+            ctx["did"].append("the resume cap was not noted (%s)" % (refused,))
+        held["capNoted"] = True
+        _mark(state, "writer", task, held)
+        write_state(ctx, state)
+    return decision(ctx, state, "gate-red", task, "%s; still red after %d "
+                    "resume rounds, named in the task's notes" % (
+                        why, MAX_RESUME_ROUNDS))
+
+
+def cap_note(ctx, held, session):
+    """The note naming every resumed run when the gate is still red after the
+    last round: each run's stream and cost, a run with no result by the
+    runner's words, and a round whose record never appeared by that record,
+    project-relative."""
+    named = []
+    for round_n in range(1, MAX_RESUME_ROUNDS + 1):
+        runs = [r for r in held.get("runs") or [] if r.get("round") == round_n]
+        for run in runs:
+            named.append("round %d: stream %s, total_cost_usd=%s" % (
+                round_n, os.path.basename(run["stream"]), run["cost"])
+                if run.get("stream") else
+                "round %d: no result (%s)" % (round_n, _clip(run["line"], 120)))
+        if not runs:
+            records = [d["record"] for d in held.get("dispatches") or []
+                       if d.get("round") == round_n]
+            named.append("round %d: %s" % (round_n, "no record at %s" % (
+                project_relative(ctx, records[-1]),) if records
+                else "never dispatched"))
+    return ("writer session %s: the task gate is still red after its resume "
+            "rounds (%s); a retry starts a fresh session" % (session, "; ".join(named)))
 
 
 def brief_scope(task):
@@ -1857,6 +2238,14 @@ def advance(ctx, state, manifest, phase, task, tree=None):
         stop = kept_tree_stop(ctx, state, task)
         if stop is not None:
             return stop
+    # Before anything reads the session: a writer session that ended since the
+    # last step leaves its cost on the task whatever the step does next, and a
+    # session that has written nothing yet is waited for rather than graded -
+    # neither as a writer that returned nothing nor by a gate over its tree.
+    note_sessions(ctx, state, task)
+    waiting = writer_wait(ctx, state, task)
+    if waiting is not None:
+        return waiting
     executor, problem = filed(ctx, task, "executor")
     if problem:
         return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], problem)
@@ -1867,10 +2256,10 @@ def advance(ctx, state, manifest, phase, task, tree=None):
             # no attempt spent, rather than graded as one that returned nothing.
             ctx["did"].append("%s's brief issued again: its scope changed after "
                               "the last one was printed" % (task["id"],))
-            return dispatch(ctx, state, phase, task, "executor")
+            return dispatch(ctx, state, phase, task, "executor", tree)
         if _marked(state, "dispatched-executor", task):
             return decision(ctx, state, "no-executor-return", task, "")
-        return dispatch(ctx, state, phase, task, "executor")
+        return dispatch(ctx, state, phase, task, "executor", tree)
     changed = scope_change(executor, task)
     if changed is not None:
         # Before the gate mark is read: a gate recorded under the old scope does
@@ -1908,10 +2297,7 @@ def advance(ctx, state, manifest, phase, task, tree=None):
             if again is not None:
                 code, out, err = again
         if code == 1:
-            said = [ln for ln in (out + err).splitlines() if "GATE" in ln]
-            return decision(ctx, state, "gate-red", task,
-                            (said[0].strip() if said else "exit 1")[:80]
-                            + base_red_why(ctx, out + err, manifest, phase, task))
+            return gate_red_decision(ctx, state, manifest, phase, task, out + err)
         if code != 0:
             return relay_refusal(ctx, "run-test-gate.py", code, out + err)
         _mark(state, "gated", task)
@@ -3096,6 +3482,11 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         ctx["did"].append("%s: scope change accepted (%s)" % (
             task["id"], _clip(reason, 80)))
         return None
+    if answer == "resume" and pending["decision"] == "gate-red-writer":
+        # The task is not re-started, so no attempt is spent; the gate is not
+        # marked as run, so the next `next` measures the session's fix.
+        return resume_writer(ctx, state, task, pending, (
+            (state.get("wave") or {}).get("trees") or {}).get(task["id"]))
     if answer == "resume":
         # The dispatch mark stays, so a return still unfiled is asked about
         # again on the next `next`; no attempt is spent.
@@ -4639,6 +5030,13 @@ def drive_locked(ctx, state, answer, reason, fixes):
         pending = None
     if pending and pending["decision"] == "triage":
         pending = refresh_triage(ctx, state, phase, pending)
+    if pending and pending.get("task"):
+        # A writer session run while the decision waited is noted before the
+        # decision is printed again or answered: a `retry` starts a new start,
+        # whose record no longer reads this one's.
+        waiting_on = _mio.tasks_by_id(manifest).get(pending["task"])
+        if waiting_on is not None:
+            note_sessions(ctx, state, waiting_on)
     if ctx.get("only") and pending and pending.get("task") != ctx["only"]:
         return E_STOPPED, ("%s %s: stopped - this phase's drive waits on a %s "
                            "decision; answer it with next %s first"
@@ -5277,10 +5675,12 @@ def signal(ctx, code, said):
     if echo:
         basis = "%s; %s" % (basis, echo[0])
     prompts = list((fields or {}).get("prompts") or [])
+    runs = list((fields or {}).get("runs") or [])
     return {"line": signal_line(ctx, SIGNAL_VERBS.get(step, "stop"), subject,
                                 ctx["did"], basis, nxt),
             "subjects": [subject] + list((fields or {}).get("subjects") or []),
-            "explain": "\n".join([full] + ["prompt: %s" % (p,) for p in prompts])}
+            "explain": "\n".join([full] + ["prompt: %s" % (p,) for p in prompts]
+                                 + ["run: %s" % (r,) for r in runs])}
 
 
 def explain_text(lines):

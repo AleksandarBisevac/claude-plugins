@@ -26,7 +26,8 @@ phase id to run. A phase whose id is that word: ask (AskUserQuestion) which one.
 2. Run `S/governance/drive-phase.py" next <phaseId> --signal` and do what its line says until
    `done`: `audit <phase> <verb> <subject> ... | <basis> | next: <command>`, whole under
    `next <phaseId> --explain <subject>`.
-3. `dispatch` → an Agent per subject (`subagent_type`, `model`: basis), prompt
+3. `dispatch` → a `run:` line under `--explain`: background Bash; else an Agent per
+   subject (`subagent_type`, `model`: basis), prompt
    `Follow the brief this prints: S/governance/drive-phase.py" brief --manifest "<manifest>" --project-dir "<project>" --role <role> <id>`; `judge`,
    `wait` → do `next:`; `ask` → the human first (AskUserQuestion); `review` → read it whole,
    answer; `stop` → relay it whole.

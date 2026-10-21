@@ -41,7 +41,7 @@ import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
-import _loader                                     # noqa: E402  (load_hooks_config only)
+import _loader                                     # noqa: E402  (load_hooks_config, load_script)
 import _config_rules as M                          # noqa: E402
 
 
@@ -393,6 +393,50 @@ def _cases(check):
             f, w = M.validate_config({"executor": {_key: _bad}})
             check("ww4 executor.%s %r is a FINDING: %r" % (_key, _bad, f),
                   any("executor.%s" % (_key,) in x for x in f))
+    # --- executor.writerModel, writerBudgetUsd ---------------------------------
+    # The writer session's model and per-session budget. The session runner
+    # refuses an alias at run time, so validation refuses it first, by name; a
+    # model with no positive finite budget beside it is a finding too, since the
+    # drive cannot start a session without one.
+    f, w = M.validate_config({"executor": {"writerModel": "claude-sonnet-4-5",
+                                           "writerBudgetUsd": 2.5}})
+    check("wm1 executor.writerModel as a full model id with a positive budget "
+          "validates clean and both are known keys: %r" % ((f, w),), not f and not w)
+    for _bad in ("opus", "sonnet", "claude", "claude-sonnet", "", " claude-opus-5 ",
+                 5, None):
+        f, w = M.validate_config({"executor": {"writerModel": _bad,
+                                               "writerBudgetUsd": 2}})
+        check("wm2 executor.writerModel %r is a FINDING - an alias or no id at all "
+              "names no fixed model: %r" % (_bad, f),
+              any("executor.writerModel" in x for x in f))
+    for _bad in (0, -1, "5", True, float("inf"), float("nan"), None, [2]):
+        f, w = M.validate_config({"executor": {"writerModel": "claude-opus-5-5",
+                                               "writerBudgetUsd": _bad}})
+        check("wm3 executor.writerBudgetUsd %r beside a writer model is a FINDING: "
+              "%r" % (_bad, f), any("executor.writerBudgetUsd" in x for x in f))
+    f, w = M.validate_config({"executor": {"writerModel": "claude-opus-5-5"}})
+    check("wm4 a writer model with no budget at all is a FINDING naming the "
+          "missing key: %r" % (f,), any("executor.writerBudgetUsd" in x for x in f))
+    setting = M.writer_session_setting(
+        {"executor": {"writerModel": "claude-opus-5-5", "writerBudgetUsd": 3}})
+    absent = M.writer_session_setting({"executor": {"waveWidth": 2}})
+    alias = M.writer_session_setting(
+        {"executor": {"writerModel": "opus", "writerBudgetUsd": 3}})
+    check("wm5 writer_session_setting reads the pair as the drive passes it, is "
+          "(None, None) with no writer model, and refuses an alias: %r"
+          % ((setting, absent, alias),),
+          setting == ({"model": "claude-opus-5-5", "budget": "3"}, None)
+          and absent == (None, None) and alias[0] is None
+          and "executor.writerModel" in (alias[1] or ""))
+    runner = _loader.load_script("run-agent-session.py", modname="ras_for_wm6")
+    ids = ("claude-opus-5-5", "claude-sonnet-4-5-20250929", "opus", "claude-x",
+           "claude-3", "Claude-opus-5")
+    check("wm6 the config's full-model-id rule and the session runner's agree on "
+          "every probe, so a config that validates is one the runner runs: %r"
+          % ([(i, M.is_full_model_id(i), runner.is_full_model_id(i)) for i in ids],),
+          all(M.is_full_model_id(i) == runner.is_full_model_id(i) for i in ids)
+          and M.is_full_model_id("claude-opus-5-5")
+          and not M.is_full_model_id("opus"))
     f, w = M.validate_config({"journal": {"strictManifestState": "ask"}})
     check("journal.strictManifestState 'ask' is a legal, known key",
           not f and not w)

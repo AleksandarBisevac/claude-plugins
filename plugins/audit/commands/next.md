@@ -27,6 +27,8 @@ until `done`; the whole step is `next <taskId> --explain <subject>`.
 - `dispatch` → an Agent per subject (`subagent_type`, `model`: the basis), the prompt
   `Follow the brief this prints: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" brief --manifest "<manifest>" --project-dir "<project>" --role <role> <id>`.
   Wait for its one-line hand-back, then `next <taskId> --signal`.
+  With `executor.writerModel` set, a writer's `dispatch` is a `run:` line under `--explain`
+  instead: run it in background Bash and call next after it exits.
 - `judge`, `wait` → do `next:`; `ask` → the human first (AskUserQuestion), then `next:` with
   their option. **The operator's words go in VERBATIM**: a `--reason` is theirs, unparaphrased,
   and reaches the hash-chained journal.

@@ -89,7 +89,14 @@ PORTABILITY_MODES = ("strict", "warn", "off")
 # truth for `executor_gate_policy`); the selftest below pins the two together,
 # the same shape PLAN_GATE_MODES above mirrors PLAN_GATE_TIERS.
 KNOWN_EXECUTOR = {"runsGate", "maxHours", "waveWidth", "worktreeSetup",
-                  "worktreeRoot"}
+                  "worktreeRoot", "writerModel", "writerBudgetUsd"}
+# A full model id is `claude-<family...>` with a version digit in it; an alias
+# (`opus`, `sonnet`) names whatever is newest on the day, so two writers under
+# one config could run two models. `run-agent-session.py` refuses the same
+# shapes at run time with its own copy of this pattern - it imports none of
+# this layer - and `wm6` in `tests/test__config_rules.py` holds the two equal
+# on every probe.
+FULL_MODEL_ID = re.compile(r"^claude-[a-z][a-z0-9-]*[0-9][a-z0-9-]*$")
 # The one word `executor.waveWidth` takes besides a whole number: as many tasks
 # at once as the machine has cores less two, resolved by the driver.
 WAVE_WIDTH_AUTO = "auto"
@@ -257,6 +264,42 @@ def wave_width_setting(config):
     return None, ("executor.waveWidth is %r, not a whole number of at least 1 "
                   "or %r - fix the config (/audit:doctor names it); it is not "
                   "read as the default" % (value, WAVE_WIDTH_AUTO))
+
+
+def is_full_model_id(model):
+    return isinstance(model, str) and bool(FULL_MODEL_ID.match(model))
+
+
+def _positive_amount(value):
+    """A finite number above zero: `True` is no amount, and neither is an
+    infinite ceiling or `nan`."""
+    return (not isinstance(value, bool) and isinstance(value, (int, float))
+            and value == value and value != float("inf") and value > 0)
+
+
+def writer_session_setting(config):
+    """`(setting, problem)` for a writer run as a headless session:
+    `{"model", "budget"}` from `executor.writerModel` and
+    `executor.writerBudgetUsd`, the budget as the runner's argv spells it;
+    `(None, None)` when no writer model is set, which keeps the executor Agent;
+    `(None, problem)` naming the key that is not a full model id or not a
+    positive finite amount - never a default standing in for either."""
+    block = (config or {}).get("executor")
+    block = block if isinstance(block, dict) else {}
+    if "writerModel" not in block:
+        return None, None
+    model = block["writerModel"]
+    if not is_full_model_id(model):
+        return None, ("executor.writerModel is %r, not a full model id "
+                      "(claude-<family>-<version>); an alias names whatever is "
+                      "newest on the day" % (model,))
+    budget = block.get("writerBudgetUsd")
+    if not _positive_amount(budget):
+        return None, ("executor.writerBudgetUsd is %s: a writer session runs under "
+                      "a per-session budget, so it needs a positive number of USD "
+                      "beside executor.writerModel" % (
+                          "absent" if budget is None else "%r" % (budget,)))
+    return {"model": model, "budget": "%s" % (budget,)}, None
 
 
 def portability_mode(config, defaults=None):
@@ -635,6 +678,14 @@ def _check_executor(executor, findings, warnings):
         findings.append("executor.waveWidth must be a whole number of at least 1 "
                         "or %r - a width of 0 would read as a drive that runs "
                         "nothing, successfully" % (WAVE_WIDTH_AUTO,))
+    if "writerModel" in executor or "writerBudgetUsd" in executor:
+        _setting, problem = writer_session_setting({"executor": executor})
+        if problem:
+            findings.append(problem)
+        elif "writerBudgetUsd" in executor \
+                and not _positive_amount(executor["writerBudgetUsd"]):
+            findings.append("executor.writerBudgetUsd must be a positive number "
+                            "of USD")
     for key in ("worktreeSetup", "worktreeRoot"):
         if key in executor and not (isinstance(executor[key], str)
                                     and executor[key].strip()):

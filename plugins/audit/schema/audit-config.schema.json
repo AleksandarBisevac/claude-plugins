@@ -493,6 +493,16 @@
           "type": "string",
           "minLength": 1,
           "description": "Where task worktrees are made, relative to the git root. Absent: the directory above it. Inside the project is refused."
+        },
+        "writerModel": {
+          "type": "string",
+          "pattern": "^claude-[a-z][a-z0-9-]*[0-9][a-z0-9-]*$",
+          "description": "Set: each task's writer runs as a headless session through run-agent-session.py on this FULL model id, at high effort, instead of the executor Agent; a red task gate resumes that session. An alias (opus, sonnet) is refused: it names whatever is newest on the day. Absent: the executor Agent, as before. Needs writerBudgetUsd beside it."
+        },
+        "writerBudgetUsd": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "The per-session budget in USD every writer session runs under (run-agent-session.py --budget-usd, enforced by the CLI). A finite positive number; required when writerModel is set."
         }
       }
     },

@@ -332,6 +332,17 @@ FIELD_HELP = {
         "The directory task worktrees are made in, relative to the git root. Unset "
         "uses the directory above the git root. A directory inside the project is "
         "refused, because a tree there would be judged as the project itself.",
+    "executor.writerModel":
+        "Set, each task's writer runs as a headless session through "
+        "run-agent-session.py on this model, at high effort, instead of the "
+        "executor agent, and a red task gate resumes that session. A full model "
+        "id (claude-<family>-<version>): an alias such as opus names whatever is "
+        "newest on the day and is refused. Unset keeps the executor agent. Needs "
+        "the writer session budget beside it.",
+    "executor.writerBudgetUsd":
+        "The most one writer session may spend, in USD, passed to the session as "
+        "its budget and enforced by the CLI. A positive number; required when the "
+        "writer session model is set.",
     "ci.cadence.closes":
         "Dispatch CI at every N-th task close since the last dispatch: the step "
         "driver pushes the phase tip to its ci/ branch and runs the workflow "
@@ -683,6 +694,10 @@ SETTINGS_GROUPS = (
              "kind": "text", "placeholder": "none"},
             {"path": "executor.worktreeRoot", "label": "Where task trees are made",
              "kind": "text", "placeholder": "beside the git root"},
+            {"path": "executor.writerModel", "label": "Writer session model (full id)",
+             "kind": "text", "placeholder": "unset: the executor agent"},
+            {"path": "executor.writerBudgetUsd", "label": "Writer session budget (USD)",
+             "kind": "number", "min": 0},
         ),
     },
     {

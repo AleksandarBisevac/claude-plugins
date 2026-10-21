@@ -93,9 +93,37 @@
         "file": "plugins/audit/commands/status.md; CHANGELOG.md",
         "issue": "A new public flag --task and an environment variable are added to audit-status.py with no mention in commands/status.md or the changelog; the executor flagged this itself and left it out because the task names no docs.",
         "resolution": "Add a line for --task / $AUDIT_GATE_TASK to commands/status.md and a changelog entry in this phase's release notes."
+      },
+      {
+        "id": "P131-R11",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:338-340,2186-2194 (WRITER_RULE, advance)",
+        "issue": "Nothing in the drive's state tells a writer session that is still running from one that finished. WRITER_RULE says 'Run the run: line ... in Bash, in the background; then next.' A `next` taken straight after the background launch meets, for a first dispatch, executor None plus the dispatched-executor mark and asks no-executor-return (offering resume/retry while the session runs, so a second session can be started on the same tree); for a resume round it meets a filed executor with no gated mark and runs the task gate on the session's half-written tree, which can record a spurious red and spend a resume round. The record file (session_record) is the only completion signal and advance does not consult it before deciding. ws1-ws7 play each session synchronously (_play_session) before the next `next`, so no case can see this.",
+        "resolution": "Make completion explicit: either word the rule 'run it in the background and take `next` only when it exits', or (better, mechanical) have advance return a `wait` step while a writer session was dispatched for the current round and its record has not appeared (and no record means not finished), and add a case that calls `next` between dispatch and the run."
+      },
+      {
+        "id": "P131-R12",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:268-286 (WRITER_MODEL_KEY, WRITER_BUDGET_KEY) vs the config schema / _config_rules",
+        "issue": "The task reads two new config keys, executor.writerModel and executor.writerBudgetUsd, that the config schema does not know: validate-config.py prints 'WARNING: unknown executor key' for each (the executor's own NOT DONE note (a)). A key the plugin reads but its validator calls unknown is a user-visible false warning on the only way to turn the feature on.",
+        "resolution": "Add both keys to the config schema and _config_rules (here or in a named follow-up task) so the validator accepts what the driver reads."
+      },
+      {
+        "id": "P131-R13",
+        "severity": "low",
+        "file": "plugins/audit/commands/run.md, next.md, resume.md, review.md (untouched)",
+        "issue": "These commands drive the same `drive-phase.py next` signal but still describe `dispatch` as 'an Agent'. Under executor.writerModel their dispatch is a `run:` line to run in background Bash, so a /audit:next or /audit:run session reading only its own command file would try an Agent call on a command line (the executor's NOT DONE note (b)). Only phase.md was in scope.",
+        "resolution": "Reword the dispatch step in each of those command files the way phase.md now reads, or point them at one shared sentence."
+      },
+      {
+        "id": "P131-R14",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-agent-session.py:603-634 (write_record, main) / tests/test_run_agent_session.py",
+        "issue": "--record is written for every outcome including a usage refusal (prefixed `usage:`), but no case covers the usage-refusal path or an unwritable record path; only the success path is exercised, indirectly via ws2-ws6 through test_drive_phase.py (executor's NOT DONE note (d)).",
+        "resolution": "Add a case in tests/test_run_agent_session.py: a bad --model with --record leaves {\"line\": \"usage: ...\", \"exit\": 2}, and an unwritable --record changes no exit code."
       }
     ],
-    "outcome": "[findings: 10 - 0 high, 2 med, 8 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 14 - 0 high, 3 med, 11 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1138,7 +1166,16 @@
         "plugins/audit/commands/run.md",
         "plugins/audit/commands/next.md",
         "plugins/audit/commands/resume.md",
-        "plugins/audit/commands/review.md"
+        "plugins/audit/commands/review.md",
+        "plugins/audit/scripts/panel/_panel_settings.py",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/overview.png"
       ],
       "tests": {
         "mode": "tdd",
@@ -1182,9 +1219,9 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-21T05:53:04Z.723016",
+        "runId": "2026-10-21T07:02:36Z.07b059",
         "status": "passed",
-        "at": "2026-10-21T05:53:04Z"
+        "at": "2026-10-21T07:02:36Z"
       }
     },
     {
@@ -1533,7 +1570,7 @@
     {
       "id": "P131.12",
       "title": "A task gate's open-high-bugs condition exempts the bugs its own task and that phase's open sibling tasks are fixing, while sign-off and the release guard still count every one",
-      "status": "in_progress",
+      "status": "done",
       "description": "`_status_facts.evaluate_gate` fails `open-high-bugs` on a plan-wide count, so a task fixing a high bug can never pass a task gate carrying the plan's `gate` step: the gate counts the very bug the task exists to close (seen on BF4.1). Do: give the task-gate evaluation the task id (audit-status.py gains a task argument the gate step passes), and exempt, for open-high-bugs only, the bugs linked to that task and to the other still-open tasks of the same phase, reading it through the same helper `withheld_mutes` in run-test-gate.py uses so there is one definition of 'this task's bugs'. Sign-off (`--gate` with no task) and the release guard keep counting every open high bug. The gate's output names which bugs were exempted and why.",
       "files": [
         "plugins/audit/scripts/status/_status_facts.py",
@@ -1567,19 +1604,40 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b2405c56f3ae",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_status_facts.py: GATE_TASK_ENV ('AUDIT_GATE_TASK'); task_bug_ids(manifest, task_id) - the one definition of a task's bugs (bug.taskId names the task, or the task's own bugId names the bug); gate_exemptions(manifest, task_id) -> {bugId: why} for open high bugs linked to the task and to non-terminal siblings of its phase ({} for no task or an unknown task); open_high_counted(); evaluate_gate(summary, conditions, exempt=None), with exempt read by open-high-bugs alone; rollup bugs block gains openHighIds. audit-status.py: --task ID, defaulting to $AUDIT_GATE_TASK; exemptions are computed from this checkout's own plan (the copy the gate grades); summary.gate carries task+exempted; a 'GATE TASK ...' line plus one 'exempted BUG-x: why' line per bug is printed on both the pass and the fail path; the open-high-bugs failure detail names the count left after exemption. Nothing is printed when no task is given. run-test-gate.py: withheld_mutes reads _status_facts.task_bug_ids; step_env(task) sets AUDIT_GATE_TASK for a task run and REMOVES it for any other run; _shell takes env; run_gate takes task= and its default runner (_step_runner) starts every step in that env; main passes task=args.task. The full-run call stays task None, so it clears the variable. .claude/hooks/guard-release.py is untouched: it reads effective_bug_status itself, not evaluate_gate. render-report's evaluate_gate call passes no exempt. tests/test_run_test_gate.py: the mw4 _shell stub accepts env=. Verification: own gate exit 0, 187 cases. Sweep of test__status_facts, test_audit_status, test_run_test_gate and test__proc_group: exit 0, 4/4 files, 1172 cases. Full sweep on a committed copy (git ls-files -co into a scratch repo, CLAUDE_*, AUDIT_LOCK_TOKENS and AUDIT_GATE_TASK unset): 189/191 files ok, 16615 cases; only tools/check-example-ledgers.py and tools/measure-context.py are red, the two the orchestrator allowed. ruff check and vermin -t=3.8- on the touched files: exit 0. Mutations, run in a scratch copy with __pycache__ purged: m1 exempt ignored -> gx1,gx3,gx4 red; m2 terminal siblings kept -> gx7; m3 any task's bug plan-wide -> gx5,gx7; m4 bugId side dropped -> gx1-gx4; m5 env not read -> gx4; m6 env not cleared -> gte1; m7 task not passed -> gte1; m8 high check dropped -> gx1,gx7,gx8; m9 unknown task exempts its linked bug -> gx9, but only after the fixture gained BUG-7 naming P9.9 (it had survived first); m10 withheld_mutes back to taskId only -> gte2. fo-block is also red in the unmutated scratch copy, because that copy holds no tools/ (_deps missing). Left out of scope: audit-task.py:6752-6755 (no-change close) builds the same both-ends bug set inline - a third copy of task_bug_ids, not in this task's files. audit-task.py:6890 and :7186 read bug.taskId alone on purpose: they settle the bugs whose status derives from the task, which is effective_bug_status's link, a different question. audit-status.py:1602 asks which task is the fix. No docs edited: the task names none. commands/status.md and CHANGELOG.md might want --task.",
+        "descriptive": "A task gate no longer fails open-high-bugs over the high bugs its own task and its phase's open siblings are fixing, and it names each one it set aside. Sign-off, CI, render-report and the release guard still count every one."
       },
       "startedAt": "2026-10-21T04:54:16Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-21T06:26:42Z",
+      "verifiedBy": [
+        "gx1-gx3 (test__status_facts): a task gate passes with the task's and the open sibling's bugs exempted, sign-off fails, each exemption has a reason, and the command (exit 0 vs 1) names the exempted bugs",
+        "gx4: the task reaches audit-status through $AUDIT_GATE_TASK",
+        "gx5-gx6: a high bug linked to nothing, or to another phase's task, still fails the task gate, in the facts and in the command",
+        "gx7: a sibling done while its bug stays open ends that bug's exemption",
+        "gx8: open-bugs is not exempted and a low bug is never listed",
+        "gx9: an unknown task id exempts nothing, even a bug naming that id",
+        "gte1 (test_run_test_gate): a task run's step sees AUDIT_GATE_TASK, and a no-task run clears an exported one",
+        "gte2: withheld_mutes and task_bug_ids agree on a bug linked only from the task's bugId"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-21T06:26:39Z.820330",
         "status": "passed",
         "at": "2026-10-21T06:26:39Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b2405c56f3ae",
+        "at": "2026-10-21T06:26:42Z",
+        "return": "docs/audit/evidence/returns/P131.12/20261021T045416Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-21T05:16:26Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__status_facts.py` in a throwaway tree at HEAD exited 1 with failing cases tests/test__status_facts.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 178/179 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {

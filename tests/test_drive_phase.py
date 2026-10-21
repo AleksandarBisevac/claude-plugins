@@ -65,6 +65,7 @@ import _manifest_io as _mio                        # noqa: E402  (load_manifest,
 import _evidence_io as _evio                       # noqa: E402  (read_rows, project_config_for)
 import _tree_stamp                                 # noqa: E402  (the dirty digest a row records)
 import _filed_returns as _fr                       # noqa: E402  (return_path)
+import _machine_paths as _mpaths                   # noqa: E402  (machine_path_shape)
 
 DRIVER = "drive-phase.py"
 PHASE = "P1"
@@ -115,20 +116,26 @@ def _plan(task_ids, gate, phase_gate=None):
 
 
 def _repo(prefix, task_ids=TASKS, gate=("true",), per_task="always",
-          phase_gate=None):
+          phase_gate=None, executor=None):
     """A committed repository holding the plan, one source file per task, and
     a `.gitignore` for the driver's and the briefs' state directory. `per_task`
     is `review.perTask`: `always` is the reviewer-per-task drive most cases here
     are about, and the `dk` cases drive the other two readings. `phase_gate`
-    is the phase's own `testGate` when it differs from the tasks' gate."""
+    is the phase's own `testGate` when it differs from the tasks' gate.
+    `executor` is the config's `executor` object, absent when None - the `ws`
+    cases set the writer-session keys there, committed with the fixture so the
+    tree a gate measures holds no change of the config's own."""
     root = os.path.realpath(_harness.fixture_root("drive-%s-" % (prefix,)))
     os.makedirs(os.path.join(root, "docs", "audit"))
     os.makedirs(os.path.join(root, ".claude"))
     os.makedirs(os.path.join(root, "src"))
+    config = {"manifestPath": "docs/audit/audit-plan.json",
+              "review": {"perTask": per_task}}
+    if executor is not None:
+        config["executor"] = executor
     with open(os.path.join(root, ".claude", "audit.config.json"), "w",
               encoding="utf-8") as fh:
-        json.dump({"manifestPath": "docs/audit/audit-plan.json",
-                   "review": {"perTask": per_task}}, fh)
+        json.dump(config, fh)
     with open(os.path.join(root, ".gitignore"), "w", encoding="utf-8") as fh:
         fh.write(".claude/state/\n")
     # At least three sources: the findings these cases hand in name `src/f1.txt`
@@ -511,10 +518,10 @@ def _drive_cases(check):
     gate_before = {}
     real_dispatch = M.dispatch
 
-    def watching_dispatch(ctx, state, phase, task, role):
+    def watching_dispatch(ctx, state, phase, task, role, *tree):
         if role == "reviewer":
             gate_before[task["id"]] = _ledger_has_green(root, mpath, task["id"])
-        return real_dispatch(ctx, state, phase, task, role)
+        return real_dispatch(ctx, state, phase, task, role, *tree)
     M.dispatch = watching_dispatch
     try:
         run = drive(M, root, mpath, on_dispatch=note_gate)
@@ -600,10 +607,10 @@ def _drive_mutant_cases(check):
     seen = {}
     real_m = mutant.dispatch
 
-    def watch_m(ctx, state, phase, task, role):
+    def watch_m(ctx, state, phase, task, role, *tree):
         if role == "reviewer":
             seen[task["id"]] = _ledger_has_green(root_m, mpath_m, task["id"])
-        return real_m(ctx, state, phase, task, role)
+        return real_m(ctx, state, phase, task, role, *tree)
     mutant.dispatch = watch_m
     drive(mutant, root_m, mpath_m, cap=2)
     check("dp4m RED TWIN: a driver that dispatches the reviewer without recording "
@@ -835,6 +842,375 @@ def _retry_reason_cases(check):
           and bool(new_start) and bool(want_key)
           and entry == {"start": want_key, "value": reason}
           and brc == 0 and brief.count(line) == 1)
+
+
+# --- the writer as a headless session ------------------------------------------
+# A full model id in the shape the session runner accepts, a session id in the
+# shape the CLI writes, and three costs no two of which share a digit run, so a
+# note carrying the wrong session's figure cannot read as the right one.
+WRITER_MODEL = "claude-sonnet-4-5"
+WRITER_SESSION = "3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+WRITER_EXECUTOR = {"writerModel": WRITER_MODEL, "writerBudgetUsd": 2.5}
+WRITER_COSTS = ("0.4242", "0.5151", "0.6161")
+
+# The `claude` the session runner finds on PATH: it keeps what reached it - its
+# argv and the prompt on its stdin - one JSON line per run, and ends the stream
+# with the one `result` event the runner reads the session id and cost from.
+_WRITER_STUB = r'''
+import json, os, sys
+prompt = sys.stdin.buffer.read().decode("utf-8")
+with open(os.environ["WS_LOG"], "a", encoding="utf-8") as fh:
+    fh.write(json.dumps({"argv": sys.argv[1:], "stdin": prompt}) + "\n")
+sid = os.environ["WS_SESSION"]
+if os.environ.get("WS_MODE") == "none":
+    sys.stdout.write(json.dumps({"type": "system", "subtype": "init"}) + "\n")
+    sys.stdout.flush()
+    raise SystemExit(7)
+for event in ({"type": "system", "subtype": "init", "session_id": sid},
+              {"type": "result", "subtype": "success", "is_error": False,
+               "session_id": sid, "total_cost_usd": float(os.environ["WS_COST"])}):
+    sys.stdout.write(json.dumps(event) + "\n")
+sys.stdout.flush()
+'''
+
+
+def _writer_stub(where):
+    """A PATH directory holding the stub `claude`: a shell wrapper on POSIX and a
+    batch file on Windows, each quoting both paths, since the spaced sweep leg
+    puts TMPDIR under a directory with a space in it."""
+    bindir = os.path.join(where, "bin")
+    os.makedirs(bindir)
+    stub_py = os.path.join(where, "claude_stub.py")
+    with open(stub_py, "w", encoding="utf-8") as fh:
+        fh.write(_WRITER_STUB)
+    if os.name == "nt":
+        with open(os.path.join(bindir, "claude.cmd"), "w", encoding="utf-8") as fh:
+            fh.write('@"%s" "%s" %%*\r\n' % (sys.executable, stub_py))
+    else:
+        path = os.path.join(bindir, "claude")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write('#!/bin/sh\nexec "%s" "%s" "$@"\n' % (sys.executable, stub_py))
+        os.chmod(path, 0o755)
+    return bindir
+
+
+def _signal_next(M, root, mpath, *extra):
+    """`(code, line)` of one `next --signal`, the form every command runs."""
+    with _Env(root):
+        said = []
+        code = M.main(["next", PHASE, mpath, "--project-dir", root, "--signal"]
+                      + list(extra), out=said.append)
+    return code, "\n".join(said)
+
+
+def _explain_of(M, root, mpath, subject):
+    """`(code, text)` of `next --explain <subject>`."""
+    with _Env(root):
+        said = []
+        code = M.main(["next", PHASE, mpath, "--project-dir", root, "--explain",
+                       subject], out=said.append)
+    return code, "\n".join(said)
+
+
+def _run_argv(text):
+    """The argv of the one `run:` line an explain prints, read back the way a
+    POSIX shell reads it; None when there is none, and when there are two."""
+    runs = [ln[len("run: "):] for ln in text.splitlines() if ln.startswith("run: ")]
+    return shlex.split(runs[0]) if len(runs) == 1 else None
+
+
+def _flag(argv, flag):
+    """The value that follows `flag` in `argv`, or None."""
+    argv = list(argv or [])
+    return argv[argv.index(flag) + 1] if flag in argv[:-1] else None
+
+
+def _play_session(root, argv, bindir, log, cost, session=WRITER_SESSION,
+                  mode="ok"):
+    """Run the printed session command as the main loop does - its interpreter
+    word replaced by this one - with the stub standing for `claude`. `mode`
+    `none` makes the stub exit 7 with no result event. Returns `(code,
+    output)`."""
+    env = dict(os.environ)
+    env["PATH"] = bindir + os.pathsep + env.get("PATH", "")
+    env.update(WS_LOG=log, WS_SESSION=session, WS_COST=cost, WS_MODE=mode)
+    done = subprocess.run([sys.executable] + list(argv[1:]), cwd=root, env=env,
+                          capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", timeout=120)
+    return done.returncode, done.stdout + done.stderr
+
+
+def _stub_runs(log):
+    try:
+        with open(log, encoding="utf-8") as fh:
+            return [json.loads(ln) for ln in fh if ln.strip()]
+    except OSError:
+        return []
+
+
+def _notes(mpath, task_id):
+    return [str((n or {}).get("text") or "")
+            for n in tasks_of(mpath).get(task_id, {}).get("notes") or []]
+
+
+def _streams(text):
+    """The stream paths a session runner's printed lines name."""
+    return re.findall(r"stream=(.+?)\s*$", text, re.M)
+
+
+def _writer_session_cases(check):
+    """With `executor.writerModel` set, the writer is a headless session the main
+    loop runs through `run-agent-session.py`, never an Agent carrying the executor
+    body; the cost each session's own result printed is noted on the task; and a
+    red task gate resumes the session that wrote the task, spending no attempt,
+    for at most two rounds before a fresh retry is the way on."""
+    M, why = _load("drive_phase_writer")
+    if M is None:
+        check("ws1 the driver loads", False, why)
+        return
+    root, mpath = _repo("writer", task_ids=TASKS[:1], gate=("false",),
+                        executor=WRITER_EXECUTOR)
+    stubs = os.path.realpath(_harness.fixture_root("drive-writer-stub-"))
+    bindir = _writer_stub(stubs)
+    log = os.path.join(stubs, "runs.jsonl")
+    code, line = _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    argv = _run_argv(block) or []
+    prompt = _flag(argv, "--prompt-file")
+    prompt_text = (_read(prompt).decode("utf-8", "replace")
+                   if prompt and os.path.isfile(prompt) else "")
+    head = ([ln for ln in block.splitlines() if ln.startswith("dispatch ")]
+            or [""])[0]
+    check("ws1 the dispatch line for a writer names run-agent-session.py with the "
+          "writer role, the task id and the full model id, and names no executor "
+          "agent; the run line --explain prints runs that script on the prompt "
+          "brief --role writer wrote, resuming nothing: %r"
+          % ((code, line, head, argv),),
+          code == 0 and "run-agent-session.py --role writer" in line
+          and " P1.1 " in line and WRITER_MODEL in line
+          and "audit-executor" not in line + block
+          and head.startswith("dispatch run-agent-session.py --role writer "
+                              "--task P1.1 --model %s" % (WRITER_MODEL,))
+          and argv[:1] == ["python3"]
+          and os.path.basename(argv[1] if len(argv) > 1 else "")
+          == "run-agent-session.py"
+          and _flag(argv, "--role") == "writer" and _flag(argv, "--task") == "P1.1"
+          and _flag(argv, "--model") == WRITER_MODEL
+          and _flag(argv, "--budget-usd") == "2.5" and "--resume" not in argv
+          and prompt_text.startswith("Implement the following task in this "
+                                     "repository."))
+    early, waiting = _signal_next(M, root, mpath)
+    _c, wait_block = _explain_of(M, root, mpath, "P1.1")
+    record_rel = os.path.relpath(_flag(argv, "--record") or "", root).replace(os.sep, "/")
+    check("ws10 a next before the session wrote its record is a wait naming the "
+          "record relative to the project, never no-executor-return, and its "
+          "explain still holds the run line; no attempt is spent: %r"
+          % ((early, waiting, wait_block),),
+          early == 0 and " wait P1.1" in waiting
+          and "no-executor-return" not in waiting + wait_block
+          and record_rel in wait_block
+          and not [ln for ln in [waiting] + wait_block.splitlines()
+                   if root in ln and not ln.startswith("run: ")]
+          and _run_argv(wait_block) == argv
+          and _attempts(mpath, "P1.1") == 1)
+    ran, said = _play_session(root, argv, bindir, log, WRITER_COSTS[0])
+    streams = _streams(said)
+    # The writer's return is filed the way an executor's is until the drive
+    # files it itself; what is under test here is the session around it.
+    _file_executor(root, mpath, "P1.1")
+    before = _attempts(mpath, "P1.1")
+    code, line = _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    noted = [n for n in _notes(mpath, "P1.1") if WRITER_SESSION in n]
+    check("ws2 the session the runner ran is noted on the task once, naming its "
+          "session id and the cost its own result printed: %r"
+          % ((ran, said[-200:], noted),),
+          ran == 0 and len(noted) == 1 and WRITER_COSTS[0] in noted[0])
+    check("ws3 a red task gate on a task with a recorded session is a decision "
+          "whose first option is resume, with the rule saying it spends no "
+          "attempt: %r" % ((code, line, block),),
+          code == 0 and "gate-red-writer" in line
+          and "answer: next %s --answer resume|retry|rerun|block" % (PHASE,) in block
+          and "no attempt" in block and _attempts(mpath, "P1.1") == before)
+    rounds, waits = [], []
+    for n, cost in enumerate(WRITER_COSTS[1:], 1):
+        code, line = _signal_next(M, root, mpath, "--answer", "resume")
+        _c, block = _explain_of(M, root, mpath, "P1.1")
+        again = _run_argv(block) or []
+        fed = _flag(again, "--prompt-file")
+        fed_text = (_read(fed).decode("utf-8", "replace")
+                    if fed and os.path.isfile(fed) else "")
+        held_code, held = _signal_next(M, root, mpath)
+        waits.append((n, held_code, held))
+        ran, said = _play_session(root, again, bindir, log, cost)
+        streams += _streams(said)
+        reached = (_stub_runs(log) or [{}])[-1]
+        rounds.append((n, code, line, again, fed_text, ran, reached,
+                       _attempts(mpath, "P1.1")))
+        code, line = _signal_next(M, root, mpath)
+    check("ws4 each resume dispatch runs run-agent-session.py --resume on the "
+          "recorded session with the gate's failing lines as its prompt, reaching "
+          "claude as such, and spends no attempt: %r" % (rounds,),
+          len(rounds) == 2 and all(
+              c == 0 and "run-agent-session.py --role writer" in ln
+              and _flag(a, "--resume") == WRITER_SESSION
+              and _flag(a, "--role") == "writer" and _flag(a, "--task") == "P1.1"
+              and _flag(a, "--model") == WRITER_MODEL
+              and "GATE RED" in f and not f.startswith("Implement the following")
+              and r == 0 and _flag(got.get("argv"), "--resume") == WRITER_SESSION
+              and "GATE RED" in (got.get("stdin") or "") and spent == before
+              for _n, c, ln, a, f, r, got, spent in rounds))
+    check("ws11 a next while a resumed session has written no record is a wait, "
+          "so the unfixed tree is not gated and no round is spent on it: %r"
+          % (waits,),
+          len(waits) == 2 and all(c == 0 and " wait P1.1" in w
+                                  and "gate-red" not in w for _n, c, w in waits))
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    resumed = streams[1:]
+    named = [n for n in _notes(mpath, "P1.1")
+             if len(resumed) == 2 and all(os.path.basename(s) in n for s in resumed)]
+    check("ws5 the third red after two resumes stops at the plain gate-red, which "
+          "offers no resume and keeps a fresh retry, with a note on the task "
+          "naming both resumed runs: %r" % ((line, block, resumed, named),),
+          "gate-red-writer" not in line
+          and block.startswith("decide gate-red P1.1")
+          and "answer: next %s --answer retry|rerun|block" % (PHASE,) in block
+          and len(named) == 1 and _attempts(mpath, "P1.1") == before)
+    # A session's own note carries one cost; the note at the cap names the
+    # resumed runs' costs together and is ws5's.
+    single = [c[0] for c in ([x for x in WRITER_COSTS if x in n]
+                             for n in _notes(mpath, "P1.1")) if len(c) == 1]
+    check("ws6 every session the task ran is on it with its own cost, each once, "
+          "after more nexts than sessions: %r" % (_notes(mpath, "P1.1"),),
+          sorted(single) == sorted(WRITER_COSTS))
+    code, line = _signal_next(M, root, mpath, "--answer", "retry")
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    fresh = _run_argv(block) or []
+    check("ws7 THE TWIN: retry after the cap spends one attempt and dispatches a "
+          "fresh writer session, resuming nothing: %r" % ((code, line, fresh),),
+          code == 0 and _attempts(mpath, "P1.1") == (before or 0) + 1
+          and "run-agent-session.py --role writer" in line
+          and _flag(fresh, "--role") == "writer" and "--resume" not in fresh)
+
+    off_root, off_mpath = _repo("writer-off", task_ids=TASKS[:1])
+    code, line = _signal_next(M, off_root, off_mpath)
+    check("ws8 THE ROLLBACK TWIN: with no executor.writerModel the dispatch is the "
+          "executor Agent, as before, and names no session runner: %r" % ((code, line),),
+          code == 0 and M.EXECUTOR_AGENT in line
+          and "run-agent-session.py" not in line)
+    bad_root, bad_mpath = _repo("writer-nobudget", task_ids=TASKS[:1],
+                                executor={"writerModel": WRITER_MODEL})
+    code, line = _signal_next(M, bad_root, bad_mpath)
+    _c, block = _explain_of(M, bad_root, bad_mpath, PHASE)
+    check("ws9 a writer model with no per-session budget stops the drive naming "
+          "executor.writerBudgetUsd, and dispatches nothing: %r" % ((code, line, block),),
+          code == 1 and "executor.writerBudgetUsd" in line + block
+          and "run-agent-session.py --role" not in line + block)
+    _writer_no_result_cases(check, M, bindir, log)
+    _writer_twice_cases(check, M, bindir, log)
+
+
+def _no_machine_path(text, root):
+    """Whether `text` names no absolute path of the fixture or the machine: the
+    shapes `audit-task.py note` refuses, and the fixture root in any spelling."""
+    return (root not in text and os.path.realpath(root) not in text
+            and _mpaths.machine_path_shape(text) is None)
+
+
+def _writer_no_result_cases(check, M, bindir, log):
+    """A session that ends without a result - claude exiting with no result
+    event, or the runner unable to make a directory it needs - leaves a note
+    naming no machine path, and the drive goes on; a note the verb refuses is
+    recorded and never asked again; the cap's note names a missing record
+    relative to the project."""
+    root, mpath = _repo("writer-noresult", task_ids=TASKS[:1],
+                        executor=WRITER_EXECUTOR)
+    _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    argv = _run_argv(block) or []
+    ran, said = _play_session(root, argv, bindir, log, "0.1", mode="none")
+    code, line = _signal_next(M, root, mpath)
+    notes = _notes(mpath, "P1.1")
+    check("ws12 a session that ended with no result (could-not-run naming its "
+          "stream) is noted with no machine path and no cost, and the drive goes "
+          "on rather than stopping: %r" % ((ran, said[-160:], code, line, notes),),
+          ran == 3 and "could-not-run" in said and code == 0
+          and " stop " not in line and len(notes) == 1
+          and "no result" in notes[0] and _no_machine_path(notes[0], root))
+    blocker = os.path.join(root, ".claude", "state", "a-file")
+    with open(blocker, "w", encoding="utf-8") as fh:
+        fh.write("x\n")
+    io_argv = list(argv)
+    io_argv[io_argv.index("--scratch") + 1] = os.path.join(blocker, "scratch")
+    # The same printed command run again, its scratch below a file.
+    ran2, said2 = _play_session(root, io_argv, bindir, log, "0.1")
+    code2, line2 = _signal_next(M, root, mpath)
+    notes = _notes(mpath, "P1.1")
+    check("ws13 an io-error line is noted with no machine path either, and the "
+          "drive goes on: %r" % ((ran2, said2[-160:], code2, line2, notes),),
+          ran2 == 5 and "io-error" in said2 and code2 == 0
+          and " stop " not in line2 and len(notes) == 2
+          and all(_no_machine_path(n, root) for n in notes))
+    # A note the verb refuses: recorded, the drive goes on, and the same
+    # record is not offered to the verb again at the next step.
+    root3, mpath3 = _repo("writer-refused", task_ids=TASKS[:1],
+                          executor=WRITER_EXECUTOR)
+    _signal_next(M, root3, mpath3)
+    _c, block3 = _explain_of(M, root3, mpath3, "P1.1")
+    _play_session(root3, _run_argv(block3) or [], bindir, log, "0.2")
+    calls = []
+    real = M.run_verb
+
+    def refusing(ctx, script, args, stdin=None, record=False):
+        if script == "audit-task.py" and "note" in args:
+            calls.append(list(args))
+            return 1, "[audit-task] REFUSED: a refusal this case stands in\n", ""
+        return real(ctx, script, args, stdin=stdin, record=record)
+    M.run_verb = refusing
+    try:
+        first, said_a = _next(M, root3, mpath3)
+        second, said_b = _next(M, root3, mpath3)
+    finally:
+        M.run_verb = real
+    check("ws14 a note the verb refuses does not stop the drive: the step says it "
+          "was not noted, goes on, and the record is not offered again: %r"
+          % ((first, said_a, second, said_b, len(calls)),),
+          first == 0 and second == 0 and len(calls) == 1
+          and "not noted" in said_a and " stop " not in said_a + said_b)
+    ctx = {"project": root, "stateDir": os.path.join(root, ".claude", "state")}
+    record = os.path.join(ctx["stateDir"], "sessions", "drive", "P1.1.x.2.jsonl")
+    note = M.cap_note(ctx, {"dispatches": [{"seq": 2, "round": 1, "record": record}],
+                            "runs": []}, WRITER_SESSION)
+    check("ws15 the cap's note names a resume round whose record never appeared "
+          "relative to the project, with no machine path: %r" % (note,),
+          ".claude/state/sessions/drive/P1.1.x.2.jsonl" in note
+          and _no_machine_path(note, root))
+
+
+def _writer_twice_cases(check, M, bindir, log):
+    """The printed command run twice in one dispatch: both sessions are noted,
+    each once with its own cost, and a red gate resumes the later one."""
+    later = "9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d"
+    root, mpath = _repo("writer-twice", task_ids=TASKS[:1], gate=("false",),
+                        executor=WRITER_EXECUTOR)
+    _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    argv = _run_argv(block) or []
+    _play_session(root, argv, bindir, log, "0.7311")
+    _play_session(root, argv, bindir, log, "0.8422", session=later)
+    _file_executor(root, mpath, "P1.1")
+    code, line = _signal_next(M, root, mpath)
+    notes = _notes(mpath, "P1.1")
+    _signal_next(M, root, mpath, "--answer", "resume")
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    again = _run_argv(block) or []
+    check("ws16 a command run twice leaves both sessions on the task, each once "
+          "with its own cost, and the resume goes to the later session: %r"
+          % ((line, notes, _flag(again, "--resume")),),
+          "gate-red-writer" in line
+          and len([n for n in notes if WRITER_SESSION in n and "0.7311" in n]) == 1
+          and len([n for n in notes if later in n and "0.8422" in n]) == 1
+          and _flag(again, "--resume") == later)
 
 
 def _gate_calls(module):
@@ -6249,6 +6625,16 @@ def _signal_corpus(M, mpath):
         ctx, "P125.55-0h5", ["node tools/capture-screenshots.mjs --update " + "a" * 150],
         "../trees/P125.55-0h5"), {}))
     out.append(("resume-executor", M.resume_said(ctx, "P125.55-0h5"), {}))
+    session_argv = ["python3", "/a/long/plugin/path/" * 8 + "run-agent-session.py",
+                    "--role", "writer", "--task", "P125.55-0h5"]
+    out.append(("dispatch-writer", M.writer_said(
+        ctx, "P125.55-0h5", "claude-sonnet-4-5-20250929", brief, session_argv), {}))
+    out.append(("resume-writer", M.writer_said(
+        ctx, "P125.55-0h5", "claude-sonnet-4-5-20250929", brief, session_argv,
+        resume=WRITER_SESSION, round_n=2), {}))
+    out.append(("wait-writer", M.wait_said(
+        ctx, "P125.55-0h5", ".claude/state/sessions/drive/P125.55-0h5."
+        "20261014T182420Z.12.jsonl", session_argv), {}))
     out.append(("done", M.done_said(ctx, "landed (" + "merged into main " * 10 + ")",
                                     "P126"), {"did": _SIGNOFF_DID}))
     out.append(("done", M.done_said(ctx, "landed", None), {"did": _SIGNOFF_DID}))
@@ -7235,6 +7621,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("ucs-block", "_unchecked_ids_cases"),
           ("dd-block", "_decide_cases"), ("ct-block", "_continue_cases"),
           ("dd3-block", "_rerun_cases"), ("rs-block", "_resume_cases"),
+          ("ws-block", "_writer_session_cases"),
           ("rrs-block", "_retry_reason_cases"),
           ("rm-block", "_rerun_measures_cases"),
           ("fx-block", "_fix_batch_cases"), ("ht-block", "_handed_triage_cases"),

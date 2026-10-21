@@ -393,8 +393,52 @@ def _cases(check):
               e_io is not None and code == e_io and e_io not in codes + [e_budget]
               and dirs["state"] in out + err and "Traceback" not in err and rec is None,
               "exit %r out %r err %r" % (code, out[-300:], err[-300:]))
+
+        # --- the --record file ---------------------------------------------------
+        # One JSON line per run, appended: the same printed command run twice
+        # keeps both outcomes, since the driver notes each line once.
+        kept = os.path.join(root, "records", "w.jsonl")
+        first = _run(root, bindir, "writer", extra=["--record", kept], tag="rec1")
+        second = _run(root, bindir, "writer", extra=["--record", kept], tag="rec2",
+                      mode="budget")
+        lines = _record_lines(kept)
+        check("ras27 --record appends one line per run holding the printed line and "
+              "this script's exit code, the directory made on the way: %r"
+              % ((first[0], second[0], lines),),
+              len(lines) == 2
+              and lines[0] == {"line": first[1].strip(), "exit": 0}
+              and lines[1] == {"line": second[1].strip(), "exit": second[0]}
+              and second[0] == e_budget)
+        refused = os.path.join(root, "records", "usage.jsonl")
+        code, out, err, rec, dirs = _run(root, bindir, "writer", model="opus",
+                                         extra=["--record", refused], tag="rec3")
+        lines = _record_lines(refused)
+        check("ras28 a usage refusal is recorded too, as `usage: <the message>` with "
+              "exit 2, and claude was never started: %r" % ((code, lines, err),),
+              code == 2 and rec is None and len(lines) == 1
+              and lines[0]["exit"] == 2
+              and lines[0]["line"].startswith("usage: --model 'opus'")
+              and lines[0]["line"][len("usage: "):] in err)
+        blocker = os.path.join(root, "records", "a-file")
+        with open(blocker, "w", encoding="utf-8") as fh:
+            fh.write("x\n")
+        code, out, err, rec, dirs = _run(
+            root, bindir, "writer", extra=["--record", os.path.join(blocker, "r.jsonl")],
+            tag="rec4")
+        check("ras29 a record that cannot be written is named on stderr and leaves "
+              "the run's own exit code and line as they were: %r" % ((code, out, err),),
+              code == 0 and out.startswith("session=%s " % SESSION)
+              and "could not be written" in err and "Traceback" not in err)
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+
+def _record_lines(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return [json.loads(ln) for ln in fh if ln.strip()]
+    except (OSError, ValueError):
+        return []
 
 
 def _selftest():

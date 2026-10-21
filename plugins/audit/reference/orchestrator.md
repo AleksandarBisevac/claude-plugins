@@ -12,7 +12,8 @@ resolution, preflight, guardrails, readiness, the lock, branch-per-phase, resume
 agent, for a reader who asks, and for the commands outside the pipeline (`/audit:report`,
 `/audit:worktree`, `/audit:layout`) that still read it first. **Execute the task** and **Phase
 sign-off** are in `reference/execute-task.md` and `reference/phase-signoff.md`.
-A headless role run: `run-agent-session.py`.
+A headless role run: `run-agent-session.py`; under `executor.writerModel` each writer runs
+through it, and a red task gate resumes that session for at most two rounds.
 
 ## At a glance
 
@@ -28,9 +29,8 @@ A headless role run: `run-agent-session.py`.
   (review? → test gate → runtime boot?) → merge back (ff, else confirmed `--no-ff`) → release lock.
 - **On trouble:** unmet blockers → skip; gates red → retry to `maxAttempts` → `blocked`; gates
   can't run (infra) → don't burn an attempt, human action item; interrupted → `/audit:resume`.
-  **A `rerun` answer measures:** the step driver marks it for that start and gives the next
-  gate run `--no-reuse`, spending the mark on that one run — a rerun answered by `GATE VERDICT
-  REUSED` would hand the same red decision straight back, and nothing would have run.
+  **A `rerun` answer measures:** the next gate run of that start gets `--no-reuse`, once — a
+  reused red verdict would hand the same decision straight back.
 - **One task per agent, bounded:** continuing a running agent onto its next task is preferred
   below `executor.maxHours` (default 3); at or past it, hand back with a summary and spawn fresh
   — `reference/execute-task.md`'s continuation rule.
