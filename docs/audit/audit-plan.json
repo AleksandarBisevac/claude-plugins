@@ -1554,7 +1554,8 @@
       "P131.1",
       "P131.2",
       "P131.3",
-      "P131.7"
+      "P131.7",
+      "P131.15-dau"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3665,7 +3666,8 @@
       "P130.30-ywo",
       "P130.40-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P131.17-dau"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -8018,7 +8020,8 @@
       "P130.9",
       "P131.1",
       "P131.2",
-      "P131.11"
+      "P131.11",
+      "P131.15-dau"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
@@ -9804,7 +9807,8 @@
       "P131.7",
       "P131.8",
       "P131.9",
-      "P131.13"
+      "P131.13",
+      "P131.17-dau"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -10653,7 +10657,8 @@
       "P131.3",
       "P131.7",
       "P109.9",
-      "P86.4"
+      "P86.4",
+      "P131.15-dau"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -11207,7 +11212,8 @@
       "P131.13",
       "P131.2",
       "P129.7-izt",
-      "P129.8-izt"
+      "P129.8-izt",
+      "P131.17-dau"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"

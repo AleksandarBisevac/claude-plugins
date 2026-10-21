@@ -156,9 +156,30 @@
         "file": "tests/test_drive_phase.py (wf/wl blocks)",
         "issue": "Every wf/wl case drives the shared-tree path (tree is None). The wave branches this diff adds - open_dispatch(..., tree), head_move(..., tree) and member_project, diff_paths(..., tree), take_stamp(ctx, task, tree), carry_work after the filing, locked_paths_now(..., tree) - are read only; I could not tell from the tests that any of them work in a task worktree, which is where P131.6 itself runs.",
         "resolution": "Add one wave-shaped case (a task worktree, a writer that edits there) holding the filing, the lock and the commit check."
+      },
+      {
+        "id": "P131-R20",
+        "severity": "med",
+        "file": "tools/verify.sh:944",
+        "issue": "The class this task was to close is still open in a live command: refs_rule() puts only plugins/audit/scripts on sys.path (`sys.path.insert(0, os.path.join(\"plugins\", \"audit\", \"scripts\"))`) and then runs `import _refs`, which no longer resolves (verified in the task tree: python3 -I with that preamble raises ModuleNotFoundError: No module named '_refs', exit 1). refs_rule backs the release followers (verify.sh:991-994, raw_url_pin_drift, artifact_version_drift, screenshot_capture_drift), so `verify.sh --release` is broken. The task's grep excluded `:!tools`, and mv6 reads only .py string literals and evals.json, so a shell heredoc is outside the lint: the claims block says the grep was complete (4 hits, all repointed) while the class is not closed.",
+        "resolution": "Put tools/lints on the path in verify.sh's heredoc before `import _refs` (as tools/affected.py does through _output.LINTS_DIR). Widen mv6/_shipped_literals to also read *.sh and *.mjs/*.yml under tools/ and .github/ (or add a text-level scan of the heredoc), with the planted shape mv7 already uses, so the next shell caller turns red."
+      },
+      {
+        "id": "P131-R21",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md:1655",
+        "issue": "The guide still describes manifest_moved_files() as splitting a MOVE from a DELETION by 'whether the basename still exists anywhere in the plugin'. The diff changes both halves: the index now spans plugins/audit, tests and tools/lints (MOVED_TO_TREES), and a third class, `history`, exists for done or cancelled tasks naming a moved path.",
+        "resolution": "Reword the sentence to name MOVED_TO_TREES and the live/history axis, without a number."
+      },
+      {
+        "id": "P131-R22",
+        "severity": "low",
+        "file": "plugins/audit/scripts/_output.py:643",
+        "issue": "MOVED_TO_TREES hardcodes \"tests\" and \"tools/lints\" as literals while the anchor already owns LINTS_DIR (tools/affected.py reads _output.LINTS_DIR). Two spellings of one location will drift if the lints move again, which is how this task came to exist.",
+        "resolution": "Derive the tuple's lints entry from LINTS_DIR (and tests from TESTS_DIR) via posix_rel against REPO_ROOT."
       }
     ],
-    "outcome": "[findings: 19 - 0 high, 4 med, 15 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 22 - 0 high, 5 med, 17 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1284,7 +1305,7 @@
     {
       "id": "P131.6",
       "title": "After a writer session the drive proves red-first through git, locks the test digest, takes the stamp and files the return itself",
-      "status": "in_progress",
+      "status": "done",
       "description": "The writer no longer runs submit, so the drive runs the same verbs after the session ends: stamp-verification.py red with the own-tests command the drive already resolves for executor.runsGate own-tests, in a throwaway tree at HEAD with only the task's test files copied over it (so it proves red on an uncommitted change); it records the sha256 digest of those test files at the proof. Then stamp-verification.py take, then audit-task.py file-return with a return the drive builds: the diff's paths, the red-first block with its test digest, the stamp, and the writer's last message quoted verbatim as the writer's claim, never as a verdict. Where no test command can be derived, the red-first block is could-not-prove with that basis, never proved. The digest is locked: a resume round that changes a test file after the proof re-proves red and lists the changed test files for the reviewer, and the commit is refused while the test files differ from the locked digest with no re-proof on record. A session that left a commit past the task's start stops with a decision naming the commit, and nothing is filed. reference/execute-task.md states the drive-side order. Acceptance: (1) on a fixture tree whose new test fails without the change, the filed return's red-first block is proved, carries the test digest, and quotes the writer's last message as its claim; (2) a task whose tests yield no derivable command is filed with red-first could-not-prove naming the basis; (3) a test file edited after the proof without a re-proof makes the commit refuse, naming the file; (4) a writer session that left a commit stops with a decision naming the commit and files nothing; (5) red run by the drive proves red exactly as when an executor ran it.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1329,19 +1350,35 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e5b216055c1c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: writer_settle (called in advance after writer_wait) settles each writer dispatch whose record holds a session result, once: HEAD is recorded per dispatch (open_dispatch head=tree_head) and a moved HEAD is the new decision writer-committed (block|retry) naming the commit, filing nothing; otherwise file_writer_return runs stamp-verification.py red with red_args (now the one argv builder submit's red_block also uses, through red_run) over writer_test_command (the resolved gate entry naming a tests.add file, the same two readers audit-lookup.red_command asks), locks payload.testDigest in the writer state, takes the stamp, and files through audit-task.py file-return a return with gates {}, diffPaths (git status through _config.git_to_plan, records left out), redFirst (helper source + testDigest), stamp, writerClaim = the stream's last result text verbatim, and the case-binding gap fields. No derivable command -> could-not-prove naming the basis; gate-only with no tests.add -> not-attempted. A resume round whose session changed a locked test file is re-proved (reprove) and noted on the task listing the files. close_task refuses the commit with the new decision tests-moved (reprove|block) naming the changed files while locked_paths_now (_journal_io.file_hash over the locked paths) differs; --answer reprove re-proves, relocks and re-runs the recorded gate (the per-task reviewer already filed, so advance would not re-gate). stamp-verification.py: red's payload gains testDigest (sha256:<hex> of each declared test file's bytes + a digest over the list), and declared_tests() factors the scope read _red_scope used. Module docstrings and reference/execute-task.md state the drive-side order. Tests: wf1-wf5, wl1-wl4 new in tests/test_drive_phase.py (wf/wl blocks; ws2/ws16 no longer file as an executor - the stub now writes files, can commit, and ends with a result text); sdr1-sdr2 new in tests/test_stamp_verification.py. Runs: test_drive_phase 441/441 and test_stamp_verification 308/308 (exit 0 each); 8 mutations in throwaway copies each red (lock check skipped -> wl1,wl2; lock always moved -> wf3; no commit check -> wf5; claim stripped -> wf1; resume re-proof skipped -> wl3,wl4; no-command reads proved -> wf4; red_args without --derive-introduces -> sdr1; testDigest dropped -> sdr2). Committed-copy sweep: 189/191 files ok, red only in tools/check-example-ledgers.py and tools/measure-context.py, the two the orchestrator named as allowed. ruff and vermin clean.",
+        "descriptive": "After a writer session the drive proves red-first through a throwaway git tree, locks the test digest, takes the stamp and files the return itself, quoting the writer's last message as a claim"
       },
       "startedAt": "2026-10-21T07:02:41Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-21T10:50:04Z",
+      "verifiedBy": [
+        "wf1-wf5: the drive files a writer's return with a proved red-first block carrying the test digest and the verbatim last message as writerClaim; the commit twin closes; no derivable command files could-not-prove naming the basis; a session that committed stops at writer-committed naming the commit and files nothing",
+        "wl1-wl4: a test file edited after the proof makes the commit refuse with tests-moved naming the file, reprove re-proves and closes; a resume round that changes a test file re-proves and notes the file, and the close then commits",
+        "sdr1-sdr2: red run with the drive's red_args on the uncommitted change proves exactly as the executor's own call, leaves the shared tree untouched, and reports testDigest outside the three-field block"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-21T10:50:01Z.9327a7",
         "status": "passed",
         "at": "2026-10-21T10:50:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "e5b216055c1c",
+        "at": "2026-10-21T10:50:04Z",
+        "return": "docs/audit/evidence/returns/P131.6/20261021T070241Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-21T08:26:16Z",
+        "basis": "`python3 tests/test_drive_phase.py --selftest --stage wf-block --stage wl-block` in a throwaway tree at HEAD exited 1 with 9 of 9 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `wf-block`, `wl-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - wf1 (house FAIL), wf2 (house FAIL), wf3 (house FAIL), wf4 (house FAIL), wf5 (house FAIL), wl1 (house FAIL), wl2 (house FAIL), wl3 (house FAIL), wl4 (house FAIL): SELFTEST FAILED: 0/9 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1834,7 +1871,10 @@
         "plugins/audit/scripts/status/_doctor_policy.py",
         ".claude/skills/before-you-claim/evals/evals.json",
         "tests/test__output.py",
-        "tests/test__refs.py"
+        "tests/test__refs.py",
+        "tools/verify.sh",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/lints/_deps.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1869,9 +1909,9 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-21T09:05:54Z.5fe3a7",
-        "status": "failed",
-        "at": "2026-10-21T09:05:54Z"
+        "runId": "2026-10-21T10:58:25Z.933e36",
+        "status": "passed",
+        "at": "2026-10-21T10:58:25Z"
       }
     },
     {
@@ -1904,6 +1944,47 @@
         "verifying-external-behavior"
       ],
       "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P131.17-dau",
+      "title": "The drive never shows a stored gate verdict or pending gate decision whose basis has changed, and a rerun on one wave member re-measures every member red for the same step",
+      "status": "pending",
+      "description": "Before the drive shows ANY stored gate verdict or pending gate decision (gate-red, gate-red-writer, a reused green), it compares the record's gateDigest (_evidence_io.gate_digest) and tree identity with what the task's gate resolves to now; a mismatch discards the stored verdict and measures again. Every gate-red line prints the runId and its age. A rerun answered on a wave member applies to every member whose pending red carries the same failing step (or the drive asks once per member, never silently replays one). Seen on another project: after the test build command changed, rerun re-measured one member and the next next replayed the other member's red from its original run under the old command (drive-phase.py ~3494-3500 marks only the decision's task; task_gate ~1837-1847 passes --no-reuse only for a marked task). This is the third instance of one class - a stored verdict shown without asking whether its basis still holds - so fix it as one check every display path goes through, not per call site. Moved into S1 by the owner (2026-10-21: 'da, F763 u S1, F761 u S4').",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: two wave members red on the same step, the build command changes, rerun is answered on one; the next next measures the other instead of replaying its stored red, and a stored GREEN whose gateDigest no longer matches the current gate is measured again rather than shown; and every gate-red line names the runId and its age, while a stored verdict whose gateDigest and tree identity still match is reused as before"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
       "attempts": 0,
