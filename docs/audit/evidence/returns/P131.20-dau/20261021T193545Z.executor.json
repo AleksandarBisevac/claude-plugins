@@ -1,0 +1,33 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass",
+    "full sweep on committed copy (python3 tools/sweep-selftests.py in /tmp copy)": "pass except tools/check-example-ledgers.py and tools/measure-context.py (the two allowed reds; measure-context's only failing case is mc18, a reference commit that does not resolve in a copy repo; mc19 passes: reviewer 6994 of 7000)",
+    "python3 tools/measure-context.py --gate (project tree)": "pass",
+    "ruff check on the two py files": "pass",
+    "vermin -t=3.8- on the two py files": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-21T19:57:05Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out after 19 s and its process group was torn down; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Applied P131.8-review-reads.patch with git apply --3way: all three files (audit-reviewer.md, drive-phase.py, tests/test_drive_phase.py) applied cleanly with no conflict despite P131.17's heavy drive-phase.py changes; git reset -q run so nothing is staged. No edit made on top of the patch. Reviewer path vs P131.17: reviewer_session_step is called inside advance() at the existing dispatched-reviewer branch, which sits BEFORE P131.17's stored_green(...,'gated') check and gate_step; the reviewer path itself shows no gate verdict (it dispatches, waits, or files via submit) and after a filed reviewer advance() still runs stored_green so a moved gate basis still re-measures (green == STORED_MOVED) - both behaviours kept. dispatch() now takes tree for the reviewer (advance passes it). The suite adds rv1-rv6: reviewer dispatch names run-agent-session.py --role reviewer; zero-tool stream recorded cannot-tell and redispatched once; second zero-tool stream stops naming both sessions with no third dispatch; the stop repeats on a later next; a stream with tool calls is accepted and filed as before; with no writer session the reviewer is still the Agent dispatch. Reviewer body: one line added (Open each changed function in the tree before judging), bytes removed elsewhere; measure-context --gate reads reviewer 6994/7000. test_drive_phase.py: 492 cases pass (187s). Full sweep on a committed copy of the tree: 192/194 files ok, only tools/check-example-ledgers.py and tools/measure-context.py red (measure-context: mc18 only, a reference commit absent from the copy). Dependants: plugins/audit/agents/audit-reviewer.md dependants (prove-gates.py, docs/research/pipeline-cost-design.md, pipeline-cost-levers.md, run-agent-session.py, _filed_returns.py, audit-lookup.py, tests/test__refs.py, tests/test_audit_task.py): still correct - the sweep passes for the code/test ones, which read the body's structure (ih9 in test__refs only needs reference/execute-task.md to have no reader of preExisting, unchanged); run-agent-session.py builds --agents from the file text and already supports --role reviewer; the two research docs are design prose not contradicted by one added line. drive-phase.py dependants (tests/test_drive_phase.py: changed, +cases rv1-rv6; PLUGIN-BUILD-GUIDE.md, README.md, pipeline-cost-design.md, detect-plan-skip.py, record-risk-confirmation.py, stamp-verification.py, _areas.py): still correct - only additions plus optional params with defaults (role=, key=, step=, who=), no existing signature or output changed for the writer path; sweep green. Names used elsewhere: _carries, _clip, _mark, _marked and the rest unchanged (writer_state/open_dispatch/session_record/session_note/note_sessions/wait_said gained defaulted params only). tests/test_drive_phase.py dependants (sweep-costs.json, test__runner_output.py, test_run_test_gate.py, sweep-selftests.py, the docs; _counting/_follower_cases/_head/_load): still correct, they read the suite or its helpers by name, none of which changed. NOT DONE, outside my files: three docs still describe reviewer dispatch only as an Agent - plugins/audit/commands/phase.md, plugins/audit/reference/orchestrator.md (also at 62000 of 62000 ceiling, so any addition needs bytes removed elsewhere), and PLUGIN-BUILD-GUIDE.md.",
+    "descriptive": "A per-task reviewer session whose saved stream holds no tool call is recorded cannot-tell and redispatched once, then stops, instead of being accepted as a review."
+  },
+  "testsAdded": [
+    "rv1-rv6 in tests/test_drive_phase.py: reviewer dispatch command, zero-tool redispatch, second zero-tool stop, stop repeated by later next, tool-calling session accepted (twin), no-writer-session rollback twin"
+  ],
+  "casesAdded": [
+    [
+      "rv2",
+      "rv3",
+      "rv5"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py reviewer_session_step / stream_tool_calls / reviewer_unread implement the module docstring paragraph THE PER-TASK REVIEWER IS A SESSION; called from advance() at the dispatched-reviewer branch\n2 patch's own cases rv2/rv3 (zero-tool) and rv5/rv6 (twins) were red-first on the original executor; here the submit helper re-proves on a throwaway HEAD tree\n3 n/a - not a fix of a reported defect; the re-add applies a saved patch\n4 the docstring says: nothing enforces that a session opened the RIGHT files, only some; REVIEWER_SESSION_RULE is a prompt rule backed by the stream count in stream_tool_calls\n5 n/a - no property recorded (sweep seconds are history)\n6 decision reads the saved stream's tool_use blocks, not the reviewer's text\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:b56d3d0b0377ca898a05882480a014ce99c3d2169f40039cea85a665e5e95ae8\",\"dirtyDigest\":\"sha256:e42dc1263dc05eaa91b49eb90840258a2e34e1654a06f4a0bfc9f2425d1ba62f\",\"dirtyPaths\":{\"plugins/audit/agents/audit-reviewer.md\":\"a624f1be3179d902\",\"plugins/audit/scripts/governance/drive-phase.py\":\"c3c8d496533d4076\",\"tests/test_drive_phase.py\":\"dfed4aee6cb9891d\"},\"head\":\"42412f8b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/agents/audit-reviewer.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:f748f3a415829ee5843195d64b1175bde3a582818a518bf26176c38531235e73\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

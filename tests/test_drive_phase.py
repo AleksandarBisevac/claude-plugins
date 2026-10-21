@@ -876,7 +876,13 @@ if os.environ.get("WS_MODE") == "none":
     sys.stdout.write(json.dumps({"type": "system", "subtype": "init"}) + "\n")
     sys.stdout.flush()
     raise SystemExit(7)
+tools = [{"type": "tool_use", "id": "t%d" % n, "name": "Read",
+          "input": {"file_path": "src/mine.py"}}
+         for n in range(int(os.environ.get("WS_TOOLS") or 0))]
 for event in ({"type": "system", "subtype": "init", "session_id": sid},
+              {"type": "assistant", "session_id": sid,
+               "message": {"role": "assistant",
+                           "content": [{"type": "text", "text": "working"}] + tools}},
               {"type": "result", "subtype": "success", "is_error": False,
                "session_id": sid, "total_cost_usd": float(os.environ["WS_COST"]),
                "result": os.environ.get("WS_RESULT") or "done"}):
@@ -937,18 +943,19 @@ def _flag(argv, flag):
 
 
 def _play_session(root, argv, bindir, log, cost, session=WRITER_SESSION,
-                  mode="ok", edit=None, result=None, commit=False):
+                  mode="ok", edit=None, result=None, commit=False, tools=0):
     """Run the printed session command as the main loop does - its interpreter
     word replaced by this one - with the stub standing for `claude`. `mode`
     `none` makes the stub exit 7 with no result event. `edit` maps the paths
-    the stub writes to their text, `result` is its last message, and `commit`
-    has it commit what it wrote. Returns `(code, output)`."""
+    the stub writes to their text, `result` is its last message, `commit`
+    has it commit what it wrote and `tools` is how many tool calls its stream
+    holds. Returns `(code, output)`."""
     env = dict(os.environ)
     env["PATH"] = bindir + os.pathsep + env.get("PATH", "")
     env.update(WS_LOG=log, WS_SESSION=session, WS_COST=cost, WS_MODE=mode,
                WS_EDIT=json.dumps(edit or {}), WS_RESULT=(result if result is not None
                           else _said("the session is done")),
-               WS_COMMIT="1" if commit else "")
+               WS_COMMIT="1" if commit else "", WS_TOOLS=str(tools))
     done = subprocess.run([sys.executable] + list(argv[1:]), cwd=root, env=env,
                           capture_output=True, text=True, encoding="utf-8",
                           errors="replace", timeout=120)
@@ -1897,6 +1904,112 @@ def _writer_twice_cases(check, M, bindir, log):
           and len([n for n in notes if WRITER_SESSION in n and "0.7311" in n]) == 1
           and len([n for n in notes if later in n and "0.8422" in n]) == 1
           and _flag(again, "--resume") == later)
+
+
+def _review_json(mpath, task_id="P1.1"):
+    """The reviewer return a session ends its message with: clean, its intent
+    note quoting the task's own description."""
+    described = (tasks_of(mpath).get(task_id) or {}).get("description") or ""
+    return json.dumps({"findings": [], "verdict": "clean", "intent": {
+        "answer": "matches", "note": "as asked: %s" % (described,)}})
+
+
+RV_SESSIONS = ("11111111-2222-4333-8444-555555555551",
+               "11111111-2222-4333-8444-555555555552",
+               "11111111-2222-4333-8444-555555555553")
+
+
+def _reviewer_dispatch(M, bindir, log):
+    """A tdd task whose writer session already ran and was filed by the drive,
+    so the step now printed dispatches its reviewer. Returns `(root, mpath,
+    line)`."""
+    root, mpath = _tdd_writer_repo("rv", (_wf_gate(),))
+    _signal_next(M, root, mpath)
+    code, line = _writer_round(M, root, mpath, bindir, log, "0.31",
+                               edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST},
+                               result=_WF_CLAIM)
+    return root, mpath, line
+
+
+def _reviewer_session_cases(check):
+    """With a writer session set, the per-task reviewer is a headless session the
+    main loop runs through `run-agent-session.py --role reviewer`, and the drive
+    files its return from the session's last message only when the saved stream
+    shows a tool call: a stream with none is recorded cannot-tell on the task and
+    the reviewer is dispatched once more, a second such stream stops with a note,
+    and a session that read files is accepted."""
+    M, why = _load("drive_phase_reviewer_session")
+    if M is None:
+        check("rv1 the driver loads", False, why)
+        return
+    stubs = os.path.realpath(_harness.fixture_root("drive-rv-stub-"))
+    bindir = _writer_stub(stubs)
+    log = os.path.join(stubs, "runs.jsonl")
+
+    root, mpath, line = _reviewer_dispatch(M, bindir, log)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    first = _run_argv(block) or []
+    check("rv1 the reviewer's dispatch names run-agent-session.py with the reviewer "
+          "role, the task and a full model id, and names no reviewer agent: %r"
+          % ((line, first),),
+          "run-agent-session.py --role reviewer" in line
+          and "audit-reviewer" not in line + block
+          and _flag(first, "--role") == "reviewer" and _flag(first, "--task") == "P1.1"
+          and (_flag(first, "--model") or "").startswith("claude-"))
+    _play_session(root, first, bindir, log, "0.21", session=RV_SESSIONS[0],
+                  result=_review_json(mpath), tools=0)
+    code, line = _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    second = _run_argv(block) or []
+    notes = [n for n in _notes(mpath, "P1.1") if RV_SESSIONS[0] in n]
+    check("rv2 a reviewer session whose stream holds no tool call is recorded "
+          "cannot-tell on the task, files no return, and the reviewer is "
+          "dispatched once more on a record of its own: %r"
+          % ((code, line, notes, second),),
+          code == 0 and "run-agent-session.py --role reviewer" in line
+          and len(notes) >= 1 and any("cannot-tell" in n for n in notes)
+          and _filed_path(mpath, "P1.1", "reviewer") is not None
+          and not os.path.exists(_filed_path(mpath, "P1.1", "reviewer"))
+          and _flag(second, "--record") not in (None, _flag(first, "--record")))
+    _play_session(root, second, bindir, log, "0.22", session=RV_SESSIONS[1],
+                  result=_review_json(mpath), tools=0)
+    code, line = _signal_next(M, root, mpath)
+    again, full = _next(M, root, mpath)
+    check("rv3 a second zero-tool reviewer session stops with a note naming both "
+          "sessions instead of a third dispatch, and files nothing: %r"
+          % ((code, line, full),),
+          code == 1 and "run-agent-session.py --role reviewer" not in line
+          and all(s in "\n".join(_notes(mpath, "P1.1")) for s in RV_SESSIONS[:2])
+          and "no third dispatch" in full
+          and all(s in full for s in RV_SESSIONS[:2])
+          and not os.path.exists(_filed_path(mpath, "P1.1", "reviewer")))
+    check("rv4 the stop is repeated, not dispatched past, by a later next: %r"
+          % ((again, full[:200]),),
+          again == 1 and "run-agent-session.py --role reviewer" not in full
+          and len([n for n in _notes(mpath, "P1.1") if "cannot-tell" in n]) == 2)
+
+    root2, mpath2, _line = _reviewer_dispatch(M, bindir, log)
+    _c, block2 = _explain_of(M, root2, mpath2, "P1.1")
+    _play_session(root2, _run_argv(block2) or [], bindir, log, "0.23",
+                  session=RV_SESSIONS[2], result=_review_json(mpath2), tools=3)
+    code2, line2 = _signal_next(M, root2, mpath2)
+    body = json.loads(_read(_filed_path(mpath2, "P1.1", "reviewer")).decode("utf-8")) \
+        if os.path.exists(_filed_path(mpath2, "P1.1", "reviewer")) else {}
+    task = tasks_of(mpath2).get("P1.1") or {}
+    check("rv5 THE TWIN: a reviewer session whose stream holds tool calls is "
+          "accepted as before - the drive files its last message as the "
+          "reviewer's return and goes on, with no cannot-tell note: %r"
+          % ((code2, line2, body.get("verdict"), task.get("status")),),
+          code2 == 0 and body.get("verdict") == "clean"
+          and "run-agent-session.py --role reviewer" not in line2
+          and not [n for n in _notes(mpath2, "P1.1") if "cannot-tell" in n])
+    off_root, off_mpath = _repo("rv-off", task_ids=TASKS[:1])
+    _signal_next(M, off_root, off_mpath)
+    _file_executor(off_root, off_mpath, "P1.1")
+    code3, line3 = _signal_next(M, off_root, off_mpath)
+    check("rv6 THE ROLLBACK TWIN: with no writer session the reviewer is still the "
+          "Agent, and names no session runner: %r" % ((code3, line3),),
+          M.REVIEWER_AGENT in line3 and "run-agent-session.py" not in line3)
 
 
 def _gate_calls(module):
@@ -7799,6 +7912,14 @@ def _signal_corpus(M, mpath):
     out.append(("wait-writer", M.wait_said(
         ctx, "P125.55-0h5", ".claude/state/sessions/drive/P125.55-0h5."
         "20261014T182420Z.12.jsonl", session_argv), {}))
+    out.append(("dispatch-reviewer-session", M.writer_said(
+        ctx, "P125.55-0h5", "claude-sonnet-4-5-20250929", brief,
+        session_argv[:2] + ["--role", "reviewer", "--task", "P125.55-0h5"],
+        role="reviewer"), {}))
+    out.append(("wait-reviewer-session", M.wait_said(
+        ctx, "P125.55-0h5", ".claude/state/sessions/drive/P125.55-0h5."
+        "20261014T182420Z.reviewer.1.jsonl", session_argv,
+        "wait-reviewer-session"), {}))
     out.append(("done", M.done_said(ctx, "landed (" + "merged into main " * 10 + ")",
                                     "P126"), {"did": _SIGNOFF_DID}))
     out.append(("done", M.done_said(ctx, "landed", None), {"did": _SIGNOFF_DID}))
@@ -8786,6 +8907,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("dd-block", "_decide_cases"), ("ct-block", "_continue_cases"),
           ("dd3-block", "_rerun_cases"), ("rs-block", "_resume_cases"),
           ("ws-block", "_writer_session_cases"),
+          ("rv-block", "_reviewer_session_cases"),
           ("wf-block", "_writer_files_cases"), ("wl-block", "_writer_lock_cases"),
           ("wi-block", "_writer_invariant_cases"),
           ("wj-block", "_writer_reading_cases"),

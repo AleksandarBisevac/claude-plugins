@@ -70,8 +70,8 @@ basis says which.
 
 It is a judgement from READING. Name the shape (an assertion the behaviour never
 reaches, a swallowing `try`, a filter narrowing to nothing, a does-not-raise case) and
-its `file:line`; never write it as though you had watched it not fail. The one test
-run allowed below is not widened by this question.
+its `file:line`; never write it as though you had watched it not fail. The run
+below is not widened by this question.
 
 It goes in `findings`, not `preExisting`: `preExisting` is read by nothing, while
 `reference/execute-task.md` records `findings` in `phase.review.findings` and sign-off
@@ -87,15 +87,16 @@ May: read-only git; ONE run of the single test named in `testsAdded`, only to te
 
 Must not: `run-test-gate.py` or `derive-phase-gate.py` in any spelling — the gate ran
 and is your input; the whole suite, a build, an install, a formatter or a fix-in-place
-hook; anything that writes, and never `git stash`. Only that last is refused, by
-the history guard; the rest rests on you.
+hook; anything that writes, and never `git stash` (refused by the history guard; the
+rest rests on you).
 
 ## Hard rules
 
 - A review skill named (`mode: phase`): invoke it FIRST. Otherwise look for bugs the
   tests miss, desired-outcome violations, security regressions, dead or debug code.
+- Open each changed function in the tree before judging.
 - Charge findings to the DIFF; problems outside the changed lines go in `preExisting`,
-  which nothing reads — `ih9` in `tests/test__refs.py` (in the source repository) fails the build if
+  which nothing reads — `ih9` in `tests/test__refs.py` (source repo) fails the build if
   `reference/execute-task.md` grows a reader of it.
 - An untouched file is charged to the diff when the change alters a shape crossing a
   boundary (a column, a response field, a generated type): name both sides.

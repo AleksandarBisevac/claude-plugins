@@ -303,9 +303,44 @@
         "file": "plugins/audit/scripts/governance/drive-phase.py:1977-1984",
         "issue": "rerun_alongside reaches a parked member only when its failing-step list equals the answered member's (sorted ==). The task clause says every member 'whose pending red carries the same failing step'; a member red on {unit-a, unit-b} beside one red on {unit-a} is not reached. It is asked for its own answer rather than silently replayed (the clause's alternative), so this is a narrowing, not a replay.",
         "resolution": "Either reach members whose failing set intersects the answered one, or state in the docstring/outcome that the rule is set equality and why."
+      },
+      {
+        "id": "P131-R41",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:1895 (reviewer_unread) vs 3310-3319 (advance)",
+        "issue": "The automatic redispatch of a zero-tool reviewer calls dispatch() directly, from inside reviewer_session_step, which advance() runs BEFORE stored_green(..., 'gated'). The redispatch therefore writes a new reviewer brief (audit-lookup.py brief prints 'The recorded gate run' from task.testEvidence) without first asking verdict_basis whether that stored run still answers the gate. On the first dispatch the order is gate check then dispatch (stored_green / gate_step precede the dispatch at 3319); on this path it is dispatch then (after the reviewer files) gate check. If the gate entries or the tree moved while the first reviewer session ran, the second reviewer is shown a verdict P131.17 would have re-measured. The same bypass already exists in apply_answer's 'redispatch' (4602-4604) but that one is a human's act; this one is automatic. No case exercises it.",
+        "resolution": "In reviewer_unread, before dispatch(), ask stored_green(ctx, state, manifest, task, 'gated') (pass manifest through) and, when it returns STORED_MOVED, run gate_step first and return its stop; or spend the 'dispatched-reviewer' mark and return None so advance() reaches its own gate check before dispatching. Add a case that edits the task's gate between the first and second reviewer session and asserts the second brief is preceded by a re-measure."
+      },
+      {
+        "id": "P131-R42",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:1913-1938 (reviewer_session_step), tests/test_drive_phase.py:1909-2013",
+        "issue": "Three branches the module docstring promises have no case: a stream the drive cannot count in (stream_tool_calls returns None, a stop 'of its own, never read as a count of none'), a session whose last message holds no JSON object (return_object None, falls to the plain no-reviewer-return decision), and submit refusing the object's shape (returns the refusal tuple). rv1-rv6 only reach the zero-tool, many-tool and no-session paths. The None-vs-0 distinction guards against reading an unreadable stream as 'opened nothing' or as 'opened something', and nothing would go red if it were collapsed.",
+        "resolution": "Add cases: a stream file with no assistant event (expect the 'cannot count tool calls' stop, no cannot-tell note, no redispatch); a tools>0 stream whose result text is prose (expect no-reviewer-return); a tools>0 stream whose JSON lacks verdict (expect the shape refusal and nothing filed)."
+      },
+      {
+        "id": "P131-R43",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:4604 (apply_answer 'redispatch')",
+        "issue": "This diff made dispatch() take the task's tree for a reviewer session (advance() now passes it, 3319), but the sibling call site that re-dispatches the reviewer after a no-reviewer-return decision still calls dispatch(ctx, state, phase, task, 'reviewer') with no tree. With writerModel set, that session would run with --tree set to the project rather than the member's own tree. apply_answer has no tree in scope today, so this may be unreachable for a wave member; nothing in the diff says so.",
+        "resolution": "Either pass the task's kept tree (kept_tree(state, task)) at 4604, or state in reviewer_dispatch's docstring that a redispatch from a decision always runs in the project tree and why that is right."
+      },
+      {
+        "id": "P131-R44",
+        "severity": "low",
+        "file": "plugins/audit/agents/audit-reviewer.md:87-90",
+        "issue": "The rewrite 'never the stash command (refused by the history guard; the rest rests on you)' loses the old 'Only that last is refused', so the parenthetical's scope is ambiguous in a rule the reviewer is told to obey literally. The task asked to cut bytes elsewhere to fit one new line; the body grew by 9 bytes net (6985 to 6994, under the 7000 ceiling, so acceptance 4 holds, but not 'as many bytes removed').",
+        "resolution": "Reword to keep the scope explicit, e.g. 'and never the stash command (only that is refused, by the history guard; the rest rests on you)', and recover the bytes from a longer sentence elsewhere."
+      },
+      {
+        "id": "P131-R45",
+        "severity": "low",
+        "file": "plugins/audit/commands/phase.md, plugins/audit/reference/orchestrator.md, PLUGIN-BUILD-GUIDE.md (untouched; shape crosses the dispatch boundary)",
+        "issue": "With executor.writerModel set the per-task reviewer is now a run-agent-session.py --role reviewer session and the drive files its return itself, but the three documents that describe the reviewer dispatch still describe it only as an Agent dispatch followed by the reviewer running submit. The executor's own outcome records this as NOT DONE. A reader following orchestrator.md would run the session as an Agent and then wait for a submit that, by REVIEWER_SESSION_RULE, the session is told not to run.",
+        "resolution": "Add the reviewer-session branch to the three documents (orchestrator.md is at its byte ceiling, so remove bytes elsewhere in the same edit), or file a follow-up task before the phase signs off."
       }
     ],
-    "outcome": "[findings: 40 - 0 high, 11 med, 29 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 45 - 0 high, 11 med, 34 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2184,7 +2219,7 @@
     {
       "id": "P131.17-dau",
       "title": "The drive never shows a stored gate verdict or pending gate decision whose basis has changed, and a rerun on one wave member re-measures every member red for the same step",
-      "status": "in_progress",
+      "status": "done",
       "description": "Before the drive shows ANY stored gate verdict or pending gate decision (gate-red, gate-red-writer, a reused green), it compares the record's gateDigest (_evidence_io.gate_digest) and tree identity with what the task's gate resolves to now; a mismatch discards the stored verdict and measures again. Every gate-red line prints the runId and its age. A rerun answered on a wave member applies to every member whose pending red carries the same failing step (or the drive asks once per member, never silently replays one). Seen on another project: after the test build command changed, rerun re-measured one member and the next next replayed the other member's red from its original run under the old command (drive-phase.py ~3494-3500 marks only the decision's task; task_gate ~1837-1847 passes --no-reuse only for a marked task). This is the third instance of one class - a stored verdict shown without asking whether its basis still holds - so fix it as one check every display path goes through, not per call site. Moved into S1 by the owner (2026-10-21: 'da, F763 u S1, F761 u S4').",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2215,19 +2250,36 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "42412f8bf037",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "ONE check for every stored task-gate verdict. _evidence_io.py: new section 'a stored verdict, read against what its gate is now' - STORED_HOLDS/MOVED/UNKNOWN, tree_key (the spelling run-test-gate records as testedState.tree.key, pinned equal by sv7), measured_row (follows reusedFrom), red_step_names, stored_verdict_moved(rows, run_id, now): MOVED only when the row's gateDigest differs from gate_digest(entries, buildCommands) now or its tree key differs from the tree the gate runs in now; a missing row/digest is UNKNOWN (said, never agreement); edited bytes under the same gate are deliberately NOT asked (the committer refuses those - asking here re-measured and closed bytes a reviewer never saw, which dr1/dr2 caught on my first cut). drive-phase.py: verdict_taken (runId, measured ts, tree, failing steps) stored as `verdict` on every gate-red / gate-red-writer decision and as the value of the gated/regated marks; verdict_basis = the one check; gate_basis_holds is called from pending_still_applies; stored_green wraps the gated/regated marks; rerun_alongside makes a rerun reach every parked member red on the same steps (with --no-reuse); verdict_said adds '; run <runId>, <age> old' to both gate-red line templates; drive_locked takes a rerun on a moved decision as the measurement it owes and refuses any other answer naming why. Also fixed _RUN_ID: a green run's terse line is 'evidence: recorded <id>; pointer: ...', so the old (\\S+) captured '<id>;' and named no ledger row (found when the stored green read UNKNOWN). PATHS that show or act on a stored verdict, all now through the check: (1) drive_locked pending re-print + answer, (2) step_member parked hold, (3) walk_wave parked promote+render, (4) explain, (5) advance writer path gated mark, (6) advance gated mark before reviewer/close - now re-measured past a filed reviewer when moved, (7) integrate_member regated mark, (8) apply_answer rerun -> rerun_alongside, (9) render_decision run+age. Left, already asking: green_phase_gate/held_gate_binds (phase-gate held green, _vb.phase_binding), run-test-gate reuse_identity (content + resolved gate + scope - unchanged, untouched). Left, not gate verdicts: clauses-uncovered-writer, red-refused-writer, base_red_why. Tests: 13 new cases in 3 new STAGES rows (sv-block, sv4-block, sv5-block) incl. in-suite RED TWIN mutants sv3m/sv4r/sv6r and allow twins sv2/sv4m/sv6m; an over-fire probe (verdict_basis always MOVED, run from a scratch dir by monkeypatching the loaded module, no file edited) turned sv2 and sv6m red. Gate: python3 tools/sweep-selftests.py tests/test_drive_phase.py exit 0, 481 cases. Committed copy (git archive HEAD + my 3 files, committed in a /tmp repo): full sweep 192/194 files ok, 16807 cases, the two reds tools/check-example-ledgers.py and tools/measure-context.py (unresolvable commits in a history-less copy, the two allowed); ruff and vermin exit 0 there. DEPENDANTS: tests/test_drive_phase.py - changed (this task's cases); PLUGIN-BUILD-GUIDE.md, README.md, docs/research/pipeline-cost-design.md - still correct, none quotes the gate-red line or the changed functions (grep); hooks/detect-plan-skip.py, record-risk-confirmation.py, stamp-verification.py, _areas.py - still correct, they resolve drive-phase by name and no signature they use changed; _carries/_clip/_mark/_task_args - unchanged. _evidence_io.py dependants (guard-release, close-phase, integrate-task, _affected_tests, _gate_derive, _invariants, _verdict_binding, audit-journal, and run-test-gate's _counts_as_failed etc.) - still correct: additions only, no existing name changed; test__evidence_io 308 cases ok in the committed-copy sweep. Note for the orchestrator: run-test-gate.py:5062 tree_key is now a second copy of _evidence_io.tree_key (outside my files); sv7 pins them equal, and run-test-gate should delegate in its own task. The _RUN_ID fix also changes what green_phase_gate stores as the held phase-gate runId (previously '<id>;' when the terse line was printed, which could never match a row) - the full suite stays green, but phase-gate reuse may now fire where it silently never did.",
+        "descriptive": "A gate-red or stored green is shown only while its run still answers the gate as it resolves now; a rerun on one wave member measures every member red on the same step, and every gate-red line names its run and age."
       },
       "startedAt": "2026-10-21T18:18:00Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-21T19:35:44Z",
+      "verifiedBy": [
+        "sv1-sv3/sv3m: two wave members red on different steps, buildCommands changed, rerun on one; the parked other is measured, not replayed, and the gate-red line names runId and age; unchanged, the stored red is reused (sv2)",
+        "sv4/sv4r/sv4m: rerun reaches a parked member red on the same step with --no-reuse, and not one red on a different step",
+        "sv5/sv6/sv6r/sv6m: a stored green whose build command changed is measured again past a filed reviewer; unchanged, reused",
+        "sv7/sv8: tree_key agrees with run-test-gate's; stored_verdict_moved holds/moved/unknown table"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-21T19:35:41Z.2d2b4e",
         "status": "passed",
         "at": "2026-10-21T19:35:41Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "42412f8bf037",
+        "at": "2026-10-21T19:35:44Z",
+        "return": "docs/audit/evidence/returns/P131.17-dau/20261021T181800Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-21T18:57:04Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out after 37 s and its process group was torn down; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2368,7 +2420,7 @@
     {
       "id": "P131.20-dau",
       "title": "A reviewer session that opened no file is not accepted as a review",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Reviewers run through run-agent-session.py with their agent body. The drive counts the reviewer session's tool calls from its saved stream; a return from a session with zero tool calls is recorded as cannot-tell and the reviewer is dispatched once more. agents/audit-reviewer.md gains one line, open each changed function in the tree before judging, and stays within its 7000-byte ceiling by removing as many bytes elsewhere. Acceptance: (1) a reviewer return whose saved stream holds no tool call is recorded cannot-tell and re-dispatched once; (2) a second zero-tool return stops with a note instead of a third dispatch; (3) a return whose session read files is accepted as before; (4) tools/measure-context.py --gate stays green with the reviewer body at or under its ceiling. RE-ADDED 2026-10-21 for the cancelled P131.8 (deadlocked on a base red its own gate could not get past): its finished work is the patch quality-gates-internal/plans/2026-10-17-redesign-implementation/patches/P131.8-review-reads.patch (base 1b6f120c; `git apply --check` is clean on e7d6dd09) - apply it first, verify, and only then change anything.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2399,16 +2451,22 @@
         "P131.3",
         "P131.18-dau"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-21T19:35:45Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-21T20:04:00Z.0bc1c1",
+        "status": "passed",
+        "at": "2026-10-21T20:04:00Z"
+      }
     }
   ],
   "request": "da potvrdjujem (owner 2026-10-21, confirming S1 = P130.8/9 + the seven redesign S1 tasks + F747-F750 + one D9 low cleanup task)",
