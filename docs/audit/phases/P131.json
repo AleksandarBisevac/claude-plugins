@@ -191,9 +191,30 @@
         "file": "plugins/audit/scripts/governance/_clause_coverage.py:_slashed docstring",
         "issue": "The docstring says an absolute path outside `root` 'stays absolute'. The code calls os.path.relpath, which returns a `../...` path for it. The verdict is still right (it matches nothing in the diff, cc8b) but the sentence states what the code does not do.",
         "resolution": "Reword to 'becomes a ../ path that matches nothing the diff names', or keep it absolute with a commonpath test."
+      },
+      {
+        "id": "P131-R25",
+        "severity": "med",
+        "file": "tools/measure-affected-miss.py (outcome, acceptance 5)",
+        "issue": "contradicts task clause (5) 'the measured result over 20 commits is recorded in the task outcome with the commit range': the outcome records 9 consecutive commits ea05966b7..260b2c732, 'requested 20, 11 not examined', stopped by the time budget. The range and the stop are stated honestly, but the clause asked for a result over 20 and the headline 'misses 3 of 9 commits (mutation)' is a different sample.",
+        "resolution": "Measure the remaining 11 task commits (--rev set to the parent of ea05966b7, --commits 11, --no-ci) and add them to the outcome with their range, or have the owner accept 9 as the recorded sample. Do not read the nine as the twenty."
+      },
+      {
+        "id": "P131-R26",
+        "severity": "low",
+        "file": "tools/measure-affected-miss.py:535-582",
+        "issue": "ci_half asks gh run list with --limit (default 200) and keeps only runs newer than the window start, but never notices when the list came back full. If the window reaches past the 200th failed run, the older runs are silently absent and the headline 'K of J runs (CI)' reads as the whole window, which is the 'partial read as complete' shape the half is built to avoid.",
+        "resolution": "When len(listed) == ci_limit and the oldest returned createdAt is still >= since, add a truncated flag to the result and render it in the CI tail (e.g. 'window truncated at the run limit'); add a case with a stub gh returning exactly the limit."
+      },
+      {
+        "id": "P131-R27",
+        "severity": "low",
+        "file": "tools/measure-affected-miss.py:391-393",
+        "issue": "inert is computed as 'the mutated sweep had no red', not 'the mutation changed no verdict'. If the commit already holds a suite red unmutated, an inert mutation is reported as 'ran' with red N, so a mutation that did nothing reads as evidence. Not a false miss (the baseline check filters those), but the inert signal is lost exactly when the tree is not green.",
+        "resolution": "Compare against the unmutated sweep's red set (or treat reds that the baseline check later lists as baseline_red as not counting toward inert)."
       }
     ],
-    "outcome": "[findings: 24 - 0 high, 6 med, 18 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 27 - 0 high, 7 med, 20 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2013,7 +2034,12 @@
       "startedAt": "2026-10-21T11:23:48Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-21T14:23:55Z.ba16a4",
+        "status": "passed",
+        "at": "2026-10-21T14:23:55Z"
+      }
     },
     {
       "id": "P131.17-dau",

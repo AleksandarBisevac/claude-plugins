@@ -13,6 +13,9 @@ Which checks a change actually needs — and, when it cannot tell, all of them.
     tools/affected.py --list-all      # every suite file, one per line,
                                        # nothing executed -- .listing.all
 
+HOW OFTEN THIS SELECTION IS WRONG is not decided here: `tools/measure-affected-miss.py` plants
+a fault in the files of recent commits and counts the red suites this file did not select.
+
 WHY THE BROWSER GATES ARE THE POINT. The whole Python selftest sweep now runs in
 parallel and the panel browser gate is by far the longest leg, so narrowing the
 Python side saves seconds and narrowing the BROWSER side saves minutes. Re-derive

@@ -485,6 +485,18 @@ these, and `tests/test_derive_phase_gate.py` reads them off this list:
 each file by the rules a whole sweep applies, and refuses a path it does not sweep, naming it — so
 a listing that drifts from the sweep fails by name instead of quietly running something else.
 
+**How often that selection leaves out a suite that goes red is a measurement, and it has a
+tool.** `python3 tools/measure-affected-miss.py` takes the recent task commits, plants an
+import-time `raise` and then a house-style violation in the Python each one changed, in a
+scratch worktree of that commit, runs the sweep, and counts the red suites `tools/affected.py`
+did not select - each named, each checked a second time and against the unmutated commit before
+it counts. Its CI half does the same for the suites a failed run's log names, and prints
+`could-not-ask` when `gh` cannot be asked, which is not a zero. A mutation that turns nothing red is
+printed as `inert`, so a clean line is never zero evidence read as safety. It never touches the
+checkout, and it changes no gate: trusting the selection is a separate decision that this
+number informs. `--budget-minutes` stops starting commits past a time limit and says so, because
+a mutation sweep per commit is minutes each.
+
 CI (`.github/workflows/ci.yml`) runs the sweep slices on ubuntu + windows, and the
 `runner` and `e2e` slices on both - the windows cells prove the `python3` → `python`
 → `py` interpreter fallback; every other slice runs on ubuntu. Which job runs which

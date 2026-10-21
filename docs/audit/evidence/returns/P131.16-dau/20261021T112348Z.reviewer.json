@@ -1,0 +1,25 @@
+{
+ "findings": [
+  {"id": 1, "severity": "med", "file": "tools/measure-affected-miss.py (outcome, acceptance 5)",
+   "issue": "contradicts task clause (5) 'the measured result over 20 commits is recorded in the task outcome with the commit range': the outcome records 9 consecutive commits ea05966b7..260b2c732, 'requested 20, 11 not examined', stopped by the time budget. The range and the stop are stated honestly, but the clause asked for a result over 20 and the headline 'misses 3 of 9 commits (mutation)' is a different sample.",
+   "resolution": "Measure the remaining 11 task commits (--rev set to the parent of ea05966b7, --commits 11, --no-ci) and add them to the outcome with their range, or have the owner accept 9 as the recorded sample. Do not read the nine as the twenty."},
+  {"id": 2, "severity": "low", "file": "tools/measure-affected-miss.py:535-582",
+   "issue": "ci_half asks gh run list with --limit (default 200) and keeps only runs newer than the window start, but never notices when the list came back full. If the window reaches past the 200th failed run, the older runs are silently absent and the headline 'K of J runs (CI)' reads as the whole window, which is the 'partial read as complete' shape the half is built to avoid.",
+   "resolution": "When len(listed) == ci_limit and the oldest returned createdAt is still >= since, add a truncated flag to the result and render it in the CI tail (e.g. 'window truncated at the run limit'); add a case with a stub gh returning exactly the limit."},
+  {"id": 3, "severity": "low", "file": "tools/measure-affected-miss.py:391-393",
+   "issue": "inert is computed as 'the mutated sweep had no red', not 'the mutation changed no verdict'. If the commit already holds a suite red unmutated, an inert mutation is reported as 'ran' with red N, so a mutation that did nothing reads as evidence. Not a false miss (the baseline check filters those), but the inert signal is lost exactly when the tree is not green.",
+   "resolution": "Compare against the unmutated sweep's red set (or treat reds that the baseline check later lists as baseline_red as not counting toward inert)."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "diverges",
+  "note": "The diff adds tools/measure-affected-miss.py with both halves, scratch worktrees removed in finally, a could-not-ask path for the CI half, the 'misses M of N commits (mutation); K of J runs (CI)' headline with every miss named, plus pointers in tools/affected.py and CONTRIBUTING.md. Acceptance (1)-(4) are met by the inline suite (m6, m8, m10, m13; I ran the file's --selftest once: 20/20 cases passed, exit 0). The outcome describes the diff accurately and says plainly what it did not do. The divergence is clause (5): 'the measured result over 20 commits is recorded' versus the outcome's own 'NOT 20 commits ... 9 consecutive task commits ... 11 not examined'. The executor's claim is honest; the task is short of its clause.",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "The filed redFirst status is could-not-prove, and its basis holds: the test file is the new implementation file itself (inline suite), so there is no HEAD copy to hold the implementation at and no earlier red to show. The executor's claims list mutation probes (select-all, select-none, no-baseline, inert-never, no-drop, gh-asked-empty, ...) turning named cases red, but nothing handed to me shows those runs, so I do not upgrade to proved.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "tests.gate is the single command `python3 tools/sweep-selftests.py tools/measure-affected-miss.py`, which selects only the new file's own inline suite; no pre-existing test is selected by it, so there is nothing inherited to flag."
+ },
+ "verdict": "findings",
+ "tasks": []
+}
