@@ -177,9 +177,23 @@
         "file": "plugins/audit/scripts/_output.py:643",
         "issue": "MOVED_TO_TREES hardcodes \"tests\" and \"tools/lints\" as literals while the anchor already owns LINTS_DIR (tools/affected.py reads _output.LINTS_DIR). Two spellings of one location will drift if the lints move again, which is how this task came to exist.",
         "resolution": "Derive the tuple's lints entry from LINTS_DIR (and tests from TESTS_DIR) via posix_rel against REPO_ROOT."
+      },
+      {
+        "id": "P131-R23",
+        "severity": "med",
+        "file": "docs/audit/evidence/returns/P131.7/20261021T112346Z.executor.json (outcome.technical, claims, stamp, testsAdded)",
+        "issue": "The filed return does not describe the current tree. It says _clause_coverage.task_clauses loads audit-lookup.py's own via _loader, that audit-lookup.py is untouched, that _clause_coverage and drive-phase got layers above the entry-point layer, and that drive-phase moved out of the entry layer. The tree instead defines acceptance_items/task_clauses in _clause_coverage.py (L2, -> _output), audit-lookup.py imports them (`acceptance_items = _cc.acceptance_items`, `task_clauses = _cc.task_clauses`, `re` import and ACCEPTANCE_MARK removed), drive-phase stays in L9 with _clause_coverage added to its edges, and tests/test_audit_lookup.py gained wp8b (absent from testsAdded). The stamp is not current: `stamp-verification.py compare` reports scopeDigest and dirtyDigest moved - it was taken over 6 declared files and the task now declares 8 (audit-lookup.py and test_audit_lookup.py added). Its evidence figures (test__clause_coverage 15/15, test_drive_phase 464/464, test__deps 254/254, sweep 190/192) were measured on the earlier design and are unverified for this one.",
+        "resolution": "Re-run the task's gate on the current tree, re-take the stamp over all 8 declared files, and re-file the return with outcome.technical describing the move (no loader, no extra layers, audit-lookup edited), wp8b in testsAdded/casesAdded, and the mutation list re-run against the new layout (in particular the one-numbering pin wp8b: make audit-lookup define its own task_clauses and confirm red)."
+      },
+      {
+        "id": "P131-R24",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_clause_coverage.py:_slashed docstring",
+        "issue": "The docstring says an absolute path outside `root` 'stays absolute'. The code calls os.path.relpath, which returns a `../...` path for it. The verdict is still right (it matches nothing in the diff, cc8b) but the sentence states what the code does not do.",
+        "resolution": "Reword to 'becomes a ../ path that matches nothing the diff names', or keep it absolute with a commonpath test."
       }
     ],
-    "outcome": "[findings: 22 - 0 high, 5 med, 17 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 24 - 0 high, 6 med, 18 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1384,7 +1398,7 @@
     {
       "id": "P131.7",
       "title": "Every acceptance clause has an answer before a task closes, and a clause with no answer resumes the writer instead of passing in silence",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Add plugins/audit/scripts/governance/_clause_coverage.py, a helper the drive calls after the writer session: it numbers the task's clauses (the tests.add entries first, then the numbered items of the description's acceptance list), reads the JSON object the writer's last message ends with, and returns covered or a gap naming each clause that has no answer, a malformed answer, or a 'delivered' answer citing a path the diff does not touch. A missing or unparsable JSON object is a gap of every clause, never covered. A gap resumes the writer session once with the list of uncovered clauses and counts toward the two resume rounds. The writer's own words stay a claim; the check reads only whether each clause was answered and whether the cited path changed. A new helper owes a selftest in tests/, a layer in tools/lints/_deps.py LAYERS, a tree line and a section in PLUGIN-BUILD-GUIDE.md, and the PATH_PREAMBLE. Acceptance: (1) a task with three tests.add entries and two Acceptance items numbers five clauses in that order; (2) an answer covering all five with paths in the diff is covered; (3) an answer omitting clause 4 is a gap naming 4; (4) a delivered answer citing a path outside the diff is a gap naming that clause and path; (5) no JSON at all is a gap of every clause; (6) a gap resumes the session with the uncovered clauses and counts as a resume round.",
       "files": [
         "plugins/audit/scripts/governance/_clause_coverage.py",
@@ -1392,7 +1406,9 @@
         "tools/lints/_deps.py",
         "PLUGIN-BUILD-GUIDE.md",
         "tests/test__clause_coverage.py",
-        "tests/test_drive_phase.py"
+        "tests/test_drive_phase.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "tests/test_audit_lookup.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1424,16 +1440,22 @@
       "dependsOn": [
         "P131.6"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-21T11:23:46Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-21T13:29:22Z.3e3944",
+        "status": "passed",
+        "at": "2026-10-21T13:29:22Z"
+      }
     },
     {
       "id": "P131.8",
@@ -1861,7 +1883,7 @@
     {
       "id": "P131.15-dau",
       "title": "The moved-file guard sees the move to tests/ and tools/lints/, and no command in a docstring or eval imports _deps or _refs from scripts/",
-      "status": "in_progress",
+      "status": "done",
       "description": "Found by the adversarial review of P131.1 (two medium findings). (1) _output.moved_file_target and _refs.manifest_moved_files index only files under plugins/audit/, so a suite moved to tests/ or a lint moved to tools/lints/ reads as gone (quiet history) instead of moved: manifest_moved_files()['gone'] went 25 -> 2647, and /audit:task add --files plugins/audit/tests/... is accepted. Widen the index to tests/ and tools/lints/ so the move is recognised, keeping done tasks as history. Then the orchestrator repoints the pending tasks that still name old paths (P129.7-.11-izt, P109.1-.7 and .9, P86.1/.3/.4) with /audit:task scope. (2) Docstring commands in _manifest_rules.py:68, _manifest_vocab.py:13, _doctor_policy.py:27 and the before-you-claim eval prompt (evals.json:18) run sys.path.insert(0,'plugins/audit/scripts');import _deps, which now raises ModuleNotFoundError; repoint them to tools/lints and add the lint that keeps the class closed. Find them with: git grep -nE 'import _(deps|refs)' -- . ':!tests' ':!tools' ':!docs/audit'.",
       "files": [
         "plugins/audit/scripts/_output.py",
@@ -1899,25 +1921,42 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "260b2c732e6e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/_output.py: added MOVED_TO_TREES=(plugins/audit, tests, tools/lints) and moved_index(repo_root); moved_file_target's default index is now moved_index (py_index unchanged, so tool_basename_drift is untouched). tools/lints/_refs.py: manifest_moved_files uses moved_index and now takes task status into account (_manifest_io.TERMINAL): a done/cancelled task, or an index row that only settled tasks list, naming a moved path goes into a new 'history' list; a task with work left stays 'moved' (loud); a basename found nowhere stays 'gone'. _recorded_paths now returns (source, path, live). The three docstring commands and the before-you-claim eval prompt now put tools/lints on sys.path first; I ran the _manifest_rules form and it prints. tests/test__refs.py adds q7 (real tree: the plugin-tree test__refs path -> tests/test__refs.py, scripts/_deps.py -> tools/lints/_deps.py), q8 (pending/in_progress tasks loud, with their index rows), q9 (done tasks and done-only index rows are history, not moved nor gone); q1 now prints the moved list on failure. tests/test__output.py adds mv5 (module names derived from tools/lints/*.py, includes _deps and _refs), mv6 (no string literal in plugins/audit, tools, .claude .py or any evals.json holds a command putting plugins/audit/scripts on sys.path and importing a tools/lints module, unless it also names tools/lints), mv7 (detector fires on import / from-import / comma-list), mv8 (allow twin: quiet when tools/lints is named, when the import is of a scripts module, with no insert). The lint check lives in the test file because _output_lints.py is not in the task's files. Mutations (each restored, pycache purged): MOVED_TO_TREES plugin only -> q7,q8,q9 red; classify-all-live -> q1,q8,q9 red; classify-all-history -> q3,q8,q9 red; detector drops the tools/lints exemption -> mv6,mv8 red; detector never fires -> mv7 red. Gates: tests/test__output.py 88/88 pass. tests/test__refs.py: every case passes except q1 (291/292): q1 is the dogfood-plan case 'no moved file' and now correctly reports the 45 live-task entries of P109.1-.7/.9, P129.7-.11-izt and P86.1/.3/.4 (and their fileIndex rows) that still name old paths; it goes green when the orchestrator repoints them with /audit:task scope (the case's failure text says so). Committed copy of my tree, full tools/sweep-selftests.py: 188/191 files ok; red are tests/test__refs.py (q1 only), tools/check-example-ledgers.py, tools/measure-context.py (the last two the allowed ones). ruff check passes; vermin 3.8 passes.",
+        "descriptive": "A suite moved to tests/ or a lint moved to tools/lints/ now reads as moved (loud for live tasks, history for done ones), and a lint case keeps commands in shipped files from importing the relocated lints off scripts/."
       },
       "startedAt": "2026-10-21T07:02:46Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-21T11:23:44Z",
+      "verifiedBy": [
+        "q7: moved_file_target answers tests/ and tools/lints/ homes on the real tree",
+        "q8: pending/in_progress tasks and their index rows naming old paths are moved, not gone",
+        "q9: done tasks and done-only index rows are history",
+        "mv5-mv8: derived module set, the tree-wide no-command-importing-relocated-lints check, and its fire/quiet twins"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-21T11:23:37Z.f92937",
         "status": "passed",
         "at": "2026-10-21T11:23:37Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "260b2c732e6e",
+        "at": "2026-10-21T11:23:44Z",
+        "return": "docs/audit/evidence/returns/P131.15-dau/20261021T070246Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-21T07:26:31Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__refs.py tests/test__output.py` in a throwaway tree at HEAD exited 1 with failing cases mv6 (house FAIL), q7 (house FAIL), q8 (house FAIL), q9 (house FAIL), tests/test__output.py: exited 1 (house FAIL), tests/test__refs.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (SELFTEST FAILED: 291/292 cases passed), so the red is not one the fix turns green - SELFTEST FAILED: 289/292 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P131.16-dau",
       "title": "The affected selection's miss rate is measured on this repository's history before any task gate trusts it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Add tools/measure-affected-miss.py. Mutation half: for each of the last N task commits (default 20), in a scratch worktree at that commit, apply each of two mutations to every changed .py (an import-time raise, and a house-style violation the tree lints read), run the full sweep, and count the suites that went red that tools/affected.py --base <parent> did not select. CI half: for each failed CI run in the window, read its failing suites (gh run view --log-failed) and check them against the selection for that SHA's diff. It prints 'misses M of N commits (mutation); K of J runs (CI)' with every miss named; a CI half that could not ask prints could-not-ask and is never read as zero. It never edits the checkout: every mutation happens in its own scratch worktree, removed in finally. Acceptance: (1) on a fixture repository where a suite depends on a changed module the selection omits, the miss is counted and named; (2) a selection that includes every red suite counts zero misses; (3) no gh, or no network, prints could-not-ask for the CI half; (4) the checkout's status is unchanged after a run; (5) the measured result over 20 commits is recorded in the task outcome with the commit range. MOVED from S3 into S1 by the owner (2026-10-21: \"zameni S2 i S3 i pokreni miss-rate odmah\"); it measures and changes no gate, so S3.2 still owns trusting the selection.",
       "files": [
         "tools/measure-affected-miss.py",
@@ -1946,16 +1985,17 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-21T11:23:48Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P131.17-dau",
@@ -2010,9 +2050,9 @@
   ],
   "reviewPerTask": "signals",
   "claim": {
-    "sessionId": "6a842230-e291-45bb-b30a-a357d700bcd0",
+    "sessionId": "bf837df2-37bc-4c94-9233-61f7d70c1d7f",
     "branch": "audit/p131-the-writer-is-a-plain-claude-c",
-    "at": "2026-10-20T23:08:34Z"
+    "at": "2026-10-21T11:23:46Z"
   },
   "startedAt": "2026-10-20T23:08:34Z"
 }
