@@ -65,7 +65,7 @@ unreadable one is that entry point's finding. Only a consumer that hands none -
 that read failing is a warning, not a finding, which is why a caller that
 WRITES binds the schema instead. Who the consumers are is derived, not listed:
 
-    python3 -c "import sys;sys.path.insert(0,'plugins/audit/scripts');import _deps;\
+    python3 -c "import sys;sys.path.insert(0,'tools/lints');sys.path.insert(0,'plugins/audit/scripts');import _deps;\
     e,_=_deps.import_graph();print(sorted(a for a,b in e if b=='_manifest_rules'))"
 
 This module carries no `--selftest` of its own; its cases live in

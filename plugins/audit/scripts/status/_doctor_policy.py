@@ -24,7 +24,7 @@ both were left behind when `_panel_discovery` moved down and this module followe
 it, because nothing compares a docstring to `_deps.LAYERS`. A stale ARGUMENT is
 worse than no argument. The table is the answer:
 
-    python3 -c "import sys;sys.path.insert(0,'plugins/audit/scripts');import _deps
+    python3 -c "import sys;sys.path.insert(0,'tools/lints');sys.path.insert(0,'plugins/audit/scripts');import _deps
     print([i for i,t in enumerate(_deps.LAYERS) if '_doctor_policy' in t])"
 
 This module carries no `--selftest` of its own; its cases live in

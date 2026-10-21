@@ -5393,7 +5393,8 @@ def dict_key_violations(script_dir=None, hooks_dir=None):
 # the same disease every present-tense count written into prose has. Print it
 # rather than reading it:
 #
-#   python3 -c "import sys; sys.path.insert(0, 'plugins/audit/scripts'); \
+#   python3 -c "import sys; sys.path.insert(0, 'tools/lints'); \
+# sys.path.insert(0, 'plugins/audit/scripts'); \
 # import _deps; print(len(_deps.KNOWN_LAYER_DEBT))"
 #
 # The numbers that DO survive below are HISTORY - what was retired, by which

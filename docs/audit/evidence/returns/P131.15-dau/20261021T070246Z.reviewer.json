@@ -1,0 +1,32 @@
+{
+ "findings": [
+  {"id": 1, "severity": "med", "file": "tools/verify.sh:944",
+   "issue": "The class this task was to close is still open in a live command: refs_rule() puts only plugins/audit/scripts on sys.path (`sys.path.insert(0, os.path.join(\"plugins\", \"audit\", \"scripts\"))`) and then runs `import _refs`, which no longer resolves (verified in the task tree: python3 -I with that preamble raises ModuleNotFoundError: No module named '_refs', exit 1). refs_rule backs the release followers (verify.sh:991-994, raw_url_pin_drift, artifact_version_drift, screenshot_capture_drift), so `verify.sh --release` is broken. The task's grep excluded `:!tools`, and mv6 reads only .py string literals and evals.json, so a shell heredoc is outside the lint: the claims block says the grep was complete (4 hits, all repointed) while the class is not closed.",
+   "resolution": "Put tools/lints on the path in verify.sh's heredoc before `import _refs` (as tools/affected.py does through _output.LINTS_DIR). Widen mv6/_shipped_literals to also read *.sh and *.mjs/*.yml under tools/ and .github/ (or add a text-level scan of the heredoc), with the planted shape mv7 already uses, so the next shell caller turns red."},
+  {"id": 2, "severity": "low", "file": "PLUGIN-BUILD-GUIDE.md:1655",
+   "issue": "The guide still describes manifest_moved_files() as splitting a MOVE from a DELETION by 'whether the basename still exists anywhere in the plugin'. The diff changes both halves: the index now spans plugins/audit, tests and tools/lints (MOVED_TO_TREES), and a third class, `history`, exists for done or cancelled tasks naming a moved path.",
+   "resolution": "Reword the sentence to name MOVED_TO_TREES and the live/history axis, without a number."},
+  {"id": 3, "severity": "low", "file": "plugins/audit/scripts/_output.py:643",
+   "issue": "MOVED_TO_TREES hardcodes \"tests\" and \"tools/lints\" as literals while the anchor already owns LINTS_DIR (tools/affected.py reads _output.LINTS_DIR). Two spellings of one location will drift if the lints move again, which is how this task came to exist.",
+   "resolution": "Derive the tuple's lints entry from LINTS_DIR (and tests from TESTS_DIR) via posix_rel against REPO_ROOT."}
+ ],
+ "preExisting": [
+  {"id": 1, "severity": "low", "file": "tools/lints/_deps.py:5396",
+   "issue": "A comment shows the same broken command (sys.path.insert(0,'plugins/audit/scripts') then import _deps). It is a comment, not a string literal, so mv6 cannot see it; the executor named it as left.",
+   "resolution": "Repoint it to tools/lints in a follow-up."},
+  {"id": 2, "severity": "low", "file": "CLAUDE.md:303",
+   "issue": "Runs _output.selftest_coverage from a path that no longer holds it (it moved to _output_lints); the executor named it as left, outside the task's files.",
+   "resolution": "Repoint to the lints module."}
+ ],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause (1) 'Widen the index to tests/ and tools/lints so the move is recognised, keeping done tasks as history': moved_index/MOVED_TO_TREES in _output.py and the live/history split in _refs.manifest_moved_files do this; q7-q9 read the real tree and a fixture. Clause (2) 'repoint them to tools/lints and add the lint that keeps the class closed': the three docstring commands and evals.json:18 are repointed, and I ran the repointed form and it imports. The lint (mv5-mv8, in tests/test__output.py) covers .py string literals and evals.json only, so tools/verify.sh:944 stays broken (finding 1); I judged that a shortfall in the lint's reach rather than a divergence, since the description names only the four sites. The 'orchestrator repoints pending tasks' step is not the executor's. The claim describes the diff accurately, including its honest note that q1 was red until the orchestrator repoints. The filed gate word 'fail' differs from the recorded gate run (passed, 2026-10-21T10:58:25Z); in the task tree q1-q9 and 292/292 test__refs cases pass and test__output passes 88/88 (I ran each --selftest once). The claims block's grep (4 hits) excluded tools/, which is why verify.sh:944 was missed.",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "Executor's word echoed, its basis holds as a refusal: at HEAD the gate command exited 1 with mv6, q7, q8, q9 failing, but with the working tree's implementation the run did not reach all-green (291/292, q1 red until the pending tasks are repointed), so the red is not one the fix turns green in that run. mv5, mv7 and mv8 were not shown red at HEAD in the basis; mutation results are claimed in outcome.technical but have no command or exit code, so they are unverified.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Gate is `python3 tools/sweep-selftests.py tests/test__refs.py tests/test__output.py`, which selects those two files as whole suites. I read the diff's cases and the neighbouring q1-q6 and ran each file's --selftest once (ALL PASS 292/292 and 88/88). I did not read the remaining cases of either suite end to end, so this covers only the cases next to the changed behaviour: q1, q3 and q4 do reach manifest_moved_files, and no swallowing try, narrowed-to-nothing filter or unreached assertion was seen. One caveat on testsAdded: the drive reports mv5-mv8 as 'not printed' (testsAddGaps), yet the four mv lines do print in the suite output (grep count 4), so that gap is a binding of one description to four ids, not an absent test."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

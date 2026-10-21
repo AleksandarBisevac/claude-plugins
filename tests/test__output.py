@@ -18,6 +18,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import ast
 import json
 import os
+import re
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -26,6 +27,112 @@ import _output as M                                # noqa: E402
 import _output_lints as L                          # noqa: E402
 import _surface_digest                             # noqa: E402  (us1: the digest the walk feeds)
 
+
+
+# --- literals that carry a command --------------------------------------------
+def _lint_module_names():
+    """The module names `tools/lints/` holds - the ones a command that puts only the
+    plugin's scripts on sys.path can no longer import. Read off the directory so a
+    lint module added there is covered the day it lands."""
+    folder = os.path.join(M.REPO_ROOT, "tools", "lints")
+    return sorted(n[:-3] for n in os.listdir(folder) if n.endswith(".py"))
+
+
+def moved_module_imports(text, names):
+    """The module names `text` imports from a command that puts the plugin's
+    scripts on sys.path, none of which that command can reach.
+
+    A literal that also names `tools/lints` puts the lints on the path itself, so it
+    is a working command and reports nothing."""
+    # The plugin's scripts directory however it is spelled: one literal, or joined
+    # from parts (`os.path.join("plugins", "audit", "scripts")`), which is how
+    # `tools/verify.sh` wrote it and which no search for the slash form finds.
+    spot = re.search(r"plugins\W+audit\W+scripts", text)
+    if spot is None or "tools/lints" in text:
+        return []
+    tail = text[spot.start():]
+    alt = "|".join(re.escape(n) for n in names)
+    found = re.findall(r"\b(?:import\s+(?:\w+\s*,\s*)*|from\s+)(%s)\b" % alt, tail)
+    return sorted(set(found))
+
+
+def _json_strings(node):
+    if isinstance(node, str):
+        yield node
+    elif isinstance(node, dict):
+        for value in node.values():
+            for text in _json_strings(value):
+                yield text
+    elif isinstance(node, list):
+        for value in node:
+            for text in _json_strings(value):
+                yield text
+
+
+# What a command may legitimately still name in its old form: the changelog and the
+# dated design records are history, `docs/audit` is generated from the plan, and a
+# case under `tests/` builds the very shapes this reading must detect.
+_COMMAND_SCAN_SKIP = ("CHANGELOG.md", "docs/", "tests/")
+_COMMAND_SCAN_EXTS = (".py", ".sh", ".yml", ".yaml", ".md", ".json")
+
+
+def _comment_blocks(source):
+    """The runs of consecutive `#` comment lines in `source`, `#` stripped - the other
+    place a `.py` carries a command a reader will copy."""
+    blocks = []
+    run = []
+    for line in source.splitlines():
+        if line.lstrip().startswith("#"):
+            run.append(line.lstrip()[1:])
+        elif run:
+            blocks.append("\n".join(run))
+            run = []
+    if run:
+        blocks.append("\n".join(run))
+    return blocks
+
+
+def chunks_of(rel, source):
+    """The texts in one file that can each hold a command, by the file's own grain.
+
+    A `.py` holds one in a string literal or a comment block, an evals file in a JSON
+    string, and everything else - a shell script and its heredocs, a workflow's `run:`
+    step, a fenced block in a document - in a blank-line-separated block of its text.
+    ONE reading for every kind, so a new extension is a row in
+    `_COMMAND_SCAN_EXTS`, not a second scanner."""
+    if rel.endswith(".py"):
+        tree = ast.parse(source, rel)
+        return ([node.value for node in ast.walk(tree)
+                 if isinstance(node, ast.Constant) and isinstance(node.value, str)]
+                + _comment_blocks(source))
+    if rel.endswith(".json"):
+        return list(_json_strings(json.loads(source)))
+    return [b for b in re.split(r"\n\s*\n", source) if b.strip()]
+
+
+def _command_files():
+    """Repo-relative paths of the text files to read: the ones git tracks, or - for a
+    tree git cannot answer for (an exported archive) - a walk, which names the same
+    files minus anything untracked."""
+    paths, _why = L.tracked_files(M.REPO_ROOT, _COMMAND_SCAN_EXTS)
+    if paths is None:
+        paths = []
+        for root, dirnames, filenames in os.walk(M.REPO_ROOT):
+            dirnames[:] = sorted(d for d in dirnames
+                                 if d not in ("__pycache__", ".git", "node_modules"))
+            paths.extend(M.posix_rel(os.path.join(root, n), M.REPO_ROOT)
+                         for n in sorted(filenames) if n.endswith(_COMMAND_SCAN_EXTS))
+    return [p for p in paths if not p.startswith(_COMMAND_SCAN_SKIP)]
+
+
+def _shipped_literals():
+    """[(repo-relative path, text)] for every chunk of every file `_command_files`
+    names."""
+    out = []
+    for rel in _command_files():
+        with open(os.path.join(M.REPO_ROOT, rel), "r", encoding="utf-8") as fh:
+            out.extend((rel, text) for text in chunks_of(rel, fh.read()))
+    return out
 
 
 # --- cases --------------------------------------------------------------------
@@ -185,6 +292,64 @@ def _cases(check):
           and not M.is_plugin_py_path("tools/x.py")
           and not M.is_plugin_py_path(M.PLUGIN_REL + "/README.md")
           and not M.is_plugin_py_path(None))
+
+    # ------------------------------ the move to tests/ and tools/lints/ (`mv5`-`mv8`)
+    # The index a moved file is looked up in must hold the places a plugin file went
+    # to, not only the plugin: a suite filed under `tests/` or a lint under
+    # `tools/lints/` read as GONE (quiet history) while it had only moved.
+    mv_names = _lint_module_names()
+    check("mv5 the modules that left `scripts/` are DERIVED from what `tools/lints/` "
+          "holds - and the two the command-in-prose class was found with are among "
+          "them, so an empty derivation cannot make mv6 vacuous: %r" % (mv_names,),
+          "_deps" in mv_names and "_refs" in mv_names)
+    mv_hits = [(rel, text[:60]) for rel, text in _shipped_literals()
+               if moved_module_imports(text, mv_names)]
+    check("mv6 no command anywhere the repo keeps one - a string literal or a comment "
+          "in a .py, an eval prompt, a shell heredoc, a workflow step, a fenced block "
+          "in a document - puts the plugin's scripts on sys.path and then imports a "
+          "module that now lives under tools/lints: %r" % (mv_hits,), mv_hits == [])
+    mv_scripts = M.PLUGIN_REL + "/scripts"
+    mv_planted = ("python3 -c \"import sys;sys.path.insert(0,'%s');import _deps;"
+                  "print(1)\"" % mv_scripts)
+    mv_planted_from = "sys.path.insert(0, '%s'); from _refs import x" % mv_scripts
+    mv_planted_list = "sys.path.insert(0,'%s');import json, _refs" % mv_scripts
+    mv_fixed = ("sys.path.insert(0,'tools/lints');sys.path.insert(0,'%s');import _deps"
+                % mv_scripts)
+    mv_shipped = "sys.path.insert(0,'%s');import _output;_output.install_path()" % mv_scripts
+    check("mv7 the detector fires on the planted shapes - `import`, `from ... import` "
+          "and a name inside a comma list - the three spellings a command uses",
+          moved_module_imports(mv_planted, mv_names)
+          and moved_module_imports(mv_planted_from, mv_names)
+          and moved_module_imports(mv_planted_list, mv_names))
+    mv_sh = ("#!/bin/sh\nrefs_rule() {\n  python3 - \"$1\" <<'PYEOF'\nimport os, sys\n"
+             "sys.path.insert(0, os.path.join(\"plugins\", \"audit\", \"scripts\"))\nimport _refs\nPYEOF\n}\n")
+    mv_md = "text\n\n```sh\npython3 -c \"%s\"\n```\n" % mv_planted.split('"')[1]
+    mv_py = "x = 1\n# run:\n#   python3 -c \"import sys;sys.path.insert(0, '%s'); \\\n# import _deps\"\n" % mv_scripts
+    mv_two = "echo hi\n\n" + mv_sh.split("\n", 1)[1]
+    check("mv9 the chunk reader finds the planted command in a shell heredoc, in a "
+          "fenced document block and in a `.py` comment block - and not once per file "
+          "but where it sits: a heredoc two blocks below an unrelated one still counts",
+          all(any(moved_module_imports(c, mv_names) for c in chunks_of(rel, text))
+              for rel, text in (("a.sh", mv_sh), ("b.md", mv_md), ("c.py", mv_py),
+                                ("d.sh", mv_two))))
+    check("mv10 ...and its allow twin: the same heredoc with tools/lints put on the "
+          "path first yields no hit, so reading every file kind did not turn the "
+          "reading into a flag on every sys.path insert",
+          not any(moved_module_imports(c, mv_names)
+                  for c in chunks_of("e.sh", mv_sh.replace(
+                      "sys.path.insert(0, os.path.join(\"plugins\", \"audit\", \"scripts\"))",
+                      "sys.path.insert(0, 'tools/lints')\n"
+                      "sys.path.insert(0, os.path.join(\"plugins\", \"audit\", \"scripts\"))"))))
+    # The over-fire direction, which looks vacuous and is the only case that goes red
+    # if the detector is widened to every sys.path insert or to every import: a
+    # command that also puts tools/lints on the path works, and so does one that
+    # imports a module scripts/ still holds.
+    check("mv8 ...and stays quiet on a command that names tools/lints beside the "
+          "scripts, on one importing a module scripts/ still holds, and on a literal "
+          "with no sys.path insert at all",
+          not moved_module_imports(mv_fixed, mv_names)
+          and not moved_module_imports(mv_shipped, mv_names)
+          and not moved_module_imports("import _deps", mv_names))
 
     # ------------------------------------------------------------- script_files()
     check("sf1 script_files() is py_files(SCRIPTS_DIR) - the same list, not a "

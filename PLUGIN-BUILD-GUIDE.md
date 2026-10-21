@@ -1652,9 +1652,13 @@ tree. Two matching modes: BARE in documents, and ANCHORED (`plugins/audit/`,
 `guard-secrets-read.py`'s unanchored build-script literal — a fixture about a CONSUMER repo's
 file — out of the scan while still catching `require-plan.py`'s three real lock-script
 strings. `CHANGELOG.md` and `docs/design/` are excluded with the reason in the table: a path
-that has since moved was true when it was written. `manifest_moved_files()` splits a MOVE
-(loud: stale reference) from a DELETION (silent: correct history) by asking whether the
-basename still exists anywhere in the plugin, and `sweep_glob_drift()` holds every document
+that has since moved was true when it was written. `manifest_moved_files()` sorts a recorded `.py` path
+that is gone into three classes by asking whether its basename exists in any tree of
+`_output.MOVED_TO_TREES` (the plugin, `tests/` and `tools/lints/`, because the suites and
+the lint modules left the plugin): `moved` is a task with work left naming the old place
+(loud: stale reference), `history` is a done or cancelled task naming it (correct history,
+listed apart so it is counted), and `gone` is a basename found nowhere, a DELETION (silent:
+correct history). And `sweep_glob_drift()` holds every document
 that shows the selftest sweep to the RUNNER — scoped to the runnable region, so the places
 this guide writes the flat glob as prose stay legal. That sentence said "the recursive `find`
 form" for a while after the runner replaced it, and named a count that had since grown: two

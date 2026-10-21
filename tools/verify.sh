@@ -940,6 +940,7 @@ slice_panel() {
 refs_rule() {
   python3 - "$1" <<'PYEOF'
 import os, sys
+sys.path.insert(0, "tools/lints")
 sys.path.insert(0, os.path.join("plugins", "audit", "scripts"))
 import _refs
 rows = getattr(_refs, sys.argv[1])()

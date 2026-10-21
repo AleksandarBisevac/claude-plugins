@@ -123,6 +123,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 import _output_lints  # noqa: E402  (the lint half, development code)
 
 _output.install_path()
+import _manifest_io  # noqa: E402  (TERMINAL: which statuses are history)
 
 # REPO_ROOT rather than "the plugin root": every `rel` this module produces already
 # starts with `plugins/audit/`, so it is joined to the directory the plugin tree hangs
@@ -597,22 +598,48 @@ def _read_json(path):
 # The three questions about "did this `.py` move" are answered by the anchor, not
 # here: `audit-task.py` is shipped and asks one of them, and this module is not.
 _py_index = _output.py_index
+_moved_index = _output.moved_index
 is_plugin_py_path = _output.is_plugin_py_path
 moved_file_target = _output.moved_file_target
 
 
 def _recorded_paths(repo_root):
-    """([(source, path), ...], [(rel, problem), ...]) — what the plan says it touches.
+    """([(source, path, live), ...], [(rel, problem), ...]) - what the plan says it touches.
 
     Both the index's `fileIndex` keys and every shard task's `files`, each carrying where
-    it was found so a violation names one place to go and fix. A shard that will not
-    parse becomes a problem rather than a shorter list."""
+    it was found so a violation names one place to go and fix. `live` is whether a task
+    that still has work to do records the path: a done or cancelled task is history, and
+    an index row is live when any task it lists is, or when a listed id is in no shard
+    (an index row nobody owns is not history). A shard that will not parse becomes a
+    problem rather than a shorter list."""
     recorded = []
     unreadable = []
     try:
         plan = _read_json(os.path.join(repo_root, _MANIFEST_REL.replace("/", os.sep)))
     except (OSError, ValueError) as exc:
         return recorded, [(_MANIFEST_REL, "unreadable: %s" % exc)]
+
+    shard_paths = []
+    settled = {}
+    phases_dir = os.path.join(repo_root, _PHASES_REL.replace("/", os.sep))
+    if not os.path.isdir(phases_dir):
+        unreadable.append((_PHASES_REL, "no such directory"))
+    else:
+        for name in sorted(os.listdir(phases_dir)):
+            if not name.endswith(".json"):
+                continue
+            rel = "%s/%s" % (_PHASES_REL, name)
+            try:
+                shard = _read_json(os.path.join(phases_dir, name))
+            except (OSError, ValueError) as exc:
+                unreadable.append((rel, "unreadable: %s" % exc))
+                continue
+            for task in shard.get("tasks") or []:
+                live = task.get("status") not in _manifest_io.TERMINAL
+                settled[task.get("id")] = not live
+                for path in task.get("files") or []:
+                    shard_paths.append(
+                        ("%s task %s" % (rel, task.get("id") or "?"), path, live))
 
     file_index = plan.get("fileIndex")
     if file_index is None:
@@ -622,60 +649,48 @@ def _recorded_paths(repo_root):
                            % type(file_index).__name__))
     else:
         for key in sorted(file_index):
-            recorded.append(("%s fileIndex" % _MANIFEST_REL, key))
-
-    phases_dir = os.path.join(repo_root, _PHASES_REL.replace("/", os.sep))
-    if not os.path.isdir(phases_dir):
-        unreadable.append((_PHASES_REL, "no such directory"))
-        return recorded, unreadable
-    for name in sorted(os.listdir(phases_dir)):
-        if not name.endswith(".json"):
-            continue
-        rel = "%s/%s" % (_PHASES_REL, name)
-        try:
-            shard = _read_json(os.path.join(phases_dir, name))
-        except (OSError, ValueError) as exc:
-            unreadable.append((rel, "unreadable: %s" % exc))
-            continue
-        for task in shard.get("tasks") or []:
-            for path in task.get("files") or []:
-                recorded.append(("%s task %s" % (rel, task.get("id") or "?"), path))
-    return recorded, unreadable
+            owners = file_index[key] if isinstance(file_index[key], list) else []
+            live = not owners or not all(settled.get(o, False) for o in owners)
+            recorded.append(("%s fileIndex" % _MANIFEST_REL, key, live))
+    return recorded + shard_paths, unreadable
 
 
 def manifest_moved_files(repo_root=None):
-    """{"moved": [...], "gone": [...], "unreadable": [...], "checked": n}.
+    """{"moved": [...], "history": [...], "gone": [...], "unreadable": [...], "checked": n}.
 
-    Restricted to `.py` under `plugins/audit/` — the manifest records project files of
-    every kind, and only this plugin's own sources are ours to move.
+    Restricted to `.py` recorded under `plugins/audit/` - the manifest records project
+    files of every kind, and only this plugin's own sources are ours to move. A file
+    that LEFT the plugin is still a move: `_output.moved_index` looks in `tests/` and
+    `tools/lints/` too.
 
-    THE ASYMMETRY IS THE POINT. A recorded path whose file is gone but whose BASENAME
-    exists elsewhere in the plugin is a MOVE, and a document still pointing at the old
-    place is stale: that is `moved`, and it is loud. A recorded path whose basename
-    exists nowhere is a DELETION, and a done task that says it deleted a file is correct
-    history: that is `gone`, and it is not a violation. Classified rather than dropped,
-    because "no moves found" and "nothing was examined" must not print the same way —
-    `checked` is what separates them.
+    THE ASYMMETRY IS THE POINT, AND IT HAS TWO AXES. A recorded path whose file is gone
+    but whose BASENAME exists elsewhere is a MOVE, and a document still pointing at the
+    old place is stale: that is `moved` when a task with work left records it, and it is
+    loud. A done or cancelled task naming the old place is correct history - the file was
+    there when it ran - so that is `history`, listed apart so it is counted and never
+    dropped. A recorded path whose basename exists nowhere is a DELETION, and a done task
+    that says it deleted a file is correct history: that is `gone`, and it is not a
+    violation. Classified rather than dropped, because "no moves found" and "nothing was
+    examined" must not print the same way - `checked` is what separates them.
     """
     root = repo_root if repo_root is not None else REPO_ROOT
     recorded, unreadable = _recorded_paths(root)
-    index = _py_index(root)
+    index = _moved_index(root)
     moved = []
+    history = []
     gone = []
     checked = 0
-    for source, path in recorded:
+    for source, path, live in recorded:
         # A `:line-range` SUFFIX IS NOT STRIPPED HERE, AND THAT IS STATED
         # RATHER THAN FIXED. The schema allows one on a `files` entry, and
         # every other consumer that turns a declared entry into a filesystem
         # path strips it first (`_manifest_vocab._strip_line_suffix`, taken by
         # `commit-task-work.py`, `audit-task.py` and `_manifest_crossrefs.py`
-        # rather than re-parsed per caller). This module cannot take the same
-        # import: `_deps.LAYERS` places `_refs` and `_manifest_vocab` in the
-        # SAME layer, so importing it here would be the sideways edge
-        # `layer_violations()` refuses, and writing the one-line split again
-        # would be a fourth spelling of the rule those three already share.
+        # rather than re-parsed per caller). Importing it here would be a third
+        # consumer of a rule that has one home, and writing the one-line split again
+        # would be a fourth spelling of it.
         # So a suffixed entry fails `.endswith(".py")` and never reaches
-        # `checked` — an UNDER-COUNT, not a false positive: nothing is
+        # `checked` - an UNDER-COUNT, not a false positive: nothing is
         # reported wrongly about it, a real move or deletion just goes
         # unexamined.
         if not is_plugin_py_path(path):
@@ -684,11 +699,14 @@ def manifest_moved_files(repo_root=None):
         if os.path.isfile(os.path.join(root, path.replace("/", os.sep))):
             continue
         target = moved_file_target(path, root, index)
-        if target is not None:
+        if target is None:
+            gone.append((source, path))
+        elif live:
             moved.append((source, path, target))
         else:
-            gone.append((source, path))
-    return {"moved": moved, "gone": gone, "unreadable": unreadable, "checked": checked}
+            history.append((source, path, target))
+    return {"moved": moved, "history": history, "gone": gone,
+            "unreadable": unreadable, "checked": checked}
 
 
 # --- the basenames tools/ names -----------------------------------------------

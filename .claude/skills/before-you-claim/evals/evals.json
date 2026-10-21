@@ -15,7 +15,7 @@
     },
     {
       "id": 2,
-      "prompt": "In the repository, PLUGIN-BUILD-GUIDE.md line 822 says 'the seventeen `KNOWN_LAYER_DEBT` edges', but `_deps.KNOWN_LAYER_DEBT` holds one entry (`python3 -c \"import sys;sys.path.insert(0,'plugins/audit/scripts');import _deps;print(len(_deps.KNOWN_LAYER_DEBT))\"` prints 1). Fix the guide.",
+      "prompt": "In the repository, PLUGIN-BUILD-GUIDE.md line 822 says 'the seventeen `KNOWN_LAYER_DEBT` edges', but `_deps.KNOWN_LAYER_DEBT` holds one entry (`python3 -c \"import sys;sys.path.insert(0,'tools/lints');sys.path.insert(0,'plugins/audit/scripts');import _deps;print(len(_deps.KNOWN_LAYER_DEBT))\"` prints 1). Fix the guide.",
       "expected_output": "Every site carrying the rotted count is repaired - three planted present-tense sentences at lines 822, 3022 and 3389 - found by a grep over the whole file; the two 'seventeen' sentences about __file__ sites (lines 989, 1084) are left and named as left with the reason; no new present-tense number; the notes list the grep and its hits.",
       "files": [],
       "expectations": [

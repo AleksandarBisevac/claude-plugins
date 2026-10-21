@@ -10,7 +10,7 @@ each is as many vocabularies as there are copies - all of which agree until the
 first time one of them learns a word. Who imports it is derived, not listed here,
 because the list was wrong in both halves when somebody finally ran the graph:
 
-    python3 -c "import sys;sys.path.insert(0,'plugins/audit/scripts');import _deps;\
+    python3 -c "import sys;sys.path.insert(0,'tools/lints');sys.path.insert(0,'plugins/audit/scripts');import _deps;\
     e,_=_deps.import_graph();print(sorted(a for a,b in e if b=='_manifest_vocab'))"
 
 THE FLOOR, AND THAT IS WHY `TERMINAL` IS NOT HERE. This module reaches no sibling

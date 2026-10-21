@@ -57,6 +57,7 @@ import _surface_digest                             # noqa: E402  (the digest sc2
 _ANCHOR_LITERAL = "${CLAUDE_PLUGIN_ROOT}/"
 _FX_SCRIPTS = M.PLUGIN_REL + "/scripts/"
 _FX_HOOKS = M.PLUGIN_REL + "/hooks/"
+_LINTS_HOME = "tools/lints/"   # where the lint modules moved to; fixture paths build on it
 _FX_COMMANDS = M.PLUGIN_REL + "/commands/"
 _FX_AGENTS = M.PLUGIN_REL + "/agents/"
 _FX_REFERENCE = M.PLUGIN_REL + "/reference/"
@@ -709,7 +710,9 @@ def _cases(check):
     check("q1 the dogfood plan records no moved file, over %d recorded .py paths - "
           "the count is what separates that from having examined nothing"
           % plan["checked"],
-          plan["moved"] == [] and plan["checked"] >= 70, repr(plan["checked"]))
+          plan["moved"] == [] and plan["checked"] >= 70,
+          "a task with work left names a path that moved - repoint it with "
+          "`/audit:task scope`: %r" % (plan["moved"],))
     check("q2 ...and nothing in it is unreadable", plan["unreadable"] == [],
           repr(plan["unreadable"]))
 
@@ -739,6 +742,55 @@ def _cases(check):
         check("q5 a recorded path that is not this plugin's .py is not this lint's "
               "business: 3 recorded, 3 checked, docs/index.html untouched",
               res["checked"] == 3, repr(res))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # --- a file that moved OUT of the plugin: to tests/ or to tools/lints/ ----------
+    check("q7 a suite that left the plugin for tests/ and a lint module that left "
+          "scripts/ for tools/lints/ are MOVES with their new home named, on the real "
+          "tree, not files whose basename is nowhere",
+          M.moved_file_target(M.PLUGIN_REL + "/tests/test__refs.py", M.REPO_ROOT)
+          == "tests/test__refs.py"
+          and M.moved_file_target(_FX_SCRIPTS + "_deps.py", M.REPO_ROOT)
+          == _LINTS_HOME + "_deps.py")
+
+    tmp = tempfile.mkdtemp()
+    try:
+        _old_suite = M.PLUGIN_REL + "/tests/test__x.py"
+        _old_lint = _FX_SCRIPTS + "_y.py"
+        _old_done = _FX_SCRIPTS + "_z.py"
+        _write(tmp, "tests/test__x.py", "# the suite, now at the top\n")
+        _write(tmp, _LINTS_HOME + "_y.py", "# a lint\n")
+        _write(tmp, _LINTS_HOME + "_z.py", "# another lint\n")
+        _write(tmp, M._MANIFEST_REL, json.dumps(
+            {"fileIndex": {_old_suite: ["P1.1", "P1.2"], _old_lint: ["P1.4"],
+                           _old_done: ["P1.3"]}}))
+        _write(tmp, M._PHASES_REL + "/P1.json", json.dumps({"tasks": [
+            {"id": "P1.1", "status": "pending", "files": [_old_suite]},
+            {"id": "P1.2", "status": "done", "files": [_old_suite]},
+            {"id": "P1.3", "status": "done", "files": [_old_done]},
+            {"id": "P1.4", "status": "in_progress", "files": [_old_lint]}]}))
+        res = M.manifest_moved_files(tmp)
+        _loud = sorted((m[0].split(" ", 1)[-1], m[1], m[2]) for m in res["moved"])
+        check("q8 a PENDING or running task naming either old path is loud - moved, "
+              "with the new home, and not gone: the task's shard entry and the index "
+              "row that lists it live, by id",
+              _loud == sorted([
+                  ("fileIndex", _old_suite, "tests/test__x.py"),
+                  ("task P1.1", _old_suite, "tests/test__x.py"),
+                  ("fileIndex", _old_lint, _LINTS_HOME + "_y.py"),
+                  ("task P1.4", _old_lint, _LINTS_HOME + "_y.py")])
+              and res["gone"] == [], repr((res["moved"], res["gone"])))
+        # The other direction, which looks vacuous and is the case that goes red if
+        # every task naming a moved path is made loud: a DONE task is history.
+        _hist = sorted((h[0].split(" ", 1)[-1], h[1]) for h in res.get("history", []))
+        check("q9 a DONE task naming an old path stays history - listed apart, never "
+              "moved and never gone - and an index row only done tasks list is history "
+              "with it",
+              _hist == sorted([("task P1.2", _old_suite), ("task P1.3", _old_done),
+                               ("fileIndex", _old_done)])
+              and all(m[1] != _old_done for m in res["moved"]),
+              repr((res.get("history"), res["moved"])))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

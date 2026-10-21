@@ -635,6 +635,25 @@ def py_index(repo_root, rel_root=None):
     return index
 
 
+# Where a file recorded under the plugin may have gone. The plugin is the first
+# place, but the suites left it for `tests/` and the lint modules left `scripts/` for
+# `tools/lints/`: an index of the plugin alone reads those as deleted, which is the
+# quiet history a move must not be.
+MOVED_TO_TREES = (PLUGIN_REL, posix_rel(TESTS_DIR, REPO_ROOT),
+                  posix_rel(LINTS_DIR, REPO_ROOT))
+
+
+def moved_index(repo_root):
+    """`py_index` over every tree in `MOVED_TO_TREES` - the one map a moved file's
+    basename is looked up in. A tree the checkout lacks contributes nothing, so a
+    fixture root holding only the plugin answers as it always did."""
+    index = {}
+    for tree in MOVED_TO_TREES:
+        for name, rels in py_index(repo_root, tree).items():
+            index.setdefault(name, []).extend(rels)
+    return index
+
+
 def is_plugin_py_path(path):
     """Whether `path` is a `.py` path under `plugins/audit/` at all - the one reading
     of "is this the plugin's business" `moved_file_target` and `_refs`'
@@ -647,14 +666,14 @@ def moved_file_target(path, repo_root=None, index=None):
     """The new home `path` moved to, or None.
 
     None covers every reading that is NOT a move: `path` still exists there, it is
-    not a plugin `.py` path (`is_plugin_py_path`), or no `.py` anywhere in the plugin
-    shares its basename - a deletion, not a move, which `manifest_moved_files` files
+    not a plugin `.py` path (`is_plugin_py_path`), or no `.py` in any tree of
+    `MOVED_TO_TREES` shares its basename - a deletion, not a move, which `manifest_moved_files` files
     as `gone` rather than here.
 
     THE ONE READER OF THE QUESTION: `manifest_moved_files` asks it once per recorded
     path and `audit-task.py`'s `add`/`scope` once per `--files` entry about to be
     written, so a file that moved is reported the same way whether the plan already
-    recorded it or an operator is about to. `index`, when given, is `py_index`'s
+    recorded it or an operator is about to. `index`, when given, is `moved_index`'s
     map, so a caller asking about many paths builds it once.
     """
     if not is_plugin_py_path(path):
@@ -662,7 +681,7 @@ def moved_file_target(path, repo_root=None, index=None):
     root = repo_root if repo_root is not None else REPO_ROOT
     if os.path.isfile(os.path.join(root, path.replace("/", os.sep))):
         return None
-    idx = index if index is not None else py_index(root)
+    idx = index if index is not None else moved_index(root)
     elsewhere = [p for p in idx.get(os.path.basename(path), ()) if p != path]
     return ", ".join(elsewhere) if elsewhere else None
 
