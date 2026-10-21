@@ -22,348 +22,467 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P131-R1",
         "severity": "med",
         "file": "whole diff (git diff HEAD -M --numstat): tools/gate-parity.py, tools/lints/_refs.py, plugins/audit/scripts/_output.py, tools/sweep-selftests.py, tools/prove-gates.py, tools/affected.py",
         "issue": "contradicts task clause: the acceptance line 'the whole repo changes by less than 0.5k lines' is not met. Excluding docs/audit and .github/sweep-costs.json the diff is 1655 insertions and 862 deletions (git diff HEAD -M --numstat); the executor's own outcome lists it under NOT MET (a). Most of it is the mechanical repoint plus new logic (_output LINTS_DIR/moved_file_target, _refs suite anchor, gate-parity ld1-ld7, sweep sr1-sr3), so the clause as written is probably unachievable, but the filed return does not say the clause is wrong, only that it is unmet.",
-        "resolution": "Either the orchestrator amends the clause (state the real bound, e.g. 'the mechanical repoint plus the named new logic, measured as numstat outside docs/audit') with the measurement recorded, or the task is reopened to split the new logic out. Do not leave it silently passing."
+        "resolution": "Either the orchestrator amends the clause (state the real bound, e.g. 'the mechanical repoint plus the named new logic, measured as numstat outside docs/audit') with the measurement recorded, or the task is reopened to split the new logic out. Do not leave it silently passing.",
+        "status": "accepted-open",
+        "acceptedReason": "S1 (redesign) complete: 19 tasks done. Of 48 per-task review findings, 22 are resolved by the commits that fixed them, 19 lows are carried to BUG-29-dau (D9 cleanup batch), and 7 mediums remain as recorded, none a code defect at HEAD: R1, R25, R46, R47 are deviations from task text the orchestrator accepted on adversarial evidence (P131.1 line budget, P131.16 9 of 20 commits, P131.9 clauses 1 and 5 tightened to the positive-evidence rule); R4 is settled by the owner's CLAUDE.md patch 53d8e498; R31's remaining half is CLAUDE.md:55, the owner's file; R23 is a filed return describing an earlier design, the class register F769 schedules. Per-task reviewer answers continued over: P131.1 intent diverges: Adversarial pre-commit review (2026-10-21) accepts the divergence: the <0.5k-lines clause was an estimate; the repoints alone are ~0.5k a side and the rest is the guards items (2),(3) and the no-fewer-references clause require. Installed-copy run clean, 340 suites before/after, prove-gates set identical (71), _refs checked 1195->1312. Two medium findings from that review (moved-file guard blind to tests/, docstring commands importing _deps from scripts/) get a fix task in this phase. Owner's standing words 2026-10-21: 'Radis autonomno ... ne izbacujes mi prompt-ove'.; P131.2 intent diverges: Divergence on clauses (3) shipped --selftest mentions in usage docstrings and (8) B9 record: B9 is now recorded by the orchestrator on the landing SHA c403486b (code 75222, 9523829 bytes, quality-gates-internal PLAN.md 'B9'); the leftover --selftest/_output.<lint> wording is low and goes to the D9 cleanup task. Adversarial pre-commit review on a committed copy found one med (fixed and re-verified) and confirmed every entry point, hook, report and panel byte-identical to HEAD's behaviour. Owner 2026-10-21: autonomous run, no prompts.; P131.16-dau intent diverges: Divergence is clause (5) only: 9 of 20 commits measured (one sweep 7-12 min under load). The result already decides S3.2 - the selector missed on 3 of the 5 commits that could miss, so S3.2 is held (plan bab72da) behind a zero-miss re-measurement over at least 20 commits. Clauses (1)-(4) met, 20/20 selftest, 11 mutations red; the two lows go to the D9 batch. No adversarial pass: a disclosed coverage count in a measurement tool no gate reads (owner 2026-10-21: only the processes a change needs).; P131.9 intent diverges: Divergence on clauses (1) and (5) is deliberate and on the safe side, taken from two adversarial passes: a finding that overlaps no task's diff is validated and, if confirmed, stops for a human instead of becoming a note; a med/high withdrawal is taken only with a Read of a cited file. Both prevent a real correctness finding from being accepted-open silently (the first pass reproduced exactly that). Clauses (2)-(4) hold per the review. Owner 2026-10-21: autonomous run."
       },
       {
         "id": "P131-R2",
         "severity": "low",
         "file": "CLAUDE.md:150,205,301",
         "issue": "Item (7) is by design left to the owner: CLAUDE.md still names plugins/audit/tests/ in three places, and .claude/skills/writing-python/SKILL.md (not in the task's files) does not mention LINTS_DIR. The tree is therefore internally stale until the owner applies the drafted lines; the draft is in the outcome.",
-        "resolution": "Owner applies the drafted CLAUDE.md edits in the same landing; the orchestrator adds writing-python/SKILL.md LINTS_DIR to the follow-up."
+        "resolution": "Owner applies the drafted CLAUDE.md edits in the same landing; the orchestrator adds writing-python/SKILL.md LINTS_DIR to the follow-up.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P131-R3",
         "severity": "low",
         "file": "task return: gates",
         "issue": "The filed return records only gates.selftests = pass. plugin-validate, gate, report, shots, interactive and vitest are in tests.gate and were not run by the executor (it says 'own-tests reading'). The brief records the gate run as passed (runId 2026-10-21T01:06:24Z.a4ffb1) but I was not handed which commands it ran, and the acceptance item 'installed cache holds no tests/' was not run (tracked-files half verified by me: git ls-files plugins/audit | grep -c /tests/ = 0).",
-        "resolution": "Confirm the recorded run covered every tests.gate entry (cat the run's evidence rows), and run the /audit:version install check after the landing."
+        "resolution": "Confirm the recorded run covered every tests.gate entry (cat the run's evidence rows), and run the /audit:version install check after the landing.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P131-R4",
         "severity": "med",
         "file": "CLAUDE.md:31,53,91-93,301-308",
         "issue": "Task clause (4)/(6) retired --selftest in shipped modules and moved the lint halves, but CLAUDE.md (in the diff's declared scope, unchanged by this diff) still instructs the opposite. Lines 91-93 item 1 say a new .py under hooks/ or scripts/ needs a --selftest and that CI fails a file without one, which now tells a contributor to add a banned stub. Lines 301-308 still describe a migrated class and a file that exits 0 on --selftest, and the line 303 command calls _output.selftest_coverage(), which no longer exists in scripts/_output.py (it is in tools/lints/_output_lints.py), so it raises AttributeError. Lines 31 and 53 name _output.house_style_violations() and _output.prose_number_claims(), now in _output_lints. The executor listed the exact patch in its outcome but did not apply it.",
-        "resolution": "Rewrite item 1 to 'a tests/test_<name>.py or a named COVERAGE_EXEMPT row', replace the 301-308 paragraph and its command with _output_lints.selftest_coverage(), and repoint the _output.<lint> names to _output_lints."
+        "resolution": "Rewrite item 1 to 'a tests/test_<name>.py or a named COVERAGE_EXEMPT row', replace the 301-308 paragraph and its command with _output_lints.selftest_coverage(), and repoint the _output.<lint> names to _output_lints.",
+        "status": "accepted-open",
+        "acceptedReason": "S1 (redesign) complete: 19 tasks done. Of 48 per-task review findings, 22 are resolved by the commits that fixed them, 19 lows are carried to BUG-29-dau (D9 cleanup batch), and 7 mediums remain as recorded, none a code defect at HEAD: R1, R25, R46, R47 are deviations from task text the orchestrator accepted on adversarial evidence (P131.1 line budget, P131.16 9 of 20 commits, P131.9 clauses 1 and 5 tightened to the positive-evidence rule); R4 is settled by the owner's CLAUDE.md patch 53d8e498; R31's remaining half is CLAUDE.md:55, the owner's file; R23 is a filed return describing an earlier design, the class register F769 schedules. Per-task reviewer answers continued over: P131.1 intent diverges: Adversarial pre-commit review (2026-10-21) accepts the divergence: the <0.5k-lines clause was an estimate; the repoints alone are ~0.5k a side and the rest is the guards items (2),(3) and the no-fewer-references clause require. Installed-copy run clean, 340 suites before/after, prove-gates set identical (71), _refs checked 1195->1312. Two medium findings from that review (moved-file guard blind to tests/, docstring commands importing _deps from scripts/) get a fix task in this phase. Owner's standing words 2026-10-21: 'Radis autonomno ... ne izbacujes mi prompt-ove'.; P131.2 intent diverges: Divergence on clauses (3) shipped --selftest mentions in usage docstrings and (8) B9 record: B9 is now recorded by the orchestrator on the landing SHA c403486b (code 75222, 9523829 bytes, quality-gates-internal PLAN.md 'B9'); the leftover --selftest/_output.<lint> wording is low and goes to the D9 cleanup task. Adversarial pre-commit review on a committed copy found one med (fixed and re-verified) and confirmed every entry point, hook, report and panel byte-identical to HEAD's behaviour. Owner 2026-10-21: autonomous run, no prompts.; P131.16-dau intent diverges: Divergence is clause (5) only: 9 of 20 commits measured (one sweep 7-12 min under load). The result already decides S3.2 - the selector missed on 3 of the 5 commits that could miss, so S3.2 is held (plan bab72da) behind a zero-miss re-measurement over at least 20 commits. Clauses (1)-(4) met, 20/20 selftest, 11 mutations red; the two lows go to the D9 batch. No adversarial pass: a disclosed coverage count in a measurement tool no gate reads (owner 2026-10-21: only the processes a change needs).; P131.9 intent diverges: Divergence on clauses (1) and (5) is deliberate and on the safe side, taken from two adversarial passes: a finding that overlaps no task's diff is validated and, if confirmed, stops for a human instead of becoming a note; a med/high withdrawal is taken only with a Read of a cited file. Both prevent a real correctness finding from being accepted-open silently (the first pass reproduced exactly that). Clauses (2)-(4) hold per the review. Owner 2026-10-21: autonomous run."
       },
       {
         "id": "P131-R5",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/derive-phase-gate.py:75; plugins/audit/scripts/manifest/migrate-manifest.py:33; plugins/audit/scripts/manifest/merge-manifest.py:42; plugins/audit/scripts/manifest/migrate-json-encoding.py:45; plugins/audit/scripts/manifest/set-priority.py:22; plugins/audit/reference/phase-signoff.md:347",
         "issue": "Shipped usage blocks and one agent-facing reference still advertise `<script> --selftest` (and phase-signoff.md:347 says 'run it with --selftest', pointing at tests/test_run_test_gate.py), a flag clause (5) turned into an ordinary usage error. Clause (3) asked that every shipped pointer to an unshipped path be repointed or removed. Separately, shipped comments name _output.prose_number_claims() (status/_doctor_hygiene.py:374, status/audit-status.py:1105, governance/propose-gates.py:31), which moved to tools/lints; the executor's carve-out covers only text inside PATH_PREAMBLE.",
-        "resolution": "Delete the `--selftest` usage lines, reword phase-signoff.md:347 to drop 'run it with --selftest', and reword the three _output.prose_number_claims comments to name the source-repository lint."
+        "resolution": "Delete the `--selftest` usage lines, reword phase-signoff.md:347 to drop 'run it with --selftest', and reword the three _output.prose_number_claims comments to name the source-repository lint.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P131-R6",
         "severity": "low",
         "file": "docs/audit (plan record for B9)",
         "issue": "Clause (8) asks for the B9 `code` figure taken on the landing SHA and recorded in the plan with that SHA. The filed outcome gives 75222 measured over the working tree, with the exact command left for later, and a grep of docs/audit finds it only in the executor's return file and the journal, not as a plan field. The byte ceiling is met (9523827 against 10416128 by the executor's own measurement).",
-        "resolution": "Re-take the figure on the landing commit with the clause's git archive command (K-poc is in quality-gates-internal) and record it with the SHA before the phase signs off."
+        "resolution": "Re-take the figure on the landing commit with the clause's git archive command (K-poc is in quality-gates-internal) and record it with the SHA before the phase signs off.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P131-R7",
         "severity": "low",
         "file": "tools/check-example-pins.py:480-489",
         "issue": "x2 (the live-set case) recomputes the expected set with the same two ingredients pinned_examples uses (example_files filtered by read_pins), so it can only fail if the two diverge in plumbing, not if the filter itself is wrong; x1 over the scratch repo carries the real discriminating power. The io.open(...).read() calls in x2 and in x4/rl16 also leave file handles to the GC.",
-        "resolution": "Optional: have x2 assert the live set equals the paths named in the example files by a literal expectation (docs/examples/azure-pipelines.yml is in it) and read files via a with block."
+        "resolution": "Optional: have x2 assert the live set equals the paths named in the example files by a literal expectation (docs/examples/azure-pipelines.yml is in it) and read files via a with block.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P131-R8",
         "severity": "low",
         "file": "plugins/audit/scripts/status/audit-status.py:2377-2382",
         "issue": "An ambient $AUDIT_GATE_TASK silently becomes the task for any direct `audit-status.py --gate` run (CI step, release check, a human's shell with the variable exported), so a sign-off-shaped run can exempt bugs while the task text says 'no task'. It is printed ('named by $AUDIT_GATE_TASK ...'), so it is visible, but the task description asked for an explicit argument the gate step passes and for sign-off and the release guard to keep counting every open high bug. run-test-gate clears the variable for its own no-task runs, so that path is safe; a direct invocation is not covered by any case.",
-        "resolution": "Either keep the env channel and add a case that a direct no-task run under an exported variable is reported loudly (it is, by the 'GATE TASK' line) and not read by CI/sign-off callers, or have run-test-gate also pass --task where the plan's gate command is an audit-status call. At minimum document the variable beside --task in commands/status.md."
+        "resolution": "fixed in P131.12 (b2405c56f3ae): Either keep the env channel and add a case that a direct no-task run under an exported variable is reported loudly (it is, by the 'GATE TASK' line) and not read by CI/sign-off callers, or have run-test-gate also pass --task where the plan's gate command is an audit-status call. At minimum document the variable beside --task in commands/status.md.",
+        "fixTask": "P131.12",
+        "commit": "b2405c56f3ae",
+        "status": "fixed"
       },
       {
         "id": "P131-R9",
         "severity": "low",
         "file": "plugins/audit/scripts/status/audit-status.py:312-324",
         "issue": "For a task id the plan does not hold (gate_exemptions returns {}), _exemption_lines prints 'no open high bug is exempted - none is linked to this task or to an open task of its phase', which implies the task exists. gx9 checks the facts function but not this output.",
-        "resolution": "When the task is not in the plan, say 'task X is not in the plan, so nothing is exempted', and pin it in gx9."
+        "resolution": "fixed in P131.12 (b2405c56f3ae): When the task is not in the plan, say 'task X is not in the plan, so nothing is exempted', and pin it in gx9.",
+        "fixTask": "P131.12",
+        "commit": "b2405c56f3ae",
+        "status": "fixed"
       },
       {
         "id": "P131-R10",
         "severity": "low",
         "file": "plugins/audit/commands/status.md; CHANGELOG.md",
         "issue": "A new public flag --task and an environment variable are added to audit-status.py with no mention in commands/status.md or the changelog; the executor flagged this itself and left it out because the task names no docs.",
-        "resolution": "Add a line for --task / $AUDIT_GATE_TASK to commands/status.md and a changelog entry in this phase's release notes."
+        "resolution": "Add a line for --task / $AUDIT_GATE_TASK to commands/status.md and a changelog entry in this phase's release notes.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P131-R11",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:338-340,2186-2194 (WRITER_RULE, advance)",
         "issue": "Nothing in the drive's state tells a writer session that is still running from one that finished. WRITER_RULE says 'Run the run: line ... in Bash, in the background; then next.' A `next` taken straight after the background launch meets, for a first dispatch, executor None plus the dispatched-executor mark and asks no-executor-return (offering resume/retry while the session runs, so a second session can be started on the same tree); for a resume round it meets a filed executor with no gated mark and runs the task gate on the session's half-written tree, which can record a spurious red and spend a resume round. The record file (session_record) is the only completion signal and advance does not consult it before deciding. ws1-ws7 play each session synchronously (_play_session) before the next `next`, so no case can see this.",
-        "resolution": "Make completion explicit: either word the rule 'run it in the background and take `next` only when it exits', or (better, mechanical) have advance return a `wait` step while a writer session was dispatched for the current round and its record has not appeared (and no record means not finished), and add a case that calls `next` between dispatch and the run."
+        "resolution": "fixed in P131.5 (7cf2a9cdf63f): Make completion explicit: either word the rule 'run it in the background and take `next` only when it exits', or (better, mechanical) have advance return a `wait` step while a writer session was dispatched for the current round and its record has not appeared (and no record means not finished), and add a case that calls `next` between dispatch and the run.",
+        "fixTask": "P131.5",
+        "commit": "7cf2a9cdf63f",
+        "status": "fixed"
       },
       {
         "id": "P131-R12",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:268-286 (WRITER_MODEL_KEY, WRITER_BUDGET_KEY) vs the config schema / _config_rules",
         "issue": "The task reads two new config keys, executor.writerModel and executor.writerBudgetUsd, that the config schema does not know: validate-config.py prints 'WARNING: unknown executor key' for each (the executor's own NOT DONE note (a)). A key the plugin reads but its validator calls unknown is a user-visible false warning on the only way to turn the feature on.",
-        "resolution": "Add both keys to the config schema and _config_rules (here or in a named follow-up task) so the validator accepts what the driver reads."
+        "resolution": "fixed in P131.5 (7cf2a9cdf63f): Add both keys to the config schema and _config_rules (here or in a named follow-up task) so the validator accepts what the driver reads.",
+        "fixTask": "P131.5",
+        "commit": "7cf2a9cdf63f",
+        "status": "fixed"
       },
       {
         "id": "P131-R13",
         "severity": "low",
         "file": "plugins/audit/commands/run.md, next.md, resume.md, review.md (untouched)",
         "issue": "These commands drive the same `drive-phase.py next` signal but still describe `dispatch` as 'an Agent'. Under executor.writerModel their dispatch is a `run:` line to run in background Bash, so a /audit:next or /audit:run session reading only its own command file would try an Agent call on a command line (the executor's NOT DONE note (b)). Only phase.md was in scope.",
-        "resolution": "Reword the dispatch step in each of those command files the way phase.md now reads, or point them at one shared sentence."
+        "resolution": "fixed in P131.5 (7cf2a9cdf63f): Reword the dispatch step in each of those command files the way phase.md now reads, or point them at one shared sentence.",
+        "fixTask": "P131.5",
+        "commit": "7cf2a9cdf63f",
+        "status": "fixed"
       },
       {
         "id": "P131-R14",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:603-634 (write_record, main) / tests/test_run_agent_session.py",
         "issue": "--record is written for every outcome including a usage refusal (prefixed `usage:`), but no case covers the usage-refusal path or an unwritable record path; only the success path is exercised, indirectly via ws2-ws6 through test_drive_phase.py (executor's NOT DONE note (d)).",
-        "resolution": "Add a case in tests/test_run_agent_session.py: a bad --model with --record leaves {\"line\": \"usage: ...\", \"exit\": 2}, and an unwritable --record changes no exit code."
+        "resolution": "fixed in P131.5 (7cf2a9cdf63f): Add a case in tests/test_run_agent_session.py: a bad --model with --record leaves {\"line\": \"usage: ...\", \"exit\": 2}, and an unwritable --record changes no exit code.",
+        "fixTask": "P131.5",
+        "commit": "7cf2a9cdf63f",
+        "status": "fixed"
       },
       {
         "id": "P131-R15",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:1874-1895,1987-2010,2027-2040",
         "issue": "writer_test_command / writer_prove demand a red proof from every task that has a tests.add file, whatever its tests.mode (only the no-tests.add case consults the mode). The repo's rule is that red-first is owed by tdd (expectRedFirst is mode == tdd; the reviewer rule says not-attempted for gate-only and regression). A regression-mode writer task whose new test passes at HEAD gets no block from the helper, so it becomes red-refused-writer, two resume rounds are spent telling the session to make a passing test fail, then red-refused and a retry or block. A gate-only task that happens to name a test is treated the same way.",
-        "resolution": "Gate the proof on tests.mode == tdd (or expectRedFirst): for other modes with tests.add, run it if wanted but turn a no-block or refused helper answer into a not-attempted or could-not-prove block carrying the helper's words rather than into red-refused-writer. Add a wl-style case for a regression task whose test passes at HEAD."
+        "resolution": "fixed in P131.6 (e5b216055c1c): Gate the proof on tests.mode == tdd (or expectRedFirst): for other modes with tests.add, run it if wanted but turn a no-block or refused helper answer into a not-attempted or could-not-prove block carrying the helper's words rather than into red-refused-writer. Add a wl-style case for a regression task whose test passes at HEAD.",
+        "fixTask": "P131.6",
+        "commit": "e5b216055c1c",
+        "status": "fixed"
       },
       {
         "id": "P131-R16",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:2099",
         "issue": "The commit check is skipped silently when either head is unknown: `if last.get(\"head\") and now and now != last[\"head\"]`. open_dispatch stores tree_head(...) which is None when git cannot say, and a dispatch recorded before this change has no head key. In both cases a session that committed passes settle unflagged and the drive goes on to prove, gate and file, which is acceptance clause 4 not holding with no signal that it was not checked.",
-        "resolution": "When the dispatch has no head or git cannot name HEAD now, say so in ctx[\"did\"] (or ask a decision) instead of passing as if checked; add a case with a dispatch lacking head."
+        "resolution": "fixed in P131.6 (e5b216055c1c): When the dispatch has no head or git cannot name HEAD now, say so in ctx[\"did\"] (or ask a decision) instead of passing as if checked; add a case with a dispatch lacking head.",
+        "fixTask": "P131.6",
+        "commit": "e5b216055c1c",
+        "status": "fixed"
       },
       {
         "id": "P131-R17",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:2125-2150,2186-2192",
         "issue": "A drive-filed writer return carries no casesAdded, so case_binding_gaps reports every tests.add entry as unbound (wf1 output: testsAddGaps = no case id bound), and testsAdded is the plan's own tests.add text filtered by diffPaths rather than anything the writer reported. The id-versus-printed-label comparison the reviewer brief relies on can therefore never run for a writer task, and the reviewer sees a standing gap on every one.",
-        "resolution": "Bind case ids from the helper's printed labels or the writer's per-clause answer, or state in execute-task.md that writer returns are unbound by design so the gap is not read as a defect."
+        "resolution": "fixed in P131.6 (e5b216055c1c): Bind case ids from the helper's printed labels or the writer's per-clause answer, or state in execute-task.md that writer returns are unbound by design so the gap is not read as a defect.",
+        "fixTask": "P131.6",
+        "commit": "e5b216055c1c",
+        "status": "fixed"
       },
       {
         "id": "P131-R18",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/_filed_returns.py:975-981",
         "issue": "names_path replaces audit-lookup's substring test (`f in cmd`) with a closed delimiter list. The same change alters the executor brief's own-tests/`--` command, not only the drive. A gate spelled `pytest tests/a.py,tests/b.py`, `python3 tests/a.py;x`, `$ROOT/tests/a.py` or `plugins/x/tests/a.py` against a declared `tests/a.py` named before and no longer does; the outcome is could-not-prove with a basis (honest, not silent), but a previously derivable red is lost. The lookbehind `(?<=\\./)` also accepts `../tests/a.py`.",
-        "resolution": "Either widen the trailing set to `,`, `;`, `)` and accept a `/`-preceded suffix match on a path boundary, or pin the narrower reading with a case that names the loss (rm2 only pins the `_old` suffix)."
+        "resolution": "fixed in P131.6 (e5b216055c1c): Either widen the trailing set to `,`, `;`, `)` and accept a `/`-preceded suffix match on a path boundary, or pin the narrower reading with a case that names the loss (rm2 only pins the `_old` suffix).",
+        "fixTask": "P131.6",
+        "commit": "e5b216055c1c",
+        "status": "fixed"
       },
       {
         "id": "P131-R19",
         "severity": "low",
         "file": "tests/test_drive_phase.py (wf/wl blocks)",
         "issue": "Every wf/wl case drives the shared-tree path (tree is None). The wave branches this diff adds - open_dispatch(..., tree), head_move(..., tree) and member_project, diff_paths(..., tree), take_stamp(ctx, task, tree), carry_work after the filing, locked_paths_now(..., tree) - are read only; I could not tell from the tests that any of them work in a task worktree, which is where P131.6 itself runs.",
-        "resolution": "Add one wave-shaped case (a task worktree, a writer that edits there) holding the filing, the lock and the commit check."
+        "resolution": "Add one wave-shaped case (a task worktree, a writer that edits there) holding the filing, the lock and the commit check.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P131-R20",
         "severity": "med",
         "file": "tools/verify.sh:944",
         "issue": "The class this task was to close is still open in a live command: refs_rule() puts only plugins/audit/scripts on sys.path (`sys.path.insert(0, os.path.join(\"plugins\", \"audit\", \"scripts\"))`) and then runs `import _refs`, which no longer resolves (verified in the task tree: python3 -I with that preamble raises ModuleNotFoundError: No module named '_refs', exit 1). refs_rule backs the release followers (verify.sh:991-994, raw_url_pin_drift, artifact_version_drift, screenshot_capture_drift), so `verify.sh --release` is broken. The task's grep excluded `:!tools`, and mv6 reads only .py string literals and evals.json, so a shell heredoc is outside the lint: the claims block says the grep was complete (4 hits, all repointed) while the class is not closed.",
-        "resolution": "Put tools/lints on the path in verify.sh's heredoc before `import _refs` (as tools/affected.py does through _output.LINTS_DIR). Widen mv6/_shipped_literals to also read *.sh and *.mjs/*.yml under tools/ and .github/ (or add a text-level scan of the heredoc), with the planted shape mv7 already uses, so the next shell caller turns red."
+        "resolution": "fixed in P131.15-dau (260b2c732e6e): Put tools/lints on the path in verify.sh's heredoc before `import _refs` (as tools/affected.py does through _output.LINTS_DIR). Widen mv6/_shipped_literals to also read *.sh and *.mjs/*.yml under tools/ and .github/ (or add a text-level scan of the heredoc), with the planted shape mv7 already uses, so the next shell caller turns red.",
+        "fixTask": "P131.15-dau",
+        "commit": "260b2c732e6e",
+        "status": "fixed"
       },
       {
         "id": "P131-R21",
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md:1655",
         "issue": "The guide still describes manifest_moved_files() as splitting a MOVE from a DELETION by 'whether the basename still exists anywhere in the plugin'. The diff changes both halves: the index now spans plugins/audit, tests and tools/lints (MOVED_TO_TREES), and a third class, `history`, exists for done or cancelled tasks naming a moved path.",
-        "resolution": "Reword the sentence to name MOVED_TO_TREES and the live/history axis, without a number."
+        "resolution": "fixed in P131.15-dau (260b2c732e6e): Reword the sentence to name MOVED_TO_TREES and the live/history axis, without a number.",
+        "fixTask": "P131.15-dau",
+        "commit": "260b2c732e6e",
+        "status": "fixed"
       },
       {
         "id": "P131-R22",
         "severity": "low",
         "file": "plugins/audit/scripts/_output.py:643",
         "issue": "MOVED_TO_TREES hardcodes \"tests\" and \"tools/lints\" as literals while the anchor already owns LINTS_DIR (tools/affected.py reads _output.LINTS_DIR). Two spellings of one location will drift if the lints move again, which is how this task came to exist.",
-        "resolution": "Derive the tuple's lints entry from LINTS_DIR (and tests from TESTS_DIR) via posix_rel against REPO_ROOT."
+        "resolution": "fixed in P131.15-dau (260b2c732e6e): Derive the tuple's lints entry from LINTS_DIR (and tests from TESTS_DIR) via posix_rel against REPO_ROOT.",
+        "fixTask": "P131.15-dau",
+        "commit": "260b2c732e6e",
+        "status": "fixed"
       },
       {
         "id": "P131-R23",
         "severity": "med",
         "file": "docs/audit/evidence/returns/P131.7/20261021T112346Z.executor.json (outcome.technical, claims, stamp, testsAdded)",
         "issue": "The filed return does not describe the current tree. It says _clause_coverage.task_clauses loads audit-lookup.py's own via _loader, that audit-lookup.py is untouched, that _clause_coverage and drive-phase got layers above the entry-point layer, and that drive-phase moved out of the entry layer. The tree instead defines acceptance_items/task_clauses in _clause_coverage.py (L2, -> _output), audit-lookup.py imports them (`acceptance_items = _cc.acceptance_items`, `task_clauses = _cc.task_clauses`, `re` import and ACCEPTANCE_MARK removed), drive-phase stays in L9 with _clause_coverage added to its edges, and tests/test_audit_lookup.py gained wp8b (absent from testsAdded). The stamp is not current: `stamp-verification.py compare` reports scopeDigest and dirtyDigest moved - it was taken over 6 declared files and the task now declares 8 (audit-lookup.py and test_audit_lookup.py added). Its evidence figures (test__clause_coverage 15/15, test_drive_phase 464/464, test__deps 254/254, sweep 190/192) were measured on the earlier design and are unverified for this one.",
-        "resolution": "Re-run the task's gate on the current tree, re-take the stamp over all 8 declared files, and re-file the return with outcome.technical describing the move (no loader, no extra layers, audit-lookup edited), wp8b in testsAdded/casesAdded, and the mutation list re-run against the new layout (in particular the one-numbering pin wp8b: make audit-lookup define its own task_clauses and confirm red)."
+        "resolution": "Re-run the task's gate on the current tree, re-take the stamp over all 8 declared files, and re-file the return with outcome.technical describing the move (no loader, no extra layers, audit-lookup edited), wp8b in testsAdded/casesAdded, and the mutation list re-run against the new layout (in particular the one-numbering pin wp8b: make audit-lookup define its own task_clauses and confirm red).",
+        "status": "accepted-open",
+        "acceptedReason": "S1 (redesign) complete: 19 tasks done. Of 48 per-task review findings, 22 are resolved by the commits that fixed them, 19 lows are carried to BUG-29-dau (D9 cleanup batch), and 7 mediums remain as recorded, none a code defect at HEAD: R1, R25, R46, R47 are deviations from task text the orchestrator accepted on adversarial evidence (P131.1 line budget, P131.16 9 of 20 commits, P131.9 clauses 1 and 5 tightened to the positive-evidence rule); R4 is settled by the owner's CLAUDE.md patch 53d8e498; R31's remaining half is CLAUDE.md:55, the owner's file; R23 is a filed return describing an earlier design, the class register F769 schedules. Per-task reviewer answers continued over: P131.1 intent diverges: Adversarial pre-commit review (2026-10-21) accepts the divergence: the <0.5k-lines clause was an estimate; the repoints alone are ~0.5k a side and the rest is the guards items (2),(3) and the no-fewer-references clause require. Installed-copy run clean, 340 suites before/after, prove-gates set identical (71), _refs checked 1195->1312. Two medium findings from that review (moved-file guard blind to tests/, docstring commands importing _deps from scripts/) get a fix task in this phase. Owner's standing words 2026-10-21: 'Radis autonomno ... ne izbacujes mi prompt-ove'.; P131.2 intent diverges: Divergence on clauses (3) shipped --selftest mentions in usage docstrings and (8) B9 record: B9 is now recorded by the orchestrator on the landing SHA c403486b (code 75222, 9523829 bytes, quality-gates-internal PLAN.md 'B9'); the leftover --selftest/_output.<lint> wording is low and goes to the D9 cleanup task. Adversarial pre-commit review on a committed copy found one med (fixed and re-verified) and confirmed every entry point, hook, report and panel byte-identical to HEAD's behaviour. Owner 2026-10-21: autonomous run, no prompts.; P131.16-dau intent diverges: Divergence is clause (5) only: 9 of 20 commits measured (one sweep 7-12 min under load). The result already decides S3.2 - the selector missed on 3 of the 5 commits that could miss, so S3.2 is held (plan bab72da) behind a zero-miss re-measurement over at least 20 commits. Clauses (1)-(4) met, 20/20 selftest, 11 mutations red; the two lows go to the D9 batch. No adversarial pass: a disclosed coverage count in a measurement tool no gate reads (owner 2026-10-21: only the processes a change needs).; P131.9 intent diverges: Divergence on clauses (1) and (5) is deliberate and on the safe side, taken from two adversarial passes: a finding that overlaps no task's diff is validated and, if confirmed, stops for a human instead of becoming a note; a med/high withdrawal is taken only with a Read of a cited file. Both prevent a real correctness finding from being accepted-open silently (the first pass reproduced exactly that). Clauses (2)-(4) hold per the review. Owner 2026-10-21: autonomous run."
       },
       {
         "id": "P131-R24",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_clause_coverage.py:_slashed docstring",
         "issue": "The docstring says an absolute path outside `root` 'stays absolute'. The code calls os.path.relpath, which returns a `../...` path for it. The verdict is still right (it matches nothing in the diff, cc8b) but the sentence states what the code does not do.",
-        "resolution": "Reword to 'becomes a ../ path that matches nothing the diff names', or keep it absolute with a commonpath test."
+        "resolution": "Reword to 'becomes a ../ path that matches nothing the diff names', or keep it absolute with a commonpath test.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P131-R25",
         "severity": "med",
         "file": "tools/measure-affected-miss.py (outcome, acceptance 5)",
         "issue": "contradicts task clause (5) 'the measured result over 20 commits is recorded in the task outcome with the commit range': the outcome records 9 consecutive commits ea05966b7..260b2c732, 'requested 20, 11 not examined', stopped by the time budget. The range and the stop are stated honestly, but the clause asked for a result over 20 and the headline 'misses 3 of 9 commits (mutation)' is a different sample.",
-        "resolution": "Measure the remaining 11 task commits (--rev set to the parent of ea05966b7, --commits 11, --no-ci) and add them to the outcome with their range, or have the owner accept 9 as the recorded sample. Do not read the nine as the twenty."
+        "resolution": "Measure the remaining 11 task commits (--rev set to the parent of ea05966b7, --commits 11, --no-ci) and add them to the outcome with their range, or have the owner accept 9 as the recorded sample. Do not read the nine as the twenty.",
+        "status": "accepted-open",
+        "acceptedReason": "S1 (redesign) complete: 19 tasks done. Of 48 per-task review findings, 22 are resolved by the commits that fixed them, 19 lows are carried to BUG-29-dau (D9 cleanup batch), and 7 mediums remain as recorded, none a code defect at HEAD: R1, R25, R46, R47 are deviations from task text the orchestrator accepted on adversarial evidence (P131.1 line budget, P131.16 9 of 20 commits, P131.9 clauses 1 and 5 tightened to the positive-evidence rule); R4 is settled by the owner's CLAUDE.md patch 53d8e498; R31's remaining half is CLAUDE.md:55, the owner's file; R23 is a filed return describing an earlier design, the class register F769 schedules. Per-task reviewer answers continued over: P131.1 intent diverges: Adversarial pre-commit review (2026-10-21) accepts the divergence: the <0.5k-lines clause was an estimate; the repoints alone are ~0.5k a side and the rest is the guards items (2),(3) and the no-fewer-references clause require. Installed-copy run clean, 340 suites before/after, prove-gates set identical (71), _refs checked 1195->1312. Two medium findings from that review (moved-file guard blind to tests/, docstring commands importing _deps from scripts/) get a fix task in this phase. Owner's standing words 2026-10-21: 'Radis autonomno ... ne izbacujes mi prompt-ove'.; P131.2 intent diverges: Divergence on clauses (3) shipped --selftest mentions in usage docstrings and (8) B9 record: B9 is now recorded by the orchestrator on the landing SHA c403486b (code 75222, 9523829 bytes, quality-gates-internal PLAN.md 'B9'); the leftover --selftest/_output.<lint> wording is low and goes to the D9 cleanup task. Adversarial pre-commit review on a committed copy found one med (fixed and re-verified) and confirmed every entry point, hook, report and panel byte-identical to HEAD's behaviour. Owner 2026-10-21: autonomous run, no prompts.; P131.16-dau intent diverges: Divergence is clause (5) only: 9 of 20 commits measured (one sweep 7-12 min under load). The result already decides S3.2 - the selector missed on 3 of the 5 commits that could miss, so S3.2 is held (plan bab72da) behind a zero-miss re-measurement over at least 20 commits. Clauses (1)-(4) met, 20/20 selftest, 11 mutations red; the two lows go to the D9 batch. No adversarial pass: a disclosed coverage count in a measurement tool no gate reads (owner 2026-10-21: only the processes a change needs).; P131.9 intent diverges: Divergence on clauses (1) and (5) is deliberate and on the safe side, taken from two adversarial passes: a finding that overlaps no task's diff is validated and, if confirmed, stops for a human instead of becoming a note; a med/high withdrawal is taken only with a Read of a cited file. Both prevent a real correctness finding from being accepted-open silently (the first pass reproduced exactly that). Clauses (2)-(4) hold per the review. Owner 2026-10-21: autonomous run."
       },
       {
         "id": "P131-R26",
         "severity": "low",
         "file": "tools/measure-affected-miss.py:535-582",
         "issue": "ci_half asks gh run list with --limit (default 200) and keeps only runs newer than the window start, but never notices when the list came back full. If the window reaches past the 200th failed run, the older runs are silently absent and the headline 'K of J runs (CI)' reads as the whole window, which is the 'partial read as complete' shape the half is built to avoid.",
-        "resolution": "When len(listed) == ci_limit and the oldest returned createdAt is still >= since, add a truncated flag to the result and render it in the CI tail (e.g. 'window truncated at the run limit'); add a case with a stub gh returning exactly the limit."
+        "resolution": "When len(listed) == ci_limit and the oldest returned createdAt is still >= since, add a truncated flag to the result and render it in the CI tail (e.g. 'window truncated at the run limit'); add a case with a stub gh returning exactly the limit.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P131-R27",
         "severity": "low",
         "file": "tools/measure-affected-miss.py:391-393",
         "issue": "inert is computed as 'the mutated sweep had no red', not 'the mutation changed no verdict'. If the commit already holds a suite red unmutated, an inert mutation is reported as 'ran' with red N, so a mutation that did nothing reads as evidence. Not a false miss (the baseline check filters those), but the inert signal is lost exactly when the tree is not green.",
-        "resolution": "Compare against the unmutated sweep's red set (or treat reds that the baseline check later lists as baseline_red as not counting toward inert)."
+        "resolution": "Compare against the unmutated sweep's red set (or treat reds that the baseline check later lists as baseline_red as not counting toward inert).",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P131-R28",
         "severity": "med",
         "file": "plugins/audit/scripts/status/audit-lookup.py:148-171 and plugins/audit/scripts/status/_impact.py:289-297",
         "issue": "The scan is bounded per declared file (two git grep calls, a cap of 8 files, the total printed) but not per brief. dependant_lines passes every declared entry to _impact.dependants with no limit on how many files are searched or how many lines are rendered, and the section goes into three artifacts (executor brief, writer prompt, reviewer brief). Measured read-only on this repo with the declared files of the 184-file task P130.8: 8.8 s for one scan, 337 lines, about 121 KB of section text. Tasks with 504 and 235 files exist in this plan (P131.1, P131.2). The per-call 20 s timeout times two times N files has no ceiling either. Test im7 pins only the per-file figure, with three files, so nothing fails if the per-brief figure is unbounded. A large rename task would get a section that is slow to build and swamps the brief, which is the opposite of a bounded brief.",
-        "resolution": "Give dependants()/render() a per-brief budget: search at most K declared files (or stop at a wall-clock deadline), render at most M lines, and print 'N of M declared files searched / lines shown' so the cut is counted, not silent. Add an im7 case with more declared files than the budget that asserts the git-call count and the printed totals."
+        "resolution": "fixed in P131.18-dau (1b6f120c34cb): Give dependants()/render() a per-brief budget: search at most K declared files (or stop at a wall-clock deadline), render at most M lines, and print 'N of M declared files searched / lines shown' so the cut is counted, not silent. Add an im7 case with more declared files than the budget that asserts the git-call count and the printed totals.",
+        "fixTask": "P131.18-dau",
+        "commit": "1b6f120c34cb",
+        "status": "fixed"
       },
       {
         "id": "P131-R29",
         "severity": "med",
         "file": "plugins/audit/scripts/status/_impact.py:123-140 and :301-302",
         "issue": "For a JS/TS file the dominant importer is invisible, and the brief then states it positively. Probed on a throwaway fixture: src/api.ts imported by src/main.ts as `import {fmt} from './api'` and src/util.js required as `require('./util')` - the importer is matched only when it spells the extension. src/api.ts rendered as 'c.json (path)' alone (main.ts missing). When nothing else names the file the section prints NONE_LINE, 'No tracked file names any of this task's files', which asserts a negative the scan cannot support. The docstring's WHAT IT CANNOT SEE admits the gap, but the brief the agent reads does not. The task asked for a language-agnostic helper; the Python module-name reading has no JS/TS counterpart, and im5 covers .js/.md/.json by path and basename only, no extensionless import.",
-        "resolution": "For JS/TS-family files (.js .mjs .cjs .jsx .ts .tsx) also search the extensionless stem and classify a line as an import when it is a quoted relative specifier ending in the stem (`from './api'`, `require('../x/api')`). Add a fixture case for it. Independently, soften NONE_LINE to 'No tracked file names ... by path, basename, or (Python) module name' so the one-line result states what was searched."
+        "resolution": "fixed in P131.18-dau (1b6f120c34cb): For JS/TS-family files (.js .mjs .cjs .jsx .ts .tsx) also search the extensionless stem and classify a line as an import when it is a quoted relative specifier ending in the stem (`from './api'`, `require('../x/api')`). Add a fixture case for it. Independently, soften NONE_LINE to 'No tracked file names ... by path, basename, or (Python) module name' so the one-line result states what was searched.",
+        "fixTask": "P131.18-dau",
+        "commit": "1b6f120c34cb",
+        "status": "fixed"
       },
       {
         "id": "P131-R30",
         "severity": "low",
         "file": "plugins/audit/scripts/status/_impact.py:251-252",
         "issue": "The private-name rule keeps a leading-underscore name when the file 'also references the module'. A document that mentions the module (PLUGIN-BUILD-GUIDE.md, a research note) therefore counts for every private name of it: the probe lists `_norm in PLUGIN-BUILD-GUIDE.md` for _impact.py and `_borrowed_wrapper_names in PLUGIN-BUILD-GUIDE.md` for _deps.py. Names sorted fewest-files-first put these single-file noise hits ahead of real callers.",
-        "resolution": "Apply the private-name rule only to files whose reference kind is path or import, not basename, or only to code files."
+        "resolution": "Apply the private-name rule only to files whose reference kind is path or import, not basename, or only to code files.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P131-R31",
         "severity": "med",
         "file": "PLUGIN-BUILD-GUIDE.md:1453-1454; CLAUDE.md:55",
         "issue": "Two documents still state the behaviour this diff reverses. PLUGIN-BUILD-GUIDE.md says the scanned set is every .py and .md git TRACKS, 'so an agent's untracked scratch file is nobody's finding'; CLAUDE.md:55 says both sets are derived 'off what git tracks'. After the widening, an untracked not-ignored .py/.md IS a finding. The diff fixed the same sentence in tools/lints/_deps.py, tests/test__deps.py, tests/test__output.py and _output_lints.py but not these two.",
-        "resolution": "Reword both to 'what git lists (tracked, plus untracked and not ignored)' and drop the 'nobody's finding' clause; quote _output_lints.GIT_LISTED_BASIS rather than paraphrasing it."
+        "resolution": "Reword both to 'what git lists (tracked, plus untracked and not ignored)' and drop the 'nobody's finding' clause; quote _output_lints.GIT_LISTED_BASIS rather than paraphrasing it.",
+        "status": "accepted-open",
+        "acceptedReason": "S1 (redesign) complete: 19 tasks done. Of 48 per-task review findings, 22 are resolved by the commits that fixed them, 19 lows are carried to BUG-29-dau (D9 cleanup batch), and 7 mediums remain as recorded, none a code defect at HEAD: R1, R25, R46, R47 are deviations from task text the orchestrator accepted on adversarial evidence (P131.1 line budget, P131.16 9 of 20 commits, P131.9 clauses 1 and 5 tightened to the positive-evidence rule); R4 is settled by the owner's CLAUDE.md patch 53d8e498; R31's remaining half is CLAUDE.md:55, the owner's file; R23 is a filed return describing an earlier design, the class register F769 schedules. Per-task reviewer answers continued over: P131.1 intent diverges: Adversarial pre-commit review (2026-10-21) accepts the divergence: the <0.5k-lines clause was an estimate; the repoints alone are ~0.5k a side and the rest is the guards items (2),(3) and the no-fewer-references clause require. Installed-copy run clean, 340 suites before/after, prove-gates set identical (71), _refs checked 1195->1312. Two medium findings from that review (moved-file guard blind to tests/, docstring commands importing _deps from scripts/) get a fix task in this phase. Owner's standing words 2026-10-21: 'Radis autonomno ... ne izbacujes mi prompt-ove'.; P131.2 intent diverges: Divergence on clauses (3) shipped --selftest mentions in usage docstrings and (8) B9 record: B9 is now recorded by the orchestrator on the landing SHA c403486b (code 75222, 9523829 bytes, quality-gates-internal PLAN.md 'B9'); the leftover --selftest/_output.<lint> wording is low and goes to the D9 cleanup task. Adversarial pre-commit review on a committed copy found one med (fixed and re-verified) and confirmed every entry point, hook, report and panel byte-identical to HEAD's behaviour. Owner 2026-10-21: autonomous run, no prompts.; P131.16-dau intent diverges: Divergence is clause (5) only: 9 of 20 commits measured (one sweep 7-12 min under load). The result already decides S3.2 - the selector missed on 3 of the 5 commits that could miss, so S3.2 is held (plan bab72da) behind a zero-miss re-measurement over at least 20 commits. Clauses (1)-(4) met, 20/20 selftest, 11 mutations red; the two lows go to the D9 batch. No adversarial pass: a disclosed coverage count in a measurement tool no gate reads (owner 2026-10-21: only the processes a change needs).; P131.9 intent diverges: Divergence on clauses (1) and (5) is deliberate and on the safe side, taken from two adversarial passes: a finding that overlaps no task's diff is validated and, if confirmed, stops for a human instead of becoming a note; a med/high withdrawal is taken only with a Read of a cited file. Both prevent a real correctness finding from being accepted-open silently (the first pass reproduced exactly that). Clauses (2)-(4) hold per the review. Owner 2026-10-21: autonomous run."
       },
       {
         "id": "P131-R32",
         "severity": "low",
         "file": "tests/test__output.py:113-126 (_command_files -> chunks_of, ast.parse / json.loads)",
         "issue": "_command_files now also reads untracked-not-ignored .py/.sh/.yml/.md/.json outside docs/ and tests/. chunks_of calls ast.parse on every .py and json.loads on every .json with no guard, so a half-written or syntactically invalid untracked scratch file under tools/ or plugins/ makes this suite raise instead of being ignored. Before the diff only committed files could do that. The executor's note lists this caller only as 'now also reads untracked shipped literals; full sweep green' and the sweep was green only because no such file existed.",
-        "resolution": "Decide that this caller wants the wider set and say why in its docstring, or guard chunks_of (report an unparseable file as a finding naming the path rather than a traceback)."
+        "resolution": "Decide that this caller wants the wider set and say why in its docstring, or guard chunks_of (report an unparseable file as a finding naming the path rather than a traceback).",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P131-R33",
         "severity": "low",
         "file": "tools/lints/_output_lints.py:2977-2982",
         "issue": "The new PROSE_SCAN_EXEMPT row exempts the whole of tools/measure-affected-miss.py to cover six fixture lines. The table's other self-fixture rows (tests/test__output_lints.py) state the cost of that choice ('a genuinely stale count in this one suite is unguarded'); this row's reason does not, so a real stale count in that tool's prose or docstrings is now silently unread.",
-        "resolution": "Append the cost to the reason in one clause (the tool's own prose is unguarded), as the neighbouring rows do. The task said not to rewrite the fixtures, so the row itself is correct."
+        "resolution": "fixed in P131.19-dau (1e0ad8ef8539): Append the cost to the reason in one clause (the tool's own prose is unguarded), as the neighbouring rows do. The task said not to rewrite the fixtures, so the row itself is correct.",
+        "fixTask": "P131.19-dau",
+        "commit": "1e0ad8ef8539",
+        "status": "fixed"
       },
       {
         "id": "P131-R34",
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py:3398-3411",
         "issue": "_EDITS_A_COMMENT matches a verb (update|fix|correct|...) followed within 40 characters by the noun comment/docstring, and only the text AFTER the noun is checked for a clause join. A resolution that changes code BECAUSE of a comment matches: 'Update the loop to match the docstring', 'Fix the retry bug noted in the comment'. Each is a single clause with no join after the noun, so _says_no_code_change returns True and _fix_task_args (the new elif at ~3918) makes the task gate-only and returns before the _fix_clauses tests.add clauses are written. A real behaviour fix loses its red-first discipline and its suite clause; that is the false-green direction. Only the negative twin 'Fix the comment and the loop' (bx12 P1-R3) is pinned; no case covers a verb + code object + comment noun.",
-        "resolution": "Require the comment/docstring noun to be the object of the edit: anchor it directly after the verb and an optional determiner/adjective (e.g. ^(?:update|reword|...)\\s+(?:the|this|that|its|a)?\\s*(?:\\w+\\s+)?(?:comments?|docstrings?)\\b), or reject when a code-ish noun or 'to match|per|noted in|described in' sits between verb and noun. Add bx12 rows for 'Update the loop to match the docstring' and 'Fix the bug the comment describes' staying tdd."
+        "resolution": "fixed in P131.13 (9b3b8159e6cb): Require the comment/docstring noun to be the object of the edit: anchor it directly after the verb and an optional determiner/adjective (e.g. ^(?:update|reword|...)\\s+(?:the|this|that|its|a)?\\s*(?:\\w+\\s+)?(?:comments?|docstrings?)\\b), or reject when a code-ish noun or 'to match|per|noted in|described in' sits between verb and noun. Add bx12 rows for 'Update the loop to match the docstring' and 'Fix the bug the comment describes' staying tdd.",
+        "fixTask": "P131.13",
+        "commit": "9b3b8159e6cb",
+        "status": "fixed"
       },
       {
         "id": "P131-R35",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:2833-2846, plugins/audit/scripts/manifest/_manifest_vocab.py:185-203, plugins/audit/commands/init.md:398",
         "issue": "Reusing gateBasis `phase-no-paths` for 'files were named, none is a suite' is accurate in effect (no suite path to point the spelling at, so the phase gate is used) but the plan's own vocabulary defines the word narrowly as 'a sibling records a spelling and this task named no file to point a gate at' (init.md:398, _manifest_vocab.py:176-179). It is also not in GATE_BASIS_ANSWERED, so the validator warns on every such task that the gate is 'a default rather than a choice' and says 'Narrow it to the paths this task names' (_manifest_phases.py:1824-1833). For this task the paths it names are exactly the non-suite files that must not be pointed at, so the advice points at the bug this task fixes. The task note explains the real reason, but the machine-readable word and the warning mislead a reader of the plan.",
-        "resolution": "Either add a distinct word (e.g. `files-no-suite`, adding to an open vocabulary is free) to GATE_BASIS and GATE_BASIS_ANSWERED so the wide gate is read as an answer, or keep phase-no-paths and amend init.md:398 and the validator wording to say 'or none of its files is a suite; name the suite with --tests-add'."
+        "resolution": "fixed in P131.13 (9b3b8159e6cb): Either add a distinct word (e.g. `files-no-suite`, adding to an open vocabulary is free) to GATE_BASIS and GATE_BASIS_ANSWERED so the wide gate is read as an answer, or keep phase-no-paths and amend init.md:398 and the validator wording to say 'or none of its files is a suite; name the suite with --tests-add'.",
+        "fixTask": "P131.13",
+        "commit": "9b3b8159e6cb",
+        "status": "fixed"
       },
       {
         "id": "P131-R36",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1707-1708",
         "issue": "The comment still says `expectRedFirst` is derived as `audit-task._build_task` writes `mode == \"tdd\"`. The diff changes the derivation to _expects_red_first(mode, tests_add, fix_task) in two writers (_build_task and _locked_scope), so the sentence now states a rule the code no longer follows.",
-        "resolution": "Reword to point at `audit-task._expects_red_first`, the one rule both writers read."
+        "resolution": "fixed in P131.13 (9b3b8159e6cb): Reword to point at `audit-task._expects_red_first`, the one rule both writers read.",
+        "fixTask": "P131.13",
+        "commit": "9b3b8159e6cb",
+        "status": "fixed"
       },
       {
         "id": "P131-R37",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:6628-6642",
         "issue": "explain's fallback still shows a stored verdict past the check: when pending_still_applies drops a moved gate-red (gate_basis_holds False) the loop falls through to read_explain(), which prints the last signal's kept text - the same stale 'recorded gate red ... run X' line the check just discarded. The task asks for ONE check every display path goes through; this path is guarded for the live decision but not for its kept copy. No sv case drives explain over a moved decision.",
-        "resolution": "In explain, when a pending for the subject exists and verdict_moved(ctx, pending) is not None, answer that the decision was discarded (its note) instead of falling back to the kept text, and add a case that changes buildCommands and asks explain."
+        "resolution": "fixed in P131.17-dau (42412f8bf037): In explain, when a pending for the subject exists and verdict_moved(ctx, pending) is not None, answer that the decision was discarded (its note) instead of falling back to the kept text, and add a case that changes buildCommands and asks explain.",
+        "fixTask": "P131.17-dau",
+        "commit": "42412f8bf037",
+        "status": "fixed"
       },
       {
         "id": "P131-R38",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:779",
         "issue": "The _RUN_ID widening ([^\\s;]+) is outside the task's description and changes what green_phase_gate stores at :5439 as phaseGate.runId (previously '<id>;' on the terse green line, which could never match a row, so held-gate reuse silently never fired). Phase-gate reuse can now fire where it did not; the executor says so in its outcome but no case pins either the new reuse or its binding by held_gate_binds.",
-        "resolution": "Add a case that a green phase gate's terse line yields a held runId that names a ledger row and that held_gate_binds still refuses when head or the gate moved; or split the regex fix into its own task."
+        "resolution": "Add a case that a green phase gate's terse line yields a held runId that names a ledger row and that held_gate_binds still refuses when head or the gate moved; or split the regex fix into its own task.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P131-R39",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_evidence_io.py:1148-1153",
         "issue": "tree_key is now a second spelling of plugins/audit/scripts/governance/run-test-gate.py:5062 tree_key, held equal only by sv7. A change to either spelling that sv7 cannot see (e.g. a different realpath policy) makes every wave member's stored verdict compare MOVED and be re-measured for ever.",
-        "resolution": "Make run-test-gate delegate to _evidence_io.tree_key in its own task, as the executor's note proposes, and keep sv7 as the pin until then."
+        "resolution": "Make run-test-gate delegate to _evidence_io.tree_key in its own task, as the executor's note proposes, and keep sv7 as the pin until then.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P131-R40",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:1977-1984",
         "issue": "rerun_alongside reaches a parked member only when its failing-step list equals the answered member's (sorted ==). The task clause says every member 'whose pending red carries the same failing step'; a member red on {unit-a, unit-b} beside one red on {unit-a} is not reached. It is asked for its own answer rather than silently replayed (the clause's alternative), so this is a narrowing, not a replay.",
-        "resolution": "Either reach members whose failing set intersects the answered one, or state in the docstring/outcome that the rule is set equality and why."
+        "resolution": "fixed in P131.17-dau (42412f8bf037): Either reach members whose failing set intersects the answered one, or state in the docstring/outcome that the rule is set equality and why.",
+        "fixTask": "P131.17-dau",
+        "commit": "42412f8bf037",
+        "status": "fixed"
       },
       {
         "id": "P131-R41",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:1895 (reviewer_unread) vs 3310-3319 (advance)",
         "issue": "The automatic redispatch of a zero-tool reviewer calls dispatch() directly, from inside reviewer_session_step, which advance() runs BEFORE stored_green(..., 'gated'). The redispatch therefore writes a new reviewer brief (audit-lookup.py brief prints 'The recorded gate run' from task.testEvidence) without first asking verdict_basis whether that stored run still answers the gate. On the first dispatch the order is gate check then dispatch (stored_green / gate_step precede the dispatch at 3319); on this path it is dispatch then (after the reviewer files) gate check. If the gate entries or the tree moved while the first reviewer session ran, the second reviewer is shown a verdict P131.17 would have re-measured. The same bypass already exists in apply_answer's 'redispatch' (4602-4604) but that one is a human's act; this one is automatic. No case exercises it.",
-        "resolution": "In reviewer_unread, before dispatch(), ask stored_green(ctx, state, manifest, task, 'gated') (pass manifest through) and, when it returns STORED_MOVED, run gate_step first and return its stop; or spend the 'dispatched-reviewer' mark and return None so advance() reaches its own gate check before dispatching. Add a case that edits the task's gate between the first and second reviewer session and asserts the second brief is preceded by a re-measure."
+        "resolution": "In reviewer_unread, before dispatch(), ask stored_green(ctx, state, manifest, task, 'gated') (pass manifest through) and, when it returns STORED_MOVED, run gate_step first and return its stop; or spend the 'dispatched-reviewer' mark and return None so advance() reaches its own gate check before dispatching. Add a case that edits the task's gate between the first and second reviewer session and asserts the second brief is preceded by a re-measure.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P131-R42",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:1913-1938 (reviewer_session_step), tests/test_drive_phase.py:1909-2013",
         "issue": "Three branches the module docstring promises have no case: a stream the drive cannot count in (stream_tool_calls returns None, a stop 'of its own, never read as a count of none'), a session whose last message holds no JSON object (return_object None, falls to the plain no-reviewer-return decision), and submit refusing the object's shape (returns the refusal tuple). rv1-rv6 only reach the zero-tool, many-tool and no-session paths. The None-vs-0 distinction guards against reading an unreadable stream as 'opened nothing' or as 'opened something', and nothing would go red if it were collapsed.",
-        "resolution": "Add cases: a stream file with no assistant event (expect the 'cannot count tool calls' stop, no cannot-tell note, no redispatch); a tools>0 stream whose result text is prose (expect no-reviewer-return); a tools>0 stream whose JSON lacks verdict (expect the shape refusal and nothing filed)."
+        "resolution": "Add cases: a stream file with no assistant event (expect the 'cannot count tool calls' stop, no cannot-tell note, no redispatch); a tools>0 stream whose result text is prose (expect no-reviewer-return); a tools>0 stream whose JSON lacks verdict (expect the shape refusal and nothing filed).",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P131-R43",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:4604 (apply_answer 'redispatch')",
         "issue": "This diff made dispatch() take the task's tree for a reviewer session (advance() now passes it, 3319), but the sibling call site that re-dispatches the reviewer after a no-reviewer-return decision still calls dispatch(ctx, state, phase, task, 'reviewer') with no tree. With writerModel set, that session would run with --tree set to the project rather than the member's own tree. apply_answer has no tree in scope today, so this may be unreachable for a wave member; nothing in the diff says so.",
-        "resolution": "Either pass the task's kept tree (kept_tree(state, task)) at 4604, or state in reviewer_dispatch's docstring that a redispatch from a decision always runs in the project tree and why that is right."
+        "resolution": "Either pass the task's kept tree (kept_tree(state, task)) at 4604, or state in reviewer_dispatch's docstring that a redispatch from a decision always runs in the project tree and why that is right.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P131-R44",
         "severity": "low",
         "file": "plugins/audit/agents/audit-reviewer.md:87-90",
         "issue": "The rewrite 'never the stash command (refused by the history guard; the rest rests on you)' loses the old 'Only that last is refused', so the parenthetical's scope is ambiguous in a rule the reviewer is told to obey literally. The task asked to cut bytes elsewhere to fit one new line; the body grew by 9 bytes net (6985 to 6994, under the 7000 ceiling, so acceptance 4 holds, but not 'as many bytes removed').",
-        "resolution": "Reword to keep the scope explicit, e.g. 'and never the stash command (only that is refused, by the history guard; the rest rests on you)', and recover the bytes from a longer sentence elsewhere."
+        "resolution": "Reword to keep the scope explicit, e.g. 'and never the stash command (only that is refused, by the history guard; the rest rests on you)', and recover the bytes from a longer sentence elsewhere.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P131-R45",
         "severity": "low",
         "file": "plugins/audit/commands/phase.md, plugins/audit/reference/orchestrator.md, PLUGIN-BUILD-GUIDE.md (untouched; shape crosses the dispatch boundary)",
         "issue": "With executor.writerModel set the per-task reviewer is now a run-agent-session.py --role reviewer session and the drive files its return itself, but the three documents that describe the reviewer dispatch still describe it only as an Agent dispatch followed by the reviewer running submit. The executor's own outcome records this as NOT DONE. A reader following orchestrator.md would run the session as an Agent and then wait for a submit that, by REVIEWER_SESSION_RULE, the session is told not to run.",
-        "resolution": "Add the reviewer-session branch to the three documents (orchestrator.md is at its byte ceiling, so remove bytes elsewhere in the same edit), or file a follow-up task before the phase signs off."
+        "resolution": "Add the reviewer-session branch to the three documents (orchestrator.md is at its byte ceiling, so remove bytes elsewhere in the same edit), or file a follow-up task before the phase signs off.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P131-R46",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:5744-5785, 6247-6256",
         "issue": "contradicts task clause (5) 'a finding citing no line of the phase diff is a note, not a block': sort_findings sends such a finding to the validation pass like any other (a candidate), and when the pass confirms it as correctness/requirement it lands in 'unowned', which review_findings_step turns into a stop for a human (a block, not a note). tests/test_drive_phase.py pv8 (~2426-2441) and pv1 (pv-outside is in the validation prompt, ~197) pin this behaviour, so the suite now asserts the opposite of the clause. This is the orchestrator's 'positive evidence only' rule; it is a deliberate departure from the task text and the task description was not amended.",
-        "resolution": "Either amend the task's clause (5) and acceptance text to the 'positive evidence' rule (a finding citing no phase-diff line is validated like the rest and only a human-settled stop if confirmed), or restore the clause: make a finding whose cited_ranges overlap no task's diff a note without a block. Decide which and record it, so the task description, pv1/pv8 and phase-signoff.md agree."
+        "resolution": "Either amend the task's clause (5) and acceptance text to the 'positive evidence' rule (a finding citing no phase-diff line is validated like the rest and only a human-settled stop if confirmed), or restore the clause: make a finding whose cited_ranges overlap no task's diff a note without a block. Decide which and record it, so the task description, pv1/pv8 and phase-signoff.md agree.",
+        "status": "accepted-open",
+        "acceptedReason": "S1 (redesign) complete: 19 tasks done. Of 48 per-task review findings, 22 are resolved by the commits that fixed them, 19 lows are carried to BUG-29-dau (D9 cleanup batch), and 7 mediums remain as recorded, none a code defect at HEAD: R1, R25, R46, R47 are deviations from task text the orchestrator accepted on adversarial evidence (P131.1 line budget, P131.16 9 of 20 commits, P131.9 clauses 1 and 5 tightened to the positive-evidence rule); R4 is settled by the owner's CLAUDE.md patch 53d8e498; R31's remaining half is CLAUDE.md:55, the owner's file; R23 is a filed return describing an earlier design, the class register F769 schedules. Per-task reviewer answers continued over: P131.1 intent diverges: Adversarial pre-commit review (2026-10-21) accepts the divergence: the <0.5k-lines clause was an estimate; the repoints alone are ~0.5k a side and the rest is the guards items (2),(3) and the no-fewer-references clause require. Installed-copy run clean, 340 suites before/after, prove-gates set identical (71), _refs checked 1195->1312. Two medium findings from that review (moved-file guard blind to tests/, docstring commands importing _deps from scripts/) get a fix task in this phase. Owner's standing words 2026-10-21: 'Radis autonomno ... ne izbacujes mi prompt-ove'.; P131.2 intent diverges: Divergence on clauses (3) shipped --selftest mentions in usage docstrings and (8) B9 record: B9 is now recorded by the orchestrator on the landing SHA c403486b (code 75222, 9523829 bytes, quality-gates-internal PLAN.md 'B9'); the leftover --selftest/_output.<lint> wording is low and goes to the D9 cleanup task. Adversarial pre-commit review on a committed copy found one med (fixed and re-verified) and confirmed every entry point, hook, report and panel byte-identical to HEAD's behaviour. Owner 2026-10-21: autonomous run, no prompts.; P131.16-dau intent diverges: Divergence is clause (5) only: 9 of 20 commits measured (one sweep 7-12 min under load). The result already decides S3.2 - the selector missed on 3 of the 5 commits that could miss, so S3.2 is held (plan bab72da) behind a zero-miss re-measurement over at least 20 commits. Clauses (1)-(4) met, 20/20 selftest, 11 mutations red; the two lows go to the D9 batch. No adversarial pass: a disclosed coverage count in a measurement tool no gate reads (owner 2026-10-21: only the processes a change needs).; P131.9 intent diverges: Divergence on clauses (1) and (5) is deliberate and on the safe side, taken from two adversarial passes: a finding that overlaps no task's diff is validated and, if confirmed, stops for a human instead of becoming a note; a med/high withdrawal is taken only with a Read of a cited file. Both prevent a real correctness finding from being accepted-open silently (the first pass reproduced exactly that). Clauses (2)-(4) hold per the review. Owner 2026-10-21: autonomous run."
       },
       {
         "id": "P131-R47",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:5883-5897, 5992-6003",
         "issue": "contradicts task clause (1) 'a finding the second pass withdraws does not block and is recorded as a note': a withdrawal (or confirmed-as-other) of a med-or-worse finding is not taken unless the stream holds a Read/NotebookRead/Grep tool_use naming a file the finding cites; otherwise validation_step stops the whole drive. A finding whose `file` names no path (cited_paths empty) can therefore never be withdrawn by any pass, and always stops.",
-        "resolution": "If the read-evidence rule is kept, amend clause (1) to say so and make the unreadable case explicit (a finding citing no path cannot be demoted: stop with that reason, not 'read nothing'); otherwise record the unread withdrawal as the note it asked for."
+        "resolution": "If the read-evidence rule is kept, amend clause (1) to say so and make the unreadable case explicit (a finding citing no path cannot be demoted: stop with that reason, not 'read nothing'); otherwise record the unread withdrawal as the note it asked for.",
+        "status": "accepted-open",
+        "acceptedReason": "S1 (redesign) complete: 19 tasks done. Of 48 per-task review findings, 22 are resolved by the commits that fixed them, 19 lows are carried to BUG-29-dau (D9 cleanup batch), and 7 mediums remain as recorded, none a code defect at HEAD: R1, R25, R46, R47 are deviations from task text the orchestrator accepted on adversarial evidence (P131.1 line budget, P131.16 9 of 20 commits, P131.9 clauses 1 and 5 tightened to the positive-evidence rule); R4 is settled by the owner's CLAUDE.md patch 53d8e498; R31's remaining half is CLAUDE.md:55, the owner's file; R23 is a filed return describing an earlier design, the class register F769 schedules. Per-task reviewer answers continued over: P131.1 intent diverges: Adversarial pre-commit review (2026-10-21) accepts the divergence: the <0.5k-lines clause was an estimate; the repoints alone are ~0.5k a side and the rest is the guards items (2),(3) and the no-fewer-references clause require. Installed-copy run clean, 340 suites before/after, prove-gates set identical (71), _refs checked 1195->1312. Two medium findings from that review (moved-file guard blind to tests/, docstring commands importing _deps from scripts/) get a fix task in this phase. Owner's standing words 2026-10-21: 'Radis autonomno ... ne izbacujes mi prompt-ove'.; P131.2 intent diverges: Divergence on clauses (3) shipped --selftest mentions in usage docstrings and (8) B9 record: B9 is now recorded by the orchestrator on the landing SHA c403486b (code 75222, 9523829 bytes, quality-gates-internal PLAN.md 'B9'); the leftover --selftest/_output.<lint> wording is low and goes to the D9 cleanup task. Adversarial pre-commit review on a committed copy found one med (fixed and re-verified) and confirmed every entry point, hook, report and panel byte-identical to HEAD's behaviour. Owner 2026-10-21: autonomous run, no prompts.; P131.16-dau intent diverges: Divergence is clause (5) only: 9 of 20 commits measured (one sweep 7-12 min under load). The result already decides S3.2 - the selector missed on 3 of the 5 commits that could miss, so S3.2 is held (plan bab72da) behind a zero-miss re-measurement over at least 20 commits. Clauses (1)-(4) met, 20/20 selftest, 11 mutations red; the two lows go to the D9 batch. No adversarial pass: a disclosed coverage count in a measurement tool no gate reads (owner 2026-10-21: only the processes a change needs).; P131.9 intent diverges: Divergence on clauses (1) and (5) is deliberate and on the safe side, taken from two adversarial passes: a finding that overlaps no task's diff is validated and, if confirmed, stops for a human instead of becoming a note; a med/high withdrawal is taken only with a Read of a cited file. Both prevent a real correctness finding from being accepted-open silently (the first pass reproduced exactly that). Clauses (2)-(4) hold per the review. Owner 2026-10-21: autonomous run."
       },
       {
         "id": "P131-R48",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:833, 859-866, 5841-5870",
         "issue": "The read evidence only counts Read, NotebookRead and Grep with a file `path`. VALIDATE_HEAD/VALIDATE_RULE tell the pass to 're-read' and to use 'git show <commit>' but never name the Read tool, so a pass that opens the code with Bash (git show, sed -n, cat) or Grep over a directory is treated as having read nothing and its withdrawal stops the drive (a false stop on honest work).",
-        "resolution": "Say in VALIDATE_RULE that each cited file is opened with the Read tool, or count the Bash opening commands (git show/cat/sed) in stream_reads."
+        "resolution": "fixed in P131.9 (b44c70f8f1f5): Say in VALIDATE_RULE that each cited file is opened with the Read tool, or count the Bash opening commands (git show/cat/sed) in stream_reads.",
+        "fixTask": "P131.9",
+        "commit": "b44c70f8f1f5",
+        "status": "fixed"
       }
     ],
-    "outcome": "[findings: 48 - 0 high, 13 med, 35 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 48 - 0 high, 13 med, 35 low; 22 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "S1 (redesign) complete: 19 tasks done. Of 48 per-task review findings, 22 are resolved by the commits that fixed them, 19 lows are carried to BUG-29-dau (D9 cleanup batch), and 7 mediums remain as recorded, none a code defect at HEAD: R1, R25, R46, R47 are deviations from task text the orchestrator accepted on adversarial evidence (P131.1 line budget, P131.16 9 of 20 commits, P131.9 clauses 1 and 5 tightened to the positive-evidence rule); R4 is settled by the owner's CLAUDE.md patch 53d8e498; R31's remaining half is CLAUDE.md:55, the owner's file; R23 is a filed return describing an earlier design, the class register F769 schedules. Per-task reviewer answers continued over: P131.1 intent diverges: Adversarial pre-commit review (2026-10-21) accepts the divergence: the <0.5k-lines clause was an estimate; the repoints alone are ~0.5k a side and the rest is the guards items (2),(3) and the no-fewer-references clause require. Installed-copy run clean, 340 suites before/after, prove-gates set identical (71), _refs checked 1195->1312. Two medium findings from that review (moved-file guard blind to tests/, docstring commands importing _deps from scripts/) get a fix task in this phase. Owner's standing words 2026-10-21: 'Radis autonomno ... ne izbacujes mi prompt-ove'.; P131.2 intent diverges: Divergence on clauses (3) shipped --selftest mentions in usage docstrings and (8) B9 record: B9 is now recorded by the orchestrator on the landing SHA c403486b (code 75222, 9523829 bytes, quality-gates-internal PLAN.md 'B9'); the leftover --selftest/_output.<lint> wording is low and goes to the D9 cleanup task. Adversarial pre-commit review on a committed copy found one med (fixed and re-verified) and confirmed every entry point, hook, report and panel byte-identical to HEAD's behaviour. Owner 2026-10-21: autonomous run, no prompts.; P131.16-dau intent diverges: Divergence is clause (5) only: 9 of 20 commits measured (one sweep 7-12 min under load). The result already decides S3.2 - the selector missed on 3 of the 5 commits that could miss, so S3.2 is held (plan bab72da) behind a zero-miss re-measurement over at least 20 commits. Clauses (1)-(4) met, 20/20 selftest, 11 mutations red; the two lows go to the D9 batch. No adversarial pass: a disclosed coverage count in a measurement tool no gate reads (owner 2026-10-21: only the processes a change needs).; P131.9 intent diverges: Divergence on clauses (1) and (5) is deliberate and on the safe side, taken from two adversarial passes: a finding that overlaps no task's diff is validated and, if confirmed, stops for a human instead of becoming a note; a med/high withdrawal is taken only with a Read of a cited file. Both prevent a real correctness finding from being accepted-open silently (the first pass reproduced exactly that). Clauses (2)-(4) hold per the review. Owner 2026-10-21: autonomous run.",
   "tasks": [
     {
       "id": "P131.1",
@@ -1700,7 +1819,7 @@
     {
       "id": "P131.9",
       "title": "A phase-review finding blocks only after a second pass validates it, and a validated finding goes back to the writer's session while it is warm",
-      "status": "in_progress",
+      "status": "done",
       "description": "The phase review's brief carries the phase diff, every task's gate results and the instruction to open each changed function. Each blocking finding then goes through a second reviewer pass that re-reads the cited code and confirms or withdraws it; only a confirmed correctness or requirement finding blocks, and every other finding is recorded as a note on the phase. A validated finding goes to the writer session of the task whose diff holds the cited lines: run-agent-session.py --resume when that session's last activity is under one hour (the cache tier's life), otherwise a fresh writer session given the task text and the validated findings. At most review.maxRounds rounds (shipped default 2), then the phase stops with a note listing what is still open. A validated finding no longer mints a fix task. Acceptance: (1) a finding the second pass withdraws does not block and is recorded as a note; (2) a confirmed finding resumes the session of the task whose diff holds the cited lines when its last activity is under an hour, and starts a fresh session with the task text and findings otherwise; (3) after the last round, an open finding stops the phase with a note, never a silent pass; (4) no fix task is added for a validated finding; (5) a finding citing no line of the phase diff is a note, not a block.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1743,19 +1862,39 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b44c70f8f1f5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: under executor.writerModel the triage first runs review_findings_step. sort_findings blames each open finding's cited lines (cited_ranges + git blame --porcelain at HEAD, blame_commits) against every commit a phase task records or carried (task_commits, reviewCommits): no task-written line -> note 'cites no line of the phase diff' (clause 5); low -> note; the rest are candidates for one validation session (validation_dispatch/validation_said, new steps dispatch-validation / wait-validation in STEPS and SIGNAL_VERBS, runner --role reviewer on the reviewer-session model, prompt VALIDATE_HEAD + each finding + VALIDATE_RULE). validation_step requires a result, a stream with a tool call (one redispatch, then a stop) and a return answering every asked id confirmed|withdrawn with kind correctness|requirement|other (read_verdicts); anything less stops and validates nothing. Verdicts are held in state findingVerdicts with the HEAD they were given at and read only while HEAD is that commit (held_verdict). Withdrawn or confirmed-as-other -> note (clause 1). A confirmed correctness/requirement finding re-opens (audit-task.py reopen, --reason on stdin) the task whose commit wrote most of its cited lines (hand_back), after keeping its last writer session id, stream and tree (last_writer_session) in state reviewFixes; the drive loop continues (HANDED_BACK sentinel from sign_off) to start it, and dispatch() routes its writer through review_fix_dispatch: --resume on that session when warm_session finds its saved stream written under CACHE_LIFE_SECONDS (3600) ago in the same tree, prompt = REVIEW_FIX_HEAD + the confirmed findings; otherwise a fresh session whose prompt is the task's own writer brief + the findings (clause 2), each noted on the task. settle_review_fixes runs resolve-finding --fix-task once the task closes at a new commit; a hand-back that closes at no new commit is not re-opened again (stop). No fix task is ever added on this path: the triage's offered list now excludes every sorted finding (clause 4). With review.maxRounds filed reviews and a confirmed finding open, cap_stop stops the phase (exit 1), lists the open findings, and notes them once per HEAD on the owning task (clause 3). Notes: triage shows them as 'a note, not a block' lines (finding_lines), leaves them out of its findings (triage, refresh_triage), carries notedHead, and pending_still_applies drops a triage holding notes once HEAD moved (the P131.17-style basis check); run_signoff records each note --accept-open <id>='a note, not a block - <why>'. writer_said prints 'for the phase review's findings' for a round-0 resume. Module docstring paragraph added; new section markers. audit-lookup.py: the phase brief gains a 'Reading the work' section (OPEN_CODE_LINE: open each changed function, cite file:line, and says nothing checks the opening) and one 'gate results, per step, of run <id>:' line per task (_gate_results_line: each step's exit, outcome, mute; or why none). phase-signoff.md: one paragraph naming the writer-session route. Tests: test_drive_phase.py pv1-pv6 in two new stages pv-block/pv4-block (STAGES), _tdd_writer_repo takes per_task/review, the signal corpus gains dispatch-validation and wait-validation; test_audit_lookup.py bf60. Runs: python3 tests/test_drive_phase.py --selftest exit 0, 498/498; python3 tests/test_audit_lookup.py --selftest exit 0, 136/136; before the implementation bf60 FAILED (135/136) and pv1/pv2/pv4 FAILED with their blocks raising (0/3, 0/2). Committed-copy verification (/tmp/p1319-ver, git init + commit of the working tree): python3 tools/sweep-selftests.py exit 1, 192/194 files ok, the two red files exactly tools/check-example-ledgers.py (fixedIn commits unresolvable in a history-less copy) and tools/measure-context.py (same copy) - the two the orchestrator allowed; validate-manifest exit 0; ruff exit 0; vermin exit 0; measure-context --gate in the working tree exit 0 (GATE OK). Mutation probe (/tmp/p1319-probe/mutations.py over a scratch copy, byte restore, __pycache__ purged): never-warm -> pv2 red; always-warm -> pv4 red; outside-diff validated -> pv1 red; withdrawn blocks -> pv2,pv3 red; cap removed -> pv5 red; note recorded as the summary -> pv3 red; low not noted -> pv1 red; notes with no HEAD basis -> pv6 red; basis applied with no notes (over-fire) -> pv3,pv6 red. Not run: plugin-validate (claude CLI; orchestrator: stub claude only), report, gate, shots, interactive (browser) - own-tests is this task's runsGate.",
+        "descriptive": "Under a writer session a phase-review finding blocks only once a validation session confirms it as a correctness or requirement finding; that finding goes back to the writer session of the task that wrote the lines (resumed while warm, else fresh), every other finding is a note on the phase, no fix task is added, and the round cap stops the phase."
       },
       "startedAt": "2026-10-21T20:07:36Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-21T22:31:24Z",
+      "verifiedBy": [
+        "pv1: the phase review's med+ findings citing task-written lines go to a validation reviewer session; the one citing no phase-diff line and the low one are not sent",
+        "pv2: a confirmed finding resumes the owning task's own writer session (last active under an hour), prompt carries only that finding, no fix task",
+        "pv3: withdrawn, low and outside-diff findings never block; the phase signs off with each recorded accepted-open with a note reason; the confirmed one fixed by the task's own new commit; still no fix task",
+        "pv4: a confirmed finding whose writer stream was last written two hours ago starts a fresh writer session with the task text and the finding",
+        "pv5: after review.maxRounds an open confirmed finding stops the phase (exit 1) with a note on the owning task, and a later next stops the same way with no session",
+        "pv6: a triage showing notes holds only while HEAD is the commit they were sorted at; one without notes is held to no HEAD",
+        "bf60: the phase brief carries each task's diff, one per-step gate results line per task, and the open-each-changed-function instruction once before the first task"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-21T22:31:15Z.f9a356",
         "status": "passed",
         "at": "2026-10-21T22:31:15Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "b44c70f8f1f5",
+        "at": "2026-10-21T22:31:24Z",
+        "return": "docs/audit/evidence/returns/P131.9/20261021T200736Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-21T20:56:11Z",
+        "basis": "`python3 tests/test_drive_phase.py --selftest` in a throwaway tree at HEAD: the run timed out after 153 s and its process group was torn down; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2520,15 +2659,10 @@
     "Writers run under the plan gate's deny tier with the drive's scope-gap path (owner, 2026-10-21: confirmed the recommended option)"
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "bf837df2-37bc-4c94-9233-61f7d70c1d7f",
-    "branch": "audit/p131-the-writer-is-a-plain-claude-c",
-    "at": "2026-10-21T11:23:46Z"
-  },
   "startedAt": "2026-10-20T23:08:34Z",
   "testEvidence": {
-    "runId": "2026-10-21T16:31:29Z.871b7f",
-    "status": "failed",
-    "at": "2026-10-21T16:31:29Z"
+    "runId": "2026-10-21T22:52:44Z.5d2850",
+    "status": "passed",
+    "at": "2026-10-21T22:52:44Z"
   }
 }
