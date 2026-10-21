@@ -11002,7 +11002,8 @@
       "P131.1"
     ],
     "tests/test__panel_settings.py": [
-      "P131.1"
+      "P131.1",
+      "P131.2"
     ],
     "tests/test__panel_state.py": [
       "P131.1"
@@ -11058,7 +11059,8 @@
       "P131.1"
     ],
     "tests/test__runner_output.py": [
-      "P131.1"
+      "P131.1",
+      "P131.2"
     ],
     "tests/test__scope_companions.py": [
       "P131.1"
@@ -11197,7 +11199,8 @@
       "P131.7",
       "P131.8",
       "P131.9",
-      "P131.13"
+      "P131.13",
+      "P131.2"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -11262,7 +11265,8 @@
       "P131.1"
     ],
     "tests/test_panel_server.py": [
-      "P131.1"
+      "P131.1",
+      "P131.2"
     ],
     "tests/test_propose_gates.py": [
       "P131.1"
@@ -11372,6 +11376,21 @@
     ],
     "tests/test__clause_coverage.py": [
       "P131.7"
+    ],
+    "tests/test__config_rules_lints.py": [
+      "P131.2"
+    ],
+    "tests/test__help_lints.py": [
+      "P131.2"
+    ],
+    "tests/test__output_lints.py": [
+      "P131.2"
+    ],
+    "tests/test__ui_theme_lints.py": [
+      "P131.2"
+    ],
+    "tests/test_bench_report.py": [
+      "P131.2"
     ]
   },
   "bugs": [
