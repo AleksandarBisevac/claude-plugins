@@ -1555,7 +1555,8 @@
       "P131.2",
       "P131.3",
       "P131.7",
-      "P131.15-dau"
+      "P131.15-dau",
+      "P131.18-dau"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -5325,7 +5326,8 @@
       "P131.4",
       "P131.9",
       "P131.6",
-      "P131.7"
+      "P131.7",
+      "P131.18-dau"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -10659,7 +10661,8 @@
       "P131.7",
       "P109.9",
       "P86.4",
-      "P131.15-dau"
+      "P131.15-dau",
+      "P131.18-dau"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -11162,7 +11165,8 @@
       "P131.4",
       "P131.9",
       "P131.6",
-      "P131.7"
+      "P131.7",
+      "P131.18-dau"
     ],
     "tests/test_audit_status.py": [
       "P131.1",
@@ -11415,6 +11419,12 @@
     ],
     "tools/measure-affected-miss.py": [
       "P131.16-dau"
+    ],
+    "plugins/audit/scripts/status/_impact.py": [
+      "P131.18-dau"
+    ],
+    "tests/test__impact.py": [
+      "P131.18-dau"
     ]
   },
   "bugs": [
