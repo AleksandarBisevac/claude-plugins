@@ -1601,9 +1601,29 @@ _FLOATING_LABEL = re.compile(r"^[A-Za-z0-9._-]*-latest$", re.IGNORECASE)
 _RUNS_ON_MATRIX = re.compile(r"^\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}$")
 
 
+def _block_items(body, start, key_indent):
+    """The scalar items of the block sequence that follows `body[start - 1]`, as
+    ([item], index after the last one). An item is a `- value` line at or below
+    the key's own indent; the first line that is not one ends the block."""
+    items = []
+    i = start
+    while i < len(body):
+        ln = body[i]
+        got = re.match(r"^(\s*)-\s+(\S.*)$", ln)
+        if not got or len(got.group(1)) < key_indent or ":" in got.group(2):
+            break
+        items.append(got.group(2).strip())
+        i += 1
+    return items, i
+
+
 def _matrix_key_values(lines, key):
-    """Every value the job's `matrix:` block writes for `key` - the axis list, and
-    each `include` / `exclude` row's entry - or None when it has no such block.
+    """{"values": [...], "unread": [...]} for the job's `matrix:` block, or None
+    when it has no such block. `values` is every label the block writes for `key`
+    - the axis as an inline list, a scalar or a block sequence, and each `include`
+    / `exclude` row's entry; `unread` holds each place the key is written in a form
+    this cannot resolve to labels (an expression, a list spread over lines, a key
+    with nothing under it), so a value nobody read is reported and not dropped.
 
     Read from the lines rather than from `_matrix_cells()`, which resolves the
     cells that RUN and so no longer shows an `exclude` value that matches none."""
@@ -1613,18 +1633,65 @@ def _matrix_key_values(lines, key):
     if len(heads) != 1:
         return None
     base = len(body[heads[0]]) - len(body[heads[0]].lstrip())
-    values = []
-    for ln in body[heads[0] + 1:]:
+    values, unread = [], []
+    i = heads[0] + 1
+    while i < len(body):
+        ln = body[i]
+        i += 1
         if len(ln) - len(ln.lstrip()) <= base:
             break
-        got = re.match(r"^\s*(?:-\s+)?%s:\s*(.*)$" % re.escape(key), ln)
+        got = re.match(r"^(\s*)(?:-\s+)?%s:\s*(.*)$" % re.escape(key), ln)
         if not got:
             continue
-        rest = got.group(1).strip()
-        if rest.startswith("[") and rest.endswith("]"):
-            rest = rest[1:-1]
-        values += [v.strip().strip("'\"") for v in rest.split(",") if v.strip()]
-    return values
+        rest = got.group(2).strip()
+        if not rest:
+            # The key's own column: after a `- ` it is two columns past the dash.
+            key_col = ln.index(key + ":")
+            rest_items, i = _block_items(body, i, key_col)
+            if not rest_items:
+                unread.append(ln.strip())
+            texts = rest_items
+        elif rest.startswith("[") and rest.endswith("]"):
+            texts = [v for v in rest[1:-1].split(",") if v.strip()]
+        elif rest.startswith("["):
+            unread.append(ln.strip())
+            continue
+        else:
+            texts = [rest]
+        for text in texts:
+            text = text.strip().strip("'\"")
+            if "${{" in text:
+                unread.append(ln.strip())
+            else:
+                values.append(text)
+    return {"values": values, "unread": unread}
+
+
+# A runner image written the way GitHub labels one: `ubuntu-24.04`, `windows-2025`,
+# `macos-latest`. In a job's display name it ties the check's name to the image, so
+# the next image move renames the check a branch-protection rule may be waiting on.
+_IMAGE_LABEL = re.compile(r"\b(?:ubuntu|windows|macos)-(?:latest|[0-9][0-9A-Za-z.]*)",
+                          re.IGNORECASE)
+
+
+def image_in_job_names(text):
+    """[(job, why)] for each job whose `name:` carries a runner image - a label
+    written out, or `${{ matrix.K }}` where `runs-on` reads that K. A name built
+    from the family (`startsWith(matrix.os, 'windows')`) is not the image."""
+    findings = []
+    for job, lines in _workflow_jobs(text):
+        keys = _job_keys(lines)
+        name = keys.get("name")
+        if name is None:
+            continue
+        ref = _RUNS_ON_MATRIX.match((keys.get("runs-on") or "").strip())
+        via_key = ref is not None and re.search(
+            r"\$\{\{\s*matrix\.%s\s*\}\}" % re.escape(ref.group(1)), name)
+        if via_key or _IMAGE_LABEL.search(name):
+            findings.append((job, "display name %r carries the runner image, so "
+                                  "the next image move renames the check; name "
+                                  "the family (windows, linux) instead" % name))
+    return findings
 
 
 def floating_runners(text):
@@ -1654,8 +1721,13 @@ def floating_runners(text):
         label = label.strip().strip("'\"")
         ref = _RUNS_ON_MATRIX.match(label)
         if ref:
-            labels = _matrix_key_values(lines, ref.group(1))
-            if not labels:
+            got = _matrix_key_values(lines, ref.group(1))
+            labels = got["values"] if got else []
+            if got and got["unread"]:
+                findings.append((job, "`runs-on` reads matrix key `%s`, written "
+                                      "as %r, which this check cannot read into "
+                                      "labels" % (ref.group(1), got["unread"][0])))
+            elif not labels:
                 findings.append((job, "`runs-on` reads matrix key `%s`, which "
                                       "the job's matrix does not list"
                                  % ref.group(1)))
@@ -1670,6 +1742,7 @@ def floating_runners(text):
         findings += [(job, "runner image %r floats: GitHub moves a `-latest` "
                            "label, so pin the image it points at today" % one)
                      for one in labels if _FLOATING_LABEL.match(one)]
+    findings += image_in_job_names(text)
     return {"findings": findings, "jobs": len(jobs), "problem": None}
 
 
@@ -2454,6 +2527,18 @@ _RI_PLAIN = ("name: ci\njobs:\n"
              "  pinned:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: x\n"
              "  win-pinned:\n    runs-on: windows-2025\n    steps:\n      - run: x\n"
              "  win-floats:\n    runs-on: windows-latest\n    steps:\n      - run: x\n")
+_RI_BLOCK = ("name: ci\njobs:\n  cells:\n    strategy:\n      matrix:\n"
+             "        os:\n          - ubuntu-24.04\n          - %s\n"
+             "        leg: [a, b]\n        include:\n          - os: %s\n"
+             "            leg: c\n"
+             "    runs-on: ${{ matrix.os }}\n    steps:\n      - run: x\n")
+_RI_BLOCK_RAW = ("name: ci\njobs:\n  cells:\n    strategy:\n      matrix:\n"
+                 "        os:\n%s"
+                 "        leg: [a, b]\n"
+                 "    runs-on: ${{ matrix.os }}\n    steps:\n      - run: x\n")
+_RI_NAMED = ("name: ci\njobs:\n  cells:\n    name: %s\n    strategy:\n"
+             "      matrix:\n        os: [ubuntu-24.04, windows-2025]\n"
+             "    runs-on: ${{ matrix.os }}\n    steps:\n      - run: x\n")
 _RI_MATRIX = ("name: ci\njobs:\n  cells:\n    strategy:\n      matrix:\n"
               "        os: [ubuntu-24.04, windows-2025]\n        leg: [a, b]\n"
               "%s"
@@ -2530,6 +2615,60 @@ def _runner_image_cases(check):
           "`parity()` renders cannot come back clean over a file nobody read: %r"
           % (absent,),
           len(absent) == 1 and "could not be read" in absent[0][1])
+
+    # The axis written as a BLOCK sequence. Read as nothing, its floating value was
+    # invisible and the `include` row naming the same key made the list non-empty,
+    # so the job passed over a label no diff would have caught moving.
+    block = floating_runners(_RI_BLOCK % ("windows-latest", "ubuntu-24.04"))
+    block_ok = floating_runners(_RI_BLOCK % ("windows-2025", "ubuntu-24.04"))
+    block_inc = floating_runners(_RI_BLOCK % ("windows-2025", "ubuntu-latest"))
+    check("ri8 ...a matrix axis written as a block sequence is read as the inline "
+          "list is: a floating value in it is reported beside an `include` row "
+          "naming the same key, the same workflow pinned is clean (the over-fire "
+          "direction), and a floating `include` value is still reported: "
+          "%r / %r / %r" % (block["findings"], block_ok["findings"],
+                            block_inc["findings"]),
+          [j for j, _w in block["findings"]] == ["cells"]
+          and "windows-latest" in block["findings"][0][1]
+          and block_ok["findings"] == []
+          and [j for j, _w in block_inc["findings"]] == ["cells"]
+          and "ubuntu-latest" in block_inc["findings"][0][1])
+
+    unread = (
+        floating_runners(_RI_BLOCK_RAW % "          - ${{ fromJSON(inputs.os) }}\n"),
+        floating_runners(_RI_BLOCK_RAW % ""),
+        floating_runners(
+            _RI_BLOCK_RAW % "          - windows-2025\n          - ubuntu-24.04\n"
+            ).get("findings"))
+    check("ri9 ...a matrix value this cannot read - an expression, a key with no "
+          "value under it - is NAMED for its job, never dropped; a readable block "
+          "is not reported: %r" % (unread,),
+          [j for j, _w in unread[0]["findings"]] == ["cells"]
+          and "cannot read" in unread[0]["findings"][0][1]
+          and [j for j, _w in unread[1]["findings"]] == ["cells"]
+          and "cannot read" in unread[1]["findings"][0][1]
+          and unread[2] == [])
+
+    named = floating_runners(_RI_NAMED % "selftests (${{ matrix.os }}, a)")
+    named_lit = floating_runners(_RI_NAMED % "e2e (windows-2025)")
+    named_clean = floating_runners(
+        _RI_NAMED % "selftests (${{ startsWith(matrix.os, 'windows') && "
+                    "'windows' || 'linux' }}, a)")
+    check("ri10 ...and a job's display name carries no runner image: the matrix "
+          "key `runs-on` reads, or a literal label, in `name:` is reported; a name "
+          "derived from the family is not: %r / %r / %r"
+          % (named["findings"], named_lit["findings"], named_clean["findings"]),
+          [j for j, _w in named["findings"]] == ["cells"]
+          and "display name" in named["findings"][0][1]
+          and [j for j, _w in named_lit["findings"]] == ["cells"]
+          and "display name" in named_lit["findings"][0][1]
+          and named_clean["findings"] == [])
+
+    with io.open(os.path.join(REPO, CI_REL), encoding="utf-8") as fh:
+        live_names = image_in_job_names(fh.read())
+    check("ri11 THE LIVE CLAIM, names: no job in ci.yml names its runner image in "
+          "its display name, so the next image move renames no check: %r"
+          % (live_names,), live_names == [])
 
 
 # A `verify.sh` fragment in the two shapes the real one has: `ruff` on one line and

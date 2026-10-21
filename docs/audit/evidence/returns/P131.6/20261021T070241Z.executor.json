@@ -1,0 +1,45 @@
+{
+  "gates": {
+    "own-tests: python3 tests/test_drive_phase.py --selftest --stage wf-block --stage wl-block": "pass",
+    "own-tests: python3 tests/test_stamp_verification.py --selftest --stage sdr-block": "pass",
+    "selftests on a committed copy (orchestrator's request): python3 tools/sweep-selftests.py": "fail"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: writer_settle (called in advance after writer_wait) settles each writer dispatch whose record holds a session result, once: HEAD is recorded per dispatch (open_dispatch head=tree_head) and a moved HEAD is the new decision writer-committed (block|retry) naming the commit, filing nothing; otherwise file_writer_return runs stamp-verification.py red with red_args (now the one argv builder submit's red_block also uses, through red_run) over writer_test_command (the resolved gate entry naming a tests.add file, the same two readers audit-lookup.red_command asks), locks payload.testDigest in the writer state, takes the stamp, and files through audit-task.py file-return a return with gates {}, diffPaths (git status through _config.git_to_plan, records left out), redFirst (helper source + testDigest), stamp, writerClaim = the stream's last result text verbatim, and the case-binding gap fields. No derivable command -> could-not-prove naming the basis; gate-only with no tests.add -> not-attempted. A resume round whose session changed a locked test file is re-proved (reprove) and noted on the task listing the files. close_task refuses the commit with the new decision tests-moved (reprove|block) naming the changed files while locked_paths_now (_journal_io.file_hash over the locked paths) differs; --answer reprove re-proves, relocks and re-runs the recorded gate (the per-task reviewer already filed, so advance would not re-gate). stamp-verification.py: red's payload gains testDigest (sha256:<hex> of each declared test file's bytes + a digest over the list), and declared_tests() factors the scope read _red_scope used. Module docstrings and reference/execute-task.md state the drive-side order. Tests: wf1-wf5, wl1-wl4 new in tests/test_drive_phase.py (wf/wl blocks; ws2/ws16 no longer file as an executor - the stub now writes files, can commit, and ends with a result text); sdr1-sdr2 new in tests/test_stamp_verification.py. Runs: test_drive_phase 441/441 and test_stamp_verification 308/308 (exit 0 each); 8 mutations in throwaway copies each red (lock check skipped -> wl1,wl2; lock always moved -> wf3; no commit check -> wf5; claim stripped -> wf1; resume re-proof skipped -> wl3,wl4; no-command reads proved -> wf4; red_args without --derive-introduces -> sdr1; testDigest dropped -> sdr2). Committed-copy sweep: 189/191 files ok, red only in tools/check-example-ledgers.py and tools/measure-context.py, the two the orchestrator named as allowed. ruff and vermin clean.",
+    "descriptive": "After a writer session the drive proves red-first through a throwaway git tree, locks the test digest, takes the stamp and files the return itself, quoting the writer's last message as a claim"
+  },
+  "testsAdded": [
+    "wf1-wf5: the drive files a writer's return with a proved red-first block carrying the test digest and the verbatim last message as writerClaim; the commit twin closes; no derivable command files could-not-prove naming the basis; a session that committed stops at writer-committed naming the commit and files nothing",
+    "wl1-wl4: a test file edited after the proof makes the commit refuse with tests-moved naming the file, reprove re-proves and closes; a resume round that changes a test file re-proves and notes the file, and the close then commits",
+    "sdr1-sdr2: red run with the drive's red_args on the uncommitted change proves exactly as the executor's own call, leaves the shared tree untouched, and reports testDigest outside the three-field block"
+  ],
+  "casesAdded": [
+    [
+      "wf1",
+      "wf2",
+      "wf3",
+      "wf4",
+      "wf5",
+      "wl1",
+      "wl2",
+      "wl3",
+      "wl4"
+    ],
+    [
+      "sdr1",
+      "sdr2"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py writer_settle/file_writer_return/writer_red/reprove/lock_moved and the close_task check are what the module docstring's THE WRITER RUNS NO `submit` paragraph and execute-task.md's new bullet describe; stamp-verification run_red puts test_digest(root, scope['declared']) in the payload as its RED REPORTS paragraph says. Two hashing sentences were rewritten after the code changed (locked_paths_now's docstring, execute-task.md) to say only what each side does\n2 eight mutations in throwaway copies, each asserted applied (count == 1) and each red, listed in outcome.technical; the over-fire direction (lock always reports moved) turns wf3, the allow twin, red\n3 n/a - not a fix of a reported defect; the class lint the sweep raised (gb1 git_path_base_violations) was met by routing diff_paths through _config.git_to_plan, and ds1's one-hash-site rule by using _journal_io.file_hash in the drive\n4 the commit refusal is enforced by close_task's tests-moved decision, named in execute-task.md's own sentence; the writer-committed stop by writer_settle, named in the same bullet; the 'writerClaim is a claim, not a verdict' sentence is enforced by structure (the gate and the reviewer still run; wf2 holds that the gate turned the step green), not by a check on the message\n5 n/a - no property recorded\n6 n/a - no guard\n7 no number written into prose; the counts above are the suites' and the sweep's own printed tallies",
+  "redFirst": {
+    "at": "2026-10-21T08:26:16Z",
+    "basis": "`python3 tests/test_drive_phase.py --selftest --stage wf-block --stage wl-block` in a throwaway tree at HEAD exited 1 with 9 of 9 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `wf-block`, `wl-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - wf1 (house FAIL), wf2 (house FAIL), wf3 (house FAIL), wf4 (house FAIL), wf5 (house FAIL), wl1 (house FAIL), wl2 (house FAIL), wl3 (house FAIL), wl4 (house FAIL): SELFTEST FAILED: 0/9 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:d51d08dabdb8dca0e38a36fefe7149b32f60adf4328a674407ce47ea253abb51\",\"dirtyDigest\":\"sha256:69dcfd59008ebc3ae6bb25bc45b209203e9189b5b15ffa84decb509105b51c85\",\"dirtyPaths\":{\"plugins/audit/reference/execute-task.md\":\"b9e748dc0332af7d\",\"plugins/audit/scripts/governance/drive-phase.py\":\"9ef3945eac4aca9c\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"ed0d0e590bd23465\",\"tests/test_drive_phase.py\":\"1adfbcc22e9265cd\",\"tests/test_stamp_verification.py\":\"f6df9a73d3afc0d7\"},\"head\":\"7cf2a9cd\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"tests/test_drive_phase.py\",\"tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:3a4481814f0627b8f955ce59fae26842a28955ab928400b879a515e847413475\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": [
+    "tests/test_stamp_verification.py: red run by the drive on the writer's uncommitted change proves red exactly as when an executor ran it - not checked: the submit's command did not run `tests/test_stamp_verification.py`, so the ids bound to it were not compared with any printed label"
+  ]
+}

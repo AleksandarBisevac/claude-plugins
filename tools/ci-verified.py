@@ -270,9 +270,9 @@ def _jobs(*pairs):
             for name, conclusion in pairs]
 
 
-_GREEN = _jobs(("selftests (ubuntu-latest, plain 1)", "success"),
-               ("selftests (windows-latest, plain 1)", "success"),
-               ("lint + e2e (ubuntu-latest)", "success"))
+_GREEN = _jobs(("selftests (linux, plain 1)", "success"),
+               ("selftests (windows, plain 1)", "success"),
+               ("lint + e2e (linux)", "success"))
 
 
 def _ask(runs, jobs_of, exempt=("verified",)):
@@ -284,8 +284,8 @@ def _cases(check):
     check("cv1 %s (every job of run 101 is success, so it verifies: %r)"
           % (_CLAUSE, got), got["verified"] == 101)
 
-    skipped = _jobs(("selftests (ubuntu-latest, plain 1)", "success"),
-                    ("lint + e2e (ubuntu-latest)", "skipped"))
+    skipped = _jobs(("selftests (linux, plain 1)", "success"),
+                    ("lint + e2e (linux)", "skipped"))
     got = _ask([_run(102)], {102: skipped})
     check("cv2 %s (a run with a skipped job is not evidence - GitHub reports a "
           "skipped job's run as a success: %r)" % (_CLAUSE, got),
@@ -319,15 +319,15 @@ def _cases(check):
     # would go red here: the guard's own job and a release-tier job are skipped
     # on a run that did not ask for them, and they do not spoil it.
     tiered = _jobs(("verified", "skipped"),
-                   ("selftests (ubuntu-latest, plain 1)", "success"),
-                   ("resample (windows-latest)", "skipped"))
+                   ("selftests (linux, plain 1)", "success"),
+                   ("resample (windows)", "skipped"))
     got = _ask([_run(106)], {106: tiered}, exempt=("verified", "resample"))
     check("cv8 %s (an exempt job - the guard itself, a release-tier job - may "
           "be skipped without spoiling the run: %r)" % (_CLAUSE, got),
           got["verified"] == 106)
 
-    red_exempt = _jobs(("selftests (ubuntu-latest, plain 1)", "success"),
-                       ("resample (windows-latest)", "failure"))
+    red_exempt = _jobs(("selftests (linux, plain 1)", "success"),
+                       ("resample (windows)", "failure"))
     got = _ask([_run(107)], {107: red_exempt}, exempt=("verified", "resample"))
     check("cv9 %s (...but an exempt job that RAN and failed spoils it: %r)"
           % (_CLAUSE, got), got["verified"] is None)

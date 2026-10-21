@@ -90,11 +90,13 @@ concurrency:
 # EVERY JOB PINS ITS RUNNER IMAGE, and so does every `os` value a matrix crosses. A
 # `*-latest` label is a pointer GitHub moves: `ubuntu-latest` went from ubuntu-24.04
 # to ubuntu-26.04 between two runs, and the new image could not install the browser
-# the lockfile pins nor offer the interpreter the lint job asks for. The images below
-# are the ones the last green run (38937779587) logged under `Runner Image`: Linux
-# ubuntu-24.04 and Windows windows-2025. Moving to a newer image is an edit
-# to this file, made on purpose and seen in a diff. tools/gate-parity.py reports a
-# `-latest` runs-on or matrix value by job name (`floating_runners()`).
+# the lockfile pins nor offer the interpreter the lint job asks for. The images
+# pinned are ubuntu-24.04 for Linux and windows-2025 for Windows. Moving to a newer
+# image is an edit to this file, made on purpose and seen in a diff. No job's display
+# name carries the image - a check is named by its family (`windows`, `linux`) - so
+# that edit renames no check a branch-protection rule may be waiting on.
+# tools/gate-parity.py reports a `-latest` runs-on or matrix value, and an image in a
+# job's display name, by job name (`floating_runners()`, `image_in_job_names()`).
 jobs:
   # HAS THIS EXACT COMMIT ALREADY PASSED THIS WORKFLOW? Asked on a push to main only:
   # a phase reaches main as a commit its ci/ branch dispatch already ran, and running
@@ -144,11 +146,11 @@ jobs:
   # code-page leg alone, `selftests-cp1252`, until the Windows intermittents are shown
   # absent from its plain cells; that deletion waits on that evidence.
   #
-  # A cell is NAMED by its leg (`selftests (<os>, <leg> <shard>)`), which is the shape
+  # A cell is NAMED by its leg (`selftests (<family>, <leg> <shard>)`), which is the shape
   # the CI study's readers parse a run's cells by; each `include` row below adds the
   # slice to every cell of its leg, since it overwrites no value the matrix lists.
   selftests:
-    name: selftests (${{ matrix.os }}, ${{ matrix.leg }} ${{ matrix.shard }})
+    name: selftests (${{ startsWith(matrix.os, 'windows') && 'windows' || 'linux' }}, ${{ matrix.leg }} ${{ matrix.shard }})
     needs: verified
     if: ${{ !cancelled() && needs.verified.outputs.run == '' }}
     timeout-minutes: 26
@@ -189,7 +191,7 @@ jobs:
   # subprocesses, a forced codec and an MSYS path all behave differently. The ubuntu
   # half of the same slices rides in the lint job, which shares its setup.
   e2e:
-    name: e2e (windows-2025)
+    name: e2e (windows)
     needs: verified
     if: ${{ !cancelled() && needs.verified.outputs.run == '' }}
     timeout-minutes: 5
@@ -206,7 +208,7 @@ jobs:
         run: sh tools/verify.sh --only runner,e2e
 
   lint:
-    name: lint + e2e (ubuntu-24.04)
+    name: lint + e2e (linux)
     needs: verified
     if: ${{ !cancelled() && needs.verified.outputs.run == '' }}
     timeout-minutes: 5
@@ -309,7 +311,7 @@ jobs:
   # verify.sh's RESAMPLE table gives them. A red draw on a green SHA is a finding for
   # /audit:bug; nothing files it automatically yet.
   resample:
-    name: resample (windows-2025)
+    name: resample (windows)
     needs: verified
     if: ${{ !cancelled() && needs.verified.outputs.run == '' && inputs.tier == 'release' }}
     timeout-minutes: 40

@@ -1,0 +1,43 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__refs.py tests/test__output.py": "fail"
+  },
+  "redFirst": {
+    "at": "2026-10-21T07:26:31Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__refs.py tests/test__output.py` in a throwaway tree at HEAD exited 1 with failing cases mv6 (house FAIL), q7 (house FAIL), q8 (house FAIL), q9 (house FAIL), tests/test__output.py: exited 1 (house FAIL), tests/test__refs.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (SELFTEST FAILED: 291/292 cases passed), so the red is not one the fix turns green - SELFTEST FAILED: 289/292 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "plugins/audit/scripts/_output.py: added MOVED_TO_TREES=(plugins/audit, tests, tools/lints) and moved_index(repo_root); moved_file_target's default index is now moved_index (py_index unchanged, so tool_basename_drift is untouched). tools/lints/_refs.py: manifest_moved_files uses moved_index and now takes task status into account (_manifest_io.TERMINAL): a done/cancelled task, or an index row that only settled tasks list, naming a moved path goes into a new 'history' list; a task with work left stays 'moved' (loud); a basename found nowhere stays 'gone'. _recorded_paths now returns (source, path, live). The three docstring commands and the before-you-claim eval prompt now put tools/lints on sys.path first; I ran the _manifest_rules form and it prints. tests/test__refs.py adds q7 (real tree: the plugin-tree test__refs path -> tests/test__refs.py, scripts/_deps.py -> tools/lints/_deps.py), q8 (pending/in_progress tasks loud, with their index rows), q9 (done tasks and done-only index rows are history, not moved nor gone); q1 now prints the moved list on failure. tests/test__output.py adds mv5 (module names derived from tools/lints/*.py, includes _deps and _refs), mv6 (no string literal in plugins/audit, tools, .claude .py or any evals.json holds a command putting plugins/audit/scripts on sys.path and importing a tools/lints module, unless it also names tools/lints), mv7 (detector fires on import / from-import / comma-list), mv8 (allow twin: quiet when tools/lints is named, when the import is of a scripts module, with no insert). The lint check lives in the test file because _output_lints.py is not in the task's files. Mutations (each restored, pycache purged): MOVED_TO_TREES plugin only -> q7,q8,q9 red; classify-all-live -> q1,q8,q9 red; classify-all-history -> q3,q8,q9 red; detector drops the tools/lints exemption -> mv6,mv8 red; detector never fires -> mv7 red. Gates: tests/test__output.py 88/88 pass. tests/test__refs.py: every case passes except q1 (291/292): q1 is the dogfood-plan case 'no moved file' and now correctly reports the 45 live-task entries of P109.1-.7/.9, P129.7-.11-izt and P86.1/.3/.4 (and their fileIndex rows) that still name old paths; it goes green when the orchestrator repoints them with /audit:task scope (the case's failure text says so). Committed copy of my tree, full tools/sweep-selftests.py: 188/191 files ok; red are tests/test__refs.py (q1 only), tools/check-example-ledgers.py, tools/measure-context.py (the last two the allowed ones). ruff check passes; vermin 3.8 passes.",
+    "descriptive": "A suite moved to tests/ or a lint moved to tools/lints/ now reads as moved (loud for live tasks, history for done ones), and a lint case keeps commands in shipped files from importing the relocated lints off scripts/."
+  },
+  "testsAdded": [
+    "q7: moved_file_target answers tests/ and tools/lints/ homes on the real tree",
+    "q8: pending/in_progress tasks and their index rows naming old paths are moved, not gone",
+    "q9: done tasks and done-only index rows are history",
+    "mv5-mv8: derived module set, the tree-wide no-command-importing-relocated-lints check, and its fire/quiet twins"
+  ],
+  "casesAdded": [
+    [
+      "q7",
+      "q8",
+      "q9"
+    ],
+    [
+      "mv5",
+      "mv6",
+      "mv7",
+      "mv8"
+    ]
+  ],
+  "claims": "claims:\n1 _output.py moved_index/MOVED_TO_TREES and _refs.py manifest_moved_files (live/history branches) are the code the docstrings describe; q7-q9 exercise them\n2 mutations listed in outcome.technical, each red then restored; allow twins: mv8 red when the tools/lints exemption is dropped, q3/q8/q9 red under classify-all-history\n3 grep git grep -nE 'import _(deps|refs)' -- . ':!tests' ':!tools' ':!docs/audit': 4 hits, all repointed. Left, outside my files and not string literals: a comment in tools/lints/_deps.py near line 5396 shows the same broken command; CLAUDE.md line 303 runs _output.selftest_coverage, which now lives in _output_lints\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard; the check reads AST string literals, not command spellings, and its allow case mv8 was proven quiet\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:e5c88d460c109fecd9dc081b5298d3991e5142eef78a6b9663177e36b2c7ebd3\",\"dirtyDigest\":\"sha256:804536200911ce4589f44bfd7e7ff3956522972383e2f4cdad4f896f0d2cdb7e\",\"dirtyPaths\":{\".claude/skills/before-you-claim/evals/evals.json\":\"4c9a422184c651a6\",\"plugins/audit/scripts/_output.py\":\"ed3aab816bfe07ba\",\"plugins/audit/scripts/manifest/_manifest_rules.py\":\"2291de7ba8d0fb91\",\"plugins/audit/scripts/manifest/_manifest_vocab.py\":\"2c83547b8a787244\",\"plugins/audit/scripts/status/_doctor_policy.py\":\"fdd068237c9cd9db\",\"tests/test__output.py\":\"00ed9e55f8a4bc81\",\"tests/test__refs.py\":\"9599cb187be709be\",\"tools/lints/_refs.py\":\"21e6238ddcb8b358\"},\"head\":\"7cf2a9cd\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".claude/skills/before-you-claim/evals/evals.json\",\"plugins/audit/scripts/_output.py\",\"plugins/audit/scripts/manifest/_manifest_rules.py\",\"plugins/audit/scripts/manifest/_manifest_vocab.py\",\"plugins/audit/scripts/status/_doctor_policy.py\",\"tests/test__output.py\",\"tests/test__refs.py\",\"tools/lints/_refs.py\"],\"scopeDigest\":\"sha256:496854a24413596bfc9d84bd8ee8de7551f3afb9bdc12bf3ce30feb6bc446bfb\",\"v\":2}",
+  "testsAddGaps": [
+    "tests/test__output.py: no string literal in a shipped .py or in .claude/skills/**/evals.json holds a command that puts plugins/audit/scripts on sys.path and then imports _deps or _refs - bound to `mv5`, which the suite did not print",
+    "tests/test__output.py: no string literal in a shipped .py or in .claude/skills/**/evals.json holds a command that puts plugins/audit/scripts on sys.path and then imports _deps or _refs - bound to `mv6`, which the suite did not print",
+    "tests/test__output.py: no string literal in a shipped .py or in .claude/skills/**/evals.json holds a command that puts plugins/audit/scripts on sys.path and then imports _deps or _refs - bound to `mv7`, which the suite did not print",
+    "tests/test__output.py: no string literal in a shipped .py or in .claude/skills/**/evals.json holds a command that puts plugins/audit/scripts on sys.path and then imports _deps or _refs - bound to `mv8`, which the suite did not print"
+  ],
+  "testsAddUnchecked": []
+}

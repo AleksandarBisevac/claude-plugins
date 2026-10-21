@@ -1,0 +1,36 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tools/gate-parity.py": "pass",
+    "full sweep on a committed copy (CLAUDE_*, CLAUDECODE, AUDIT_LOCK_TOKENS unset)": "pass except tools/check-example-ledgers.py and tools/measure-context.py, the two the orchestrator allowed red",
+    "ruff check tools/gate-parity.py tools/ci-verified.py": "pass",
+    "vermin -t=3.8- tools/gate-parity.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-21T07:26:31Z",
+    "basis": "`python3 tools/sweep-selftests.py tools/gate-parity.py` in a throwaway tree at HEAD exited 1 with failing cases ri8 (house FAIL), ri9 (house FAIL), ri10 (house FAIL), tools/gate-parity.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 77/81 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/gate-parity.py: _matrix_key_values now returns {values, unread}: it reads inline lists, scalars and block sequences (new _block_items), and records an expression, a multi-line flow list or a key with nothing under it as unread; floating_runners reports an unread key by job instead of passing the include-only values. New image_in_job_names (called from floating_runners) reports a job name carrying a runner label or ${{ matrix.K }} for the runs-on key. Cases ri8 (block axis, over-fire twin, floating include), ri9 (unreadable forms named, readable block not), ri10 (names: matrix ref, literal, family-expression clean), ri11 (live ci.yml names clean). .github/workflows/ci.yml: display names are now selftests (linux|windows via startsWith(matrix.os,'windows') expression, leg shard), e2e (windows), lint + e2e (linux), resample (windows); runs-on and pinned images unchanged; header reworded to present-tense pins (ubuntu-24.04, windows-2025) instead of 'the last green run logged'. tools/ci-verified.py: its fixtures use image-free names; _is_exempt's exact-or-'name (' prefix rule already matches them (cv8/cv9 now exercise 'resample (windows)'), no logic change. OWNER ACTION: check names change (selftests (ubuntu-24.04, ...) -> selftests (linux, ...), e2e (windows-2025) -> e2e (windows), lint + e2e (ubuntu-24.04) -> lint + e2e (linux), resample (windows-2025) -> resample (windows)), so the repository's required-status-check list (branch protection / rulesets) must be checked by the owner and updated to the new names. Not verified: the expression-built name rendering on a real GitHub run (no CI run made). Full sweep on a committed copy: only check-example-ledgers.py and measure-context.py red.",
+    "descriptive": "CI check names no longer carry the runner image, and the gate-parity runner-image check reads block-sequence matrix axes and names unreadable ones instead of passing them."
+  },
+  "testsAdded": [
+    "ri8: block-sequence os axis with floating label beside an include row is reported; pinned twin clean; floating include still reported",
+    "ri9: unreadable matrix values (expression, empty key) are named per job",
+    "ri10: job display names carrying image via matrix ref or literal are reported, family-expression name clean",
+    "ri11: live ci.yml display names carry no runner image"
+  ],
+  "casesAdded": [
+    [
+      "ri8",
+      "ri9",
+      "ri10",
+      "ri11"
+    ]
+  ],
+  "claims": "claims:\n1 gate-parity.py _matrix_key_values/_block_items read block sequences; image_in_job_names is called at the end of floating_runners; ci.yml header says only the pinned images, no run claim\n2 pre-fix ri8/ri9/ri10 red (77/81, NameError for the new function) -> fixed 93/93; over-fire twins: ri8 pinned block clean, ri10 family-expression name clean; ri6/ri11 went red on the old ci.yml names before they were changed\n3 grep of 'windows-2025|ubuntu-24.04|selftests (|matrix.os' over the tree: ci.yml names fixed, ci-verified.py fixtures updated, gate-parity fixtures are template text (left, they are not job names), 'longest selftests ... windows-latest' header lines are history (left)\n4 n/a \u2014 no rule to an agent\n5 n/a \u2014 no property recorded\n6 n/a \u2014 no guard on commands; the check reads the parsed workflow keys\n7 n/a \u2014 no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:3e441b04bf3c8979b37994a1adda9ea327c904bb1b0e1b50bdb74b97ee4c3c3c\",\"dirtyDigest\":\"sha256:8f3c80c3ebefc53c0c0334858127db7ce8eb40dbf16d6c301a3b07028ead45a0\",\"dirtyPaths\":{\".github/workflows/ci.yml\":\"2257a6ba5a4768c2\",\"tools/ci-verified.py\":\"d8271650f439fab6\",\"tools/gate-parity.py\":\"250544658c69dadd\"},\"head\":\"7cf2a9cd\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".github/workflows/ci.yml\",\"tools/ci-verified.py\",\"tools/gate-parity.py\"],\"scopeDigest\":\"sha256:5b0fe24757b12bd379b8939b67c4096cfa2f9bfcbcdb84912d63dce01246276c\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
