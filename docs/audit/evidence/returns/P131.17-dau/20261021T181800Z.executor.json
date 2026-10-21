@@ -1,0 +1,42 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-21T18:57:04Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out after 37 s and its process group was torn down; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "ONE check for every stored task-gate verdict. _evidence_io.py: new section 'a stored verdict, read against what its gate is now' - STORED_HOLDS/MOVED/UNKNOWN, tree_key (the spelling run-test-gate records as testedState.tree.key, pinned equal by sv7), measured_row (follows reusedFrom), red_step_names, stored_verdict_moved(rows, run_id, now): MOVED only when the row's gateDigest differs from gate_digest(entries, buildCommands) now or its tree key differs from the tree the gate runs in now; a missing row/digest is UNKNOWN (said, never agreement); edited bytes under the same gate are deliberately NOT asked (the committer refuses those - asking here re-measured and closed bytes a reviewer never saw, which dr1/dr2 caught on my first cut). drive-phase.py: verdict_taken (runId, measured ts, tree, failing steps) stored as `verdict` on every gate-red / gate-red-writer decision and as the value of the gated/regated marks; verdict_basis = the one check; gate_basis_holds is called from pending_still_applies; stored_green wraps the gated/regated marks; rerun_alongside makes a rerun reach every parked member red on the same steps (with --no-reuse); verdict_said adds '; run <runId>, <age> old' to both gate-red line templates; drive_locked takes a rerun on a moved decision as the measurement it owes and refuses any other answer naming why. Also fixed _RUN_ID: a green run's terse line is 'evidence: recorded <id>; pointer: ...', so the old (\\S+) captured '<id>;' and named no ledger row (found when the stored green read UNKNOWN). PATHS that show or act on a stored verdict, all now through the check: (1) drive_locked pending re-print + answer, (2) step_member parked hold, (3) walk_wave parked promote+render, (4) explain, (5) advance writer path gated mark, (6) advance gated mark before reviewer/close - now re-measured past a filed reviewer when moved, (7) integrate_member regated mark, (8) apply_answer rerun -> rerun_alongside, (9) render_decision run+age. Left, already asking: green_phase_gate/held_gate_binds (phase-gate held green, _vb.phase_binding), run-test-gate reuse_identity (content + resolved gate + scope - unchanged, untouched). Left, not gate verdicts: clauses-uncovered-writer, red-refused-writer, base_red_why. Tests: 13 new cases in 3 new STAGES rows (sv-block, sv4-block, sv5-block) incl. in-suite RED TWIN mutants sv3m/sv4r/sv6r and allow twins sv2/sv4m/sv6m; an over-fire probe (verdict_basis always MOVED, run from a scratch dir by monkeypatching the loaded module, no file edited) turned sv2 and sv6m red. Gate: python3 tools/sweep-selftests.py tests/test_drive_phase.py exit 0, 481 cases. Committed copy (git archive HEAD + my 3 files, committed in a /tmp repo): full sweep 192/194 files ok, 16807 cases, the two reds tools/check-example-ledgers.py and tools/measure-context.py (unresolvable commits in a history-less copy, the two allowed); ruff and vermin exit 0 there. DEPENDANTS: tests/test_drive_phase.py - changed (this task's cases); PLUGIN-BUILD-GUIDE.md, README.md, docs/research/pipeline-cost-design.md - still correct, none quotes the gate-red line or the changed functions (grep); hooks/detect-plan-skip.py, record-risk-confirmation.py, stamp-verification.py, _areas.py - still correct, they resolve drive-phase by name and no signature they use changed; _carries/_clip/_mark/_task_args - unchanged. _evidence_io.py dependants (guard-release, close-phase, integrate-task, _affected_tests, _gate_derive, _invariants, _verdict_binding, audit-journal, and run-test-gate's _counts_as_failed etc.) - still correct: additions only, no existing name changed; test__evidence_io 308 cases ok in the committed-copy sweep. Note for the orchestrator: run-test-gate.py:5062 tree_key is now a second copy of _evidence_io.tree_key (outside my files); sv7 pins them equal, and run-test-gate should delegate in its own task. The _RUN_ID fix also changes what green_phase_gate stores as the held phase-gate runId (previously '<id>;' when the terse line was printed, which could never match a row) - the full suite stays green, but phase-gate reuse may now fire where it silently never did.",
+    "descriptive": "A gate-red or stored green is shown only while its run still answers the gate as it resolves now; a rerun on one wave member measures every member red on the same step, and every gate-red line names its run and age."
+  },
+  "testsAdded": [
+    "sv1-sv3/sv3m: two wave members red on different steps, buildCommands changed, rerun on one; the parked other is measured, not replayed, and the gate-red line names runId and age; unchanged, the stored red is reused (sv2)",
+    "sv4/sv4r/sv4m: rerun reaches a parked member red on the same step with --no-reuse, and not one red on a different step",
+    "sv5/sv6/sv6r/sv6m: a stored green whose build command changed is measured again past a filed reviewer; unchanged, reused",
+    "sv7/sv8: tree_key agrees with run-test-gate's; stored_verdict_moved holds/moved/unknown table"
+  ],
+  "casesAdded": [
+    [
+      "sv1",
+      "sv2",
+      "sv3",
+      "sv3m",
+      "sv4",
+      "sv4r",
+      "sv4m",
+      "sv5",
+      "sv6",
+      "sv6r",
+      "sv6m",
+      "sv7",
+      "sv8"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py verdict_basis is called by gate_basis_holds (from pending_still_applies) and stored_green (advance x2, integrate_member); verdict_said is passed as run= in render_decision; rerun_alongside is called in apply_answer's rerun branch\n2 HEAD code -> sv1,sv2,sv3,sv4,sv6 red (3/8); in-suite mutants sv3m (gate_basis_holds->True), sv4r (rerun_alongside->[]), sv6r (stored_green->old read) each fail their predicate; over-fire probe verdict_basis->MOVED turned sv2, sv6m red; restored by not editing any file\n3 grep gate-red|reused|no-reuse|parked|pending_still_applies|_marked(state, \"gated\"|regated in drive-phase.py: 9 paths, each routed (listed in outcome); held_gate_binds and run-test-gate reuse_identity left because they already ask; clauses-uncovered-writer/red-refused-writer/base_red_why left, not gate verdicts\n4 the section comment's 'every path asks pending_still_applies' is held by the sv cases only; nothing lints that a NEW display path calls it\n5 n/a - no property recorded\n6 the check reads the resolved gate (gate_digest over entries and buildCommands) and the tree key, not command text\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:26f33ed67d0f5ef749fb8ce84fa9c8492f283be698f8fda1b291d091c7aafe68\",\"dirtyDigest\":\"sha256:88d68c5dc1cbd1420f504b4837d5297b401a9cefdbae0e703dae97cf0b90e3f6\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_evidence_io.py\":\"1429c4660c25c667\",\"plugins/audit/scripts/governance/drive-phase.py\":\"e8894312b0b569da\",\"tests/test_drive_phase.py\":\"a6dab097b8188bb4\"},\"head\":\"9b3b8159\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:eaab6faf83d3370f73d5c2bc63685922dec37eec7d0b2024456460d3d04005c2\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

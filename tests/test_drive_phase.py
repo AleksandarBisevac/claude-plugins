@@ -2002,6 +2002,388 @@ def _rerun_after_record_cases(check, M):
           % (plain[:300],), "GATE RED" not in plain)
 
 
+# --- a stored gate verdict, shown only while its basis holds -------------------
+# A build command a gate entry names, red and green, spelled so a change between
+# two of them is a change of `meta.buildCommands` alone: the entry names stay.
+_SV_RED = '"%s" -c "import sys; sys.exit(1)"' % (sys.executable,)
+_SV_GREEN = '"%s" -c "import sys; sys.exit(0)"' % (sys.executable,)
+_SV_GREEN_TOO = '"%s" -c "import sys; sys.exit(0)" again' % (sys.executable,)
+# The run id and its age a gate-red line carries: `run <runId>, <n><unit> old`.
+_SV_RUN = re.compile(r"\brun (\S+), (\d+)([smhd]) old\b")
+# Two members gated by two entries, so each is red on a step of its own.
+_SV_TWO_STEPS = ("unit-a", "unit-b")
+
+
+def _sv_build(command, entries=("unit", "unit")):
+    """`edit(plan)` for `_commit_plan`: the wave's two members gated by the
+    entries `entries` names - one entry, or a tuple of them, per member - each
+    resolved to `command` through `meta.buildCommands`."""
+    gates = [list(e) if isinstance(e, tuple) else [e] for e in entries]
+
+    def edit(plan):
+        plan["meta"]["buildCommands"] = dict((k, command) for g in gates for k in g)
+        for task, gate in zip(plan["phases"][0]["tasks"], gates):
+            task["tests"]["gate"] = list(gate)
+    return edit
+
+
+def _sv_set_command(mpath, command):
+    """Change what every `meta.buildCommands` key resolves to, the entry names
+    left as they are - the plan edited by hand, uncommitted."""
+    with open(mpath, encoding="utf-8") as fh:
+        plan = json.load(fh)
+    plan["meta"]["buildCommands"] = dict(
+        (k, command) for k in plan["meta"]["buildCommands"])
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh, indent=2)
+
+
+def _sv_red_wave(M, prefix, entries=("unit", "unit")):
+    """A two-member wave whose members are both red under `entries`, each
+    resolved to the red command: `(root, mpath, calls, second)`, `second` the
+    print that measured both - the first member's decision, the second's
+    parked."""
+    calls = _gate_calls(M)
+    root, mpath = _wave_repo(prefix, 2)
+    _commit_plan(root, mpath, _sv_build(_SV_RED, entries), "both members red")
+    _code, first = _next_wave(M, root, mpath)
+    for t in _dispatched(first):
+        _file_wave_executor(root, mpath, t)
+    _code, second = _next_wave(M, root, mpath)
+    return root, mpath, calls, second
+
+
+def _sv_parked(root, task_id):
+    return (((_drive_state(root).get("wave") or {}).get("parked") or {})
+            .get(task_id) or {})
+
+
+def _sv_task_calls(calls, task_id):
+    """The gate calls among `calls` that measured `task_id`."""
+    return [(a, out) for a, out in calls if _flag(a, "--task") == task_id]
+
+
+def _sv_newest_run(root, mpath, task_id):
+    rows = _evio.oldest_first(_rows_of(root, mpath, task_id))
+    return rows[-1].get("runId") if rows else None
+
+
+def _stored_red_cases(check):
+    """A pending or parked gate-red decision is shown only while the run it
+    stands on still answers the gate the task resolves to now: once
+    `meta.buildCommands` changes, the drive measures each member again rather
+    than replaying the red the old command gave - the one a rerun answered and
+    the one that was parked behind it alike - and every gate-red line names the
+    run and its age."""
+    M, why = _load("drive_phase_stored_red")
+    if M is None:
+        check("sv1 the driver loads", False, why)
+        return
+    # Red on two different steps, so a rerun answered on the first member does
+    # not reach the second (`sv4m`): what measures the second here is its
+    # decision asking whether its run still answers the gate, and nothing else.
+    root, mpath, calls, second = _sv_red_wave(M, "storedred", _SV_TWO_STEPS)
+    parked = _sv_parked(root, "P1.2")
+    line = next((ln for ln in second.splitlines() if ln.startswith("decide ")), "")
+    shown = _SV_RUN.search(line)
+    check("sv1 both members are red under the one build command, the first "
+          "member's decision is printed and the second's waits parked, and the "
+          "printed gate-red line names the run it stands on and its age: %r"
+          % ((line, parked.get("decision"), _sv_newest_run(root, mpath, "P1.1")),),
+          instruction(second) == ("decide", "gate-red", None)
+          and line.startswith("decide gate-red P1.1")
+          and parked.get("decision") == "gate-red"
+          and shown is not None
+          and shown.group(1) == _sv_newest_run(root, mpath, "P1.1"))
+    before = len(calls)
+    _code, again = _next(M, root, mpath)
+    again_line = next((ln for ln in again.splitlines()
+                       if ln.startswith("decide ")), "")
+    check("sv2 THE TWIN: with the build command and the tree unchanged, the "
+          "stored red is shown again as before - no gate runs, and the line "
+          "still names its run: %r" % ((again_line, calls[before:]),),
+          instruction(again) == ("decide", "gate-red", None)
+          and "P1.1" in again_line and len(calls) == before
+          and _SV_RUN.search(again_line) is not None
+          and _SV_RUN.search(again_line).group(1) == shown.group(1)
+          if shown else False)
+    said, second_runs, tasks = _sv_after_change(M, root, mpath, calls)
+    check("sv3 after the build command changed and `rerun` was answered on the "
+          "first member, the second member's parked red is not replayed: its "
+          "gate is measured under the new command and it closes, as the first "
+          "does - no gate-red is printed for either: %r"
+          % ((said[-600:], [a for a, _o in second_runs],
+              [(t, tasks[t].get("status")) for t in ("P1.1", "P1.2")]),),
+          _sv_measured_again(said, second_runs, tasks))
+    # RED TWIN: the same wave under a driver whose decisions never ask whether
+    # their run still answers the gate - the parked red is replayed, so sv3's
+    # predicate fails for it, which is what says the predicate reads the check.
+    mutant, _w = _load("drive_phase_stored_red_mutant")
+    mutant.gate_basis_holds = lambda ctx, manifest, pending: True
+    root_m, mpath_m, calls_m, _second_m = _sv_red_wave(mutant, "storedredm",
+                                                       _SV_TWO_STEPS)
+    said_m, runs_m, tasks_m = _sv_after_change(mutant, root_m, mpath_m, calls_m)
+    check("sv3m RED TWIN: a driver that shows a stored red without asking its "
+          "basis replays the second member's red under the old command: %r"
+          % ((said_m[-300:], [t.get("status") for t in tasks_m.values()]),),
+          not _sv_measured_again(said_m, runs_m, tasks_m))
+    _sv_pure_cases(check, M)
+
+
+def _sv_after_change(M, root, mpath, calls):
+    """Change the build command to the green one, answer `rerun` on the printed
+    decision and drive on: `(said, second_runs, tasks)` - every print, the
+    gate calls that measured the second member, and the plan's tasks."""
+    _sv_set_command(mpath, _SV_GREEN)
+    before = len(calls)
+    prints = [_next(M, root, mpath, "--answer", "rerun")[1]]
+    for _ in range(3):
+        if instruction(prints[-1])[0] != "dispatch" and all(
+                t.get("status") == "done" for t in tasks_of(mpath).values()):
+            break
+        prints.append(_next(M, root, mpath)[1])
+    return ("\n".join(prints), _sv_task_calls(calls[before:], "P1.2"),
+            tasks_of(mpath))
+
+
+def _sv_measured_again(said, second_runs, tasks):
+    return bool("decide gate-red" not in said and second_runs
+                and all("GATE VERDICT REUSED" not in out for _a, out in second_runs)
+                and tasks["P1.1"].get("status") == "done"
+                and tasks["P1.2"].get("status") == "done")
+
+
+def _sv_pure_cases(check, M):
+    """The comparison a stored verdict passes, asked of rows built here, and
+    the tree name it compares held to the one the gate runner records."""
+    rtg = _loader.load_script("run-test-gate.py", "rtg_tree_key", cache=False)
+    where = os.path.realpath(_harness.fixture_root("drive-treekey-"))
+    try:
+        keys = (_evio.tree_key(where), rtg.tree_key(where))
+    finally:
+        _harness.remove_tree(where)
+    check("sv7 the tree name a stored verdict is compared on is the one "
+          "run-test-gate records as testedState.tree.key: %r" % (keys,),
+          keys[0] == keys[1] and len(keys[0]) == 12)
+    row = {"runId": "r1", "ts": "2026-10-21T10:00:00Z", "gateDigest": "sha256:a",
+           "testedState": {"scopeDigest": "s1", "tree": {"key": "k1"}},
+           "steps": [{"name": "unit", "exit": 1}]}
+    undigested = dict(row, runId="r2")
+    undigested.pop("gateDigest")
+    # A repeat of r1 taken in another tree, as `run-test-gate` writes one: the
+    # verdict copied, the gate digest of its own run, and no testedState - its
+    # identity is the content, not the tree. And a repeat that did record a
+    # tree, which then is what it is compared on.
+    repeat = {"runId": "r3", "ts": "2026-10-21T11:00:00Z", "gateDigest": "sha256:a",
+              "verdictSource": _evio.REUSED, "reusedFrom": {"runId": "r1"},
+              "testedState": {}, "steps": []}
+    placed = dict(repeat, runId="r4", testedState={"tree": {"key": "k2"}})
+    now = {"gateDigest": "sha256:a", "tree": "k1"}
+    said = dict((label, _evio.stored_verdict_moved(rows, run, dict(now, **over))[0])
+                for label, rows, run, over in (
+                    ("holds", [row], "r1", {}),
+                    ("gate", [row], "r1", {"gateDigest": "sha256:b"}),
+                    ("tree", [row], "r1", {"tree": None}),
+                    ("edited", [dict(row, testedState={
+                        "scopeDigest": "s2", "tree": {"key": "k1"}})], "r1", {}),
+                    ("gone", [], "r1", {}),
+                    ("none", [row], None, {}),
+                    ("undigested", [undigested], "r2", {}),
+                    ("repeat-elsewhere", [row, repeat], "r3", {"tree": "k2"}),
+                    ("repeat-placed", [row, placed], "r4", {"tree": "k2"}),
+                    ("repeat-moved", [row, placed], "r4", {"tree": "k3"})))
+    # `edited` is the bytes in the tree moving under an unchanged gate: not this
+    # comparison's question (the committer refuses that), so it still holds.
+    check("sv8 a stored verdict holds only while the gate digest and the tree "
+          "agree; either disagreeing is moved, edited bytes under the same gate "
+          "are left to the committer, and a run the ledger lacks or a row with "
+          "no gate digest is unknown - never agreement: %r" % (said,),
+          said == {"holds": _evio.STORED_HOLDS, "gate": _evio.STORED_MOVED,
+                   "tree": _evio.STORED_MOVED, "edited": _evio.STORED_HOLDS,
+                   "gone": _evio.STORED_UNKNOWN, "none": _evio.STORED_UNKNOWN,
+                   "undigested": _evio.STORED_UNKNOWN,
+                   "repeat-elsewhere": _evio.STORED_HOLDS,
+                   "repeat-placed": _evio.STORED_HOLDS,
+                   "repeat-moved": _evio.STORED_MOVED})
+    # The id a green run's terse line names, read as the drive reads it: the
+    # records are joined with "; ", so a reading that ran to the next space
+    # took the separator with it and named no row.
+    terse = rtg.success_line(["GATE GREEN: unit", "  evidence: recorded r-5.abc",
+                              "  pointer: P1.1 now names it"])
+    old = re.compile(r"evidence: recorded (\S+)").search(terse)
+    read = M._RUN_ID.search(terse)
+    check("sv9 the run id the drive reads off a green run's terse line is the id "
+          "itself, where a reading to the next space took the separator: %r"
+          % ((terse, read and read.group(1), old and old.group(1)),),
+          read is not None and read.group(1) == "r-5.abc"
+          and old is not None and old.group(1) == "r-5.abc;")
+
+
+def _stored_rerun_cases(check):
+    """A rerun answered on one wave member is a request to measure every member
+    whose parked red failed on the same step - never one measured and the
+    other's stored red replayed; a member red on another step is still asked
+    on its own."""
+    M, why = _load("drive_phase_stored_rerun")
+    if M is None:
+        check("sv4 the driver loads", False, why)
+        return
+    root, mpath, calls, _second = _sv_red_wave(M, "storedrerun")
+    before = len(calls)
+    _code, text = _next(M, root, mpath, "--answer", "rerun")
+    second_runs = _sv_task_calls(calls[before:], "P1.2")
+    check("sv4 both members red on the same step: `rerun` answered on the first "
+          "measures the second too, with --no-reuse, in the same next: %r"
+          % ((text[-300:], [a for a, _o in second_runs]),),
+          second_runs and all("--no-reuse" in a for a, _o in second_runs))
+    # RED TWIN: a rerun that marks only the member it was answered on leaves
+    # the other's red parked and its gate unrun, so sv4's predicate fails.
+    mutant, _w = _load("drive_phase_stored_rerun_mutant")
+    mutant.rerun_alongside = lambda ctx, state, manifest, pending: []
+    root_m, mpath_m, calls_m, _second_m = _sv_red_wave(mutant, "storedrerunm")
+    before = len(calls_m)
+    _next(mutant, root_m, mpath_m, "--answer", "rerun")
+    runs_m = _sv_task_calls(calls_m[before:], "P1.2")
+    check("sv4r RED TWIN: a driver whose rerun reaches only the member it was "
+          "answered on measures nothing for the second: %r"
+          % ([a for a, _o in runs_m],),
+          not (runs_m and all("--no-reuse" in a for a, _o in runs_m)))
+    root_b, mpath_b, calls_b, _second_b = _sv_red_wave(M, "storedrerunb",
+                                                       _SV_TWO_STEPS)
+    before = len(calls_b)
+    _code, text_b = _next(M, root_b, mpath_b, "--answer", "rerun")
+    other_runs = _sv_task_calls(calls_b[before:], "P1.2")
+    check("sv4m THE TWIN: red on different steps, the rerun answered on the "
+          "first member does not reach the second - its decision stays parked "
+          "for its own answer and its gate is not run: %r"
+          % ((text_b[-300:], [a for a, _o in other_runs],
+              _sv_parked(root_b, "P1.2").get("decision")),),
+          not other_runs and _sv_parked(root_b, "P1.2").get("decision")
+          == "gate-red")
+    # Overlapping, not equal: the first member red on one step, the second on
+    # that step and another. "The same failing step" is a step both share.
+    root_c, mpath_c, calls_c, _second_c = _sv_red_wave(
+        M, "storedrerunc", ("unit-a", ("unit-a", "unit-b")))
+    shared = ((_sv_parked(root_c, "P1.2").get("verdict") or {}).get("failing"))
+    before = len(calls_c)
+    _code, text_c = _next(M, root_c, mpath_c, "--answer", "rerun")
+    shared_runs = _sv_task_calls(calls_c[before:], "P1.2")
+    check("sv4o a member red on that step and another is reached by the rerun "
+          "answered on a member red on the one step - measured with --no-reuse "
+          "in the same next: %r" % ((shared, [a for a, _o in shared_runs]),),
+          shared == ["unit-a", "unit-b"]
+          and shared_runs and all("--no-reuse" in a for a, _o in shared_runs))
+
+
+def _stored_explain_cases(check):
+    """`--explain` is a path that shows a stored decision too: once the run a
+    gate-red stood on no longer answers the gate, it says so - why, and what the
+    next `next` does - and never replays the text the last signal kept."""
+    M, why = _load("drive_phase_stored_explain")
+    if M is None:
+        check("sv10 the driver loads", False, why)
+        return
+    root, mpath = _repo("storedexplain", task_ids=TASKS[:1], gate=("unit",),
+                        per_task="phase")
+    _commit_plan(root, mpath, lambda plan: plan["meta"].update(
+        buildCommands={"unit": _SV_RED}), "the gate's build command, red")
+    _code, first = _next(M, root, mpath)
+    if instruction(first) == ("dispatch", "executor", "P1.1"):
+        _file_executor(root, mpath, "P1.1")
+    # The form every command runs: the decision goes out as a signal, and its
+    # text is what a later explain could replay.
+    _code, line = _signal_next(M, root, mpath)
+    code, held = _explain_of(M, root, mpath, "P1.1")
+    check("sv10 THE TWIN: with the build command unchanged, explain shows the "
+          "waiting gate-red with its run and its answers: %r" % ((line, held),),
+          "gate-red" in line and code == 0 and "decide gate-red P1.1" in held
+          and _SV_RUN.search(held) is not None and "--answer" in held)
+    _sv_set_command(mpath, _SV_GREEN)
+    code, after = _explain_of(M, root, mpath, "P1.1")
+    check("sv11 after the build command changed, explain says the gate-red no "
+          "longer stands on a run that answers the gate, why, and that the next "
+          "next measures again - no decide line and no answer offered: %r"
+          % ((code, after),),
+          code == 0 and "decide gate-red" not in after and "--answer" not in after
+          and "no longer answers its gate" in after
+          and "other commands" in after and "next measures" in after)
+
+
+def _stored_green_cases(check):
+    """The green a task's gate recorded is the drive's stored verdict until the
+    close: once `meta.buildCommands` resolves the gate to another command, the
+    drive measures it again rather than closing on the old green; unchanged, it
+    closes on it as before."""
+    M, why = _load("drive_phase_stored_green")
+    if M is None:
+        check("sv5 the driver loads", False, why)
+        return
+
+    def to_reviewer(module, prefix):
+        root, mpath = _repo(prefix, task_ids=TASKS[:1], gate=("unit",))
+        _commit_plan(root, mpath, lambda plan: plan["meta"].update(
+            buildCommands={"unit": _SV_GREEN}), "the gate's build command")
+        calls = _gate_calls(module)
+        texts = []
+        for _ in range(4):
+            texts.append(_next(module, root, mpath)[1])
+            kind = instruction(texts[-1])
+            if kind == ("dispatch", "executor", "P1.1"):
+                _file_executor(root, mpath, "P1.1")
+            elif kind[0] != "dispatch" or kind[1] == "reviewer":
+                break
+        return root, mpath, calls, texts
+
+    def changed_then_closed(module, prefix):
+        """The command changed after the green and the reviewer filed: `(text,
+        measured, status, reached)` of the next that follows, `reached` the
+        last print and the gate calls before the change."""
+        root, mpath, calls, texts = to_reviewer(module, prefix)
+        reached = (texts[-1], list(calls))
+        _sv_set_command(mpath, _SV_GREEN_TOO)
+        _file_reviewer(root, mpath, "P1.1")
+        before = len(calls)
+        _code, text = _next(module, root, mpath)
+        return (text, calls[before:], tasks_of(mpath)["P1.1"].get("status"),
+                reached)
+
+    def measured_again(measured, status):
+        return bool(len(measured) == 1
+                    and "GATE VERDICT REUSED" not in measured[0][1]
+                    and "GATE GREEN" in measured[0][1] and status == "done")
+
+    text, measured, status, (last, gated) = changed_then_closed(M, "storedgreen")
+    check("sv5 the fixture reaches the per-task reviewer with the gate measured "
+          "green once: %r" % ((last[-200:], len(gated)),),
+          instruction(last) == ("dispatch", "reviewer", "P1.1")
+          and len(gated) == 1 and "GATE GREEN" in gated[0][1])
+    check("sv6 a stored green whose build command changed since is measured "
+          "again before the close - one gate run, not a repeat - and the task "
+          "closes on that run: %r"
+          % ((text[-300:], [o[-120:] for _a, o in measured]),),
+          measured_again(measured, status))
+    # RED TWIN: a driver whose green mark is read as it was - present, so held
+    # - closes on the old green, and sv6's predicate fails for it.
+    mutant, _w = _load("drive_phase_stored_green_mutant")
+    mutant.stored_green = lambda ctx, state, manifest, task, kind: (
+        mutant._evio.STORED_HOLDS if mutant._marked(state, kind, task) else None)
+    text_m, measured_m, status_m, _reached = changed_then_closed(mutant,
+                                                                 "storedgreenm")
+    check("sv6r RED TWIN: a driver that closes on a stored green without asking "
+          "its basis measures nothing after the command changed: %r"
+          % ((text_m[-200:], len(measured_m), status_m),),
+          not measured_again(measured_m, status_m))
+    root_t, mpath_t, calls_t, _texts_t = to_reviewer(M, "storedgreent")
+    _file_reviewer(root_t, mpath_t, "P1.1")
+    before = len(calls_t)
+    _code, text_t = _next(M, root_t, mpath_t)
+    check("sv6m THE TWIN: with the build command and the tree unchanged, the "
+          "stored green is reused as before - the close runs no gate: %r"
+          % ((text_t[-300:], len(calls_t) - before),),
+          len(calls_t) == before
+          and tasks_of(mpath_t)["P1.1"].get("status") == "done")
+
+
 def _single_task_cases(check):
     """`next <taskId>` drives that one task and stops: the run of `/audit:run`
     and `/audit:next`, which execute exactly one task, through the same steps."""
@@ -4646,6 +5028,16 @@ def _reuse_gate_cases(check):
     root, mpath = _repo("reuse-gc", task_ids=TASKS[:1], gate=(UNRELATED_GATE,),
                         per_task="phase", phase_gate=(UNRELATED_GATE,))
     drive(M2, root, mpath, answer=_stop_at_other)
+    held = _drive_state(root).get("phaseGate") or {}
+    project, config = _evio.project_config_for(mpath, root)
+    named = _evio.row_by_run(_evio.read_rows(project, config)["rows"],
+                             held.get("runId"))
+    check("dc4p the held phase-gate green names its run as the ledger keeps it - "
+          "a row of the phase, at the head the drive holds it at - so a reuse "
+          "below is a reuse of that run and not of an id no row carries: %r"
+          % ((held, (named or {}).get("phaseId")),),
+          named is not None and named.get("phaseId") == PHASE
+          and not named.get("taskId") and held.get("head") == _head(root))
     before = seen["runs"]
     added = _add_task(root, mpath, gate=UNRELATED_GATE)
     code, text = _next(M2, root, mpath, "--answer", "accept", "--reason",
@@ -8399,6 +8791,10 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("wj-block", "_writer_reading_cases"),
           ("rrs-block", "_retry_reason_cases"),
           ("rm-block", "_rerun_measures_cases"),
+          ("sv-block", "_stored_red_cases"),
+          ("sv4-block", "_stored_rerun_cases"),
+          ("sv5-block", "_stored_green_cases"),
+          ("sv10-block", "_stored_explain_cases"),
           ("fx-block", "_fix_batch_cases"), ("ht-block", "_handed_triage_cases"),
           ("dt-block", "_single_task_cases"), ("dl-block", "_lock_stop_cases"),
           ("dk-block", "_key_cases"), ("ds-block", "_submit_cases"),

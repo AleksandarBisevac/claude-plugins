@@ -406,7 +406,7 @@ STEPS = {
         "rule": ("Started: wait for it to exit, then next. Not started: run the "
                  "run: line --explain prints, in the background.",)},
     "decide-gate-red-writer": {
-        "line": "decide gate-red-writer %(task)s: recorded gate red (%(why)s)",
+        "line": "decide gate-red-writer %(task)s: recorded gate red (%(why)s)%(run)s",
         "rule": ("recommended: resume - the session that wrote it gets the "
                  "failing lines and no attempt is spent; retry spends one.",)},
     "dispatch-executor": {
@@ -436,7 +436,7 @@ STEPS = {
         "line": "follow %(task)s: run `%(recipe)s` in %(tree)s, then next %(phase)s",
         "rule": ("It needs a browser: the orchestrator runs it, never an agent.",)},
     "decide-gate-red": {
-        "line": "decide gate-red %(task)s: recorded gate red (%(why)s)",
+        "line": "decide gate-red %(task)s: recorded gate red (%(why)s)%(run)s",
         "rule": ("rerun spends no attempt (GATE COULD NOT RUN); retry spends "
                  "one; past maxAttempts, block and tell the human.",)},
     "decide-writer-committed": {
@@ -773,7 +773,10 @@ SLICE_RULE = ("dispatch the slices together in one message; each files its own "
 # The finding and preExisting lists of a sliced review are numbered afresh, and
 # the intent of the slice that answered worst stands for the phase.
 INTENT_WORST_FIRST = ("diverges", "cannot-tell", "matches")
-_RUN_ID = re.compile(r"evidence: recorded (\S+)")
+# The run id a gate's output names. A green run's terse line joins its records
+# with "; " (`run-test-gate.success_line`), so the id ends at a ";" as well as
+# at a space - read whole, it named no run in the ledger.
+_RUN_ID = re.compile(r"evidence: recorded ([^\s;]+)")
 # The most a gate-red decision says about the task's base, in bytes: the task
 # to run first leads, so a clip keeps the suggestion and cuts the suite list.
 BASE_CLAUSE_BYTES = 100
@@ -1375,7 +1378,8 @@ def render_decision(ctx, pending):
         return render_round_cap(ctx, pending)
     options, needs = DECISIONS[name]
     lines = step_text("decide-%s" % (name,), task=pending.get("task"),
-                      phase=ctx["phase"], why=pending.get("why") or "")
+                      phase=ctx["phase"], why=pending.get("why") or "",
+                      run=verdict_said(pending))
     if options:
         lines.append(ANSWER_LINE % {
             "phase": ctx["phase"], "options": "|".join(options),
@@ -1809,22 +1813,205 @@ def resume_writer(ctx, state, task, pending, tree=None):
                        resume=pending["session"], round_n=round_n)
 
 
-def gate_red_decision(ctx, state, manifest, phase, task, text):
+# --- a stored gate verdict, shown only while its basis holds -----------------------
+# The decisions that stand on one recorded gate run. Each carries the run under
+# `verdict` (`verdict_taken`), and every path that shows or acts on one - the
+# pending decision, a member's parked one, `explain` - asks `pending_still_applies`,
+# which asks `verdict_basis`. The two green marks a step closes on (`gated`,
+# `regated`) carry the same record and are asked the same question
+# (`stored_green`), so no stored verdict is shown past a change of what its gate
+# resolves to or of the tree it was taken in.
+GATE_VERDICT_DECISIONS = ("gate-red", "gate-red-writer")
+
+
+def verdict_taken(ctx, text, tree=None):
+    """The record a gate run's output names, kept beside a verdict the drive
+    shows later: `{runId, at, tree, failing}` - the run id, the moment the run
+    it stands on was measured (its source's, for a repeat), the tree the drive
+    ran it in (None for the project), and the steps that did not exit 0. A run
+    that printed no id, or a ledger that will not read, keeps what it has:
+    `verdict_basis` says that the basis is missing."""
+    found = _RUN_ID.search(text or "")
+    held = {"runId": found.group(1) if found else None, "at": None,
+            "tree": tree or None, "failing": []}
+    if not found:
+        return held
+    try:
+        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+    except Exception:                                          # noqa: BLE001
+        return held
+    row = _evio.row_by_run(rows, held["runId"])
+    measured = _evio.measured_row(rows, row) or row or {}
+    held["at"] = measured.get("ts")
+    held["failing"] = _evio.red_step_names(measured)
+    return held
+
+
+def verdict_basis(ctx, manifest, task_id, held):
+    """`(word, why)` - THE ONE CHECK a stored task-gate verdict passes before it
+    is shown or closed on: the run `held` names, read back from the ledger,
+    against the gate `task_id` resolves to now (`_evidence_io.gate_digest` over
+    its entries and `meta.buildCommands`) and the tree the drive ran it in
+    (`_evidence_io.stored_verdict_moved`, which says why the bytes in it are
+    not asked here)."""
+    if not isinstance(held, dict):
+        return _evio.STORED_UNKNOWN, "no run was recorded with it"
+    task = _mio.tasks_by_id(manifest).get(task_id) or {}
+    phase = next((p for p in manifest.get("phases") or [] if isinstance(p, dict)
+                  and any(isinstance(t, dict) and t.get("id") == task_id
+                          for t in p.get("tasks") or [])), {})
+    entries, _source = _mio.gate_entries(phase, task)
+    build = (manifest.get("meta") or {}).get("buildCommands")
+    where = member_project(ctx, held.get("tree"))
+    if where and not os.path.isdir(where):
+        return _evio.STORED_MOVED, "the tree it was measured in is gone"
+    measured_in = (None if not where or os.path.realpath(where)
+                   == os.path.realpath(ctx["project"]) else where)
+    try:
+        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+    except Exception as exc:                                   # noqa: BLE001
+        return _evio.STORED_UNKNOWN, "the ledger could not be read (%s)" % (exc,)
+    return _evio.stored_verdict_moved(rows, held.get("runId"), {
+        "gateDigest": _evio.gate_digest(entries, build),
+        "tree": _evio.tree_key(measured_in) if measured_in else None})
+
+
+def note_basis(ctx, task_id, what, held, word, why):
+    """Say once per run why a stored verdict about `task_id` was measured again
+    (`word` moved) or shown with its basis unestablished (unknown)."""
+    seen = ctx.setdefault("basisNoted", {})
+    key = (task_id, what, (held or {}).get("runId") if isinstance(held, dict) else None)
+    if key in seen:
+        return
+    seen[key] = why
+    ctx.setdefault("did", []).append(
+        "%s's %s no longer stands - %s; measured again" % (task_id, what, why)
+        if word == _evio.STORED_MOVED else
+        "%s's %s: whether it still answers its gate is not established - %s"
+        % (task_id, what, why))
+
+
+def verdict_moved(ctx, pending):
+    """The sentence `pending` was dropped with because its run no longer answers
+    its gate, or None - read off the note `note_basis` made this run."""
+    held = pending.get("verdict") if isinstance(pending, dict) else None
+    key = (pending.get("task"), pending.get("decision"),
+           held.get("runId") if isinstance(held, dict) else None)
+    why = (ctx.get("basisNoted") or {}).get(key)
+    return why if key in (ctx.get("basisMoved") or ()) else None
+
+
+def gate_basis_holds(ctx, manifest, pending):
+    """False when `pending` stands on a gate run that no longer answers its gate:
+    the decision is about a verdict nobody measured under the gate as it is."""
+    if pending.get("decision") not in GATE_VERDICT_DECISIONS:
+        return True
+    held = pending.get("verdict")
+    word, why = verdict_basis(ctx, manifest, pending["task"], held)
+    if word == _evio.STORED_HOLDS:
+        return True
+    note_basis(ctx, pending["task"], pending["decision"], held, word, why)
+    if word != _evio.STORED_MOVED:
+        return True
+    ctx.setdefault("basisMoved", set()).add(
+        (pending["task"], pending["decision"],
+         held.get("runId") if isinstance(held, dict) else None))
+    return False
+
+
+def stored_green(ctx, state, manifest, task, kind):
+    """`holds`, `moved` or None: whether the green mark `kind` (`gated`,
+    `regated`) holds for `task`'s start, asked through `verdict_basis`. A moved
+    one is spent, so the step measures again; a mark from before the record was
+    kept (`True`) reads as unknown and still holds, said once."""
+    held = _marked(state, kind, task)
+    if not held:
+        return None
+    word, why = verdict_basis(ctx, manifest, task["id"],
+                              held if isinstance(held, dict) else None)
+    if word == _evio.STORED_HOLDS:
+        return word
+    note_basis(ctx, task["id"], "stored green", held, word, why)
+    if word != _evio.STORED_MOVED:
+        return _evio.STORED_HOLDS
+    _spend(state, kind, task)
+    write_state(ctx, state)
+    return word
+
+
+def age_words(at):
+    """How long ago the stamp `at` was, in its largest whole unit (`12s`,
+    `4m`, `3h`, `2d`); None when it names no moment."""
+    moment = _evio.stamp_moment(at) if at else None
+    if moment is None:
+        return None
+    secs = max(0, int(ci_now() - moment))
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if secs >= size:
+            return "%d%s" % (secs // size, unit)
+    return "%ds" % (secs,)
+
+
+def verdict_said(pending):
+    """The clause a gate-verdict decision's line ends with: the run it stands
+    on and its age, or that no run was recorded with it. "" for any other."""
+    if pending.get("decision") not in GATE_VERDICT_DECISIONS:
+        return ""
+    held = pending.get("verdict")
+    if not isinstance(held, dict) or not held.get("runId"):
+        return "; no run recorded with it"
+    age = age_words(held.get("at"))
+    return "; run %s, %s" % (held["runId"], "%s old" % (age,) if age
+                             else "age unknown")
+
+
+def rerun_alongside(ctx, state, manifest, pending):
+    """The parked wave members a `rerun` answered on `pending` reaches: each
+    whose parked gate red failed on a step the answered one failed on too, its
+    decision taken back and its next gate run marked to measure. A member red
+    only on other steps keeps its decision for its own answer - it is asked,
+    never replayed."""
+    failing = set((pending.get("verdict") or {}).get("failing") or [])
+    parked = (state.get("wave") or {}).get("parked") or {}
+    by_id = _mio.tasks_by_id(manifest)
+    reached, shared = [], set()
+    for task_id in sorted(parked, key=_id_key):
+        held = parked[task_id]
+        other = by_id.get(task_id)
+        common = failing & set((held.get("verdict") or {}).get("failing") or [])
+        if (not common or other is None
+                or held.get("decision") not in GATE_VERDICT_DECISIONS):
+            continue
+        shared |= common
+        parked.pop(task_id)
+        _mark(state, "rerun", other)
+        reached.append(task_id)
+    if reached:
+        write_state(ctx, state)
+        ctx["did"].append("rerun reaches %s too: red on the same step (%s)"
+                          % (", ".join(reached), ", ".join(sorted(shared))))
+    return reached
+
+
+def gate_red_decision(ctx, state, manifest, phase, task, text, tree=None):
     """The decision a red task gate asks: resume of the recorded writer session
     while a round is left, carrying the failing lines; past the last round, the
-    plain gate-red, after a note on the task naming each resumed run."""
+    plain gate-red, after a note on the task naming each resumed run. Every one
+    carries the run it stands on (`verdict_taken`)."""
     said = [ln for ln in (text or "").splitlines() if "GATE" in ln]
     why = ((said[0].strip() if said else "exit 1")[:80]
            + base_red_why(ctx, text, manifest, phase, task))
+    verdict = {"verdict": verdict_taken(ctx, text, tree)}
     session = recorded_session(state, task)
     if session is None:
-        return decision(ctx, state, "gate-red", task, why)
+        return decision(ctx, state, "gate-red", task, why, extra=verdict)
     held = writer_state(state, task)
     if held["resumes"] < MAX_RESUME_ROUNDS:
         return decision(ctx, state, "gate-red-writer", task, "%s; session %s, "
                         "round %d/%d" % (why, session[:8], held["resumes"] + 1,
                                          MAX_RESUME_ROUNDS),
-                        extra={"session": session, "failing": failing_lines(text)})
+                        extra=dict(verdict, session=session,
+                                   failing=failing_lines(text)))
     if not held["capNoted"]:
         refused = note_task(ctx, task, cap_note(ctx, held, session))
         if refused is not None:
@@ -1834,7 +2021,7 @@ def gate_red_decision(ctx, state, manifest, phase, task, text):
         write_state(ctx, state)
     return decision(ctx, state, "gate-red", task, "%s; still red after %d "
                     "resume rounds, named in the task's notes" % (
-                        why, MAX_RESUME_ROUNDS))
+                        why, MAX_RESUME_ROUNDS), extra=verdict)
 
 
 def cap_note(ctx, held, session):
@@ -2867,7 +3054,7 @@ def advance(ctx, state, manifest, phase, task, tree=None):
         # A WRITER'S RETURN IS FILED AT ITS GREEN GATE, with the proof held
         # since its session: a red gate goes back to the session, and the
         # return then carries the proof of the bytes it is filed with.
-        if not _marked(state, "gated", task):
+        if stored_green(ctx, state, manifest, task, "gated") != _evio.STORED_HOLDS:
             stop = gate_step(ctx, state, manifest, phase, task, tree)
             if stop is not None:
                 return stop
@@ -2911,8 +3098,11 @@ def advance(ctx, state, manifest, phase, task, tree=None):
             return decision(ctx, state, "no-reviewer-return", task, "")
     # THE RECORDED GATE RUNS ONCE PER START, BEFORE THE REVIEWER OR THE CLOSE,
     # whatever the key: a task whose review is carried to the phase still owes
-    # the measurement its close and its commit are bound to.
-    if (reviewer is None or not due) and not _marked(state, "gated", task):
+    # the measurement its close and its commit are bound to - and again, past a
+    # filed reviewer, when the green it stood on no longer answers the gate.
+    green = stored_green(ctx, state, manifest, task, "gated")
+    if green != _evio.STORED_HOLDS and (reviewer is None or not due
+                                        or green == _evio.STORED_MOVED):
         stop = gate_step(ctx, state, manifest, phase, task, tree)
         if stop is not None:
             return stop
@@ -2970,10 +3160,11 @@ def gate_step(ctx, state, manifest, phase, task, tree=None):
         if again is not None:
             code, out, err = again
     if code == 1:
-        return gate_red_decision(ctx, state, manifest, phase, task, out + err)
+        return gate_red_decision(ctx, state, manifest, phase, task, out + err,
+                                 tree)
     if code != 0:
         return relay_refusal(ctx, "run-test-gate.py", code, out + err)
-    _mark(state, "gated", task)
+    _mark(state, "gated", task, verdict_taken(ctx, out + err, tree))
     write_state(ctx, state)
     banners = gate_banners(out + err)
     ctx["did"].append("gate %s green%s" % (task["id"], " (%s)" % (
@@ -3384,16 +3575,18 @@ def integrate_member(ctx, state, phase, task):
                             for p in answer.get("paths") or []]})
         ctx["did"].append("integrated %s%s" % (task["id"], " (already)"
                                                if answer.get("already") else ""))
-    if held.get("regate") is not False and not _marked(state, "regated", task):
+    if held.get("regate") is not False and stored_green(
+            ctx, state, load_phase(ctx)[0], task, "regated") != _evio.STORED_HOLDS:
         code, out, err = task_gate(ctx, state, phase, task)
         if code == 1:
             said = [ln for ln in (out + err).splitlines() if "GATE" in ln]
             return decision(ctx, state, "gate-red", task, (
                 "re-gate on the phase tree: %s" % (
-                    said[0].strip() if said else "exit 1",))[:80])
+                    said[0].strip() if said else "exit 1",))[:80],
+                extra={"verdict": verdict_taken(ctx, out + err)})
         if code != 0:
             return relay_refusal(ctx, "run-test-gate.py", code, out + err)
-        _mark(state, "regated", task)
+        _mark(state, "regated", task, verdict_taken(ctx, out + err))
         write_state(ctx, state)
         ctx["did"].append("re-gate %s green" % (task["id"],))
     return None
@@ -4151,9 +4344,11 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
     if answer == "rerun":
         # The gate is not marked as run for this start, so the drive measures
         # again - with `--no-reuse`, through the mark `task_gate` spends - and
-        # the task is not re-started, so no attempt is spent.
+        # the task is not re-started, so no attempt is spent. A wave member
+        # parked red on the same steps is measured with it, never replayed.
         _mark(state, "rerun", task)
         write_state(ctx, state)
+        rerun_alongside(ctx, state, manifest, pending)
         return None
     if answer == "redo":
         # The work was fine and the phase tree refused it, so no attempt is
@@ -4242,7 +4437,10 @@ def pending_still_applies(ctx, manifest, pending):
     decision once that role's return is filed for the start it was raised for:
     the task is in progress under the same start, so the status and the start
     alone keep it, and a parked one would stop the drive on a line about a
-    return that is there."""
+    return that is there. A decision standing on a gate run is about that run,
+    so it no longer applies once the run stops answering the gate
+    (`gate_basis_holds`). Every path that shows a waiting decision - printed
+    again, a member's parked one, `explain` - asks here."""
     if not pending.get("task"):
         return True
     task = _mio.tasks_by_id(manifest).get(pending["task"]) or {}
@@ -4254,7 +4452,9 @@ def pending_still_applies(ctx, manifest, pending):
             and start_key(task) == pending.get("start")):
         return False
     role = parked_return_role(pending["decision"])
-    return role is None or role_return_filed(ctx, task, role) is None
+    if role is not None:
+        return role_return_filed(ctx, task, role) is None
+    return gate_basis_holds(ctx, manifest, pending)
 
 
 # --- the drive ---------------------------------------------------------------------
@@ -5684,6 +5884,16 @@ def drive_locked(ctx, state, answer, reason, fixes):
     if pending and not pending_still_applies(ctx, manifest, pending):
         state.pop("pending", None)
         write_state(ctx, state)
+        moved = verdict_moved(ctx, pending)
+        if moved is not None and answer not in (None, "rerun"):
+            return E_USAGE, ("%s %s: the %s decision on %s stood on a run that "
+                             "no longer answers its gate (%s), so --answer %s "
+                             "answers nothing; next measures it again"
+                             % (PREFIX, ctx["phase"], pending["decision"],
+                                pending["task"], moved, answer))
+        if moved is not None:
+            # A rerun asks for the measurement the moved verdict owes anyway.
+            answer = None
         pending = None
     if pending and pending["decision"] == "triage":
         pending = refresh_triage(ctx, state, phase, pending)
@@ -6424,10 +6634,21 @@ def explain(ctx, subject):
     manifest = _mio.load_manifest(ctx["manifest"])
     parked = ((state.get("wave") or {}).get("parked") or {}).values()
     for pending in [state.get("pending")] + list(parked):
-        if (isinstance(pending, dict)
-                and subject == (pending.get("task") or ctx["phase"])
-                and pending_still_applies(ctx, manifest, pending)):
+        if not (isinstance(pending, dict)
+                and subject == (pending.get("task") or ctx["phase"])):
+            continue
+        if pending_still_applies(ctx, manifest, pending):
             return E_OK, explain_text(render_decision(ctx, pending)["lines"])
+        moved = verdict_moved(ctx, pending)
+        if moved is not None:
+            # The kept text is the decision as it was printed, about a run that
+            # no longer answers the gate: replaying it would offer its answers.
+            return E_OK, explain_text([
+                "%s %s: the %s decision on %s stood on run %s, which no longer "
+                "answers its gate - %s" % (
+                    PREFIX, ctx["phase"], pending["decision"], subject,
+                    (pending.get("verdict") or {}).get("runId"), moved),
+                "next measures the gate again: next %s" % (ctx["phase"],)])
     kept = read_explain(ctx)
     if kept and subject in (kept.get("subjects") or []):
         return E_OK, explain_text(str(kept.get("text") or "").splitlines())

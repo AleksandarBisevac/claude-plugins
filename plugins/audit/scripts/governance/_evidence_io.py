@@ -1136,6 +1136,86 @@ def row_for(project, result, scope, ids, identity, published=None):
     return row
 
 
+# --- a stored verdict, read against what its gate is now ----------------------
+# A caller that keeps a run's verdict past the moment it was taken - a decision
+# waiting on a human, a green the next step will close on - shows it later, and by
+# then the gate may resolve to another command or the work may have changed. The
+# words `stored_verdict_moved` answers with: the basis holds, it moved (so the
+# verdict describes another gate or another tree and is measured again), or it
+# could not be established either way (said, never read as agreement).
+STORED_HOLDS = "holds"
+STORED_MOVED = "moved"
+STORED_UNKNOWN = "unknown"
+
+
+def tree_key(tree):
+    """A short, stable name for a measured tree that is not the project - never
+    its path, which names a machine, and a row is committed. The spelling
+    `run-test-gate` records as `testedState.tree.key`; a case holds the two to
+    one answer."""
+    return hashlib.sha1(os.path.realpath(tree).encode("utf-8")).hexdigest()[:12]
+
+
+def measured_row(rows, row):
+    """The row that measured what `row` says: `row` itself, or the run a repeated
+    verdict repeats (`reusedFrom`), newest by moment - None when that run is not
+    in `rows`, since a repeat whose source is gone names no tree."""
+    if not isinstance(row, dict) or row.get(VERDICT_SOURCE) != REUSED:
+        return row if isinstance(row, dict) else None
+    return row_by_run(rows, (row.get("reusedFrom") or {}).get("runId"))
+
+
+def red_step_names(row):
+    """The names of the steps a row recorded that did not exit 0, in step order:
+    a failure and a step that reached no verdict alike, since both are what a
+    rerun is asked over."""
+    return [str(s.get("name")) for s in (row or {}).get("steps") or []
+            if isinstance(s, dict) and s.get("exit") != 0]
+
+
+def stored_verdict_moved(rows, run_id, now):
+    """`(word, why)` - whether the verdict run `run_id` recorded still answers
+    the gate as it resolves now. `now` is what the caller reads at this moment:
+    `gateDigest` (`gate_digest` over the entries and `meta.buildCommands`) and
+    `tree` (`tree_key` of the tree the gate runs in, None for the project).
+
+    THE GATE AND THE TREE, NOT THE BYTES IN IT. A change to the declared files
+    after a verdict is the committer's question (`_verdict_binding`'s digest
+    binding), and it refuses: a green read again over edited work would close
+    bytes a reviewer never saw.
+
+    MOVED ONLY ON A COMPARISON THAT DISAGREES: a run whose row is gone, or a
+    row that recorded no gate digest, is `STORED_UNKNOWN` with the reason - not
+    agreement, and not a change either, so the caller says it rather than
+    measuring for ever over a ledger it cannot read."""
+    if not run_id:
+        return STORED_UNKNOWN, "no run was recorded with it"
+    row = row_by_run(rows, run_id)
+    if row is None:
+        return STORED_UNKNOWN, "run %s is not in the ledger" % (run_id,)
+    was = row.get(GATE_DIGEST_KEY)
+    if was is not None and was != now.get("gateDigest"):
+        return STORED_MOVED, ("run %s was measured under a gate that resolves "
+                              "to other commands now" % (run_id,))
+    # THE TREE OF THE RUN NAMED, never of the run a repeat copies: a repeat is
+    # admitted on the tree's CONTENT (`run-test-gate.reuse_identity`), so one
+    # taken in tree B of a run measured in tree A is that verdict for B. A
+    # repeat whose row names no tree claims none, and is not compared on one.
+    tested = row.get("testedState") or {}
+    repeat_unplaced = (row.get(VERDICT_SOURCE) == REUSED
+                       and not isinstance(tested.get("tree"), dict))
+    was_tree = (tested.get("tree") or {}).get("key")
+    if not repeat_unplaced and was_tree != now.get("tree"):
+        return STORED_MOVED, ("run %s was measured in %s, and the gate runs in "
+                              "%s now" % (run_id, "tree %s" % (was_tree,) if was_tree
+                                          else "the project",
+                                          "tree %s" % (now["tree"],)
+                                          if now.get("tree") else "the project"))
+    if was is None:
+        return STORED_UNKNOWN, "run %s recorded no gate digest" % (run_id,)
+    return STORED_HOLDS, None
+
+
 # --- the chain, and what each layer covers ------------------------------------
 # ONE CHAIN, NOT A SECOND ONE. `prev` and `hash` mean here exactly what they mean
 # in the trail, and they are computed by the journal's OWN `row_hash`,

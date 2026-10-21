@@ -1,0 +1,28 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/scripts/governance/drive-phase.py:6628-6642",
+   "issue": "explain's fallback still shows a stored verdict past the check: when pending_still_applies drops a moved gate-red (gate_basis_holds False) the loop falls through to read_explain(), which prints the last signal's kept text - the same stale 'recorded gate red ... run X' line the check just discarded. The task asks for ONE check every display path goes through; this path is guarded for the live decision but not for its kept copy. No sv case drives explain over a moved decision.",
+   "resolution": "In explain, when a pending for the subject exists and verdict_moved(ctx, pending) is not None, answer that the decision was discarded (its note) instead of falling back to the kept text, and add a case that changes buildCommands and asks explain."},
+  {"id": 2, "severity": "low", "file": "plugins/audit/scripts/governance/drive-phase.py:779",
+   "issue": "The _RUN_ID widening ([^\\s;]+) is outside the task's description and changes what green_phase_gate stores at :5439 as phaseGate.runId (previously '<id>;' on the terse green line, which could never match a row, so held-gate reuse silently never fired). Phase-gate reuse can now fire where it did not; the executor says so in its outcome but no case pins either the new reuse or its binding by held_gate_binds.",
+   "resolution": "Add a case that a green phase gate's terse line yields a held runId that names a ledger row and that held_gate_binds still refuses when head or the gate moved; or split the regex fix into its own task."},
+  {"id": 3, "severity": "low", "file": "plugins/audit/scripts/governance/_evidence_io.py:1148-1153",
+   "issue": "tree_key is now a second spelling of plugins/audit/scripts/governance/run-test-gate.py:5062 tree_key, held equal only by sv7. A change to either spelling that sv7 cannot see (e.g. a different realpath policy) makes every wave member's stored verdict compare MOVED and be re-measured for ever.",
+   "resolution": "Make run-test-gate delegate to _evidence_io.tree_key in its own task, as the executor's note proposes, and keep sv7 as the pin until then."},
+  {"id": 4, "severity": "low", "file": "plugins/audit/scripts/governance/drive-phase.py:1977-1984",
+   "issue": "rerun_alongside reaches a parked member only when its failing-step list equals the answered member's (sorted ==). The task clause says every member 'whose pending red carries the same failing step'; a member red on {unit-a, unit-b} beside one red on {unit-a} is not reached. It is asked for its own answer rather than silently replayed (the clause's alternative), so this is a narrowing, not a replay.",
+   "resolution": "Either reach members whose failing set intersects the answered one, or state in the docstring/outcome that the rule is set equality and why."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause 'compares the record's gateDigest and tree identity with what the task's gate resolves to now; a mismatch discards the stored verdict and measures again': stored_verdict_moved/verdict_basis compare row gateDigest (gate_digest over _mio.gate_entries and meta.buildCommands, the same spelling run-test-gate records at run-test-gate.py:5552) and testedState.tree.key against the tree key the drive ran in; gate_basis_holds (via pending_still_applies, which step_member 3998, walk_wave 4043 and explain 6638 already call) and stored_green (gated/regated marks) discard on MOVED. Clause 'Every gate-red line prints the runId and its age': both decide-gate-red and decide-gate-red-writer templates now end in %(run)s from verdict_said. Clause 'A rerun answered on a wave member applies to every member whose pending red carries the same failing step (or asks once per member)': rerun_alongside marks members red on identical failing steps; others stay parked and are asked (or dropped by the basis check). Clause 'one check every display path goes through': one verdict_basis; the only path found outside it is explain's kept-text fallback (finding 1). Executor's outcome describes the diff: the nine paths, the _RUN_ID fix and the 13 sv cases match what is in the diff. Its claims line 2 (HEAD code reds sv1-sv4/sv6, over-fire probe) carries no command or exit and conflicts with the filed redFirst, which is could-not-prove.",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "Filed redFirst status could-not-prove, source red-first-helper: 'python3 tools/sweep-selftests.py tests/test_drive_phase.py in a throwaway tree at HEAD: the run timed out after 37 s and its process group was torn down'. A timeout is a refusal with a reason, so the word is echoed. The claims block asserts reds on HEAD and an over-fire probe, but names no command and exit, so I treat them as unverified. In-suite red twins (sv3m, sv4r, sv6r) replace the new functions with the old behaviour inside the suite, which is a credible but not a proof of sv cases failing on unfixed HEAD.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "tests.gate is the literal command 'python3 tools/sweep-selftests.py tests/test_drive_phase.py', which selects that one file. I read the added sv1-sv8 cases and the diff context in full; I did not read the rest of that file, so for its earlier cases the answer is only that none came up through the functions the diff changes (render_decision lines, gate_red_decision, pending_still_applies, advance gate marks)."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

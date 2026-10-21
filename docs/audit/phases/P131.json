@@ -275,9 +275,37 @@
         "file": "plugins/audit/scripts/manifest/_manifest_phases.py:1707-1708",
         "issue": "The comment still says `expectRedFirst` is derived as `audit-task._build_task` writes `mode == \"tdd\"`. The diff changes the derivation to _expects_red_first(mode, tests_add, fix_task) in two writers (_build_task and _locked_scope), so the sentence now states a rule the code no longer follows.",
         "resolution": "Reword to point at `audit-task._expects_red_first`, the one rule both writers read."
+      },
+      {
+        "id": "P131-R37",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:6628-6642",
+        "issue": "explain's fallback still shows a stored verdict past the check: when pending_still_applies drops a moved gate-red (gate_basis_holds False) the loop falls through to read_explain(), which prints the last signal's kept text - the same stale 'recorded gate red ... run X' line the check just discarded. The task asks for ONE check every display path goes through; this path is guarded for the live decision but not for its kept copy. No sv case drives explain over a moved decision.",
+        "resolution": "In explain, when a pending for the subject exists and verdict_moved(ctx, pending) is not None, answer that the decision was discarded (its note) instead of falling back to the kept text, and add a case that changes buildCommands and asks explain."
+      },
+      {
+        "id": "P131-R38",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:779",
+        "issue": "The _RUN_ID widening ([^\\s;]+) is outside the task's description and changes what green_phase_gate stores at :5439 as phaseGate.runId (previously '<id>;' on the terse green line, which could never match a row, so held-gate reuse silently never fired). Phase-gate reuse can now fire where it did not; the executor says so in its outcome but no case pins either the new reuse or its binding by held_gate_binds.",
+        "resolution": "Add a case that a green phase gate's terse line yields a held runId that names a ledger row and that held_gate_binds still refuses when head or the gate moved; or split the regex fix into its own task."
+      },
+      {
+        "id": "P131-R39",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py:1148-1153",
+        "issue": "tree_key is now a second spelling of plugins/audit/scripts/governance/run-test-gate.py:5062 tree_key, held equal only by sv7. A change to either spelling that sv7 cannot see (e.g. a different realpath policy) makes every wave member's stored verdict compare MOVED and be re-measured for ever.",
+        "resolution": "Make run-test-gate delegate to _evidence_io.tree_key in its own task, as the executor's note proposes, and keep sv7 as the pin until then."
+      },
+      {
+        "id": "P131-R40",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:1977-1984",
+        "issue": "rerun_alongside reaches a parked member only when its failing-step list equals the answered member's (sorted ==). The task clause says every member 'whose pending red carries the same failing step'; a member red on {unit-a, unit-b} beside one red on {unit-a} is not reached. It is asked for its own answer rather than silently replayed (the clause's alternative), so this is a narrowing, not a replay.",
+        "resolution": "Either reach members whose failing set intersects the answered one, or state in the docstring/outcome that the rule is set equality and why."
       }
     ],
-    "outcome": "[findings: 36 - 0 high, 11 med, 25 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 40 - 0 high, 11 med, 29 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1876,7 +1904,7 @@
     {
       "id": "P131.13",
       "title": "A fix task made at triage derives its gate only from the suite paths among the finding's files, and takes the phase gate when none is a suite",
-      "status": "in_progress",
+      "status": "done",
       "description": "A fix task the drive makes from `next <phase> --answer fix --fix <id>` derived its gate (`gateBasis: files`) from every file the finding names, so a non-suite path (.github/workflows/ci.yml) was handed to the sweep and the gate was red on every run regardless of the work (seen on BF4.3). Do: the fix-task builder derives a gate only from paths `_manifest_phases.is_suite_path` accepts, and falls back to the phase gate when none is a suite; the write-time shape check refuses a files-derived gate entry that names a non-suite path, and the task records why such an entry got past it before. ALSO (register F674 reopened, seen on another project 2026-10-21): a fix task made from a finding whose files are all documentation or comments, or whose resolution says no code change, is born tdd with expectRedFirst and an empty tests.add, so its submit owes a test command it cannot have (drive-phase.py ~4362-4375, audit-task.py ~3094). Default such a fix task to gate-only, and never write expectRedFirst true beside an empty tests.add.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1918,19 +1946,37 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9b3b8159e6cb",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: _ordinary_task_gate's files arm, for a fix task (runner_aware), points the sibling's spelling only at is_suite_path files and returns the phase's wide gate with gateBasis phase-no-paths when none is a suite; new _files_gate_refusal (backed by _manifest_phases.files_gate_non_suite_paths, runner's own program exempt via the sibling's spelling paths) refuses a fix task's files-derived gate that names a non-suite declared file, in add --fixes and in the batch form, nothing written. Why it got past before: gate_entry_shape_problem reads only repeated/misplaced suites, and the fix task's files arm handed every path to the spelling unread, so the gate was well-formed and wrong. F674: new _says_no_code_change (positive evidence: 'no code change', 'comment-only', or one clause editing a comment/docstring with no clause join) makes _fix_task_args default gate-only; new _expects_red_first writes expectRedFirst true for a fix task only when tests.add is non-empty (build and scope writers both; planned tasks keep true so the validator nudge stays). Updated pins that encoded the old behaviour: cz13 and the fx-doc ALLOW case now expect (tdd, expectRedFirst false) for a source-only fix with no case; cz17 now names the unit suite in the resolution and cz17b pins the bare-source case (phase gate, phase-no-paths, expectRedFirst false). verbs-in-full.md paragraph on fix-task gate-only/gate updated (outside task files; the plan gate allowed the Edit). Tests: test_drive_phase fx-block 8/8, test_audit_task 1104/1104, whole sweep 194/194 files 16862 cases, ruff and vermin clean. PROCESS DEVIATION: two small edits (audit-task.py function+call sites, one tweak in tests/test_audit_task.py) were made with a python one-off instead of the Edit tool, against the orchestrator note; their content is in git diff and was re-read afterwards. No browser launched, nothing committed.",
+        "descriptive": "A fix task made at triage is gated only on real suites (else the phase gate), a refusal backstops it, and comment/doc/no-code-change fixes are gate-only and never born expecting a red with no case."
       },
       "startedAt": "2026-10-21T17:14:31Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-21T18:17:59Z",
+      "verifiedBy": [
+        "fb5/fb6 (test_drive_phase): fix task over a finding naming workflow+suite gates on the suite only; workflow+source with no suite gets the phase gate with gateBasis phase-no-paths",
+        "bx10/bx11 (test_audit_task): add --fixes and the batch form refuse a files-derived gate naming a non-suite declared file, by name, nothing written; the helper never names the runner's own program or a suite",
+        "fb7/fb8 (test_drive_phase): document-only and no-code-change findings give gate-only/expectRedFirst false; a source finding stays tdd with expectRedFirst false and empty add",
+        "bx12 (test_audit_task, extra): batch of four findings gives gate-only, gate-only, tdd, tdd with expectRedFirst false throughout",
+        "cz17b (test_audit_task, extra): bare unit-test ask gets the phase gate"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-21T18:17:56Z.f0cfbf",
         "status": "passed",
         "at": "2026-10-21T18:17:56Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9b3b8159e6cb",
+        "at": "2026-10-21T18:17:59Z",
+        "return": "docs/audit/evidence/returns/P131.13/20261021T171431Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-21T17:45:21Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_task.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 480-second deadline; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2138,7 +2184,7 @@
     {
       "id": "P131.17-dau",
       "title": "The drive never shows a stored gate verdict or pending gate decision whose basis has changed, and a rerun on one wave member re-measures every member red for the same step",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Before the drive shows ANY stored gate verdict or pending gate decision (gate-red, gate-red-writer, a reused green), it compares the record's gateDigest (_evidence_io.gate_digest) and tree identity with what the task's gate resolves to now; a mismatch discards the stored verdict and measures again. Every gate-red line prints the runId and its age. A rerun answered on a wave member applies to every member whose pending red carries the same failing step (or the drive asks once per member, never silently replays one). Seen on another project: after the test build command changed, rerun re-measured one member and the next next replayed the other member's red from its original run under the old command (drive-phase.py ~3494-3500 marks only the decision's task; task_gate ~1837-1847 passes --no-reuse only for a marked task). This is the third instance of one class - a stored verdict shown without asking whether its basis still holds - so fix it as one check every display path goes through, not per call site. Moved into S1 by the owner (2026-10-21: 'da, F763 u S1, F761 u S4').",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2167,16 +2213,22 @@
       "dependsOn": [
         "P131.18-dau"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-21T18:18:00Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-21T19:35:41Z.2d2b4e",
+        "status": "passed",
+        "at": "2026-10-21T19:35:41Z"
+      }
     },
     {
       "id": "P131.18-dau",
