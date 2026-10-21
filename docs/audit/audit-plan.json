@@ -12051,6 +12051,22 @@
       "taskId": "BF4.1",
       "fixedIn": "d82a2e4d39a3",
       "notes": null
+    },
+    {
+      "id": "BUG-29-dau",
+      "title": "S1 (P131) low review findings carried to the next release's cleanup task",
+      "status": "open",
+      "severity": "low",
+      "reportedAt": "2026-10-21T22:37:58Z",
+      "reportedBy": "orchestrator",
+      "description": "D9: the low findings P131's per-task reviews left open (P131-R2, R3, R5, R6, R7, R10, R19, R24, R26, R27, R30, R32, R38, R39, R41, R42, R43, R44, R45) go into one cleanup task of the next release. Each finding in P131.json review.findings carries its file, issue and resolution.",
+      "repro": "python3 -c \"import json;d=json.load(open('docs/audit/phases/P131.json'));print([f['id'] for f in d['review']['findings'] if f.get('severity')=='low' and not f.get('fixTask')])\"",
+      "expected": "no open low finding",
+      "actual": "nineteen low findings open after P131's task reviews",
+      "files": [],
+      "taskId": null,
+      "fixedIn": null,
+      "notes": null
     }
   ],
   "deferred": {
