@@ -1525,6 +1525,54 @@ def _brief_cases(check):
           and outside_section.split("Paths outside every task's declared "
                                     "files:", 1)[1].count("src/b.py") == 0)
 
+    # ---- what the phase reviewer is handed to judge from: the diff, each
+    # task's gate results step by step, and the instruction to open the code --
+    ledger8 = os.path.join(proj8, "docs", "audit", "evidence",
+                           "2026-10.fixture.jsonl")
+    os.makedirs(os.path.dirname(ledger8), exist_ok=True)
+    gated = {"P1.1": ("run-8a", "passed", [{"name": "selftests", "exit": 0}]),
+             "P1.2": ("run-8b", "failed", [
+                 {"name": "selftests", "exit": 0},
+                 {"name": "lint", "exit": 3, "outcome": "failed"}])}
+    with open(ledger8, "w", encoding="utf-8", newline="") as fh:
+        fh.write("\n".join(json.dumps({
+            "v": 1, "runId": run_id, "ts": "2026-10-01T00:00:00Z",
+            "scope": "task", "taskId": tid, "status": status, "failed": [],
+            "steps": steps, "observations": {"ranTotal": len(steps)}})
+            for tid, (run_id, status, steps) in sorted(gated.items())) + "\n")
+    for task in man8["phases"][0]["tasks"]:
+        run_id, status, _steps = gated[task["id"]]
+        task["testEvidence"] = {"runId": run_id, "status": status, "at": "z"}
+    with open(mpath8, "w", encoding="utf-8") as fh:
+        json.dump(man8, fh)
+    brief(proj8, mpath8, "P1", "phase")
+    text8g = read(brief_file(proj8, "P1", "phase.md")) or ""
+
+    def task_section(text, tid):
+        part = text.split("\n## %s " % (tid,), 1)
+        return part[1].split("\n## ", 1)[0] if len(part) == 2 else ""
+    steps8 = dict((tid, [ln for ln in task_section(text8g, tid).splitlines()
+                         if ln.startswith("gate results")])
+                  for tid in ("P1.1", "P1.2"))
+    opening = [ln for ln in text8g.splitlines()
+               if "open each changed function" in ln.lower()]
+    first_task = text8g.find("\n## P1.1 ")
+    check("bf60 the phase-review brief carries the phase diff, each task's gate "
+          "results and the instruction to open each changed function: every "
+          "task's section holds its own diff and one line of its recorded run's "
+          "steps, each with its exit - the red step on the task that ran it and "
+          "on no other - and the instruction is said once, before the first "
+          "task's section: %r" % ((steps8, opening),),
+          task_diff_block(text8g, "P1.1") not in (None, "", "(empty)")
+          and task_diff_block(text8g, "P1.2") not in (None, "", "(empty)")
+          and len(steps8["P1.1"]) == 1 and len(steps8["P1.2"]) == 1
+          and "selftests exit 0" in steps8["P1.1"][0]
+          and "lint" not in steps8["P1.1"][0]
+          and "selftests exit 0" in steps8["P1.2"][0]
+          and "lint exit 3" in steps8["P1.2"][0]
+          and len(opening) == 1 and first_task > 0
+          and text8g.find(opening[0]) < first_task)
+
     # ---- a re-review brief carries only the fix tasks' diffs -----------------
     rereview = _bf_signed_phase()
     rereview["phases"][0]["review"] = {"findings": [

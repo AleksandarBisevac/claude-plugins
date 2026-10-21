@@ -338,9 +338,30 @@
         "file": "plugins/audit/commands/phase.md, plugins/audit/reference/orchestrator.md, PLUGIN-BUILD-GUIDE.md (untouched; shape crosses the dispatch boundary)",
         "issue": "With executor.writerModel set the per-task reviewer is now a run-agent-session.py --role reviewer session and the drive files its return itself, but the three documents that describe the reviewer dispatch still describe it only as an Agent dispatch followed by the reviewer running submit. The executor's own outcome records this as NOT DONE. A reader following orchestrator.md would run the session as an Agent and then wait for a submit that, by REVIEWER_SESSION_RULE, the session is told not to run.",
         "resolution": "Add the reviewer-session branch to the three documents (orchestrator.md is at its byte ceiling, so remove bytes elsewhere in the same edit), or file a follow-up task before the phase signs off."
+      },
+      {
+        "id": "P131-R46",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:5744-5785, 6247-6256",
+        "issue": "contradicts task clause (5) 'a finding citing no line of the phase diff is a note, not a block': sort_findings sends such a finding to the validation pass like any other (a candidate), and when the pass confirms it as correctness/requirement it lands in 'unowned', which review_findings_step turns into a stop for a human (a block, not a note). tests/test_drive_phase.py pv8 (~2426-2441) and pv1 (pv-outside is in the validation prompt, ~197) pin this behaviour, so the suite now asserts the opposite of the clause. This is the orchestrator's 'positive evidence only' rule; it is a deliberate departure from the task text and the task description was not amended.",
+        "resolution": "Either amend the task's clause (5) and acceptance text to the 'positive evidence' rule (a finding citing no phase-diff line is validated like the rest and only a human-settled stop if confirmed), or restore the clause: make a finding whose cited_ranges overlap no task's diff a note without a block. Decide which and record it, so the task description, pv1/pv8 and phase-signoff.md agree."
+      },
+      {
+        "id": "P131-R47",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:5883-5897, 5992-6003",
+        "issue": "contradicts task clause (1) 'a finding the second pass withdraws does not block and is recorded as a note': a withdrawal (or confirmed-as-other) of a med-or-worse finding is not taken unless the stream holds a Read/NotebookRead/Grep tool_use naming a file the finding cites; otherwise validation_step stops the whole drive. A finding whose `file` names no path (cited_paths empty) can therefore never be withdrawn by any pass, and always stops.",
+        "resolution": "If the read-evidence rule is kept, amend clause (1) to say so and make the unreadable case explicit (a finding citing no path cannot be demoted: stop with that reason, not 'read nothing'); otherwise record the unread withdrawal as the note it asked for."
+      },
+      {
+        "id": "P131-R48",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:833, 859-866, 5841-5870",
+        "issue": "The read evidence only counts Read, NotebookRead and Grep with a file `path`. VALIDATE_HEAD/VALIDATE_RULE tell the pass to 're-read' and to use 'git show <commit>' but never name the Read tool, so a pass that opens the code with Bash (git show, sed -n, cat) or Grep over a directory is treated as having read nothing and its withdrawal stops the drive (a false stop on honest work).",
+        "resolution": "Say in VALIDATE_RULE that each cited file is opened with the Read tool, or count the Bash opening commands (git show/cat/sed) in stream_reads."
       }
     ],
-    "outcome": "[findings: 45 - 0 high, 11 med, 34 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 48 - 0 high, 13 med, 35 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1679,7 +1700,7 @@
     {
       "id": "P131.9",
       "title": "A phase-review finding blocks only after a second pass validates it, and a validated finding goes back to the writer's session while it is warm",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The phase review's brief carries the phase diff, every task's gate results and the instruction to open each changed function. Each blocking finding then goes through a second reviewer pass that re-reads the cited code and confirms or withdraws it; only a confirmed correctness or requirement finding blocks, and every other finding is recorded as a note on the phase. A validated finding goes to the writer session of the task whose diff holds the cited lines: run-agent-session.py --resume when that session's last activity is under one hour (the cache tier's life), otherwise a fresh writer session given the task text and the validated findings. At most review.maxRounds rounds (shipped default 2), then the phase stops with a note listing what is still open. A validated finding no longer mints a fix task. Acceptance: (1) a finding the second pass withdraws does not block and is recorded as a note; (2) a confirmed finding resumes the session of the task whose diff holds the cited lines when its last activity is under an hour, and starts a fresh session with the task text and findings otherwise; (3) after the last round, an open finding stops the phase with a note, never a silent pass; (4) no fix task is added for a validated finding; (5) a finding citing no line of the phase diff is a note, not a block.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1720,16 +1741,22 @@
         "P131.5",
         "P131.20-dau"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-21T20:07:36Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-21T22:31:15Z.f9a356",
+        "status": "passed",
+        "at": "2026-10-21T22:31:15Z"
+      }
     },
     {
       "id": "P131.10",
@@ -2420,7 +2447,7 @@
     {
       "id": "P131.20-dau",
       "title": "A reviewer session that opened no file is not accepted as a review",
-      "status": "in_progress",
+      "status": "done",
       "description": "Reviewers run through run-agent-session.py with their agent body. The drive counts the reviewer session's tool calls from its saved stream; a return from a session with zero tool calls is recorded as cannot-tell and the reviewer is dispatched once more. agents/audit-reviewer.md gains one line, open each changed function in the tree before judging, and stays within its 7000-byte ceiling by removing as many bytes elsewhere. Acceptance: (1) a reviewer return whose saved stream holds no tool call is recorded cannot-tell and re-dispatched once; (2) a second zero-tool return stops with a note instead of a third dispatch; (3) a return whose session read files is accepted as before; (4) tools/measure-context.py --gate stays green with the reviewer body at or under its ceiling. RE-ADDED 2026-10-21 for the cancelled P131.8 (deadlocked on a base red its own gate could not get past): its finished work is the patch quality-gates-internal/plans/2026-10-17-redesign-implementation/patches/P131.8-review-reads.patch (base 1b6f120c; `git apply --check` is clean on e7d6dd09) - apply it first, verify, and only then change anything.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2453,19 +2480,33 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2cd80c0fbc58",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Applied P131.8-review-reads.patch with git apply --3way: all three files (audit-reviewer.md, drive-phase.py, tests/test_drive_phase.py) applied cleanly with no conflict despite P131.17's heavy drive-phase.py changes; git reset -q run so nothing is staged. No edit made on top of the patch. Reviewer path vs P131.17: reviewer_session_step is called inside advance() at the existing dispatched-reviewer branch, which sits BEFORE P131.17's stored_green(...,'gated') check and gate_step; the reviewer path itself shows no gate verdict (it dispatches, waits, or files via submit) and after a filed reviewer advance() still runs stored_green so a moved gate basis still re-measures (green == STORED_MOVED) - both behaviours kept. dispatch() now takes tree for the reviewer (advance passes it). The suite adds rv1-rv6: reviewer dispatch names run-agent-session.py --role reviewer; zero-tool stream recorded cannot-tell and redispatched once; second zero-tool stream stops naming both sessions with no third dispatch; the stop repeats on a later next; a stream with tool calls is accepted and filed as before; with no writer session the reviewer is still the Agent dispatch. Reviewer body: one line added (Open each changed function in the tree before judging), bytes removed elsewhere; measure-context --gate reads reviewer 6994/7000. test_drive_phase.py: 492 cases pass (187s). Full sweep on a committed copy of the tree: 192/194 files ok, only tools/check-example-ledgers.py and tools/measure-context.py red (measure-context: mc18 only, a reference commit absent from the copy). Dependants: plugins/audit/agents/audit-reviewer.md dependants (prove-gates.py, docs/research/pipeline-cost-design.md, pipeline-cost-levers.md, run-agent-session.py, _filed_returns.py, audit-lookup.py, tests/test__refs.py, tests/test_audit_task.py): still correct - the sweep passes for the code/test ones, which read the body's structure (ih9 in test__refs only needs reference/execute-task.md to have no reader of preExisting, unchanged); run-agent-session.py builds --agents from the file text and already supports --role reviewer; the two research docs are design prose not contradicted by one added line. drive-phase.py dependants (tests/test_drive_phase.py: changed, +cases rv1-rv6; PLUGIN-BUILD-GUIDE.md, README.md, pipeline-cost-design.md, detect-plan-skip.py, record-risk-confirmation.py, stamp-verification.py, _areas.py): still correct - only additions plus optional params with defaults (role=, key=, step=, who=), no existing signature or output changed for the writer path; sweep green. Names used elsewhere: _carries, _clip, _mark, _marked and the rest unchanged (writer_state/open_dispatch/session_record/session_note/note_sessions/wait_said gained defaulted params only). tests/test_drive_phase.py dependants (sweep-costs.json, test__runner_output.py, test_run_test_gate.py, sweep-selftests.py, the docs; _counting/_follower_cases/_head/_load): still correct, they read the suite or its helpers by name, none of which changed. NOT DONE, outside my files: three docs still describe reviewer dispatch only as an Agent - plugins/audit/commands/phase.md, plugins/audit/reference/orchestrator.md (also at 62000 of 62000 ceiling, so any addition needs bytes removed elsewhere), and PLUGIN-BUILD-GUIDE.md.",
+        "descriptive": "A per-task reviewer session whose saved stream holds no tool call is recorded cannot-tell and redispatched once, then stops, instead of being accepted as a review."
       },
       "startedAt": "2026-10-21T19:35:45Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-21T20:07:35Z",
+      "verifiedBy": [
+        "rv1-rv6 in tests/test_drive_phase.py: reviewer dispatch command, zero-tool redispatch, second zero-tool stop, stop repeated by later next, tool-calling session accepted (twin), no-writer-session rollback twin"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-21T20:04:00Z.0bc1c1",
         "status": "passed",
         "at": "2026-10-21T20:04:00Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2cd80c0fbc58",
+        "at": "2026-10-21T20:07:35Z",
+        "return": "docs/audit/evidence/returns/P131.20-dau/20261021T193545Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-21T19:57:05Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out after 19 s and its process group was torn down; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     }
   ],

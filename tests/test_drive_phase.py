@@ -876,9 +876,11 @@ if os.environ.get("WS_MODE") == "none":
     sys.stdout.write(json.dumps({"type": "system", "subtype": "init"}) + "\n")
     sys.stdout.flush()
     raise SystemExit(7)
+reads = json.loads(os.environ.get("WS_READS") or "null")
+if reads is None:
+    reads = ["src/mine.py"] * int(os.environ.get("WS_TOOLS") or 0)
 tools = [{"type": "tool_use", "id": "t%d" % n, "name": "Read",
-          "input": {"file_path": "src/mine.py"}}
-         for n in range(int(os.environ.get("WS_TOOLS") or 0))]
+          "input": {"file_path": path}} for n, path in enumerate(reads)]
 for event in ({"type": "system", "subtype": "init", "session_id": sid},
               {"type": "assistant", "session_id": sid,
                "message": {"role": "assistant",
@@ -943,19 +945,22 @@ def _flag(argv, flag):
 
 
 def _play_session(root, argv, bindir, log, cost, session=WRITER_SESSION,
-                  mode="ok", edit=None, result=None, commit=False, tools=0):
+                  mode="ok", edit=None, result=None, commit=False, tools=0,
+                  reads=None):
     """Run the printed session command as the main loop does - its interpreter
     word replaced by this one - with the stub standing for `claude`. `mode`
     `none` makes the stub exit 7 with no result event. `edit` maps the paths
     the stub writes to their text, `result` is its last message, `commit`
     has it commit what it wrote and `tools` is how many tool calls its stream
-    holds. Returns `(code, output)`."""
+    holds, each a Read of src/mine.py - or, given `reads`, one Read of each
+    path it lists. Returns `(code, output)`."""
     env = dict(os.environ)
     env["PATH"] = bindir + os.pathsep + env.get("PATH", "")
     env.update(WS_LOG=log, WS_SESSION=session, WS_COST=cost, WS_MODE=mode,
                WS_EDIT=json.dumps(edit or {}), WS_RESULT=(result if result is not None
                           else _said("the session is done")),
-               WS_COMMIT="1" if commit else "", WS_TOOLS=str(tools))
+               WS_COMMIT="1" if commit else "", WS_TOOLS=str(tools),
+               WS_READS=json.dumps(reads) if reads is not None else "")
     done = subprocess.run([sys.executable] + list(argv[1:]), cwd=root, env=env,
                           capture_output=True, text=True, encoding="utf-8",
                           errors="replace", timeout=120)
@@ -1181,13 +1186,23 @@ def _wf_gate():
     return '"%s" %s' % (sys.executable.replace("\\", "/"), _WF_TEST)
 
 
-def _tdd_writer_repo(prefix, gate, description=None):
+def _tdd_writer_repo(prefix, gate, description=None, per_task="always",
+                     review=None):
     """A one-task plan whose task is tdd over `src/mine.py` and its suite,
     under a writer session: HEAD holds `v = 1` and a suite whose one case
     passes there. `gate` is the task's and the phase's gate; `description`
-    replaces the task's, which numbers no acceptance clause of its own."""
+    replaces the task's, which numbers no acceptance clause of its own.
+    `per_task` is `review.perTask`, and `review` more keys of the config's
+    `review` block, committed with the fixture."""
     root, mpath = _repo(prefix, task_ids=TASKS[:1], gate=gate,
-                        executor=WRITER_EXECUTOR)
+                        executor=WRITER_EXECUTOR, per_task=per_task)
+    if review:
+        cfg = os.path.join(root, ".claude", "audit.config.json")
+        with open(cfg, encoding="utf-8") as fh:
+            config = json.load(fh)
+        config["review"].update(review)
+        with open(cfg, "w", encoding="utf-8") as fh:
+            json.dump(config, fh)
     os.makedirs(os.path.join(root, "tests"))
     # The gate runs the suite in this tree, and the bytecode it may leave beside
     # the source is no change of the task's.
@@ -2010,6 +2025,520 @@ def _reviewer_session_cases(check):
     check("rv6 THE ROLLBACK TWIN: with no writer session the reviewer is still the "
           "Agent, and names no session runner: %r" % ((code3, line3),),
           M.REVIEWER_AGENT in line3 and "run-agent-session.py" not in line3)
+
+
+# --- a phase-review finding blocks only once a second pass confirms it ---------
+# The validation sessions' ids, and the suite a fix round leaves: v three, its
+# new case red on the v-two code the task's first commit holds.
+PV_SESSIONS = ("22222222-3333-4444-8555-666666666661",
+               "22222222-3333-4444-8555-666666666662",
+               "22222222-3333-4444-8555-666666666663")
+_PV_THREE_TEST = _wf_suite([("old1", "mine.v >= 1"), ("new3", "mine.v == 3")])
+# Each issue opens with a tag the cases find the finding's id by. Two cite the
+# line the task's commit wrote; the third cites a fixture file no task touched.
+_PV_FINDINGS = (
+    {"severity": "med", "file": "src/mine.py:1",
+     "issue": "pv-withdrawn: v is assigned with no guard",
+     "resolution": "guard the assignment"},
+    {"severity": "high", "file": "src/mine.py:1",
+     "issue": "pv-confirmed: the phase asked for v three and the code sets two",
+     "resolution": "set v to three"},
+    {"severity": "med", "file": "src/f2.txt:1",
+     "issue": "pv-outside: src/f2.txt still reads v0",
+     "resolution": "change src/f2.txt"},
+    {"severity": "low", "file": "src/mine.py:1",
+     "issue": "pv-low: the name v says little",
+     "resolution": "rename v"})
+# A tdd task's red-first is the helper's block, which the phase reviewer
+# answers as it reads.
+_PV_ENTRY = {"P1.1": {"redFirst": "proved",
+                      "redFirstBasis": "the red-first helper's block"}}
+
+
+def _pv_findings(mpath):
+    """`{issue tag: finding}` of the phase review's recorded findings."""
+    phase = [p for p in _mio.load_manifest(mpath).get("phases") or []
+             if p.get("id") == PHASE][0]
+    return dict(((f.get("issue") or "").split(":", 1)[0], f)
+                for f in (phase.get("review") or {}).get("findings") or []
+                if isinstance(f, dict))
+
+
+def _pv_phase(mpath):
+    return [p for p in _mio.load_manifest(mpath).get("phases") or []
+            if p.get("id") == PHASE][0]
+
+
+def _pv_verdicts(verdicts):
+    """The last message of a validation session: a sentence, then one object
+    with a verdict for each `(finding id, verdict, kind[, basis])`."""
+    return "Each cited line re-read.\n%s" % (json.dumps({"findings": [
+        {"id": row[0], "verdict": row[1], "kind": row[2],
+         "basis": row[3] if len(row) > 3 else "src/mine.py:1 read at HEAD"}
+        for row in verdicts]}),)
+
+
+_PV_PRE_PHASE = "src/f2.txt:1 is pre-existing, outside the phase diff"
+
+
+def _prompt_text(argv):
+    prompt = _flag(argv, "--prompt-file")
+    return (_read(prompt).decode("utf-8", "replace")
+            if prompt and os.path.isfile(prompt) else "")
+
+
+def _pv_to_review(M, root, mpath, bindir, log):
+    """Run the task's writer session to the task's close: `(stream, code, line,
+    block)` - the writer's saved stream and the step after it, the phase
+    review's dispatch, whose `--explain` block names the brief."""
+    _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    _ran, said = _play_session(root, _run_argv(block) or [], bindir, log, "0.31",
+                               edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST},
+                               result=_WF_CLAIM)
+    code, line = _signal_next(M, root, mpath)
+    _c, review = _explain_of(M, root, mpath, PHASE)
+    return (_streams(said) or [None])[0], code, line, review
+
+
+def _pv_fix_round(M, root, mpath, bindir, log, cost):
+    """Run the writer dispatch now printed for P1.1 as a fix round - v three, a
+    case red on v two - and take the step after it: `(code, line, block)`, the
+    block the phase's `--explain` prints then."""
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    _play_session(root, _run_argv(block) or [], bindir, log, cost,
+                  edit={_WF_SRC: "v = 3\n", _WF_TEST: _PV_THREE_TEST},
+                  result=_WF_CLAIM)
+    code, line = _signal_next(M, root, mpath)
+    _c, after = _explain_of(M, root, mpath, PHASE)
+    return code, line, after
+
+
+def _phase_validation_cases(check):
+    """Under a writer session a phase review's finding blocks only once a second
+    reviewer pass re-reads the cited code and confirms it as a correctness or
+    requirement finding; a low one and one the pass withdraws - the one citing
+    pre-phase code among them - are notes on the phase. A confirmed finding goes
+    back to the writer session of the task whose diff holds the cited lines -
+    resumed while its last activity is under an hour - is fixed only once the
+    pass re-reads it at the fix and withdraws it, and no fix task is added."""
+    M, why = _load("drive_phase_validation")
+    if M is None:
+        check("pv1 the driver loads", False, why)
+        return
+    stubs = os.path.realpath(_harness.fixture_root("drive-pv-stub-"))
+    bindir = _writer_stub(stubs)
+    log = os.path.join(stubs, "runs.jsonl")
+    root, mpath = _tdd_writer_repo("pv-warm", (_wf_gate(),), per_task="phase")
+    _stream, code, line, review = _pv_to_review(M, root, mpath, bindir, log)
+    filed_code, filed_text = _file_phase_review(root, mpath, review, _PV_FINDINGS,
+                                                _PV_ENTRY)
+    code, line = _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, PHASE)
+    vargv = _run_argv(block) or []
+    vprompt = _prompt_text(vargv)
+    ids = dict((tag, f.get("id")) for tag, f in _pv_findings(mpath).items())
+    check("pv1 the phase review's findings go to a second reviewer pass first: a "
+          "reviewer session for the phase whose prompt names every med-or-worse "
+          "finding - the one citing a file no task changed included, since the "
+          "drive failing to place a finding is no evidence it does not block - "
+          "and not the low one: %r"
+          % ((filed_code, filed_text[-200:], code, line, ids, vargv),),
+          filed_code == 0 and code == 0 and len(ids) == 4
+          and "run-agent-session.py --role reviewer" in line
+          and _flag(vargv, "--role") == "reviewer"
+          and _flag(vargv, "--task") == PHASE and "--resume" not in vargv
+          and ids["pv-withdrawn"] in vprompt and ids["pv-confirmed"] in vprompt
+          and ids["pv-outside"] in vprompt and "pv-low" not in vprompt)
+    commit_1 = tasks_of(mpath)["P1.1"].get("commit") or "no commit"
+    check("pv1b the validation prompt gives the pass what it judges 'this phase's "
+          "work wrote it' by: the phase's base commit (or that none is recorded) "
+          "and each task's own commit: %r"
+          % ([ln for ln in vprompt.splitlines() if "commit" in ln or "base" in ln],),
+          "phase base:" in vprompt and ("P1.1 %s" % (commit_1,)) in vprompt)
+    _play_session(root, vargv, bindir, log, "0.12", session=PV_SESSIONS[0],
+                  result=_pv_verdicts([(ids["pv-withdrawn"], "withdrawn",
+                                        "correctness"),
+                                       (ids["pv-confirmed"], "confirmed",
+                                        "requirement"),
+                                       (ids["pv-outside"], "withdrawn",
+                                        "other", _PV_PRE_PHASE)]),
+                  reads=["src/mine.py", "src/f2.txt"])
+    code, line = _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    wargv = _run_argv(block) or []
+    wprompt = _prompt_text(wargv)
+    tasks = tasks_of(mpath)
+    check("pv2 a confirmed finding resumes the session of the task whose diff "
+          "holds the cited lines while its last activity is under an hour: "
+          "P1.1 runs again with --resume on its own writer session, prompted with "
+          "the confirmed finding and neither the withdrawn one nor the one "
+          "outside the diff, and no fix task is added: %r"
+          % ((code, line, wargv, sorted(tasks)),),
+          code == 0 and "run-agent-session.py --role writer" in line
+          and _flag(wargv, "--resume") == WRITER_SESSION
+          and _flag(wargv, "--task") == "P1.1"
+          and "pv-confirmed" in wprompt and "pv-withdrawn" not in wprompt
+          and "pv-outside" not in wprompt
+          and sorted(tasks) == ["P1.1"]
+          and tasks["P1.1"].get("status") == "in_progress")
+    # The re-open cleared P1.1's `commit`; the commit it carried is read off
+    # the journal's task.reopen row, so no drive state is consulted at all.
+    phase_now = _pv_phase(mpath)
+    record = M.reopen_record({"project": root, "gitRoot": root}, phase_now)
+    owners = (M.finding_owners({"project": root, "gitRoot": root}, record[0],
+                               {"file": "src/mine.py:1"})
+              if record[0] is not None else (None, "no record"))
+    bare = M.finding_owners({"project": root, "gitRoot": root},
+                            M.task_commits(phase_now, {}),
+                            {"file": "src/mine.py:1"})
+    check("pv9 the commit a re-opened task carried is attributed from the "
+          "journal's re-open row with no drive state at all, and P1.1 still "
+          "owns the line its old commit wrote - which the task records alone, "
+          "its commit cleared, no longer say: %r" % ((record, owners, bare),),
+          record[0] is not None and owners == (["P1.1"], None)
+          and bare == ([], None) and tasks_of(mpath)["P1.1"].get("commit") is None)
+    code, line, review2 = _pv_fix_round(M, root, mpath, bindir, log, "0.33")
+    second = _file_phase_review(root, mpath, review2, (), _PV_ENTRY)
+    # Every verdict was given at the head before the fix: the code each cites
+    # moved since, so the pass is asked again - the handed-back one included,
+    # which is fixed only once the pass re-reads it and withdraws it.
+    code, line = _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, PHASE)
+    vargv2 = _run_argv(block) or []
+    _play_session(root, vargv2, bindir, log, "0.13", session=PV_SESSIONS[1],
+                  result=_pv_verdicts([
+                      (ids["pv-withdrawn"], "withdrawn", "correctness"),
+                      (ids["pv-confirmed"], "withdrawn", "requirement",
+                       "src/mine.py:1 now sets v to three"),
+                      (ids["pv-outside"], "withdrawn", "other", _PV_PRE_PHASE)]),
+                  reads=["src/mine.py", "src/f2.txt"])
+    code, line = _signal_next(M, root, mpath)
+    triage_line = line
+    signed, said = _signal_next(M, root, mpath, "--answer", "sign-off",
+                                "--reason", SUMMARY)
+    if " gate-coverage:" in said:
+        # This fixture's phase gate names no path of the work, which a human
+        # accepts once; the notes are recorded by the sign-off verb after it.
+        signed, said = _signal_next(M, root, mpath, "--answer", "accept",
+                                    "--reason", "the fixture's gate is the suite")
+    found = _pv_findings(mpath)
+    phase = _pv_phase(mpath)
+    check("pv3 a finding is a note only on positive evidence - withdrawn by the "
+          "pass, the pre-phase one among them, or low - and none blocks: after "
+          "the fix round the pass re-checks the handed-back finding too, the "
+          "drive reaches the triage and signs off, each note recorded on the "
+          "phase with a reason saying why, the re-checked one fixed by P1.1's "
+          "own new commit, and still no fix task: %r"
+          % ((second[0], _prompt_text(vargv2)[:200], triage_line, signed, said,
+              found, (phase.get("review") or {}).get("status")),),
+          second[0] == 0 and "pv-withdrawn" in _prompt_text(vargv2)
+          and "pv-confirmed" in _prompt_text(vargv2)
+          and "triage:" in triage_line and signed == 0
+          and (phase.get("review") or {}).get("status") == "passed"
+          and found["pv-withdrawn"].get("status") == "accepted-open"
+          and "note" in (found["pv-withdrawn"].get("acceptedReason") or "")
+          and "withdr" in (found["pv-withdrawn"].get("acceptedReason") or "")
+          and found["pv-outside"].get("status") == "accepted-open"
+          and "note" in (found["pv-outside"].get("acceptedReason") or "")
+          and "phase diff" in (found["pv-outside"].get("acceptedReason") or "")
+          and found["pv-low"].get("status") == "accepted-open"
+          and "note" in (found["pv-low"].get("acceptedReason") or "")
+          and "low" in (found["pv-low"].get("acceptedReason") or "")
+          and found["pv-confirmed"].get("status") == "fixed"
+          and found["pv-confirmed"].get("fixTask") == "P1.1"
+          and sorted(tasks_of(mpath)) == ["P1.1"])
+    # A triage showing notes stands on the HEAD they were sorted at: the
+    # decision is read only while HEAD is still that commit.
+    here = _head_of(root)
+    shown = {"decision": "triage", "task": None, "findings": [],
+             "noted": [{"id": "P1-R1", "why": "withdrawn"}]}
+    plan = _mio.load_manifest(mpath)
+    holds = [M.pending_still_applies({"gitRoot": root}, plan,
+                                     dict(shown, notedHead=head))
+             for head in (here, "0" * 40)]
+    bare = M.pending_still_applies({"gitRoot": root}, plan, dict(
+        shown, noted=[], notedHead="0" * 40))
+    check("pv6 a triage showing notes still applies while HEAD is the commit "
+          "they were sorted at and no longer once HEAD moved, and a triage "
+          "holding no note is not held to any HEAD (the over-fire twin): %r"
+          % ((here, holds, bare),),
+          len(here) == 40 and holds == [True, False] and bare is True)
+
+
+def _phase_cold_cases(check):
+    """A confirmed finding on a session idle past the cache's hour starts a
+    fresh writer session with the task text and the findings, and an open
+    finding after `review.maxRounds` rounds stops the phase with a note - no
+    fix task in either."""
+    M, why = _load("drive_phase_validation_cold")
+    if M is None:
+        check("pv4 the driver loads", False, why)
+        return
+    stubs = os.path.realpath(_harness.fixture_root("drive-pv4-stub-"))
+    bindir = _writer_stub(stubs)
+    log = os.path.join(stubs, "runs.jsonl")
+    root, mpath = _tdd_writer_repo("pv-cold", (_wf_gate(),), per_task="phase",
+                                   review={"maxRounds": 2})
+    stream, code, line, review = _pv_to_review(M, root, mpath, bindir, log)
+    _file_phase_review(root, mpath, review, _PV_FINDINGS[1:2], _PV_ENTRY)
+    _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, PHASE)
+    confirmed = _pv_findings(mpath)["pv-confirmed"].get("id")
+    _play_session(root, _run_argv(block) or [], bindir, log, "0.14",
+                  session=PV_SESSIONS[2],
+                  result=_pv_verdicts([(confirmed, "confirmed", "correctness")]),
+                  tools=1)
+    # The writer's last activity, put two hours back: past the cache's life.
+    aged = time.time() - 2 * 3600
+    if stream and os.path.isfile(stream):
+        os.utime(stream, (aged, aged))
+    code, line = _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    wargv = _run_argv(block) or []
+    wprompt = _prompt_text(wargv)
+    described = tasks_of(mpath)["P1.1"].get("description") or "?"
+    check("pv4 a confirmed finding whose writer session was last active over an "
+          "hour ago starts a fresh writer session for that task, resuming "
+          "nothing, given the task text and the finding, and no fix task is "
+          "added: %r" % ((stream, code, line, wargv, wprompt[:300]),),
+          stream is not None and code == 0
+          and "run-agent-session.py --role writer" in line
+          and "--resume" not in wargv and _flag(wargv, "--task") == "P1.1"
+          and described in wprompt and "pv-confirmed" in wprompt
+          and sorted(tasks_of(mpath)) == ["P1.1"])
+    code, line, review2 = _pv_fix_round(M, root, mpath, bindir, log, "0.35")
+    still = {"severity": "med", "file": "src/mine.py:1",
+             "issue": "pv-still: three is not bounded either",
+             "resolution": "bound v"}
+    _file_phase_review(root, mpath, review2, [still], _PV_ENTRY)
+    _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, PHASE)
+    open_id = _pv_findings(mpath)["pv-still"].get("id")
+    recheck = _prompt_text(_run_argv(block) or [])
+    # The handed-back finding is re-checked against the fix's commit, and the
+    # pass finds it still there: a new commit alone fixes nothing.
+    _play_session(root, _run_argv(block) or [], bindir, log, "0.15",
+                  session=PV_SESSIONS[0],
+                  result=_pv_verdicts([(open_id, "confirmed", "correctness"),
+                                       (confirmed, "confirmed", "correctness")]),
+                  tools=1)
+    code, text = _next(M, root, mpath)
+    again, text2 = _next(M, root, mpath)
+    phase = _pv_phase(mpath)
+    noted = [n for n in _notes(mpath, "P1.1") if open_id and open_id in n]
+    check("pv5 after the last round an open confirmed finding stops the phase - "
+          "never a silent pass, never a third round - with a note naming it on "
+          "the task whose lines it cites, and no fix task; the handed-back "
+          "finding the pass re-checked and confirmed is not marked fixed by the "
+          "task's new commit and is named in the stop; a later next stops the "
+          "same way and runs no session: %r"
+          % ((code, text[-400:], again, noted,
+              (phase.get("review") or {}).get("status"),
+              _pv_findings(mpath)["pv-confirmed"].get("status")),),
+          code == 1 and open_id is not None and open_id in text
+          and confirmed in recheck and confirmed in text
+          and _pv_findings(mpath)["pv-confirmed"].get("status") != "fixed"
+          and "maxRounds" in text
+          and (phase.get("review") or {}).get("status") not in ("passed",
+                                                                 "skipped")
+          and len(noted) == 1 and sorted(tasks_of(mpath)) == ["P1.1"]
+          and again == 1 and open_id in text2
+          and "run-agent-session.py" not in text2)
+
+
+def _pv_blame_repo():
+    """`(root, {sha: task id})` - a repository where P1.1 writes x.py with its
+    defect on line 5, P1.2 then deletes x.py's first two lines and y.py's third,
+    and P1.3 deletes gone.py: the coordinates each task's own diff shows are no
+    longer HEAD's."""
+    root = os.path.realpath(_harness.fixture_root("drive-pv-blame-"))
+    _harness.git(root, "init", "-q")
+    with open(os.path.join(root, ".git", "config"), "a", encoding="utf-8",
+              newline="\n") as fh:
+        fh.write(_FIXTURE_IDENTITY)
+
+    def commit(files, gone=(), message="work"):
+        for rel, text in sorted(files.items()):
+            _write_lf(os.path.join(root, rel), text)
+        for rel in gone:
+            os.remove(os.path.join(root, rel))
+        _harness.git(root, "add", "-A")
+        _harness.git(root, "commit", "-qm", message)
+        return _head_of(root)
+    commit({"gone.py": "a\nb\nc\n", "y.py": "a\nb\nc\nd\n"}, message="base")
+    one = commit({"x.py": "l1\nl2\nl3\nl4\nbug = 1\nl6\n"})
+    two = commit({"x.py": "l3\nl4\nbug = 1\nl6\n", "y.py": "a\nb\nd\n"})
+    three = commit({}, gone=("gone.py",))
+    return root, {one: "P1.1", two: "P1.2", three: "P1.3"}
+
+
+def _pv_unit_cases(check):
+    """The rule a finding is sorted by, case by case: it is placed by each
+    task's own diff in the coordinates the brief showed, in every common cite
+    spelling; a finding the drive cannot place is validated, never noted; a
+    re-open is recorded only once the verb took it, and re-opens every task a
+    finding spans; and a validation answer naming a finding twice is refused."""
+    M, why = _load("drive_phase_validation_unit")
+    if M is None:
+        check("pv7 the driver loads", False, why)
+        return
+    root, commits = _pv_blame_repo()
+    ctx = {"project": root, "gitRoot": root}
+    cites = {"x.py:5": ["P1.1"], "x.py#L5": ["P1.1"], "x.py:L5": ["P1.1"],
+             "x.py line 5": ["P1.1"], "x.py lines 5-6": ["P1.1"],
+             "y.py:3": ["P1.2"], "gone.py:2": ["P1.3"], "x.py": []}
+    got = dict((cite, M.finding_owners(ctx, commits, {"file": cite}))
+               for cite in cites)
+    check("pv7 a finding is placed by the task whose own diff the brief showed "
+          "the cited line in, in that diff's coordinates: the defect P1.1 wrote "
+          "at x.py:5 is P1.1's though P1.2 shifted it off line 5 at HEAD, in "
+          "each spelling (#L5, :L5, line 5, lines 5-6); a deleted line is the "
+          "deleting task's and so is a deleted file's; a cite with no line is "
+          "placed nowhere: %r" % (got,),
+          all(got[cite] == (want, None) for cite, want in cites.items()))
+    head = _head_of(root)
+    tasks = [{"id": tid, "status": "done", "commit": sha}
+             for sha, tid in sorted(commits.items(), key=lambda kv: kv[1])]
+    findings = [
+        {"id": "P1-R1", "severity": "high", "file": "x.py", "issue": "i",
+         "resolution": "r"},
+        {"id": "P1-R2", "severity": "high", "file": "elsewhere.py:1", "issue": "i",
+         "resolution": "r"},
+        {"id": "P1-R3", "severity": "med", "file": "elsewhere.py:1", "issue": "i",
+         "resolution": "r"},
+        {"id": "P1-R4", "severity": "low", "file": "x.py:5", "issue": "i",
+         "resolution": "r"},
+        {"id": "P1-R5", "severity": "med", "file": "x.py:5", "issue": "i",
+         "resolution": "r"}]
+    phase = {"id": PHASE, "tasks": tasks, "review": {"findings": findings}}
+    state = {M.VERDICTS_FIELD: {
+        "P1-R2": {"verdict": "confirmed", "kind": "correctness", "basis": "b",
+                  "head": head},
+        "P1-R3": {"verdict": "withdrawn", "kind": None, "basis": "b", "head": head},
+        "P1-R5": {"verdict": "confirmed", "kind": "requirement", "basis": "b",
+                  "head": head}}}
+    sorted_, why = M.sort_findings(ctx, state, phase, head, (commits, {}))
+    shape = (why, sorted((sorted_ or {}).get("notes") or {}),
+             [f["id"] for f in (sorted_ or {}).get("candidates") or []],
+             [f["id"] for f in (sorted_ or {}).get("unowned") or []],
+             [(f["id"], o) for f, o in (sorted_ or {}).get("blocking") or []])
+    check("pv8 a finding is a note only on positive evidence: the low one and the "
+          "one the pass withdrew are notes; one the drive cannot place and no pass "
+          "has judged goes to the pass; one the pass confirmed that no task's "
+          "diff holds is held for a human, never a note; one confirmed in P1.1's "
+          "lines blocks there: %r" % (shape,),
+          shape == (None, ["P1-R3", "P1-R4"], ["P1-R1"], ["P1-R2"],
+                    [("P1-R5", ["P1.1"])]))
+    calls = []
+
+    def refused(_ctx, script, args, flag, text):
+        calls.append(args[1])
+        return None, (1, "[audit-task] refused")
+    M._verb_with_text = refused
+    held = {}
+    plan_ctx = dict(ctx, phase=PHASE, manifest=os.path.join(root, "plan.json"),
+                    did=[], stateDir=os.path.join(root, "drive-state"))
+    stop = M.hand_back(plan_ctx, held, phase, head, [(findings[4], ["P1.1"])])
+    check("pv10 a re-open the verb refuses leaves no hand-back on record, so no "
+          "later step reads a hand-back that never happened: %r" % ((stop, held),),
+          stop is not None and stop[0] != 0 and calls == ["P1.1"]
+          and not held.get(M.REVIEW_FIX_FIELD))
+
+    def took(_ctx, script, args, flag, text):
+        calls.append(args[1])
+        return "re-opened", None
+    M._verb_with_text = took
+    del calls[:]
+    held = {}
+    stop = M.hand_back(plan_ctx, held, phase, head,
+                       [(findings[4], ["P1.1", "P1.2"])])
+    check("pv12 a confirmed finding spanning two tasks' diffs re-opens each of "
+          "them, and the verb's yes is what records each hand-back (the twin of "
+          "pv10): %r" % ((stop, calls, sorted(held.get(M.REVIEW_FIX_FIELD) or {})),),
+          stop is None and calls == ["P1.1", "P1.2"]
+          and sorted(held.get(M.REVIEW_FIX_FIELD) or {}) == ["P1.1", "P1.2"])
+    twice = M.read_verdicts({"findings": [
+        {"id": "P1-R1", "verdict": "withdrawn", "kind": "other", "basis": "b"},
+        {"id": "P1-R1", "verdict": "confirmed", "kind": "correctness",
+         "basis": "b"}]}, ["P1-R1"])
+    once = M.read_verdicts({"findings": [
+        {"id": "P1-R1", "verdict": "withdrawn", "kind": "other", "basis": "b"}]},
+        ["P1-R1"])
+    check("pv11 a validation answer naming one finding twice is refused - never "
+          "the last entry winning - and one naming it once is read: %r"
+          % ((twice, once),),
+          twice[1] != [] and any("P1-R1" in p for p in twice[1])
+          and once[1] == [] and once[0]["P1-R1"]["verdict"] == "withdrawn")
+    high = dict(findings[0], file="x.py:5", severity="high")
+    runs = dict((name, _pv_validation_run(M, root, head, phase, high, reads, answer))
+                for name, reads, answer in (
+                    ("unrelated", ["y.py"], ("withdrawn", "other")),
+                    ("unrelated-other", ["y.py"], ("confirmed", "other")),
+                    ("cited", [os.path.join(root, "x.py")], ("withdrawn", "other")),
+                    ("confirmed", ["y.py"], ("confirmed", "correctness"))))
+    shape = dict((name, (r[0], (r[1] or (None, ""))[0], r[2]))
+                 for name, r in runs.items())
+    low = dict(high, severity="low")
+    check("pv13 a pass's withdrawal - or its `other` - of a med-or-worse finding "
+          "counts only when its stream read a file that finding cites: one that "
+          "read only an unrelated file is not taken (the drive stops, nothing "
+          "held, never a note), one that read the cited file is (an absolute "
+          "path reads as the project's own), a confirmation of a blocking kind "
+          "needs no read (the over-fire twin), and a low finding needs none "
+          "either: %r" % ((shape, M.unread_demotions(
+              [low], {low["id"]: {"verdict": "withdrawn"}}, set())),),
+          shape["unrelated"][:3] == (None, 1, None)
+          and high["id"] in str(runs["unrelated"][1])
+          and shape["unrelated-other"][:3] == (None, 1, None)
+          and shape["cited"] == (True, None, "withdrawn")
+          and shape["confirmed"] == (True, None, "confirmed")
+          and M.unread_demotions([low], {low["id"]: {"verdict": "withdrawn"}},
+                                 set()) == [])
+    open_one = {"id": PHASE, "tasks": [], "review": {"findings": [
+        {"id": "P1-R9", "severity": "med", "file": "x.py:5", "issue": "i",
+         "resolution": "r"}]}}
+    stale = {M.NOTED_FIELD: {"head": head, "notes": {"P1-R9": "withdrawn"}}}
+    off = M.noted_now({"gitRoot": root, "config": {}}, stale, open_one, head)
+    on = M.noted_now({"gitRoot": root, "config": {"executor": WRITER_EXECUTOR}},
+                     stale, open_one, head)
+    check("pv15 a note an earlier writer-session run left in the drive's state is "
+          "not honoured once executor.writerModel is unset - the finding is "
+          "offered as before - and is while it is set (the twin): %r" % ((off, on),),
+          off == {} and on == {"P1-R9": "withdrawn"})
+
+
+def _pv_validation_run(M, root, head, phase, finding, reads, answer):
+    """`validation_step` over one finding, its session already run: a record
+    and a saved stream made here - one Read of each of `reads`, and a last
+    message answering `answer` `(verdict, kind)`. Returns `(done, said,
+    verdict held)`."""
+    where = os.path.realpath(_harness.fixture_root("drive-pv-vrun-"))
+    stream = os.path.join(where, "stream.jsonl")
+    body = json.dumps({"findings": [{"id": finding["id"], "verdict": answer[0],
+                                     "kind": answer[1], "basis": "read"}]})
+    with open(stream, "w", encoding="utf-8") as fh:
+        for event in ({"type": "assistant", "message": {"content": [
+                          {"type": "tool_use", "id": "t%d" % n, "name": "Read",
+                           "input": {"file_path": path}}
+                          for n, path in enumerate(reads)]}},
+                      {"type": "result", "result": body}):
+            fh.write(json.dumps(event) + "\n")
+    record = os.path.join(where, "record.jsonl")
+    with open(record, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"exit": 0, "line": (
+            "session=%s subtype=success is_error=false total_cost_usd=0.01 "
+            "exit=0 stream=%s" % (PV_SESSIONS[0], stream))}) + "\n")
+    state = {}
+    node = M.validation_node(phase, head)
+    M._mark(state, M.VALIDATE_KEY, node, {
+        "seq": 1, "asked": [finding["id"]],
+        "dispatches": [{"seq": 0, "round": 0, "record": record, "argv": []}]})
+    ctx = {"project": root, "gitRoot": root, "phase": PHASE, "did": [],
+           "stateDir": os.path.join(where, "state")}
+    done, said = M.validation_step(ctx, state, phase, head, [finding])
+    held = (state.get(M.VERDICTS_FIELD) or {}).get(finding["id"]) or {}
+    return done, said, held.get("verdict")
 
 
 def _gate_calls(module):
@@ -7920,6 +8449,14 @@ def _signal_corpus(M, mpath):
         ctx, "P125.55-0h5", ".claude/state/sessions/drive/P125.55-0h5."
         "20261014T182420Z.reviewer.1.jsonl", session_argv,
         "wait-reviewer-session"), {}))
+    out.append(("dispatch-validation", M.validation_said(
+        ctx, "P125", "claude-sonnet-4-5-20250929",
+        ["P125-R%d" % (n,) for n in range(1, 30)],
+        ".claude/state/sessions/scratch/P125/validate-ef37f58e1234.0.prompt",
+        session_argv[:2] + ["--role", "reviewer", "--task", "P125"]), {}))
+    out.append(("wait-validation", M.wait_said(
+        ctx, "P125", ".claude/state/sessions/drive/P125.validateef37f58e."
+        "reviewer.0.jsonl", session_argv, "wait-validation"), {}))
     out.append(("done", M.done_said(ctx, "landed (" + "merged into main " * 10 + ")",
                                     "P126"), {"did": _SIGNOFF_DID}))
     out.append(("done", M.done_said(ctx, "landed", None), {"did": _SIGNOFF_DID}))
@@ -8908,6 +9445,9 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("dd3-block", "_rerun_cases"), ("rs-block", "_resume_cases"),
           ("ws-block", "_writer_session_cases"),
           ("rv-block", "_reviewer_session_cases"),
+          ("pv-block", "_phase_validation_cases"),
+          ("pv4-block", "_phase_cold_cases"),
+          ("pv7-block", "_pv_unit_cases"),
           ("wf-block", "_writer_files_cases"), ("wl-block", "_writer_lock_cases"),
           ("wi-block", "_writer_invariant_cases"),
           ("wj-block", "_writer_reading_cases"),

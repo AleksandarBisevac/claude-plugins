@@ -229,6 +229,32 @@ whether each clause was answered and whether the cited file changed is checked.
 Without `executor.writerModel` the executor Agent is dispatched as
 before.
 
+UNDER A WRITER SESSION A PHASE-REVIEW FINDING BLOCKS ONLY ONCE A SECOND PASS
+CONFIRMS IT (`review_findings_step`, run before the triage), and a finding is a
+note only on positive evidence: it is low, or that pass withdrew it or confirmed
+it as a kind other than correctness or requirement (`sort_findings`). Every
+other open finding no pass has judged at HEAD goes to a validation session
+(`dispatch-validation`, the reviewer's runner role) whose stream must show a
+tool call and whose last message must answer each finding once, `confirmed` or
+`withdrawn` with a kind - anything less validates nothing and stops. Its prompt
+names the phase's base and each task's commit, and a withdrawal - or `other` -
+of a med-or-worse finding is taken only when the stream read a file that
+finding cites (`unread_demotions`); otherwise the drive stops. A verdict is
+read only while HEAD is the commit it was given at. The triage leaves a note
+out, and sign-off records it `--accept-open` with the note as its reason. A
+confirmed blocking finding re-opens every task whose own diff - in the
+coordinates the phase brief showed it, a deleted line or file included
+(`finding_owners`) - holds a cited line; that task's next writer dispatch
+resumes its last session when the session's saved stream was last written under
+`CACHE_LIFE_SECONDS` ago in the same tree, else starts a fresh session on the
+task's brief and the findings. The finding is fixed (`resolve-finding`) only
+when the pass re-reads it at the fix's commit and withdraws it. One confirmed in
+lines no task's diff holds stops for a human. No fix task is added. A finding
+spends a round per filed review or per hand-back, and one still confirmed at
+`review.maxRounds` stops the phase and is noted on its task. The commit a re-open
+cleared and the findings it was for are read off the journal's re-open row
+(`reopen_record`), so a lost state file loses neither.
+
 Usage:
   drive-phase.py next <phaseId|taskId> [manifest] [--project-dir DIR]
                  [--answer OPTION] [--reason TEXT] [--fix FINDING[,FINDING]]
@@ -269,6 +295,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -438,6 +465,15 @@ STEPS = {
         "rule": (WRITER_RULE,)},
     "wait-reviewer-session": {
         "line": "wait %(task)s: the reviewer session has written no record at "
+                "%(record)s yet",
+        "rule": ("Started: wait for it to exit, then next. Not started: run the "
+                 "run: line --explain prints, in the background.",)},
+    "dispatch-validation": {
+        "line": "dispatch run-agent-session.py --role reviewer --task %(phase)s "
+                "--model %(model)s validates %(ids)s prompt=%(prompt)s",
+        "rule": (WRITER_RULE,)},
+    "wait-validation": {
+        "line": "wait %(task)s: the validation session has written no record at "
                 "%(record)s yet",
         "rule": ("Started: wait for it to exit, then next. Not started: run the "
                  "run: line --explain prints, in the background.",)},
@@ -726,6 +762,7 @@ SIGNAL_VERBS = {
     "resume-writer": "dispatch", "decide-gate-red-writer": "judge",
     "wait-writer": "wait", "decide-writer-committed": "ask",
     "dispatch-reviewer-session": "dispatch", "wait-reviewer-session": "wait",
+    "dispatch-validation": "dispatch", "wait-validation": "wait",
     "decide-head-moved": "judge", "decide-head-unknown": "judge",
     "decide-red-refused-writer": "judge",
     "decide-red-refused": "judge", "decide-tests-moved": "judge",
@@ -783,6 +820,71 @@ CARRIED_FIELD = "carried"
 ROUNDS_FIELD = "reviewRounds"
 CAP_FIELD = "roundCap"
 EXTRA_ROUNDS_FIELD = "extraRounds"
+# A PHASE-REVIEW FINDING UNDER A WRITER SESSION BLOCKS ONLY ONCE IT IS VALIDATED.
+# A second reviewer session re-reads the code each finding cites and answers
+# `confirmed` or `withdrawn`, with the finding's kind; only a confirmed finding
+# of a blocking kind goes back to a writer, and every other finding is a note.
+# The verdicts are held per finding with the HEAD they were given at, and read
+# only while HEAD is still that commit: a fix round moves the code they judged.
+VALIDATE_KEY = "validationSession"
+VERDICTS_FIELD = "findingVerdicts"
+# The tools whose `tool_use` reads a file: a pass's withdrawal of a finding is
+# taken only when its stream holds one of these over a path the finding cites.
+READ_TOOLS = ("Read", "NotebookRead", "Grep")
+FINDING_VERDICTS = ("confirmed", "withdrawn")
+BLOCKING_KINDS = ("correctness", "requirement")
+FINDING_KINDS = BLOCKING_KINDS + ("other",)
+# The notes the last sort made, beside the HEAD it was made at: what the triage
+# leaves out of its offered findings and sign-off records as each one's reason.
+NOTED_FIELD = "findingNotes"
+# A confirmed finding's way back: each task whose own diff holds the cited
+# lines is re-opened, and its entry here holds the findings, the commit it
+# carried and its last writer session's id, stream and tree, read before the
+# re-open. What must outlive a lost state file - the commit it carried and the
+# findings handed to it - is in the re-open's journal row (`reopen_record`),
+# whose reason is `REOPEN_REASON`.
+REVIEW_FIX_FIELD = "reviewFixes"
+REOPEN_REASON = ("the phase review's finding(s) %s, confirmed by the validation "
+                 "pass at %s, go back to this task's writer")
+_REOPEN_IDS = re.compile(r"^the phase review's finding\(s\) ([^\s,]+(?:,[^\s,]+)*),"
+                         r" confirmed by the validation pass")
+# The HEAD the cap's note was made at, so a repeated stop notes nothing again.
+CAP_NOTED_FIELD = "reviewCapNoted"
+# How long a writer session's prompt cache lives: a session last active longer
+# ago than this is resumed at a full re-read, so a fresh one is started instead.
+CACHE_LIFE_SECONDS = 3600
+# What a triage returns when a confirmed finding re-opened a task: the drive
+# goes on to that task's writer in the same step.
+HANDED_BACK = object()
+VALIDATE_HEAD = ("The phase review of %(phase)s at head %(head)s raised the "
+                 "findings below. Re-read the code each one cites as it stands "
+                 "in this tree. Confirm a finding only when that code really has "
+                 "the defect and this phase's work wrote it; withdraw it "
+                 "otherwise - code no task of the phase changed is pre-existing, "
+                 "and a defect a fix has since removed is gone.")
+VALIDATE_RULE = (
+    "kind: correctness (the code does the wrong thing), requirement (it does not "
+    "do what its task or the phase asked) or other (style, naming, a missing "
+    "case). Open each file a finding cites with the Read tool before you answer "
+    "withdrawn or other for it: the drive takes such an answer only when your "
+    "session holds a Read of a file that finding cites, and a withdrawal "
+    "without one is not accepted. This session files nothing: run no submit "
+    "block. End your last "
+    "message with one JSON object and nothing after it: {\"findings\": "
+    "[{\"id\": \"<id>\", \"verdict\": \"confirmed|withdrawn\", \"kind\": "
+    "\"correctness|requirement|other\", \"basis\": \"<file:line read and what "
+    "it shows>\"}]}")
+REVIEW_FIX_HEAD = ("The phase review raised these findings on the code your task "
+                   "wrote, and a second reviewer pass re-read the cited lines and "
+                   "confirmed each:")
+# A hunk header of a task's own diff: its old side, then its new side.
+_HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", re.M)
+# A cited line in a finding's `file`: `path:291-294,308` (the shape the
+# reviewer is asked for), `path:L5`, `path#L5-L7`, `path line 5`, `path (lines
+# 5-6)`.
+_CITED = re.compile(
+    r"([^\s,;:#()]+)(?::|#|,?\s+\(?lines?\s+)"
+    r"(L?\d+(?:\s*[-–]\s*L?\d+)?(?:\s*,\s*L?\d+(?:\s*[-–]\s*L?\d+)?)*)")
 # The gate's banners a green exit still prints, and the clause each becomes.
 GATE_BANNERS = (("NO OVERLAP WITH THIS WORK", "NO OVERLAP"),
                 ("TREE CHANGED OUTSIDE THIS WORK", "TREE CHANGED"))
@@ -1324,15 +1426,17 @@ def writer_said(ctx, task_id, model, prompt, argv, resume=None, round_n=0,
     runner, the role, the task and the full model id, and the command itself,
     whole, as the `run:` line `--explain` prints - too long for any line the
     bound allows. `resume` is the recorded session a red gate goes back to, in
-    round `round_n`. `role` `reviewer` is the per-task reviewer's session,
-    which is never resumed."""
+    round `round_n` - round 0 is a phase review's confirmed findings going
+    back to it, which spends no round. `role` `reviewer` is the per-task
+    reviewer's session, which is never resumed."""
     step = ("dispatch-reviewer-session" if role == "reviewer"
             else "resume-writer" if resume else "dispatch-writer")
     lines = step_text(step, task=task_id, model=model, prompt=prompt,
                       session=resume or "")
     basis = "%s --role %s model=%s%s" % (
-        WRITER_RUNNER, role, model, " --resume %s round %d/%d" % (
-            resume[:8], round_n, MAX_RESUME_ROUNDS) if resume else "")
+        WRITER_RUNNER, role, model, "" if not resume
+        else " --resume %s round %d/%d" % (resume[:8], round_n, MAX_RESUME_ROUNDS)
+        if round_n else " --resume %s for the phase review's findings" % (resume[:8],))
     command = " ".join(shlex.quote(word) for word in argv)
     return instruction("dispatch", lines, signal_of(
         step, task_id, basis, command, runs=[command]))
@@ -1603,6 +1707,9 @@ def dispatch(ctx, state, phase, task, role, tree=None):
           {"scope": brief_scope(task)} if role == "executor" else True)
     write_state(ctx, state)
     brief = project_relative(ctx, found.group(1).strip())
+    if writer and review_fix(state, task) is not None:
+        return review_fix_dispatch(ctx, state, phase, task, writer, os.path.abspath(
+            os.path.join(ctx["project"], found.group(1).strip())), tree)
     if writer:
         prompt = os.path.abspath(os.path.join(ctx["project"], found.group(1).strip()))
         _record, argv = open_dispatch(ctx, state, task, 0, lambda record: writer_argv(
@@ -4646,10 +4753,13 @@ def pending_still_applies(ctx, manifest, pending):
     alone keep it, and a parked one would stop the drive on a line about a
     return that is there. A decision standing on a gate run is about that run,
     so it no longer applies once the run stops answering the gate
-    (`gate_basis_holds`). Every path that shows a waiting decision - printed
-    again, a member's parked one, `explain` - asks here."""
+    (`gate_basis_holds`). A triage showing a phase review's findings as notes
+    stands on the HEAD they were sorted at, and no longer applies once HEAD
+    moved: the next triage sorts - and validates - them over the code as it
+    is. Every path that shows a waiting decision - printed again, a member's
+    parked one, `explain` - asks here."""
     if not pending.get("task"):
-        return True
+        return not pending.get("noted") or pending.get("notedHead") == git_head(ctx)
     task = _mio.tasks_by_id(manifest).get(pending["task"]) or {}
     if pending["decision"] == "review-answer":
         return True
@@ -5197,6 +5307,9 @@ def finding_lines(found, pending, offer=True):
     for f in pending.get("carried") or []:
         lines.append(_clip("  %s - carried to %s, recorded so at sign-off"
                            % (f.get("id"), f.get("to")), TRIAGE_LINE_BYTES))
+    for f in pending.get("noted") or []:
+        lines.append(_clip("  %s - a note, not a block: %s" % (f.get("id"), f.get("why")),
+                           TRIAGE_LINE_BYTES))
     return lines
 
 
@@ -5353,9 +5466,14 @@ def triage(ctx, state, manifest, phase):
             write_state(ctx, state)
             ctx["did"].append("phase review again: %s owed" % (", ".join(owed[:3]),))
             return dispatch_phase_review(ctx, state, phase)
+    held = review_findings_step(ctx, state, phase, review)
+    if held is not None:
+        return held
+    manifest, phase = load_phase(ctx)
     still, handed = triage_findings(phase)
     carried = carried_now(state, phase)
-    still = [f for f in still if f.get("id") not in carried]
+    noted = noted_now(ctx, state, phase)
+    still = [f for f in still if f.get("id") not in carried and f.get("id") not in noted]
     # A settlement counts for the content it was given for: an answer settled
     # by name alone is put to the human again, so its accept records the
     # signature the sign-off verb honours.
@@ -5369,7 +5487,13 @@ def triage(ctx, state, manifest, phase):
     extra = {"findings": still, "handed": handed, "answers": answers,
              "fixesAfter": after, "head": (mark.get("head") or "")[:12],
              "carried": [{"id": fid, "to": to}
-                         for fid, to in sorted(carried.items())]}
+                         for fid, to in sorted(carried.items())],
+             "noted": [{"id": fid, "why": why} for fid, why in sorted(noted.items())]}
+    if noted:
+        # The notes stand on the code they were sorted over: the triage
+        # showing them holds only while HEAD is that commit
+        # (`pending_still_applies`).
+        extra["notedHead"] = (state.get(NOTED_FIELD) or {}).get("head")
     if ctx.get("advance") is not None:
         reason = ctx.pop("advance")
         if advance_applies(review, extra):
@@ -5477,6 +5601,678 @@ def add_fix_tasks(ctx, phase, fixes):
     return None
 
 
+# --- a phase-review finding, validated and handed back to its writer ----------
+def finding_list(ids):
+    """Finding ids as one comma-joined word, `none` for no id: a finding id
+    holds no `.`, so `join_ids`' shortening never applies to one."""
+    return ",".join(str(i) for i in ids) or "none"
+
+
+def cited_ranges(file_field):
+    """`[(path, first, last)]` - every line range a finding's `file` cites, in
+    the spellings a reviewer writes: `path:291-294,308`, `path:L5`,
+    `path#L5-L7`, `path line 5`, `path (lines 5-6)`. A path with no line, or a
+    word that is no path, cites no line."""
+    out = []
+    for hit in _CITED.finditer(str(file_field or "").replace("\\", "/")):
+        path = hit.group(1)
+        if "." not in path and "/" not in path:
+            continue
+        for part in hit.group(2).replace("L", "").split(","):
+            bounds = [int(b) for b in re.split(r"\s*[-–]\s*", part.strip()) if b]
+            if bounds and min(bounds) >= 1:
+                out.append((path, min(bounds), max(bounds)))
+    return out
+
+
+def commit_hunks(ctx, sha, path, cache=None):
+    """`((new, old), None)` - the line ranges `sha`'s own diff of `path` shows,
+    on its new side and its old side, in the coordinates of that diff (`git
+    show`, the comparison a phase brief prints for the task, three lines of
+    context) - or `(None, why)` when git could not say. `cache` keeps one
+    answer per `(sha, path)` for the call that passes it."""
+    key = (sha, path)
+    if cache is not None and key in cache:
+        return cache[key], None
+    # The cite is project-relative and git reads a pathspec from the checkout's
+    # top: one base, through the plan's own pair, or a nested project's path
+    # names nothing. A path outside the checkout is in no task's diff.
+    top = ctx.get("gitRoot") or ctx["project"]
+    spec = _loader.load_hooks_config(modname="audit__config").plan_to_git(
+        path, top, ctx["project"])
+    if spec is None:
+        return ([], []), None
+    try:
+        done = subprocess.run(
+            ["git", "-C", top, "show", "--format=", "--no-color",
+             "--no-ext-diff", "--no-renames", sha, "--", spec],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, "git show could not run (%s)" % (exc,)
+    if done.returncode != 0:
+        return None, "git show %s -- %s exited %d: %s" % (
+            sha[:12], path, done.returncode, _clip(done.stderr.strip(), 160))
+    new, old = [], []
+    for hit in _HUNK.finditer(done.stdout):
+        for side, start, count in ((old, hit.group(1), hit.group(2)),
+                                   (new, hit.group(3), hit.group(4))):
+            count = 1 if count is None else int(count)
+            if count:
+                side.append((int(start), int(start) + count - 1))
+    if cache is not None:
+        cache[key] = (new, old)
+    return (new, old), None
+
+
+def task_commits(phase, carried):
+    """`{sha: task id}` - each commit a task of the phase records, and each
+    one `carried` names: a commit a task held before a re-open cleared it."""
+    held = dict(carried or {})
+    held.update((str(t["commit"]), t["id"]) for t in _tasks(phase) if t.get("commit"))
+    return held
+
+
+def reopen_record(ctx, phase):
+    """`(carried, handed, None)` off the journal's `task.reopen` rows for the
+    phase - `carried` `{sha: task id}`, the commit each re-open cleared, and
+    `handed` `{finding id: [task id, ...]}`, one entry per hand-back the drive
+    made, read off the reason it writes - or `(None, None, why)` when the
+    journal cannot be read. The journal, not the drive's state, because the
+    state file can be lost and the commit a task carried is then nowhere else."""
+    try:
+        rows = _journal_io.read_all(ctx["project"])
+    except Exception as exc:                                   # noqa: BLE001
+        return None, None, "the journal could not be read (%s)" % (exc,)
+    ids = set(t.get("id") for t in _tasks(phase))
+    carried, handed = {}, {}
+    for row in rows:
+        details = row.get("details") if isinstance(row.get("details"), dict) else {}
+        tid = details.get("taskId")
+        if row.get("action") != TASK_REOPEN or tid not in ids:
+            continue
+        carried.update((str(c.get("from")), tid) for c in details.get("changes") or []
+                       if isinstance(c, dict) and c.get("field") == "commit"
+                       and c.get("from"))
+        mine = _REOPEN_IDS.match(str(details.get("reason") or ""))
+        for fid in (mine.group(1).split(",") if mine else []):
+            handed.setdefault(fid, []).append(tid)
+    return carried, handed, None
+
+
+def _overlap(first, last, ranges):
+    return sum(max(0, min(last, b) - max(first, a) + 1) for a, b in ranges)
+
+
+def finding_owners(ctx, commits, finding, cache=None):
+    """`(owners, None)` - the tasks whose own diff, as the phase brief showed
+    it, holds a line the finding cites, the most cited lines first and then by
+    id - or `(None, why)` when git could not say. The cite is read in each
+    task's own coordinates, not HEAD's: a later task that moved the lines
+    leaves them the earlier task's. A diff's new side is read first; its old
+    side - a deleted line, a deleted file - only when no new side holds the
+    cite. `[]` when no task's diff holds it, which is no evidence about the
+    finding: the caller validates it like any other."""
+    ranges = cited_ranges(finding.get("file"))
+    new_counts, old_counts = {}, {}
+    for sha, tid in sorted(commits.items()):
+        for path, first, last in ranges:
+            hunks, why = commit_hunks(ctx, sha, path, cache)
+            if hunks is None:
+                return None, why
+            new_counts[tid] = new_counts.get(tid, 0) + _overlap(first, last, hunks[0])
+            old_counts[tid] = old_counts.get(tid, 0) + _overlap(first, last, hunks[1])
+    counts = new_counts if any(new_counts.values()) else old_counts
+    return sorted([t for t, n in counts.items() if n],
+                  key=lambda t: (-counts[t], _id_key(t))), None
+
+
+def held_verdict(state, fid, head):
+    """The validation verdict held for finding `fid`, only while HEAD is still
+    the commit it was given at; None otherwise."""
+    held = (state.get(VERDICTS_FIELD) or {}).get(fid)
+    return held if isinstance(held, dict) and held.get("head") == head else None
+
+
+def fixed_by(phase, handed, fid):
+    """The task a withdrawn finding was fixed by: the last task it was handed
+    back to, once that task is done again at a commit of its own - the pass
+    then re-read the fix and found the defect gone. None otherwise, and the
+    withdrawal is a note."""
+    tasks = dict((t["id"], t) for t in _tasks(phase))
+    tid = (handed.get(fid) or [None])[-1]
+    task = tasks.get(tid) or {}
+    return tid if task.get("status") == "done" and task.get("commit") else None
+
+
+def sort_findings(ctx, state, phase, head, record):
+    """`(sorted, None)` over the open findings no live fix task holds, or
+    `(None, why)` when git could not place a confirmed one. `record` is
+    `(commits, handed)`: `task_commits` and `reopen_record`'s hand-backs.
+
+    ONE RULE: A FINDING IS A NOTE ONLY ON POSITIVE EVIDENCE - it is low, or the
+    validation pass withdrew it, or confirmed it as a kind that does not block.
+    The drive failing to place a finding is never a reason: a finding no pass
+    has judged at `head` is a `candidate`, whatever it cites. `sorted` holds
+    `notes` `{id: why}`, `candidates`, `fixed` `[(finding, task id)]` - withdrawn
+    once handed back and re-checked - `blocking` `[(finding, owners)]`, each
+    confirmed as a blocking kind in a task's diff, and `unowned`: confirmed as a
+    blocking kind in lines no task's diff holds, which only a human settles."""
+    commits, handed = record
+    out = {"notes": {}, "candidates": [], "fixed": [], "blocking": [], "unowned": []}
+    cache = {}
+    for finding in open_findings(phase):
+        fid = finding["id"]
+        if live_fix_task(phase, finding):
+            continue
+        verdict = held_verdict(state, fid, head)
+        if finding.get("severity") == CARRY_SEVERITY:
+            out["notes"][fid] = ("a low finding: only a confirmed correctness or "
+                                 "requirement finding blocks")
+        elif verdict is None:
+            out["candidates"].append(finding)
+        elif verdict.get("verdict") == "withdrawn" and fixed_by(phase, handed, fid):
+            out["fixed"].append((finding, fixed_by(phase, handed, fid)))
+        elif verdict.get("verdict") == "withdrawn":
+            out["notes"][fid] = ("the validation pass withdrew it at %s: %s"
+                                 % (head[:12], verdict.get("basis")))
+        elif verdict.get("kind") not in BLOCKING_KINDS:
+            out["notes"][fid] = ("the validation pass confirmed it as %s, which "
+                                 "does not block: %s" % (verdict.get("kind"),
+                                                         verdict.get("basis")))
+        else:
+            owners, why = finding_owners(ctx, commits, finding, cache)
+            if owners is None:
+                return None, "%s: %s" % (fid, why)
+            out["blocking" if owners else "unowned"].append(
+                (finding, owners) if owners else finding)
+    return out, None
+
+
+def noted_now(ctx, state, phase, head=None):
+    """`{finding id: why}` of the notes the last sort made, while HEAD is still
+    the commit it sorted at and each finding is still open; `{}` once HEAD
+    moved, so a note is never shown over code it did not judge - and `{}`
+    without a writer session, the only route that makes a note: one an earlier
+    run left in the state is not honoured once `executor.writerModel` is
+    unset, and the finding is offered as the triage always offered it."""
+    writer, problem = writer_setting(ctx.get("config"))
+    if problem or not writer:
+        return {}
+    held = state.get(NOTED_FIELD) if isinstance(state.get(NOTED_FIELD), dict) else {}
+    if held.get("head") != (head or git_head(ctx)):
+        return {}
+    open_ids = set(f.get("id") for f in open_findings(phase))
+    return dict((fid, why) for fid, why in (held.get("notes") or {}).items()
+                if fid in open_ids)
+
+
+def read_verdicts(body, ids):
+    """`(verdicts, problems)` - `{id: {"verdict", "kind", "basis"}}` from a
+    validation session's return object - and what keeps it from answering:
+    no `findings` list, an entry for a finding it was not asked about, a word
+    outside the vocabulary, a finding answered twice - never the last entry
+    winning - or a finding left with no verdict."""
+    if not isinstance(body, dict) or not isinstance(body.get("findings"), list):
+        return {}, ["its last message ends with no JSON object holding a "
+                    "`findings` list"]
+    got, problems, seen = {}, [], []
+    for entry in body["findings"]:
+        fid = str((entry or {}).get("id")) if isinstance(entry, dict) else None
+        if fid not in ids:
+            problems.append("an entry for %s, which it was not asked about" % (fid,))
+            continue
+        if fid in seen:
+            problems.append("two entries for %s" % (fid,))
+            got.pop(fid, None)
+            continue
+        seen.append(fid)
+        verdict, kind = entry.get("verdict"), entry.get("kind")
+        if verdict not in FINDING_VERDICTS or (verdict == "confirmed"
+                                               and kind not in FINDING_KINDS):
+            problems.append("%s answered verdict %r kind %r, not %s with a kind "
+                            "of %s" % (fid, verdict, kind, "|".join(FINDING_VERDICTS),
+                                       "|".join(FINDING_KINDS)))
+            continue
+        got[fid] = {"verdict": verdict, "kind": kind,
+                    "basis": _clip(str(entry.get("basis") or "no basis given"), 200)}
+    missing = [fid for fid in ids if fid not in got]
+    if missing:
+        problems.append("no verdict for %s" % (", ".join(missing),))
+    return got, problems
+
+
+def stream_reads(stream, project):
+    """The project-relative paths a saved stream's `tool_use` blocks read a file
+    at: `Read` and `NotebookRead` by their path, `Grep` by a `path` naming a
+    file - an absolute path read as the project's own. Empty for a stream
+    that cannot be read: no read is shown, and nothing is taken on one."""
+    try:
+        with open(stream, "r", encoding="utf-8") as fh:
+            raw = fh.read()
+    except (OSError, TypeError):
+        return set()
+    out = set()
+    for line in raw.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        message = event.get("message") if isinstance(event, dict) else None
+        content = message.get("content") if isinstance(message, dict) else None
+        for block in content if isinstance(content, list) else []:
+            if not (isinstance(block, dict) and block.get("type") == "tool_use"
+                    and block.get("name") in READ_TOOLS):
+                continue
+            given = block.get("input") if isinstance(block.get("input"), dict) else {}
+            for key in ("file_path", "notebook_path", "path"):
+                path = given.get(key)
+                if isinstance(path, str) and path:
+                    if os.path.isabs(path):
+                        path = os.path.relpath(os.path.realpath(path),
+                                               os.path.realpath(project))
+                    out.add(os.path.normpath(path).replace(os.sep, "/"))
+    return out
+
+
+def cited_paths(file_field):
+    """Every path a finding's `file` names - with a line or without one."""
+    paths = set(path for path, _f, _l in cited_ranges(file_field))
+    paths.update(word for word in re.findall(r"[^\s,;:#()]+",
+                                             str(file_field or "").replace("\\", "/"))
+                 if "." in word or "/" in word)
+    return set(os.path.normpath(p).replace(os.sep, "/") for p in paths)
+
+
+def unread_demotions(candidates, verdicts, reads):
+    """The ids of the med-or-worse candidates whose verdict would demote them -
+    `withdrawn`, or confirmed as a kind that does not block - while `reads`
+    holds no path the finding cites. A low finding is a note without any pass,
+    so it needs no read; a confirmation of a blocking kind demotes nothing."""
+    out = []
+    for finding in candidates:
+        verdict = verdicts.get(finding["id"]) or {}
+        demotes = (verdict.get("verdict") == "withdrawn"
+                   or verdict.get("kind") not in BLOCKING_KINDS)
+        if (finding.get("severity") != CARRY_SEVERITY and demotes
+                and not cited_paths(finding.get("file")) & set(reads)):
+            out.append(finding["id"])
+    return out
+
+
+def validation_node(phase, head):
+    """The record a validation pass's sessions are kept under: the phase, at
+    one HEAD - a pass at a moved HEAD is a new one."""
+    return {"id": phase["id"], "startedAt": "validate-%s" % (head,)}
+
+
+def validation_dispatch(ctx, state, phase, head, candidates):
+    """The validation session's dispatch: its prompt - every candidate, then
+    `VALIDATE_RULE` - written beside the sessions, the reviewer's runner role on
+    the reviewer session's model, and the ids it was asked about kept."""
+    setting = reviewer_session_setting(phase, writer_setting(ctx["config"])[0])
+    node = validation_node(phase, head)
+    ids = [f["id"] for f in candidates]
+    seq = writer_state(state, node, VALIDATE_KEY)["seq"]
+    prompt = os.path.join(sessions_dir(ctx), "scratch", phase["id"],
+                          "validate-%s.%d.prompt" % (head[:12], seq))
+    lines = [VALIDATE_HEAD % {"phase": phase["id"], "head": head[:12]}, "",
+             "phase base: %s" % (phase.get("baseRef")
+                                 or "not recorded (phase.baseRef is absent)",),
+             "task commits (git show <commit> is a task's own diff):"]
+    lines += ["  %s %s" % (t["id"], t.get("commit") or "no commit")
+              for t in _tasks(phase)]
+    lines.append("")
+    for f in candidates:
+        lines += ["- %s %s %s: %s" % (f["id"], f.get("severity"), f.get("file"),
+                                      f.get("issue")),
+                  "  resolution asked: %s" % (f.get("resolution") or "none",)]
+    os.makedirs(os.path.dirname(prompt), exist_ok=True)
+    with open(prompt, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("\n".join(lines + ["", VALIDATE_RULE]) + "\n")
+    _record, argv = open_dispatch(ctx, state, node, 0, lambda record: writer_argv(
+        ctx, node, setting, prompt, record, role="reviewer"), None, VALIDATE_KEY)
+    held = writer_state(state, node, VALIDATE_KEY)
+    held["asked"] = ids
+    _mark(state, VALIDATE_KEY, node, held)
+    write_state(ctx, state)
+    return validation_said(ctx, phase["id"], setting["model"], ids,
+                           project_relative(ctx, prompt), argv)
+
+
+def validation_said(ctx, phase_id, model, ids, prompt, argv):
+    """The validation session's dispatch print: the runner, the phase, the
+    model and the finding ids it validates, and the command as its `run:`
+    line."""
+    command = " ".join(shlex.quote(word) for word in argv)
+    return instruction("dispatch", step_text(
+        "dispatch-validation", phase=phase_id, model=model,
+        ids=finding_list(ids), prompt=prompt), signal_of(
+        "dispatch-validation", phase_id, "%s --role reviewer model=%s; "
+        "validates %s" % (WRITER_RUNNER, model, finding_list(ids)),
+        command, runs=[command]))
+
+
+def validation_step(ctx, state, phase, head, candidates):
+    """`(True, None)` once the pass at `head` answered for every candidate -
+    each verdict held with that HEAD - else `(None, said)`: the dispatch, the
+    wait while its record is empty, the dispatch once more for a stream with
+    no tool call, or the stop. A pass that opened no file re-read nothing, and
+    one whose return does not answer every finding validates none of them."""
+    node = validation_node(phase, head)
+    held = writer_state(state, node, VALIDATE_KEY)
+    ids = [f["id"] for f in candidates]
+    if not held["dispatches"] or not set(ids) <= set(held.get("asked") or []):
+        return None, validation_dispatch(ctx, state, phase, head, candidates)
+    last = held["dispatches"][-1]
+    runs = read_sessions(last["record"])
+    if not runs:
+        return None, wait_said(ctx, phase["id"], project_relative(
+            ctx, last["record"]), last.get("argv") or [], "wait-validation")
+    run = runs[-1]
+    if not run["session"]:
+        return None, _stopped(ctx, "the validation session for %s produced no "
+                              "result (%s), so no finding was validated" % (
+                                  finding_list(ids), _clip(run["line"], 160)))
+    calls, why = stream_tool_calls(run["stream"])
+    if calls is None:
+        return None, _stopped(ctx, "validation session %s left a stream the drive "
+                              "cannot count tool calls in (%s), so whether it "
+                              "re-read the cited code is not known"
+                              % (run["session"], why))
+    if calls == 0:
+        if held.get("redispatched", 0) < MAX_REVIEWER_REDISPATCH:
+            held["redispatched"] = held.get("redispatched", 0) + 1
+            held["asked"] = []
+            _mark(state, VALIDATE_KEY, node, held)
+            write_state(ctx, state)
+            ctx["did"].append("validation session %s opened no file" % (
+                run["session"][:8],))
+            return None, validation_dispatch(ctx, state, phase, head, candidates)
+        return None, _stopped(ctx, "validation sessions for %s opened no file, so "
+                              "none of them re-read the cited code and no finding "
+                              "was validated; there is no third dispatch" % (
+                                  finding_list(ids),))
+    text, _why = session_last_message(run["stream"])
+    got, problems = read_verdicts(return_object(text), ids)
+    if problems:
+        return None, _stopped(ctx, "validation session %s validated nothing: %s"
+                              % (run["session"], "; ".join(problems)))
+    reads = stream_reads(run["stream"], ctx["project"])
+    unread = unread_demotions(candidates, got, reads)
+    if unread:
+        # A demotion stands on the code the pass read: one that read none of a
+        # finding's cited files re-read nothing of it, and its verdict is not
+        # taken - never a note, never held: the drive stops for a human.
+        return None, _stopped(ctx, "validation session %s withdrew or set aside "
+                              "%s without reading a file it cites (it read: %s), "
+                              "so that verdict is not taken and nothing was "
+                              "validated; a human settles it" % (
+                                  run["session"], finding_list(unread),
+                                  ", ".join(sorted(reads)) or "nothing"))
+    verdicts = dict(state.get(VERDICTS_FIELD) or {})
+    verdicts.update((fid, dict(v, head=head, session=run["session"],
+                               cost=run["cost"])) for fid, v in got.items())
+    state[VERDICTS_FIELD] = verdicts
+    write_state(ctx, state)
+    ctx["did"].append("validation session %s: %d confirmed, %d withdrawn "
+                      "(total_cost_usd=%s)" % (
+                          run["session"][:8],
+                          len([v for v in got.values() if v["verdict"] == "confirmed"]),
+                          len([v for v in got.values() if v["verdict"] == "withdrawn"]),
+                          run["cost"]))
+    return True, None
+
+
+def last_writer_session(state, task):
+    """`{"session", "stream", "tree"}` of the latest writer run of `task`'s
+    current start that produced a session, or None - read before a re-open
+    starts the task again, after which that start's record no longer reads."""
+    held = writer_state(state, task)
+    for run in reversed(held["runs"]):
+        if not run.get("session"):
+            continue
+        argv = next((d.get("argv") for d in held["dispatches"]
+                     if d.get("seq") == run.get("seq")), None) or []
+        return {"session": run["session"], "stream": run.get("stream"),
+                "tree": argv[argv.index("--tree") + 1] if "--tree" in argv[:-1]
+                else None}
+    return None
+
+
+def hand_back(ctx, state, phase, head, blocking):
+    """Each confirmed finding back to every task whose own diff holds its
+    cited lines (`blocking` is `[(finding, owners)]`): the task re-opened, so
+    the drive starts it and its writer takes the findings, and - only once the
+    verb took the re-open - its entry kept: its findings, the commit it
+    carried and its last writer session, read before the re-open. The re-open
+    row the verb journals is the durable record (`reopen_record`). No fix task
+    is added. None, or the stop."""
+    by_task = {}
+    for finding, owners in blocking:
+        for tid in owners:
+            by_task.setdefault(tid, []).append(finding["id"])
+    tasks = dict((t["id"], t) for t in _tasks(phase))
+    for tid in sorted(by_task, key=_id_key):
+        task = tasks.get(tid) or {}
+        if task.get("status") != "done":
+            return _stopped(ctx, "the confirmed finding(s) %s cite lines %s's diff "
+                            "holds, and %s is %s, so there is no closed task to "
+                            "re-open for its writer" % (
+                                finding_list(by_task[tid]), tid, tid,
+                                task.get("status")))
+        held = (state.get(REVIEW_FIX_FIELD) or {}).get(tid)
+        if isinstance(held, dict) and task.get("commit") in (None, held.get("from")):
+            # Its last hand-back closed at no commit of its own: re-opening it
+            # again would run the same writer over the same findings without end.
+            return _stopped(ctx, "%s was re-opened for %s and closed again at no "
+                            "new commit, so the finding(s) %s are still open and "
+                            "%s is not re-opened again; fix them by hand or settle "
+                            "each at sign-off" % (
+                                tid, finding_list(held.get("findings") or []),
+                                finding_list(by_task[tid]), tid))
+        session = last_writer_session(state, task) or {}
+        _out, stop = _verb_with_text(
+            ctx, "audit-task.py", _task_args(ctx, "reopen", tid), "--reason",
+            REOPEN_REASON % (finding_list(by_task[tid]), head[:12]))
+        if stop is not None:
+            return stop
+        state.setdefault(REVIEW_FIX_FIELD, {})[tid] = dict(
+            session, findings=by_task[tid], head=head, dispatched=False,
+            **{"from": task.get("commit")})
+        write_state(ctx, state)
+        ctx["did"].append("%s re-opened for %s" % (tid, finding_list(by_task[tid])))
+    return None
+
+
+def review_fix(state, task):
+    """The handed-back findings `task`'s next writer dispatch takes, or None
+    once one took them."""
+    held = (state.get(REVIEW_FIX_FIELD) or {}).get(task["id"])
+    return held if isinstance(held, dict) and not held.get("dispatched") else None
+
+
+def warm_session(ctx, fix, tree=None):
+    """`(session, why)` - the writer session a fix round resumes, its last
+    activity (its saved stream's last write) under `CACHE_LIFE_SECONDS` ago in
+    the tree this round runs in - or `(None, why)` a fresh one starts."""
+    if not fix.get("session"):
+        return None, "no writer session of the task's last start is recorded"
+    here = member_project(ctx, tree) or ctx["project"]
+    if fix.get("tree") and os.path.realpath(fix["tree"]) != os.path.realpath(here):
+        return None, ("its session %s ran in another tree, where a resume would "
+                      "not find it" % (fix["session"][:8],))
+    try:
+        idle = time.time() - os.path.getmtime(fix.get("stream") or "")
+    except OSError as exc:
+        return None, ("the last write of session %s's stream cannot be read (%s)"
+                      % (fix["session"][:8], exc.__class__.__name__))
+    said = "session %s was last active %d min ago; the cache lives %d min" % (
+        fix["session"][:8], max(idle, 0) // 60, CACHE_LIFE_SECONDS // 60)
+    return (fix["session"] if idle < CACHE_LIFE_SECONDS else None), said
+
+
+def review_fix_dispatch(ctx, state, phase, task, writer, brief, tree=None):
+    """A re-opened task's writer dispatch, carrying the confirmed findings:
+    `--resume` on its last session while that is warm (`warm_session`),
+    prompted with the findings alone; otherwise a fresh session whose prompt
+    is the task's own brief - its text - and then the findings."""
+    fix = review_fix(state, task)
+    _manifest, phase = load_phase(ctx)
+    held = dict((f.get("id"), f) for f in (phase.get("review") or {}).get("findings")
+                or [] if isinstance(f, dict))
+    lines = []
+    for fid in fix.get("findings") or []:
+        found = held.get(fid) or {}
+        lines += ["- %s %s %s: %s" % (fid, found.get("severity"), found.get("file"),
+                                      found.get("issue")),
+                  "  resolution asked: %s" % (found.get("resolution") or "none",)]
+    if ((task.get("tests") or {}).get("mode")) == "tdd":
+        lines.append("Prove each with a case that fails on the code at HEAD.")
+    session, why = warm_session(ctx, fix, tree)
+    prompt = session_record(ctx, task, writer_state(state, task)["seq"])[
+        :-len(".jsonl")] + ".prompt.md"
+    try:
+        with open(brief, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError as exc:
+        return _stopped(ctx, "the writer brief %s could not be read (%s)" % (brief, exc))
+    os.makedirs(os.path.dirname(prompt), exist_ok=True)
+    with open(prompt, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(resume_prompt(lines, REVIEW_FIX_HEAD) if session else
+                 "%s\n\n%s\n\n%s\n" % (text.rstrip("\n"), REVIEW_FIX_HEAD,
+                                       "\n".join(lines)))
+    _record, argv = open_dispatch(ctx, state, task, 0, lambda record: writer_argv(
+        ctx, task, writer, prompt, record, tree, resume=session), tree)
+    state[REVIEW_FIX_FIELD][task["id"]] = dict(fix, dispatched=True,
+                                               resumed=session, why=why)
+    write_state(ctx, state)
+    said = "%s go to %s (%s)" % (
+        finding_list(fix.get("findings") or []), "a resume of session %s" % (
+            session,) if session else "a fresh writer session", why)
+    refused = note_task(ctx, task, "the phase review's confirmed finding(s) " + said)
+    ctx["did"].append(_clip(said, 120) + ("" if refused is None
+                                          else " (not noted: %s)" % (refused,)))
+    return writer_said(ctx, task["id"], writer["model"],
+                       project_relative(ctx, prompt), argv, resume=session)
+
+
+def resolve_fixed(ctx, state, fixed):
+    """Each handed-back finding the validation pass re-read at the fix's commit
+    and withdrew, recorded fixed by `resolve-finding --fix-task`, which writes
+    that task's own commit on it - never on a new commit alone. A task's entry
+    goes once none of its findings is left. None, or the stop."""
+    fixes = dict(state.get(REVIEW_FIX_FIELD) or {})
+    for finding, tid in fixed:
+        _out, stop = _verb_or_stop(ctx, "audit-task.py", [
+            "resolve-finding", finding["id"], ctx["manifest"], "--project-dir",
+            ctx["project"], "--fix-task", tid])
+        if stop is not None:
+            return stop
+        ctx["did"].append("%s fixed by %s, re-checked" % (finding["id"], tid))
+        entry = dict(fixes.get(tid) or {})
+        entry["findings"] = [f for f in entry.get("findings") or []
+                             if f != finding["id"]]
+        if entry["findings"]:
+            fixes[tid] = entry
+        else:
+            fixes.pop(tid, None)
+        state[REVIEW_FIX_FIELD] = fixes
+        write_state(ctx, state)
+    return None
+
+
+def cap_stop(ctx, state, phase, head, blocking, rounds, cap):
+    """The stop once `review.maxRounds` rounds are spent with a confirmed
+    finding open: never a sign-off over it and never another round. Each task
+    whose diff holds a finding's lines gets a note naming them, once per HEAD."""
+    said = ["%s %s %s - %s" % (f["id"], f.get("severity"), f.get("file"),
+                               _clip(f.get("issue") or "", 80))
+            for f, _owners in blocking]
+    if state.get(CAP_NOTED_FIELD) != head:
+        tasks = dict((t["id"], t) for t in _tasks(phase))
+        for tid in sorted(set(t for _f, owners in blocking for t in owners
+                              if t in tasks), key=_id_key):
+            refused = note_task(ctx, tasks[tid], "review round %d of %d spent with "
+                                "the confirmed finding(s) still open on this task's "
+                                "lines: %s" % (rounds, cap, "; ".join(
+                                    s for (_f, owners), s in zip(blocking, said)
+                                    if tid in owners)))
+            if refused is not None:
+                ctx["did"].append("%s not noted: %s" % (tid, refused))
+        state[CAP_NOTED_FIELD] = head
+        write_state(ctx, state)
+    return _stopped(ctx, "review.maxRounds is %d and %d review round(s) are spent, "
+                    "so no writer takes these confirmed finding(s) and the phase is "
+                    "not signed off: %s. Raise review.maxRounds for another round, "
+                    "or settle each at sign-off with audit-task.py signoff "
+                    "--accept-open <id>=<the human's reason>." % (
+                        cap, rounds, "; ".join(said)))
+
+
+def review_findings_step(ctx, state, phase, review):
+    """Under a writer session, what the phase review's open findings lead to
+    before the triage: sorted (`sort_findings`), every finding no pass has
+    judged at this HEAD through the validation pass - a handed-back one
+    included, which is fixed only when the pass re-reads it and withdraws it -
+    then the stop for a confirmed finding no task's diff holds, the stop past
+    the cap, or each confirmed blocking finding handed back to its tasks.
+    None when the triage goes on as before: no writer session, no review
+    filed, or nothing confirmed left open.
+
+    A ROUND, for one finding, is a filed phase review or a hand-back of it,
+    whichever count is higher, so the cap holds under every `review.perTask`:
+    a key that files no second review still spends a round on each re-open."""
+    writer, problem = writer_setting(ctx["config"])
+    if problem or not writer or review is None:
+        return None
+    head = git_head(ctx)
+    if not head:
+        return _stopped(ctx, "git named no HEAD, so no finding can be judged at it")
+    carried, handed, why = reopen_record(ctx, phase)
+    if why is not None:
+        return _stopped(ctx, "%s, so the commits a re-opened task carried and the "
+                        "findings handed back are not known" % (why,))
+    record = (task_commits(phase, carried), handed)
+    found, why = sort_findings(ctx, state, phase, head, record)
+    if why is None and found["candidates"]:
+        done, said = validation_step(ctx, state, phase, head, found["candidates"])
+        if done is None:
+            return said
+        found, why = sort_findings(ctx, state, phase, head, record)
+    if why is not None:
+        return _stopped(ctx, "git could not read a task's own diff for a confirmed "
+                        "finding, so whose lines it cites is not known: %s" % (why,))
+    stop = resolve_fixed(ctx, state, found["fixed"])
+    if stop is not None:
+        return stop
+    state[NOTED_FIELD] = {"head": head, "notes": found["notes"]}
+    write_state(ctx, state)
+    if found["unowned"]:
+        return _stopped(ctx, "the validation pass confirmed %s as blocking, and no "
+                        "task's own diff holds a line it cites (or it cites none in "
+                        "a form the drive reads), so no writer can take it: a human "
+                        "decides - add a task that fixes it, or settle it at "
+                        "sign-off with audit-task.py signoff --accept-open "
+                        "<id>=<the human's reason>" % (
+                            "; ".join("%s %s %s" % (f["id"], f.get("severity"),
+                                                    f.get("file"))
+                                      for f in found["unowned"]),))
+    blocking = found["blocking"]
+    if not blocking:
+        return None
+    filed_rounds, cap, problem = review_rounds(ctx, state, phase)
+    if problem:
+        return _stopped(ctx, problem)
+    rounds = max([filed_rounds] + [1 + len(handed.get(f["id"]) or [])
+                                   for f, _owners in blocking])
+    if rounds >= cap:
+        return cap_stop(ctx, state, phase, head, blocking, rounds, cap)
+    stop = hand_back(ctx, state, phase, head, blocking)
+    return HANDED_BACK if stop is None else stop
+
+
+# --- sign-off's last step: the gate, the verdict, the landing -------------------
 def phase_gate(ctx, phase):
     """`(code, stdout, stderr)` of the phase's recorded gate run, derived first
     when `meta.phaseGate.mode` asks for a derived gate."""
@@ -5686,11 +6482,17 @@ def run_signoff(ctx, state, phase):
     # open, and the verb refuses a sign-off that leaves one unsaid, so each is
     # recorded with the reason the answer carried. A finding handed to a fix
     # task still to run is not offered one: that task is its answer. One a
-    # `carry` answer handed on is recorded as carried to the id it named.
+    # `carry` answer handed on is recorded as carried to the id it named. One
+    # the sort left a note at this HEAD (`noted_now`) never blocked, and is
+    # recorded with its note as the reason rather than the summary's words.
     carried = carried_now(state, phase)
+    noted = noted_now(ctx, state, phase, head)
     for finding in triage_findings(phase)[0]:
         args += (["--carried", "%s=%s" % (finding["id"], carried[finding["id"]])]
                  if finding["id"] in carried else
+                 ["--accept-open", "%s=a note, not a block - %s" % (
+                     finding["id"], noted[finding["id"]])]
+                 if finding["id"] in noted else
                  ["--accept-open", "%s=%s" % (finding["id"], summary)])
     mark = state.get("phaseReview") or {}
     if mark.get("head"):
@@ -6076,7 +6878,9 @@ def refresh_triage(ctx, state, phase, pending):
         return None
     offered, handed = triage_findings(phase)
     carried = carried_now(state, phase)
-    offered = [f for f in offered if f.get("id") not in carried]
+    noted = noted_now(ctx, state, phase)
+    offered = [f for f in offered if f.get("id") not in carried
+               and f.get("id") not in noted]
     if offered != pending.get("findings") or handed != (pending.get("handed") or []):
         pending = dict(pending, findings=offered, handed=handed)
         state["pending"] = pending
@@ -6166,7 +6970,10 @@ def drive_phase(ctx, state, phase):
             if idle else None)
         if task is None:
             if all(t.get("status") in _mio.TERMINAL for t in _tasks(phase)):
-                return _as_result(sign_off(ctx, state, manifest, phase))
+                said = sign_off(ctx, state, manifest, phase)
+                if said is HANDED_BACK:
+                    continue
+                return _as_result(said)
             return E_OK, stalled_said(
                 ctx, [t for t in _tasks(phase)
                       if t.get("status") not in _mio.TERMINAL],

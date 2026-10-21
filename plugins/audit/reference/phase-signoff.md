@@ -111,6 +111,17 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    `falsifier` decision, and files a return that still carries a `falsifiers` field without
    recording it.
 
+   **Under `executor.writerModel` the drive does the rest of this step itself**
+   (`drive-phase.py`'s `review_findings_step`): a finding is a note only when it is low or a
+   validation session withdrew it or confirmed it as a kind that does not block; every other
+   finding goes to that session, and only one it confirms as a correctness or requirement
+   finding blocks. That one re-opens each task whose own diff holds a cited line, for its own
+   writer session - resumed while its stream was last written under `CACHE_LIFE_SECONDS` ago,
+   else fresh - and is fixed only once the session re-reads it and withdraws it; no fix task
+   is added. One no task's diff holds, or one still open at `review.maxRounds`, stops the
+   drive for a human. Sign-off records each note `--accept-open` with the note as its reason.
+   The rest of this step is the route without a writer session.
+
    **Nothing refuses a hand edit of the shard** — the validator's shape warning is the only
    backstop, and a hand-written finding carries no journal row and no tally. Then, for each
    actionable finding, **create and start its task** (the two commands below) and spawn an

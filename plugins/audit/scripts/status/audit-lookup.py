@@ -409,6 +409,14 @@ BRIEFS_DIRNAME = _fr.BRIEFS_DIRNAME
 PHASE_QUESTION = ("Where does a task choose something the request leaves open? "
                   "Name the task, the choice it made and the line of the request "
                   "that left it open.")
+# The phase reviewer is handed each task's diff and gate results below, and the
+# diff is lines, not code: this is the one sentence telling it to read the code.
+OPEN_CODE_LINE = ("Open each changed function in the tree at this head before "
+                  "you judge it: a diff shows the lines a task changed, not the "
+                  "function around them; nothing checks that you did. Cite each "
+                  "finding as `file:line` of a line the diffs below show, in that "
+                  "diff's numbering: under a writer session the drive hands a "
+                  "confirmed finding to the task whose diff holds that line.")
 
 # A gate entry that names a `meta.buildCommands` key with a project after the
 # colon: one token, a colon, no spaces.
@@ -1562,6 +1570,30 @@ def _recorded_run_line(evidence, rows, rows_why):
     return "%s; %s" % (line, "; ".join(banners)) if banners else line
 
 
+def _gate_results_line(evidence, rows, rows_why):
+    """The `gate results:` line of one task in the phase brief: each step of
+    its recorded run with the exit it recorded - and the outcome where the row
+    names one, and the mute where one excused it - or why there is none to
+    show. A run's status alone hides which step went red."""
+    run_id = (evidence or {}).get("runId")
+    if not run_id:
+        return "gate results: none - the task records no run"
+    if rows_why:
+        return "gate results: not read - the ledger could not be read (%s)" % (
+            rows_why,)
+    row = _evio.row_by_run(rows, run_id)
+    if row is None:
+        return "gate results: not read - no ledger row carries runId %s" % (run_id,)
+    steps = [s for s in row.get("steps") or [] if isinstance(s, dict)]
+    if not steps:
+        return "gate results: run %s records no step" % (run_id,)
+    return "gate results, per step, of run %s: %s" % (run_id, "; ".join(
+        "%s exit %s%s%s" % (s.get("name") or "?", s.get("exit"),
+                            " (%s)" % (s["outcome"],) if s.get("outcome") else "",
+                            " muted" if s.get("muted") else "")
+        for s in steps))
+
+
 def phase_brief_parts(manifest, phase, ctx):
     """The sign-off reviewer's brief in the pieces a slice is cut from: the
     `header` (the request as saved, the choices it left open, the fixed
@@ -1588,6 +1620,7 @@ def phase_brief_parts(manifest, phase, ctx):
         "the record."))
     lines += _section("The choices the request left open", _choices_lines(phase))
     lines += _section("The question", [PHASE_QUESTION])
+    lines += _section("Reading the work", [OPEN_CODE_LINE])
     lines += refuse_lines(manifest)
     lines += _section("Phase desired outcome",
                       _verbatim(phase.get("desiredOutcome"),
@@ -1675,6 +1708,7 @@ def phase_brief_parts(manifest, phase, ctx):
             "files:"] + ["- %s" % (f,) for f in task.get("files") or []]
             + _tests_add_review_lines(task, _filed_obj(text)) + [
             _recorded_run_line(evidence, rows, rows_why),
+            _gate_results_line(evidence, rows, rows_why),
             "gate commands, %s:" % (whose,)] + gate_lines(manifest, entries)
             + _task_commit_diff_lines(ctx, task.get("commit"),
                                       task.get("files"))
