@@ -1864,7 +1864,11 @@
         "tests/test_drive_phase.py",
         "tests/test_audit_task.py",
         "tests/test__manifest_phases.py",
-        "plugins/audit/reference/verbs-in-full.md"
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "tests/test__manifest_vocab.py",
+        "plugins/audit/commands/init.md",
+        "plugins/audit/schema/audit-plan.schema.json"
       ],
       "tests": {
         "mode": "tdd",
@@ -1901,7 +1905,12 @@
       "startedAt": "2026-10-21T17:14:31Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-21T17:52:37Z.c39a57",
+        "status": "passed",
+        "at": "2026-10-21T17:52:37Z"
+      }
     },
     {
       "id": "P131.14",

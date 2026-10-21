@@ -2190,7 +2190,8 @@
       "P123.21",
       "P129.1-izt",
       "P125.22",
-      "P129.7-izt"
+      "P129.7-izt",
+      "P131.13"
     ],
     "plugins/audit/commands/layout.md": [
       "P57.1",
@@ -3162,7 +3163,8 @@
       "P129.8-izt",
       "P128.40-izt",
       "P130.6",
-      "P130.21-ywo"
+      "P130.21-ywo",
+      "P131.13"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -4385,7 +4387,8 @@
       "P130.39-ywo",
       "P131.1",
       "P131.2",
-      "P131.15-dau"
+      "P131.15-dau",
+      "P131.13"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -10983,7 +10986,8 @@
       "P131.1",
       "P131.2",
       "P129.7-izt",
-      "P129.8-izt"
+      "P129.8-izt",
+      "P131.13"
     ],
     "tests/test__merge_install.py": [
       "P131.1"
