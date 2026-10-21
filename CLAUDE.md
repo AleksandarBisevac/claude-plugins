@@ -28,19 +28,19 @@ two copies of a procedure is one copy and one lie.
 - **Stdlib only** in `plugins/audit/{hooks,scripts}/`. A guard that needs `pip install` is a
   guard that is off on most machines. `py-launch.sh` stays POSIX-sh builtins only.
 - **No `typing`, no `dataclasses`, no annotations, no walrus, no `from __future__`.** Not a style
-  guide — `_output.house_style_violations()` reads the AST and fails the build. The 3.8 floor and
-  hooks that must start fast on every tool call are the reason.
+  guide — `_output_lints.house_style_violations()` reads the AST and fails the build. The 3.8
+  floor and hooks that must start fast on every tool call are the reason.
 - **Python 3.8 floor**, held by `vermin -t=3.8-` in CI. Formatting is `%`-style throughout; the
   tree contains no f-strings.
-- **Every `.py` under `hooks/` and `scripts/` is scanned wherever it sits** — CI's sweep and the
-  lints in `_output.py` and `_deps.py` all walk recursively. The old rule saying files must stay
-  one directory deep existed only because those scanners were flat, so a file in a subdirectory
-  silently stopped being tested; that reason is gone. The one cost is that a `.py` **basename must
+- **Every `.py` under `hooks/` and `scripts/` is scanned wherever it sits** — the coverage classifier and
+  the lints in `tools/lints/` (`_output_lints.py`, `_deps.py`) all walk recursively. The old rule
+  saying files must stay one directory deep existed only because those scanners were flat, so a
+  file in a subdirectory silently stopped being tested; that reason is gone. The one cost is that a `.py` **basename must
   be unique** across the whole of `scripts/`, since `import` and `_loader` both resolve by
   basename — `layer_violations()` reports a collision by name. `scripts/ui/` still holds no `.py`.
 - **`_output.py` is the anchor and never moves.** `SCRIPTS_DIR`, `PLUGIN_ROOT`, `HOOKS_DIR`,
-  `TESTS_DIR` and `REPO_ROOT` live there and nowhere else; `install_path()` puts `scripts/` and
-  every subdirectory of it holding a `.py` on `sys.path`. **The folders are labels, not
+  `TESTS_DIR`, `LINTS_DIR` and `REPO_ROOT` live there and nowhere else; `install_path()` puts
+  `scripts/` and every subdirectory of it holding a `.py` on `sys.path`. **The folders are labels, not
   namespaces** — one flat name-space, every module reached by bare basename. No other `.py` under
   `scripts/` may read `__file__` outside the pinned preamble (`depth_sensitive_paths()`).
 - **Fail-open for advisory paths, fail-loud for guards** — the table is in `SECURITY.md`.
@@ -50,10 +50,11 @@ two copies of a procedure is one copy and one lie.
   render it).
 - **Do not write a number into prose when something already prints it.** This is the repo's
   most frequent defect (the same bug, found three separate times), and it is now a lint:
-  `_output.prose_number_claims()` over every `.py` this repo keeps and
-  `_deps.doc_prose_numbers()` over every `.md` — both sets **derived** off `.gitignore`, so a
+  `_output_lints.prose_number_claims()` over every `.py` this repo keeps and
+  `_deps.doc_prose_numbers()` over every `.md` (both in `tools/lints/`) — both sets **derived**
+  off what git tracks, or off `.gitignore` where git cannot answer, so a
   file added here is scanned by default and excluding one means a row in
-  `_output.PROSE_SCAN_EXEMPT` with a reason. They fail the build on a
+  `_output_lints.PROSE_SCAN_EXEMPT` with a reason. They fail the build on a
   present-tense cardinality (`its N cases`), persistence (`` `NAME` stayed at N ``),
   completeness (`all N of them`, `all N … have`) or ratio (`N of M <noun>` — the tally a
   command prints, quoted with no command beside it) claim — and the number may be spelled as a
@@ -88,12 +89,16 @@ two copies of a procedure is one copy and one lie.
 
 Five things beyond the code, and four of them fail CI *by name* if missed:
 
-1. a `--selftest` printing the `N/M cases passed` contract — CI globs the directories and fails a
-   file that has none;
-2. `safe_stdio()` as the **first** statement in `__main__` (AST-enforced by `_output.py`);
-3. a layer assignment in `_deps.LAYERS` (the import-graph lint fails an unplaced file);
+1. a suite at `tests/test_<name>.py`, printing the `N/M cases passed` contract — never a
+   `--selftest` in the module itself, since a shipped module answers none. Hyphens become
+   underscores (`a-b.py` → `test_a_b.py`, `_x.py` → `test__x.py`). The sweep fails, by name, a
+   module with neither a suite nor a row with a reason in `_output_lints.COVERAGE_EXEMPT`;
+2. `safe_stdio()` as the **first** statement in `__main__` — **`scripts/` only**, AST-enforced by
+   `_output_lints.entries_missing_guard()`; hooks stay importless, and CI's cp1252 sweep covers them;
+3. a layer assignment in `_deps.LAYERS` (`tools/lints/_deps.py`; the import-graph lint fails an
+   unplaced file);
 4. a tree line **and** a section in `PLUGIN-BUILD-GUIDE.md` (the enumeration lint);
-5. **`scripts/` only** — `_output.PATH_PREAMBLE`, pasted byte for byte after the stdlib
+5. **`scripts/` only** — `_output_lints.PATH_PREAMBLE`, pasted byte for byte after the stdlib
    imports and above the first sibling import. Copy it from any neighbour;
    `path_preamble_violations()` counts its LINES (once, never twice) and checks the
    ordering, and `depth_sensitive_paths()` fails any file that reads `__file__` outside
@@ -192,7 +197,7 @@ the same calls a run makes; that list is the gate set, and the block below is th
 commands a change most often reruns by hand, not a second copy of it:
 
 ```bash
-python3 tools/sweep-selftests.py           # hooks, scripts, tests, tools/ AND .claude/hooks/, each in a scratch dir
+python3 tools/sweep-selftests.py           # tests/, tools/ AND .claude/hooks/, each in a scratch dir; hooks/ and scripts/ answer for a suite in tests/
 python3 tools/sweep-selftests.py --selftest
 python3 tools/sweep-selftests.py --encoding cp1252   # again, a legacy code page for stdio AND a non-UTF-8 locale only where the pin is Windows-shaped; prints which half ran; --fast skips it
 python3 tools/sweep-selftests.py --spaced            # again, TMPDIR spaced + symlinked; posix only; --fast skips it
@@ -201,7 +206,7 @@ python3 tools/bench-hooks.py --gate        # the hook import budget; no flag pri
 python3 tools/measure-context.py --gate    # what each pipeline entry makes the main loop read, vs its ceiling
 python3 tools/check-git-pipeline.py        # the write half, against a REAL git repo
 npx vitest run                             # the JavaScript unit tests
-ruff check plugins/audit tools
+ruff check plugins/audit tools tests
 vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints
 python3 tools/check-rendered-artifacts.py  # vs a fresh render AND vs HEAD; verify.sh's
                                            # plain run passes --before-commit (the render
@@ -298,15 +303,19 @@ Its docstring is the current statement of those rules; `python3 tools/gate-parit
 prints only the slices and the jobs running them, so run it for that half and read the
 docstring for the rest, rather than trusting this paragraph.
 
-**Every `--selftest` block lives in `tests/`, not in the module it tests**
-(`73042a1` — count them with
-`python3 -c "import sys;sys.path.insert(0,'plugins/audit/scripts');import _output;print(len(_output.selftest_coverage()['covered']))"`).
-A migrated file still exits 0 on `--selftest` and prints where its cases went;
-`_output.selftest_coverage()` is what keeps the two halves honest — the migration is finished,
-so `covered` is the only clean class: a file with a suite INLINE, with both, or with neither is
-a defect it names. The runner enforces the other half of that, which the old loop could not: a
-migrated file that STILL prints the contract is red, because the classifier reads string
-literals and a file assembling the line would otherwise slip past both.
+**Every suite lives in `tests/`, and a shipped module answers no `--selftest` at all**
+(`73042a1` moved the cases, `c403486b` deleted the stubs that pointed at them — count the
+covered modules with
+`python3 -c "import sys;sys.path.insert(0,'tools/lints');import _output_lints as L;print(len(L.selftest_coverage()['covered']))"`).
+`_output_lints.selftest_coverage()` asks one question of every module under `scripts/`,
+`hooks/`, `tools/lints/` and `tools/demo/`, and of `tools/bench-report.py` and
+`tools/_usage_bench.py`: is there a `tests/test_<name>.py` for it. `covered` is the clean class
+and `exempt` a debt with its reason in `COVERAGE_EXEMPT`; `uncovered`, `stale_exempt` (an
+exemption naming no module, or one that has a suite after all), `orphans` (a `tests/test_*.py` naming nothing that exists) and `collisions`
+(two modules wanting one test name) are defects, and the sweep reports each by name and refuses
+a classification that looked at nothing. The sweep no longer walks `hooks/` or `scripts/` —
+there is nothing there to run — and a `.py` reappearing under the retired
+`plugins/audit/tests/` is red, because it would ship in every install and run nowhere.
 
 `CONTRIBUTING.md` has the manifest and plugin-structure checks that complete the pre-PR set,
 and the reasoning for the gates; `verify.sh --list` is the list. The browser gates at the
