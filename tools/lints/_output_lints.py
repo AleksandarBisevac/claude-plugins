@@ -88,8 +88,8 @@ from _output import (  # noqa: E402
 # `PROSE_SCAN_EXEMPT`.
 #
 # THE PROSE SCANS DO NOT START FROM THIS WALK ANY MORE: `prose_scan_set()` asks git
-# for the TRACKED files first, so an agent's untracked scratch file is nobody's
-# finding, and falls back to this derivation only where git cannot answer - these
+# for the tracked files plus the untracked ones `.gitignore` does not name, so a
+# file written during a task is read before the commit that lands it, and falls back to this derivation only where git cannot answer - these
 # suites are also verified over a `git archive HEAD` export, which has no `.git` at
 # all. The fallback says so in the set it returns.
 _IGNORE_GLOB_CHARS = "*?[]!"
@@ -230,9 +230,17 @@ def _git_out(root, args):
     return done.returncode, done.stdout, done.stderr.decode("utf-8", "replace")
 
 
+# What a verdict says its candidate set was, spelled once: `prose_scan_set()["basis"]`
+# prints it and the cases that pin it read this name rather than a copy.
+GIT_LISTED_BASIS = "the files git lists: tracked, plus untracked and not ignored"
+
+
 def tracked_files(root, exts):
-    """`(paths, why)` - the files of `exts` git tracks under `root`, sorted, as
-    `(list, None)`; or `(None, why)` when git cannot answer for this root.
+    """`(paths, why)` - the files of `exts` git lists under `root`, sorted, as
+    `(list, None)` - the tracked ones plus the untracked ones `.gitignore` does not
+    name, because a file a task has just created is not in the index until the
+    commit that closes it, and a lint scoped by the index alone would first read
+    it on the commit that lands it red; or `(None, why)` when git cannot answer for this root.
 
     Exactly one of the two is None, the contract `_ignored_dirs()` follows, so a
     caller cannot read "git could not say" as "nothing is tracked". Git cannot
@@ -243,7 +251,8 @@ def tracked_files(root, exts):
     checkout's index.
 
     A path in the index that is not a file on disk is dropped: an uncommitted
-    deletion is not a file to read.
+    deletion is not a file to read. `--others` lists such a path never, and
+    `--cached` lists it, which is why the `isfile` filter below stays.
     """
     code, said, err = _git_out(root, ["rev-parse", "--show-toplevel"])
     if code is None:
@@ -255,7 +264,8 @@ def tracked_files(root, exts):
     if os.path.normcase(os.path.realpath(top)) != os.path.normcase(os.path.realpath(root)):
         return None, ("git's work tree for %s is %s, a different directory, so its "
                       "index says nothing about this one" % (root, top))
-    code, said, err = _git_out(root, ["ls-files", "-z"])
+    code, said, err = _git_out(
+        root, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"])
     if code is None:
         return None, err
     if code != 0:
@@ -2965,6 +2975,14 @@ def _prose_number_claim(line, following=None, preceding=None):
 #
 # A row is a repo-relative path or, ending in `/`, a directory prefix.
 PROSE_SCAN_EXEMPT = (
+    ("tools/measure-affected-miss.py",
+     "its self-test fixtures are strings that imitate the sweep's own summary line "
+     "(files ok, then a case count) so the tool can be shown to read that output; "
+     "they are data handed to a parser, not prose that claims a number, and "
+     "rewording them would stop them being the line the parser reads. The cost is "
+     "the thing to disagree with: a genuinely stale count in this tool's own "
+     "docstrings and comments is unguarded too, because the row exempts the whole "
+     "file and not only the fixture lines"),
     ("CHANGELOG.md",
      "released history: a count in a shipped entry was true of that release, and "
      "rewriting released history to keep a lint quiet is worse than the lint"),
@@ -3013,8 +3031,8 @@ def prose_scan_set(exts, repo_root=None, table=PROSE_SCAN_EXEMPT):
     sharing this walk reads.
 
     `basis` says where the candidate set came from, in words a message can carry:
-    the files git TRACKS when git can answer for the root, so an agent's untracked
-    scratch file is nobody's finding; otherwise the `.gitignore` derivation, with
+    the files git LISTS (tracked, plus untracked and not ignored) when git can
+    answer for the root; otherwise the `.gitignore` derivation, with
     the reason git could not answer. A scan that fell back is a wider scan - it
     reads whatever of the scanned extensions is on disk and not ignored - and the
     only way a reader can tell the two verdicts apart is that the set says which
@@ -3035,7 +3053,7 @@ def prose_scan_set(exts, repo_root=None, table=PROSE_SCAN_EXEMPT):
     root = repo_root if repo_root is not None else REPO_ROOT
     candidates, why = tracked_files(root, tuple(exts))
     if candidates is not None:
-        basis = "the files git tracks"
+        basis = GIT_LISTED_BASIS
     else:
         patterns, problem = _ignored_dirs(root)
         if problem is not None:

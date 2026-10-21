@@ -3160,9 +3160,10 @@ def doc_prose_numbers(doc_paths=None, repo_root=None):
 
     The same rule `_output.prose_number_claims()` enforces over the tree's `.py`,
     applied to its `.md`. Both halves read one DERIVED set - every file of their
-    extension git tracks, minus a row in `_output.PROSE_SCAN_EXEMPT` - so a
-    document added to this repo is scanned without anybody remembering to add it,
-    and a scratch document an agent has not added is nobody's finding. Where git
+    extension git lists (tracked, plus untracked and not ignored), minus a row in
+    `_output.PROSE_SCAN_EXEMPT` - so a document added to this repo is scanned
+    without anybody remembering to add it, and before the commit that adds it.
+    Where git
     cannot answer (an export with no `.git`) the set is the `.gitignore`
     derivation instead; `_output.prose_scan_set()["basis"]` says which one a
     verdict was read from, and a message that quotes this result should quote it.

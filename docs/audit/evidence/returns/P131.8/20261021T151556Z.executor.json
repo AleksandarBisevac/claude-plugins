@@ -1,0 +1,38 @@
+{
+  "gates": {
+    "own-tests: python3 tests/test_drive_phase.py --selftest --stage rv-block": "pass",
+    "full tests/test_drive_phase.py --selftest (469/470 before the sn corpus row, 0 own failures after: sn-block rerun 7/7)": "pass",
+    "tools/measure-context.py --gate": "pass",
+    "ruff check plugins/audit tools tests": "pass",
+    "vermin -t=3.8-": "pass",
+    "tests/test__refs.py --selftest": "pass",
+    "tools/sweep-selftests.py": "fail"
+  },
+  "redFirst": {
+    "at": "2026-10-21T15:37:42Z",
+    "basis": "`python3 tests/test_drive_phase.py --selftest --stage rv-block` in a throwaway tree at HEAD exited 1 with 5 of 6 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests on HEAD's code failing only the unknown-stage check for `rv-block`, which the task's test files add - the stage is new at HEAD), each passing with the working tree's implementation - rv2 (house FAIL), rv3 (house FAIL), rv5 (house FAIL): SELFTEST FAILED: 1/6 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Worked in <outside-repo> (not committed). drive-phase.py: with executor.writerModel set, the per-task reviewer is now dispatched as `run-agent-session.py --role reviewer` (reviewer_dispatch; model = phase review.model when a full id, else the writer model; prompt file = the Agent dispatch prompt + REVIEWER_SESSION_RULE saying the session files nothing and ends with the return JSON). The drive reads the saved stream (stream_tool_calls counts tool_use blocks in assistant events; unreadable or no assistant message = a stop, never a count of zero), and reviewer_session_step either waits (empty record), or: zero tool calls -> reviewer_unread notes `cannot-tell` on the task once per session and dispatches the reviewer once more (MAX_REVIEWER_REDISPATCH); a second zero-tool session stops with a note naming both sessions and 'no third dispatch', repeated by every later next; a session with tool calls has its last message filed through the existing submit() (return_object extracts the JSON) and the drive goes on as before. Helpers writer_state/open_dispatch/session_record/writer_argv/writer_said/wait_said/note_sessions/session_note gained a defaulted key/role parameter, writer behaviour unchanged; two STEPS + SIGNAL_VERBS rows added (dispatch-reviewer-session, wait-reviewer-session). Why the drive files the reviewer return rather than the session running submit: a session that could run submit makes at least one tool call, so zero tool calls could not distinguish a read from a filing, and a filed return is once-per-start so a re-dispatch after a filed zero-tool return would need a new start. agents/audit-reviewer.md: added 'Open each changed function in the tree before judging.' and cut the same bytes elsewhere (measure-context reviewer entry 6994/7000, GATE OK); tests/test__refs.py ih4 pins 'is not widened by this question', so that sentence was kept (shortened) and the bytes came from '(in the source repository)' -> '(source repo)' and the git-stash sentence. tests: stub claude now emits an assistant event with WS_TOOLS tool_use blocks; new stage rv-block (cases rv1-rv6) and two rows in the sn1 signal corpus. Red-first: first run before any code showed rv1-rv5 FAIL, rv6 PASS (1/6). Mutations on a copy under /tmp: `calls == 0` -> `calls == 99` and `calls < 0` -> rv2 (+rv-block raise) red; `calls <= 3` -> rv5 red (over-fire direction); copy removed. Sweep: tools/sweep-selftests.py 192/194 files; the two reds were tests/test__output_lints.py pn0 (tools/measure-affected-miss.py, the known HEAD red, not mine) and tests/test__refs.py ih4 (mine, fixed; test__refs rerun 292/292). Who-depends: the brief printed no 'Who depends on this' section, so I answered by my own grep: writer_state/open_dispatch/session_record/session_note/note_sessions/wait_said/writer_said/writer_argv have no caller outside drive-phase.py and tests/test_drive_phase.py (sn1 corpus); tools/measure-context.py, tools/lints/_refs.py (red_first_vocabulary_drift, phase_return_key_drift), tools/prove-gates.py and tests/test__refs.py read audit-reviewer.md and all pass. NOT DONE / outside my files: commands/phase.md, reference/orchestrator.md and PLUGIN-BUILD-GUIDE.md still describe the reviewer dispatch only as an Agent; the session path prints a run: line like the writer's. The reviewer body's last paragraph still tells an Agent to run submit; in session mode the prompt overrides it (REVIEWER_SESSION_RULE). Nothing checks that the session opened the RIGHT files, only that it opened some.",
+    "descriptive": "Under a writer session setting the per-task reviewer runs as a session whose saved stream the drive reads: a reviewer that opened no file is recorded cannot-tell and re-dispatched once, a second one stops with a note, one that read files is filed and accepted as before."
+  },
+  "testsAdded": [
+    "rv-block in tests/test_drive_phase.py: reviewer dispatch names the session runner (rv1); zero-tool stream recorded cannot-tell, nothing filed, re-dispatched once on its own record (rv2); second zero-tool stream stops with a note naming both sessions and no third dispatch (rv3); the stop repeats on a later next (rv4); a stream with tool calls is filed and accepted with no cannot-tell note (rv5); no writer session keeps the reviewer Agent (rv6); sn1 corpus rows for the two new steps"
+  ],
+  "casesAdded": [
+    [
+      "rv1",
+      "rv2",
+      "rv3",
+      "rv4",
+      "rv5",
+      "rv6"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py reviewer_session_step/reviewer_unread/stream_tool_calls do what the docstring paragraph 'THE PER-TASK REVIEWER IS A SESSION' says; that paragraph's last sentence says only that nothing checks WHICH files were opened\n2 calls==0 -> calls==99 and calls<0: rv2 red; calls<=3 (over-fire): rv5 red; copy in /tmp, live tree untouched\n3 grep of callers of the parametrised helpers: none outside drive-phase.py and the sn1 corpus; audit-reviewer.md readers (measure-context, _refs lints, prove-gates, test__refs) all green\n4 REVIEWER_SESSION_RULE and the reviewer-stream rule: enforced by reviewer_session_step in drive-phase.py (the module docstring paragraph names it); that the right files were opened is stated unenforced\n5 n/a - no timing or property recorded\n6 n/a - no guard over a command\n7 reviewer byte count 6994/7000 re-derived by python3 tools/measure-context.py --gate; no other number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:c68eca52f0b00d306346cd211fb9f65c23db1206948a55063bab2ad719ea6b23\",\"dirtyDigest\":\"sha256:e42dc1263dc05eaa91b49eb90840258a2e34e1654a06f4a0bfc9f2425d1ba62f\",\"dirtyPaths\":{\"plugins/audit/agents/audit-reviewer.md\":\"a624f1be3179d902\",\"plugins/audit/scripts/governance/drive-phase.py\":\"12ccf54246cb96af\",\"tests/test_drive_phase.py\":\"03f466849783d2c8\"},\"head\":\"1b6f120c\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/agents/audit-reviewer.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:929f3f9adcf05823ca95a9c856b95c9ea94a04faf2e6bcea8c978f6520e610df\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

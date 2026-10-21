@@ -1450,8 +1450,9 @@ scanned set was a hand-written pair — `.py` under `hooks/` and `scripts/`, plu
 documents — so a claim in `tools/`, in `tests/`, in `scripts/ui/*/README.md` or in the plugin's
 own product documents was written where nothing read it, and that is where the claims had gone:
 a part count per assembled surface, a suite size per boundary docstring, a file count in the
-prover. It is now every `.py` and every `.md` git TRACKS, so an agent's untracked scratch file is
-nobody's finding and a file added to the repo is scanned by default. Where git cannot answer
+prover. It is now every `.py` and every `.md` git LISTS — the tracked files plus the untracked
+ones `.gitignore` does not name — so a file a task has just created is read before the commit
+that lands it, and a file added to the repo is scanned by default. Where git cannot answer
 - these suites are also verified over a `git archive HEAD` export with no `.git` in it, and a
 directory inside someone else's work tree is no work tree of its own - the set is walked off
 `.gitignore` instead, and `prose_scan_set()` returns a `basis` that says which one a verdict

@@ -1,0 +1,35 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__output_lints.py": "pass",
+    "python3 tools/sweep-selftests.py (full, in the task tree)": "pass after the test__deps.py edit: before it, 193/194 files, only tests/test__deps.py red; after it, tests/test__output_lints.py + tests/test__deps.py re-run 2/2 files ok",
+    "ruff check tools tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-21T15:33:36Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__output_lints.py` in a throwaway tree at HEAD exited 1 with failing cases pn0 (house FAIL), pn37 (house FAIL), pn38 (house FAIL), pn39 (house FAIL), tests/test__output_lints.py: exited 1 (house FAIL), but HEAD's own tests on HEAD's code are not green (SELFTEST FAILED: 165/166 cases passed) - the command is already red (or unreadable) at HEAD - narrow it to the task's cases - SELFTEST FAILED: 165/169 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/lints/_output_lints.py: tracked_files() now runs git ls-files -z --cached --others --exclude-standard (still drops index paths absent on disk via the isfile filter); new GIT_LISTED_BASIS constant is prose_scan_set()'s basis; docstrings and the comment at the ignore-walk updated. New PROSE_SCAN_EXEMPT row for tools/measure-affected-miss.py (reason: fixtures imitating the sweep's summary line, not rewritten). tests/test__output_lints.py: pn37 (real git fixture: untracked fresh.py read, ignored hidden.py not), pn38 (index path gone from disk dropped), pn39 (exempt row names fixtures). tests/test__deps.py (task gate allowed the Edit): the dpn case that pinned 'untracked scratch.md is nobody's finding' and the literal basis 'the files git tracks' now expects scratch.md read and basis == GIT_LISTED_BASIS. Callers of the walk: tracked_files <- prose_scan_set (prose_number_claims, _deps.doc_prose_numbers and its comment scans at _deps.py:3769/3796/3812, tests/test__deps.py, tests/test__panel_settings.py:352) and tests/test__output.py:117 _command_files (now also reads untracked-not-ignored shipped literals; full sweep green); _deps.GIT_PATH_BASE_EXEMPT row names tracked_files (unaffected). Full sweep over the task tree: 193/194 files ok, the one red was tests/test__deps.py (a finding the widening produced, fixed as above). FINDINGS LEFT: (1) tools/lints/_deps.py:3163-3165 docstring of doc_prose_numbers still says 'git tracks ... a scratch document an agent has not added is nobody's finding' - now false; the plan gate refused my Edit (outside task P131.19-dau, declared by P131.18-dau and others), so I left it; one-line fix owed by whoever next owns that file. (2) tests/test__output.py:117-120 _command_files docstring says 'the ones git tracks' - now stale; not in my files, untouched. (3) docs/audit/phases/P130.json task text (5) says prose lints scan tracked files - history, left. I briefly wrote a _deps.py docstring edit through a python one-off, then reverted it with git apply -R before the gated Edit was refused; the tree holds no _deps.py change. The brief printed no 'Who depends on this' section, so there were no listed dependants to answer; the caller list above is my own grep.",
+    "descriptive": "HEAD is green again, and the prose lints now read a file a task creates before the commit that lands it."
+  },
+  "testsAdded": [
+    "pn37: in a real git fixture an untracked not-ignored .py carrying a present-tense number is reported, an ignored one is not",
+    "pn38: a path in the index but not on disk is dropped while the untracked file is kept",
+    "pn39: the PROSE_SCAN_EXEMPT row for tools/measure-affected-miss.py exists and its reason names fixtures and the summary line",
+    "tests/test__deps.py dpn case updated to the widened set (scratch.md read, basis constant)"
+  ],
+  "casesAdded": [
+    [
+      "pn0",
+      "pn37",
+      "pn38",
+      "pn39"
+    ]
+  ],
+  "claims": "claims:\n1 _output_lints.py tracked_files() runs the ls-files with --cached --others --exclude-standard, isfile filter retained after it; the PROSE_SCAN_EXEMPT row sits first in the table\n2 --exclude-standard removed -> pn37, pn38 red (167/169, hidden.py read) -> restored 169/169; before the fix pn0, pn37-pn39 red 165/169\n3 grep tracked_files tools tests plugins: prose_scan_set, tests/test__output.py:117, _deps.GIT_PATH_BASE_EXEMPT, audit-task._tracked_files (its own function, unrelated); grep 'git tracks': test__deps.py:1952 fixed, _deps.py:3163 left (gate refused), test__output.py:117 left (out of files), plugin docs about worktreeSetup unrelated\n4 n/a - no rule to an agent\n5 full sweep measured once (193/194 then the one red fixed and re-run); not a recorded property\n6 n/a - no guard; the walk reads git's own listing, not a text pattern\n7 n/a - no number written in prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:b901fea50e9de4625c5b9d98813acb289270bfbf1eb829886b09ff7c6def2015\",\"dirtyDigest\":\"sha256:05c87d297616e29ff671a1f336be8be5beeeee116b2b558971cc7399652fce32\",\"dirtyPaths\":{\"tests/test__deps.py\":\"a98ba3a8ff43339e\",\"tests/test__output_lints.py\":\"51071cc3d3d71abe\",\"tools/lints/_output_lints.py\":\"a4a61a84c1ebf2e8\"},\"head\":\"1b6f120c\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test__output_lints.py\",\"tools/lints/_output_lints.py\",\"tools/measure-affected-miss.py\"],\"scopeDigest\":\"sha256:b90ac27f95dc2a00d9a84fc4b2ec939278e6afdfbaade40c6e4b75881fb9b680\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -1637,6 +1637,49 @@ def _cases(check):
               and "unreadable" in _pn_blind[0][2])
     finally:
         shutil.rmtree(_pn_tmp, ignore_errors=True)
+    # A file a task creates is invisible to a scan that lists only the index until
+    # the close commit lands it, and the tree then goes red on a file no gate read.
+    # The fixture is a real repository because the walk asks git, and every file is
+    # placed so the two wrong implementations disagree: a tracked-only listing
+    # misses `fresh.py`, and a listing that ignores `.gitignore` reports
+    # `hidden.py` as well.
+    _pn_git = tempfile.mkdtemp(prefix="pn-untracked-")
+    try:
+        _pn_claim = '"""its 12 cases live in `tests/x.py`."""\n'
+        for _pn_rel, _pn_text in ((".gitignore", "hidden.py\n"),
+                                  ("kept.py", '"""Nothing countable here."""\n'),
+                                  ("fresh.py", _pn_claim),
+                                  ("hidden.py", _pn_claim)):
+            with io.open(os.path.join(_pn_git, _pn_rel), "w",
+                         encoding="utf-8") as _fh:
+                _fh.write(_pn_text)
+        _harness.git(_pn_git, "init", "-q")
+        _harness.git(_pn_git, "add", ".gitignore", "kept.py")
+        _pn_new = L.prose_number_claims(_pn_git)
+        _pn_new_set = L.prose_scan_set((".py",), _pn_git)
+        check("pn37 a new .py that is neither tracked nor ignored is read before "
+              "any commit, and an ignored one is not - the scan lists tracked plus "
+              "untracked-not-ignored files: finding %r, read %r"
+              % (_pn_new, _pn_new_set["paths"]),
+              _pn_new == [("fresh.py", 1, "its 12 cases")]
+              and _pn_new_set["paths"] == ["fresh.py", "kept.py"])
+        os.remove(os.path.join(_pn_git, "kept.py"))
+        _pn_gone = L.tracked_files(_pn_git, (".py",))
+        check("pn38 a path the index holds that is not on disk is still dropped "
+              "from the listing, beside an untracked file that is kept: %r"
+              % (_pn_gone,),
+              _pn_gone == (["fresh.py"], None))
+    finally:
+        shutil.rmtree(_pn_git, ignore_errors=True)
+    _pn_fixture_row = [_w for _p, _w in L.PROSE_SCAN_EXEMPT
+                       if _p == "tools/measure-affected-miss.py"]
+    check("pn39 the miss-rate tool's fixtures have an exemption row whose reason "
+          "names them: strings imitating the sweep's own summary line, not prose: "
+          "%r" % (_pn_fixture_row,),
+          len(_pn_fixture_row) == 1
+          and "fixture" in _pn_fixture_row[0]
+          and "summary line" in _pn_fixture_row[0]
+          and L.prose_scan_exemption("tools/measure-affected-miss.py") is not None)
     check("pn23 a numeral with an interior separator is a TALLY or a "
           "MEASUREMENT, not a count of things - the narrowing the widened scan "
           "needed, because the contract every suite prints appears outside "

@@ -1913,10 +1913,10 @@ def _cases(check):
           and not [l for l in open(M.__file__, encoding="utf-8").read().split("\n")
                    if l.startswith("def _prose_number_claim")
                    or l.startswith("def _case_claim")])
-    # THE FILE SET THE PROSE SCANS READ: what git TRACKS where git can answer, and
-    # the `.gitignore` derivation - saying so - where it cannot. An agent's
-    # untracked scratch document used to be every scan's finding, because the
-    # derivation reads whatever is on disk and not ignored; and the suites are also
+    # THE FILE SET THE PROSE SCANS READ: what git LISTS (tracked, plus untracked and
+    # not ignored) where git can answer, and the `.gitignore` derivation - saying
+    # so - where it cannot. A file written during a task is read before the commit
+    # that lands it, which is the point; and the suites are also
     # verified over a `git archive HEAD` export, which has no `.git` to ask. The
     # claim is BUILT, never spelled: this file is itself read by the scan.
     _tg_claim = "The tree carries all %s of them.\n" % (12,)
@@ -1943,13 +1943,14 @@ def _cases(check):
         _ex_scan = _output_lints.prose_scan_set((".md",), _tg_export)
         _tg_found = sorted(set(h[0] for h in _tg_hits))
         _ex_found = sorted(set(h[0] for h in _ex_hits))
-        check("doc_prose_numbers reads only tracked files when git can answer, and "
-              "falls back to the .gitignore derivation, saying so, in an export "
-              "with no .git: the repository reports %r from the basis %r; the "
-              "export reports %r from the basis %r"
+        check("doc_prose_numbers reads the files git lists (tracked, plus untracked "
+              "and not ignored) when git can answer, and falls back to the "
+              ".gitignore derivation, saying so, in an export with no .git: the "
+              "repository reports %r from the basis %r; the export reports %r from "
+              "the basis %r"
               % (_tg_found, _tg_scan["basis"], _ex_found, _ex_scan["basis"]),
-              _tg_found == ["sub/inner.md", "tracked.md"]
-              and _tg_scan["basis"] == "the files git tracks"
+              _tg_found == ["scratch.md", "sub/inner.md", "tracked.md"]
+              and _tg_scan["basis"] == _output_lints.GIT_LISTED_BASIS
               and _ex_found == ["gone.md", "scratch.md", "sub/inner.md", "tracked.md"]
               and ".gitignore derivation" in _ex_scan["basis"]
               and "git could not answer" in _ex_scan["basis"])

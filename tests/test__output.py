@@ -110,29 +110,42 @@ def chunks_of(rel, source):
     return [b for b in re.split(r"\n\s*\n", source) if b.strip()]
 
 
-def _command_files():
-    """Repo-relative paths of the text files to read: the ones git tracks, or - for a
-    tree git cannot answer for (an exported archive) - a walk, which names the same
-    files minus anything untracked."""
-    paths, _why = L.tracked_files(M.REPO_ROOT, _COMMAND_SCAN_EXTS)
+def _command_files(top=None):
+    """Repo-relative paths of the text files to read under `top` (this repo by
+    default): the ones git lists (tracked, plus untracked and not ignored), or - for
+    a tree git cannot answer for (an exported archive) - a walk, which names the
+    files on disk without reading `.gitignore`."""
+    top = top if top is not None else M.REPO_ROOT
+    paths, _why = L.tracked_files(top, _COMMAND_SCAN_EXTS)
     if paths is None:
         paths = []
-        for root, dirnames, filenames in os.walk(M.REPO_ROOT):
+        for root, dirnames, filenames in os.walk(top):
             dirnames[:] = sorted(d for d in dirnames
                                  if d not in ("__pycache__", ".git", "node_modules"))
-            paths.extend(M.posix_rel(os.path.join(root, n), M.REPO_ROOT)
+            paths.extend(M.posix_rel(os.path.join(root, n), top)
                          for n in sorted(filenames) if n.endswith(_COMMAND_SCAN_EXTS))
     return [p for p in paths if not p.startswith(_COMMAND_SCAN_SKIP)]
 
 
-def _shipped_literals():
-    """[(repo-relative path, text)] for every chunk of every file `_command_files`
-    names."""
+def _shipped_literals(top=None):
+    """`(literals, unreadable)` for every file `_command_files` names: the
+    `[(repo-relative path, text)]` chunks of each file that could be read, and the
+    `[(path, reason)]` of each that could not.
+
+    An untracked file is read now, and a scratch `.py` or `.json` an agent left
+    half-written does not parse. It is named in `unreadable` rather than skipped
+    (a file nobody read would pass the scan) or raised on (one stray file would
+    take the whole suite down with it)."""
+    top = top if top is not None else M.REPO_ROOT
     out = []
-    for rel in _command_files():
-        with open(os.path.join(M.REPO_ROOT, rel), "r", encoding="utf-8") as fh:
-            out.extend((rel, text) for text in chunks_of(rel, fh.read()))
-    return out
+    unreadable = []
+    for rel in _command_files(top):
+        try:
+            with open(os.path.join(top, rel), "r", encoding="utf-8") as fh:
+                out.extend((rel, text) for text in chunks_of(rel, fh.read()))
+        except (OSError, ValueError, SyntaxError) as exc:
+            unreadable.append((rel, "%s: %s" % (type(exc).__name__, exc)))
+    return out, unreadable
 
 
 # --- cases --------------------------------------------------------------------
@@ -302,12 +315,40 @@ def _cases(check):
           "holds - and the two the command-in-prose class was found with are among "
           "them, so an empty derivation cannot make mv6 vacuous: %r" % (mv_names,),
           "_deps" in mv_names and "_refs" in mv_names)
-    mv_hits = [(rel, text[:60]) for rel, text in _shipped_literals()
+    mv_literals, mv_unreadable = _shipped_literals()
+    mv_hits = [(rel, text[:60]) for rel, text in mv_literals
                if moved_module_imports(text, mv_names)]
     check("mv6 no command anywhere the repo keeps one - a string literal or a comment "
           "in a .py, an eval prompt, a shell heredoc, a workflow step, a fenced block "
           "in a document - puts the plugin's scripts on sys.path and then imports a "
-          "module that now lives under tools/lints: %r" % (mv_hits,), mv_hits == [])
+          "module that now lives under tools/lints, and every file the scan lists "
+          "could be read (unreadable, by name: %r): %r" % (mv_unreadable, mv_hits),
+          mv_hits == [] and mv_unreadable == [])
+    # The walk now lists untracked files, so a half-written scratch file is in it.
+    # One tracked file that parses, and three untracked ones: a `.py` and a `.json`
+    # that do not, and a `.py` that does. The scan must name the first two, still
+    # read the third and the tracked one, and not raise.
+    import shutil
+    import tempfile
+    mv_fix = tempfile.mkdtemp(prefix="mv-unreadable-")
+    try:
+        for mv_rel, mv_text in (("kept.py", "x = 'tracked'\n"),
+                                ("broken.py", "def (:\n"),
+                                ("broken.json", "{not json"),
+                                ("fresh.py", "y = 'untracked'\n")):
+            with open(os.path.join(mv_fix, mv_rel), "w", encoding="utf-8") as fh:
+                fh.write(mv_text)
+        _harness.git(mv_fix, "init", "-q")
+        _harness.git(mv_fix, "add", "kept.py")
+        mv_fix_lits, mv_fix_bad = _shipped_literals(mv_fix)
+    finally:
+        shutil.rmtree(mv_fix, ignore_errors=True)
+    check("mv11 an untracked .py or .json that does not parse is reported as "
+          "unreadable BY NAME and the scan carries on: unreadable %r, read %r"
+          % (mv_fix_bad, sorted(set(r for r, _t in mv_fix_lits))),
+          sorted(r for r, _why in mv_fix_bad) == ["broken.json", "broken.py"]
+          and all(why for _r, why in mv_fix_bad)
+          and sorted(set(r for r, _t in mv_fix_lits)) == ["fresh.py", "kept.py"])
     mv_scripts = M.PLUGIN_REL + "/scripts"
     mv_planted = ("python3 -c \"import sys;sys.path.insert(0,'%s');import _deps;"
                   "print(1)\"" % mv_scripts)
