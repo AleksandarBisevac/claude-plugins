@@ -197,6 +197,7 @@ claude-plugins/                           # this repo (personal, public)
           _runner_collects.py             # does the test runner collect this path: collected, not collected, or could not tell - from the runner's own file listing, else a literal include in its config text
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs; the one POSIX sh (and its PATH) every plan command runs under, or a refusal - never cmd.exe
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
+          _clause_coverage.py             # the ONE numbering of a task's clauses (tests.add entries, then the description's Acceptance items) and whether a writer's last JSON object answers every one, citing a file the diff touches - a missing or unreadable object is a gap of every clause
           _wave.py                        # which ready tasks may run together (declared files provably disjoint; an empty declaration runs alone) and what an overlap between two is - mergeable, or a lockfile that is not
           _verdict_binding.py             # the ONE rule for whether a recorded gate verdict binds the declared work now - a task commit's, a sign-off's, and whether `done` or close-phase may close over the newest verdict (one that no longer holds refuses)
           stamp-verification.py           # the CLI over it: take a stamp, or grade one - current / stale (naming the field) / unestablished; `red` proves a red-first in a throwaway tree
@@ -315,6 +316,7 @@ L1:
   _loader -> _output
 
 L2:
+  _clause_coverage -> _output
   _excerpt -> _output
   _machine_paths -> _output
   _usage_core -> _loader, _output
@@ -426,7 +428,7 @@ L9:
   audit-journal -> _claude_home, _evidence_io, _journal_io, _output
   audit-lock -> _claude_home, _locks, _output
   audit-logs -> _claude_home, _gate_feed, _output
-  audit-lookup -> _areas, _claude_home, _config_rules, _evidence_io, _excerpt, _filed_returns, _gate_feed, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output
+  audit-lookup -> _areas, _claude_home, _clause_coverage, _config_rules, _evidence_io, _excerpt, _filed_returns, _gate_feed, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output
   audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _filed_returns, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
   audit-task -> _affected_tests, _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
@@ -437,7 +439,7 @@ L9:
   commit-manifest-index -> _claude_home, _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
   commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _invariants, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _utc_stamp
-  drive-phase -> _areas, _claude_home, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _output, _runner_collects, _scope_companions, _status_facts, _tree_stamp, _verdict_binding, _wave, _worktrees
+  drive-phase -> _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _output, _runner_collects, _scope_companions, _status_facts, _tree_stamp, _verdict_binding, _wave, _worktrees
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
@@ -4653,6 +4655,23 @@ because `"auto"` is the caller's to resolve and a zero must not read as "run not
 overlap is mergeable; a lockfile among them (`is_non_mergeable`) makes it refused whatever else is
 shared. Whether two paths touch is `_task_outputs.covers` and nowhere here. Its cases are
 `tests/test__wave.py`.
+
+### `plugins/audit/scripts/governance/_clause_coverage.py`
+Whether a writer answered every clause its task owes.
+
+`task_clauses(task)` is the one numbering: the `tests.add` entries in order, then the numbered items
+of the description after its last `Acceptance:` marker. `audit-lookup.py` builds the writer's closing
+line from it and `drive-phase.py` reads the writer's answer against it, which is why it lives below
+both rather than in either - two entry points may not load each other. `check(clauses, message,
+changed, root)` reads the JSON object the message ends with and returns `covered`, or a `gaps` list
+with one record per clause: `no-answer`, `malformed`, `path-not-in-diff` (with the `path`), or, for
+every clause at once, `no-json`. **A missing or unparsable object is never covered**, and an object
+followed by more prose is not the answer, because the closing line asks for it last. The check reads
+whether each clause was answered and whether the cited path changed - never whether the cited line
+delivers the clause, which the recorded gate and the reviewer judge. `delivered: false` with a reason
+is an answer, listed as `declined`. A gap at a green gate is the drive's `clauses-uncovered-writer`
+decision, whose `resume` sends `resume_text` to the session and counts as a resume round; once the
+rounds are spent it is the plain `clauses-uncovered`. Its cases are `tests/test__clause_coverage.py`.
 
 ### `plugins/audit/scripts/governance/_tree_stamp.py`
 Which tree was this, and is it still that one.

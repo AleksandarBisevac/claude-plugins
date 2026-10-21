@@ -206,7 +206,15 @@ grade. `close_task` refuses the commit with `tests-moved`, naming the files,
 while a test file differs from the locked digest: the filing and its review were
 of other bytes, so `retry` (a new start) is the way on. A file added under a
 declared test directory after the lock is not among the locked paths and is not
-compared. Without `executor.writerModel` the executor Agent is dispatched as
+compared. THE LAST MESSAGE IS ALSO READ FOR CLAUSE COVERAGE, at the green gate and
+before the stamp (`_clause_coverage.check`): its closing JSON object must answer every
+clause `task_clauses` numbers, and a `delivered` answer must cite a path the diff
+touches. A gap - an unanswered or malformed clause, a path outside the diff, or no
+JSON object at all - files nothing and asks `clauses-uncovered-writer`, whose `resume`
+sends the uncovered clauses to the session as a round of `MAX_RESUME_ROUNDS`; past
+them it is the plain `clauses-uncovered`. What the writer wrote stays a claim: only
+whether each clause was answered and whether the cited file changed is checked.
+Without `executor.writerModel` the executor Agent is dispatched as
 before.
 
 Usage:
@@ -296,6 +304,7 @@ import _doctor_setup  # noqa: E402  (hooks_task_binding: whether the loaded hook
 import _runner_collects  # noqa: E402  (collects: whether a runner takes a test path)
 import _gate_derive  # noqa: E402  (entry_collector: what collects a gate entry's tests)
 import _tree_stamp  # noqa: E402  (parse_stamp, declared_scope: the scope a filing was made under)
+import _clause_coverage as _cc  # noqa: E402  (check: whether the writer answered every clause)
 import _scope_companions  # noqa: E402  (derive: the runner config a widen declares)
 import _worktrees  # noqa: E402  (read_provenance: whether a kept tree's marker names its task)
 
@@ -452,6 +461,18 @@ STEPS = {
                 "writer's work did not hold (%(why)s); nothing was filed",
         "rule": ("recommended: resume - the helper's words go to the session that "
                  "wrote it and no attempt is spent; block keeps the task.",)},
+    "decide-clauses-uncovered-writer": {
+        "line": "decide clauses-uncovered-writer %(task)s: the writer's last "
+                "message leaves acceptance clauses unanswered (%(why)s); "
+                "nothing was filed",
+        "rule": ("recommended: resume - the uncovered clauses go to the session "
+                 "that wrote it and no attempt is spent; block keeps the task.",)},
+    "decide-clauses-uncovered": {
+        "line": "decide clauses-uncovered %(task)s: the writer's last message "
+                "leaves acceptance clauses unanswered (%(why)s); nothing was "
+                "filed",
+        "rule": ("retry starts a fresh session and spends an attempt; block keeps "
+                 "the task.",)},
     "decide-red-refused": {
         "line": "decide red-refused %(task)s: the red-first proof of the writer's "
                 "work did not hold (%(why)s); nothing was filed",
@@ -597,6 +618,10 @@ DECISIONS = {
     # The red-first proof of a writer's work did not hold: back to its session.
     "red-refused-writer": (("resume", "block"), ("block",)),
     "red-refused": (("retry", "block"), ("block",)),
+    # A green gate over a writer's work whose last message leaves a clause
+    # unanswered: back to the session while a round is left, else a fresh retry.
+    "clauses-uncovered-writer": (("resume", "block"), ("block",)),
+    "clauses-uncovered": (("retry", "block"), ("block",)),
     # A test file changed after the filed proof the commit is bound to.
     "tests-moved": (("retry", "block"), ("block",)),
     "no-reviewer-return": (("redispatch", "not-asked"), ("not-asked",)),
@@ -667,6 +692,7 @@ SIGNAL_VERBS = {
     "decide-head-moved": "judge", "decide-head-unknown": "judge",
     "decide-red-refused-writer": "judge",
     "decide-red-refused": "judge", "decide-tests-moved": "judge",
+    "decide-clauses-uncovered-writer": "judge", "decide-clauses-uncovered": "judge",
     "decide-integration-refused": "judge", "decide-undeclared-change": "judge",
     "decide-scope-gap": "judge", "decide-gate-red": "judge",
     "decide-no-executor-return": "judge", "decide-scope-changed": "judge",
@@ -1849,6 +1875,8 @@ CASES_BASIS_FIELD = "casesAddedBasis"
 CASES_BASIS = ("absent: a writer session names no case per tests.add entry, and "
                "the drive binds no printed label to an entry by itself; every "
                "entry is listed among the gaps")
+CLAUSES_UNCOVERED_HEAD = ("The clause coverage the drive checked after your session "
+                          "did not hold. What it found:")
 RED_REFUSED_HEAD = ("The red-first proof the drive ran after your session did not "
                     "hold. The helper's words:")
 
@@ -2104,6 +2132,20 @@ def red_refused(ctx, state, task, why):
     return decision(ctx, state, "red-refused", task, _clip(why, 160))
 
 
+def clauses_uncovered(ctx, state, task, result, clauses):
+    """The decision a writer's unanswered clause asks, at a green gate: back to
+    the session that wrote it while a round is left - the round counts toward
+    `MAX_RESUME_ROUNDS`, as every resume does - else a fresh retry. Nothing is
+    filed and the held proof stays."""
+    why = _clip(_cc.gap_summary(result), 160)
+    session = recorded_session(state, task)
+    if session and writer_state(state, task)["resumes"] < MAX_RESUME_ROUNDS:
+        return decision(ctx, state, "clauses-uncovered-writer", task, why, extra={
+            "session": session, "prompt": CLAUSES_UNCOVERED_HEAD,
+            "failing": _cc.resume_text(result, clauses).splitlines()})
+    return decision(ctx, state, "clauses-uncovered", task, why)
+
+
 def note_reproof(ctx, state, task, when, changed, block):
     """Keep a re-proof over changed test files, for the return and the task."""
     held = writer_state(state, task)
@@ -2262,11 +2304,23 @@ def file_writer_return(ctx, state, manifest, phase, task, tree=None):
     if paths is None:
         return _stopped(ctx, "git could not list what the writer session of %s "
                         "changed, so nothing was filed" % (task["id"],))
+    streams = [r.get("stream") for r in held["runs"] if r.get("session")]
+    claim, why = session_last_message(streams[-1] if streams else None)
+    # CLAUSE COVERAGE, after the proof and before the stamp: a clause the
+    # writer left unanswered, or answered with a file the diff does not touch,
+    # goes back to the session instead of being filed in silence. A message the
+    # stream could not give is a gap of every clause, never covered.
+    clauses = _cc.task_clauses(task)
+    covered = _cc.check(clauses, claim, paths,
+                        root=member_project(ctx, tree) or ctx["project"])
+    if not covered["covered"]:
+        return clauses_uncovered(ctx, state, task, covered, clauses)
+    if covered["declined"]:
+        ctx["did"].append("%s: the writer reports clause %s as not delivered"
+                          % (task["id"], ", ".join(str(n) for n in covered["declined"])))
     line, stop = take_stamp(ctx, task, tree) if tree else take_stamp(ctx, task)
     if stop is not None:
         return stop
-    streams = [r.get("stream") for r in held["runs"] if r.get("session")]
-    claim, why = session_last_message(streams[-1] if streams else None)
     body = writer_return(task, paths, block, line, claim, why, held["reproofs"])
     cmd, _basis = writer_test_command(manifest, phase, task)
     printed = proof.get("printed") if cmd else None
@@ -4082,9 +4136,12 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
             write_state(ctx, state)
         return None
     if answer == "resume" and pending["decision"] in ("gate-red-writer",
-                                                      "red-refused-writer"):
+                                                      "red-refused-writer",
+                                                      "clauses-uncovered-writer"):
         # The task is not re-started, so no attempt is spent; the gate is not
-        # marked as run, so the next `next` measures the session's fix.
+        # marked as run, so the next `next` measures the session's fix. A
+        # clause gap is asked at a GREEN gate, whose mark is spent here for it.
+        _spend(state, "gated", task)
         return resume_writer(ctx, state, task, pending, (
             (state.get("wave") or {}).get("trees") or {}).get(task["id"]))
     if answer == "resume":

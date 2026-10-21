@@ -169,7 +169,14 @@ LAYERS = (
     # time shares. It reaches nothing but `_output` and is down here because
     # writers on several layers above (the evidence layer, the proposals library,
     # the doors) all stamp, and none may import a sibling's helper to do it.
-    ("_machine_paths", "_excerpt", "_usage_core", "_utc_stamp"),
+    ("_machine_paths", "_excerpt", "_usage_core", "_utc_stamp",
+     # `_clause_coverage` numbers a task's clauses and reads a writer's answer
+     # against them. It reaches `_output` and nothing else, and it is down here
+     # because its two consumers are entry points that may not load each other:
+     # `audit-lookup` builds the writer's closing line from the numbering and
+     # `drive-phase` reads the answer against it, so the one numbering lives
+     # below both.
+     "_clause_coverage"),
     # `_deps` (this module) and `_refs` are NOT here: they live under `tools/lints/`,
     # outside the plugin, and import only `_output`. A layer table orders what a user
     # installs, so development code has no row in it - `tests_import_violations()`

@@ -92,7 +92,6 @@ import argparse
 import json
 import os
 import pathlib
-import re
 import shlex
 import subprocess
 import sys
@@ -130,6 +129,7 @@ import _journal_io  # noqa: E402  (the trail this cross-checks against)
 import _evidence_io as _evio  # noqa: E402  (project/config resolution)
 import _excerpt  # noqa: E402  (a red step's output is quoted both ends, never head-cut)
 import _loader  # noqa: E402  (the one way scripts/ loads hooks/_config as a library)
+import _clause_coverage as _cc  # noqa: E402  (task_clauses: the one numbering of a task's clauses)
 import _areas  # noqa: E402  (resolve_skills: area skills first, then the task's)
 import _filed_returns as _fr  # noqa: E402  (where `submit` filed a return, and
 #                                            which tasks a phase review owes)
@@ -724,7 +724,6 @@ BROWSER_GATE_SCRIPTS = ("capture-screenshots.mjs", "check-report-interactive.mjs
                         "verify.sh")
 BROWSER_GATE_TOKEN = ("playwright", "test")
 
-ACCEPTANCE_MARK = "Acceptance:"
 WRITER_COMMIT_LINE = ("Fix whatever does not pass. When everything is green, "
                       "leave the changes uncommitted: the drive commits them.")
 
@@ -738,40 +737,11 @@ def runs_browser(command):
             or any(words[i:i + len(token)] == token for i in range(len(words))))
 
 
-def acceptance_items(description):
-    """The texts of the description's numbered Acceptance items, in order.
-
-    Read after the LAST `Acceptance:` - a description numbers its own steps
-    before it - and by sequence: `(2)` opens the second item only once `(1)`
-    has opened the first, so a parenthesised number inside an item's own words
-    (`the last of (7) lines`) stays in that item. A description with no
-    `Acceptance:`, or no `(1)` after it, has no items."""
-    text = description if isinstance(description, str) else ""
-    at = text.rfind(ACCEPTANCE_MARK)
-    if at < 0:
-        return []
-    body = text[at + len(ACCEPTANCE_MARK):]
-    opens, want = [], 1
-    for m in re.finditer(r"\((\d+)\)", body):
-        if int(m.group(1)) == want:
-            opens.append((m.start(), m.end()))
-            want += 1
-    return [body[end:(opens[i + 1][0] if i + 1 < len(opens) else len(body))].strip()
-            for i, (_start, end) in enumerate(opens)]
-
-
-def task_clauses(task):
-    """`[{"n", "kind", "text"}]` - the clauses a task owes an answer to, numbered
-    from one: its `tests.add` entries first, in order, then the numbered items of
-    its description's Acceptance list. THE ONE NUMBERING: the writer's closing
-    line is built from this list, and whatever reads the writer's answer is to
-    read the same list rather than number the clauses a second time."""
-    added = [a for a in ((task.get("tests") or {}).get("add") or [])
-             if isinstance(a, str) and a.strip()]
-    rows = ([("tests.add", a) for a in added]
-            + [("acceptance", a) for a in acceptance_items(task.get("description"))])
-    return [{"n": n, "kind": kind, "text": text}
-            for n, (kind, text) in enumerate(rows, 1)]
+# The clause list is `_clause_coverage`'s: the closing line below asks for an
+# answer per clause and the drive reads the answer against the same list, so
+# the numbering is defined once, where the check that reads it lives.
+acceptance_items = _cc.acceptance_items
+task_clauses = _cc.task_clauses
 
 
 def _clause_span(first, last):

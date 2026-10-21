@@ -1452,9 +1452,9 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-21T13:29:22Z.3e3944",
+        "runId": "2026-10-21T13:55:52Z.a57972",
         "status": "passed",
-        "at": "2026-10-21T13:29:22Z"
+        "at": "2026-10-21T13:55:52Z"
       }
     },
     {
@@ -1494,6 +1494,7 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [
+        "P131.18-dau",
         "P131.3"
       ],
       "attempts": 0,
@@ -1547,6 +1548,7 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [
+        "P131.18-dau",
         "P131.5",
         "P131.8"
       ],
@@ -1801,7 +1803,8 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [
-        "P131.1"
+        "P131.1",
+        "P131.18-dau"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -2025,6 +2028,53 @@
         "before-you-claim"
       ],
       "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P131.18-dau"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P131.18-dau",
+      "title": "Every brief names who depends on the task's files - the tracked files that import, call or name them - and the executor answers for each one before it submits",
+      "status": "pending",
+      "description": "Tonight's defects in new code (seven of twelve tasks, all caught before commit) share one shape: the change did not account for another part of the system that reads what it changed - a shell heredoc importing a moved module, a lint scoped by git ls-files, an env var read by the release check, another session committing in the shared checkout, a record file a second dispatch overwrote. The brief gives the task text and its files but not who depends on them. Add plugins/audit/scripts/status/_impact.py (stdlib, shipped, language-agnostic, git-backed): for each declared file it lists the tracked files that reference it - by path, by basename, by Python module name in an import, and for Python files by each top-level def/class name the file defines (word match via git grep) - excluding the file itself, untracked and ignored files, capped with the total printed. audit-lookup.py's executor brief and writer prompt gain a 'Who depends on this' section from it and one closing instruction: answer every listed dependant in the outcome as still-correct-and-why or changed. The reviewer brief gets the same list so the review can check the answers. Owner 2026-10-21: 'da, stavi ga u S1' - placed before the remaining drive-phase tasks so they run with it.",
+      "files": [
+        "plugins/audit/scripts/status/_impact.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "tools/lints/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__impact.py",
+        "tests/test_audit_lookup.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__impact.py: on a fixture repository, a declared Python module's dependants are the tracked files that import it or name its path or basename - including a .sh heredoc, a .yml step and a fenced .md command - and a top-level function the module defines is reported with the files that call it by name; the module itself, untracked and gitignored files are left out; a list longer than the cap prints the cap and the total, never a silent cut; and a declared non-Python file (.js, .md, .json) gets its path and basename references the same way",
+          "tests/test_audit_lookup.py: the executor brief and the writer prompt carry a 'Who depends on this' section listing each declared file's dependants from _impact, and ask the executor to answer each listed dependant in its outcome as either still correct (with why) or changed; a task whose files have no dependants says so in one line rather than omitting the section"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__impact.py tests/test_audit_lookup.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
       "attempts": 0,

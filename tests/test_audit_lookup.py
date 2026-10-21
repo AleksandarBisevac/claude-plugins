@@ -28,6 +28,7 @@ import _journal_io                                  # noqa: E402
 import _evidence_io as _evio                        # noqa: E402
 import _manifest_phases                             # noqa: E402  (own_gate_entries, swapped in bf31)
 import _gate_feed                                   # noqa: E402  (review_asks: the sentence the brief must carry)
+import _clause_coverage as _cc                      # noqa: E402  (the one numbering the drive reads a writer's answer against)
 
 M = _loader.load_script("audit-lookup.py", modname="audit_lookup")
 
@@ -2181,6 +2182,18 @@ def _writer_prompt_cases(check):
               (4, "acceptance"), (5, "acceptance")]
           and M.task_clauses(man["phases"][0]["tasks"][0])[3]["text"]
           .startswith("the remainder goes to the last of (7) lines"))
+
+    task_one = man["phases"][0]["tasks"][0]
+    last_n = _cc.task_clauses(task_one)[-1]["n"]
+    check("wp8b ONE NUMBERING: the brief's clause list and the list the drive "
+          "reads a writer's answer against are the same function and the same "
+          "numbers for one fixture task - not two implementations that agree on "
+          "it today - and the closing line's last clause is the list's last "
+          "(%d): %r" % (last_n, closing),
+          M.task_clauses is _cc.task_clauses
+          and M.acceptance_items is _cc.acceptance_items
+          and M.task_clauses(task_one) == _cc.task_clauses(task_one)
+          and ("clauses 3 to %d" % (last_n,)) in closing)
 
     # The other order, which a numbering that put Acceptance first would pass
     # wp7 on: no tests.add entry, so the Acceptance items are clauses 1 to 3.

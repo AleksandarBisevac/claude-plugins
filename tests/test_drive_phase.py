@@ -946,7 +946,8 @@ def _play_session(root, argv, bindir, log, cost, session=WRITER_SESSION,
     env = dict(os.environ)
     env["PATH"] = bindir + os.pathsep + env.get("PATH", "")
     env.update(WS_LOG=log, WS_SESSION=session, WS_COST=cost, WS_MODE=mode,
-               WS_EDIT=json.dumps(edit or {}), WS_RESULT=result or "",
+               WS_EDIT=json.dumps(edit or {}), WS_RESULT=(result if result is not None
+                          else _said("the session is done")),
                WS_COMMIT="1" if commit else "")
     done = subprocess.run([sys.executable] + list(argv[1:]), cwd=root, env=env,
                           capture_output=True, text=True, encoding="utf-8",
@@ -1132,8 +1133,19 @@ _WF_TEST = "tests/test_mine.py"
 _WF_SRC = "src/mine.py"
 # What the writer's session says last: several lines and a JSON object, so a
 # claim kept verbatim is told apart from one trimmed, re-joined or parsed.
-_WF_CLAIM = ('All clauses done.\n{"clauses": [{"clause": 1, "answer": "done", '
-             '"evidence": "tests/test_mine.py new1"}]}\n  trailing  ')
+def _answer_json(numbers, path=_WF_SRC):
+    """The JSON object a writer ends its message with: `numbers` each delivered,
+    citing `path` - the file every round of these fixtures leaves in the diff."""
+    return json.dumps(dict((str(n), {"delivered": True, "file": path, "line": 1})
+                           for n in numbers), sort_keys=True)
+
+
+def _said(text, numbers=(1,), path=_WF_SRC):
+    """`text`, then the answer object as the message's last thing."""
+    return "%s\n%s" % (text, _answer_json(numbers, path))
+
+
+_WF_CLAIM = "All clauses done.\n%s\n  " % (_answer_json((1,)),)
 
 
 def _wf_suite(cases):
@@ -1162,10 +1174,11 @@ def _wf_gate():
     return '"%s" %s' % (sys.executable.replace("\\", "/"), _WF_TEST)
 
 
-def _tdd_writer_repo(prefix, gate):
+def _tdd_writer_repo(prefix, gate, description=None):
     """A one-task plan whose task is tdd over `src/mine.py` and its suite,
     under a writer session: HEAD holds `v = 1` and a suite whose one case
-    passes there. `gate` is the task's and the phase's gate."""
+    passes there. `gate` is the task's and the phase's gate; `description`
+    replaces the task's, which numbers no acceptance clause of its own."""
     root, mpath = _repo(prefix, task_ids=TASKS[:1], gate=gate,
                         executor=WRITER_EXECUTOR)
     os.makedirs(os.path.join(root, "tests"))
@@ -1179,7 +1192,7 @@ def _tdd_writer_repo(prefix, gate):
         plan = json.load(fh)
     task = plan["phases"][0]["tasks"][0]
     task["files"] = [_WF_SRC, _WF_TEST]
-    task["description"] = "make v two, and prove it with a case"
+    task["description"] = description or "make v two, and prove it with a case"
     task["tests"] = {"mode": "tdd", "add": ["%s: v is two" % (_WF_TEST,)],
                      "gate": list(gate), "expectRedFirst": True}
     plan["fileIndex"] = {_WF_SRC: ["P1.1"], _WF_TEST: ["P1.1"]}
@@ -1270,7 +1283,7 @@ def _writer_files_cases(check):
     _signal_next(M, root_n, mpath_n)
     _writer_round(M, root_n, mpath_n, bindir, log, "0.32",
                   edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST},
-                  result="done")
+                  result=_said("done"))
     red_n = (_filed_body(mpath_n, "P1.1") or {}).get("redFirst") or {}
     check("wf4 a tdd task whose gate names no tests.add file has no derivable test "
           "command, so its return is filed with red-first could-not-prove naming "
@@ -1364,7 +1377,7 @@ def _writer_lock_cases(check):
     root, mpath = _tdd_writer_repo("wl-moved", (_wf_gate(),))
     _signal_next(M, root, mpath)
     _writer_round(M, root, mpath, bindir, log, "0.41",
-                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST}, result="done")
+                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST}, result=_said("done"))
     _file_reviewer(root, mpath, "P1.1")
     head = _head_of(root)
     _write_lf(os.path.join(root, *_WF_TEST.split("/")),
@@ -1395,13 +1408,13 @@ def _writer_lock_cases(check):
     _signal_next(M, root_r, mpath_r)
     code_r, line_r = _writer_round(M, root_r, mpath_r, bindir, log, "0.42",
                                    edit={_WF_SRC: "v = 3\n", _WF_TEST: _WF_NEW_TEST},
-                                   result="first try")
+                                   result=_said("first try"))
     early = _filed_body(mpath_r, "P1.1")
     _signal_next(M, root_r, mpath_r, "--answer", "resume")
     moved = _WF_NEW_TEST + "# the resume round touched the suite\n"
     code_s, line_s = _writer_round(M, root_r, mpath_r, bindir, log, "0.43",
                                    edit={_WF_SRC: "v = 2\n", _WF_TEST: moved},
-                                   result="second try")
+                                   result=_said("second try"))
     listed = [n for n in _notes(mpath_r, "P1.1")
               if _WF_TEST in n and "re-prove" in n and "proved" in n]
     late = _filed_body(mpath_r, "P1.1") or {}
@@ -1417,13 +1430,134 @@ def _writer_lock_cases(check):
           and "reviewer" in line_s and late_red.get("status") == "proved"
           and late_files == {_WF_TEST: _sha_of(root_r, _WF_TEST)}
           and [r.get("changed") for r in late.get("reproofs") or []] == [[_WF_TEST]]
-          and late.get("writerClaim") == "second try")
+          and late.get("writerClaim") == _said("second try"))
     _file_reviewer(root_r, mpath_r, "P1.1")
     _signal_next(M, root_r, mpath_r)
     check("wl4 ...and the close commits: %r"
           % (tasks_of(mpath_r).get("P1.1", {}).get("status"),),
           tasks_of(mpath_r).get("P1.1", {}).get("status") == "done")
     _writer_refused_cases(check, M, bindir, log)
+    _writer_clause_cases(check, M, bindir, log)
+
+
+# Two Acceptance items beside the one `tests.add` entry: three clauses the
+# writer's last message owes an answer to, numbered by the lookup's own list.
+_WC_DESCRIPTION = ("make v two, and prove it. Acceptance: (1) v is two; "
+                   "(2) the suite proves it")
+
+
+def _clause_prompt(M, root, mpath):
+    """The prompt text the next dispatch of the task's writer is fed, read off
+    the command `--explain` prints."""
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    argv = _run_argv(block) or []
+    fed = _flag(argv, "--prompt-file")
+    text = (_read(fed).decode("utf-8", "replace")
+            if fed and os.path.isfile(fed) else "")
+    return argv, text
+
+
+def _writer_clause_cases(check, M, bindir, log):
+    """A green gate does not file a return whose clauses the writer left
+    unanswered: the session is resumed with the uncovered ones, the round counts
+    toward the two, and once they are spent the plain decision is asked."""
+    edit = {_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST}
+    root, mpath = _tdd_writer_repo("wc-gap", (_wf_gate(),), _WC_DESCRIPTION)
+    _signal_next(M, root, mpath)
+    code, line = _writer_round(M, root, mpath, bindir, log, "0.51", edit=edit,
+                               result=_said("done", (1, 3)))
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    check("wk1 the gate is green, yet clause 2 has no answer: nothing is filed "
+          "and the decision going back to the writer names clause 2 and no "
+          "other: %r" % ((code, line, block),),
+          code == 0 and "clauses-uncovered-writer" in line
+          and "clause 2" in line and "clause 1" not in line
+          and "clause 3" not in line and "--answer resume|block" in block
+          and _filed_body(mpath, "P1.1") is None)
+
+    resumed_code, resumed = _signal_next(M, root, mpath, "--answer", "resume")
+    argv, fed_text = _clause_prompt(M, root, mpath)
+    check("wk2 `resume` sends the uncovered clause's number and words to the "
+          "session that wrote the task, in a prompt that does not repeat the "
+          "answered ones: %r" % ((resumed_code, resumed, fed_text[:300]),),
+          resumed_code == 0 and _flag(argv, "--resume") == WRITER_SESSION
+          and "clause 2: v is two" in fed_text
+          and "the suite proves it" not in fed_text
+          and "test_mine.py: v is two" not in fed_text)
+
+    code_b, line_b = _writer_round(M, root, mpath, bindir, log, "0.52", edit={},
+                                   result=_said("now all of it", (1, 2, 3)))
+    body = _filed_body(mpath, "P1.1") or {}
+    check("wk3 the resumed session answers every clause: the gate is measured "
+          "again over its fix, the return is filed with that message as the "
+          "claim, and the reviewer is next: %r" % ((code_b, line_b, body.get(
+              "writerClaim")),),
+          code_b == 0 and "reviewer" in line_b
+          and body.get("writerClaim") == _said("now all of it", (1, 2, 3)))
+
+    # The resumed session leaves a file behind that a second gate command
+    # refuses; the proof of the declared files still holds, so only a gate
+    # measured again can notice.
+    flag_gate = '"%s" -c "import os, sys; sys.exit(1 if os.path.exists(\'bad.flag\') else 0)"' % (
+        sys.executable.replace("\\", "/"),)
+    again, again_path = _tdd_writer_repo("wc-regate", (_wf_gate(), flag_gate),
+                                         _WC_DESCRIPTION)
+    _signal_next(M, again, again_path)
+    _writer_round(M, again, again_path, bindir, log, "0.58", edit=edit,
+                  result=_said("partial", (1, 3)))
+    _signal_next(M, again, again_path, "--answer", "resume")
+    _c, regated = _writer_round(M, again, again_path, bindir, log, "0.59",
+                                edit={"bad.flag": "x\n"},
+                                result=_said("all of it", (1, 2, 3)))
+    check("wk7 the green gate that asked for the clause is not the last word: the "
+          "resumed session left what the gate refuses, so the gate is measured "
+          "again over its work - red, going back to the writer - and nothing is "
+          "filed on the strength of the earlier green: %r" % (regated,),
+          "gate-red-writer" in regated and _filed_body(again_path, "P1.1") is None)
+
+    capped, capped_path = _tdd_writer_repo("wc-cap", (_wf_gate(),), _WC_DESCRIPTION)
+    _signal_next(M, capped, capped_path)
+    seen = []
+    result = _said("partial", (1, 3))
+    _c, first = _writer_round(M, capped, capped_path, bindir, log, "0.53",
+                              edit=edit, result=result)
+    seen.append(first)
+    for cost in ("0.54", "0.55"):
+        _signal_next(M, capped, capped_path, "--answer", "resume")
+        _c, again = _writer_round(M, capped, capped_path, bindir, log, cost,
+                                  edit={}, result=result)
+        seen.append(again)
+    _c, last_block = _explain_of(M, capped, capped_path, "P1.1")
+    check("wk4 a clause gap counts as a resume round: the first two gaps go back "
+          "to the writer, and the third - the two rounds spent - is the plain "
+          "decision whose answers are retry and block, with nothing filed: %r"
+          % (seen,),
+          "clauses-uncovered-writer" in seen[0] and "clauses-uncovered-writer" in seen[1]
+          and "clauses-uncovered-writer" not in seen[2]
+          and "clauses-uncovered" in seen[2] and "--answer retry|block" in last_block
+          and _filed_body(capped_path, "P1.1") is None)
+
+    outside, outside_path = _tdd_writer_repo("wc-path", (_wf_gate(),),
+                                             _WC_DESCRIPTION)
+    _signal_next(M, outside, outside_path)
+    _writer_round(M, outside, outside_path, bindir, log, "0.56", edit=edit,
+                  result=_said("done", (1, 2, 3), path="src/nowhere.py"))
+    _c, said_outside = _explain_of(M, outside, outside_path, "P1.1")
+    check("wk5 a delivered answer that cites a file the diff does not touch is a "
+          "gap, and the decision names the path: %r" % (said_outside,),
+          "clauses-uncovered-writer" in said_outside and "src/nowhere.py" in said_outside
+          and _filed_body(outside_path, "P1.1") is None)
+
+    bare, bare_path = _tdd_writer_repo("wc-bare", (_wf_gate(),), _WC_DESCRIPTION)
+    _signal_next(M, bare, bare_path)
+    _writer_round(M, bare, bare_path, bindir, log, "0.57", edit=edit,
+                  result="done, all of it")
+    _c, said_bare = _explain_of(M, bare, bare_path, "P1.1")
+    check("wk6 a message with no JSON object is a gap of every clause - three "
+          "numbers named, nothing filed: %r" % (said_bare,),
+          "clauses-uncovered-writer" in said_bare and "clause 1:" in said_bare
+          and "clause 2:" in said_bare and "clause 3:" in said_bare
+          and _filed_body(bare_path, "P1.1") is None)
 
 
 def _writer_refused_cases(check, M, bindir, log):
@@ -1433,11 +1567,11 @@ def _writer_refused_cases(check, M, bindir, log):
     root, mpath = _tdd_writer_repo("wl-weakened", (_wf_gate(), "false"))
     _signal_next(M, root, mpath)
     _writer_round(M, root, mpath, bindir, log, "0.44",
-                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST}, result="one")
+                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST}, result=_said("one"))
     _signal_next(M, root, mpath, "--answer", "resume")
     crashing = _wf_suite([("old1", "mine.v >= 1"), ("new1", "1 / (mine.v - 1) == 1")])
     code, line = _writer_round(M, root, mpath, bindir, log, "0.45",
-                               edit={_WF_TEST: crashing}, result="two")
+                               edit={_WF_TEST: crashing}, result=_said("two"))
     _c, block = _explain_of(M, root, mpath, "P1.1")
     check("wl5 a resume round whose test change leaves the red no longer proved "
           "(the new case crashes at HEAD) is a decision going back to the writer, "
@@ -1452,7 +1586,7 @@ def _writer_refused_cases(check, M, bindir, log):
     passing = _wf_suite([("old1", "mine.v >= 1"), ("new1", "mine.v >= 1")])
     code_p, line_p = _writer_round(M, root_p, mpath_p, bindir, log, "0.46",
                                    edit={_WF_SRC: "v = 2\n", _WF_TEST: passing},
-                                   result="done")
+                                   result=_said("done"))
     resumed_code, resumed = _signal_next(M, root_p, mpath_p, "--answer", "resume")
     _c, run_block = _explain_of(M, root_p, mpath_p, "P1.1")
     again = _run_argv(run_block) or []
@@ -1493,7 +1627,7 @@ def _proved_then_red(M, root, mpath, bindir, log):
     so the resume round comes. Returns round 0's red-first `at`."""
     _signal_next(M, root, mpath)
     _writer_round(M, root, mpath, bindir, log, "0.51",
-                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST}, result="zero")
+                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST}, result=_said("zero"))
 
 
 def _writer_invariant_cases(check):
@@ -1514,7 +1648,7 @@ def _writer_invariant_cases(check):
     _signal_next(M, root, mpath, "--answer", "resume")
     _sibling_commit(root, "a sibling, during the resume round\n")
     code, line = _writer_round(M, root, mpath, bindir, log, "0.52",
-                               edit={_WF_SRC: "v = 2  # fixed\n"}, result="one")
+                               edit={_WF_SRC: "v = 2  # fixed\n"}, result=_said("one"))
     filed_code, filed_line = _signal_next(M, root, mpath, "--answer", "file")
     body = _filed_body(mpath, "P1.1") or {}
     red = body.get("redFirst") or {}
@@ -1535,7 +1669,7 @@ def _writer_invariant_cases(check):
     _sibling_commit(root_v, "fixed by a sibling, before the resume\n")
     _signal_next(M, root_v, mpath_v, "--answer", "resume")
     code_v, line_v = _writer_round(M, root_v, mpath_v, bindir, log, "0.53",
-                                   edit={}, result="one")
+                                   edit={}, result=_said("one"))
     body_v = _filed_body(mpath_v, "P1.1") or {}
     red_v = body_v.get("redFirst") or {}
     now_v = _head_of(root_v)
@@ -1550,7 +1684,7 @@ def _writer_invariant_cases(check):
     _proved_then_red(M, root_i, mpath_i, bindir, log)
     _signal_next(M, root_i, mpath_i, "--answer", "resume")
     _writer_round(M, root_i, mpath_i, bindir, log, "0.55",
-                  edit={_WF_SRC: "v = 2  # fixed\n"}, result="one")
+                  edit={_WF_SRC: "v = 2  # fixed\n"}, result=_said("one"))
     impl_i = dict((f.get("path"), f.get("sha256")) for f in (
         ((_filed_body(mpath_i, "P1.1") or {}).get("redFirst") or {})
         .get("implementationDigest") or {}).get("files") or [])
@@ -1624,7 +1758,7 @@ def _writer_reading_cases(check):
         _harness.git(root, *argv)
     _signal_next(M, root, mpath)
     _writer_round(M, root, mpath, bindir, log, "0.61",
-                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST}, result="done")
+                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST}, result=_said("done"))
     red = (_filed_body(mpath, "P1.1") or {}).get("redFirst") or {}
     check("wj1 a regression-mode writer task is not asked for red-first: its "
           "return is filed not-attempted with the mode as the basis, and goes "
