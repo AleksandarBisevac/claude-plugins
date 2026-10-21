@@ -1,7 +1,7 @@
 {
   "id": "P131",
   "title": "The writer is a plain Claude Code session, and scripts verify around it",
-  "status": "in_progress",
+  "status": "done",
   "description": "Rewrites F2 of the cost/code/CI plan: the writer stops being a subagent with a brief and becomes the measured plain reference itself, and the plugin's verification moves out of the session into scripts the drive runs. Measured on this repository: the task text is 1 to 2 percent of an executor's opening context, no executor of 114 read the cache on its first request, and cache rebuilds after a five-minute pause were 26 to 38 percent of executor spend. The confirming run measures what this costs against plain at the same model and effort before any claim is written; its first stage runs after the clause-coverage task and its second stage is this phase's exit. Every task here lands before the phase that removes the old path, so the old path stays available as a rollback for one release. This phase also carries the two moves cancelled out of P130 (tests and development code leave the shipped plugin), the four medium faults scheduled to this release, and one task for the low findings carried from BF4 under D9.",
   "desiredOutcome": "Every task's writer runs as a headless top-level Claude Code session the drive launches on plain's own prompt, on a model pinned by full id at high effort, under a per-session budget, priced by the session's own total_cost_usd, and returning one JSON answer per acceptance clause. After the session the drive proves red-first through a throwaway git tree and locks the digest of the task's test files, checks clause coverage, and runs the task gate; a red gate or an uncovered clause resumes the same session for at most two rounds. A reviewer session that opened no file is not a review, and a phase-review finding blocks only after a second pass validates it, going back to the writer's session while its cache is warm.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "f2f103a20ad00f927195976188686e20c4bf3b8a",
   "branch": "audit/p131-the-writer-is-a-plain-claude-c",
-  "mergedAt": null,
+  "mergedAt": "2026-10-21T22:53:30Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -2664,5 +2664,6 @@
     "runId": "2026-10-21T22:52:44Z.5d2850",
     "status": "passed",
     "at": "2026-10-21T22:52:44Z"
-  }
+  },
+  "mergedHead": "45c0516749aabe87f378b390cf1df2d16bd7b849"
 }
