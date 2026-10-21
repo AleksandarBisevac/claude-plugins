@@ -147,7 +147,7 @@ each; **the report emits three `<script>` tags** — `window.AUDIT_USAGE`, the b
 and the code. The pin that reads `SCRIPT.count("<script>") == 1` counts tags in a **Python
 string**, not in the page, so it does not contradict this and never did.
 
-**Substring assertions guard the assembled output**, and they live in `plugins/audit/tests/` —
+**Substring assertions guard the assembled output**, and they live in `tests/` —
 not in the scripts that build it. Some *require* duplication to stay as it is. What a UI change
 has to budget for is the pins against the surface it touches, so **print them before you start**:
 
@@ -202,7 +202,7 @@ python3 tools/measure-context.py --gate    # what each pipeline entry makes the 
 python3 tools/check-git-pipeline.py        # the write half, against a REAL git repo
 npx vitest run                             # the JavaScript unit tests
 ruff check plugins/audit tools
-vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
+vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints
 python3 tools/check-rendered-artifacts.py  # vs a fresh render AND vs HEAD; verify.sh's
                                            # plain run passes --before-commit (the render
                                            # only), and --release adds --against-commit
@@ -212,7 +212,7 @@ python3 tools/check-example-ledgers.py     # ...and that no committed evidence r
                                            # produce, and that every commit
                                            # a committed manifest names resolves -
                                            # refusing on a clone too shallow to ask
-python3 plugins/audit/scripts/demo/gen-demo-usage.py \
+python3 tools/demo/gen-demo-usage.py \
     examples/acme-store/audit-plan.json --out-dir <tmp>   # the committed ledger is
                                            # DERIVED, so it is diffed against a fresh
                                            # run; verify.sh does this for you
@@ -298,7 +298,7 @@ Its docstring is the current statement of those rules; `python3 tools/gate-parit
 prints only the slices and the jobs running them, so run it for that half and read the
 docstring for the rest, rather than trusting this paragraph.
 
-**Every `--selftest` block lives in `plugins/audit/tests/`, not in the module it tests**
+**Every `--selftest` block lives in `tests/`, not in the module it tests**
 (`73042a1` — count them with
 `python3 -c "import sys;sys.path.insert(0,'plugins/audit/scripts');import _output;print(len(_output.selftest_coverage()['covered']))"`).
 A migrated file still exits 0 on `--selftest` and prints where its cases went;
