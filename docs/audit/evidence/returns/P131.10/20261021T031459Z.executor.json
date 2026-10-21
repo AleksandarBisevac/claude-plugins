@@ -1,0 +1,37 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_stamp_verification.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-21T03:35:48Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 with failing cases si9 (house FAIL), si10 (house FAIL), si11 (house FAIL), si12 (house FAIL), tests/test_stamp_verification.py: exited 1 (house FAIL), but the fix run could not be made: the run timed out after 156 s and its process group was torn down - SELFTEST FAILED: 295/301 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "stamp-verification.py: inline_test_text(head, now, pull=True) now returns (text, held, applied, problem, pulled). After choosing the test-definition hunks it pulls in a hunk outside them, one top-level statement at a time, when the hunk changes no HEAD line (_hunk_units: old side all blank/comment, every added non-neutral line inside a whole top-level statement) and the statement is an import/def/class/plain or annotated assignment (_stmt_binds) binding a name HEAD does not bind (_module_binds, imports and if/try/with blocks included) and an applied hunk or an already pulled unit references (_closure, fixed point over _loads_by_line). A hunk pulled in whole is not counted as held; partly pulled hunks keep HEAD's lines plus the pulled statements. inline_overlays keeps a suite split when anything was pulled (held or pulled) and carries the plain copy too; run_red, when the pulled-in run is GREEN, runs again with the plain copy (tag task-held) and records run['withdrawn'], because a pulled-in new def may be the fix itself, so the old --introduces proof stays reachable. red_verdict: inline_clause() names the pulled-in statements ('pulled in for the names its test hunks reference: import json (line 2); ...'), withdrawn_clause() says when they were held back, and a V_COLLECT inline run whose output carries a NameError now says the name stays unresolved (unresolved_name()) in place of 'no test was collected'. Payload 'inline' gains pulledIn/heldBack. tests: new stage si-inline-closure (si9-si14); si3 asserts pulled == [] and unpacks the 5-tuple; si5-7 slice [:4]. Gate: `python3 tools/sweep-selftests.py tests/test_stamp_verification.py` exit 0, 306 cases. ruff exit 0; vermin -t=3.8- exit 0; every no-argument lint in _output_lints plus _deps.navigability_violations: 0 hits. Mutation probe on a scratch copy of the tree (scratchpad/mutations.py, every anchor asserted to land exactly once): 9 of 9 mutations killed, each in exactly the expected cases - closure off (si9,si12,si13), partial hunk pulled whole (si13), no transitive reach (si9,si13), head-binds check dropped (si13), unresolved wording never (si10,si11) / not inline-only (si14), no held-back retry (si12) / retry on every verdict (si9), tangled hunk split (si11).",
+    "descriptive": "Red-first on an inline suite now pulls in the new imports and helpers a new case needs, so the case goes red on its assertion; an unresolvable name is named off the NameError."
+  },
+  "testsAdded": [
+    "si9: an inline suite whose new case needs a new import and a helper calling a second helper is proved on its assertion, and the basis names the pulled-in statements and not an unreferenced helper in the same hunk",
+    "si10: a name bound at run time (globals()) stays could-not-prove with the unresolved symbol named, never 'no test was collected'",
+    "si11: a new helper written in the hunk that carries the fix is not pulled in; could-not-prove names it unresolved",
+    "si12: when the pulled-in definition is the fix itself the run passes, is made again with it held back, and is proved via --introduces as before",
+    "si13: the copy holds exactly the import and both helpers (counted), not the unreferenced one nor the fix; pull=False gives the plain split; a new statement rebinding a HEAD name is never pulled in",
+    "si14: a NameError in a non-inline suite keeps the collection reason"
+  ],
+  "casesAdded": [
+    [
+      "si9",
+      "si10",
+      "si11",
+      "si12",
+      "si13",
+      "si14"
+    ]
+  ],
+  "claims": "claims:\n1 stamp-verification.py: _hunk_units/_closure/inline_test_text implement the section comment's pull rule; run_red's 'task-held' run is the held-back retry the comment names; red_verdict's V_COLLECT+inline branch is the NameError wording; inline_overlays comment rewritten after a first draft misdescribed held counting\n2 9 mutations on a scratch copy, each anchor asserted count==1 -> killed in exactly the expected cases (both directions for the wording and the retry: E/E2, F/F2); restored by construction (the worktree was never mutated)\n3 grep -rn 'inline_test_text|inline_overlays|inline_clause' over the tree: callers only run_red and the suite's si3/si5-7, all updated; n/a otherwise - not a register fault\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:7c785336c0e2f4fb78c350966f88c6d2feeadb40ac17e3f2b3652b58693dba3e\",\"dirtyDigest\":\"sha256:1ce382448f815ade9a50a6d9db675b359162c9ded8aef6af2fc213e0ddc5a2c9\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/stamp-verification.py\":\"eaa46797a94585a6\",\"tests/test_stamp_verification.py\":\"36208e2921314a74\"},\"head\":\"c403486b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/stamp-verification.py\",\"tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:657f029c8082ffb8daaff010e2cb4a2d177fe30a5be02cded5d53e7f3da76cbb\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

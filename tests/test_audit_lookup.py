@@ -2030,6 +2030,216 @@ def _nested_member_cases(check):
           "(empty)" not in wave and "+a = 4" in "\n".join(wave))
 
 
+# The plain reference the owner's baseline measured, held as a literal: the
+# writer's prompt is this text for the fixture task, line for line, except the
+# lines the task names as deliberate differences. Held here and not derived
+# from the module, so a template that drifts is a failed case and not a
+# template that agrees with itself.
+_WP_DESCRIPTION = ("Do (1) this and (2) that for refunds.\n"
+                   "Acceptance: (1) the split sums exactly (2) the remainder "
+                   "goes to the last of (7) lines (3) a zero refund is refused")
+_WP_BASELINE = [
+    "Implement the following task in this repository.",
+    "",
+    "Task: Split a refund across lines",
+    "",
+    _WP_DESCRIPTION,
+    "",
+    "Files the task declares:",
+    "- src/refund.py",
+    "- tests/test_refund.py",
+    "",
+    "Tests to add:",
+    "- tests/test_refund.py: sums exactly",
+    "- tests/test_refund.py: the remainder rule",
+    "",
+    "Before you finish, check that everything passes:",
+    "- python3 tools/sweep-selftests.py",
+    "- ruff check plugins/audit tools && vermin -t=3.8- --no-tips plugins/audit",
+    "- python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report",
+    "",
+    "@@BROWSER@@",
+    "",
+    "@@COMMIT@@",
+    "",
+    "@@CLOSING@@",
+]
+_WP_BROWSER = ["node tools/capture-screenshots.mjs --check",
+               "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html"]
+
+
+def _wp_manifest(gate=("selftests", "lint", "report", "shots", "interactive"),
+                 add=("tests/test_refund.py: sums exactly",
+                      "tests/test_refund.py: the remainder rule"),
+                 description=_WP_DESCRIPTION):
+    commands = {
+        "selftests": "python3 tools/sweep-selftests.py",
+        "lint": "ruff check plugins/audit tools && vermin -t=3.8- --no-tips plugins/audit",
+        "report": "python3 plugins/audit/scripts/report/render-report.py "
+                  "docs/audit/audit-plan.json --out-dir /tmp/audit-report",
+        "shots": _WP_BROWSER[0],
+        "interactive": _WP_BROWSER[1]}
+    task = {"id": "P1.1", "title": "Split a refund across lines",
+            "status": "in_progress", "description": description,
+            "files": ["src/refund.py", "tests/test_refund.py"],
+            "docs": ["docs/refunds.md"], "skills": ["writing-python"],
+            "tests": {"mode": "tdd", "expectRedFirst": True,
+                      "add": list(add), "gate": list(gate)},
+            "startedAt": _BF_START, "attempts": 1, "maxAttempts": 3}
+    phase = {"id": "P1", "title": "Refunds", "status": "in_progress",
+             "desiredOutcome": "refunds add up to the order total",
+             "tasks": [task]}
+    return {"meta": {"version": 2, "buildCommands": commands},
+            "phases": [phase], "bugs": [],
+            "fileIndex": {"src/refund.py": ["P1.1"],
+                          "tests/test_refund.py": ["P1.1"]}}
+
+
+def _wp_text(manifest):
+    phase = manifest["phases"][0]
+    return "\n".join(M.compose_writer_prompt(manifest, phase, phase["tasks"][0])) + "\n"
+
+
+def _writer_prompt_cases(check):
+    """The writer's prompt is plain's own prompt composed from the task, with
+    one closing line asking for an answer per acceptance clause."""
+    man = _wp_manifest()
+    text = _wp_text(man)
+    lines = text.split("\n")[:-1]
+    template = "\n".join(_WP_BASELINE).split("\n")
+    # The three template lines that carry a deliberate difference: the browser
+    # line (it names the drive, which the measured prompt could not), the commit
+    # line and the closing line. Every other line must be the literal's.
+    cut = [i for i, ln in enumerate(template) if ln.startswith("@@")]
+    shape_ok = len(lines) == len(template)
+    others_equal = shape_ok and all(lines[i] == template[i]
+                                    for i in range(len(template))
+                                    if i not in cut)
+    commit = lines[cut[1]] if shape_ok else ""
+    check("wp1 on the fixture task the writer prompt equals the baseline "
+          "literal line for line - same number of lines, every line but the "
+          "three marked ones identical: lines=%d template=%d"
+          % (len(lines), len(template)), others_equal)
+    check("wp2 the commit line is the one deliberate rewrite of the measured "
+          "final sentence - the changes stay uncommitted and the drive commits "
+          "them: %r" % (commit,),
+          shape_ok and commit == "Fix whatever does not pass. When everything "
+          "is green, leave the changes uncommitted: the drive commits them."
+          and "commit the changes as one commit" not in text)
+
+    browser = [ln for ln in lines if ln.startswith("Do not run")]
+    gate_at = lines.index("Before you finish, check that everything passes:")
+    gate_items = []
+    for ln in lines[gate_at + 1:]:
+        if not ln.startswith("- "):
+            break
+        gate_items.append(ln)
+    check("wp3 no browser gate is listed among the commands to run, and the "
+          "non-browser three are: %r" % (gate_items,),
+          len(gate_items) == 3
+          and not any("capture-screenshots" in g or "check-report-interactive"
+                      in g or "playwright" in g or "verify.sh" in g
+                      for g in gate_items))
+    check("wp4 ONE line names the browser gates, each once, as the drive's and "
+          "not to be run in the session: %r" % (browser,),
+          len(browser) == 1
+          and all(browser[0].count(c) == 1 for c in _WP_BROWSER)
+          and "drive" in browser[0])
+    plain = M.compose_writer_prompt(
+        _wp_manifest(gate=("selftests", "lint")), _wp_manifest()["phases"][0],
+        _wp_manifest(gate=("selftests", "lint"))["phases"][0]["tasks"][0])
+    check("wp5 THE ALLOW TWIN of wp4: a gate with no browser entry gets no "
+          "browser line, because naming gates the task does not have is a claim "
+          "with no basis: %r" % ([ln for ln in plain if ln.startswith("Do not")],),
+          not [ln for ln in plain if ln.startswith("Do not")]
+          and "- python3 tools/sweep-selftests.py" in plain)
+
+    forbidden = ("brief", "Skill", "skill", "submit", "AUDIT_RETURN",
+                 "drive-phase", "audit-executor", "casesAdded", "redFirst",
+                 "Invoke each", "executor", "docs/refunds.md", "writing-python",
+                 "Refunds", "desired outcome")
+    hits = [w for w in forbidden if w in text]
+    check("wp6 the prompt carries no brief path, no guidance, no skills list, "
+          "no submit instruction, no docs list and no phase outcome - none of "
+          "those words appears: %r" % (hits,), not hits)
+
+    closing = lines[-1]
+    check("wp7 the closing line numbers the clauses the way the task does - the "
+          "two tests.add entries are clauses 1 to 2 and the three Acceptance "
+          "items, read after the LAST 'Acceptance:' and by sequence so the "
+          "'(7)' inside item 2 and the '(1)' before the marker are not items, "
+          "are clauses 3 to 5: %r" % (closing,),
+          "clauses 1 to 2" in closing and "clauses 3 to 5" in closing
+          and "(1) to (3)" in closing and "delivered" in closing
+          and "reason" in closing)
+    check("wp8 the clause list the closing line is built from, read straight "
+          "off the task: %r" % ([(c["n"], c["kind"]) for c in M.task_clauses(
+              man["phases"][0]["tasks"][0])],),
+          [(c["n"], c["kind"]) for c in M.task_clauses(
+              man["phases"][0]["tasks"][0])]
+          == [(1, "tests.add"), (2, "tests.add"), (3, "acceptance"),
+              (4, "acceptance"), (5, "acceptance")]
+          and M.task_clauses(man["phases"][0]["tasks"][0])[3]["text"]
+          .startswith("the remainder goes to the last of (7) lines"))
+
+    # The other order, which a numbering that put Acceptance first would pass
+    # wp7 on: no tests.add entry, so the Acceptance items are clauses 1 to 3.
+    bare = _wp_manifest(add=())
+    bare_closing = _wp_text(bare).split("\n")[-2]
+    tests_section = _wp_text(bare).split("Tests to add:\n")[1].split("\n")[0]
+    check("wp9 a task with no tests.add entry numbers its Acceptance items "
+          "from 1, says so in the section, and the closing line names no "
+          "tests.add clause: %r / %r" % (tests_section, bare_closing),
+          tests_section == "- none"
+          and "clauses 1 to 3" in bare_closing
+          and "Tests to add" not in bare_closing
+          and bare_closing.count("clauses") == 1)
+
+    none = _wp_manifest(add=(), description="Do the thing with no list.")
+    none_closing = _wp_text(none).split("\n")[-2]
+    check("wp10 a task that numbers no clause says so instead of asking for "
+          "entries that do not exist - the empty object, not a gap: %r"
+          % (none_closing,),
+          "no acceptance clause" in none_closing and "{}" in none_closing
+          and "clauses 1" not in none_closing)
+
+    check("wp11 two calls give identical bytes: %r"
+          % (_wp_text(man) == text,),
+          _wp_text(man) == text and _wp_text(_wp_manifest()) == text)
+
+    # --- the command, as the drive runs it -----------------------------------
+    root = _harness.fixture_root("audit-lookup-wp-")
+    proj = os.path.join(root, "proj")
+    os.makedirs(os.path.join(proj, ".claude"))
+    with open(os.path.join(proj, ".claude", "audit.config.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+    os.makedirs(os.path.dirname(mpath))
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(man, fh)
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            code = M.main([mpath, "brief", "P1.1", "--role", "writer",
+                           "--project", proj])
+        except SystemExit as exc:
+            code = exc.code
+    written = os.path.join(proj, ".claude", "state", "briefs", "P1.1",
+                           "20260101T000000Z.writer.md")
+    try:
+        with open(written, "r", encoding="utf-8", newline="") as fh:
+            on_disk = fh.read()
+    except OSError:
+        on_disk = None
+    check("wp12 `brief P1.1 --role writer` exits 0 and writes exactly the "
+          "prompt, to a file of its own beside the executor's: code=%r file=%s"
+          % (code, "found" if on_disk is not None else "missing"),
+          code == M.E_OK and on_disk == text
+          and written in out.getvalue())
+    shutil.rmtree(root, ignore_errors=True)
+
+
 def _selftest():
     def body(check):
         # Each block staged, so one that raises still lets the other run.
@@ -2038,6 +2248,7 @@ def _selftest():
         _harness.stage(check, "bf-block", _brief_cases)
         _harness.stage(check, "nl-block", _nested_scope_cases)
         _harness.stage(check, "nm-block", _nested_member_cases)
+        _harness.stage(check, "wp-block", _writer_prompt_cases)
     return _harness.run(body)
 
 

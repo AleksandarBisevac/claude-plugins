@@ -72,8 +72,11 @@ and the agent is handed its path. The main loop used to compose each brief by
 hand from `reference/execute-task.md`, and the brief then sat in its context for
 the rest of the run; computed here it is the same every time, carries what a
 retry owes (`attempts > 1`), and never passes through the main loop at all:
-    audit-lookup.py <manifest> brief <taskId>  --role executor|reviewer
+    audit-lookup.py <manifest> brief <taskId>  --role executor|writer|reviewer
     audit-lookup.py <manifest> brief <phaseId> --role phase
+`--role writer` is not a brief: it writes the prompt a plain top-level session
+is started on (`compose_writer_prompt`) - the task's own text in the layout the
+baseline measured, with no path, rules, skills or submit in it.
 The reviewer's brief carries the executor's return AS FILED, so it is REFUSED
 (exit `E_REFUSED`, nothing written) until that return is filed for the task's
 current start; the phase reviewer's brief is refused while any task of the phase
@@ -89,6 +92,7 @@ import argparse
 import json
 import os
 import pathlib
+import re
 import shlex
 import subprocess
 import sys
@@ -390,7 +394,7 @@ def runs_gate_reading(project, hc=None):
 
 
 # --- the computed brief ------------------------------------------------------
-BRIEF_ROLES = ("executor", "reviewer", "phase")
+BRIEF_ROLES = ("executor", "writer", "reviewer", "phase")
 BRIEFS_DIRNAME = _fr.BRIEFS_DIRNAME
 
 # The one question a phase review asks of the request, fixed so every phase
@@ -700,6 +704,142 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
             + ["The working tree is the last attempt; this is what it answered."])
     lines += _section(SUBMIT_SECTION,
                       executor_submit_lines(manifest, phase, task, ctx))
+    return lines
+
+
+# --- the writer's prompt ---------------------------------------------------------
+# The writer is a plain top-level session, so what it is handed is plain's own
+# prompt for the task and nothing else: no brief path, no rules, no skills, no
+# return contract. The layout is the one the owner's baseline measured, so a
+# difference in what the session does is not a difference in what it was told.
+# Three lines differ from that measured text on purpose: the commit sentence
+# (the drive commits), the browser sentence (it names the drive as their runner)
+# and the closing line (one answer per acceptance clause).
+
+# A gate command is a browser gate when it runs one of these: the two
+# screenshot/interaction drivers, the whole-suite runner that includes them, or
+# the browser runner's own `test` subcommand. Read off the command's words, so a
+# gate renamed in `meta.buildCommands` is still seen for what it runs.
+BROWSER_GATE_SCRIPTS = ("capture-screenshots.mjs", "check-report-interactive.mjs",
+                        "verify.sh")
+BROWSER_GATE_TOKEN = ("playwright", "test")
+
+ACCEPTANCE_MARK = "Acceptance:"
+WRITER_COMMIT_LINE = ("Fix whatever does not pass. When everything is green, "
+                      "leave the changes uncommitted: the drive commits them.")
+
+
+def runs_browser(command):
+    """Whether a resolved gate command opens a browser: a word's basename is one
+    of `BROWSER_GATE_SCRIPTS`, or the words hold `playwright test` in a row."""
+    words = [w.strip("\"'").rsplit("/", 1)[-1] for w in str(command or "").split()]
+    token = list(BROWSER_GATE_TOKEN)
+    return (any(w in BROWSER_GATE_SCRIPTS for w in words)
+            or any(words[i:i + len(token)] == token for i in range(len(words))))
+
+
+def acceptance_items(description):
+    """The texts of the description's numbered Acceptance items, in order.
+
+    Read after the LAST `Acceptance:` - a description numbers its own steps
+    before it - and by sequence: `(2)` opens the second item only once `(1)`
+    has opened the first, so a parenthesised number inside an item's own words
+    (`the last of (7) lines`) stays in that item. A description with no
+    `Acceptance:`, or no `(1)` after it, has no items."""
+    text = description if isinstance(description, str) else ""
+    at = text.rfind(ACCEPTANCE_MARK)
+    if at < 0:
+        return []
+    body = text[at + len(ACCEPTANCE_MARK):]
+    opens, want = [], 1
+    for m in re.finditer(r"\((\d+)\)", body):
+        if int(m.group(1)) == want:
+            opens.append((m.start(), m.end()))
+            want += 1
+    return [body[end:(opens[i + 1][0] if i + 1 < len(opens) else len(body))].strip()
+            for i, (_start, end) in enumerate(opens)]
+
+
+def task_clauses(task):
+    """`[{"n", "kind", "text"}]` - the clauses a task owes an answer to, numbered
+    from one: its `tests.add` entries first, in order, then the numbered items of
+    its description's Acceptance list. THE ONE NUMBERING: the writer's closing
+    line is built from this list, and whatever reads the writer's answer is to
+    read the same list rather than number the clauses a second time."""
+    added = [a for a in ((task.get("tests") or {}).get("add") or [])
+             if isinstance(a, str) and a.strip()]
+    rows = ([("tests.add", a) for a in added]
+            + [("acceptance", a) for a in acceptance_items(task.get("description"))])
+    return [{"n": n, "kind": kind, "text": text}
+            for n, (kind, text) in enumerate(rows, 1)]
+
+
+def _clause_span(first, last):
+    return ("clause %d" % first) if first == last else (
+        "clauses %d to %d" % (first, last))
+
+
+def writer_closing_line(task):
+    """The one line that asks for an answer per clause, numbered by
+    `task_clauses`; a task with no clause is told the empty object is the
+    answer rather than asked for entries that do not exist."""
+    clauses = task_clauses(task)
+    if not clauses:
+        return ("The task numbers no acceptance clause, so finish your last "
+                "message with the empty JSON object {}.")
+    parts = []
+    for kind, what in (("tests.add", "the Tests to add entries in the order listed"),
+                       ("acceptance", "the Acceptance items %s of the task description")):
+        group = [c for c in clauses if c["kind"] == kind]
+        if not group:
+            continue
+        if kind == "acceptance":
+            what = what % ("(1)" if len(group) == 1 else "(1) to (%d)" % len(group))
+        parts.append("%s %s %s" % (_clause_span(group[0]["n"], group[-1]["n"]),
+                                   "is" if len(group) == 1 else "are", what))
+    return ("Finish your last message with one JSON object holding one entry "
+            "per acceptance clause, keyed by the clause's number: %s. Each entry "
+            "is {\"delivered\": true, \"file\": \"<path>\", \"line\": <number>} "
+            "naming the file and line that deliver the clause, or "
+            "{\"delivered\": false, \"reason\": \"<why it is not delivered>\"}."
+            % (", and ".join(parts),))
+
+
+def _or_list(items):
+    return items[0] if len(items) == 1 else (
+        "%s or %s" % (", ".join(items[:-1]), items[-1]))
+
+
+def compose_writer_prompt(manifest, phase, task):
+    """The writer session's whole prompt, as lines: plain's own text for the
+    task, composed from the task alone - no brief path, no rules, no skills, no
+    submit - so two calls on the same task are the same bytes.
+
+    A gate entry that names no `meta.buildCommands` key is a literal command, as
+    the gate itself runs it (`_evio.resolved_commands`); a browser entry is left
+    out of the commands to run and named, once, as the drive's. A plan whose
+    gate has no browser entry gets no browser line: naming gates the task does
+    not have would be a claim with no basis."""
+    tests = task.get("tests") or {}
+    files = [f for f in (task.get("files") or []) if isinstance(f, str)]
+    added = [a for a in (tests.get("add") or []) if isinstance(a, str) and a.strip()]
+    entries, _whose = _task_gate(manifest, phase, task)
+    commands = [c for _name, c in _evio.resolved_commands(manifest, entries)]
+    browser = [c for c in commands if runs_browser(c)]
+    plain = [c for c in commands if not runs_browser(c)]
+    lines = ["Implement the following task in this repository.", "",
+             "Task: %s" % (task.get("title"),), ""]
+    lines += _verbatim(task.get("description"), "The task records no description.")
+    lines += ["", "Files the task declares:"]
+    lines += ["- %s" % (f,) for f in files] or ["- none declared"]
+    lines += ["", "Tests to add:"]
+    lines += ["- %s" % (a,) for a in added] or ["- none"]
+    lines += ["", "Before you finish, check that everything passes:"]
+    lines += ["- %s" % (c,) for c in plain] or ["- none declared"]
+    if browser:
+        lines += ["", "Do not run %s: the drive runs the browser gates itself, "
+                      "after your session ends." % (_or_list(browser),)]
+    lines += ["", WRITER_COMMIT_LINE, "", writer_closing_line(task)]
     return lines
 
 
@@ -1757,6 +1897,8 @@ def write_brief(manifest, manifest_path, project_arg, node_id, role):
                 "first: drive-phase.py submit %s --role executor. No brief "
                 "written." % (node_id, filed[0], node_id))
         lines = compose_reviewer_brief(manifest, phase, task, ctx, filed)
+    elif role == "writer":
+        lines = compose_writer_prompt(manifest, phase, task)
     else:
         ok, gate = runs_gate_reading(ctx["project"], ctx["hc"])
         if not ok:

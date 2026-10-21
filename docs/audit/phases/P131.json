@@ -647,7 +647,7 @@
     {
       "id": "P131.2",
       "title": "The rest of the development code leaves the plugin, the selftest stubs go, and B9 is recorded",
-      "status": "in_progress",
+      "status": "done",
       "description": "Plan F1.5 (S1b), invariants I11 and I12. Runs on F1.4's paths (tests/, tools/lints/). (1) plugins/audit/scripts/demo/ (gen-demo-manifest.py, gen-demo-usage.py, _demo_cast.py) moves to tools/demo/; `render-report.py --bench` is removed and the benchmark becomes tools/bench-report.py (new) over tools/_usage_bench.py (moved from scripts/usage/). (2) The lint halves of _output.py, config/_help.py, _ui_theme.py and config/_config_rules.py move to tools/lints/ under basenames that collide with nothing in scripts/ (for example _output_lints.py), and the product halves stay. (3) reference/phase-signoff.md:370 (the plan's :350) and every other shipped pointer to an unshipped file is repointed or removed. (4) .github/sweep-costs.json, tools/capture-screenshots.mjs (`resolveScript('gen-demo-manifest.py')`), tools/check-rendered-artifacts.py, tools/check-example-ledgers.py, tools/check-report-interactive.mjs and tools/verify.sh follow the moves. (5) The `--selftest` stubs in shipped modules are deleted, not rewritten: at 571becfd 149 `if` blocks in 143 files, 1,166 lines (the same at edbbb86e; the plan's 142 blocks and 1,124 lines came from the code study's narrower AST rule), counted by any top-level `if` whose test names `selftest`. A shipped entry point given `--selftest` is then an ordinary usage error. (6) `selftest_coverage`'s `migrated` class goes: coverage becomes a development check that every shipped module has tests/test_<name>.py or a named exemption. (7) COMPATIBILITY.md is unchanged (neither `--selftest` nor `--bench` is promised); CHANGELOG.md records both under Removed. (8) B9 is recorded: on the landing SHA, `git archive <sha> | tar -x -C <empty dir> && python3 studies/K-poc/linekinds.py <dir>/plugins/audit > k.json && python3 studies/K-poc/agg.py k.json`, and the `code` figure goes into the plan with the SHA (84,131 at 571becfd; 83,024 at the v3.4.0 tag, the letter of D9). Acceptance: as F1.4; `git ls-tree -r -l <sha> plugins/audit | awk '{s+=$4} END{print s}'` gives at most 10,416,128 (21,263,295 at 571becfd, 9,942,204 once tests/, _deps.py and _refs.py are gone, before this task's removals). NEW PATHS (absent at 571becfd, created by this task): tools/demo/, tools/bench-report.py, tools/_usage_bench.py, tools/lints/<module>_lints.py. Paths under tests/ and tools/lints/ are the ones F1.4 created. CARRIED from the cancelled P130.9 into S1 (owner, 2026-10-20).",
       "files": [
         ".claude/skills/VENDORED.md",
@@ -920,25 +920,40 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c403486bf250",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "DONE: (1) demo generators moved to tools/demo/ (git mv; bootstrap adapted to the tools/ shape); render-report.py --bench removed; benchmark is tools/bench-report.py (new) over tools/_usage_bench.py (moved; _mode loses its selftest arm). (2) Lint halves split by a derived closure (a name moves when no shipped file reads it) into tools/lints/_output_lints.py, _ui_theme_lints.py, _help_lints.py, _config_rules_lints.py; _output.py keeps anchors, safe_stdio, success line, file walks, write_lf_lines (restored: tools/harvest-worktree.py and _deps.py use it); the five stylesheet lints moved out of _ui_theme.py and the test-only aliases in _panel_page.py/render-report.py were deleted. selftest_requested/SELFTEST_FLAG/selftest_argv_violations/covered_repo_paths/--covered deleted. (3) Selftest stubs deleted from shipped modules (AST-driven script over hooks/ and scripts/; migrate-manifest, merge-manifest, panel-server edited by hand); one `if` naming selftest remains in shipped code: _runner_output.command_runner, which PARSES a forwarded test command. My first stub-removal script wrongly deleted 11 real `__main__` blocks whose tail was `raise SystemExit(main(...))`; found by the demo generators printing nothing, restored from HEAD by a second script, and the same check now lists none missing. (4) selftest_coverage rewritten in _output_lints: classes covered/exempt/uncovered/stale_exempt/orphans/collisions, COVERAGE_EXEMPT (empty), suite_elsewhere_paths(); no migrated class. tools/sweep-selftests.py: SWEEP_DIRS drops hooks/ and scripts/, sweep_files() leaves out tools/lints, tools/demo and the two benchmarks, grade() has no covered argument, coverage_findings()+report_coverage() add the coverage verdict, summary line is 'N/M files ok, K cases' (_runner_output._SWEEP_SUMMARY reads the old clause as optional). (5) followers: .github/sweep-costs.json pruned of ghost rows (152), tools/capture-screenshots.mjs (demoScript), check-rendered-artifacts.py (DEMO_DIR), verify.sh, ui-tests/overview-outcome.test.mjs, affected.py, prove-gates.py (85 rows retargeted by an AST script, selftest_argv rows dropped, selftest_coverage rows rewritten, suite_elsewhere_paths in NOT_A_GATE), gate-parity.py (TS_ORDER_SITES row dropped, the table is empty), tools/lints/_deps.py (LAYERS rows, GIT_PATH_BASE row, map regenerated), tests split: test__output/_ui_theme/_help/_config_rules each into product + *_lints suites by a statement-level splitter, new test__output_lints sc1-sc9, test_bench_report.py (bn1-bn8). (6) Docs: CHANGELOG Removed entry, CONTRIBUTING, PLUGIN-BUILD-GUIDE (tree, sections, map), shipped references now say '(in the source repository)', phase-signoff.md sc3/sc5 pointer replaced, .claude/skills updated. COMPATIBILITY.md untouched. (7) B9: linekinds.py+agg.py over the WORKING TREE (git ls-files + untracked, not a SHA - no commit exists yet): code=75222 (total 144335, prose 40.1 percent); 84131 at 571becfd, 83024 at v3.4.0. plugins/audit bytes: 9523827 vs ceiling 10416128 (10015130 at HEAD). The figure must be re-taken on the landing SHA: git archive <sha> | tar -x -C <empty dir>; python3 <K-poc>/linekinds.py <dir>/plugins/audit > k.json; python3 <K-poc>/agg.py k.json, with K-poc at quality-gates-internal/reports/2026-10-14-cost-code-ci-analysis/studies/K-poc (studies/K-poc does not exist in this repo). BLOCKER, ONE LINE: the full sweep is 189/190 - tests/test__refs.py c5 is red solely on CLAUDE.md:215, which still names plugins/audit/scripts/demo/gen-demo-usage.py. I did not edit CLAUDE.md (no agent message can authorize that). Owner patch: line 215 -> 'python3 tools/demo/gen-demo-usage.py \\\\'; also stale there: line 91-93 item 1 (a --selftest in every module -> 'a tests/test_<name>.py'), 150 and 205 and 301-308 (plugins/audit/tests -> tests/; the 'migrated file still exits 0 on --selftest' paragraph is false now; `_output.selftest_coverage()` -> `_output_lints.selftest_coverage()`), 31/36/53/94/96 (`_output.house_style_violations` etc. -> `_output_lints.`). NOT RUN (executor.runsGate is own-tests): capture-screenshots --check, check-report-interactive, claude plugin validate, render-report gate; capture-screenshots.mjs only passed node --check. Tests outside the brief's file list edited as consequences (tests are exempt from the plan gate): test__panel_settings, test__runner_output (rs1b), test_panel_server, test_drive_phase (ds7g now asserts the usage error).",
+        "descriptive": "The plugin no longer ships its demo generators, benchmark, lint halves or any --selftest stub; the sweep checks every module has a suite or a named exemption instead of running them."
       },
       "startedAt": "2026-10-21T01:14:54Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-21T03:14:22Z",
+      "verifiedBy": [
+        "sweep-selftests: a shipped module with neither a tests/test_<name>.py nor a named exemption is red (g3), its allow twin and a named run (g3b), the real tree clean (g3c), no migrated grade (g2), discovery leaves the development modules out (d2/d3)",
+        "check-rendered-artifacts: the committed example is compared with a render made by tools/demo/gen-demo-*.py - files exist there, argv and recipe name that directory (ra12b), beside the existing live render comparison ra5"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-21T03:14:13Z.9dea71",
         "status": "passed",
         "at": "2026-10-21T03:14:13Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "c403486bf250",
+        "at": "2026-10-21T03:14:22Z",
+        "return": "docs/audit/evidence/returns/P131.2/20261021T011454Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-21T02:20:11Z",
+        "basis": "`python3 tools/sweep-selftests.py tools/sweep-selftests.py tools/check-rendered-artifacts.py` in a throwaway tree at HEAD exited 1 with failing cases tools/check-rendered-artifacts.py: exited 1 (house FAIL), tools/sweep-selftests.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (SELFTEST FAILED: 104/105 cases passed), so the red is not one the fix turns green - SELFTEST FAILED: 3/4 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P131.3",
       "title": "One script runs a writer or a reviewer as a headless top-level session under a per-session budget and prints its cost from the session's own result",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Add plugins/audit/scripts/governance/run-agent-session.py, an entry point that runs one role as a headless top-level Claude Code session in the task's tree: claude -p with --model given as a full model id (never an alias), --effort, --permission-mode auto, --output-format stream-json, --max-budget-usd from the caller, and --plugin-dir naming the running plugin so its hooks act on the session. The writer role passes no --agents or --agent and sends no agent body. The reviewer role passes --agents built from agents/audit-reviewer.md and --agent audit-reviewer. --resume <session id> continues a recorded session. The prompt goes on stdin, never in argv: a sibling session's pkill -f matches command lines. The session runs in its own process group with its own TMPDIR under the task's scratch, and its stream is saved under the state dir. It prints one line: the session id, the stream result's total_cost_usd, and the exit. A stream that ends with no result event is could-not-run naming the stream path. A new entry point owes a selftest in tests/, safe_stdio first in __main__, a layer in tools/lints/_deps.py LAYERS, a tree line and a section in PLUGIN-BUILD-GUIDE.md, and the PATH_PREAMBLE. Acceptance: (1) the writer argv carries the full model id, the effort, permission mode auto, the budget and the plugin dir, and neither --agents nor --agent; (2) the reviewer argv carries --agents built from audit-reviewer.md and --agent audit-reviewer; (3) on both roles the prompt arrives on stdin and is absent from argv; (4) the printed cost is the stream result's total_cost_usd and the printed id is the stream's session id; (5) a stream with no result event prints could-not-run naming the stream and exits non-zero; (6) --resume adds the recorded session id and changes nothing else in the argv; (7) the child runs in a process group of its own; (8) one live run's printed cost equals the transcript re-price (checked in the confirming run's first stage, not by the suite). It also closes the per-session pricing half of the headless-versus-interactive ruler fault: each session is priced from its own result's total_cost_usd, and the run prints that figure beside a transcript re-price so a difference is visible rather than averaged away.",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
@@ -977,21 +992,22 @@
       "dependsOn": [
         "P131.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-21T03:14:54Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P131.4",
       "title": "The writer's prompt is plain's own prompt, composed from the task by script, with one closing line asking for an answer per acceptance clause",
-      "status": "pending",
+      "status": "in_progress",
       "description": "In audit-lookup.py add compose_writer_prompt beside compose_executor_brief: deterministic text in the format of the plain reference the owner's baseline measured, and nothing else. Its lines, in order: 'Implement the following task in this repository.'; 'Task: <title>'; the description; 'Files the task declares:' with one '- <path>' per declared file; 'Tests to add:' with one '- <entry>' per tests.add entry; 'Before you finish, check that everything passes:' with one '- <command>' per non-browser command of the task's resolved gate; one line naming the browser gates as run by the drive and not to be run in the session; 'Fix whatever does not pass. When everything is green, leave the changes uncommitted: the drive commits them.'; and one closing line asking for a final JSON object with one entry per acceptance clause, numbered as the task numbers them (the tests.add entries first, then the numbered items of the description's acceptance list), each either delivered with the file and line that delivers it or not delivered with the reason. The commit line and the closing line are the only deliberate differences from the measured prompt. The prompt carries no brief path, no clause section beyond that one line, no guidance block, no skills list and no submit instruction. Expose it as brief <taskId> --role writer. Acceptance: (1) on a fixture task the prompt equals the baseline template line for line except the two named lines; (2) it carries no brief path, no guidance text, no skills list and no submit instruction; (3) it lists no browser gate among the commands to run and names the browser gates as the drive's; (4) the closing line's clause numbering matches what the clause-coverage check will read for the same task; (5) two calls give identical bytes.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -1026,16 +1042,22 @@
       "dependsOn": [
         "P131.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-21T03:14:56Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-21T03:46:14Z.13f6d1",
+        "status": "passed",
+        "at": "2026-10-21T03:46:14Z"
+      }
     },
     {
       "id": "P131.5",
@@ -1304,7 +1326,7 @@
     {
       "id": "P131.10",
       "title": "Red-first on an inline suite pulls in the imports and helpers the applied test hunks reference, so a new case goes red on its assertion rather than on a NameError",
-      "status": "pending",
+      "status": "in_progress",
       "description": "stamp-verification.py `inline_test_text` builds the red copy of an inline suite (test and implementation in one file) as HEAD plus only the hunks inside a test definition (`_test_spans`), holding every other hunk at HEAD. A new case that needs a new top-level import or helper then crashes the throwaway with NameError, so red-first answers could-not-prove and the case binding reports the case as not printed although it was red in the writer's tree (seen on tools/gate-parity.py: `import signal` and `_default_sigint` stayed at HEAD while the case using them was applied). Do: apply a hunk outside a test definition when it only adds imports or defines a name the applied test hunks reference and HEAD lacks (a name-reference closure over the applied hunks), and say which hunks were pulled in; where the closure cannot be computed, keep could-not-prove but name the unresolved symbol from the NameError instead of 'no test was collected'.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -1332,16 +1354,17 @@
       "dependsOn": [
         "P131.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-21T03:14:59Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P131.11",
