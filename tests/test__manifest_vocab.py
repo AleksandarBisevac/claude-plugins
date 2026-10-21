@@ -761,6 +761,17 @@ def _cases(check):
           # `gateBasis` value and has no business in the ANSWERED set.
           and "failing-from-run" not in M.GATE_BASIS_ANSWERED)
 
+    check("mv49b `files-no-suite` is a GATE_BASIS word and an ANSWER: a fix task "
+          "whose files hold no suite carries the phase's gate because there is "
+          "no suite to point a runner at, so narrowing to its files is exactly "
+          "what the wide-gate warning must not advise; the neighbour `phase-no-"
+          "paths` (no file named) is neither silenced nor dropped: %r"
+          % (sorted(M.GATE_BASIS_ANSWERED),),
+          "files-no-suite" in M.GATE_BASIS
+          and "files-no-suite" in M.GATE_BASIS_ANSWERED
+          and "phase-no-paths" in M.GATE_BASIS
+          and "phase-no-paths" not in M.GATE_BASIS_ANSWERED)
+
     # --- P79.1: the derived sign-off gate's vocabulary -----------------------
     check("mv50 `coupling` is a KNOWN_META key and `testGateBasis` and "
           "`testGateDerived` are KNOWN_PHASE keys - the typo-catcher's whole "

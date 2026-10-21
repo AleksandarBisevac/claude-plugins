@@ -4024,6 +4024,90 @@ def _triage_with(M, prefix, findings):
     return root, mpath
 
 
+def _fix_task_over(M, prefix, finding, extra_files=()):
+    """`(task, code, text)` - the one fix task `--answer fix` adds over `finding`
+    in a phase whose runner takes paths (`vitest run` behind the `test` key, a
+    sibling's gate pointed at one suite). `extra_files` are written into the
+    fixture first: a fix task is scoped only onto paths that exist."""
+    root, mpath = _triage_with(M, prefix, [finding])
+    for rel in extra_files:
+        full = os.path.join(root, *rel.split("/"))
+        if not os.path.isdir(os.path.dirname(full)):
+            os.makedirs(os.path.dirname(full))
+        with open(full, "w", encoding="utf-8") as fh:
+            fh.write("v0\n")
+
+    def spell(plan):
+        plan["meta"]["buildCommands"] = {"test": "vitest run"}
+        phase = plan["phases"][0]
+        phase["testGate"] = ["test"]
+        phase["tasks"][0]["tests"]["gate"] = ["vitest run src/f1.test.ts"]
+    _commit_plan(root, mpath, spell, "a runner that takes paths")
+    _harness.git(root, "add", "-A")
+    _harness.git(root, "commit", "-qm", "the files the findings name")
+    code, text = _next(M, root, mpath, "--answer", "fix", "--fix", "P1-R1")
+    mine = [t for t in tasks_of(mpath).values() if t.get("fixes") == ["P1-R1"]]
+    return (mine[0] if mine else {}), code, text
+
+
+def _fix_gate_cases(check, M):
+    """The gate of a fix task made at the triage is derived from the suite
+    paths among the finding's files, never from a workflow or a source file,
+    and a fix task that owes no test is not born asking for a red first."""
+    workflow = ".github/workflows/ci.yml"
+    suite, source = "src/Button.test.tsx", "src/Button.tsx"
+    base = {"severity": "med", "issue": "it is wrong", "resolution": "rework it"}
+
+    with_suite, code, text = _fix_task_over(
+        M, "fix-gate-suite", dict(base, file=", ".join((source, suite, workflow))),
+        (source, suite, workflow))
+    tests = with_suite.get("tests") or {}
+    check("fb5 a fix task over a finding naming a workflow file and a suite "
+          "gets a gate that names only the suite: %r"
+          % ((code, tests.get("gate"), tests.get("gateBasis"), text[-200:]),),
+          code == 0 and tests.get("gate") == ["vitest run %s" % (suite,)]
+          and workflow not in " ".join(tests.get("gate") or []))
+
+    no_suite, code, text = _fix_task_over(
+        M, "fix-gate-nosuite", dict(base, file=", ".join((source, workflow))),
+        (source, workflow))
+    tests = no_suite.get("tests") or {}
+    check("fb6 a fix task over a finding naming a workflow file and a source "
+          "file, and no suite, gets the phase's gate with a gateBasis that "
+          "says no path was there to point it at, and no gate entry names the "
+          "workflow: %r" % ((code, tests.get("gate"), tests.get("gateBasis")),),
+          code == 0 and tests.get("gate") == ["test"]
+          and tests.get("gateBasis") == "files-no-suite"
+          and not any(workflow in e or source in e
+                      for e in tests.get("gate") or []))
+
+    doc, code, text = _fix_task_over(
+        M, "fix-gate-doc", dict(base, file="docs/guide.md",
+                                resolution="reword the paragraph"),
+        ("docs/guide.md",))
+    comment, code_c, text_c = _fix_task_over(
+        M, "fix-gate-comment", dict(base, file=source, issue="the comment lies",
+                                    resolution="No code change: update the "
+                                    "comment to say what the loop does"),
+        (source,))
+    code_s = _fix_task_over(M, "fix-gate-source", dict(base, file=source),
+                            (source,))
+    plain = code_s[0].get("tests") or {}
+    modes = [((t.get("tests") or {}).get("mode"),
+              (t.get("tests") or {}).get("expectRedFirst")) for t in (doc, comment)]
+    check("fb7 a fix task over a finding whose files are only a document, or "
+          "whose resolution says no code changes, is gate-only with "
+          "expectRedFirst false: %r" % ((modes, code, code_c),),
+          code == 0 and code_c == 0 and modes == [("gate-only", False)] * 2)
+    check("fb8 ALLOW CASE, the twin of fb7: a finding naming a source file "
+          "whose resolution asks for a change stays tdd, and a tdd task "
+          "naming no case does not write expectRedFirst true beside an empty "
+          "tests.add: %r" % ((plain.get("mode"), plain.get("expectRedFirst"),
+                              plain.get("add")),),
+          plain.get("mode") == "tdd" and not plain.get("add")
+          and plain.get("expectRedFirst") is False)
+
+
 def _fix_batch_cases(check):
     """`--answer fix` hands every named finding to ONE `add --from-file -` call
     on stdin: no finding's text passes through argv, and the batch lands whole
@@ -4073,6 +4157,8 @@ def _fix_batch_cases(check):
           code_p == 0 and len(fix_p) == 1
           and "`(split_not_commands at :4809)`" in (fix_p[0].get("description") or "")
           and instruction(text_p)[0] == "dispatch")
+
+    _fix_gate_cases(check, M)
 
     mutant, _w = _load("drive_phase_fix_batch_bad")
     real_verb = mutant.run_verb

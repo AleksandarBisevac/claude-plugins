@@ -17218,12 +17218,13 @@ def _introduces_cases(check):
                  for i in ("P1.2", "P1.3", "P1.4", "P1.5")]
         check("cz13 a fix task's discipline is the rule `--bug` uses when the "
               "caller picked none: a finding naming a test file that does not "
-              "exist yet and one asking for neither a test nor anything but a "
-              "change are tdd and red-first; the two whose resolution only asks "
+              "exist yet is tdd and red-first, and one asking for neither a "
+              "test nor anything but a change is tdd with no red-first, having "
+              "no case to prove one by; the two whose resolution only asks "
               "for a test over what exists (placed beside its source, or with "
               "no place for it) are regression, not red-first - none is "
               "gate-only: %r" % (modes,),
-              modes == [("regression", False), ("tdd", True), ("tdd", True),
+              modes == [("regression", False), ("tdd", True), ("tdd", False),
                         ("regression", False)])
         check("cz14 ...the new test file is named in tests.add and in `files`, so "
               "the gate runs it: %r" % (got["P1.2"]["tests"],),
@@ -17455,7 +17456,7 @@ def _introduces_cases(check):
         check("%s (ALLOW: a document beside a source file does not make the "
               "task gate-only - the source still owes a case: %r)"
               % (clause37, (mode_of("P1.4"),)),
-              mode_of("P1.4")[:2] == ("tdd", True))
+              mode_of("P1.4")[:2] == ("tdd", False) and mode_of("P1.4")[2] == [])
 
         # ---- a fix task is never scoped to nothing by accident ----------------
         proj, mpath = project("fx-nopath", [
@@ -17488,17 +17489,39 @@ def _introduces_cases(check):
               == ["src/b.ts"])
 
         # ---- the runner the test a fix asks for belongs to --------------------
+        # THE TEST IS NAMED, so the gate is derived from a suite. It used to name
+        # only the source and read the gate off that source (`vitest run
+        # src/a.ts`), which handed a runner a file that is not a test; a source
+        # with no suite among a fix task's files now gets the phase's gate.
         proj, mpath = project("fx-unit", [finding(
-            "P1-R1", "src/a.ts", resolution="Add a unit test for the parser")])
+            "P1-R1", "src/a.ts", resolution="Add a unit test for the parser in "
+            "tests/unit/a.test.ts")])
         write(proj, "src/a.ts")
+        write(proj, "tests/unit/a.test.ts")
         code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R1")
         t = tasks(mpath).get("P1.2") or {}
         gate = (t.get("tests") or {}).get("gate") or []
         check("cz17 a finding naming src/a.ts whose resolution asks for a unit "
-              "test: the gate holds the unit runner and not the e2e one: %r"
+              "test in tests/unit/a.test.ts: the gate holds the unit runner "
+              "pointed at that suite and not the e2e one: %r"
               % ((code, gate),),
-              code == 0 and any("vitest" in g for g in gate)
+              code == 0 and any("vitest" in g and "tests/unit/a.test.ts" in g
+                                for g in gate)
               and not any("playwright" in g for g in gate))
+        proj, mpath = project("fx-unit-bare", [finding(
+            "P1-R1", "src/a.ts", resolution="Add a unit test for the parser")])
+        write(proj, "src/a.ts")
+        code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R1")
+        t = tasks(mpath).get("P1.2") or {}
+        tests = t.get("tests") or {}
+        check("cz17b the same ask with no suite named or placed: no runner is "
+              "pointed at the source, so the gate is the phase's own, said as "
+              "such, and the task does not expect a red first with no case: %r"
+              % ((code, tests.get("gate"), tests.get("gateBasis"),
+                  tests.get("expectRedFirst")),),
+              code == 0 and tests.get("gate") == ["lint"]
+              and tests.get("gateBasis") == "files-no-suite"
+              and tests.get("expectRedFirst") is False)
         proj, mpath = project("fx-reported", [finding("P1-R1", "src/a.ts (x, y)")])
         write(proj, "src/a.ts")
         code, text = verb(proj, "add", "Fix", "--phase", "P1", "--fixes", "P1-R1")
@@ -18092,6 +18115,110 @@ def _batch_fix_cases(check):
               % ((code, (tasks.get(new[0]) or {}).get("files") if new else None),),
               code == 0 and new
               and (tasks.get(new[0]) or {}).get("files") == [scripts + "a/dup.py"])
+
+        # ---- a files-derived gate of a fix task names suites and nothing else --
+        # The derivation filters `files` to suite paths, so a gate naming a
+        # workflow file cannot come out of it; the write-time check is the
+        # backstop that says so by name when some other derivation hands one
+        # through, and it is shown firing by standing in for the derivation.
+        workflow = ".github/workflows/ci.yml"
+        proj, mpath = project("backstop", finding_for("src/a.py, " + workflow),
+                              (workflow,))
+        real_gate = M._ordinary_task_gate
+
+        def unfiltered(shape, owner, wide, build, add_paths, files, *rest, **kw):
+            return (["vitest run " + " ".join(files)],
+                    "narrowed to this task's files", "files")
+        M._ordinary_task_gate = unfiltered
+        before = _plan_bytes(proj)
+        lines = []
+        try:
+            code = M.main(["add", "Fix", "--phase", "P1", "--fixes", "P1-R1",
+                           "--project-dir", proj], out=lines.append)
+            proj_b, _mpath_b = project(
+                "backstop-batch", finding_for("src/a.py, " + workflow), (workflow,))
+            before_b = _plan_bytes(proj_b)
+            real_in, lines_b = sys.stdin, []
+            sys.stdin = io.StringIO(fix_doc({"title": "fix P1-R1",
+                                             "fixes": ["P1-R1"]}))
+            try:
+                code_b = M.main(["add", "--from-file", "-", "--project-dir",
+                                 proj_b], out=lines_b.append)
+            finally:
+                sys.stdin = real_in
+        finally:
+            M._ordinary_task_gate = real_gate
+        said, txt_b = "\n".join(lines), "\n".join(lines_b)
+        check("bx10 `add --fixes` whose files-derived gate names a non-suite "
+              "path is refused by that path's name, and so is the batch form, "
+              "with nothing written: %r"
+              % ((code, said[-300:], code_b, txt_b[-300:]),),
+              code == M.E_USAGE and code_b == M.E_USAGE
+              and workflow in said and workflow in txt_b
+              and "src/a.py" in said and _plan_bytes(proj) == before
+              and _plan_bytes(proj_b) == before_b)
+        entry = ["vitest run src/a.py %s tests/test_a.py" % (workflow,)]
+        own = M._phases.gate_entry_paths("python3 tools/run-suite.py {paths}")
+        runner_entry = ["python3 tools/run-suite.py tests/test_a.py"]
+        check("bx11 the check reads which path the derivation pointed at: a "
+              "suite is not named, a source or workflow file is, and the "
+              "runner's own program is never named even when the task edits "
+              "it: %r"
+              % ((M._phases.files_gate_non_suite_paths(
+                  entry, ["src/a.py", workflow, "tests/test_a.py"]),
+                  M._phases.files_gate_non_suite_paths(
+                      runner_entry, ["tools/run-suite.py", "tests/test_a.py"],
+                      own)),),
+              M._phases.files_gate_non_suite_paths(
+                  entry, ["src/a.py", workflow, "tests/test_a.py"])
+              == ["src/a.py", workflow]
+              and M._phases.files_gate_non_suite_paths(
+                  runner_entry, ["tools/run-suite.py", "tests/test_a.py"], own)
+              == []
+              and M._phases.files_gate_non_suite_paths(
+                  runner_entry, ["tools/run-suite.py", "tests/test_a.py"])
+              == ["tools/run-suite.py"])
+
+        # ---- a fix task owing no case is not born expecting a red first --------
+        findings = [
+            {"id": "P1-R1", "severity": "med", "file": "src/a.py",
+             "issue": "the comment lies",
+             "resolution": "No code change: update the comment to say what the "
+                           "loop does"},
+            {"id": "P1-R2", "severity": "med", "file": "src/b.py",
+             "issue": "the loop drifted from its docstring",
+             "resolution": "Update the loop to match the docstring"},
+            {"id": "P1-R3", "severity": "med", "file": "src/a.py",
+             "issue": "the retry is wrong",
+             "resolution": "Fix the retry bug noted in the comment"},
+            {"id": "P1-R4", "severity": "med", "file": "src/b.py",
+             "issue": "it is slow", "resolution": "cache it"},
+            {"id": "P1-R5", "severity": "med", "file": "docs/guide.md",
+             "issue": "the guide is stale", "resolution": "reword the paragraph"},
+            {"id": "P1-R6", "severity": "med", "file": "docs/guide.adoc",
+             "issue": "the guide is stale", "resolution": "reword the paragraph"}]
+        proj, mpath = project("noredfirst", findings,
+                              ("docs/guide.md", "docs/guide.adoc"))
+        code, txt = _cli_in(["add", "--from-file", "-"], proj, fix_doc(
+            *[{"title": "fix %s" % f["id"], "fixes": [f["id"]]} for f in findings]))
+        tasks, _named = state(mpath)
+        new = sorted(t for t in tasks if t != "P1.1")
+        got = [((tasks[t].get("tests") or {}).get("mode"),
+                (tasks[t].get("tests") or {}).get("expectRedFirst"),
+                bool((tasks[t].get("tests") or {}).get("add"))) for t in new]
+        check("bx12 a fix task whose resolution says outright that no code "
+              "changes, or whose every file is a documentation file, is "
+              "gate-only with expectRedFirst false; a resolution that merely "
+              "MENTIONS a comment or docstring beside a code fix (R2, R3 - the "
+              "over-fire twins) stays tdd, and a tdd task naming no case never "
+              "writes expectRedFirst true beside an empty tests.add: %r"
+              % ((code, got, txt[-200:]),),
+              code == 0 and got == [("gate-only", False, False),
+                                    ("tdd", False, False),
+                                    ("tdd", False, False),
+                                    ("tdd", False, False),
+                                    ("gate-only", False, False),
+                                    ("gate-only", False, False)])
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

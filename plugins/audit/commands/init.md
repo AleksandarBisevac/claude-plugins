@@ -398,15 +398,17 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
      paths, so there is nothing to narrow with; `phase-no-paths` says a sibling does record it
      and this task named no file to point a gate at. The two are repaired differently, which is
      why they are two words — and why a plan that writes neither is read as an unnarrowed
-     default. The rest of the vocabulary belongs to `/audit:task`: `declared`, `cleared`,
-     `tests.add`, `files`.
+     default. `files-no-suite` is a fix task's own word: it named files and none is a suite
+     path, so the phase's gate is the answer and narrowing to those files would hand a runner
+     something that is no test. The rest of the vocabulary belongs to `/audit:task`: `declared`,
+     `cleared`, `tests.add`, `files`.
 
      **And the wide entry is the one the validator says out loud.**
      `scripts/manifest/validate-manifest.py` warns for every unfinished task whose `tests.gate`
      is its phase's `testGate` verbatim — which is what a derivation that fell through to the
      last arm writes. It is a WARNING and never a finding, because the wide gate is sometimes
      the right answer and an existing plan must not go red on upgrade. It is silent on a task
-     recording `phase-no-spelling` or `declared`, because those are answers rather than
+     recording `phase-no-spelling`, `files-no-suite` or `declared`, because those are answers rather than
      defaults; it names a task recording `phase-no-paths`, a word it does not know, or nothing
      at all.
    - `model`: `sonnet` is the floor for ALL fix work (low/med risk, mechanical included);

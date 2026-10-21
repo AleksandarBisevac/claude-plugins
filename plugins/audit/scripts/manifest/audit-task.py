@@ -1463,6 +1463,44 @@ def _gate_write_refusal(entries, assembled, project, where, shape=True):
     return None
 
 
+def _files_gate_refusal(task, phase, assembled):
+    """The refusal line for a FIX task whose `files`-derived gate names a file of
+    its own that is no suite, or None.
+
+    A gate pointed at `files` goes to a test runner, and a workflow or source
+    file given to one runs nothing and fails every attempt (a fix task over a
+    finding naming `.github/workflows/ci.yml` carried exactly that). The
+    derivation filters to suites (`_ordinary_task_gate`); this asks the same
+    question of what it wrote, so a derivation that stops filtering is refused
+    by the path's name instead of landing as a gate red on every run.
+
+    WHY NOTHING CAUGHT IT BEFORE: `gate_entry_shape_problem` only reads the
+    shapes that run a suite twice, and the `files` arm of a fix task handed
+    every path to the sibling's spelling unread - the gate was well-formed and
+    wrong. Ordinary tasks are not asked: their `files` arm is unfiltered on
+    purpose, and a gate they declare is theirs.
+
+    The runner's own program is not a path the derivation was handed, so the
+    paths the sibling's spelling names itself are exempt
+    (`_manifest_phases.files_gate_non_suite_paths`)."""
+    tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
+    if tests.get("gateBasis") != "files":
+        return None
+    _wide, _meta, build, shape, _owner = _task_gate_setup(phase, assembled)
+    own = [p for entry in shape or () for p in _gate_entry_paths(entry)]
+    bad = _phases.files_gate_non_suite_paths(tests.get("gate"), task.get("files"),
+                                             own, build)
+    if not bad:
+        return None
+    return ("[audit-task] tests.gate was derived from this task's files and "
+            "names %s, which %s no suite -- refused, nothing written. A runner "
+            "given a file that is not a test runs nothing of this task's. Name "
+            "the suite that tests it (`--tests-add \"<path>: <what it "
+            "asserts>\"`, or `--files` with the suite among them), or the "
+            "gate itself with `--gate`." % (", ".join(bad),
+                                           "is" if len(bad) == 1 else "are"))
+
+
 def _manifest_beside_gate_set(args):
     """Move a manifest the parser could not see out of `--gate-set`, in place.
 
@@ -2792,6 +2830,21 @@ def _ordinary_task_gate(shape, owner, wide, build, add_paths, files, mode,
                     "%s's gate entries that name no path, carried through -- "
                     "this task's files name no suite path to narrow %s's gate "
                     "at" % (owner, owner), "gate-only-no-suite")
+        if runner_aware:
+            # A FIX TASK'S FILES ARE POINTED AT ONLY WHERE THEY ARE SUITES. Its
+            # `tests.add` is often empty (a finding naming a workflow and a
+            # source file owes no case it can place), so `files` is all this
+            # arm has, and a workflow handed to the runner is a gate that is red
+            # on every run whatever the work. No suite among them is the wide
+            # gate's question, said as such. Ordinary tasks keep the unfiltered
+            # arm above: their `files` were declared with the gate in mind.
+            suite_files = [p for p in files if _phases.is_suite_path(p)]
+            if not suite_files:
+                return wide, ("the phase's testGate, wide -- none of this fix "
+                              "task's files is a suite path (%s), so %s's "
+                              "spelling has nothing to be pointed at"
+                              % (", ".join(files), owner)), "files-no-suite"
+            files = suite_files
         entries, more = _point(shape, build, files, project, runner_aware,
                                owner, meta)
         return (entries,
@@ -3026,6 +3079,19 @@ def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
     return gate, "%s, so falling through: %s" % (why, basis), source
 
 
+def _expects_red_first(mode, tests_add, fix_task=False):
+    """Whether a task with this `mode` and `tests.add` expects a red first. tdd
+    says so; a FIX task also has to name a case.
+
+    The one rule both writers of `expectRedFirst` read (`_build_task`, `scope`).
+    A fix task is made from a finding, not planned, and the finding often owes
+    no case it can place - so it is born tdd with nothing to prove a red by, and
+    its submit owes a test command it cannot have. A planned task keeps `true`
+    beside an empty `tests.add`: there `_manifest_phases` warns, and the warning
+    is the nudge to name the case."""
+    return mode == "tdd" and (bool(tests_add) or not fix_task)
+
+
 def _build_task(task_id, title, args, phase, assembled, failing_row=None,
                 project=None, companions=(), runner_aware=False):
     """`(task, unnamed, gateBasis)` -- the new task, fully template-initialized
@@ -3090,8 +3156,11 @@ def _build_task(task_id, title, args, phase, assembled, failing_row=None,
         "tests": {
             "mode": mode,
             "add": tests_add,
-            # true iff tdd -- the machine-readable disambiguation of `add`.
-            "expectRedFirst": mode == "tdd",
+            # true iff tdd AND a case is named -- the machine-readable
+            # disambiguation of `add`. A tdd task naming no case is an
+            # instruction to prove a red with nothing to prove it by, which the
+            # validator warns about and a submit cannot satisfy.
+            "expectRedFirst": _expects_red_first(mode, tests_add, runner_aware),
             "gate": gate,
             # WHICH ARM PRODUCED THAT LIST, as data rather than as the sentence
             # the report prints and drops. Two arms end in the phase's gate
@@ -3315,6 +3384,27 @@ def _only_asks_for_test(resolution):
     text = " ".join(str(resolution or "").split()).lstrip(" -*`\"'")
     text = text.rstrip(" .!?`\"'")
     return bool(_ASKS_FOR_TEST.match(text)) and not _CLAUSE_JOIN.search(text)
+
+
+# A resolution that owes no behaviour change, on its own EXPLICIT word and
+# nothing else (`no code change`, `no change needed`). Wording about a comment
+# or a docstring is deliberately not read: "Update the loop to match the
+# docstring" and "Fix the retry bug noted in the comment" both name one and ask
+# for code, so any rule over those nouns takes a real fix for a comment edit and
+# drops its red-first. A comment edit inside a source file stays tdd, born with
+# no `expectRedFirst` for want of a case (`_expects_red_first`) - the safe side.
+# The caller overrides either way with --tests-mode.
+_NO_CODE_CHANGE = re.compile(
+    r"\bno\s+(?:code|source)\s+changes?\b|"
+    r"\bno\s+changes?\s+(?:is\s+|are\s+)?(?:needed|required|necessary)\b",
+    re.IGNORECASE)
+
+
+def _says_no_code_change(resolution):
+    """True when the resolution says outright that no code changes
+    (`_NO_CODE_CHANGE`). Such a fix has no case to write and no red to show, and
+    a tdd task born for it owes a test command it cannot have."""
+    return bool(_NO_CODE_CHANGE.search(" ".join(str(resolution or "").split())))
 
 
 def _finding_paths(text):
@@ -3567,7 +3657,7 @@ def _named_for(suite, source):
 # A document is read by prose lints and by the checks that name it, not by a
 # case written first: its fix task has no red to show. `.txt` is left out: a
 # requirements list or a build file is a source there, not prose.
-_DOCUMENT_EXTENSIONS = (".md", ".rst", ".yml", ".yaml")
+_DOCUMENT_EXTENSIONS = (".md", ".rst", ".adoc", ".yml", ".yaml")
 # What may name a document as a check that reads it: code and scripts, not data.
 _CHECK_EXTENSIONS = (".py", ".mjs", ".js", ".cjs", ".ts", ".sh")
 
@@ -3748,7 +3838,10 @@ def _fix_task_args(args, targets, project, fixes, records=()):
     task is given (`_paths_discipline`): regression when every path is a test,
     else tdd - a fix task used to default to gate-only, and a finding asking
     for a new test was handed a gate that could not run it. Gate-only is the
-    caller's to ask for, never a default.
+    caller's to ask for, except where the finding owes no case on its own
+    evidence: every file a document with no test of its own, or every
+    resolution saying outright "no code change" (`_says_no_code_change`).
+    Wording about a comment is not read.
 
     EACH DECLARED SOURCE BRINGS THE SUITE THAT TESTS IT (`_suites_for`), and the
     task carries one tests.add clause per finding (`_fix_clauses`) unless the
@@ -3816,6 +3909,13 @@ def _fix_task_args(args, targets, project, fixes, records=()):
             "test of its own, so there is no case to write first and no red to "
             "show; the gate the task carries is its check"
             % (", ".join(fixes), ", ".join(documents)))
+    elif args.tests_mode is None and targets and all(
+            _says_no_code_change(e.get("resolution")) for e in targets):
+        args.tests_mode = "gate-only"
+        notes.append(
+            "gate-only, not tdd: every resolution of %s says outright that no "
+            "code changes, so there is no case to write first and no red to "
+            "show; the gate the task carries is its check" % ", ".join(fixes))
     elif args.tests_mode is None:
         args.tests_mode, note = _paths_discipline(scope["paths"], ", ".join(fixes))
         if note:
@@ -4022,6 +4122,10 @@ def _locked_add(args, project, config, mpath, title, out):
     # and an entry re-pointed off a sibling are the same list on disk.
     gate_refusal = _gate_write_refusal(task["tests"]["gate"], assembled, project,
                                        "tests.gate")
+    if gate_refusal:
+        out(gate_refusal)
+        return E_USAGE
+    gate_refusal = _files_gate_refusal(task, phase, assembled) if fixes else None
     if gate_refusal:
         out(gate_refusal)
         return E_USAGE
@@ -8780,8 +8884,10 @@ def _batch_build_tasks(doc, ids, keys, phase, first, assembled, project, mpath):
         task, _unnamed, gate_basis = _build_task(
             tid, spec_task["title"].strip(), args, phase, assembled, None,
             project, companions, runner_aware=bool(fixes))
-        gate_refusal = _gate_write_refusal(task["tests"]["gate"], assembled,
-                                           project, "tests.gate")
+        gate_refusal = (_gate_write_refusal(task["tests"]["gate"], assembled,
+                                            project, "tests.gate")
+                        or (_files_gate_refusal(task, phase, assembled)
+                            if fixes else None))
         if gate_refusal:
             bad.append("tasks[%d]: %s" % (i, gate_refusal))
             continue
@@ -9354,13 +9460,19 @@ def _locked_scope(args, project, config, mpath, tid, out):
         tests["mode"] = args.tests_mode
         # The same derivation `_build_task` makes, so the two writers cannot
         # disagree about what `expectRedFirst` means.
-        tests["expectRedFirst"] = args.tests_mode == "tdd"
+        tests["expectRedFirst"] = _expects_red_first(
+            args.tests_mode, args.tests_add or tests.get("add"),
+            bool(node.get("fixes")))
     if args.tests_add:
         now_add = list(args.tests_add)
         if was_add != now_add:
             changes.append({"id": tid, "field": "tests.add",
                             "from": was_add, "to": now_add})
         tests["add"] = now_add
+        # A case named for a tdd task that had none turns the expectation on:
+        # `expectRedFirst` follows the pair (mode, add), not the mode alone.
+        if tests.get("mode") == "tdd":
+            tests["expectRedFirst"] = True
         # ...and into `files` here too, for `_build_task`'s reason: a case
         # whose PATH `tests.add` names is a file this task creates, and a scope that
         # omits it fails the task's own commit. `scope` is the verb an operator

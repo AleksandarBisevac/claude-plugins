@@ -1,0 +1,43 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_task.py": "pass",
+    "python3 tools/sweep-selftests.py (whole tree, 194/194 files, exit 0)": "pass",
+    "ruff check plugins/audit tools tests": "pass",
+    "vermin -t=3.8- ...": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-21T17:45:21Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_task.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 480-second deadline; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-task.py: _ordinary_task_gate's files arm, for a fix task (runner_aware), points the sibling's spelling only at is_suite_path files and returns the phase's wide gate with gateBasis phase-no-paths when none is a suite; new _files_gate_refusal (backed by _manifest_phases.files_gate_non_suite_paths, runner's own program exempt via the sibling's spelling paths) refuses a fix task's files-derived gate that names a non-suite declared file, in add --fixes and in the batch form, nothing written. Why it got past before: gate_entry_shape_problem reads only repeated/misplaced suites, and the fix task's files arm handed every path to the spelling unread, so the gate was well-formed and wrong. F674: new _says_no_code_change (positive evidence: 'no code change', 'comment-only', or one clause editing a comment/docstring with no clause join) makes _fix_task_args default gate-only; new _expects_red_first writes expectRedFirst true for a fix task only when tests.add is non-empty (build and scope writers both; planned tasks keep true so the validator nudge stays). Updated pins that encoded the old behaviour: cz13 and the fx-doc ALLOW case now expect (tdd, expectRedFirst false) for a source-only fix with no case; cz17 now names the unit suite in the resolution and cz17b pins the bare-source case (phase gate, phase-no-paths, expectRedFirst false). verbs-in-full.md paragraph on fix-task gate-only/gate updated (outside task files; the plan gate allowed the Edit). Tests: test_drive_phase fx-block 8/8, test_audit_task 1104/1104, whole sweep 194/194 files 16862 cases, ruff and vermin clean. PROCESS DEVIATION: two small edits (audit-task.py function+call sites, one tweak in tests/test_audit_task.py) were made with a python one-off instead of the Edit tool, against the orchestrator note; their content is in git diff and was re-read afterwards. No browser launched, nothing committed.",
+    "descriptive": "A fix task made at triage is gated only on real suites (else the phase gate), a refusal backstops it, and comment/doc/no-code-change fixes are gate-only and never born expecting a red with no case."
+  },
+  "testsAdded": [
+    "fb5/fb6 (test_drive_phase): fix task over a finding naming workflow+suite gates on the suite only; workflow+source with no suite gets the phase gate with gateBasis phase-no-paths",
+    "bx10/bx11 (test_audit_task): add --fixes and the batch form refuse a files-derived gate naming a non-suite declared file, by name, nothing written; the helper never names the runner's own program or a suite",
+    "fb7/fb8 (test_drive_phase): document-only and no-code-change findings give gate-only/expectRedFirst false; a source finding stays tdd with expectRedFirst false and empty add",
+    "bx12 (test_audit_task, extra): batch of four findings gives gate-only, gate-only, tdd, tdd with expectRedFirst false throughout",
+    "cz17b (test_audit_task, extra): bare unit-test ask gets the phase gate"
+  ],
+  "casesAdded": [
+    [
+      "fb5",
+      "fb6"
+    ],
+    [
+      "bx10",
+      "bx11"
+    ],
+    [
+      "fb7",
+      "fb8"
+    ]
+  ],
+  "claims": "claims:\n1 audit-task.py _ordinary_task_gate files arm (runner_aware branch) does the suite filter and phase-no-paths fallback; _files_gate_refusal is the write-time check, called after _gate_write_refusal in _locked_add and _batch_build_tasks; _expects_red_first is the one expectRedFirst rule\n2 bx10 and fb6 were red before the code (fx-block 5/8, AttributeError on bx-block) and green after; over-fire twin: bx11 shows the helper silent on the runner's own program and on suites, fb5 and fb8 are allow cases; no mutation-restore cycle run beyond the pre-fix red\n3 grep 'expectRedFirst' in tests/test_audit_task.py: the pins that wrote true beside an empty tests.add (cz13, fx-doc ALLOW) were updated, t3/ck1/ck4/sc2 for planned tasks left because planned tasks keep true; `gate_entry_shape_problem` callers left unchanged (shape-only); dg3 left because ordinary tasks keep the unfiltered files arm\n4 n/a - no rule addressed to an agent; the refusal is enforced by _files_gate_refusal in audit-task.py\n5 n/a - no property measured\n6 n/a - no guard reading a command: the refusal reads the derived gate entries' paths against the task's declared files\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:825c5b12ac60c0eb486127c79f8c07f56ce7dd06f74c4b66d9e1f036dfdf53cd\",\"dirtyDigest\":\"sha256:5faf915f7fc950636c3a200dc5e5880fcb12ef6f1edda1634505ff621c1d0034\",\"dirtyPaths\":{\"plugins/audit/reference/verbs-in-full.md\":\"ba68f0851a522cf0\",\"plugins/audit/scripts/manifest/_manifest_phases.py\":\"23a54fe4c7045260\",\"plugins/audit/scripts/manifest/audit-task.py\":\"1b3c1157728856f6\",\"tests/test_audit_task.py\":\"08fd1b094519ccbd\",\"tests/test_drive_phase.py\":\"7d561bef177ae8bf\"},\"head\":\"1e0ad8ef\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/_manifest_phases.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"tests/test__manifest_phases.py\",\"tests/test_audit_task.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:ebe531ff7a5f7bfb04f73e396c9c81de038bac189a6be42932b47725da5c6f1e\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -1152,6 +1152,35 @@ def gate_entry_paths(entry):
     return found
 
 
+def files_gate_non_suite_paths(entries, files, own=(), build=None):
+    """The files of a task that its `files`-derived gate `entries` name without
+    their being suites, in the order the entries name them, once each.
+
+    A gate pointed at a task's files is handed to a test runner, which can only
+    take a suite: a workflow file or a source file given to it is a run of
+    nothing, red on every attempt whatever the work. The derivation filters
+    `files` to `is_suite_path` before it points a gate, and this is the same
+    question asked of what it wrote, so a derivation that stops filtering is
+    named by the path it let through instead of by a gate that fails.
+
+    ONLY A PATH THE TASK DECLARES COUNTS, not every non-suite path in an entry:
+    an entry also names the runner's own program (`python3 tools/sweep.py
+    <suites>`), which is no file the derivation was handed. `own` is the paths
+    the sibling's spelling names itself, and a task that edits that program
+    still does not have it read as a path pointed at. A bare `meta.buildCommands`
+    key (`build`) is resolved through the plan whole and names nothing here."""
+    declared = [_vocab._strip_line_suffix(str(f)) for f in files or ()]
+    out = []
+    for entry in entries or ():
+        if not isinstance(entry, str) or (build and entry in build):
+            continue
+        for path in gate_entry_paths(entry):
+            if (path in declared and path not in own and path not in out
+                    and not is_suite_path(path)):
+                out.append(path)
+    return out
+
+
 # The words a gate entry starts its SCRIPT with: what is run, not what is tested.
 # `python3 a/test_x.py a/test_y.py` runs the first path as a program and hands
 # it the second, so only the first is a suite that ran. A test RUNNER
@@ -1676,7 +1705,8 @@ def _walk_phases(phases, build_keys=()):
             # asks whether the case it named can be found on disk. So this one
             # does NOT require `expectRedFirst`, and the difference is deliberate
             # rather than drift: `expectRedFirst` is a DERIVED field
-            # (`audit-task._build_task` writes `mode == "tdd"`), it is what
+            # (`audit-task._expects_red_first`, which `_build_task` and `scope`
+            # both read: tdd, and for a fix task also a named case), it is what
             # declares the red-first intent the rule above is about, and the `files` union
             # this rule exists for does not read it at all. Requiring it here
             # would let a hand-edited `expectRedFirst: false` opt a task out of a

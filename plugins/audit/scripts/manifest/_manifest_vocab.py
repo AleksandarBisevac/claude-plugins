@@ -190,7 +190,12 @@ GATE_BASIS = ("declared", "cleared", "tests.add", "files",
               # reader compares the word before the colon and looks the runId
               # up in the evidence ledger, and never parses it further, because
               # the schema calls a runId opaque.
-              "gate-only-no-suite", "failing-from-run")
+              "gate-only-no-suite", "failing-from-run",
+              # `files-no-suite`: a FIX task's `files` hold no suite path, so
+              # the runner has nothing of this task's to be pointed at and the
+              # phase's gate is the answer. Not `phase-no-paths`, which says
+              # the task named no file at all and is repaired by naming one.
+              "files-no-suite")
 
 # The arms under which the phase's gate verbatim is the ANSWER rather than an
 # unnarrowed default. `declared` is a caller naming the commands outright, which is
@@ -200,7 +205,10 @@ GATE_BASIS = ("declared", "cleared", "tests.add", "files",
 # `gate-only-no-suite` joins them for the same reason as `phase-no-spelling`:
 # a phase gate that runs no suite has nothing path-scoped to narrow FROM, so
 # carrying it verbatim is an answer and not an unnarrowed default.
-GATE_BASIS_ANSWERED = ("declared", "phase-no-spelling", "gate-only-no-suite")
+# `files-no-suite` joins them: the files are named and none is a suite, so
+# narrowing to them (what the warning advises) is the fault it was made to avoid.
+GATE_BASIS_ANSWERED = ("declared", "phase-no-spelling", "gate-only-no-suite",
+                       "files-no-suite")
 
 
 # --- which derivation produced a PHASE's `testGateDerived` -----------------------

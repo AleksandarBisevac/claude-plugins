@@ -588,6 +588,11 @@ def _cases(check):
           "task named no file to point a gate at, so narrowing IS possible "
           "here and the line says which arm it read: %r" % (_tg_np,),
           len(_tg_np) == 1 and "phase-no-paths" in _tg_np[0])
+    _tg_fns = _tg_walk(_TG_WIDE, list(_TG_WIDE), basis="files-no-suite")[1]
+    check("tg10b a fix task recording that its files hold NO SUITE is silent: "
+          "the wide gate is the answer there, and the line would otherwise "
+          "advise narrowing to exactly the files that are no test: %r"
+          % (_tg_fns,), _tg_fns == [])
     _tg_unknown = _tg_walk(_TG_WIDE, list(_TG_WIDE), basis="something-newer")[1]
     check("tg11 SECOND-DIRECTION CASE: a word this build does not know is NOT "
           "folded into the two that silence the line - a vocabulary read as an "
