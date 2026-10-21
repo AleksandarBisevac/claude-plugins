@@ -1,7 +1,7 @@
 {
   "id": "P132",
   "title": "Fix what the S1 phase code review found on the writer-session path",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Bugfix phase after P131 (S1). The tasks run in series because three of them edit drive-phase.py. Lows from the same review are carried with BUG-29-dau (register F778).",
   "desiredOutcome": "The four high and medium findings of the S1 phase code review (F774-F777) are fixed red-first, so the writer-session path that the stage 1 measurement exercises has no known defect and 3.6.0 is not held by them.",
   "testGate": [
@@ -16,8 +16,8 @@
     "vitest"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "85a9d38b364df0f04d72a6c51aaa3a43967126d7",
+  "branch": "audit/p132-fix-what-the-s1-phase-code-rev",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -30,7 +30,7 @@
     {
       "id": "P132.1",
       "title": "A task re-opened by the phase-review hand-back is judged on its own work: clause coverage reads the diff against the commit it carried, its findings reach every re-dispatch, and the record survives the task's close",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F774 (from the S1 phase code review). (1, high) diff_paths (drive-phase.py ~2473) lists only changes against HEAD, which already holds the re-opened task's first commit, so every clause the first commit delivered is path-not-in-diff (~2810) and the task can never pass clause coverage. For a re-opened start, read the changed paths against the commit the task carried (reviewFixes from / the journal's task.reopen record), so a clause cited to a file the first commit delivered still counts. (2, med) reviewFixes[tid].dispatched is keyed by task, not by start (~6092, ~1710): any re-dispatch after the first (retry, stale-brief re-issue) gets the plain brief without the confirmed findings - key it by start. (6, low) finish_task (~6738) pops reviewFixes and the writer record, losing the closed-at-no-new-commit guard and the warm session - keep them until the phase signs off.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -56,16 +56,17 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-21T23:23:46Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P132.2",
@@ -201,8 +202,59 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P132.5-5mm",
+      "title": "The release tier is green again on Windows and the spaced-path leg: the dev-module walk is rooted at the repo it is asked about, git fixtures are removed with the read-only-aware helper, and the miss-rate tool's command line quotes its interpreter",
+      "status": "pending",
+      "description": "Release-tier CI run 39692464240 (ci/P131 @1c5ac5e0) went red on six jobs that were green on 3.5.0, from three S1 regressions (diagnosed from the job logs): (1) tools/lints/_output_lints.py ~2214-2218 suite_elsewhere_paths walks DEV_DIRS/DEV_FILES absolute under REPO_ROOT and relpaths them against a fixture repo_root - ValueError across drives on Windows (d0, e2e windows, windows plain/cp1252 2), wrong ../ paths silently on posix; root the walk at the repo asked about. (2) tests/test__output.py ~333-345 (mv11) and tests/test__output_lints.py ~1646-1675 (pn37/pn38) remove git fixtures with shutil.rmtree(ignore_errors=True), which cannot unlink git's read-only objects on Windows, so the fixture survives and the sweep's watched TMPDIR reports it; use _harness.remove_tree, and fix EVERY rmtree(..., ignore_errors=True) around a git fixture in tests/ and tools/ (grep the class, list each site). (3) tools/measure-affected-miss.py m15 (~1205-1210) builds '%s %s' % (sys.executable, ...) unquoted and the tool shlex.splits it (~743-745): backslashes eaten on Windows, a spaced interpreter split on the stress leg; quote with shlex.quote. After landing, the orchestrator re-dispatches the release tier.",
+      "files": [
+        "tools/lints/_output_lints.py",
+        "tools/sweep-selftests.py",
+        "tests/test__output.py",
+        "tests/test__output_lints.py",
+        "tools/measure-affected-miss.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/sweep-selftests.py: d0 asserts tools/lints/_not_swept.py is not in the nested set of a fixture repository rooted outside REPO_ROOT, red on today's code on posix too; and tools/measure-affected-miss.py: m15 builds its command lines with shlex.quote so an interpreter path holding a backslash or a space survives the split"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/sweep-selftests.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim",
+        "reproducing-ci-locally"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "ok preporuka usvojena (owner 2026-10-22: BF5 fixes from the S1 phase code review first, then stage 1, then S3)",
-  "openChoices": []
+  "openChoices": [],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "bf837df2-37bc-4c94-9233-61f7d70c1d7f",
+    "branch": "audit/p132-fix-what-the-s1-phase-code-rev",
+    "at": "2026-10-21T23:23:46Z"
+  },
+  "startedAt": "2026-10-21T23:23:46Z"
 }

@@ -854,7 +854,7 @@
     {
       "id": "P132",
       "title": "Fix what the S1 phase code review found on the writer-session path",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P132.json"
     }
   ],
@@ -7989,7 +7989,8 @@
       "P130.8",
       "P130.9",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P132.5-5mm"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -11012,7 +11013,8 @@
       "P131.1",
       "P131.2",
       "P131.15-dau",
-      "P131.19-dau"
+      "P131.19-dau",
+      "P132.5-5mm"
     ],
     "tests/test__panel_composition.py": [
       "P131.1"
@@ -11418,7 +11420,8 @@
     ],
     "tools/lints/_output_lints.py": [
       "P131.2",
-      "P131.19-dau"
+      "P131.19-dau",
+      "P132.5-5mm"
     ],
     "tools/lints/_ui_theme_lints.py": [
       "P131.2"
@@ -11445,7 +11448,8 @@
     ],
     "tests/test__output_lints.py": [
       "P131.2",
-      "P131.19-dau"
+      "P131.19-dau",
+      "P132.5-5mm"
     ],
     "tests/test__ui_theme_lints.py": [
       "P131.2"
@@ -11455,7 +11459,8 @@
     ],
     "tools/measure-affected-miss.py": [
       "P131.16-dau",
-      "P131.19-dau"
+      "P131.19-dau",
+      "P132.5-5mm"
     ],
     "plugins/audit/scripts/status/_impact.py": [
       "P131.18-dau"
