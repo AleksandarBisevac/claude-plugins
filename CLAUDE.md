@@ -267,7 +267,7 @@ carries `receive.autogc` off — only that key, so a suite that takes the pairs 
 its own prefix still sees a spawn — and does reach receive-pack, so no git a suite
 starts leaves a detached housekeeping run working in a fixture it is about to read or delete —
 unless the suite points `GIT_CONFIG_GLOBAL` elsewhere for its own git, which then reads what
-the suite chose. The file sits outside both watched directories and is checked back like their
+the suite chose. The file sits outside every watched directory and is checked back like their
 planted files, because a suite's `git config --global` now writes there. The caller's own pairs
 in that protocol are dropped first, so the runner's set is the whole of it. **The working directory and
 the home directory are the watched pair**, each holding one file the suite did not put
@@ -280,6 +280,13 @@ normally the system temp and a stray fixture there is somebody else's problem; t
 channel is the one that caught a suite shelling out to the real `az`, which writes into the
 operator's home directory on any machine that has it — CI's ubuntu runner included. A suite
 that needs scratch space builds it under `tempfile.mkdtemp()` and removes it in `finally`.
+
+**The checkout's own `.claude/` is watched as well**, because a suite whose scratch sits under
+a checkout resolves that checkout as its project and writes its restore points there with
+the watched pair spotless. Only the names the live session itself writes under `state/` are
+left out, each with its writer, and a finding is still told when the suite also failed or
+timed out. The prevention half comes first: the runner refuses to start when its temp
+directory has a `.git` above it. `CONTRIBUTING.md` carries the attribution rule.
 
 **And this paragraph is not checked against the runner.** A lint once compared the runner's own
 constants with the documents that describe the isolation — this one, `CONTRIBUTING.md`, and the
