@@ -1500,10 +1500,19 @@ def _writer_scope_cases(check):
                             "attempt": {"during": ["a.md"],
                                         "cleanAtStart": ["a.md"]}}),
         M.undeclared_split(None)]
-    owned = M.plugin_owned_paths({"project": root, "gitRoot": root}, [
+    # The fixture commits its config, so the table's untracked-only row is not
+    # the plugin's here; the same call after the config leaves the index is.
+    root_o, _mpath_o = _repo("xs-owned", task_ids=TASKS[:1], per_task="phase")
+    owned_paths = [
         ".claude/audit-backups/plan.json", ".claude/.gitignore",
         ".claude/audit.config.json", ".claude/audit-backups-not/x", "GUIDE.md",
-        "docs/.claude/audit-backups/y"])
+        "docs/.claude/audit-backups/y"]
+    owned_tracked = M.plugin_owned_paths(
+        {"project": root_o, "gitRoot": root_o}, owned_paths)
+    _harness.git(root_o, "rm", "--cached", "-q", "--",
+                 ".claude/audit.config.json")
+    owned = M.plugin_owned_paths({"project": root_o, "gitRoot": root_o},
+                                 owned_paths)
     # Both directions: a refusal with any other part beside the undeclared
     # paths sets nothing aside, and only the table's rows are plugin-owned.
     check("xs6 only a refusal whose whole reason is undeclared paths names "
@@ -1512,11 +1521,15 @@ def _writer_scope_cases(check):
           "cleanAtStart shows none clean; a declared file older than the start, "
           "one of mixed age, any other arm, or a commit made names none - and "
           "only the plugin-owned table's rows under .claude/ are never "
-          "reverted: %r" % ((shapes, owned),),
+          "reverted - a config git tracks is a project file, so a task's edit "
+          "of it is set aside like any other undeclared one: %r"
+          % ((shapes, owned, owned_tracked),),
           shapes == [(["a.md", "b.md"], ["c.md"]), ([], ["a.md"]), ([], []),
                      ([], []), ([], []), ([], []), ([], [])]
           and owned == [".claude/audit-backups/plan.json", ".claude/.gitignore",
-                        ".claude/audit.config.json"])
+                        ".claude/audit.config.json"]
+          and owned_tracked == [".claude/audit-backups/plan.json",
+                                ".claude/.gitignore"])
 
     root_e, mpath_e = _repo("xs-executor", task_ids=TASKS[:1], per_task="phase")
     _xs_with_aside(root_e)

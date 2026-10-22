@@ -1,0 +1,39 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__scoped_commit.py tests/test_audit_task.py tests/test_commit_task_work.py tests/test_drive_phase.py tests/test__deps.py tests/test__output_lints.py": "pass",
+    "ruff check plugins/audit tests tools": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-22T20:34:41Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__scoped_commit.py tests/test_audit_task.py tests/test_commit_task_work.py` in a throwaway tree at HEAD exited 1 with failing cases sc-ua9 (house FAIL), lo-po4 (house FAIL), ctw-at10 (house FAIL), tests/test__scoped_commit.py: exited 1 (house FAIL) and 2 more, but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 137/138 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Retry. (1) gb1: _scoped_commit._is_tracked now sends its git-root-relative path through hooks _config.plan_to_git(rel, git_root, git_root) (entry of a project that is the top) before git ls-files; None (outside the checkout) reads as tracked, the loud side. No GIT_PATH_BASE_EXEMPT row added: tools/lints/_deps.py is outside the task and the plan gate refused the edit, and the routing makes it unnecessary; the lint's fixpoint sees _is_tracked reach the pair. (2) xs6: the set-aside's plugin_owned_rels deliberately leaves a TRACKED audit.config.json out (a task's edit of a project file is an undeclared change, set aside like any other, same answer as the commit and the close), so the right fix is the fixture: xs6 now builds its own repo (xs-owned), asks plugin_owned_paths once with the config tracked (expects only audit-backups/plan.json and .claude/.gitignore) and once after git rm --cached (expects the config as well), so both directions are pinned. Gate: python3 tools/sweep-selftests.py tests/test__scoped_commit.py tests/test_audit_task.py tests/test_commit_task_work.py tests/test_drive_phase.py tests/test__deps.py tests/test__output_lints.py exited 0, 6/6 files ok, 2267 cases (test__deps 254, test__output_lints 169, test__scoped_commit 54, test_audit_task 1110, test_commit_task_work 138, test_drive_phase 542); ruff check plugins/audit tests tools exit 0. Dependants: drive-phase.py unchanged, its set-aside asks plugin_owned_rels and now agrees with the commit and the close (xs6 pins it); commit-task-work.py, audit-task.py, _live_copy.py, close-phase.py, commit-audit-state.py, commit-manifest-index.py unchanged and still correct (they do not call _is_tracked; plugin_owned_rels' answer is the same as attempt 1); test files test_audit_task.py, test_commit_task_work.py, test__scoped_commit.py unchanged this retry.",
+    "descriptive": "A tracked audit.config.json edit is the task's undeclared change at commit, close and set-aside alike; the one-reader lint is structural and counts what it scanned; _is_tracked now goes through the git-path door and xs6 pins both readings of the config."
+  },
+  "testsAdded": [
+    "sc-ua9/ctw-at10/lo-po4: a tracked audit.config.json edit is undeclared at the commit, the close and the shared answer (lo-po5 and ctw-at7 the untracked twins)",
+    "sc-ua10/sc-ua11: structural result_scan of the readers, red twin mutating the real commit-task-work source",
+    "sc-ua8: the scan counts what it reached and fails on zero files, below the floor, or a missed home module",
+    "xs6 (extended): set-aside placement with the config tracked and untracked"
+  ],
+  "casesAdded": [
+    [
+      "sc-ua9",
+      "ctw-at10",
+      "lo-po4"
+    ],
+    [
+      "sc-ua10",
+      "sc-ua11"
+    ],
+    [
+      "sc-ua8"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:8c7ff53b30e4d8db875b667fec16ce0f3c11cc4ca0202ab959e857ff497dd395\",\"dirtyDigest\":\"sha256:d290fff2559aa61b3a9968b565b70acd4723a1cf62f397257b4acc3782e616e1\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_scoped_commit.py\":\"0ed1ad39c4fd1700\",\"plugins/audit/scripts/manifest/_manifest_io.py\":\"42e6d7d72cdaa3d2\",\"tests/test__scoped_commit.py\":\"e3db468d4f42affa\",\"tests/test_audit_task.py\":\"1eac47480535f916\",\"tests/test_commit_task_work.py\":\"7d9e8dfd74aeaad0\",\"tests/test_drive_phase.py\":\"f0150746ae746dad\"},\"head\":\"17563b1b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_scoped_commit.py\",\"plugins/audit/scripts/manifest/_manifest_io.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"tests/test__scoped_commit.py\",\"tests/test_audit_task.py\",\"tests/test_commit_task_work.py\"],\"scopeDigest\":\"sha256:eefc5ffb8e8c312a21162c1fd112b54e2ee9b7d9fb288b66c0498fd4d9bbed0b\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

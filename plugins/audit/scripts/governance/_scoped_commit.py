@@ -1080,15 +1080,43 @@ def plugin_owned_rels(project, git_root):
     """`[(git-root-relative path, why), ...]` - `_manifest_io.PLUGIN_OWNED_IN_CLAUDE`
     placed under the project's `.claude/` and under the checkout's, which are
     two directories when the project sits below the git root and the one
-    restore-point writer parks its copy in the checkout's."""
+    restore-point writer parks its copy in the checkout's.
+
+    A row of `_manifest_io.PLUGIN_OWNED_WHILE_UNTRACKED` is placed only while
+    git does not track it: the committed configuration file is a project file a
+    task can edit, so its change is an undeclared one like any other. The
+    commit, the close and the set-aside all place the rows here, so they agree
+    on it."""
     rows, seen = [], set()
     for base in (project, git_root):
-        for path, why in _mio.plugin_owned_under(os.path.join(base, ".claude")):
+        claude = os.path.join(base, ".claude")
+        for path, why in _mio.plugin_owned_under(claude):
             rel = _invariants._rel(path, git_root)
-            if rel is not None and rel not in seen:
-                seen.add(rel)
-                rows.append((rel, why))
+            if rel is None or rel in seen:
+                continue
+            seen.add(rel)
+            name = os.path.relpath(path, claude).replace("\\", "/")
+            if name in _mio.PLUGIN_OWNED_WHILE_UNTRACKED \
+                    and _is_tracked(git_root, rel):
+                continue
+            rows.append((rel, why))
     return rows
+
+
+def _is_tracked(git_root, rel):
+    """Whether git's index holds `rel`. When git cannot say, True: a path not
+    known to be the plugin's own is an undeclared change - the loud answer -
+    where the other would let a task's edit pass as a note.
+
+    `rel` is spelled from the checkout's top, so it goes through
+    `plan_to_git` as an entry of a project that IS the top: the pathspec is the
+    one every other listing here is asked with."""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    spec = hc.plan_to_git(rel, git_root, git_root)
+    if spec is None:
+        return True
+    code, out, _err = run_git(git_root, ["ls-files", "-z", "--", spec])
+    return code != 0 or bool(out)
 
 
 def split_plugin_owned(paths, owned):
@@ -1125,9 +1153,14 @@ def undeclared_changes(git_root, project, config, record, started_at, owned,
     plugin's runtime directories (`run_state_rels`) and every row of
     `_manifest_io.PLUGIN_OWNED_IN_CLAUDE` (`plugin_owned_rels`) are never a
     task's edit, so a path the commit step leaves out as plugin-owned is
-    never one the close refuses, nor one the set-aside reverts. A reader that
-    kept a skip list of its own is the defect this function exists to remove;
-    `tests/test__scoped_commit.py` fails by name when one reappears."""
+    never one the close refuses, nor one the set-aside reverts - except the
+    committed configuration file, which `plugin_owned_rels` leaves to the
+    strays. A reader that kept a skip list of its own is the defect this
+    function exists to remove. `tests/test__scoped_commit.py` fails by name
+    when a reader names the primitives of one, and when a reader reads this
+    answer other than by key or narrows an undeclared list by anything but a
+    membership test (`result_scan`); a reader that reaches a skip by a route
+    neither describes is not caught."""
     paths, why = status_paths(git_root)
     if paths is None:
         return None, why

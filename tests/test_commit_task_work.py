@@ -133,6 +133,16 @@ def _head(fx):
     return TI._head(fx["root"])
 
 
+def _untrack_config(fx):
+    """The fixture's `.claude/audit.config.json` stays on disk and leaves git's
+    index, in a commit of its own: a project that does not commit it, which is
+    the shape of a config a session or the panel creates."""
+    TI._git(fx["root"], "rm", "--cached", "-q", "--",
+            ".claude/audit.config.json")
+    TI._git(fx["root"], "commit", "-q", "-m",
+            "chore: the project does not commit its config")
+
+
 def _clone_at(fx, sha, dest):
     """A fresh clone, checked out at `sha`. Returns the clone's path."""
     TI._git(None, "clone", "--quiet", "--no-hardlinks", fx["root"], dest)
@@ -2279,6 +2289,7 @@ def _attempt_cases(check, repos):
     # the plugin's paths too), and the close that follows must carry the
     # task's file, leave the plugin's paths out of the commit and name each.
     fx = repos.make()
+    _untrack_config(fx)
     _restartable(fx)
     scode, said = _start(fx)
     _write(os.path.join(fx["root"], OWNED), "a = 2  # this attempt's work\n")
@@ -2332,6 +2343,36 @@ def _attempt_cases(check, repos):
           % ((scode, code, text[:500], carried),),
           scode == 0 and code == 0 and restore_rel in text
           and restore_rel not in carried and OWNED in carried)
+
+    # THE CONFIGURATION FILE THE PROJECT COMMITS IS A FILE A TASK CAN EDIT. The
+    # fixture commits it, so editing it mid-attempt is an undeclared change:
+    # refused by name at the commit, which is the other half of the close's
+    # (`lo-po4`), and the same edit with the file untracked is `ctw-at7`'s
+    # allow. Removed again, the commit goes through - the refusal was about that
+    # file and nothing else.
+    fx = repos.make()
+    _restartable(fx)
+    scode, said = _start(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # this attempt's work\n")
+    config_path = os.path.join(fx["root"], ".claude", "audit.config.json")
+    edited_config = _mio.read_json(config_path)
+    edited_config["executor"] = {"waveWidth": 3}
+    _write(config_path, json.dumps(edited_config, indent=2) + "\n")
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    held = _head(fx)
+    refusal = [ln for ln in text.splitlines()
+               if ln.startswith("[commit-task-work] REFUSED")]
+    TI._git(fx["root"], "checkout", "-q", "--", ".claude/audit.config.json")
+    code2, text2 = _run(fx)
+    check("ctw-at10 a TRACKED configuration file edited during the attempt "
+          "refuses the commit by name and commits nothing; put back, the "
+          "task's file is committed: %r"
+          % ((scode, code, refusal[:1], code2, text2[:300]),),
+          scode == 0 and code == 1 and len(refusal) == 1
+          and ".claude/audit.config.json" in refusal[0]
+          and "plugin-owned" not in text and held == before and code2 == 0)
 
     # The table is the writers' as well as the check's: what the restore-point
     # writer creates - the directory and the ignore file it adds a line to - is

@@ -290,6 +290,47 @@ def _undeclared_changes_cases(check, tmp, outside):
           and kept["during"] == [".claude/audit-backups-not/y"]
           and [p for p, _w in kept["pluginOwned"]] == [RESTORE])
 
+    # THE CONFIGURATION FILE IS THE PLUGIN'S ONLY WHILE GIT DOES NOT TRACK IT.
+    # One answer for the commit, the close and the set-aside, so the case asks
+    # the function and the table placement they all read. Each shape
+    # below separates a wrong implementation from the right one: a committed config
+    # edited (a table that exempts it by name keeps it out of every list), an
+    # untracked config (a guard that refuses all config over-fires), a
+    # committed and edited `.gitignore` (the other rows stay as they were), and
+    # a git that cannot answer (the loud side).
+    config_rel = ".claude/audit.config.json"
+    ignore_rel = ".claude/.gitignore"
+    held = _repo(tmp, "undeclared-config-tracked")
+    _write(os.path.join(held, *config_rel.split("/")), "{}\n")
+    _write(os.path.join(held, *ignore_rel.split("/")), "x\n")
+    _git(held, "add", "-A")
+    _git(held, "commit", "-q", "-m", "the project commits its config")
+    _write(os.path.join(held, *config_rel.split("/")), '{"edited": true}\n')
+    _write(os.path.join(held, *ignore_rel.split("/")), "x\ny\n")
+    edited, _w = (("missing", "") if asked is None else
+                  asked(held, held, {}, None, LONG_AGO, [], []))
+    fresh = _repo(tmp, "undeclared-config-untracked")
+    _write(os.path.join(fresh, *config_rel.split("/")), "{}\n")
+    created, _w = (("missing", "") if asked is None else
+                   asked(fresh, fresh, {}, None, LONG_AGO, [], []))
+    placed = M.plugin_owned_rels(held, held)
+    set_aside = M.split_plugin_owned([config_rel, ignore_rel], placed)
+    blind_rows = M.plugin_owned_rels(outside, outside)
+    check("sc-ua9 a TRACKED configuration file that was edited is an undeclared "
+          "change - in during and strays, in no plugin-owned list, and not in "
+          "the rows the set-aside places - while the ignore file beside it, "
+          "tracked and edited, stays plugin-owned; the same file untracked is "
+          "named and left out; and where git cannot say it is not exempted: %r"
+          % ((edited, created, placed, blind_rows),),
+          isinstance(edited, dict) and isinstance(created, dict)
+          and edited["during"] == [config_rel] and edited["strays"] == [config_rel]
+          and [p for p, _w in edited["pluginOwned"]] == [ignore_rel]
+          and set_aside[0] == [config_rel]
+          and [p for p, _w in set_aside[1]] == [ignore_rel]
+          and created["strays"] == [] and created["during"] == []
+          and [p for p, _w in created["pluginOwned"]] == [config_rel]
+          and config_rel not in [rel for rel, _w in blind_rows])
+
 
 # --- every reader asks it ------------------------------------------------------
 # NOT A COMMENT, A SCAN. The defect is a reader computing the skip list itself,
@@ -332,6 +373,162 @@ def _calls_of(source, attr):
                 and n.func.attr == attr])
 
 
+# WHAT A READER MAY DO WITH THE ANSWER. The names above catch the primitives
+# that were found in a reader's own skip list, and nothing else: a reader that
+# post-filters `changes["during"]` with a skip of its own names none of them.
+# So the second half of the scan is on the SHAPE of the use, and reads the
+# answer by key only - `R["key"]`, or `R is None` - which leaves a reader no
+# way to rebuild it (`dict(R)`, `R.get`, iterating it, handing it on). The
+# lists that decide a refusal (`UNDECLARED_KEYS`) may then be narrowed by a
+# membership test against a value the reader computes (`p in recorded`) and by
+# nothing else: any other condition on them - a prefix, a call, a literal or
+# upper-case constant to test against - is a rule about which paths count,
+# which is the shared function's alone. `covered` is outside that set on
+# purpose: it is work in flight, and the close narrows it to its own task's
+# files.
+RESULT_KEYS = ("during", "predates", "undated", "strays", "covered", "mixed",
+               "pluginOwned", "basis")
+UNDECLARED_KEYS = ("during", "predates", "undated", "strays", "mixed",
+                   "pluginOwned")
+
+
+def _key_of(node):
+    """The constant string a Subscript indexes with, or None (3.8 wraps it in
+    an `Index`; later versions do not)."""
+    index = node.slice
+    if index.__class__.__name__ == "Index":
+        index = index.value
+    import ast
+    if isinstance(index, ast.Constant) and isinstance(index.value, str):
+        return index.value
+    return None
+
+
+def _asks(node):
+    import ast
+    return (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "undeclared_changes")
+
+
+def _only_membership(cond):
+    """True for `x in y` / `x not in y` where `y` is not a literal and not an
+    upper-case name - a test against what the reader computed, not against a
+    list the reader wrote."""
+    import ast
+    if not (isinstance(cond, ast.Compare) and len(cond.ops) == 1
+            and isinstance(cond.ops[0], (ast.In, ast.NotIn))):
+        return False
+    other = cond.comparators[0]
+    if isinstance(other, (ast.Constant, ast.List, ast.Tuple, ast.Set, ast.Dict)):
+        return False
+    return not (isinstance(other, ast.Name) and other.id.isupper())
+
+
+def result_scan(source):
+    """`{"bound": n, "violations": [...]}` over every function in `source` that
+    asks `undeclared_changes`: `bound` is how many answers were taken into a
+    name (so a scan that reached nothing reads as nothing, not as clean), and
+    each violation names a use of the answer other than by key, an ask whose
+    answer is not bound to a name, or a narrowing of an undeclared list by
+    anything but a membership test."""
+    import ast
+    bound, found = 0, set()
+    for fn in ast.walk(ast.parse(source)):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        asked = [n for n in ast.walk(fn) if _asks(n)]
+        if not asked:
+            continue
+        names, took = set(), []
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Assign) and _asks(node.value):
+                took.append(node.value)
+                target = node.targets[0]
+                if isinstance(target, ast.Tuple) and target.elts:
+                    target = target.elts[0]
+                if isinstance(target, ast.Name):
+                    names.add(target.id)
+        bound += len(names)
+        for node in asked:
+            if not any(node is t for t in took):
+                found.add("line %d: the answer is not bound to a name"
+                          % (node.lineno,))
+        parents = {}
+        for node in ast.walk(fn):
+            for child in ast.iter_child_nodes(node):
+                parents[child] = node
+
+        def list_read(node, tainted):
+            if isinstance(node, ast.Subscript) \
+                    and isinstance(node.value, ast.Name) \
+                    and node.value.id in names \
+                    and _key_of(node) in UNDECLARED_KEYS:
+                return True
+            return isinstance(node, ast.Name) and node.id in tainted
+
+        tainted = set()
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 \
+                    and isinstance(node.targets[0], ast.Name) \
+                    and list_read(node.value, ()):
+                tainted.add(node.targets[0].id)
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Name) and node.id in names \
+                    and isinstance(node.ctx, ast.Load):
+                up = parents.get(node)
+                by_key = (isinstance(up, ast.Subscript) and up.value is node
+                          and _key_of(up) in RESULT_KEYS)
+                is_none = (isinstance(up, ast.Compare) and up.left is node
+                           and all(isinstance(o, (ast.Is, ast.IsNot))
+                                   for o in up.ops)
+                           and all(isinstance(c, ast.Constant)
+                                   and c.value is None for c in up.comparators))
+                if not (by_key or is_none):
+                    found.add("line %d: the answer `%s` is used other than by "
+                              "key" % (node.lineno, node.id))
+            if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp,
+                                 ast.DictComp)):
+                for gen in node.generators:
+                    if list_read(gen.iter, tainted) and not all(
+                            _only_membership(c) for c in gen.ifs):
+                        found.add("line %d: an undeclared list is narrowed by "
+                                  "a rule of the reader's own" % (node.lineno,))
+            if isinstance(node, ast.For) and list_read(node.iter, tainted) \
+                    and any(isinstance(n, ast.Continue)
+                            for stmt in node.body for n in ast.walk(stmt)):
+                found.add("line %d: an undeclared list is skipped through by "
+                          "the reader" % (node.lineno,))
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
+                    and node.func.id == "filter" \
+                    and any(list_read(a, tainted) for a in node.args):
+                found.add("line %d: an undeclared list goes through filter()"
+                          % (node.lineno,))
+    return {"bound": bound, "violations": sorted(found)}
+
+
+# The scripts/ walk of the table's home: how much of the tree it must reach
+# before a clean verdict means anything. Well above the three readers and the
+# two home modules, and well below the tree - the floor exists to refuse a walk
+# that reached a handful of files, not to count the tree.
+SCAN_FLOOR = 60
+
+
+def scan_gaps(scanned):
+    """Why a walk that read the `.py` files named in `scanned` cannot vouch for
+    the tree: it read none, read fewer than `SCAN_FLOOR`, or missed a module the
+    question is about."""
+    gaps = []
+    if not scanned:
+        gaps.append("it read no `.py` file at all")
+    elif len(scanned) < SCAN_FLOOR:
+        gaps.append("it read %d `.py` files, fewer than the floor of %d"
+                    % (len(scanned), SCAN_FLOOR))
+    gaps.extend("it never reached %s" % (name,)
+                for name in HOME_OF_THE_TABLE + tuple(n for _f, n in READERS)
+                if name not in scanned)
+    return gaps
+
+
 def _readers_share_the_question_cases(check):
     import _output
     sources = {}
@@ -365,16 +562,72 @@ def _readers_share_the_question_cases(check):
 
     # THE TABLE'S HOME, tree-wide: whoever else reads the rows is a reader with a
     # list of its own, whichever file it sits in.
-    outside = []
+    scanned, outside = [], []
     for dirpath, _dirs, files in os.walk(_output.SCRIPTS_DIR):
         for name in sorted(files):
-            if not name.endswith(".py") or name in HOME_OF_THE_TABLE:
+            if not name.endswith(".py"):
+                continue
+            scanned.append(name)
+            if name in HOME_OF_THE_TABLE:
                 continue
             with io.open(os.path.join(dirpath, name), encoding="utf-8") as fh:
                 if "plugin_owned_under" in _names_in(fh.read()):
                     outside.append(name)
+    # A WALK THAT READ NOTHING FINDS NOTHING, and `outside == []` over an empty
+    # walk is the same green as over the whole tree: the verdict also stands on
+    # what was read, and `scan_gaps` is shown to refuse an empty walk and a
+    # short one.
+    gaps = scan_gaps(scanned)
     check("sc-ua8 under scripts/, only the table's own module and the shared "
-          "function read `plugin_owned_under`: %r" % (outside,), outside == [])
+          "function read `plugin_owned_under`, over a walk that read %d `.py` "
+          "files, reached both home modules and every reader (gaps: %r): %r"
+          % (len(scanned), gaps, outside),
+          outside == [] and gaps == []
+          and scan_gaps([]) != [] and scan_gaps(["a.py", "b.py", "c.py"]) != []
+          and len(scan_gaps(scanned[:SCAN_FLOOR - 1])) >= 1)
+
+    # THE SHAPE OF THE USE, over the two readers that take the answer. `bound`
+    # must be one each: a scan that reached no ask would report no violation.
+    taken = dict((name, result_scan(sources[name]))
+                 for name in ("commit-task-work.py", "audit-task.py"))
+    check("sc-ua10 the commit and the close each take the answer into one name "
+          "and read it by key only - no rebuilding it, no condition of their "
+          "own on an undeclared list: %r" % (taken,),
+          all(t["bound"] == 1 and t["violations"] == [] for t in taken.values()))
+
+    # THE SCAN MUST SEE WHAT THE NAME LIST CANNOT. Each mutation is made in the
+    # real source of the commit step and shown to have landed; the first is the
+    # post-filter of `during` with a skip of its own, which names none of the
+    # retired primitives and so passed sc-ua5.
+    real = sources["commit-task-work.py"]
+    anchor = 'during = strays["during"]'
+    own_skip = real.replace(
+        anchor, 'during = [p for p in strays["during"] '
+                'if not p.startswith(".claude/")]')
+    rebuilt = real.replace(anchor, 'during = dict(strays)["during"]')
+    listed = real.replace(anchor, 'during = [p for p in strays["during"] '
+                                  'if p not in SKIP_LIST]')
+    through = real.replace(anchor, 'during = list(filter(lambda p: p, '
+                                   'strays["during"]))')
+    allowed = real.replace(anchor, 'during = [p for p in strays["during"] '
+                                   'if p not in mine_elsewhere]')
+    landed = real.count(anchor) == 1 and all(
+        text != real for text in (own_skip, rebuilt, listed, through, allowed))
+    old = reader_violations(own_skip)
+    new = dict((label, result_scan(text)["violations"])
+               for label, text in (("own_skip", own_skip), ("rebuilt", rebuilt),
+                                   ("listed", listed), ("through", through),
+                                   ("allowed", allowed)))
+    check("sc-ua11 a reader post-filtering `strays[\"during\"]` with a skip of "
+          "its own is named by the shape scan and was NOT by the name scan; so "
+          "are rebuilding the answer, testing against an upper-case list and "
+          "filter(); a membership test against a computed value is not "
+          "(mutations landed: %s, name scan said %r): %r"
+          % (landed, old, new),
+          landed and old == []
+          and all(len(new[k]) >= 1 for k in
+                  ("own_skip", "rebuilt", "listed", "through"))
+          and new["allowed"] == [])
 
 
 # --- the span an attempt's commits are read over -------------------------------

@@ -16078,6 +16078,43 @@ def _leftover_cases(check):
         check("lo-po3 ALLOW: a task declaring no files does not refuse a "
               "plugin-owned restore point either: %r" % ((code, text[:400]),),
               code == 0 and restore in text)
+
+        # THE CONFIGURATION FILE IS THE PLUGIN'S ONLY WHILE GIT DOES NOT TRACK
+        # IT, and the close answers as the commit step does (`ctw-at10`): the
+        # fixture commits it, so an edit to it during the attempt is an
+        # undeclared change and refuses the close, by name and alone. The same
+        # edit with the file out of the index is the plugin's, named and left
+        # out - the over-fire direction, which a close refusing every config
+        # change would fail.
+        config = ".claude/audit.config.json"
+        proj, mpath = project("plugin-owned-config", [
+            task("P1.1", ["src/a.ts"], status="pending", attempts=0)])
+        code0, said = start(proj, "P1.1")
+        commit_work(proj)
+        write(proj, config, '{"edited": true}\n')
+        before = read(mpath)
+        code, text = close(proj)
+        refusal = [ln for ln in text.splitlines() if "REFUSED" in ln]
+        check("lo-po4 a TRACKED configuration file edited during the attempt "
+              "refuses the close by name, is not called plugin-owned, and the "
+              "plan is as it was: %r" % ((code0, code, text[:600]),),
+              code0 == 0 and code == M.E_USAGE and len(refusal) == 1
+              and config in refusal[0] and "plugin-owned" not in text
+              and read(mpath) == before)
+
+        proj, mpath = project("plugin-owned-config-untracked", [
+            task("P1.1", ["src/a.ts"], status="pending", attempts=0)])
+        git(proj, "rm", "--cached", "-q", "--", config)
+        git(proj, "commit", "-q", "-m", "the project does not commit its config")
+        code0, said = start(proj, "P1.1")
+        commit_work(proj)
+        write(proj, config, '{"edited": true}\n')
+        code, text = close(proj)
+        check("lo-po5 ALLOW: the same configuration file, not tracked, is "
+              "named as plugin-owned state the close left out and does not "
+              "refuse it: %r" % ((code0, code, text[:600]),),
+              code0 == 0 and code == 0 and config in text
+              and "plugin-owned" in text and "REFUSED" not in text)
     finally:
         _harness.remove_tree(root)
 

@@ -133,40 +133,50 @@
         "severity": "med",
         "file": "tools/sweep-selftests.py:163-171",
         "issue": "contradicts task clause 'extend tools/sweep-selftests.py's watched set to the checkout's own .claude/ so a write there is a finding naming the suite': CLAUDE_UNWATCHED removes state, logs, usage, worktrees, settings.local.json and audit-panel.json from the watched set, and those are most of the places the plugin writes under .claude/ (the checkout's .gitignore already lists state/, usage/ and logs/). The executor's own known offender, tests/test_audit_task.py writing .claude/state/{.gitignore,bash-writes-plugin-cli.json,writer-token.json} when TMPDIR sits in a clone, passes this guard unseen. A suite that exercises the usage ledger, a hook log or worktree creation against its own location would be invisible the same way. The exemption is by subtree name, so it hides every suite write there along with the live session's.",
-        "resolution": "Narrow the exemption from a subtree to what the live session really writes. Options: (a) for state/logs/usage, watch the NAMES a suite is known to leak (writer-token.json, bash-writes-plugin-cli.json, state/.gitignore) with a case per name; (b) have sweep() refuse or loudly report when the scratch root (TMPDIR) is under the watched checkout, since that is the precondition for the unwatched leak (this overlaps P137.4, so the task may only file the cheap loud line); (c) at least add a case pinning which known suite-writes are NOT caught, so the blind spot is a recorded fact and not only a comment.",
-        "fixTask": "P137.6-3y3"
+        "resolution": "fixed in P137.6-3y3 (990bfa8c43d0): Narrow the exemption from a subtree to what the live session really writes. Options: (a) for state/logs/usage, watch the NAMES a suite is known to leak (writer-token.json, bash-writes-plugin-cli.json, state/.gitignore) with a case per name; (b) have sweep() refuse or loudly report when the scratch root (TMPDIR) is under the watched checkout, since that is the precondition for the unwatched leak (this overlaps P137.4, so the task may only file the cheap loud line); (c) at least add a case pinning which known suite-writes are NOT caught, so the blind spot is a recorded fact and not only a comment.",
+        "fixTask": "P137.6-3y3",
+        "commit": "990bfa8c43d0",
+        "status": "fixed"
       },
       {
         "id": "P137-R13",
         "severity": "med",
         "file": "tools/sweep-selftests.py:719-725 (sweep) and 1095-1099 (grade)",
         "issue": "contradicts task clause 'a write there is a finding naming the suite': a write attributed to a suite is passed to grade() as debris, but grade() returns 'exited N' (or the raw timeout text) before it reads debris. A suite that writes into .claude/ and also exits non-zero or times out therefore gets no finding, and the write is not put in the loose row either, so it is lost. This is the very case the task reproduces: with TMPDIR in a clone, test_migrate_manifest.py writes audit-backups/ and then dies with FileNotFoundError, so the sweep shows only 'exited 1' and never names the write. The executor notes this as a limit, but the diff leaves it in place.",
-        "resolution": "In sweep(), when the graded row is not ok and by_suite holds lines for it, append claude_debris(...) to the row's why. Or move those lines into `loose` so claude_row reports them. Add a case with a suite that writes into .claude/ and then exits 1.",
-        "fixTask": "P137.6-3y3"
+        "resolution": "fixed in P137.6-3y3 (990bfa8c43d0): In sweep(), when the graded row is not ok and by_suite holds lines for it, append claude_debris(...) to the row's why. Or move those lines into `loose` so claude_row reports them. Add a case with a suite that writes into .claude/ and then exits 1.",
+        "fixTask": "P137.6-3y3",
+        "commit": "990bfa8c43d0",
+        "status": "fixed"
       },
       {
         "id": "P137-R14",
         "severity": "low",
         "file": "tools/sweep-selftests.py:219-248 (claude_changes)",
         "issue": "The 'never blame a clean suite' rule (comment at 144-153) does not hold for deletions and for added directories. A DELETED entry is timed by the nearest surviving ancestor's mtime in the AFTER snapshot, and an ADDED directory by its own mtime. A directory's mtime moves with any later entry change directly under it, including entries the guard does not watch (state/ appearing, settings.local.json rewritten by rename, __pycache__). Example: suite A deletes .claude/keep at t1, and the live session or suite B then touches a direct child of .claude/ at t2. The deletion is stamped t2 and pinned on whichever single suite holds t2, which may be a clean one. cw6 asserts the stamps against fixed numbers (99, 66) and cannot see this.",
-        "resolution": "Do not time a deletion (or an added directory) from a directory stamp that other changes can move. Give it at=None and report it in the loose row naming every suite whose window overlaps the whole sweep, with its own wording. The current loose text for at=None says 'no suite's run holds the moment', which is untrue of a deletion that has no moment.",
-        "fixTask": "P137.6-3y3"
+        "resolution": "fixed in P137.6-3y3 (990bfa8c43d0): Do not time a deletion (or an added directory) from a directory stamp that other changes can move. Give it at=None and report it in the loose row naming every suite whose window overlaps the whole sweep, with its own wording. The current loose text for at=None says 'no suite's run holds the moment', which is untrue of a deletion that has no moment.",
+        "fixTask": "P137.6-3y3",
+        "commit": "990bfa8c43d0",
+        "status": "fixed"
       },
       {
         "id": "P137-R15",
         "severity": "low",
         "file": "tools/sweep-selftests.py:179, 723-745",
         "issue": "The 20 ms start slack is applied to every window, so at --jobs 1 two adjacent suites' windows overlap by up to the slack whenever the gap between one ended_ns and the next began_ns is shorter than it. A write in the last milliseconds of a suite then has two candidates, and the printed advice ('Re-run ... with --jobs 1 to name the one that wrote') can loop back to 'unattributed'. cw0 passes only because the writer sleeps 0.4 s after writing. The comment says windows 'cannot overlap' at --jobs 1.",
-        "resolution": "Resolve ties on the raw windows first: if exactly one raw (unslacked) window holds the moment, name it; use the slack only when no raw window does. Add a case with a write at ended_ns - 1 ms and a neighbour starting 5 ms later.",
-        "fixTask": "P137.6-3y3"
+        "resolution": "fixed in P137.6-3y3 (990bfa8c43d0): Resolve ties on the raw windows first: if exactly one raw (unslacked) window holds the moment, name it; use the slack only when no raw window does. Add a case with a write at ended_ns - 1 ms and a neighbour starting 5 ms later.",
+        "fixTask": "P137.6-3y3",
+        "commit": "990bfa8c43d0",
+        "status": "fixed"
       },
       {
         "id": "P137-R16",
         "severity": "low",
         "file": "CLAUDE.md (tests section), CONTRIBUTING.md, tests/_harness.py fixture_root docstring",
         "issue": "These documents say the watched pair is the working directory and the home directory. This diff adds a third watched directory, so those sentences are now false. The executor deferred them, and CLAUDE.md says that paragraph is not checked against the runner, so nothing will catch the drift.",
-        "resolution": "Update the three sentences in this task or file a follow-up task for them. Do not leave 'the watched pair' standing.",
-        "fixTask": "P137.6-3y3"
+        "resolution": "fixed in P137.6-3y3 (990bfa8c43d0): Update the three sentences in this task or file a follow-up task for them. Do not leave 'the watched pair' standing.",
+        "fixTask": "P137.6-3y3",
+        "commit": "990bfa8c43d0",
+        "status": "fixed"
       },
       {
         "id": "P137-R17",
@@ -230,9 +240,30 @@
         "file": "tools/sweep-selftests.py:2491-2500 (cw10) and tools/gate-parity.py:1097-1103",
         "issue": "cw10's 'a character wrong' variant is always `state/` -> `state/x`, a prefix change. A row loosened at its tail or anchor (e.g. `\\.json$` becoming `\\.json`, or `(?:-[0-9a-f]+)?` becoming `.*`) still skips its example and still fails to match the prefix-mutated one, so cw10 stays green. The new gate-parity comment and the case text claim a row 'grown loose enough to swallow a suite's file' is reported; the mutation only reaches prefix looseness.",
         "resolution": "Also test a tail mutation per row (append 'x' to the example, and for the directory rows a sibling like 'state/briefs-extra/x'), and assert the sentence."
+      },
+      {
+        "id": "P137-R26",
+        "severity": "low",
+        "file": "tests/test__scoped_commit.py:207-217,242-253,298-303,325-329",
+        "issue": "The structural scan (result_scan, sc-ua10/sc-ua11) can be fooled by a reader that hands the narrowed list to a helper, and the comment claims more than it delivers. Taint is only set by `x = R[\"during\"]` (a direct Subscript, line 300-303); an assignment from a call (`during = _drop_config(strays[\"during\"])`, or `during = _drop_config(during)` after the tainted assignment) taints nothing, and a Call argument is never examined, so nothing is flagged. The helper itself is not scanned either: only functions that call `undeclared_changes` are walked (line 268), so a comprehension over its parameter is invisible. Passing the WHOLE answer to a helper is caught (`used other than by key`), but passing a list read by key is not. Further holes in the same shape: a `for p in R[\"during\"]` loop that appends in an else branch rather than using `continue` (325-329); `_only_membership` accepts any comparator that is not a literal and not an upper-case Name, so `p not in _skiplist()`, `p in _mio.SKIP` (Attribute) and a lower-case module list all count as 'computed' (251-253); a tuple-unpacked or `or`-wrapped read is not tainted. The comment at 207-217 says the lists may be narrowed 'by a membership test ... and by nothing else' and that a reader has 'no way to rebuild it ... handing it on' - false for the helper route. The docstring at _scoped_commit.py:~1160 does admit 'a reader that reaches a skip by a route neither describes is not caught', which satisfies the first alternative of P137-R2, but the helper hand-off is the most obvious such route and is cheap to close. Read from the code; not run.",
+        "resolution": "Make taint transitive: an Assign whose value contains any tainted name or a by-key read of an UNDECLARED_KEYS list taints its targets (any expression, including calls, BoolOps, tuples). Flag a tainted value passed as an argument to any call except a short allowlist of presentation builtins (len, sorted, set, list, tuple, str.join) and, for a same-file helper receiving it, scan that helper's body with its parameter as tainted. Narrow `_only_membership` to a comparator that is a bare lower-case Name bound in the function from something other than a literal, and flag loops that filter without `continue` (any `if` guarding an append of the loop variable). Add a sc-ua11 mutation per hole (call-wrapped, helper, Attribute comparator). Or reword the comment so it does not say 'nothing else'."
+      },
+      {
+        "id": "P137-R27",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_scoped_commit.py:1093-1106 (read by plugins/audit/scripts/governance/drive-phase.py:3520-3529,3702)",
+        "issue": "`_is_tracked` returns True when git cannot answer, which is the loud direction for the commit and the close (the config counts as an undeclared change and the verb refuses; nothing is written) but the unsafe one for the set-aside. There `plugin_owned_rels` is read as a PROTECTION list (`plugin_owned_paths` -> `settle_aside`: 'Nothing is reverted ... when one of paths is plugin-owned'). A config wrongly judged tracked is not in that list, so it is reverted by `git checkout HEAD` or, when HEAD does not hold it, deleted by `os.remove` (drive-phase.py:3685-3691). Reaching that needs `ls-files` to fail (or `plan_to_git` to return None) while `ls-tree` and `checkout` succeed, so it is narrow, and the patch keeps the bytes; but one function now serves three readers with opposite safe directions and the diff chose the direction by the two that refuse. `plan_to_git` None (outside the checkout) is also read as tracked, though nothing outside the checkout is listed by status in the first place. Judgement from reading; sc-ua9's `blind_rows` pins only the 'not exempted' side and no case pins the set-aside side of a failed answer.",
+        "resolution": "Return a tri-state from `_is_tracked` (tracked / untracked / unknown) and let `plugin_owned_rels` place the config for the refusing readers when unknown, while `plugin_owned_paths` treats unknown as owned (protected), or have set_aside refuse to revert a path whose tracked state is unknown. Add a case with git unavailable for the set-aside reader."
+      },
+      {
+        "id": "P137-R28",
+        "severity": "low",
+        "file": "tests/test_drive_phase.py:1500-1535 (xs6)",
+        "issue": "The change edits tests/test_drive_phase.py, which is in neither the task's `files` nor its `tests.gate` (the gate is the three suites test__scoped_commit, test_audit_task, test_commit_task_work). The behaviour change really does turn xs6 red (a tracked config is no longer plugin-owned for the set-aside), so the recorded gate run, which passed, would have passed over a stale xs6; only the executor's own wider gate command ran it. The brief's diff also omits the file, so a reader of the brief does not see the set-aside's new expectation. The outcome does describe the xs6 change, so the claim is honest; the scope declaration is not.",
+        "resolution": "Add tests/test_drive_phase.py to the task's files and to tests.gate (retarget --gate-set) so the dependant suite is part of the recorded gate, or record the widening as a scope note on the task."
       }
     ],
-    "outcome": "[findings: 25 - 0 high, 6 med, 19 low; 8 with a recorded fix commit]"
+    "outcome": "[findings: 28 - 0 high, 6 med, 22 low; 13 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -579,7 +610,7 @@
     {
       "id": "P137.6-3y3",
       "title": "The sweep's checkout .claude/ guard sees every write a suite makes there and names it even when the suite also failed",
-      "status": "in_progress",
+      "status": "done",
       "description": "",
       "files": [
         "tools/sweep-selftests.py",
@@ -610,14 +641,17 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "990bfa8c43d0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Retry fix: tests/test__refs.py tb1 (tool_basename_drift) flagged the cw14 fixture label 'tests/x.py' at tools/sweep-selftests.py lines 2443, 2445, 2446, 2448. Spelled around the lint by the first accepted spelling (drop the extension where nothing reads it): grade() uses rel_path only as a label returned in the row, so the four calls now pass 'tests/x'; no exemption added, TOOL_FIXTURE_BASENAMES untouched. All attempt-1 work kept: tools/sweep-selftests.py (state/ watched again, CLAUDE_LIVE_WRITES, scratch_refusal exit 2, grade reports code and finding together, removals unattributed, serial gap, window in rows), tools/gate-parity.py AUDITED_EXEMPTIONS row, CONTRIBUTING.md paragraph, tests/_harness.py fixture_root docstring. CLAUDE.md untouched; its Tests sentence 'The working directory and the home directory are the watched pair ...' is stale and is the follow-up for the tests/_harness.py tests.add entry. Gates run in the worktree: python3 tests/test__refs.py --selftest exit 0 (292/292); python3 tools/sweep-selftests.py tools/sweep-selftests.py tools/gate-parity.py tests/test__refs.py exit 0 (3/3 files ok, 508 cases); sweep-selftests --selftest 123/123 (file ok in the sweep). Dependants: callers of sweep-selftests.py unchanged in spelling; gate-parity.py one row; CONTRIBUTING.md one paragraph; _harness.py docstring only; label change in cw14 affects nothing else. Disclosure: the four-line label edit was made with sed -i (then removing the .bak), not the Edit tool, against the instruction; the attempt-1 large edit via python heredoc is also still disclosed.",
+        "descriptive": "The sweep's checkout .claude/ guard sees every suite write and names it even when the suite also failed; the cw14 fixture no longer trips the tool basename lint."
       },
       "startedAt": "2026-10-22T20:03:34Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-22T20:18:15Z",
+      "verifiedBy": [
+        "follow-up note for the three stale sentences (CLAUDE.md Tests paragraph) - no new case, documented in outcome",
+        "sweep-selftests inline cases cw2-cw16: a suite's own write under the checkout's .claude/state/ is a finding; non-zero exit and .claude write both reported; removals never pinned on a suite; a temp dir inside a checkout refused"
+      ],
       "notes": [
         {
           "at": "2026-10-22T19:08:03Z",
@@ -656,6 +690,18 @@
         "runId": "2026-10-22T20:15:15Z.539193",
         "status": "passed",
         "at": "2026-10-22T20:15:15Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "990bfa8c43d0",
+        "at": "2026-10-22T20:18:15Z",
+        "return": "docs/audit/evidence/returns/P137.6-3y3/20261022T200334Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-22T20:06:34Z",
+        "basis": "`python3 tools/sweep-selftests.py tools/sweep-selftests.py` in a throwaway tree at HEAD exited 1 with failing cases cw2 (house FAIL), cw9 (house FAIL), cw11 (house FAIL), cw12 (house FAIL), cw5 (house FAIL), cw6 (house FAIL), cw13 (house FAIL), cw14 (house FAIL) and 2 more, but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 114/123 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -672,7 +718,8 @@
         "plugins/audit/scripts/governance/_scoped_commit.py",
         "plugins/audit/scripts/manifest/audit-task.py",
         "tests/test__scoped_commit.py",
-        "tests/test_audit_task.py"
+        "tests/test_audit_task.py",
+        "tests/test_drive_phase.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -692,14 +739,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-22T19:08:31Z",
+      "startedAt": "2026-10-22T20:24:06Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -718,6 +765,10 @@
         {
           "at": "2026-10-22T19:08:12Z",
           "text": "no test runner in this task's gate for the test P137-R1, P137-R2, P137-R3 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test__scoped_commit.py tests/test_audit_task.py tests/test_commit_task_work.py'], derived as from --gate; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        },
+        {
+          "at": "2026-10-22T20:43:59Z",
+          "text": "files widened by tests/test_drive_phase.py: widened by the integration answer"
         }
       ],
       "fixes": [
@@ -727,9 +778,9 @@
       ],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-22T20:00:27Z.a4ca33",
-        "status": "failed",
-        "at": "2026-10-22T20:00:27Z"
+        "runId": "2026-10-22T20:50:05Z.82d7d0",
+        "status": "passed",
+        "at": "2026-10-22T20:50:05Z"
       }
     }
   ],

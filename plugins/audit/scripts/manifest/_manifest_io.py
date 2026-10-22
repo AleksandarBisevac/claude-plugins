@@ -1355,6 +1355,14 @@ PLUGIN_OWNED_IN_CLAUDE = (
     (CONFIG_NAME, "the plugin's own configuration"),
 )
 
+# THE ROWS ABOVE THAT ARE THE PLUGIN'S ONLY WHILE GIT DOES NOT TRACK THEM. A
+# configuration file a session or the panel just created is nobody's edit; one
+# the project commits is a file a task can really change, and exempting it
+# there would let that change pass the commit and the close as a note. The
+# reader of the table (`_scoped_commit.plugin_owned_rels`) asks git per path;
+# the ignore file and the restore points are not a project's own files.
+PLUGIN_OWNED_WHILE_UNTRACKED = (CONFIG_NAME,)
+
 
 def plugin_owned_under(claude_dir):
     """`[(absolute path, why), ...]` - the table's rows placed under `claude_dir`.
