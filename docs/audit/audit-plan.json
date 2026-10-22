@@ -860,7 +860,7 @@
     {
       "id": "P133",
       "title": "The task-gate exemption flag is added only to this plugin's own audit-status",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P133.json"
     }
   ],
