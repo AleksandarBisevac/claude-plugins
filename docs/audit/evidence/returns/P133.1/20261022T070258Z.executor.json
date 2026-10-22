@@ -1,0 +1,34 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_test_gate.py": "pass",
+    "committed-copy: python3 tools/sweep-selftests.py (whole tree, 194/194 files ok, exit 0)": "pass",
+    "committed-copy: ruff check plugins/audit tools tests": "pass",
+    "committed-copy: vermin -t=3.8-": "pass",
+    "committed-copy: python3 tools/gate-parity.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-22T07:20:57Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py` in a throwaway tree at HEAD exited 1 with failing cases gtf2 (house FAIL), gtf3 (house FAIL), tests/test_run_test_gate.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 563/565 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "run-test-gate.py: new _is_own_status (os.path.samefile against SCRIPTS_DIR/status/audit-status.py, project-relative names resolved against the project, OSError -> not own) and gate_task_step(command, task, project) -> (command, note); with_gate_task now delegates to it ([0]) and takes an optional project. run_gate gained say=print and says the note once per step; the signal-retry path uses with_gate_task (no second note). main passes say=out, or a stderr writer under --json so stdout stays parseable. Tests: new _foreign_status_cases (gtf1 fixture = stand-in old audit-status that exits 2 on unknown args, proven 0 unchanged / 2 with --task; gtf2 foreign copy runs unchanged; gtf3 one line naming the script; gtf4 own script by absolute AND project-relative path still gets --task and prints nothing). The existing gte1/gte3/gte4 now spell the plugin's own script absolutely, since their old relative path named a file that is not this plugin's. Own suite 565/565. Verified on a throwaway local clone with my two files committed there (the shared tree got no commit; clone left at /tmp/p1331-vIyb because the removal was refused): whole-tree sweep 194/194 files ok exit 0, ruff clean, vermin ok, gate-parity ok. I did not run the other verify.sh slices (check-example-ledgers, measure-context etc.). Dependants: run-test-gate.py (docs/examples/azure-pipelines.yml, tools/check-example-ledgers.py, PLUGIN-BUILD-GUIDE.md, docs/handbook.html, hooks/_config.py, the two schemas, _config_rules.py) still correct - they reference the script by path/basename; the CLI, exit codes and recorded step command are unchanged, only a foreign-audit-status gate step now runs without --task and prints one line. Names used elsewhere (_declared_by, _extension, _git_text, _jest_failure_name, _step) untouched. tests/test_run_test_gate.py dependants (test_commit_task_work.py import _cli, sweep-costs.json, verify.sh, phase-signoff.md, test__locks/_proc_group/_runner_output basename, _excluded_cases, _full_repo) still correct: nothing they use was renamed; the suite gained one stage (gtf-block) so its recorded cost in .github/sweep-costs.json is marginally low, not edited (not my file). audit-status.py:1988 comment names with_gate_task; still accurate.",
+    "descriptive": "A gate step running an older/other audit-status.py is run as declared with one line saying the task exemption was not applied, instead of failing with unrecognized arguments --task; this plugin's own script still gets --task."
+  },
+  "testsAdded": [
+    "Foreign-audit-status case block: fixture old script refusing unknown args; foreign copy runs unchanged with one naming line; plugin's own script (absolute and relative path) still gets --task with no line"
+  ],
+  "casesAdded": [
+    [
+      "gtf1",
+      "gtf2",
+      "gtf3",
+      "gtf4"
+    ]
+  ],
+  "claims": "claims:\n1 run-test-gate.py _is_own_status (samefile) and gate_task_step are what the docstrings and the note describe; run_gate calls gate_task_step once per step and say(note) once\n2 always-foreign mutant (in-memory patch of _is_own_status) -> own script gets no --task (gtf4 condition false); always-own mutant -> foreign script gets --task (gtf2 condition false); pre-fix code made gtf2/gtf3 FAIL; gtf1 proves the fixture really exits 2 with --task\n3 grep -rn 'with_gate_task|gate_task_step' outside docs/audit: run-test-gate.py (def, delegation, run_gate x2), tests gte1 (updated to the absolute own path), audit-status.py:1988 comment (still accurate); no second site appends --task\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 decision reads the resolved file (os.path.samefile on the path the step names, relative to the project), not the spelling; the allow case (own script, absolute and relative) proven quiet in gtf4 alongside the deny\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:456df6aa85dcc16643b28ed05b9983397014f5304bca1aeda3a7d8419b636c7c\",\"dirtyDigest\":\"sha256:c5bd082fca8ddab6228e55eb1f8a784fba0ecaa61a2de76d29d55b48e5f2198b\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/run-test-gate.py\":\"84e691509460fe21\",\"tests/test_run_test_gate.py\":\"26fb53d286bd58de\"},\"head\":\"4e6c7b52\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/run-test-gate.py\",\"tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:45ff1a57978d75975ea7be96c7b0d25e69aa903ee1a09c55bd9278d131a3325a\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

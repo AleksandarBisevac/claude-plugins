@@ -1,0 +1,52 @@
+{
+  "findings": [
+    {
+      "id": 1,
+      "severity": "med",
+      "file": "plugins/audit/scripts/governance/run-test-gate.py:3036-3052",
+      "issue": "_is_own_status receives the word shlex.split produced, which is the text BEFORE the shell expands it. os.path.expanduser handles only a leading ~, not $VAR or ${VAR}. A gate step that names the plugin's own script through its installed path (python3 ${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py plan.json --gate; the repo already writes ${CLAUDE_PLUGIN_ROOT}/scripts/... in plugin commands, e.g. audit-plan.json:4209) is joined to the project as a literal relative name. That file does not exist, so samefile raises OSError and the function returns False. The shell would have run exactly this runner's own script, yet the step is classed foreign: --task is withheld and the note wrongly says it is another copy. This fails in the direction the orchestrator asked about (withholding from the plugin's own script) and reopens the P131.12 red on the task gate. Nothing in the diff or tests covers an env-var spelling.",
+      "resolution": "Run os.path.expandvars(os.path.expanduser(script)) before the isabs test (CLAUDE_PLUGIN_ROOT is set in the runner's env when the plugin spawns it), or resolve the word through the shell the step will run in. If a word still contains an unexpanded $, say 'could not resolve' in the note instead of 'is another copy'. Add a gtf case with the step spelled ${CLAUDE_PLUGIN_ROOT}/... and the variable set to the plugin root, expecting --task."
+    },
+    {
+      "id": 2,
+      "severity": "med",
+      "file": "plugins/audit/scripts/governance/run-test-gate.py:3036-3052",
+      "issue": "Identity is judged against the runner's SCRIPTS_DIR only. When the runner is not the project's own checkout (the drive-from-HEAD driver worktree <outside-repo>, or an installed cache copy), a project whose gate names its own plugins/audit/scripts/status/audit-status.py (this repo's gate, audit-plan.json:22) names a different file from the runner's. It is classed foreign, so --task is never appended for the dogfood repo's task gates under the driver, and a task whose own bug is open and fixed would again be graded by the plain gate. The note makes it visible, so this is a loss of the P131.12 exemption rather than a silent one. It follows from the task text ('same file as this runner's own'), but the text and the executor's outcome leave this case unexamined.",
+      "resolution": "State the consequence in the outcome and in the note, or decide on capability instead of location: accept a named audit-status.py whose --help advertises --task, or whose content is byte-identical to the runner's copy. Pin whichever is chosen with a case where the project holds a byte-identical copy at a different path."
+    },
+    {
+      "id": 3,
+      "severity": "low",
+      "file": "tests/test_run_test_gate.py:10684-10748",
+      "issue": "gtf4's allow case covers an absolute and a project-relative path to the real file only. The forms the orchestrator named (a symlink in the project pointing at the own script, a ../ path, ${VAR} expansion) are asserted nowhere. A samefile-to-realpath regression, or a mutant that compares spelled paths with abspath, would pass gtf2-gtf4. gtf1 proves the fixture exits 2 with --task, but gtf2/gtf3 do not pin that the withholding comes from identity rather than from the string 'tools/old'.",
+      "resolution": "Add a symlink case (project/link/audit-status.py -> own, expect --task, no note) and a spelled-differently case (./x/../ form, expect --task). Skip the symlink case where os.symlink is unavailable (Windows without privilege), saying so."
+    }
+  ],
+  "preExisting": [
+    {
+      "id": 1,
+      "severity": "low",
+      "file": "plugins/audit/scripts/governance/run-test-gate.py:3057",
+      "issue": "shlex.split in POSIX mode eats backslashes, so a Windows-form step (python3 C:\\path\\audit-status.py plan.json --gate) is mangled to a name whose basename is not audit-status.py. The step is then returned unchanged with no note, both before and after this diff. A Windows project therefore never gets --task and is never told.",
+      "resolution": "Split with posix=False on nt, or note that the step could not be read."
+    },
+    {
+      "id": 2,
+      "severity": "low",
+      "file": "plugins/audit/scripts/governance/run-test-gate.py:3068",
+      "issue": "with_gate_task(command, task_id, project=None) resolves a relative script against the process cwd when project is omitted. The only production callers pass project, but the default is a trap for a future caller.",
+      "resolution": "Make project required, or document that None means cwd."
+    }
+  ],
+  "intent": {
+    "answer": "matches",
+    "note": "Task clause: 'append --task only when it is the same file as this runner's own status/audit-status.py (os.path.samefile, or realpath equality); otherwise run the step unchanged and print one line that the task-gate exemption was not applied because the step runs another copy of audit-status, naming it. Keep the existing refusals.' The diff does this. _is_own_status uses os.path.samefile against SCRIPTS_DIR/status/audit-status.py, resolves a relative name against the project (which is _shell's cwd), and treats OSError as 'not own'. gate_task_step keeps the compound, shlex-error, has-task and no --gate refusals and returns a one-line note naming the script. run_gate says the note once per step, the retry path goes through with_gate_task so it adds no second note, and --json sends the note to stderr. The executor's outcome describes this diff accurately. It correctly says the old gte tests were respelled to the absolute own path, and that the recorded sweep cost is untouched. Not covered: the step's script word is not shell-expanded (finding 1), and the repo's own gate under a driver-copy runner is classed foreign (finding 2). Dependants: the outcome's answers hold. The CLI, exit codes and recorded step command are unchanged, the audit-status.py:1988 comment still names a live function, and no other caller of with_gate_task exists (grep over plugins, tools and tests outside this file).",
+    "missing": [],
+    "redFirst": "could-not-prove",
+    "redFirstBasis": "Executor's word echoed. Its basis is that a throwaway tree at HEAD ran the sweep command, exited 1, and failed gtf2 and gtf3, but it admits the fixed tree's output matched no tally reader, so the red is not shown to be one the fix turns green. Read as a report, gtf2 and gtf3 look like assertion failures on unfixed code, which would be red. I did not run them. gtf1 is a fixture check and gtf4 is an allow case that passes on unfixed code, so neither is red-first by design. The executor's claims block also reports hand-made always-foreign and always-own mutants turning gtf4 and gtf2 false; that was not rechecked.",
+    "inheritedTests": "none-found",
+    "inheritedTestsBasis": "Gate is 'python3 tools/sweep-selftests.py tests/test_run_test_gate.py', which selects the whole of that one file. I grepped the file for audit-status.py and read every hit: line 5925 only loads the module, gte1/gte3/gte4 (10617-10681) are this task's respelled cases and still assert the attachment, and gtf1-gtf4 are new. No other test there runs a gate step naming audit-status.py with a task, so none would stay green if the own-script --task attachment were deleted. The rest of the file's 565 cases were not read line by line."
+  },
+  "verdict": "findings",
+  "tasks": []
+}

@@ -101,6 +101,7 @@ Exit codes:
   2  the gate could not be asked (no manifest, no such phase)
 """
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -3033,10 +3034,71 @@ _drain = _proc_group.drain
 _NOT_A_LONE_COMMAND = ("|", "&", ";", "<", ">", "(", ")", "`", "#", "\n")
 
 
-def with_gate_task(command, task_id):
+def _declares_task_option(tree):
+    """Whether a parsed script has an `add_argument` call naming `--task`."""
+    return any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+               and n.func.attr == "add_argument"
+               and any(isinstance(a, ast.Constant) and a.value == "--task"
+                       for a in n.args)
+               for n in ast.walk(tree))
+
+
+def _task_option_gap(script, project):
+    """None when the `audit-status.py` a gate step names declares `--task`,
+    otherwise the reason it will not be given one (`could not be read (...)` or
+    `does not declare --task`).
+
+    THE QUESTION IS WHETHER THE SCRIPT THIS STEP RUNS TAKES THE OPTION, not
+    whether it is the runner's own file: a project's in-repo copy is a different
+    file and takes it, and an older release a project pins is a different file
+    and rejects it (`unrecognized arguments`, exit 2). So the word is resolved
+    the way the shell will resolve it - variables and `~` expanded, a relative
+    name read from the project, which is where `_shell` runs a step - and the
+    file is READ, as text parsed to a tree: nothing is run to ask it. A name
+    the expansion cannot turn into a readable file is withheld with that
+    reason, never read as an old copy."""
+    named = os.path.expanduser(os.path.expandvars(script))
+    if project is not None and not os.path.isabs(named):
+        named = os.path.join(project, named)
+    try:
+        with open(named, "rb") as fh:
+            tree = ast.parse(fh.read(), filename=named)
+    except (OSError, SyntaxError, ValueError) as exc:
+        return "could not be read (%s: %s)" % (type(exc).__name__, exc)
+    return None if _declares_task_option(tree) else "does not declare --task"
+
+
+def gate_task_step(command, task_id, project=None):
+    """`(command, note)`: `with_gate_task`'s command, and `note` - one line - when
+    the step is a lone `audit-status.py --gate` that was NOT given `--task`
+    because the script it names does not declare that option or cannot be read
+    (`_task_option_gap`). `note` is None when nothing was withheld for that
+    reason."""
+    if task_id is None or any(c in command for c in _NOT_A_LONE_COMMAND):
+        return command, None
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return command, None
+    scripts = [a for a in argv if os.path.basename(a) == "audit-status.py"]
+    has_task = any(a == "--task" or a.startswith("--task=") for a in argv)
+    if not scripts or "--gate" not in argv or has_task:
+        return command, None
+    gap = _task_option_gap(scripts[0], project)
+    if gap:
+        return command, (
+            "[run-test-gate] the task exemption was not applied: this step runs "
+            "%s, which %s, so it is run as declared, without --task %s."
+            % (scripts[0], gap, task_id))
+    return "%s --task %s" % (command, shlex.quote(str(task_id))), None
+
+
+def with_gate_task(command, task_id, project=None):
     """`command` with `--task <task_id>` appended when it is ONE invocation of
-    `audit-status.py` carrying `--gate` and no `--task` yet; otherwise
-    `command` exactly as declared, and always so for a `task_id` of None.
+    an `audit-status.py` that declares `--task`, carrying `--gate` and no
+    `--task` yet; otherwise `command` exactly as declared, and always so for a
+    `task_id` of None. A copy that does not declare it, or cannot be read, gets
+    no flag (`gate_task_step` says so).
 
     THE ARGV IS THE ONE CHANNEL. The task reaches the plan's gate step as a
     flag on that step's own command line because anything ambient - an
@@ -3049,17 +3111,11 @@ def with_gate_task(command, task_id):
     direction a wrong guess must fall in. The step's recorded `command` stays
     the declared one; the task the gate graded is printed by `audit-status.py`
     (`GATE TASK ...`) in the step's output whenever it grades open-high-bugs."""
-    if task_id is None or any(c in command for c in _NOT_A_LONE_COMMAND):
-        return command
-    try:
-        argv = shlex.split(command)
-    except ValueError:
-        return command
-    runs_status = any(os.path.basename(a) == "audit-status.py" for a in argv)
-    has_task = any(a == "--task" or a.startswith("--task=") for a in argv)
-    if not runs_status or "--gate" not in argv or has_task:
-        return command
-    return "%s --task %s" % (command, shlex.quote(str(task_id)))
+    return gate_task_step(command, task_id, project)[0]
+
+
+def _say_on_stderr(line):
+    sys.stderr.write(line + "\n")
 
 
 def _shell(project, command, timeout=None):
@@ -3719,7 +3775,7 @@ def observed_step(name, command, code, text, facts, duration_ms):
 def run_gate(project, commands, runner=None, owns=None, timeout=None,
              recorded=None, task_scope=False, keep_text=False,
              derived_check=None, muted=None, today=None, preamble=None,
-             withheld=None, task=None):
+             withheld=None, task=None, say=print):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
@@ -3763,8 +3819,10 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     not honour whatever their `until`.
     `res["muted"]` is every mute that excused a step, `[]` when none did.
     `task` is the task a task-scope run grades, or None: each command is run
-    through `with_gate_task`, which is how the plan's own `gate` step learns
-    whose gate it is grading, while the row keeps the declared command.
+    through `gate_task_step`, which is how the plan's own `gate` step learns
+    whose gate it is grading, while the row keeps the declared command. A step
+    that runs another copy of `audit-status.py` is run as declared and `say`
+    gets one line, once per step, that the exemption was not applied.
     """
     runner = runner or _shell
     today = _vocab.mute_today() if today is None else today
@@ -3805,8 +3863,10 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     try:
         for name, command in commands:
             step_started = time.monotonic()
-            code, text, facts = runner(project, with_gate_task(command, task),
-                                       timeout)
+            gated, task_note = gate_task_step(command, task, project)
+            if task_note:
+                say(task_note)
+            code, text, facts = runner(project, gated, timeout)
             step = observed_step(name, command, code, text, facts,
                                  _elapsed_ms(step_started))
             # ONE SECOND ATTEMPT, AND ONLY FOR A STEP THE OS ENDED. The key read
@@ -3832,7 +3892,8 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
                 retry_started = time.monotonic()
                 lowered, change = lowered_parallelism(command)
                 code, text, facts = runner(
-                    project, with_gate_task(lowered or command, task), timeout)
+                    project, with_gate_task(lowered or command, task, project),
+                    timeout)
                 first = step
                 step = observed_step(name, command, code, text, facts,
                                      _elapsed_ms(retry_started))
@@ -5462,7 +5523,10 @@ def main(argv, out=print):
                            muted=declared_mutes(manifest),
                            preamble=declared_preamble(manifest),
                            withheld=withheld_mutes(manifest, args.task),
-                           task=args.task)
+                           task=args.task,
+                           # `--json` keeps stdout parseable, so its note goes
+                           # to stderr instead of being dropped.
+                           say=(_say_on_stderr if args.as_json else out))
         finally:
             _disarm_interrupt(previous)
         # ON THE MEASURED RUN AND NOT ON THE REPEAT'S SOURCE. `run_gate` takes no

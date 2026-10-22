@@ -1,7 +1,7 @@
 {
   "id": "P133",
   "title": "The task-gate exemption flag is added only to this plugin's own audit-status",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Bugfix found by the stage 1 confirming measurement (register F780).",
   "desiredOutcome": "A project whose gate step calls a different or older audit-status.py gets its gate run as declared, with a line saying the task exemption was not applied, instead of a red gate on every run.",
   "testGate": [
@@ -16,21 +16,44 @@
     "vitest"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "4e6c7b52019fec937afd54379a3d8ae8a39f7047",
+  "branch": "audit/p133-the-task-gate-exemption-flag-i",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P133-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:3036-3052",
+        "issue": "_is_own_status receives the word shlex.split produced, which is the text BEFORE the shell expands it. os.path.expanduser handles only a leading ~, not $VAR or ${VAR}. A gate step that names the plugin's own script through its installed path (python3 ${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py plan.json --gate; the repo already writes ${CLAUDE_PLUGIN_ROOT}/scripts/... in plugin commands, e.g. audit-plan.json:4209) is joined to the project as a literal relative name. That file does not exist, so samefile raises OSError and the function returns False. The shell would have run exactly this runner's own script, yet the step is classed foreign: --task is withheld and the note wrongly says it is another copy. This fails in the direction the orchestrator asked about (withholding from the plugin's own script) and reopens the P131.12 red on the task gate. Nothing in the diff or tests covers an env-var spelling.",
+        "resolution": "Run os.path.expandvars(os.path.expanduser(script)) before the isabs test (CLAUDE_PLUGIN_ROOT is set in the runner's env when the plugin spawns it), or resolve the word through the shell the step will run in. If a word still contains an unexpanded $, say 'could not resolve' in the note instead of 'is another copy'. Add a gtf case with the step spelled ${CLAUDE_PLUGIN_ROOT}/... and the variable set to the plugin root, expecting --task."
+      },
+      {
+        "id": "P133-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:3036-3052",
+        "issue": "Identity is judged against the runner's SCRIPTS_DIR only. When the runner is not the project's own checkout (the drive-from-HEAD driver worktree <outside-repo>, or an installed cache copy), a project whose gate names its own plugins/audit/scripts/status/audit-status.py (this repo's gate, audit-plan.json:22) names a different file from the runner's. It is classed foreign, so --task is never appended for the dogfood repo's task gates under the driver, and a task whose own bug is open and fixed would again be graded by the plain gate. The note makes it visible, so this is a loss of the P131.12 exemption rather than a silent one. It follows from the task text ('same file as this runner's own'), but the text and the executor's outcome leave this case unexamined.",
+        "resolution": "State the consequence in the outcome and in the note, or decide on capability instead of location: accept a named audit-status.py whose --help advertises --task, or whose content is byte-identical to the runner's copy. Pin whichever is chosen with a case where the project holds a byte-identical copy at a different path."
+      },
+      {
+        "id": "P133-R3",
+        "severity": "low",
+        "file": "tests/test_run_test_gate.py:10684-10748",
+        "issue": "gtf4's allow case covers an absolute and a project-relative path to the real file only. The forms the orchestrator named (a symlink in the project pointing at the own script, a ../ path, ${VAR} expansion) are asserted nowhere. A samefile-to-realpath regression, or a mutant that compares spelled paths with abspath, would pass gtf2-gtf4. gtf1 proves the fixture exits 2 with --task, but gtf2/gtf3 do not pin that the withholding comes from identity rather than from the string 'tools/old'.",
+        "resolution": "Add a symlink case (project/link/audit-status.py -> own, expect --task, no note) and a spelled-differently case (./x/../ form, expect --task). Skip the symlink case where os.symlink is unavailable (Windows without privilege), saying so."
+      }
+    ],
+    "outcome": "[findings: 3 - 0 high, 2 med, 1 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P133.1",
       "title": "run-test-gate appends --task only to a gate step that runs this plugin's own audit-status.py, and says so when it does not",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F780. run-test-gate.py with_gate_task (P131.12) appends `--task <id>` to any single `audit-status.py --gate` step. Stage 1 showed the project's gate naming an OLDER audit-status (this repo at base 48f2322d, plugin 3.3.0) that rejects the flag (`unrecognized arguments: --task`, exit 2), so the gate is red on every run. Resolve the step's script path (relative to the project, after the same word parsing with_gate_task already does) and append --task only when it is the same file as this runner's own status/audit-status.py (os.path.samefile, or realpath equality); otherwise run the step unchanged and print one line that the task-gate exemption was not applied because the step runs another copy of audit-status, naming it. Keep the existing refusals (compound commands etc.).",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -56,18 +79,31 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-22T07:02:58Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-22T07:58:26Z.6e6572",
+        "status": "passed",
+        "at": "2026-10-22T07:58:26Z"
+      }
     }
   ],
   "request": "da, kreni tim redom (owner 2026-10-22: plugin fix first, then harness, then re-run stage 1)",
-  "openChoices": []
+  "openChoices": [],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "bf837df2-37bc-4c94-9233-61f7d70c1d7f",
+    "branch": "audit/p133-the-task-gate-exemption-flag-i",
+    "at": "2026-10-22T07:02:58Z"
+  },
+  "startedAt": "2026-10-22T07:02:58Z"
 }

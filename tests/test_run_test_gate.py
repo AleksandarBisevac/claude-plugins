@@ -10616,7 +10616,10 @@ def _gate_task_env_cases(check):
     explicit `--task` on that step's own argv - never through the environment,
     which every other `audit-status.py --gate` (CI, sign-off, a release check)
     inherits too."""
-    status = "python3 plugins/audit/scripts/status/audit-status.py plan.json --gate"
+    # The plugin's OWN script, spelled absolutely: `--task` is only appended to
+    # that file (`_foreign_status_cases` is the other direction).
+    status = "python3 %s plan.json --gate" % shlex.quote(
+        os.path.join(_output.SCRIPTS_DIR, "status", "audit-status.py"))
     attached = M.with_gate_task(status, "P1.2")
     left = dict((label, M.with_gate_task(command, "P1.2")) for label, command in (
         ("compound", status + " && echo done"),
@@ -10678,6 +10681,153 @@ def _gate_task_env_cases(check):
           code == M.E_OK and ran == [status + " --task P1.2"])
 
 
+def _foreign_status_cases(check):
+    """`--task` goes to a gate step whose `audit-status.py` DECLARES that option,
+    whichever copy of the script it is: the project's own in-repo copy, the
+    plugin root spelled through an environment variable, a symlink. A copy that
+    does not declare it (an older release a project pins), or one that cannot be
+    read, is run as declared and the output says which and why."""
+    own = os.path.join(_output.SCRIPTS_DIR, "status", "audit-status.py")
+    repo = _mini_repo("run-test-gate-foreign-status-")
+    # The dogfood shape: the PROJECT holds its own audit-status, a different
+    # file from the runner's, and it declares --task.
+    mine_dir = os.path.join(repo, "plugins", "audit", "scripts", "status")
+    os.makedirs(mine_dir)
+    mine = os.path.join(mine_dir, "audit-status.py")
+    _write(mine, "import argparse\n"
+                 "p = argparse.ArgumentParser()\n"
+                 "p.add_argument('plan')\n"
+                 "p.add_argument('--gate', action='store_true')\n"
+                 "p.add_argument('--task', default=None, metavar='ID')\n"
+                 "p.parse_args()\n"
+                 "print('GATE PASSED')\n")
+    old_dir = os.path.join(repo, "tools", "old")
+    os.makedirs(old_dir)
+    old = os.path.join(old_dir, "audit-status.py")
+    # An older release: it refuses any argument it does not know, exit 2.
+    _write(old, "import sys\n"
+                "known = ('plan.json', '--gate')\n"
+                "bad = [a for a in sys.argv[1:] if a not in known]\n"
+                "if bad:\n"
+                "    sys.stderr.write('unrecognized arguments: %s\\n' % ' '.join(bad))\n"
+                "    sys.exit(2)\n"
+                "print('GATE PASSED')\n")
+    def gate(script):
+        return "python3 %s plan.json --gate" % script
+    foreign = gate("tools/old/audit-status.py")
+    in_repo = gate("plugins/audit/scripts/status/audit-status.py")
+    own_abs = gate(shlex.quote(own))
+    # From the REAL paths: a temp dir behind a symlink (macOS /var) makes a
+    # textual relpath climb one level too few, and the OS resolves `..`
+    # from where the directory really is.
+    own_rel = gate(shlex.quote(
+        os.path.relpath(os.path.realpath(own),
+                        os.path.realpath(repo)).replace(os.sep, "/")))
+    # The spelling a user project's gate uses; set around the runs below.
+    var_name = "RTG_FOREIGN_CASES_PLUGIN_ROOT"
+    via_var = gate('"${%s}/scripts/status/audit-status.py"' % var_name)
+    unset_var = gate('"${RTG_FOREIGN_CASES_NEVER_SET}/audit-status.py"')
+    missing = gate("tools/nowhere/audit-status.py")
+    dotted = gate("tools/old/../../plugins/audit/scripts/status/audit-status.py")
+    dotted_old = gate("plugins/audit/../../tools/old/audit-status.py")
+    linked, linked_old = gate("link-new/audit-status.py"), gate(
+        "link-old/audit-status.py")
+    try:
+        os.symlink(mine_dir, os.path.join(repo, "link-new"))
+        os.symlink(old_dir, os.path.join(repo, "link-old"))
+        symlinks = True
+    except (OSError, NotImplementedError, AttributeError):
+        symlinks = False
+
+    def run(command):
+        seen = []
+
+        def runner(_project, cmd, _timeout=None):
+            seen.append(cmd)
+            return 0, "ok\n", {}
+        buf = _io.StringIO()
+        with _ctx.redirect_stdout(buf), _ctx.redirect_stderr(buf):
+            M.run_gate(repo, [("gate", command)], runner=runner, task="P1.2")
+        return seen, buf.getvalue()
+    os.environ[var_name] = _output.PLUGIN_ROOT
+    try:
+        via_seen, via_out = run(via_var)
+    finally:
+        del os.environ[var_name]
+    foreign_seen, foreign_out = run(foreign)
+    abs_seen, abs_out = run(own_abs)
+    rel_seen, rel_out = run(own_rel)
+    repo_seen, repo_out = run(in_repo)
+    unset_seen, unset_out = run(unset_var)
+    gone_seen, gone_out = run(missing)
+    dot_seen, dot_out = run(dotted)
+    dot_old_seen, dot_old_out = run(dotted_old)
+    if symlinks:
+        link_seen, link_out = run(linked)
+        link_old_seen, link_old_out = run(linked_old)
+    else:
+        link_seen, link_out = [linked + " --task P1.2"], ""
+        link_old_seen, link_old_out = [linked_old], (
+            "the task exemption was not applied: does not declare --task "
+            "tools/old/audit-status.py")
+    # The fixture is real: run unchanged the old script exits 0, with --task 2.
+    unchanged = subprocess.run([sys.executable, old, "plan.json", "--gate"],
+                               cwd=repo, capture_output=True, text=True)
+    attached = subprocess.run([sys.executable, old, "plan.json", "--gate",
+                               "--task", "P1.2"], cwd=repo, capture_output=True,
+                              text=True)
+    check("gtf1 THE FIXTURE: the stand-in old audit-status exits 0 as declared "
+          "and 2 with `--task` appended, which is the red this task removes: "
+          "%r / %r" % (unchanged.returncode, attached.returncode),
+          unchanged.returncode == 0 and attached.returncode == 2
+          and "unrecognized arguments: --task" in attached.stderr)
+    check("gtf2 a gate step whose audit-status.py does not declare --task runs "
+          "exactly as declared, with no --task: %r" % (foreign_seen,),
+          foreign_seen == [foreign])
+    check("gtf3 and says so once, naming the script, that the task exemption "
+          "was not applied and why (it does not declare --task): %r"
+          % (foreign_out,),
+          foreign_out.count("task exemption was not applied") == 1
+          and foreign_out.count("tools/old/audit-status.py") == 1
+          and foreign_out.count("does not declare --task") == 1)
+    # The other direction: a guard that refuses everything would pass gtf2/gtf3.
+    check("gtf4 a step naming the runner's own audit-status.py - by absolute "
+          "path and by a project-relative path - still gets `--task <id>` and "
+          "prints no such line: %r / %r / %r"
+          % (abs_seen, rel_seen, (abs_out, rel_out)),
+          abs_seen == [own_abs + " --task P1.2"]
+          and rel_seen == [own_rel + " --task P1.2"]
+          and "not applied" not in abs_out + rel_out)
+    check("gtf5 THE DOGFOOD SHAPE: the project's own in-repo audit-status.py, a "
+          "different file from the runner's that declares --task, gets it and "
+          "prints nothing: %r / %r" % (repo_seen, repo_out),
+          repo_seen == [in_repo + " --task P1.2"] and repo_out == "")
+    check("gtf6 the plugin root spelled `${VAR}/scripts/...`, the form a user "
+          "project's gate uses, is expanded the way the shell will and gets "
+          "--task: %r / %r" % (via_seen, via_out),
+          via_seen == [via_var + " --task P1.2"] and via_out == ""
+          and unset_seen == [unset_var]
+          and "could not be read" in unset_out
+          and "does not declare" not in unset_out)
+    check("gtf7 a script that is not there is run as declared with a note "
+          "saying it could not be read, not that it lacks the option: %r / %r"
+          % (gone_seen, gone_out),
+          gone_seen == [missing]
+          and gone_out.count("task exemption was not applied") == 1
+          and "could not be read" in gone_out
+          and "tools/nowhere/audit-status.py" in gone_out)
+    check("gtf8 a `../` spelling and a symlink (symlinks made here: %s) give "
+          "the answer the real path gives, for the declaring and the old "
+          "script alike: %r / %r / %r / %r"
+          % (symlinks, dot_seen, dot_old_seen, link_seen, link_old_seen),
+          dot_seen == [dotted + " --task P1.2"] and dot_out == ""
+          and dot_old_seen == [dotted_old]
+          and "does not declare --task" in dot_old_out
+          and link_seen == [linked + " --task P1.2"] and link_out == ""
+          and link_old_seen == [linked_old]
+          and "does not declare --task" in link_old_out)
+
+
 def _task_bug_definition_cases(check):
     """`withheld_mutes` reads a task's bugs through the one definition a task
     gate's exemption reads too."""
@@ -10700,6 +10850,7 @@ def _task_bug_definition_cases(check):
 def _selftest():
     def body(check):
         _harness.stage(check, "gte-block", _gate_task_env_cases)
+        _harness.stage(check, "gtf-block", _foreign_status_cases)
         _harness.stage(check, "gtd-block", _task_bug_definition_cases)
         _shared_facts_cases(check)
         _harness.stage(check, "fo-block", _follower_cases)
