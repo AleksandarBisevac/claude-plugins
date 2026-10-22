@@ -1,7 +1,7 @@
 {
   "id": "P135",
   "title": "A writer's task closes on its own work: the plugin's own state is never refused at commit, and an out-of-scope edit becomes a note instead of a refusal",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Fixes from the stage 1 confirming measurement; the writer's prompt stays equal to plain's.",
   "desiredOutcome": "A task whose gate is green commits even when the plugin itself wrote a restore point, and a writer edit outside the task's files is left out of the commit and named, so the measured pipeline can finish a task.",
   "testGate": [
@@ -16,26 +16,43 @@
     "vitest"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "f2bcd8c785362c7612bbd134ddc38f1ae90c04f2",
+  "branch": "audit/p135-a-writer-s-task-closes-on-its",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P135-R1",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/commit-task-work.py:617-630; plugins/audit/scripts/manifest/_manifest_io.py:1353-1357",
+        "issue": "The table matches by path alone, never by content. In this repo .claude/.gitignore and .claude/audit.config.json are TRACKED (git ls-files .claude), so a task's real undeclared edit to either one is now not refused: it is left out of the commit and named in one notes line. Verified by calling split_plugin_owned with project=<root>/sub: '.claude/.gitignore', 'sub/.claude/audit.config.json' and any name under '.claude/audit-backups/' (including a '.py') all go to the named list. The edit is not silent, but the close succeeds with a tracked-file change left uncommitted. The task asked for this on F760 ('if it belongs there'), so it is not a divergence. It is a weaker check than the old refusal for those two files.",
+        "resolution": "For the two file rows, wave the path only when its change is the plugin's. For .gitignore, that means every added line is one the plugin writes (the ensure_claude_ignored patterns). For audit.config.json, that means the file was absent at the start snapshot. Otherwise keep refusing. At minimum, repeat the plugin-owned line in the refusal output when something else also refuses, so a reader sees what was left out."
+      },
+      {
+        "id": "P135-R2",
+        "severity": "low",
+        "file": "tests/test_commit_task_work.py:2330-2347; tools/gate-parity.py:1048",
+        "issue": "The new AUDITED_EXEMPTIONS row is ('live', 'tests/test_commit_task_work.py ctw-at9'). The checker only confirms that the file carries a case id starting 'ctw-at9 ', so the row is well formed and the instrument exists. ctw-at9 pins only the audit-backups and .gitignore rows plus non-empty reasons. The audit.config.json row has no pin: deleting it makes no case red, because ctw-at7 asserts it only through the config edit. The table comment says nothing forces a new writer to add its row.",
+        "resolution": "Add the config file to ctw-at9's expected paths (os.path.join(root, '.claude', _mio.CONFIG_NAME) in paths), so all three rows are pinned."
+      }
+    ],
+    "outcome": "[findings: 2 - 0 high, 0 med, 2 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P135.1",
       "title": "commit-task-work never refuses the plugin's own state - the manifest restore point under audit-backups/ and the .gitignore line that hides it - and one table of plugin-owned paths is read by both the writer and the check",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F782. Stage 1 run a2: the gate was green and commit-task-work's undeclared-path refusal (attempt_refusal, commit-task-work.py ~546) refused twice on paths no session created by a tool call: `.claude/.gitignore` gaining `audit-backups/`, then `audit-backups/audit-plan.json.bak-<stamp>`. The writers of those paths are in manifest/_manifest_io.py and migrate-manifest.py (grep audit-backups). Put the plugin-owned state paths (restore points, the .gitignore entry the plugin adds, its state dirs) in one table in a shared module both read; attempt_refusal treats them as plugin-owned: never refused as the task's edit, never silently left out of the record (name them on a line). Check the owner's earlier report of the same class: `.claude/audit.config.json` created mid-attempt was refused too (register F760) - cover it by the same table if it belongs there.",
       "files": [
         "plugins/audit/scripts/governance/commit-task-work.py",
         "plugins/audit/scripts/manifest/_manifest_io.py",
-        "tests/test_commit_task_work.py"
+        "tests/test_commit_task_work.py",
+        "tools/gate-parity.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -57,16 +74,22 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-22T12:01:44Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-22T13:04:55Z.3a682c",
+        "status": "passed",
+        "at": "2026-10-22T13:04:55Z"
+      }
     },
     {
       "id": "P135.2",
@@ -109,8 +132,55 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P135.3-kux",
+      "title": "A writer or reviewer session starts as a clean top-level session: run-agent-session does not pass the orchestrator's Claude session variables to it",
+      "status": "pending",
+      "description": "Found while diagnosing F784: run-agent-session._session_env (~249-253) copies the orchestrator's whole environment, so CLAUDECODE, CLAUDE_CODE_SESSION_ID and CLAUDE_EFFORT reach the writer, while a top-level session (and both measurement arms) start without them. Drop the parent's Claude session variables (CLAUDECODE and every CLAUDE_CODE_* / CLAUDE_EFFORT; keep any CLAUDE_* the runner sets on purpose and name them) so a writer starts like a plain top-level session.",
+      "files": [
+        "plugins/audit/scripts/governance/run-agent-session.py",
+        "tests/test_run_agent_session.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_agent_session.py: the child environment carries no CLAUDECODE, CLAUDE_CODE_SESSION_ID, CLAUDE_EFFORT or other CLAUDE_* session variable from the parent, while PATH, HOME and the runner's own variables are kept"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_agent_session.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "Stage 1 measurement (2026-10-22): runs could not close because the commit check refused the plugin's own restore point and the writer's out-of-scope edit (register F782, F783)",
-  "openChoices": []
+  "openChoices": [],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "bf837df2-37bc-4c94-9233-61f7d70c1d7f",
+    "branch": "audit/p135-a-writer-s-task-closes-on-its",
+    "at": "2026-10-22T12:01:44Z"
+  },
+  "startedAt": "2026-10-22T12:01:44Z"
 }

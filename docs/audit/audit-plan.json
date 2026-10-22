@@ -872,7 +872,7 @@
     {
       "id": "P135",
       "title": "A writer's task closes on its own work: the plugin's own state is never refused at commit, and an out-of-scope edit becomes a note instead of a refusal",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P135.json"
     }
   ],
@@ -7883,7 +7883,8 @@
       "P131.1",
       "P131.2",
       "P131.14",
-      "P132.5-5mm"
+      "P132.5-5mm",
+      "P135.1"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -11483,11 +11484,13 @@
     ],
     "plugins/audit/scripts/governance/run-agent-session.py": [
       "P131.3",
-      "P131.5"
+      "P131.5",
+      "P135.3-kux"
     ],
     "tests/test_run_agent_session.py": [
       "P131.3",
-      "P131.5"
+      "P131.5",
+      "P135.3-kux"
     ],
     "plugins/audit/scripts/governance/_clause_coverage.py": [
       "P131.7"
