@@ -880,6 +880,12 @@
       "title": "The run-agent-session environment cases hold on Windows",
       "status": "done",
       "shard": "phases/P136.json"
+    },
+    {
+      "id": "P137",
+      "title": "One answer to what an attempt changed that no task declares, and a committed task always closes",
+      "status": "in_progress",
+      "shard": "phases/P137.json"
     }
   ],
   "fileIndex": {
@@ -1180,7 +1186,8 @@
       "P130.53-ywo",
       "P130.60-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P137.6-3y3"
     ],
     "COMPATIBILITY.md": [
       "P18.8",
@@ -1296,7 +1303,8 @@
       "P130.58-ywo",
       "P131.1",
       "P131.2",
-      "P131.16-dau"
+      "P131.16-dau",
+      "P137.6-3y3"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -1589,7 +1597,9 @@
       "P131.18-dau",
       "P131.19-dau",
       "P135.3-kux",
-      "P135.5-kux"
+      "P135.5-kux",
+      "P137.1",
+      "P137.4-3y3"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3872,7 +3882,9 @@
       "P130.52-ywo",
       "P130.56-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P137.1",
+      "P137.7-3y3"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -4023,7 +4035,8 @@
       "P131.1",
       "P131.2",
       "P135.1",
-      "P135.2"
+      "P135.2",
+      "P137.1"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
       "P42.6",
@@ -4314,7 +4327,8 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P135.1"
+      "P135.1",
+      "P137.7-3y3"
     ],
     "plugins/audit/scripts/manifest/_manifest_merge.py": [
       "P60.1"
@@ -4656,7 +4670,9 @@
       "P131.1",
       "P131.2",
       "P131.13",
-      "P132.3"
+      "P132.3",
+      "P137.1",
+      "P137.7-3y3"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -7893,7 +7909,9 @@
       "P131.2",
       "P131.14",
       "P132.5-5mm",
-      "P135.1"
+      "P135.1",
+      "P137.3-3y3",
+      "P137.6-3y3"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -8028,7 +8046,9 @@
       "P130.9",
       "P131.1",
       "P131.2",
-      "P132.5-5mm"
+      "P132.5-5mm",
+      "P137.3-3y3",
+      "P137.6-3y3"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -9881,7 +9901,10 @@
       "P132.1",
       "P132.2",
       "P132.3",
-      "P135.2"
+      "P135.2",
+      "P137.1",
+      "P137.2",
+      "P137.5-3y3"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -10885,7 +10908,8 @@
       "P131.2",
       "P109.3",
       "P132.5-5mm",
-      "P134.1"
+      "P134.1",
+      "P137.6-3y3"
     ],
     "tests/fixtures/pricing-page-2026-10-10.md": [
       "P131.1"
@@ -11157,7 +11181,9 @@
       "P131.1"
     ],
     "tests/test__scoped_commit.py": [
-      "P131.1"
+      "P131.1",
+      "P137.1",
+      "P137.7-3y3"
     ],
     "tests/test__status_facts.py": [
       "P131.1",
@@ -11266,7 +11292,9 @@
       "P131.13",
       "P129.7-izt",
       "P132.5-5mm",
-      "P132.3"
+      "P132.3",
+      "P137.1",
+      "P137.7-3y3"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -11289,7 +11317,9 @@
     "tests/test_commit_task_work.py": [
       "P131.1",
       "P135.1",
-      "P135.2"
+      "P135.2",
+      "P137.1",
+      "P137.7-3y3"
     ],
     "tests/test_derive_phase_gate.py": [
       "P131.1"
@@ -11316,7 +11346,11 @@
       "P132.2",
       "P132.3",
       "P132.5-5mm",
-      "P135.2"
+      "P135.2",
+      "P137.1",
+      "P137.2",
+      "P137.5-3y3",
+      "P137.7-3y3"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -11497,7 +11531,8 @@
       "P131.5",
       "P135.3-kux",
       "P135.4-kux",
-      "P135.5-kux"
+      "P135.5-kux",
+      "P137.4-3y3"
     ],
     "tests/test_run_agent_session.py": [
       "P131.3",
@@ -11505,7 +11540,8 @@
       "P135.3-kux",
       "P135.4-kux",
       "P135.5-kux",
-      "P136.1"
+      "P136.1",
+      "P137.4-3y3"
     ],
     "plugins/audit/scripts/governance/_clause_coverage.py": [
       "P131.7"
@@ -11544,6 +11580,9 @@
     ],
     ".claude/audit.config.json": [
       "P132.4"
+    ],
+    "tests/": [
+      "P137.3-3y3"
     ]
   },
   "bugs": [
