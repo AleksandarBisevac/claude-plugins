@@ -1076,7 +1076,18 @@ def run_state_rels(project, config, git_root):
     return [rel for rel in rels if rel is not None]
 
 
-def plugin_owned_rels(project, git_root):
+# Whether git's index holds a path has three answers. The two readers of the
+# plugin-owned rows want opposite things from the third: the commit and the
+# close REFUSE what is not placed as the plugin's own, so for them an unknown
+# leaves the path unplaced; the set-aside REVERTS or deletes what is not
+# placed, so for it an unknown places the path. `plugin_owned_rels` takes the
+# reader's side as a required argument.
+TRACKED, UNTRACKED, UNKNOWN = "tracked", "untracked", "unknown"
+UNKNOWN_REFUSES = "unknown-refuses"
+UNKNOWN_PROTECTS = "unknown-protects"
+
+
+def plugin_owned_rels(project, git_root, when_unknown):
     """`[(git-root-relative path, why), ...]` - `_manifest_io.PLUGIN_OWNED_IN_CLAUDE`
     placed under the project's `.claude/` and under the checkout's, which are
     two directories when the project sits below the git root and the one
@@ -1086,7 +1097,17 @@ def plugin_owned_rels(project, git_root):
     git does not track it: the committed configuration file is a project file a
     task can edit, so its change is an undeclared one like any other. The
     commit, the close and the set-aside all place the rows here, so they agree
-    on it."""
+    on it wherever git can say.
+
+    `when_unknown` is where they differ, and it has no default so that no
+    reader takes a side by omission: `UNKNOWN_REFUSES` for a reader that
+    refuses what is not placed (the commit and the close, through
+    `undeclared_changes`) leaves such a row out; `UNKNOWN_PROTECTS` for a
+    reader that reverts or deletes what is not placed (the set-aside) puts it
+    in. Any other value raises `ValueError`."""
+    if when_unknown not in (UNKNOWN_REFUSES, UNKNOWN_PROTECTS):
+        raise ValueError("when_unknown must be %r or %r, not %r"
+                         % (UNKNOWN_REFUSES, UNKNOWN_PROTECTS, when_unknown))
     rows, seen = [], set()
     for base in (project, git_root):
         claude = os.path.join(base, ".claude")
@@ -1096,17 +1117,20 @@ def plugin_owned_rels(project, git_root):
                 continue
             seen.add(rel)
             name = os.path.relpath(path, claude).replace("\\", "/")
-            if name in _mio.PLUGIN_OWNED_WHILE_UNTRACKED \
-                    and _is_tracked(git_root, rel):
-                continue
+            if name in _mio.PLUGIN_OWNED_WHILE_UNTRACKED:
+                state = tracking(git_root, rel)
+                if state == TRACKED or (state == UNKNOWN
+                                        and when_unknown == UNKNOWN_REFUSES):
+                    continue
             rows.append((rel, why))
     return rows
 
 
-def _is_tracked(git_root, rel):
-    """Whether git's index holds `rel`. When git cannot say, True: a path not
-    known to be the plugin's own is an undeclared change - the loud answer -
-    where the other would let a task's edit pass as a note.
+def tracking(git_root, rel):
+    """`TRACKED`, `UNTRACKED` or `UNKNOWN` - whether git's index holds `rel`;
+    `UNKNOWN` when the path cannot be spelled as a pathspec or `git ls-files`
+    exits non-zero or could not be run. What an unknown means is the
+    reader's, not this function's (`plugin_owned_rels`).
 
     `rel` is spelled from the checkout's top, so it goes through
     `plan_to_git` as an entry of a project that IS the top: the pathspec is the
@@ -1114,9 +1138,11 @@ def _is_tracked(git_root, rel):
     hc = _loader.load_hooks_config(modname="audit__config")
     spec = hc.plan_to_git(rel, git_root, git_root)
     if spec is None:
-        return True
+        return UNKNOWN
     code, out, _err = run_git(git_root, ["ls-files", "-z", "--", spec])
-    return code != 0 or bool(out)
+    if code != 0:
+        return UNKNOWN
+    return TRACKED if out else UNTRACKED
 
 
 def split_plugin_owned(paths, owned):
@@ -1170,7 +1196,8 @@ def undeclared_changes(git_root, project, config, record, started_at, owned,
             if any(_task_outputs.covers(entry, p) for entry in owned)]
     held = set(mine)
     rest = [p for p in live if p not in held]
-    strays, named = split_plugin_owned(rest, plugin_owned_rels(project, git_root))
+    strays, named = split_plugin_owned(
+        rest, plugin_owned_rels(project, git_root, UNKNOWN_REFUSES))
     changes = attribute(git_root, strays, record, started_at)
     changes["covered"] = mine
     changes["strays"] = strays

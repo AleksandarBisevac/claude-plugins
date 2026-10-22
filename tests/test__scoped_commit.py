@@ -313,9 +313,11 @@ def _undeclared_changes_cases(check, tmp, outside):
     _write(os.path.join(fresh, *config_rel.split("/")), "{}\n")
     created, _w = (("missing", "") if asked is None else
                    asked(fresh, fresh, {}, None, LONG_AGO, [], []))
-    placed = M.plugin_owned_rels(held, held)
+    unknown_refuses = getattr(M, "UNKNOWN_REFUSES", "missing")
+    unknown_protects = getattr(M, "UNKNOWN_PROTECTS", "missing")
+    placed = M.plugin_owned_rels(held, held, unknown_refuses)
     set_aside = M.split_plugin_owned([config_rel, ignore_rel], placed)
-    blind_rows = M.plugin_owned_rels(outside, outside)
+    blind_rows = M.plugin_owned_rels(outside, outside, unknown_refuses)
     check("sc-ua9 a TRACKED configuration file that was edited is an undeclared "
           "change - in during and strays, in no plugin-owned list, and not in "
           "the rows the set-aside places - while the ignore file beside it, "
@@ -330,6 +332,126 @@ def _undeclared_changes_cases(check, tmp, outside):
           and created["strays"] == [] and created["during"] == []
           and [p for p, _w in created["pluginOwned"]] == [config_rel]
           and config_rel not in [rel for rel, _w in blind_rows])
+
+    _tracking_unknown_cases(check, held, fresh, config_rel, ignore_rel,
+                            unknown_refuses, unknown_protects)
+
+
+def _rel_names(rows):
+    return [rel for rel, _why in rows]
+
+
+def _placed(project, when_unknown):
+    """The rels `plugin_owned_rels` places under `project`, or the exception
+    the call raised - a case about the argument must see a refusal as data."""
+    try:
+        return _rel_names(M.plugin_owned_rels(project, project, when_unknown))
+    except Exception as exc:
+        return "%s: %s" % (exc.__class__.__name__, exc)
+
+
+def _tracking_unknown_cases(check, held, fresh, config_rel, ignore_rel,
+                            unknown_refuses, unknown_protects):
+    """Whether git tracks the configuration file has THREE answers, and the two
+    kinds of reader want opposite things from the third. The commit and the
+    close REFUSE what is not known to be the plugin's own; the set-aside
+    REVERTS what is not protected, so for it an unknown must protect. Each case
+    below is built to separate a direction chosen by the reader from one chosen
+    by the function, and from an unknown that is read as tracked or untracked
+    for everyone."""
+    real_run_git = M.run_git
+
+    def blind_to_tracking(git_root, args, *rest, **kwargs):
+        # Only the tracked-or-not question: the status listing, which every
+        # reader needs first, is still answered.
+        if list(args[:3]) == ["ls-files", "-z", "--"]:
+            return None, "", "git could not be run (fixture)"
+        return real_run_git(git_root, args, *rest, **kwargs)
+
+    known = [(_placed(held, how), _placed(fresh, how))
+             for how in (unknown_refuses, unknown_protects)]
+    check("sc-ua12 ALLOW: where git CAN answer, the direction argument changes "
+          "nothing - a tracked configuration file is placed under neither, an "
+          "untracked one under both, and the ignore file under both - so a "
+          "function that applies the unknown rule to every answer goes red "
+          "here: %r" % (known,),
+          known[0] == known[1] and config_rel not in known[0][0]
+          and ignore_rel in known[0][0] and config_rel in known[0][1])
+
+    M.run_git = blind_to_tracking
+    try:
+        blind = dict((label, (_placed(held, how), _placed(fresh, how)))
+                     for label, how in (("refuse", unknown_refuses),
+                                        ("protect", unknown_protects)))
+        refusal_commit = _commit_refusal(fresh, config_rel)
+        refusal_close = _close_leftovers(fresh, config_rel)
+    finally:
+        M.run_git = real_run_git
+    refusal_commit_known = _commit_refusal(fresh, config_rel)
+    refusal_close_known = _close_leftovers(fresh, config_rel)
+    check("sc-ua13 where git cannot say whether the configuration file is "
+          "tracked, a reader that refuses does not place it and a reader that "
+          "protects does - for an edited tracked file and an untracked one "
+          "alike, and the ignore file is placed either way: %r" % (blind,),
+          config_rel not in blind["refuse"][0] and config_rel not in blind["refuse"][1]
+          and config_rel in blind["protect"][0] and config_rel in blind["protect"][1]
+          and ignore_rel in blind["refuse"][0] and ignore_rel in blind["protect"][0])
+
+    check("sc-ua14 the direction is a required argument with two values, so no "
+          "reader gets one by default or by a misspelling: %r"
+          % ((_placed_without_direction(fresh), _placed(fresh, "protects")),),
+          _placed_without_direction(fresh).startswith("TypeError")
+          and _placed(fresh, "protects").startswith("ValueError")
+          and unknown_refuses != unknown_protects)
+
+    check("sc-ua15 the commit step, asked while git cannot say whether an "
+          "untracked configuration file is tracked, refuses it as an undeclared "
+          "change instead of leaving it out; asked while git can say, it leaves "
+          "it out and refuses nothing: %r"
+          % ((refusal_commit, refusal_commit_known),),
+          config_rel in refusal_commit[0] and refusal_commit[1] == []
+          and refusal_commit_known[0] == ""
+          and refusal_commit_known[1] == [config_rel])
+
+    check("sc-ua16 the close, asked the same, counts the file among what the "
+          "task left behind instead of naming it plugin-owned; asked while git "
+          "can say, it is named plugin-owned and left out of both lists: %r"
+          % ((refusal_close, refusal_close_known),),
+          refusal_close[0] == [config_rel] and refusal_close[1] == []
+          and refusal_close_known[0] == []
+          and refusal_close_known[1] == [config_rel])
+
+
+def _placed_without_direction(project):
+    try:
+        M.plugin_owned_rels(project, project)
+    except Exception as exc:
+        return "%s: %s" % (exc.__class__.__name__, exc)
+    return "answered"
+
+
+def _commit_refusal(repo, config_rel):
+    """`(refusal text, plugin-owned paths named)` of the commit step's
+    `attempt_refusal` over `repo` with a task that declares no files."""
+    task = {"id": "P1.1", "status": "in_progress", "files": [], "attempts": 1,
+            "startedAt": LONG_AGO}
+    manifest = {"phases": [{"id": "P1", "tasks": [task]}]}
+    targets = {"paths": [], "declared": [], "records": []}
+    refusal, _notes, attribution = CTW.attempt_refusal(
+        manifest, task, repo, repo, {}, targets, [])
+    return refusal, list((attribution or {}).get("pluginOwned") or [])
+
+
+def _close_leftovers(repo, config_rel):
+    """`(left, plugin-owned paths named)` of the close's
+    `_uncommitted_leftovers` over `repo` with a task that declares no files."""
+    task = {"id": "P1.1", "status": "in_progress", "files": [], "attempts": 1,
+            "startedAt": LONG_AGO}
+    plan = {"phases": [{"id": "P1", "tasks": [task]}]}
+    mpath = os.path.join(repo, "docs", "audit", "audit-plan.json")
+    left, during, _basis, named = AT._uncommitted_leftovers(
+        repo, {}, mpath, {}, repo, plan, task)
+    return left + during, [path for path, _why in named]
 
 
 # --- every reader asks it ------------------------------------------------------
@@ -371,6 +493,26 @@ def _calls_of(source, attr):
     return len([n for n in ast.walk(ast.parse(source))
                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
                 and n.func.attr == attr])
+
+
+def _directions_of(source, name):
+    """For each call of `name` (a bare name or an attribute), the last name of
+    its third argument - `UNKNOWN_REFUSES` for `_scoped_commit.UNKNOWN_REFUSES`
+    - or `-` when the call passes fewer than three arguments."""
+    import ast
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        called = func.attr if isinstance(func, ast.Attribute) else \
+            getattr(func, "id", None)
+        if called != name:
+            continue
+        third = node.args[2] if len(node.args) >= 3 else None
+        found.append(third.attr if isinstance(third, ast.Attribute) else
+                     getattr(third, "id", "?") if third is not None else "-")
+    return found
 
 
 # WHAT A READER MAY DO WITH THE ANSWER. The names above catch the primitives
@@ -548,6 +690,36 @@ def _readers_share_the_question_cases(check):
           "once - a second ask in one reader is a second answer - and the "
           "set-aside asks the shared table: %r" % ((asks, places),),
           asks == {"commit-task-work.py": 1, "audit-task.py": 1} and places == 1)
+
+    # WHICH WAY AN UNKNOWN GOES IS NAMED AT EVERY CALL, tree-wide. The direction
+    # is a required argument, but a reader could still pass the wrong constant;
+    # the commit and the close reach the rows only through `undeclared_changes`
+    # (refusing), the set-aside asks directly (protecting), and nobody else asks.
+    directions = {}
+    for dirpath, _dirs, files in os.walk(_output.SCRIPTS_DIR):
+        for name in sorted(files):
+            if not name.endswith(".py"):
+                continue
+            with io.open(os.path.join(dirpath, name), encoding="utf-8") as fh:
+                asked_with = _directions_of(fh.read(), "plugin_owned_rels")
+            if asked_with:
+                directions[name] = asked_with
+    flipped = sources["drive-phase.py"].replace("_scoped_commit.UNKNOWN_PROTECTS",
+                                                "_scoped_commit.UNKNOWN_REFUSES")
+    bare = sources["drive-phase.py"].replace(
+        'ctx["gitRoot"], _scoped_commit.UNKNOWN_PROTECTS))', 'ctx["gitRoot"]))')
+    check("sc-ua17 under scripts/, `plugin_owned_rels` is asked in two places and "
+          "each names its direction: the shared function refuses on an unknown, "
+          "the set-aside protects; the scan reads a flipped constant and a "
+          "missing argument as such (mutations landed: %s): %r"
+          % (flipped != sources["drive-phase.py"]
+             and bare != sources["drive-phase.py"], directions),
+          directions == {"_scoped_commit.py": ["UNKNOWN_REFUSES"],
+                         "drive-phase.py": ["UNKNOWN_PROTECTS"]}
+          and flipped != sources["drive-phase.py"]
+          and _directions_of(flipped, "plugin_owned_rels") == ["UNKNOWN_REFUSES"]
+          and bare != sources["drive-phase.py"]
+          and _directions_of(bare, "plugin_owned_rels") == ["-"])
 
     # THE SCAN MUST BE ABLE TO FAIL, in both directions: a reader that computes
     # the list itself is named, and the shared spelling is not.

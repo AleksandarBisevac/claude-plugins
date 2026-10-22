@@ -3523,9 +3523,13 @@ def plugin_owned_paths(ctx, paths):
     `.claude/` and the checkout's. The commit leaves these out already; the
     set-aside asks the same table again because a revert is not undone by a
     refusal that follows it. The table and its placement are
-    `_scoped_commit.plugin_owned_rels`, the same the commit and the close ask."""
+    `_scoped_commit.plugin_owned_rels`, the same the commit and the close ask,
+    and where git cannot say whether the configuration file is tracked this
+    reader asks with `UNKNOWN_PROTECTS`: it reverts what is not placed, so an
+    unknown must not leave the file unplaced."""
     _others, named = _scoped_commit.split_plugin_owned(
-        paths, _scoped_commit.plugin_owned_rels(ctx["project"], ctx["gitRoot"]))
+        paths, _scoped_commit.plugin_owned_rels(
+            ctx["project"], ctx["gitRoot"], _scoped_commit.UNKNOWN_PROTECTS))
     return [path for path, _why in named]
 
 

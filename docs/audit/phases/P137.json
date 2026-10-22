@@ -224,16 +224,20 @@
         "severity": "med",
         "file": "tools/sweep-selftests.py:1237-1241 (grade) with 1634-1636 (sweep)",
         "issue": "contradicts task clause (P137-R13, 'a write there is a finding naming the suite' even when the suite failed; task title 'names it even when the suite also failed'): grade() now reports the finding beside a non-zero exit, but `if code is None: return row(False, output)` still runs first, so a suite that wrote into the checkout's .claude/ and then TIMED OUT keeps its attributed lines in by_suite and they are dropped: not in the suite's row, not in the loose row. R13 named 'or the raw timeout text' explicitly. The docstring reasons 'the fixtures its kill left are the kill's, not the suite's', which is true of the cwd and home channels and false of a write into the checkout's .claude/, which no kill makes. cw14's g_late only drives a working-directory finding, so the checkout channel on a timeout is unpinned. The executor's descriptive claim ('names it even when the suite also failed') overstates the diff for this case.",
-        "resolution": "In grade() let the kill exemption apply only to the cwd/home findings: for code None, still append findings whose channel is CLAUDE_CHANNEL ('timed out; and wrote into the checkout .claude: ...'). Add a cw14 case: code None with debris=['checkout .claude: ADDED stray.txt'] must name stray.txt.",
-        "fixTask": "P137.8-3y3"
+        "resolution": "fixed in P137.8-3y3 (c500614cd58d): In grade() let the kill exemption apply only to the cwd/home findings: for code None, still append findings whose channel is CLAUDE_CHANNEL ('timed out; and wrote into the checkout .claude: ...'). Add a cw14 case: code None with debris=['checkout .claude: ADDED stray.txt'] must name stray.txt.",
+        "fixTask": "P137.8-3y3",
+        "commit": "c500614cd58d",
+        "status": "fixed"
       },
       {
         "id": "P137-R23",
         "severity": "med",
         "file": "tools/sweep-selftests.py:1971-1974 (main) and 2463-2480 (cw15)",
         "issue": "The refusal-to-start behaviour that tests.add names ('a temp dir inside a checkout is refused') is pinned only on the helper. cw15 calls scratch_refusal() directly; nothing runs main() or reads its exit code, so deleting the four lines in main() that call it leaves every case, and the gate, green. The documents (CONTRIBUTING.md paragraph, _harness.py docstring, cw16) all say the sweep 'refuses to start'. Shape: an assertion the behaviour (the call and `return 2`) never reaches.",
-        "resolution": "Add a case that drives main() (or a thin wrapper taking tmp) with a temp dir containing a .git above it and asserts exit 2 plus the 'refusing to start' text on stderr, and a clean temp dir that does not take that exit.",
-        "fixTask": "P137.8-3y3"
+        "resolution": "fixed in P137.8-3y3 (c500614cd58d): Add a case that drives main() (or a thin wrapper taking tmp) with a temp dir containing a .git above it and asserts exit 2 plus the 'refusing to start' text on stderr, and a clean temp dir that does not take that exit.",
+        "fixTask": "P137.8-3y3",
+        "commit": "c500614cd58d",
+        "status": "fixed"
       },
       {
         "id": "P137-R24",
@@ -270,9 +274,23 @@
         "file": "tests/test_drive_phase.py:1500-1535 (xs6)",
         "issue": "The change edits tests/test_drive_phase.py, which is in neither the task's `files` nor its `tests.gate` (the gate is the three suites test__scoped_commit, test_audit_task, test_commit_task_work). The behaviour change really does turn xs6 red (a tracked config is no longer plugin-owned for the set-aside), so the recorded gate run, which passed, would have passed over a stale xs6; only the executor's own wider gate command ran it. The brief's diff also omits the file, so a reader of the brief does not see the set-aside's new expectation. The outcome does describe the xs6 change, so the claim is honest; the scope declaration is not.",
         "resolution": "Add tests/test_drive_phase.py to the task's files and to tests.gate (retarget --gate-set) so the dependant suite is part of the recorded gate, or record the widening as a scope note on the task."
+      },
+      {
+        "id": "P137-R29",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_scoped_commit.py:1129-1145",
+        "issue": "`tracking()` is now a public name that returns UNKNOWN with no direction attached. plugin_owned_rels is guarded three ways (required argument, ValueError on any other value, and the tree-wide sc-ua17 scan that pins the exact two call sites and their constants), but nothing scans for a third reader calling `tracking()` directly and deciding for itself what UNKNOWN means, which is the original defect shape (a reader picking a side by omission). Today it has one caller (plugin_owned_rels), so nothing is wrong yet.",
+        "resolution": "Either keep it private (`_tracking`) so only plugin_owned_rels reads it, or extend sc-ua17's scan to assert `tracking` is called only from _scoped_commit.plugin_owned_rels."
+      },
+      {
+        "id": "P137-R30",
+        "severity": "low",
+        "file": "executor return (claims item 2 / redFirst.basis)",
+        "issue": "The claims block says the M1-M6 mutations 'went red as listed in redFirst.basis', but redFirst.basis lists no mutation: it is the red-first helper's timeout text with status could-not-prove. The mutation results are therefore not on the record; the new cases (sc-ua12..sc-ua17, xs6b) were never seen red in anything handed to me.",
+        "resolution": "Re-run the mutations (revert drive-phase.py to UNKNOWN_REFUSES; make tracking() return TRACKED on failure) as a probe the driver can run, or file the mutation table in the outcome so the claim has a basis."
       }
     ],
-    "outcome": "[findings: 28 - 0 high, 6 med, 22 low; 16 with a recorded fix commit]"
+    "outcome": "[findings: 30 - 0 high, 6 med, 24 low; 18 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -812,7 +830,7 @@
     {
       "id": "P137.8-3y3",
       "title": "A sweep names a checkout .claude/ write after a timeout too, and its refusal to start is pinned through main()",
-      "status": "in_progress",
+      "status": "done",
       "description": "",
       "files": [
         "tools/sweep-selftests.py",
@@ -834,14 +852,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c500614cd58d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/sweep-selftests.py only. R22: grade() with code None now keeps the kill exemption for the working-directory and home-directory findings only; findings starting with the checkout .claude channel label are still reported, in the form '<output>; and wrote outside the fixtures it makes for itself: checkout .claude: ADDED stray.txt'. The grade() docstring was updated to say so. New case cw14b: code None with debris=['checkout .claude: ADDED stray.txt'] names stray.txt once beside 'did not finish within 9s'; with working directory and home directory leftovers alongside, only the .claude write is named. Red proof (scratch copy under $TMPDIR, since removed): mutation A, the None branch reverted to the original bare return, gave 'FAIL cw14b ...' (SELFTEST FAILED: 124/125); mutation B, the None branch accusing all debris, gave FAIL cw14 and FAIL cw14b (123/125). R23: new case cw15b drives main() with tempfile.tempdir swapped to a dir with a .git above it: asserts exit 2 and stderr containing 'refusing to start - the temp directory'; and a clean temp dir, which gets past that refusal to the next, cheap one (an unknown suite name) rather than running a sweep, asserting the refusal text is absent and 'is not a suite this sweep covers' is present. tempfile.tempdir and sys.stderr are restored in finally. Red proof: mutation C, main()'s scratch_refusal call replaced with `refusal = None`, gave 'FAIL cw15b main() exits 2 ...' (SELFTEST FAILED: 124/125) with cw15 still PASS, which is the gap this closes. Fixture names carry no .py basename. Gate: `python3 tools/sweep-selftests.py tools/sweep-selftests.py tests/test__refs.py tools/gate-parity.py` run in the worktree with no pipe (output redirected to a file, exit read directly): exit 0, '3/3 files ok, 510 cases' (sweep-selftests 125, test__refs 292, gate-parity 93). `--selftest` alone: exit 0, 125/125. Dependants (the 42 files listed for tools/sweep-selftests.py and its names budget_line, coverage_findings, locale_decision, named_suites): still correct. None of those names was edited; grade() keeps its signature and its output for every input except code None with a checkout .claude finding, which the sweep produces only for a run that wrote there and then timed out; main() is unchanged. The files that read the sweep's output, such as the CI workflow and the cost table, see the same row shape (path, ok, why, cases, output).",
+        "descriptive": "A suite that wrote into the checkout's .claude/ and then timed out is now named for the write, and the sweep's refusal to start with a temp dir inside a checkout is pinned through main()."
       },
       "startedAt": "2026-10-22T20:51:10Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-22T21:27:42Z",
+      "verifiedBy": [
+        "cw14b: grade() with code None names a checkout .claude finding and only that one, dropping the cwd and home leftovers",
+        "cw15b: main() exits 2 with the refusal text for a temp dir under a .git, and a clean temp dir gets past it to the next refusal"
+      ],
       "notes": [
         {
           "at": "2026-10-22T20:50:55Z",
@@ -865,6 +886,17 @@
         "runId": "2026-10-22T21:18:01Z.f31689",
         "status": "passed",
         "at": "2026-10-22T21:18:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c500614cd58d",
+        "at": "2026-10-22T21:27:42Z",
+        "return": "docs/audit/evidence/returns/P137.8-3y3/20261022T205110Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+        "at": "2026-10-22T20:55:30Z"
       }
     },
     {
@@ -927,9 +959,9 @@
       ],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-22T21:25:35Z.50df31",
+        "runId": "2026-10-22T21:35:38Z.721cd6",
         "status": "passed",
-        "at": "2026-10-22T21:25:35Z"
+        "at": "2026-10-22T21:35:38Z"
       }
     }
   ],

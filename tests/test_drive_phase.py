@@ -1446,6 +1446,56 @@ def _writer_scope_cases(check):
           and "not set aside" in line_c + block_c and "clause" in line_c + block_c
           and left_c == _XS_EDIT and _xs_patch_notes(mpath_c, "P1.1") == [])
 
+    # GIT CANNOT SAY WHETHER THE CONFIGURATION FILE IS TRACKED. The set-aside
+    # reads the plugin-owned rows as what it must NOT revert, so for it an
+    # unknown answer protects the file; the same unknown refuses the commit and
+    # the close (the `sc-ua13` to `sc-ua16` cases). Two shapes: the placement
+    # alone, and the whole drive over a writer that edited the committed config
+    # - where the red is a config put back to HEAD, whose patch the note names.
+    config_rel = ".claude/audit.config.json"
+    root_g, mpath_g = _tdd_writer_repo("xs-blind", (_wf_gate(),))
+    real_run_git = M._scoped_commit.run_git
+
+    def blind_to_tracking(git_root, args, *rest, **kwargs):
+        if list(args[:3]) == ["ls-files", "-z", "--"]:
+            return None, "", "git could not be run (fixture)"
+        return real_run_git(git_root, args, *rest, **kwargs)
+
+    M._scoped_commit.run_git = blind_to_tracking
+    try:
+        unit_blind = M.plugin_owned_paths({"project": root_g, "gitRoot": root_g},
+                                          [config_rel, _XS_ASIDE])
+        _signal_next(M, root_g, mpath_g)
+        with open(os.path.join(root_g, *config_rel.split("/")),
+                  encoding="utf-8") as fh:
+            config_head = fh.read()
+        config_edit = config_head + "\n"
+        _writer_round(M, root_g, mpath_g, bindir, log, "0.46",
+                      edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST,
+                            config_rel: config_edit},
+                      result=_WF_CLAIM)
+        _file_reviewer(root_g, mpath_g, "P1.1")
+        code_g, line_g = _signal_next(M, root_g, mpath_g)
+        _c, block_g = _explain_of(M, root_g, mpath_g, PHASE)
+    finally:
+        M._scoped_commit.run_git = real_run_git
+    with open(os.path.join(root_g, *config_rel.split("/")),
+              encoding="utf-8") as fh:
+        config_after = fh.read()
+    check("xs6b where git cannot say whether the configuration file is tracked, "
+          "the set-aside protects it - the placement names it plugin-owned, a "
+          "writer's edit of it is neither reverted nor deleted, no patch is "
+          "noted, the refusal is relayed saying the file is plugin-owned state "
+          "no set-aside reverts, and the task stays in progress: %r"
+          % ((unit_blind, code_g, line_g[-300:], block_g[-300:],
+              _xs_patch_notes(mpath_g, "P1.1")),),
+          unit_blind == [config_rel] and code_g != 0
+          and (tasks_of(mpath_g).get("P1.1") or {}).get("status") == "in_progress"
+          and config_after == config_edit and config_after != config_head
+          and _xs_patch_notes(mpath_g, "P1.1") == []
+          and "plugin-owned state, which no set-aside reverts"
+              in line_g + block_g and config_rel in line_g + block_g)
+
     root_d, mpath_d = _tdd_writer_repo("xs-dirty", (_wf_gate(),))
     _xs_with_aside(root_d)
     os.makedirs(os.path.join(root_d, "notes"))
