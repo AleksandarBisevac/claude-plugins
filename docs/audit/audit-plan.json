@@ -872,7 +872,7 @@
     {
       "id": "P135",
       "title": "A writer's task closes on its own work: the plugin's own state is never refused at commit, and an out-of-scope edit becomes a note instead of a refusal",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P135.json"
     }
   ],
