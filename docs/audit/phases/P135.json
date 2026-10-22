@@ -22,28 +22,34 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P135-R1",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/commit-task-work.py:617-630; plugins/audit/scripts/manifest/_manifest_io.py:1353-1357",
         "issue": "The table matches by path alone, never by content. In this repo .claude/.gitignore and .claude/audit.config.json are TRACKED (git ls-files .claude), so a task's real undeclared edit to either one is now not refused: it is left out of the commit and named in one notes line. Verified by calling split_plugin_owned with project=<root>/sub: '.claude/.gitignore', 'sub/.claude/audit.config.json' and any name under '.claude/audit-backups/' (including a '.py') all go to the named list. The edit is not silent, but the close succeeds with a tracked-file change left uncommitted. The task asked for this on F760 ('if it belongs there'), so it is not a divergence. It is a weaker check than the old refusal for those two files.",
-        "resolution": "For the two file rows, wave the path only when its change is the plugin's. For .gitignore, that means every added line is one the plugin writes (the ensure_claude_ignored patterns). For audit.config.json, that means the file was absent at the start snapshot. Otherwise keep refusing. At minimum, repeat the plugin-owned line in the refusal output when something else also refuses, so a reader sees what was left out."
+        "resolution": "For the two file rows, wave the path only when its change is the plugin's. For .gitignore, that means every added line is one the plugin writes (the ensure_claude_ignored patterns). For audit.config.json, that means the file was absent at the start snapshot. Otherwise keep refusing. At minimum, repeat the plugin-owned line in the refusal output when something else also refuses, so a reader sees what was left out.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P135-R2",
         "severity": "low",
         "file": "tests/test_commit_task_work.py:2330-2347; tools/gate-parity.py:1048",
         "issue": "The new AUDITED_EXEMPTIONS row is ('live', 'tests/test_commit_task_work.py ctw-at9'). The checker only confirms that the file carries a case id starting 'ctw-at9 ', so the row is well formed and the instrument exists. ctw-at9 pins only the audit-backups and .gitignore rows plus non-empty reasons. The audit.config.json row has no pin: deleting it makes no case red, because ctw-at7 asserts it only through the config edit. The table comment says nothing forces a new writer to add its row.",
-        "resolution": "Add the config file to ctw-at9's expected paths (os.path.join(root, '.claude', _mio.CONFIG_NAME) in paths), so all three rows are pinned."
+        "resolution": "Add the config file to ctw-at9's expected paths (os.path.join(root, '.claude', _mio.CONFIG_NAME) in paths), so all three rows are pinned.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P135-R3",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:3541-3562 (settle_aside) and 3587-3606 (writer_commit)",
         "issue": "The task note and ctx['did'] line say 'the commit carries the declared work' and are written before the re-proof, the re-measured gate and the second commit have run. If the re-measured gate goes red (or the second commit refuses), the paths are already reverted and the note already filed, so the task carries a note claiming a commit the run did not make. The patch path in the note is still correct, so nothing is lost; the sentence is only premature.",
-        "resolution": "Word the note as what was done ('set aside ... put back to HEAD; the drive asks the commit again') and leave the commit claim to the close line, or file the note after the second commit succeeds."
+        "resolution": "Word the note as what was done ('set aside ... put back to HEAD; the drive asks the commit again') and leave the commit claim to the close line, or file the note after the second commit succeeds.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P135-R4",
@@ -60,48 +66,62 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:78-80, PLUGIN-BUILD-GUIDE.md:5073-5075",
         "issue": "The comment and the guide say the list is 'the measurement harness's plain arm' list. That harness (run-plain.sh) lives in the private quality-gates-internal repo, not in this one, so a reader of the public tree cannot check the equivalence and nothing keeps the two lists together. I checked it by hand: the 14 names match run-plain.sh lines 62-64 today.",
-        "resolution": "State the list's basis in this repo (what each name is and why a top-level session starts without it) rather than pointing at a file outside the repository, or add a case that reads a committed copy of the list.",
-        "fixTask": "P135.5-kux"
+        "resolution": "fixed in P135.5-kux (ee1462d198cc): State the list's basis in this repo (what each name is and why a top-level session starts without it) rather than pointing at a file outside the repository, or add a case that reads a committed copy of the list.",
+        "fixTask": "P135.5-kux",
+        "commit": "ee1462d198cc",
+        "status": "fixed"
       },
       {
         "id": "P135-R6",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:140-146",
         "issue": "The prefix drop moves the closed-list problem to the keep list. Every CLAUDE_CODE_* name not on KEEP_SESSION_VARS or under CLAUDE_CODE_USE_ is now dropped, including names that carry user configuration a plain top-level session launched from the same shell inherits (for example CLAUDE_CODE_MAX_OUTPUT_TOKENS, CLAUDE_CODE_CLIENT_CERT/KEY, CLAUDE_CODE_DISABLE_* switches, CLAUDE_CODE_SUBAGENT_MODEL, if the operator exports them). The writer would then differ from the plain arm in the other direction. The executor's own claim (2) says the keep names are a judgement, not read from the CLI, and no case or document records which CLAUDE_CODE_* names are expected to survive beyond five. I could not verify the CLI's names from here.",
-        "resolution": "Either read the CLI's documented env-var list and name the configuration switches the keep rule must cover, or write down in the docstring that any CLAUDE_CODE_* name outside the keep rule is deliberately dropped and how an operator keeps one. Keep the claim 'unverified against a CLI release' wherever the keep list is described."
+        "resolution": "Either read the CLI's documented env-var list and name the configuration switches the keep rule must cover, or write down in the docstring that any CLAUDE_CODE_* name outside the keep rule is deliberately dropped and how an operator keeps one. Keep the claim 'unverified against a CLI release' wherever the keep list is described.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P135-R7",
         "severity": "low",
         "file": "tests/test_run_agent_session.py:424-433",
         "issue": "ras30c exercises one of the five KEEP_SESSION_VARS names (CLAUDE_CODE_OAUTH_TOKEN) and one CLAUDE_CODE_USE_ name (VERTEX; BEDROCK sits in ras31's decoys). A misspelled CLAUDE_CODE_API_KEY_HELPER_TTL_MS or CLAUDE_CODE_SKIP_*_AUTH entry would drop that variable silently and stay green.",
-        "resolution": "Derive the case's kept_credentials from the keep tuples written out in the test (all five names), or add the other four names to kept_credentials."
+        "resolution": "Derive the case's kept_credentials from the keep tuples written out in the test (all five names), or add the other four names to kept_credentials.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P135-R8",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:131-132 and PLUGIN-BUILD-GUIDE.md:5074",
         "issue": "Both still say the harness's plain arm unsets 'this same list' / 'the list'. After this diff the runner drops by rule (prefix plus keep), so the sentence no longer describes it. The executor named this and left it for P135.5.",
-        "resolution": "Confirm P135.5 owns the sentence in both places; otherwise reword them here."
+        "resolution": "fixed in P135.5-kux (ee1462d198cc): Confirm P135.5 owns the sentence in both places; otherwise reword them here.",
+        "fixTask": "P135.5-kux",
+        "commit": "ee1462d198cc",
+        "status": "fixed"
       },
       {
         "id": "P135-R9",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:130-139",
         "issue": "The comment says of every listed name 'Passed on, each makes the child a child of the orchestrator's session'. Nothing in the repo or the diff probes that for CLAUDE_EFFORT, CLAUDE_PID or CLAUDE_PROJECT_DIR; those are plausibly dropped because they carry the parent's settings or location, not because they mark parentage. The task asked 'what each name is and why a top-level session starts without it'; the why is given once for the whole set, as a claim no run backs.",
-        "resolution": "Give the reason per group (parent marker: CLAUDECODE, CLAUDE_CODE_CHILD_SESSION; the parent's own settings and location: CLAUDE_EFFORT, CLAUDE_PROJECT_DIR; the plugin's lock state: AUDIT_LOCK_TOKENS), or soften 'each makes the child a child' to what is known: a top-level session does not have them."
+        "resolution": "Give the reason per group (parent marker: CLAUDECODE, CLAUDE_CODE_CHILD_SESSION; the parent's own settings and location: CLAUDE_EFFORT, CLAUDE_PROJECT_DIR; the plugin's lock state: AUDIT_LOCK_TOKENS), or soften 'each makes the child a child' to what is known: a top-level session does not have them.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       },
       {
         "id": "P135-R10",
         "severity": "low",
         "file": "tests/test_run_agent_session.py:130-144",
         "issue": "ras30d asserts word presence (CLAUDE_CODE_, KEEP_SESSION_VARS, KEEP_SESSION_PREFIXES, top-level) in a comment slice and a 6000-character guide window, plus a four-string denylist of outside names. It does not check that the 14 names (or the 5 in PARENT_SESSION_VARS) the prose describes are the ones the code holds, so the comment can drift from the tuple and stay green; the second option in the task (a case tying the prose to the list) is only partly met.",
-        "resolution": "Add an assertion that every name in PARENT_SESSION_VARS appears in both the comment and the guide paragraph."
+        "resolution": "Add an assertion that every name in PARENT_SESSION_VARS appears in both the comment and the guide paragraph.",
+        "status": "carried",
+        "carriedTo": "BUG-29-dau"
       }
     ],
-    "outcome": "[findings: 10 - 0 high, 1 med, 9 low; 1 with a recorded fix commit]"
+    "outcome": "[findings: 10 - 0 high, 1 med, 9 low; 3 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "P135: the plugin's own restore point and .gitignore line are never refused at commit (P135.1); an out-of-scope writer edit is set aside and named instead of refusing the task (P135.2); writer/reviewer sessions start clean - CLAUDE_CODE_* dropped by prefix with a named keep list (P135.3-.5). Lows carried to BUG-29-dau. Per-task reviewer answers continued over: P135.3-kux intent diverges: owner, standing for this run: 'Radis autonomno ... ne izbacujes mi prompt-ove da ti ja nesto potvrdim'; the divergence (exact names instead of the CLAUDE_CODE_* prefix) is a med finding fixed by a follow-up task in this phase",
   "tasks": [
     {
       "id": "P135.1",
@@ -371,7 +391,7 @@
     {
       "id": "P135.5-kux",
       "title": "fix P135-R5: The comment and the guide say the list is 'the measurement harne...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The comment and the guide say the list is 'the measurement harness's plain arm' list. That harness (run-plain.sh) lives in the private quality-gates-internal repo, not in this one, so a reader of the public tree cannot check the equivalence and nothing keeps the two lists together. I checked it by hand: the 14 names match run-plain.sh lines 62-64 today.\n\nResolution asked: State the list's basis in this repo (what each name is and why a top-level session starts without it) rather than pointing at a file outside the repository, or add a case that reads a committed copy of the list.",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
@@ -396,14 +416,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ee1462d198cc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Rewrote the comment above PARENT_SESSION_VARS in run-agent-session.py and the run-agent-session paragraph in PLUGIN-BUILD-GUIDE.md so they state the rule the code holds: names outside CLAUDE_CODE_ dropped by name (CLAUDECODE marker, pid, effort, project dir, lock tokens), CLAUDE_CODE_* dropped by prefix, provider/credential switches kept by KEEP_SESSION_VARS/KEEP_SESSION_PREFIXES, why a top-level session lacks them; no private file named, 'this same list' gone. Also reworded the test comment that cited the harness. Added ras30d reading the script and the guide section: neither contains run-plain / plain arm / measurement harness / quality-gates-internal, and both name the prefix drop, the keep list and 'top-level'. No behaviour change. sweep-selftests tests/test_run_agent_session.py: 1/1 files ok, 38 cases; ruff check on both .py: pass; tests/test__deps.py (254 cases) and tests/test__output_lints.py (169 cases) via sweep-selftests: ok. Dependants: drive-phase.py, _config_rules.py, _panel_settings.py, audit-config.schema.json, test__config_rules.py, test_drive_phase.py - still correct, only a comment/prose changed, no name or behaviour moved. PLUGIN-BUILD-GUIDE.md other sections unchanged. tests/test_run_agent_session.py: _under unchanged; added REPO_ROOT import from _output.\n\nclaims:\n1 run-agent-session.py:130-143 comment describes the constants that follow and the drop predicate; guide paragraph rewritten to the same rule\n2 ras30d red on old prose (37/38), green after (38/38); over-fire direction not mutated\n3 grep -rnE 'plain arm|run-plain|measurement harness' plugins tests PLUGIN-BUILD-GUIDE.md CONTRIBUTING.md: 3 hits (script comment, guide, test comment) - all rewritten\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+        "descriptive": "The drop-list comment and the build guide now state the rule on public code alone, with no pointer to a private harness file."
       },
       "startedAt": "2026-10-22T15:08:20Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-22T15:15:57Z",
+      "verifiedBy": [
+        "ras30d: the script's drop-list comment and the guide section name no file outside the repo and state the prefix drop, the keep list and the top-level basis"
+      ],
       "notes": [
         {
           "at": "2026-10-22T15:01:21Z",
@@ -426,16 +448,28 @@
         "runId": "2026-10-22T15:14:42Z.5e0605",
         "status": "passed",
         "at": "2026-10-22T15:14:42Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ee1462d198cc",
+        "at": "2026-10-22T15:15:57Z",
+        "return": "docs/audit/evidence/returns/P135.5-kux/20261022T150820Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-22T15:12:19Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py` in a throwaway tree at HEAD exited 1 with failing cases ras30d (house FAIL), tests/test_run_agent_session.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 37/38 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     }
   ],
   "request": "Stage 1 measurement (2026-10-22): runs could not close because the commit check refused the plugin's own restore point and the writer's out-of-scope edit (register F782, F783)",
   "openChoices": [],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "bf837df2-37bc-4c94-9233-61f7d70c1d7f",
-    "branch": "audit/p135-a-writer-s-task-closes-on-its",
-    "at": "2026-10-22T12:01:44Z"
-  },
-  "startedAt": "2026-10-22T12:01:44Z"
+  "startedAt": "2026-10-22T12:01:44Z",
+  "testEvidence": {
+    "runId": "2026-10-22T15:28:48Z.676f22",
+    "status": "passed",
+    "at": "2026-10-22T15:28:48Z"
+  }
 }
