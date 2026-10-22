@@ -1,0 +1,40 @@
+{
+ "findings": [
+  {"id": 1, "severity": "med", "file": "plugins/audit/scripts/governance/drive-phase.py:3790-3810",
+   "issue": "contradicts task clause \"a commit after the attempt's start head carrying the task's Audit-Row\": own_commit takes nonces from every journal row naming the task in ANY attempt (the loop at ~3795 filters on taskId only, not on rows after the current attempt's task.start row), and runs `git rev-list <start>..HEAD` without checking that `start` is an ancestor of HEAD. After a rebase or reset the recorded start head can survive off HEAD's history, `start..HEAD` then lists every commit since the merge base, and a previous attempt's still-reachable carrier is taken as this attempt's commit and closed on. _scoped_commit.attempt_span (_scoped_commit.py ~1234-1262) states it is the ONLY reader of the attempt's span and answers (None, why) for exactly this case; own_commit is a second reader with a different rule, the shape that docstring warns about. Read from the code; not run.",
+   "resolution": "Do not run rev-list directly: check `git merge-base --is-ancestor <start> HEAD` (non-zero or error returns None, so the caller keeps the no-change decision) or read the span through _scoped_commit.attempt_span, and limit nonces to journal rows after the current attempt's task.start row."},
+  {"id": 2, "severity": "low", "file": "plugins/audit/scripts/governance/drive-phase.py:3779-3810",
+   "issue": "A commit that was later reverted still closes the task. own_commit returns the Audit-Row carrier C without asking whether C's work is still in HEAD; after `git revert C` the carrier is still in start..HEAD, and the done --commit path (which asks whether the attempt changed a declared file in the span) also still sees C change it, so the task is recorded done on a commit whose effect is undone.",
+   "resolution": "Require that the declared files still differ between C^ and HEAD in C's direction, e.g. no commit in C..HEAD touches the declared files, or `git diff --quiet C HEAD -- <declared>` is false-then-equal to C's own change; otherwise return None so the old decision stands."},
+  {"id": 3, "severity": "low", "file": "plugins/audit/scripts/governance/drive-phase.py:3806-3810",
+   "issue": "The carrier's subject header is not checked. _invariants.recorded_commits (_invariants.py ~784-790) counts a carrier as the scoped commit only when its subject opens with the class header AND the trailer is in the last paragraph, because a squash or any commit that absorbs the message keeps the trailer. own_commit checks only inLast, so a squash-absorbing commit in the range whose last paragraph ends with the trailer is accepted as the task's commit. The task commit's header is commit-task-work.message_parts' `<type>(<taskId>): audit - ...`.",
+   "resolution": "Also require carrier subject to match the task commit's header shape for this task id (`(<taskId>): ` after the type), treating a non-matching carrier as not found, as recorded_commits does with `absorbed`."},
+  {"id": 4, "severity": "med", "file": "tests/test_drive_phase.py:11852-11949 (tcc1-tcc3)",
+   "issue": "No case pins the range. Mutation: replace `rev-list start..HEAD` with `rev-list HEAD` (drop the range). tcc3's carrier sits after the start head, so it is found either way; no case has a carrier at or before the start head that must be ignored. The task clause is literally 'a commit after the attempt's start head'.",
+   "resolution": "Add a case where a carrier exists before the attempt's start (a previous attempt's commit, or a start recorded after the commit) and own_commit/next must still answer no-change."},
+  {"id": 5, "severity": "low", "file": "tests/test_drive_phase.py:11852-11949",
+   "issue": "No case pins the `inLast` filter. Mutation: delete `if c[\"inLast\"]` from the `held` set. Every carrier the fixture produces has its trailer in the last paragraph, so the filter never rejects anything.",
+   "resolution": "Add a case whose range holds a commit with the Audit-Row line in a non-last paragraph and assert it is not closed on."},
+  {"id": 6, "severity": "low", "file": "tests/test_drive_phase.py:11852-11949",
+   "issue": "No case pins the withdrawn-nonce filter. Mutation: delete `nonce not in withdrawn`. The fixture journal has no audit.commit.withdrawn row, so the filter never fires and a withdrawn row's nonce would be accepted with no case red.",
+   "resolution": "Add a case with a withdrawal row for the task's nonce plus a commit still carrying that trailer, and assert no-change is still offered."},
+  {"id": 7, "severity": "low", "file": "tests/test_drive_phase.py:11852-11949",
+   "issue": "No case pins the `task.get(\"commit\")` guard (and none the status guard). Mutation: drop `or task.get(\"commit\")` from the first line of own_commit. Every close_task call in tcc1-4 has an in_progress task with commit null, so the dropped guard changes no outcome.",
+   "resolution": "Unit-call own_commit with a task that has a recorded commit and a carrier in range, and assert None."},
+  {"id": 8, "severity": "low", "file": "tests/test_drive_phase.py:12010-12030 (tcc4)",
+   "issue": "tcc4 never produces a carrier: the stub returns 'nothing to commit' and no commit-task-work run happens, so there is no Audit-Row row and no carrier commit anywhere, and own_commit returns None at the first 'not carried' exit. It would stay green for the four mutations above together (drop the range, the inLast filter, the withdrawn filter and the commit guard), so it is not the twin that keeps the fix from firing on everything. It also leaves unpinned the unreadable-start-head and unreadable-journal exits, which the docstring promises return None.",
+   "resolution": "Make the twin a case with a real carrier that must be ignored (before start, withdrawn, or not in the last paragraph) and add the start-head-missing / journal-unreadable cases."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "diverges",
+  "note": "Clause: 'a commit after the attempt's start head carrying the task's Audit-Row' and 'never offer no-change for a task whose own commit is in the range'. The diff does close on the commit in the plain a1c sequence (tcc3) through the unchanged audit-task done --commit path, so the main clause is met, and the claim (outcome.technical) describes the diff accurately, including its disclosure. It diverges on the 'after the attempt's start head' qualifier: own_commit takes nonces from every attempt and never checks the start head is an ancestor of HEAD (finding 1), and nothing asks whether the commit's work was later reverted (finding 2) or whether the carrier is the task commit rather than an absorbing one (finding 3). The tests do not pin the range or any of the filters (findings 4-8).",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "Executor's filed basis, verbatim: the red-first run of `python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD 'timed out: no time was left of the 480-second deadline'. A timeout reached no assertion, so could-not-prove holds; nothing handed shows tcc1-4 red on the unfixed code. tcc3's own comment names the expected red ('decide no-change P1.1 ... answered no-change|retry') but that is a claim, not a run.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "The gate is the one command `python3 tools/sweep-selftests.py tests/test_drive_phase.py`, selecting only tests/test_drive_phase.py. I read the diff and the added tcc block, not the whole file; the new cases' own weakness is findings 4-8. I found no other test in the diff's reach that would stay green with own_commit deleted beyond tcc4 (finding 8), but I did not read the rest of the file."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

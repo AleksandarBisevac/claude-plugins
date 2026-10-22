@@ -3765,6 +3765,52 @@ def writer_commit(ctx, state, phase, task):
     return committed_sha(out), None
 
 
+def own_commit(ctx, task):
+    """The SHA of the commit the drive already made of `task`'s work this
+    attempt, or None: an in_progress task with no recorded commit, a commit
+    after the head the attempt's start recorded (`start_head_of`), and the
+    commit carries the `Audit-Row` trailer of a journal row naming the task
+    (`trailer_carriers`, in the last paragraph where the writer puts it; a row
+    a withdrawal took back names none).
+
+    WHY THE COMMIT STEP CANNOT BE THE ONLY ANSWER. A close refused after the
+    commit landed leaves the work committed and the task open; the commit step,
+    asked again, finds nothing to commit and says so - which reads as a task
+    that changed nothing. None here is "no such commit found", including when
+    the start head or the journal cannot be read: the caller then keeps the
+    decision it always made, and never claims a commit it could not name."""
+    if task.get("status") != "in_progress" or task.get("commit"):
+        return None
+    try:
+        rows = _journal_io.read_all(ctx["project"], ctx.get("config"))
+    except Exception:                                          # noqa: BLE001
+        return None
+    start = _scoped_commit.start_head_of(rows, task)
+    if not start:
+        return None
+    withdrawn = _invariants.withdrawn_nonces(rows)
+    nonces = []
+    for row in rows:
+        details = row.get("details") if isinstance(row, dict) else None
+        if not isinstance(details, dict) or details.get("taskId") != task["id"]:
+            continue
+        nonce = str(details.get(_invariants.NONCE_KEY) or "")
+        if nonce and nonce not in withdrawn and nonce not in nonces:
+            nonces.append(nonce)
+    carried, _why = _invariants.trailer_carriers(ctx["gitRoot"], nonces)
+    if not carried:
+        return None
+    code, out, _err = _git_literal(ctx["gitRoot"],
+                                   ["rev-list", "%s..HEAD" % (start,)])
+    if code != 0:
+        return None
+    since = out.decode("utf-8", "replace").split()
+    held = set(c["sha"] for found in carried.values() for c in found
+               if c["inLast"])
+    # Newest first: rev-list's own order, so two carriers name the later one.
+    return next((sha for sha in since if sha in held), None)
+
+
 def close_task(ctx, state, phase, task, intent_basis=None):
     """Findings, commit and close for a task whose returns are filed; None when
     the drive goes on, else the instruction or stop to print."""
@@ -3798,6 +3844,11 @@ def close_task(ctx, state, phase, task, intent_basis=None):
         if stop is not None:
             return stop
         sha = committed_sha(out)
+    if not sha:
+        # A close refused after the commit landed leaves the work committed:
+        # close on that commit through the same verb and checks, rather than
+        # offer no-change (a false outcome) or retry (the work redone).
+        sha = own_commit(ctx, task)
     if not sha:
         return decision(ctx, state, "no-change", task, "")
     extra = ["--commit", sha, "--from-return"]

@@ -10321,6 +10321,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("sl-block", "_slice_cases"),
           ("np-block", "_nested_project_cases"),
           ("bb-block", "_base_red_drive_cases"),
+          ("tcc-block", "_committed_close_cases"),
           ("sb-block", "_stage_cases"))
 
 
@@ -11834,6 +11835,120 @@ def _base_red_drive_cases(check):
           said[0].startswith("; run P1.3 first; red at base too: %s" % (suite,))
           and "r-base" in said[0]
           and said[1] == "; no base run recorded" and said[2] == "")
+
+
+def _next_text(M, root, mpath):
+    """`(code, text)` of one plain `next` of the phase."""
+    said = []
+    with _Env(root):
+        code = M.main(["next", PHASE, mpath, "--project-dir", root],
+                      out=said.append)
+    return code, "\n".join(said)
+
+
+def _to_close(M, root, mpath):
+    """Play the main loop up to the step that commits and closes P1.1: its
+    executor and its reviewer have filed, nothing else has happened."""
+    _next_text(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    _next_text(M, root, mpath)
+    _file_reviewer(root, mpath, "P1.1")
+
+
+def _after_verb(M, script, then):
+    """Make `M.run_verb` run `then(code, out, err)` after every run of `script`;
+    the replacement a result returns stands in for the verb's own. Returns the
+    function to put back."""
+    real = M.run_verb
+
+    def wrapped(ctx, name, args, *rest, **kw):
+        got = real(ctx, name, args, *rest, **kw)
+        return then(*got) if name == script else got
+    M.run_verb = wrapped
+    return real
+
+
+def _committed_close_cases(check):
+    """A task whose work the drive committed, and whose close was then refused,
+    closes on that commit at the next step: the commit step finds nothing left
+    to commit, and the answer is neither no-change (a false outcome) nor retry
+    (a writer paid to redo committed work). The sequence is stage 1's: the
+    commit lands with its journal row, the close is refused over a stray file,
+    the file is removed, and `next` is asked again."""
+    M, why = _load("drive_phase_committed_close")
+    if M is None:
+        check("tcc1 the driver loads", False, why)
+        return
+    root, mpath = _repo("tcc", task_ids=TASKS[:1])
+    _to_close(M, root, mpath)
+    stray = os.path.join(root, "stray.txt")
+
+    def leave_stray(code, out, err):
+        # After the commit and before the close: a file nobody declares and the
+        # plugin does not own, changed since the attempt began.
+        if code == 0 and "committed" in out:
+            _write_lf(stray, "a file the commit never saw\n")
+        return code, out, err
+
+    real = _after_verb(M, "commit-task-work.py", leave_stray)
+    try:
+        code1, text1 = _next_text(M, root, mpath)
+    finally:
+        M.run_verb = real
+    carriers = _git_out(root, "log", "--format=%H", "--grep=Audit-Row: ").split()
+    task = tasks_of(mpath).get("P1.1") or {}
+    check("tcc1 the setup is the sequence stage 1 met: the commit landed carrying "
+          "one Audit-Row, the close was refused over the stray file, and the "
+          "task stands in progress with no commit recorded: %r"
+          % ((code1, text1[-300:], carriers, task.get("status"),
+              task.get("commit")),),
+          code1 != 0 and os.path.isfile(stray) and len(carriers) == 1
+          and task.get("status") == "in_progress" and not task.get("commit"))
+    code2, text2 = _next_text(M, root, mpath)
+    task2 = tasks_of(mpath).get("P1.1") or {}
+    check("tcc2 while the stray file stays the close is refused again, in the "
+          "verb's words, and no-change is not offered: %r"
+          % ((code2, text2[-300:], task2.get("status")),),
+          code2 != 0 and "no-change" not in text2
+          and task2.get("status") == "in_progress" and not task2.get("commit"))
+    os.remove(stray)
+    head = _git_out(root, "rev-parse", "HEAD").strip()
+    code3, text3 = _next_text(M, root, mpath)
+    task3 = tasks_of(mpath).get("P1.1") or {}
+    # The red for the defect: `decide no-change P1.1: the commit found nothing
+    # to commit`, answered no-change|retry.
+    check("tcc3 with the stray file removed, the next step closes the task on "
+          "the commit that carries its row - not on no-change, not on retry: %r"
+          % ((code3, text3[-400:], task3.get("status"), task3.get("commit"),
+              carriers, head),),
+          code3 == 0 and "closed P1.1 at %s" % (carriers[0][:7],) in text3
+          and "no-change" not in text3 and "retry" not in text3
+          and task3.get("status") == "done"
+          and bool(task3.get("commit")) and len(carriers) == 1
+          and carriers[0].startswith(str(task3.get("commit")))
+          and head.startswith(str(task3.get("commit"))))
+
+    # The twin that keeps the fix from firing on everything: a commit step that
+    # made no commit and left the work in the tree is a task with no commit of
+    # its own, and no-change is still the question it is asked.
+    root_n, mpath_n = _repo("tcc-none", task_ids=TASKS[:1])
+    _to_close(M, root_n, mpath_n)
+    real = M.run_verb
+
+    def no_commit(ctx, name, args, *rest, **kw):
+        if name == "commit-task-work.py":
+            return 0, "nothing to commit\n", ""
+        return real(ctx, name, args, *rest, **kw)
+    M.run_verb = no_commit
+    try:
+        code_n, text_n = _next_text(M, root_n, mpath_n)
+    finally:
+        M.run_verb = real
+    task_n = tasks_of(mpath_n).get("P1.1") or {}
+    check("tcc4 a task that has no commit of its own in the range is still "
+          "asked no-change: %r" % ((code_n, text_n[-300:], task_n.get("status")),),
+          instruction(text_n) == ("decide", "no-change", None)
+          and "no-change" in text_n and task_n.get("status") == "in_progress")
 
 
 def _stage_cases(check):

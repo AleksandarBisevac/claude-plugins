@@ -44,16 +44,72 @@
         "file": "tests/test__scoped_commit.py:558-569 (sc-ua8)",
         "issue": "The tree-wide scan passes on `outside == []` without counting the files it read. If the `os.walk(_output.SCRIPTS_DIR)` found no `.py` (a wrong anchor, or a skipped directory), the check would read as 'nobody else reads plugin_owned_under' and stay green. That is a filter narrowing to nothing, the shape the repo's no-silent-pass rule names. sc-ua7 shows the per-source scan can fail, but not that this walk reaches files.",
         "resolution": "Collect the scanned names and assert the walk reached the home modules (`_manifest_io.py` and `_scoped_commit.py` among the files read) and more than a handful of files. Put the count in the check text so a narrowed walk goes red."
+      },
+      {
+        "id": "P137-R4",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:3790-3810",
+        "issue": "contradicts task clause \"a commit after the attempt's start head carrying the task's Audit-Row\": own_commit takes nonces from every journal row naming the task in ANY attempt (the loop at ~3795 filters on taskId only, not on rows after the current attempt's task.start row), and runs `git rev-list <start>..HEAD` without checking that `start` is an ancestor of HEAD. After a rebase or reset the recorded start head can survive off HEAD's history, `start..HEAD` then lists every commit since the merge base, and a previous attempt's still-reachable carrier is taken as this attempt's commit and closed on. _scoped_commit.attempt_span (_scoped_commit.py ~1234-1262) states it is the ONLY reader of the attempt's span and answers (None, why) for exactly this case; own_commit is a second reader with a different rule, the shape that docstring warns about. Read from the code; not run.",
+        "resolution": "Do not run rev-list directly: check `git merge-base --is-ancestor <start> HEAD` (non-zero or error returns None, so the caller keeps the no-change decision) or read the span through _scoped_commit.attempt_span, and limit nonces to journal rows after the current attempt's task.start row."
+      },
+      {
+        "id": "P137-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:3779-3810",
+        "issue": "A commit that was later reverted still closes the task. own_commit returns the Audit-Row carrier C without asking whether C's work is still in HEAD; after `git revert C` the carrier is still in start..HEAD, and the done --commit path (which asks whether the attempt changed a declared file in the span) also still sees C change it, so the task is recorded done on a commit whose effect is undone.",
+        "resolution": "Require that the declared files still differ between C^ and HEAD in C's direction, e.g. no commit in C..HEAD touches the declared files, or `git diff --quiet C HEAD -- <declared>` is false-then-equal to C's own change; otherwise return None so the old decision stands."
+      },
+      {
+        "id": "P137-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:3806-3810",
+        "issue": "The carrier's subject header is not checked. _invariants.recorded_commits (_invariants.py ~784-790) counts a carrier as the scoped commit only when its subject opens with the class header AND the trailer is in the last paragraph, because a squash or any commit that absorbs the message keeps the trailer. own_commit checks only inLast, so a squash-absorbing commit in the range whose last paragraph ends with the trailer is accepted as the task's commit. The task commit's header is commit-task-work.message_parts' `<type>(<taskId>): audit - ...`.",
+        "resolution": "Also require carrier subject to match the task commit's header shape for this task id (`(<taskId>): ` after the type), treating a non-matching carrier as not found, as recorded_commits does with `absorbed`."
+      },
+      {
+        "id": "P137-R7",
+        "severity": "med",
+        "file": "tests/test_drive_phase.py:11852-11949 (tcc1-tcc3)",
+        "issue": "No case pins the range. Mutation: replace `rev-list start..HEAD` with `rev-list HEAD` (drop the range). tcc3's carrier sits after the start head, so it is found either way; no case has a carrier at or before the start head that must be ignored. The task clause is literally 'a commit after the attempt's start head'.",
+        "resolution": "Add a case where a carrier exists before the attempt's start (a previous attempt's commit, or a start recorded after the commit) and own_commit/next must still answer no-change."
+      },
+      {
+        "id": "P137-R8",
+        "severity": "low",
+        "file": "tests/test_drive_phase.py:11852-11949",
+        "issue": "No case pins the `inLast` filter. Mutation: delete `if c[\"inLast\"]` from the `held` set. Every carrier the fixture produces has its trailer in the last paragraph, so the filter never rejects anything.",
+        "resolution": "Add a case whose range holds a commit with the Audit-Row line in a non-last paragraph and assert it is not closed on."
+      },
+      {
+        "id": "P137-R9",
+        "severity": "low",
+        "file": "tests/test_drive_phase.py:11852-11949",
+        "issue": "No case pins the withdrawn-nonce filter. Mutation: delete `nonce not in withdrawn`. The fixture journal has no audit.commit.withdrawn row, so the filter never fires and a withdrawn row's nonce would be accepted with no case red.",
+        "resolution": "Add a case with a withdrawal row for the task's nonce plus a commit still carrying that trailer, and assert no-change is still offered."
+      },
+      {
+        "id": "P137-R10",
+        "severity": "low",
+        "file": "tests/test_drive_phase.py:11852-11949",
+        "issue": "No case pins the `task.get(\"commit\")` guard (and none the status guard). Mutation: drop `or task.get(\"commit\")` from the first line of own_commit. Every close_task call in tcc1-4 has an in_progress task with commit null, so the dropped guard changes no outcome.",
+        "resolution": "Unit-call own_commit with a task that has a recorded commit and a carrier in range, and assert None."
+      },
+      {
+        "id": "P137-R11",
+        "severity": "low",
+        "file": "tests/test_drive_phase.py:12010-12030 (tcc4)",
+        "issue": "tcc4 never produces a carrier: the stub returns 'nothing to commit' and no commit-task-work run happens, so there is no Audit-Row row and no carrier commit anywhere, and own_commit returns None at the first 'not carried' exit. It would stay green for the four mutations above together (drop the range, the inLast filter, the withdrawn filter and the commit guard), so it is not the twin that keeps the fix from firing on everything. It also leaves unpinned the unreadable-start-head and unreadable-journal exits, which the docstring promises return None.",
+        "resolution": "Make the twin a case with a real carrier that must be ignored (before start, withdrawn, or not in the last paragraph) and add the start-head-missing / journal-unreadable cases."
       }
     ],
-    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 11 - 0 high, 2 med, 9 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P137.1",
       "title": "One function answers which paths an attempt changed that no in_progress task declares, and every reader asks it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Move the question - paths changed during the attempt (by the start snapshot, else mtime against startedAt) that no in_progress task covers, with the plan's bookkeeping, the plugin's run state and every _manifest_io.PLUGIN_OWNED_IN_CLAUDE row taken out and returned separately as named plugin-owned state - into one function in _scoped_commit, and make commit-task-work.py's attempt refusal, audit-task.py's _uncommitted_leftovers (the close) and drive-phase.py's set-aside split call it, deleting their own skip lists. The close then never refuses a path the commit step left out as plugin-owned. Add a case per reader in which a restore point appears under .claude/audit-backups/ during the attempt: the commit leaves it out and names it, and the close on that commit is accepted; and a lint or case that fails when a reader computes the skip list itself (the invariant, not the instance).",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
@@ -85,25 +141,40 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fbdbfccf5f10",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added _scoped_commit.undeclared_changes(git_root, project, config, record, started_at, owned, bookkeeping) -> (changes, why): status_paths, drops the reader's bookkeeping and run_state_rels, splits covered-by-owned, splits every PLUGIN_OWNED_IN_CLAUDE row (plugin_owned_rels/split_plugin_owned, moved here from commit-task-work), then attribute(); returns attribute's dict plus covered, strays, pluginOwned. Removed attempt_strays. commit-task-work.attempt_refusal now passes only its staging list as bookkeeping and reads pluginOwned; its run_state_rels/plugin_owned_rels/split_plugin_owned deleted. audit-task._uncommitted_leftovers now returns (left, during, basis, named) through the same call (its _run_state_rels deleted; the evidence 'records' use _scoped_commit.run_state_rels); the close prints a '[audit-task] plugin-owned state, not the task's edit, left out of this close and not refused: ...' line and the REFUSED texts are unchanged. drive-phase.plugin_owned_paths delegates to _scoped_commit.plugin_owned_rels/split_plugin_owned (new import _scoped_commit). New cases: test_audit_task lo-po1 (restore point appears after start: close accepted, restore point named), lo-po2 (second direction: stray + audit-backups-not sibling still refused alone), lo-po3 (task with no files); test__scoped_commit sc-ua1..sc-ua4 (function over a real repo, both directions, with and without a snapshot, git blind) and sc-ua5..sc-ua8 (AST scan: no reader names plugin_owned_under/PLUGIN_OWNED_IN_CLAUDE/attempt_strays/logs_dir; commit and close each call undeclared_changes once; drive-phase asks plugin_owned_rels once; the scan is shown to flag a reader-owned list and pass the shared call and a comment; tree-wide only _manifest_io/_scoped_commit read plugin_owned_under). Existing pins unchanged and green: ctw-at7/at8 (commit side), xs6 (drive-phase). PLUGIN-BUILD-GUIDE.md: the attempt_strays sentence rewritten for undeclared_changes and the module-map fence regenerated with tools/lints/_deps.py --write-map (drive-phase gained the _scoped_commit edge; test__deps g1 was red until then). Evidence: python3 tools/sweep-selftests.py (whole tree) exit 0, 194/194 files, 17007 cases, after the last edit; tests/test_audit_task.py alone 1108/1108. Tests were written after I had read the implementation (the brief gives the files), so red-first rests on the helper's run against HEAD. Dependants: commit-task-work.py (8 listed readers incl. _invariants, _verdict_binding, commit-manifest-index, run-test-gate, drive-phase) - still correct: its CLI, JSON answer keys (attempt.during/predates/pluginOwned/cleanAtStart), note wording and exit codes are unchanged; only the three helper functions left, and no listed file or test named them (grep of tests/tools/plugins). audit-task.py (96 names used elsewhere) - still correct: only the private _uncommitted_leftovers arity (3 to 4) and _run_state_rels (deleted) changed, grep shows no outside user; one new informational output line on a close that has plugin-owned state. drive-phase.py - changed: new import of _scoped_commit and plugin_owned_paths now delegates (same return, pinned by xs6); the module-map fence in PLUGIN-BUILD-GUIDE.md changed accordingly. Edited under P137.1 although the brief lists it as last declared by P137.2 (pending); the plan gate did not refuse the write. _scoped_commit.py - changed: attempt_strays removed (only user was commit-task-work; PLUGIN-BUILD-GUIDE.md named it and was updated), five names added; close-phase, commit-audit-state, commit-manifest-index, _live_copy import it for other names, untouched. tests/test__scoped_commit.py, test_commit_task_work.py, test_audit_task.py, test_drive_phase.py - test_commit_task_work.py and test_drive_phase.py were not edited (their existing ctw-at7/at8 and xs6 cases are the commit and set-aside readers' cases and pass); the other two gained the cases above. Not done: no new case in test_commit_task_work/test_drive_phase beyond the existing ones, since they already carry a restore point under audit-backups for those readers.",
+        "descriptive": "The commit step, the close and the set-aside now ask one function what an attempt changed that no task declares, so a plugin-owned restore point the commit leaves out is no longer refused by the close; a scan fails when a reader keeps a skip list of its own."
       },
       "startedAt": "2026-10-22T16:33:07Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-22T17:22:28Z",
+      "verifiedBy": [
+        "test_audit_task: a close on a task commit is accepted when a restore point appears under .claude/audit-backups/ after start, and names it (plus the refusal twin and the no-files task)",
+        "test__scoped_commit: undeclared_changes returns plugin-owned state apart from the undeclared changes in both directions, and an AST scan fails when a reader computes the skip list itself or does not call the shared function"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-22T17:20:08Z.e7b0ba",
         "status": "passed",
         "at": "2026-10-22T17:20:08Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "fbdbfccf5f10",
+        "at": "2026-10-22T17:22:28Z",
+        "return": "docs/audit/evidence/returns/P137.1/20261022T163307Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-22T16:58:09Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__scoped_commit.py` in a throwaway tree at HEAD exited 1 with failing cases sc-ua1 (house FAIL), sc-ua2 (house FAIL), sc-ua3 (house FAIL), sc-ua4 (house FAIL), sc-ua5 (house FAIL), sc-ua6 (house FAIL), sc-ua8 (house FAIL) and 5 more, but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 1105/1108 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P137.2",
       "title": "A task whose work the drive committed closes on that commit when the close was refused after it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "When the drive committed a task's work (a commit after the attempt's start head carrying the task's Audit-Row) and the close was then refused, the next step finds nothing to commit and offers only no-change (which records a false outcome) or retry (which pays a writer to redo committed work). Make the drive recognise that commit and close the task on it - the close re-asked through the same checks, refusing as before when they still refuse - and never offer no-change for a task whose own commit is in the range. Add a case reproducing a1c's sequence: commit lands, close refused, the refusal's cause removed, next step closes on the commit.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -127,16 +198,22 @@
       "dependsOn": [
         "P137.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-22T17:22:29Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-22T17:50:08Z.df81bb",
+        "status": "passed",
+        "at": "2026-10-22T17:50:08Z"
+      }
     },
     {
       "id": "P137.3-3y3",
