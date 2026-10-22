@@ -854,7 +854,7 @@
     {
       "id": "P132",
       "title": "Fix what the S1 phase code review found on the writer-session path",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P132.json"
     }
   ],
