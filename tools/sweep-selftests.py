@@ -69,8 +69,12 @@ suite doing that wrote its restore points and ignore lines into the real checkou
 with the cwd and the home both spotless. It is read before the pool starts and after
 it drains, and a write is pinned on a suite only when exactly one suite's run holds
 the moment it happened - otherwise it is reported unattributed, naming every
-candidate. The comment above `CLAUDE_CHANNEL` has the rest, including what is left
-out and why.
+candidate. A removal or a directory made with something in it has no time of its
+own to read, so a removal is reported unattributed and the directory is reported
+through what is in it. The run REFUSES TO START when its temp directory has a `.git`
+above it (`scratch_refusal`), which is the prevention half of this watch; the
+snapshot is the detection half. The comment above `CLAUDE_CHANNEL` has the rest,
+including what is left out and why.
 
 AND THE INTERPRETER'S BYTECODE CACHE IS SENT SOMEWHERE ELSE, which is not a detail:
 macOS's system python writes a shadow cache under the HOME it is given for every
@@ -623,17 +627,78 @@ def child_debris(work, home):
 # candidate sorted first would make a clean suite red on the day somebody else
 # leaked, which is how a guard gets switched off.
 #
-# THE LIVE SESSION'S RUNTIME DIRECTORIES ARE NOT WATCHED, because the sweep is
-# usually typed from inside the session that writes them: `state/` grows without
-# bound in a long-lived one (`ls .claude/state | wc -l` counts it) and changes
-# every few seconds, so watching it would redden every sweep and cost a walk of
-# every entry in it. Each row below says why it is left
-# out; a suite that writes under one of them is the blind spot of this guard, and
-# the table is where to narrow it.
+# THE LIVE SESSION'S OWN SLOTS IN `state/` ARE LEFT OUT BY NAME, AND NOTHING ELSE IN
+# IT IS. The sweep is usually typed from inside the session that writes them, and
+# `state/` once was left out whole - which hid a suite that wrote its own file
+# there, a blind spot a suite really wrote through. `CLAUDE_LIVE_WRITES` is the
+# narrow table that replaced the row: a pattern per name the hooks and the drive
+# give a slot, each with the writer and the observation that put it there. A name
+# no row matches is a suite's, and a name a session starts to write that no row
+# knows reddens the sweep until a row (with its evidence) is added - which is the
+# direction a guard should fail in. Walking `state/` costs a listing of its names;
+# the left-out ones are matched by name BEFORE any entry is stat'ed, so the
+# hundreds a long-lived session accumulates (`ls .claude/state | wc -l` counts
+# them) cost a match each and not a system call.
+#
+# THE REST OF THE LIVE SESSION'S RUNTIME DIRECTORIES ARE STILL NOT WATCHED:
+# each row of `CLAUDE_UNWATCHED` says why it is left out, and a suite that writes
+# under one of them is the blind spot of this guard. That table is where to narrow
+# them, the way `state/` was.
+#
+# AND THE RUNNER REFUSES TO START WHEN ITS OWN SCRATCH IS INSIDE A CHECKOUT
+# (`scratch_refusal`): every directory a child is handed is made under the temp
+# directory, and one with a `.git` above it makes the children's world a part of a
+# checkout - the cwd, the home and the fixtures all resolve into the tree this
+# watch exists to protect. That is the prevention half; the snapshot is the
+# detection half, for a suite that finds the checkout by its own location whatever
+# the temp directory is.
 CLAUDE_CHANNEL = "checkout .claude"
 CLAUDE_ROW = ".claude/ (the checkout's own)"
+_SID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+_SLOT = "(?:[.-][0-9a-f]+)*"
+# Rows are `(pattern over the path below .claude/, an example name, the sentence)`.
+# The example is a name the table must skip and a one-character misspelling of it
+# must not be - case `cw10` drives every row that way. The sentence names the
+# writer and the observation, re-derivable as `find .claude/state -maxdepth 1
+# -mmin -240` while a session works: every pattern here was among what that listed
+# in a live checkout, and a name that command did not list is not in this table.
+CLAUDE_LIVE_WRITES = (
+    ("^state/call-start-" + _SID + "(?:-[0-9a-f]+)?\\.json$",
+     "state/call-start-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d.json",
+     "the Pre pass's record of when a tool call started, one per call "
+     "(CALL_START_FILE in hooks/_config.py)"),
+    ("^state/journal-preimage-" + _SID + _SLOT + "\\.json$",
+     "state/journal-preimage-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d-a1b2c3d4e5f60718"
+     ".0123456789ab.json",
+     "the pre-image slot the journal hook writes before a write and consumes "
+     "after it (hooks/journal-writes.py), by far the most numerous entry listed"),
+    ("^state/plan-gate-" + _SID + _SLOT + "\\.json$",
+     "state/plan-gate-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d.a1b2c3d4e5f60718.json",
+     "the plan gate's per-session slot (TRIVIAL_SLOT in hooks/_config.py)"),
+    ("^state/bash-writes-" + _SID + "\\.json$",
+     "state/bash-writes-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d.json",
+     "the session slot guard-bash-writes keeps (BASH_WRITES_STATE_FILE in "
+     "hooks/_config.py); the plugin sidecars sharing its prefix were not listed "
+     "and are not left out"),
+    ("^state/tdd-reminder-" + _SID + "\\.json$",
+     "state/tdd-reminder-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d.json",
+     "the reminder's once-per-session note (hooks/remind-tdd.py)"),
+    ("^state/running-plugin-" + _SID + "\\.json$",
+     "state/running-plugin-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d.json",
+     "which plugin copy executes the hooks, rewritten on every prompt "
+     "(RUNNING_STAMP in hooks/_config.py)"),
+    ("^state/attempts(?:/|$)", "state/attempts/P1.1-abc.json",
+     "the drive's per-task attempt record (ATTEMPT_DIR in "
+     "scripts/governance/_scoped_commit.py)"),
+    ("^state/briefs(?:/|$)", "state/briefs/P1.1-abc/20260101T000000Z.executor.md",
+     "the briefs the drive hands its agents (BRIEFS_DIRNAME in "
+     "scripts/manifest/_filed_returns.py)"),
+    ("^state/drive(?:/|$)", "state/drive/P1.json",
+     "the drive's per-phase progress record (DRIVE_DIRNAME in "
+     "scripts/manifest/_filed_returns.py)"),
+)
+_LIVE_WRITES_RE = tuple(re.compile(row[0]) for row in CLAUDE_LIVE_WRITES)
 CLAUDE_UNWATCHED = (
-    ("state", "hook state the live session rewrites on every tool call"),
     ("logs", "hook logs the live session appends to"),
     ("usage", "the usage ledger the live session appends to"),
     ("worktrees", "linked worktrees the orchestrator creates and removes"),
@@ -649,6 +714,45 @@ CLAUDE_UNWATCHED = (
 # a filesystem coarser than this (FAT's two seconds) leaves a change with no
 # window, which is reported loudly as unattributed and not missed.
 CLAUDE_START_SLACK_NS = 20 * 1000 * 1000
+
+# AT --jobs 1 the sweep waits this long after each child before the next one starts.
+# The slack above widens a window's start, so two windows closer than it make the
+# end of one and the start of the next candidates for the same stamp, and the
+# re-run the unattributed row advises (`--jobs 1`) would then fail to name the
+# writer in the one place it is supposed to. With the wait the windows cannot
+# touch; the margin over the slack covers a clock read on either side of the wait.
+CLAUDE_SERIAL_GAP_S = CLAUDE_START_SLACK_NS / 1e9 + 0.005
+
+
+def claude_live_written(rel):
+    """True when `rel` (a path below `.claude/`, with forward slashes) is a name
+    the live session's hooks or the drive give a slot - a row of
+    `CLAUDE_LIVE_WRITES` matches it."""
+    return any(pattern.match(rel) for pattern in _LIVE_WRITES_RE)
+
+
+def scratch_refusal(tmp, locate=None):
+    """The sentence refusing a run whose temp directory lies inside a git checkout,
+    or None when it does not.
+
+    Every directory a child is handed is made under `tmp`, so a `.git` above it
+    puts the child's cwd, home and fixtures inside a checkout - where a suite that
+    finds its project by walking up from where it sits finds THAT checkout. The path
+    is resolved first, so a symlinked temp root is judged by where it lies, and
+    nothing else is tried: a temp directory the caller did not choose is not one
+    to fall back to. `locate` is `_manifest_io.checkout_of` unless a case hands
+    one in."""
+    if locate is None:
+        import _manifest_io
+        locate = _manifest_io.checkout_of
+    inside = locate(os.path.join(os.path.realpath(tmp), "x"))
+    if inside is None:
+        return None
+    return ("the temp directory %s lies inside the git checkout %s (a .git is "
+            "above it), so every scratch directory the children are handed would "
+            "be inside a checkout and a suite that walks up for .git would find "
+            "it; point TMPDIR at a directory with no .git above it"
+            % (tmp, inside))
 
 
 def claude_snapshot(repo):
@@ -669,9 +773,16 @@ def claude_snapshot(repo):
         # entry directly under `.claude/`, and a skills directory that happens to
         # hold a `state` of its own is still a suite's to leave alone.
         left = skipped if here == top else set(["__pycache__"])
-        dirs[:] = sorted(d for d in dirs if d not in left)
-        files = sorted(f for f in files if f not in left)
         base = os.path.relpath(here, top).replace(os.sep, "/")
+
+        def _rel(name):
+            return name if base == "." else base + "/" + name
+        # The live session's slots are matched by NAME here, before any entry is
+        # stat'ed, and a directory of them is pruned whole.
+        dirs[:] = sorted(d for d in dirs
+                         if d not in left and not claude_live_written(_rel(d)))
+        files = sorted(f for f in files
+                       if f not in left and not claude_live_written(_rel(f)))
         entries = [(d, "dir") for d in dirs]
         entries.extend((f, "file") for f in files)
         for name, kind in entries:
@@ -679,8 +790,8 @@ def claude_snapshot(repo):
                 st = os.lstat(os.path.join(here, name))
             except OSError:
                 continue
-            rel = name if base == "." else base + "/" + name
-            seen[rel] = (kind, st.st_size if kind == "file" else 0, st.st_mtime_ns)
+            seen[_rel(name)] = (kind, st.st_size if kind == "file" else 0,
+                                st.st_mtime_ns)
     try:
         seen["."] = ("dir", 0, os.lstat(top).st_mtime_ns)
     except OSError:
@@ -693,28 +804,46 @@ def claude_changes(before, after):
     `{"path", "text", "at"}`, sorted by path. `at` is the nanosecond the change
     happened, or None when the snapshots hold no time for it.
 
+    A change is TIMED only by a stamp that is its own, and a change that has none
+    says so (`"untimed"`, a sentence) rather than borrowing a neighbour's:
+
+      * a file added or rewritten carries its own modification time;
+      * a directory added with nothing in it carries its creation, and one added
+        WITH something in it is not listed at all - what is in it is, and its own
+        stamp moves with every entry put in later, so it would be timed by the
+        last of them;
+      * a DELETED entry leaves nothing behind to carry a time. The directory it
+        left has a stamp, but that is the latest change there, whoever made it,
+        so naming a suite from it was a guess presented as a reading.
+
     A directory's own stamp moving is no change - it follows from the entries
-    below it, which are reported themselves. A DELETED entry has no stamp, so its
-    time is that of the nearest directory above it that survived, which a removal
-    moves.
+    below it, which are reported themselves.
     """
     found = []
+    # Every directory above something that is new: those are not listed.
+    holds_new = set()
+    for rel in after:
+        parent = rel
+        while rel not in before and "/" in parent:
+            parent = parent.rsplit("/", 1)[0]
+            holds_new.add(parent)
     for rel in sorted(set(before) | set(after)):
         if rel == ".":
             continue
         was, now = before.get(rel), after.get(rel)
         shown = rel + ("/" if (now or was)[0] == "dir" else "")
-        if was is None:
-            found.append({"path": rel, "text": "ADDED %s" % (shown,), "at": now[2]})
-        elif now is None:
-            parent = rel
-            while parent != "." and parent not in after:
-                parent = parent.rsplit("/", 1)[0] if "/" in parent else "."
-            stamp = after.get(parent)
-            found.append({"path": rel, "at": stamp[2] if stamp else None,
+        if now is None:
+            found.append({"path": rel, "at": None,
+                          "untimed": "a removal leaves no time of its own to read",
                           "text": "DELETED %s, which was there before it ran"
                                   % (shown,)})
-        elif now[0] != was[0] or (now[0] == "file" and now[1:] != was[1:]):
+        elif was is None or now[0] != was[0]:
+            if now[0] == "dir" and rel in holds_new:
+                continue
+            word = "ADDED %s" % (shown,) if was is None else (
+                "REWROTE %s, which was there before it ran" % (shown,))
+            found.append({"path": rel, "text": word, "at": now[2]})
+        elif now[0] == "file" and now[1:] != was[1:]:
             found.append({"path": rel, "text": "REWROTE %s, which was there before "
                                                "it ran" % (shown,), "at": now[2]})
     return found
@@ -731,6 +860,13 @@ def claude_verdicts(changes, windows):
     by_suite, loose = {}, []
     for change in changes:
         at = change["at"]
+        if change.get("untimed"):
+            # NO SUITE IS NAMED for a change with no time of its own, however
+            # many windows are open: a clock reading that is not there cannot
+            # pick one, and a pick would blame whoever ran at the moment.
+            loose.append("%s - unattributed: %s, so the clock cannot name a suite"
+                         % (change["text"], change["untimed"]))
+            continue
         who = [] if at is None else [
             p for p, (start, end) in sorted(windows.items())
             if start - CLAUDE_START_SLACK_NS <= at <= end]
@@ -755,13 +891,17 @@ def claude_debris(findings):
 
 def claude_row(loose):
     """The row a change no single suite can be blamed for is reported against, or
-    None when there is none. Red, and carrying the advice that turns it into a name:
-    the same suites, one at a time."""
+    None when there is none. Red, and carrying the advice that turns it into a name
+    where one can be had: the suites it lists, one at a time. A line that lists no
+    suite - a removal - cannot be named that way, and the advice says so."""
     if not loose:
         return None
     return {"path": CLAUDE_ROW, "ok": False, "cases": 0, "output": "",
-            "why": "changed while the sweep ran: %s. Re-run the suites it lists "
-                   "with --jobs 1 to name the one that wrote" % ("; ".join(loose),)}
+            "why": "changed while the sweep ran: %s. Re-run the suites a line "
+                   "lists with --jobs 1 to name the one that wrote; a line that "
+                   "lists none (a removal, a time nobody holds) is named by "
+                   "whoever works on that path, not by the clock"
+                   % ("; ".join(loose),)}
 
 
 # --- running (impure) and grading (pure) --------------------------------------
@@ -1072,11 +1212,14 @@ def grade(rel_path, code, output, debris=()):
       * a run that WROTE OUTSIDE ITS OWN FIXTURES - into the directory it was
         launched from, or into the home directory it was handed - is red whatever
         else it did. A suite that leaks a fixture leaks it on every leg, and there
-        is no mode in which writing there is fine. It is
-        read after the exit code because a suite that also went red has a traceback
-        printed in full and a developer fixes that first; the leak is still waiting
-        on the next run and this line still names it, and names WHICH of the two
-        directories it landed in.
+        is no mode in which writing there is fine. A suite that ALSO exited
+        non-zero is told for both in the one line - the code first, since the
+        traceback printed below it is what a developer reads first, then what it
+        left. The finding used to wait behind the exit code, so the first run
+        taught nothing about it and a leak surfaced one fix later. The line names
+        WHICH directory it landed in. A run that never finished (`code is None`)
+        is not accused: the fixtures its kill left are the kill's, not the
+        suite's.
       * every file must exit 0 AND print the contract. This is the rule
         `verify.sh` did not have, and the reason a suite could be deleted from a
         file without anything going red locally.
@@ -1094,6 +1237,9 @@ def grade(rel_path, code, output, debris=()):
 
     if code is None:
         return row(False, output)
+    if code != 0 and debris:
+        return row(False, "exited %d; and wrote outside the fixtures it makes for "
+                          "itself: %s" % (code, "; ".join(debris)))
     if code != 0:
         return row(False, "exited %d" % (code,))
     if debris:
@@ -1457,6 +1603,10 @@ def sweep(paths, jobs=None, repo=None, encoding=None,
                            pycache, None, spaced, weight,
                            locale_vars=locale_vars, os_name=os_name)
         finally:
+            # HELD THROUGH THE WAIT, so the next child cannot start inside it:
+            # `CLAUDE_SERIAL_GAP_S` says why a serial run leaves a gap.
+            if jobs == 1:
+                time.sleep(CLAUDE_SERIAL_GAP_S)
             done(weight)
     pycache = tempfile.mkdtemp(prefix="sp-run-")
     # THE CHECKOUT'S OWN `.claude/`, read before the first child starts and after
@@ -1475,13 +1625,17 @@ def sweep(paths, jobs=None, repo=None, encoding=None,
         shutil.rmtree(pycache, ignore_errors=True)
     by_suite, loose = claude_verdicts(
         claude_changes(claude_before, claude_snapshot(watched)),
-        dict((r["path"], (r["began_ns"], r["ended_ns"])) for r in ran_all))
+        # A child that never started (the spaced layout could not be built) ran
+        # in no window and can be named for nothing.
+        dict((r["path"], (r["began_ns"], r["ended_ns"])) for r in ran_all
+             if "began_ns" in r))
     for ran in ran_all:
         graded = grade(ran["path"], ran["code"], ran["output"],
                        debris=ran["debris"]
                        + claude_debris(by_suite.get(ran["path"], [])))
         rows.append(dict(graded, seconds=ran.get("seconds"),
-                         grant=ran.get("grant"), timeout=ran.get("timeout")))
+                         grant=ran.get("grant"), timeout=ran.get("timeout"),
+                         window=(ran.get("began_ns"), ran.get("ended_ns"))))
     unnamed = claude_row(loose)
     if unnamed is not None:
         rows.append(unnamed)
@@ -1814,6 +1968,10 @@ def main(argv):
     if refusal:
         sys.stderr.write(refusal + "\n")
         return 2
+    refusal = scratch_refusal(tempfile.gettempdir())
+    if refusal:
+        sys.stderr.write("sweep-selftests: refusing to start - %s\n" % (refusal,))
+        return 2
     paths = sweep_files()
     findings, accounted = coverage_findings()
     if not paths:
@@ -2008,13 +2166,24 @@ def _claude_watch_cases(check):
                    "open(os.path.join(CL, 'keep2'), 'w').write('clobbered, longer\\n')\n"
                    "time.sleep(0.4)\n")
         rows = sweep([d], jobs=1, repo=repo, timeout=30)
+        by_path = dict((r["path"], r) for r in rows)
+        gone = by_path.get(CLAUDE_ROW)
         check("cw2 a suite that DELETES a file the checkout's .claude/ held and "
-              "one that REWRITES another are both named, in the two words the "
-              "scratch directories use for them: %r" % (rows[0]["why"],),
-              len(rows) == 1 and not rows[0]["ok"]
-              and "DELETED keep, " in rows[0]["why"]
-              and "REWROTE keep2" in rows[0]["why"]
-              and rows[0]["why"].count("checkout .claude: ") == 2)
+              "one that REWRITES another are both reported, in the two words the "
+              "scratch directories use for them - but only the rewrite is pinned "
+              "on the suite, because a removal leaves nothing that carries a time "
+              "of its own (the directory above it keeps a stamp that any later "
+              "change moves), so the deletion is a red row of its own that says "
+              "so and names no suite: %r"
+              % (dict((k, (v["ok"], v["why"])) for k, v in sorted(by_path.items())),),
+              len(rows) == 2 and not by_path[d]["ok"]
+              and "REWROTE keep2" in by_path[d]["why"]
+              and "DELETED keep, " not in by_path[d]["why"]
+              and by_path[d]["why"].count("checkout .claude: ") == 1
+              and gone is not None and not gone["ok"]
+              and "DELETED keep, " in gone["why"]
+              and "no time of its own" in gone["why"]
+              and d not in gone["why"])
 
         # -- two suites running together: the write is NOT pinned on either -----
         repo = _fresh("parallel")
@@ -2044,16 +2213,77 @@ def _claude_watch_cases(check):
 
         # -- what the live session writes there is not a suite's ----------------
         repo = _fresh("runtime")
+        # `state/` is there before the sweep starts, as it is in any checkout a
+        # session has already worked in: the directory itself is watched.
+        os.makedirs(os.path.join(repo, ".claude", "state"))
         r_ = _suite(repo, "writes_runtime_state",
-                    "os.makedirs(os.path.join(CL, 'state'))\n"
-                    "open(os.path.join(CL, 'state', 's.json'), 'w').write('{}')\n"
+                    "os.makedirs(os.path.join(CL, 'logs'))\n"
+                    "open(os.path.join(CL, 'logs', 'h.log'), 'w').write('x')\n"
+                    # A NAME SPELLED OUT here, as `ls .claude/state` prints one,
+                    # and not read off the table: a case that asks the table
+                    # which names it skips passes whatever the table says.
+                    "open(os.path.join(CL, 'state', "
+                    "'call-start-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d.json'), "
+                    "'w').write('{}')\n"
                     "time.sleep(0.4)\n")
         rows = sweep([r_], jobs=1, repo=repo, timeout=30)
-        check("cw4 the runtime directories the live session itself writes while "
-              "a sweep runs (state, logs, usage, worktrees) are left out of the "
-              "watched set, so a sweep typed from inside a session is not "
-              "reddened by it: %r" % ([(r["path"], r["why"]) for r in rows],),
+        check("cw4 what the live session itself writes while a sweep runs - a "
+              "hook's slot in state/ under a name the hooks give it, and the "
+              "hook log directory - is left out of the watched set, so a sweep "
+              "typed from inside a session is not reddened by it: %r"
+              % ([(r["path"], r["why"]) for r in rows],),
               len(rows) == 1 and rows[0]["ok"])
+
+        # -- cw9: state/ IS WATCHED, which is what cw4 used to hide ---------------
+        # The whole directory was once left out, so a suite that wrote a file of
+        # its own there was invisible. A name no hook gives a slot is a suite's.
+        repo = _fresh("state-write")
+        s_ = _suite(repo, "writes_state_file",
+                    "os.makedirs(os.path.join(CL, 'state'))\n"
+                    "open(os.path.join(CL, 'state', 'suite-made.json'), 'w')"
+                    ".write('{}')\n"
+                    "time.sleep(0.4)\n")
+        rows = sweep([s_], jobs=1, repo=repo, timeout=30)
+        check("cw9 a suite that writes a file of its own under the checkout's "
+              ".claude/state/ is RED and the finding names the path - the "
+              "directory is no longer left out wholesale, only the names the "
+              "live session's hooks and the drive give their own slots: %r"
+              % ([(r["path"], r["ok"], r["why"]) for r in rows],),
+              len(rows) == 1 and not rows[0]["ok"]
+              and "state/suite-made.json" in rows[0]["why"]
+              and "checkout .claude" in rows[0]["why"])
+
+        # -- cw11: THE FINDING IS NOT HIDDEN BY A NON-ZERO EXIT ------------------
+        repo = _fresh("fails-and-writes")
+        f_ = io.open(os.path.join(repo, "tests", "fails_and_writes"), "w",
+                     encoding="utf-8")
+        f_.write(root + "open(os.path.join(CL, 'stray.txt'), 'w').write('x')\n"
+                 "time.sleep(0.4)\nsys.exit(3)\n")
+        f_.close()
+        rows = sweep(["tests/fails_and_writes"], jobs=1, repo=repo, timeout=30)
+        check("cw11 a suite that exits non-zero AND wrote into the checkout's "
+              ".claude/ is red for both, in one line: the exit code is named and "
+              "so is the path - a developer fixing the exit code first used to "
+              "learn of the write on the next run only: %r"
+              % ([(r["path"], r["ok"], r["why"]) for r in rows],),
+              len(rows) == 1 and not rows[0]["ok"]
+              and "exited 3" in rows[0]["why"]
+              and "stray.txt" in rows[0]["why"])
+
+        # -- cw12: back-to-back suites at --jobs 1 are told apart by the clock ----
+        repo = _fresh("serial")
+        trio = [_suite(repo, "serial_%s" % n, "") for n in ("a", "b", "c")]
+        rows = sweep(trio, jobs=1, repo=repo, timeout=30)
+        spans = sorted(r["window"] for r in rows if "window" in r)
+        gaps = [later[0] - earlier[1] for earlier, later in zip(spans, spans[1:])]
+        check("cw12 at --jobs 1 the windows suites ran in are separated by more "
+              "than the slack a stamp's lag is allowed: the slack widens a "
+              "window's START, so adjacent windows that touch would make a write "
+              "at the end of one a candidate for the next, and the re-run the "
+              "unattributed row advises would not name the writer: gaps %r ns "
+              "against slack %d ns" % (gaps, CLAUDE_START_SLACK_NS),
+              len(spans) == 3 and len(gaps) == 2
+              and all(g > CLAUDE_START_SLACK_NS for g in gaps))
     finally:
         remove_tree(box)
 
@@ -2061,9 +2291,25 @@ def _claude_watch_cases(check):
     snap_box = tempfile.mkdtemp(prefix="sweep-snap-")
     try:
         none_at_all = claude_snapshot(snap_box)
-        for rel in ("state/s.json", "logs/l.log", "usage/u.jsonl", "worktrees/w/x",
-                    "hooks/__pycache__/cached", "skills/mine/state/kept",
-                    "audit-backups/p.bak", "hooks/h", ".gitignore"):
+        # THE LIVE SESSION'S NAMES ARE SPELLED OUT, as `ls .claude/state` prints
+        # them: asking the table which names it skips would pass whatever it said.
+        sid = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        live = ["state/call-start-%s.json" % sid,
+                "state/call-start-%s-a1b2c3d4e5f60718.json" % sid,
+                "state/journal-preimage-%s-a1b2c3d4e5f60718.0123456789ab.json" % sid,
+                "state/plan-gate-%s.a1b2c3d4e5f60718.json" % sid,
+                "state/bash-writes-%s.json" % sid,
+                "state/tdd-reminder-%s.json" % sid,
+                "state/running-plugin-%s.json" % sid,
+                "state/attempts/P1.1-abc.json", "state/briefs/P1.1-abc/b.md",
+                "state/drive/P1.json"]
+        theirs = ["state/s.json", "state/writer-token.json", "state/release-run.json",
+                  "state/call-start-notauuid.json", "state/briefs-extra/x",
+                  "state/bash-writes-plugin-%s.json" % sid]
+        for rel in live + theirs + [
+                "logs/l.log", "usage/u.jsonl", "worktrees/w/x",
+                "hooks/__pycache__/cached", "skills/mine/state/kept",
+                "audit-backups/p.bak", "hooks/h", ".gitignore"]:
             target = os.path.join(snap_box, ".claude", *rel.split("/"))
             os.makedirs(os.path.dirname(target), exist_ok=True)
             io.open(target, "w").write("x")
@@ -2072,20 +2318,42 @@ def _claude_watch_cases(check):
         snap = claude_snapshot(snap_box)
         check("cw5 the snapshot of a checkout with no .claude/ is EMPTY, and of "
               "one with a live session's directories in it holds exactly the "
-              "rest - what that session leaves out (state, logs, usage, "
-              "worktrees and settings.local.json), the panel pidfile and "
-              "bytecode wherever it sits are absent, while a directory merely "
-              "NAMED like one of them below the top, and the restore-point "
-              "directory this guard was written for, are present: %r"
-              % (sorted(snap),),
+              "rest - what that session leaves out (logs, usage, worktrees and "
+              "settings.local.json, the hook and drive slots in state/ under the "
+              "names they give them), the panel pidfile and bytecode wherever it "
+              "sits are absent, while a directory merely NAMED like one of them "
+              "below the top, the restore-point directory this guard was written "
+              "for and every OTHER file in state/ - a name no hook gives a slot, "
+              "a near-miss of one - are present: %r" % (sorted(snap),),
               none_at_all == {}
               and sorted(k for k, v in snap.items() if v[0] == "file")
-              == [".gitignore", "audit-backups/p.bak", "hooks/h",
-                  "settings.json", "skills/mine/state/kept"]
+              == sorted([".gitignore", "audit-backups/p.bak", "hooks/h",
+                         "settings.json", "skills/mine/state/kept",
+                         "state/call-start-notauuid.json",
+                         "state/bash-writes-plugin-%s.json" % sid,
+                         "state/release-run.json", "state/s.json",
+                         "state/writer-token.json", "state/briefs-extra/x"])
               and not [k for k in snap if k.split("/")[0] in
-                       ("state", "logs", "usage", "worktrees")
+                       ("logs", "usage", "worktrees")
                        or "__pycache__" in k or k.endswith("local.json")
-                       or k.endswith("panel.json")])
+                       or k.endswith("panel.json")]
+              and not [k for k in snap if k in live
+                       or k.split("/")[:2] in (["state", "attempts"],
+                                               ["state", "drive"])])
+
+        # -- cw10: the table's own rows, driven one by one -------------------------
+        # Each row carries an example name; it must be skipped, and so must it not
+        # be once a character of it is wrong - a row whose pattern grew loose
+        # enough to swallow a suite's file would otherwise stay green.
+        examples = [row[1] for row in CLAUDE_LIVE_WRITES]
+        misses = [x for x in examples if not claude_live_written(x)]
+        swallowed = [x for x in examples
+                     if claude_live_written(x.replace("state/", "state/x", 1))]
+        check("cw10 every row of the live-session table skips the example it "
+              "carries and does NOT skip the same name with a character wrong - "
+              "so no row is dead and none swallows a suite's own file: missed "
+              "%r, swallowed %r" % (misses, swallowed),
+              len(examples) > 0 and misses == [] and swallowed == [])
     finally:
         remove_tree(snap_box)
 
@@ -2097,25 +2365,32 @@ def _claude_watch_cases(check):
     after = {".": ("dir", 0, 99), "same": ("file", 5, 10),
              "touched": ("file", 5, 77), "sub": ("dir", 0, 66),
              "new": ("file", 3, 88), "newdir": ("dir", 0, 89),
-             "swap": ("file", 0, 90)}
+             "swap": ("file", 0, 90),
+             "full": ("dir", 0, 91), "full/inner": ("dir", 0, 92),
+             "full/inner/leaf": ("file", 1, 93)}
     got = dict((c["path"], c) for c in claude_changes(before, after))
-    check("cw6 the difference names every kind of change once - a file added, a "
-          "directory added, a file rewritten with the SAME size (only its stamp "
-          "moved), a directory replaced by a file - and two deletions, a file "
-          "under a directory that survived (timed by that directory's new stamp) "
-          "and a whole subtree (timed by the nearest ancestor left); a "
-          "directory whose own stamp merely moved, a file untouched and the root "
-          "itself are NOT changes: %r"
+    check("cw6 the difference names every kind of change once and times only what "
+          "carries a time of its own - a file added, an EMPTY directory added "
+          "(its stamp is its creation), a file rewritten with the SAME size (only "
+          "its stamp moved), a directory replaced by a file; a directory added "
+          "WITH something in it is not listed at all, since what is in it is and "
+          "carries the time (its own stamp moves with every entry put in later); "
+          "and two deletions, a file under a directory that survived and a whole "
+          "subtree, which are listed UNTIMED with the reason - a removal leaves "
+          "nothing to carry a time, and the stamp of the directory it left is "
+          "just the latest change there; a directory whose own stamp merely "
+          "moved, a file untouched and the root itself are NOT changes: %r"
           % (sorted((p, c["text"].split(" ")[0], c["at"]) for p, c in got.items()),),
-          sorted(got) == ["doomed", "doomed/inner", "keep", "new", "newdir",
-                          "sub/gone", "swap", "touched"]
+          sorted(got) == ["doomed", "doomed/inner", "full/inner/leaf", "keep",
+                          "new", "newdir", "sub/gone", "swap", "touched"]
           and got["new"]["text"] == "ADDED new" and got["new"]["at"] == 88
-          and got["newdir"]["text"] == "ADDED newdir/"
+          and got["newdir"]["text"] == "ADDED newdir/" and got["newdir"]["at"] == 89
+          and got["full/inner/leaf"]["at"] == 93
           and got["touched"]["text"].startswith("REWROTE touched") and got["touched"]["at"] == 77
-          and got["swap"]["text"].startswith("REWROTE swap")
-          and got["keep"]["text"].startswith("DELETED keep, ") and got["keep"]["at"] == 99
-          and got["sub/gone"]["at"] == 66 and got["doomed/inner"]["at"] == 99
-          and got["doomed"]["at"] == 99)
+          and got["swap"]["text"].startswith("REWROTE swap") and got["swap"]["at"] == 90
+          and got["keep"]["text"].startswith("DELETED keep, ")
+          and all(got[k]["at"] is None and "no time of its own" in got[k]["untimed"]
+                  for k in ("keep", "sub/gone", "doomed", "doomed/inner")))
 
     # -- who made it: one window, several windows, none -------------------------
     sec = 10 ** 9
@@ -2149,6 +2424,75 @@ def _claude_watch_cases(check):
           claude_row([]) is None and row is not None and not row["ok"]
           and row["path"] == CLAUDE_ROW and "--jobs 1" in row["why"]
           and all(line in row["why"] for line in loose))
+
+    # -- cw13: a change with no time of its own names no suite ------------------
+    # The second direction of cw7: windows exist and one of them would hold any
+    # moment a guess picked, so only the refusal keeps the suite rows clean.
+    by_suite, loose = claude_verdicts(
+        [{"path": "gone", "text": "DELETED gone, which was there before it ran",
+          "at": None, "untimed": "a removal has no time of its own"}],
+        {"a": (1 * sec, 2 * sec)})
+    check("cw13 a removal is reported unattributed WITH its own reason and no "
+          "suite is blamed, though a window is open that a guessed time would "
+          "have fallen in: %r / %r" % (by_suite, loose),
+          by_suite == {} and len(loose) == 1
+          and "DELETED gone" in loose[0] and "no time of its own" in loose[0]
+          and "no suite's run holds" not in loose[0])
+
+    # -- cw14: a non-zero exit does not hide what the suite also wrote -----------
+    g_both = grade("tests/x", 3, "Traceback\n",
+                   debris=["checkout .claude: ADDED stray.txt"])
+    g_code = grade("tests/x", 3, "Traceback\n")
+    g_leak = grade("tests/x", 0, "1/1 cases passed\n",
+                   debris=["checkout .claude: ADDED stray.txt"])
+    g_late = grade("tests/x", None, "did not finish within 9s",
+                   debris=["working directory: left behind: fixture"])
+    check("cw14 a run that exited non-zero AND left a finding is red for both, "
+          "code first and the finding after it, once each; the exit code alone "
+          "and the finding alone read as they always did, and a run that never "
+          "finished is not accused of the fixtures its kill left behind: "
+          "%r / %r / %r / %r" % (g_both, g_code, g_leak, g_late),
+          not g_both["ok"] and g_both["why"].startswith("exited 3")
+          and g_both["why"].count("ADDED stray.txt") == 1
+          and g_code["why"] == "exited 3"
+          and g_leak["why"].startswith("wrote outside the fixtures")
+          and g_late["why"] == "did not finish within 9s")
+
+    # -- cw15: the sweep will not start where its scratch is inside a checkout ---
+    ref_box = tempfile.mkdtemp(prefix="sweep-ref-")
+    try:
+        os.makedirs(os.path.join(ref_box, "co", ".git"))
+        os.makedirs(os.path.join(ref_box, "co", "tmp"))
+        os.makedirs(os.path.join(ref_box, "plain", "tmp"))
+        inside = scratch_refusal(os.path.join(ref_box, "co", "tmp"))
+        outside = scratch_refusal(os.path.join(ref_box, "plain", "tmp"))
+    finally:
+        remove_tree(ref_box)
+    live_tmp = scratch_refusal(tempfile.gettempdir())
+    check("cw15 a temp directory with a .git above it is REFUSED, naming both the "
+          "directory and the checkout, because every scratch directory a child "
+          "is handed is made there and a suite that finds its project by walking "
+          "up for .git would find that checkout; one with none above it is "
+          "not; and this machine's own temp directory passes, so the refusal "
+          "is not already firing on every run: %r / %r / %r"
+          % (inside, outside, live_tmp),
+          inside is not None and "co" in inside and "tmp" in inside
+          and ".git" in inside and outside is None and live_tmp is None)
+
+    # -- cw16: the three documents that describe the watched set say it ----------
+    docs_text = {}
+    for rel in ("CONTRIBUTING.md", os.path.join("tests", "_harness.py")):
+        with io.open(os.path.join(REPO, rel), encoding="utf-8") as fh:
+            docs_text[rel] = " ".join(fh.read().lower().split())
+    said = dict((rel, "third watched" in text and "checkout's own `.claude/`" in text
+                 and "refuses to start" in text)
+                for rel, text in docs_text.items())
+    check("cw16 CONTRIBUTING.md and the docstring of tests/_harness.py "
+          "fixture_root both describe the checkout's own .claude/ as a third "
+          "watched directory and say the sweep refuses to start when its temp "
+          "directory is inside a checkout - they listed two watched directories "
+          "for as long as that was true: %r" % (said,),
+          all(said.values()) and len(said) == 2)
 
 
 def _cases(check):

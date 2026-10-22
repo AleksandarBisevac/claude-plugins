@@ -53,64 +53,80 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:3790-3810",
         "issue": "contradicts task clause \"a commit after the attempt's start head carrying the task's Audit-Row\": own_commit takes nonces from every journal row naming the task in ANY attempt (the loop at ~3795 filters on taskId only, not on rows after the current attempt's task.start row), and runs `git rev-list <start>..HEAD` without checking that `start` is an ancestor of HEAD. After a rebase or reset the recorded start head can survive off HEAD's history, `start..HEAD` then lists every commit since the merge base, and a previous attempt's still-reachable carrier is taken as this attempt's commit and closed on. _scoped_commit.attempt_span (_scoped_commit.py ~1234-1262) states it is the ONLY reader of the attempt's span and answers (None, why) for exactly this case; own_commit is a second reader with a different rule, the shape that docstring warns about. Read from the code; not run.",
-        "resolution": "Do not run rev-list directly: check `git merge-base --is-ancestor <start> HEAD` (non-zero or error returns None, so the caller keeps the no-change decision) or read the span through _scoped_commit.attempt_span, and limit nonces to journal rows after the current attempt's task.start row.",
-        "fixTask": "P137.5-3y3"
+        "resolution": "fixed in P137.5-3y3 (5101bd4d4980): Do not run rev-list directly: check `git merge-base --is-ancestor <start> HEAD` (non-zero or error returns None, so the caller keeps the no-change decision) or read the span through _scoped_commit.attempt_span, and limit nonces to journal rows after the current attempt's task.start row.",
+        "fixTask": "P137.5-3y3",
+        "commit": "5101bd4d4980",
+        "status": "fixed"
       },
       {
         "id": "P137-R5",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:3779-3810",
         "issue": "A commit that was later reverted still closes the task. own_commit returns the Audit-Row carrier C without asking whether C's work is still in HEAD; after `git revert C` the carrier is still in start..HEAD, and the done --commit path (which asks whether the attempt changed a declared file in the span) also still sees C change it, so the task is recorded done on a commit whose effect is undone.",
-        "resolution": "Require that the declared files still differ between C^ and HEAD in C's direction, e.g. no commit in C..HEAD touches the declared files, or `git diff --quiet C HEAD -- <declared>` is false-then-equal to C's own change; otherwise return None so the old decision stands.",
-        "fixTask": "P137.5-3y3"
+        "resolution": "fixed in P137.5-3y3 (5101bd4d4980): Require that the declared files still differ between C^ and HEAD in C's direction, e.g. no commit in C..HEAD touches the declared files, or `git diff --quiet C HEAD -- <declared>` is false-then-equal to C's own change; otherwise return None so the old decision stands.",
+        "fixTask": "P137.5-3y3",
+        "commit": "5101bd4d4980",
+        "status": "fixed"
       },
       {
         "id": "P137-R6",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:3806-3810",
         "issue": "The carrier's subject header is not checked. _invariants.recorded_commits (_invariants.py ~784-790) counts a carrier as the scoped commit only when its subject opens with the class header AND the trailer is in the last paragraph, because a squash or any commit that absorbs the message keeps the trailer. own_commit checks only inLast, so a squash-absorbing commit in the range whose last paragraph ends with the trailer is accepted as the task's commit. The task commit's header is commit-task-work.message_parts' `<type>(<taskId>): audit - ...`.",
-        "resolution": "Also require carrier subject to match the task commit's header shape for this task id (`(<taskId>): ` after the type), treating a non-matching carrier as not found, as recorded_commits does with `absorbed`.",
-        "fixTask": "P137.5-3y3"
+        "resolution": "fixed in P137.5-3y3 (5101bd4d4980): Also require carrier subject to match the task commit's header shape for this task id (`(<taskId>): ` after the type), treating a non-matching carrier as not found, as recorded_commits does with `absorbed`.",
+        "fixTask": "P137.5-3y3",
+        "commit": "5101bd4d4980",
+        "status": "fixed"
       },
       {
         "id": "P137-R7",
         "severity": "med",
         "file": "tests/test_drive_phase.py:11852-11949 (tcc1-tcc3)",
         "issue": "No case pins the range. Mutation: replace `rev-list start..HEAD` with `rev-list HEAD` (drop the range). tcc3's carrier sits after the start head, so it is found either way; no case has a carrier at or before the start head that must be ignored. The task clause is literally 'a commit after the attempt's start head'.",
-        "resolution": "Add a case where a carrier exists before the attempt's start (a previous attempt's commit, or a start recorded after the commit) and own_commit/next must still answer no-change.",
-        "fixTask": "P137.5-3y3"
+        "resolution": "fixed in P137.5-3y3 (5101bd4d4980): Add a case where a carrier exists before the attempt's start (a previous attempt's commit, or a start recorded after the commit) and own_commit/next must still answer no-change.",
+        "fixTask": "P137.5-3y3",
+        "commit": "5101bd4d4980",
+        "status": "fixed"
       },
       {
         "id": "P137-R8",
         "severity": "low",
         "file": "tests/test_drive_phase.py:11852-11949",
         "issue": "No case pins the `inLast` filter. Mutation: delete `if c[\"inLast\"]` from the `held` set. Every carrier the fixture produces has its trailer in the last paragraph, so the filter never rejects anything.",
-        "resolution": "Add a case whose range holds a commit with the Audit-Row line in a non-last paragraph and assert it is not closed on.",
-        "fixTask": "P137.5-3y3"
+        "resolution": "fixed in P137.5-3y3 (5101bd4d4980): Add a case whose range holds a commit with the Audit-Row line in a non-last paragraph and assert it is not closed on.",
+        "fixTask": "P137.5-3y3",
+        "commit": "5101bd4d4980",
+        "status": "fixed"
       },
       {
         "id": "P137-R9",
         "severity": "low",
         "file": "tests/test_drive_phase.py:11852-11949",
         "issue": "No case pins the withdrawn-nonce filter. Mutation: delete `nonce not in withdrawn`. The fixture journal has no audit.commit.withdrawn row, so the filter never fires and a withdrawn row's nonce would be accepted with no case red.",
-        "resolution": "Add a case with a withdrawal row for the task's nonce plus a commit still carrying that trailer, and assert no-change is still offered.",
-        "fixTask": "P137.5-3y3"
+        "resolution": "fixed in P137.5-3y3 (5101bd4d4980): Add a case with a withdrawal row for the task's nonce plus a commit still carrying that trailer, and assert no-change is still offered.",
+        "fixTask": "P137.5-3y3",
+        "commit": "5101bd4d4980",
+        "status": "fixed"
       },
       {
         "id": "P137-R10",
         "severity": "low",
         "file": "tests/test_drive_phase.py:11852-11949",
         "issue": "No case pins the `task.get(\"commit\")` guard (and none the status guard). Mutation: drop `or task.get(\"commit\")` from the first line of own_commit. Every close_task call in tcc1-4 has an in_progress task with commit null, so the dropped guard changes no outcome.",
-        "resolution": "Unit-call own_commit with a task that has a recorded commit and a carrier in range, and assert None.",
-        "fixTask": "P137.5-3y3"
+        "resolution": "fixed in P137.5-3y3 (5101bd4d4980): Unit-call own_commit with a task that has a recorded commit and a carrier in range, and assert None.",
+        "fixTask": "P137.5-3y3",
+        "commit": "5101bd4d4980",
+        "status": "fixed"
       },
       {
         "id": "P137-R11",
         "severity": "low",
         "file": "tests/test_drive_phase.py:12010-12030 (tcc4)",
         "issue": "tcc4 never produces a carrier: the stub returns 'nothing to commit' and no commit-task-work run happens, so there is no Audit-Row row and no carrier commit anywhere, and own_commit returns None at the first 'not carried' exit. It would stay green for the four mutations above together (drop the range, the inLast filter, the withdrawn filter and the commit guard), so it is not the twin that keeps the fix from firing on everything. It also leaves unpinned the unreadable-start-head and unreadable-journal exits, which the docstring promises return None.",
-        "resolution": "Make the twin a case with a real carrier that must be ignored (before start, withdrawn, or not in the last paragraph) and add the start-head-missing / journal-unreadable cases.",
-        "fixTask": "P137.5-3y3"
+        "resolution": "fixed in P137.5-3y3 (5101bd4d4980): Make the twin a case with a real carrier that must be ignored (before start, withdrawn, or not in the last paragraph) and add the start-head-missing / journal-unreadable cases.",
+        "fixTask": "P137.5-3y3",
+        "commit": "5101bd4d4980",
+        "status": "fixed"
       },
       {
         "id": "P137-R12",
@@ -186,9 +202,37 @@
         "file": "plugins/audit/scripts/governance/drive-phase.py:3852 (header = re.compile(...))",
         "issue": "The task-commit header is respelled as the regex ^[^\\s()]+\\(<taskId>\\): . commit-task-work.message_parts builds the header as `<type>(<taskId>): audit - <subject>` where type is the manifest's meta.commit.type, any non-empty string after strip(); a type containing whitespace or parentheses (for example `feat(audit)`) gives a header this regex does not match. own_commit then returns None for the task's real commit and the caller offers no-change, which is the fault P137.2 fixed, reintroduced for that configuration. R6 asked for the header shape recorded_commits uses (a caller-supplied header prefix), not a new pattern. No case pins a non-default type.",
         "resolution": "Match on what the task id pins rather than on the type: accept a subject containing `(<taskId>): ` after a non-empty prefix (str.find, no character class), or build the expected header from commit-task-work.message_parts with the manifest, as recorded_commits' header argument does. Add one oc case with meta.commit.type holding a space or parenthesis."
+      },
+      {
+        "id": "P137-R22",
+        "severity": "med",
+        "file": "tools/sweep-selftests.py:1237-1241 (grade) with 1634-1636 (sweep)",
+        "issue": "contradicts task clause (P137-R13, 'a write there is a finding naming the suite' even when the suite failed; task title 'names it even when the suite also failed'): grade() now reports the finding beside a non-zero exit, but `if code is None: return row(False, output)` still runs first, so a suite that wrote into the checkout's .claude/ and then TIMED OUT keeps its attributed lines in by_suite and they are dropped: not in the suite's row, not in the loose row. R13 named 'or the raw timeout text' explicitly. The docstring reasons 'the fixtures its kill left are the kill's, not the suite's', which is true of the cwd and home channels and false of a write into the checkout's .claude/, which no kill makes. cw14's g_late only drives a working-directory finding, so the checkout channel on a timeout is unpinned. The executor's descriptive claim ('names it even when the suite also failed') overstates the diff for this case.",
+        "resolution": "In grade() let the kill exemption apply only to the cwd/home findings: for code None, still append findings whose channel is CLAUDE_CHANNEL ('timed out; and wrote into the checkout .claude: ...'). Add a cw14 case: code None with debris=['checkout .claude: ADDED stray.txt'] must name stray.txt."
+      },
+      {
+        "id": "P137-R23",
+        "severity": "med",
+        "file": "tools/sweep-selftests.py:1971-1974 (main) and 2463-2480 (cw15)",
+        "issue": "The refusal-to-start behaviour that tests.add names ('a temp dir inside a checkout is refused') is pinned only on the helper. cw15 calls scratch_refusal() directly; nothing runs main() or reads its exit code, so deleting the four lines in main() that call it leaves every case, and the gate, green. The documents (CONTRIBUTING.md paragraph, _harness.py docstring, cw16) all say the sweep 'refuses to start'. Shape: an assertion the behaviour (the call and `return 2`) never reaches.",
+        "resolution": "Add a case that drives main() (or a thin wrapper taking tmp) with a temp dir containing a .git above it and asserts exit 2 plus the 'refusing to start' text on stderr, and a clean temp dir that does not take that exit."
+      },
+      {
+        "id": "P137-R24",
+        "severity": "low",
+        "file": "tools/sweep-selftests.py:662-697 (CLAUDE_LIVE_WRITES) and cw5 'theirs' at ~2306",
+        "issue": "The exemptions are largely evidence-backed: each pattern matches names present in .claude/state of the live checkout with mtimes from the current session (call-start, journal-preimage, plan-gate, bash-writes, tdd-reminder, running-plugin, attempts, briefs, drive), and every writer cited resolves to a constant. But the table's rule 'a name that command did not list is not in this table' turns absence from a 240-minute sample into 'not written by the session'. `bash-writes-plugin-<sid>.json` is written by the live PostToolUse hook (plugins/audit/hooks/journal-writes.py:1225-1260, record_plugin_write) the first time a plugin script journals a new rel in a session; the row's own sentence admits it is 'not left out', and cw5 pins `state/bash-writes-plugin-<sid>.json` as a SUITE's file. A sweep typed inside a session at that moment (the checkout holds bash-writes-plugin-cli.json and -panel.json from the same hook) goes red once on a session write; it clears on re-run, which is the 'guard gets routed around' shape the file's comments warn about.",
+        "resolution": "Add a row for `^state/bash-writes-plugin-[A-Za-z0-9._-]+\\.json$` citing record_plugin_write, and move the plugin-sidecar example from cw5's `theirs` to `live`. Derive the writer list from the hooks' own filename constants rather than from a time-windowed ls."
+      },
+      {
+        "id": "P137-R25",
+        "severity": "low",
+        "file": "tools/sweep-selftests.py:2491-2500 (cw10) and tools/gate-parity.py:1097-1103",
+        "issue": "cw10's 'a character wrong' variant is always `state/` -> `state/x`, a prefix change. A row loosened at its tail or anchor (e.g. `\\.json$` becoming `\\.json`, or `(?:-[0-9a-f]+)?` becoming `.*`) still skips its example and still fails to match the prefix-mutated one, so cw10 stays green. The new gate-parity comment and the case text claim a row 'grown loose enough to swallow a suite's file' is reported; the mutation only reaches prefix looseness.",
+        "resolution": "Also test a tail mutation per row (append 'x' to the example, and for the directory rows a sibling like 'state/briefs-extra/x'), and assert the sentence."
       }
     ],
-    "outcome": "[findings: 21 - 0 high, 4 med, 17 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 25 - 0 high, 6 med, 19 low; 8 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -445,7 +489,7 @@
     {
       "id": "P137.5-3y3",
       "title": "own_commit closes only on this attempt's own, still-present task commit, and its cases pin every filter",
-      "status": "in_progress",
+      "status": "done",
       "description": "",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -478,14 +522,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "5101bd4d4980",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py own_commit rewritten; new helpers _attempt_start_moment and _attempt_nonces. It now (D1) reads the span through _scoped_commit.attempt_span with the task's declared files (declared_work), so a start head that is no ancestor of HEAD yields touched None and own_commit None, and rev-list is gone; (D1) takes nonces only from rows whose moment is >= the current attempt's task.start row moment (>= because the trail's grain is a second), minus withdrawn ones; (D2) names the carrier only when it is touched[0], the NEWEST commit of the span that changed a declared file, so a revert or any later change to a declared file closes nothing; (D3) requires the subject to open with `<type>(<taskId>): ` as well as inLast. tests/test_drive_phase.py: new stage oc-block (_own_commit_cases) with oc1 (all conditions hold, names the commit), oc2 (start recorded after the commit), oc3 (reopen and restart past attempt 1's commit), oc4 (earlier attempt's row, commit inside the span), oc5 (start head off history), oc6 (revert) and oc6b (allow: later commit on an undeclared file), oc7-squash/oc7-other (header), oc8 (trailer not in last paragraph), oc9 (withdrawn), oc10 (recorded commit / status not in_progress), oc11 (no start head / other attempt / unreadable journal). tcc4 now builds a REAL carrier (the commit step makes the commit, reports nothing to commit, a real withdrawal row is appended) and expects no-change; the old no-commit twin is tcc5. Gate: python3 tools/sweep-selftests.py tests/test_drive_phase.py -> exit 0, 556 cases ok (461.7s under sibling load). MUTATIONS, each applied in a scratch copy of the worktree under $TMPDIR (rsync without .git; worktree untouched; __pycache__ purged before every run; scratch confirmed byte-identical to the worktree with cmp afterwards), run as `python3 tests/test_drive_phase.py --selftest --stage tcc-block --stage oc-block`: [range dropped = drop `if not touched` and return any held carrier] -> FAIL oc2, oc5, oc6 (15/18); same plus nonce-time filter dropped -> FAIL oc2, oc3, oc4, oc5, oc6 (13/18) (oc3 is held by two filters, so only the pair turns it red); [nonce rows before the attempt start kept: `moment < began` dropped] -> FAIL oc4 (17/18); [revert: newest-only weakened to any touching carrier] -> FAIL oc6 (17/18); [over-fire: carrier must be HEAD itself] -> FAIL oc6b (17/18); [withdrawn filter dropped: withdrawn = set()] -> FAIL tcc4, oc9 (16/18); [inLast dropped] -> FAIL oc8 (17/18); [header match dropped] -> FAIL oc7-squash, oc7-other (16/18); [task.get(commit) guard dropped] -> FAIL oc10 (17/18); [status guard dropped] -> FAIL oc10 (17/18); [except Exception around read_all narrowed to KeyError] -> oc-block RAISED OSError, oc11 did not run (17/18); [ancestry, in _scoped_commit.attempt_span: both `if code == 1` and `if code != 0` made `if False`] -> FAIL oc5 (17/18) (dropping only the code == 1 branch stayed 18/18, because the `code != 0` branch also returns None for exit 1; that is the redundancy in attempt_span, not a gap in oc5). Not done: the optional `git diff --quiet C HEAD` check (newest-touching == C already covers a later change); the nonce filter duplicates the task.start predicate of _scoped_commit.start_head_of locally because that file is outside this task's files. DEPENDANTS: own_commit's only caller is close_task (signature unchanged) and no .md or other file names it (git grep own_commit: only drive-phase.py, tests/test_drive_phase.py and past evidence), so README.md, PLUGIN-BUILD-GUIDE.md, docs/research/pipeline-cost-design.md and the basename importers (detect-plan-skip.py, record-risk-confirmation.py, stamp-verification.py, _areas.py) are still correct; test dependants (sweep-costs.json, tools/sweep-selftests.py etc.) read the suite only through its printed tally, and the new stage oc-block is registered once in STAGES (sb1 passes). claims:\n1 drive-phase.py own_commit docstring sentences map to: header regex and inLast in the held set, newest = touched[0][1], attempt_span call, _attempt_nonces (withdrawn, moment >= began)\n2 12 mutations above, each red on the named case, restored (scratch cmp identical to worktree)\n3 n/a — not a fix of a reported defect id; filters grepped in the one function (git grep own_commit: one caller)\n4 n/a — no rule to an agent\n5 sweep ran once under sibling load (461.7s); no timing property claimed\n6 n/a — no guard on commands\n7 no number written in prose besides the dated tallies above",
+        "descriptive": "own_commit now closes only on this attempt's own, still-present task commit, and each of its filters has a case proven red by its own mutation."
       },
       "startedAt": "2026-10-22T19:08:20Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-22T20:02:52Z",
+      "verifiedBy": [
+        "oc1-oc11 (oc6b, oc7-squash, oc7-other) unit-call own_commit over a real git fixture with one condition failing at a time",
+        "tcc4 rebuilt with a real withdrawn carrier, tcc5 the old no-commit twin"
+      ],
       "notes": [
         {
           "at": "2026-10-22T19:07:58Z",
@@ -515,6 +562,18 @@
         "runId": "2026-10-22T19:44:19Z.5c1c9b",
         "status": "passed",
         "at": "2026-10-22T19:44:19Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "5101bd4d4980",
+        "at": "2026-10-22T20:02:52Z",
+        "return": "docs/audit/evidence/returns/P137.5-3y3/20261022T190820Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-22T19:37:09Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 480-second deadline; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -549,14 +608,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-22T19:08:27Z",
+      "startedAt": "2026-10-22T20:03:34Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -594,9 +653,9 @@
       ],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-10-22T19:52:42Z.1c8744",
-        "status": "failed",
-        "at": "2026-10-22T19:52:42Z"
+        "runId": "2026-10-22T20:15:15Z.539193",
+        "status": "passed",
+        "at": "2026-10-22T20:15:15Z"
       }
     },
     {

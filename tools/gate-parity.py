@@ -1094,6 +1094,12 @@ AUDITED_EXEMPTIONS = {
     # left out is reported; whether its sentence is still true of a live session
     # it does not judge, so this is the weaker of the two strengths.
     "CLAUDE_UNWATCHED": ("live", "tools/sweep-selftests.py cw5"),
+    # ...and what it leaves out of `state/` by name. `cw10` drives every row with
+    # the example it carries - skipped - and the same name with a character wrong
+    # - not skipped - so a dead row and a row grown loose enough to swallow a
+    # suite's file are both reported; whether its sentence names the writer
+    # truthfully it does not judge, so this is the weaker strength too.
+    "CLAUDE_LIVE_WRITES": ("live", "tools/sweep-selftests.py cw10"),
     "EXCLUDED": ("live", "tests/test__refs.py t2"),
 }
 

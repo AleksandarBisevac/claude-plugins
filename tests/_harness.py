@@ -180,7 +180,18 @@ def fixture_root(prefix):
     only when something is left behind but when that planted file is DELETED or
     REWRITTEN - the destructive half, which a strays-only check reports as spotless.
 
-    A THIRD DIRECTORY IS PINNED AND DELIBERATELY NOT WATCHED: `PYTHONPYCACHEPREFIX`
+    THE CHECKOUT'S OWN `.claude/` IS A THIRD WATCHED DIRECTORY, watched by looking:
+    a suite that finds its project by its own location touches neither directory
+    above, so the runner reads that `.claude/` before the pool starts and after it
+    drains and names what changed (a write is pinned on a suite only when exactly
+    one suite's run holds its moment; a removal carries no time and is reported
+    unattributed). The live session's own slots in `state/` are left out by name
+    and nothing else in it is. And the sweep refuses to start when its temp
+    directory has a `.git` above it, since every directory a suite is handed is
+    made there.
+
+    THE BYTECODE CACHE'S DIRECTORY IS PINNED AND DELIBERATELY NOT WATCHED:
+    `PYTHONPYCACHEPREFIX`
     sends the interpreter's bytecode cache out of both watched trees. An interpreter
     writes that cache where its own configuration says, and macOS's system python
     says "under the HOME I was given" - so without it a suite that merely started a

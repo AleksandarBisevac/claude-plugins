@@ -256,6 +256,24 @@ not put there; the cache prefix is redirected rather than watched, because an in
 that writes its shadow cache under the HOME it was handed would otherwise convict a child
 for starting a grandchild.
 
+THE CHECKOUT'S OWN `.claude/` IS A THIRD WATCHED DIRECTORY, watched by looking rather than
+by handing the child anything: neither of the pair is one that a suite finding its project
+by its own location ever touches, and one such suite wrote a restore point and an ignore
+line into the real checkout with both of them spotless. The runner reads that directory
+before the pool starts and after it drains. A write is pinned on a suite only when exactly
+one suite's run holds the moment its file was stamped; otherwise it is reported against a
+row of its own, naming every candidate, and `--jobs 1` (which leaves a gap between suites
+longer than the stamp's allowed lag) is the re-run that names the writer. A REMOVAL has no
+time of its own to read, so it is reported on that row with no suite named, and a directory
+made with something in it is reported through what is in it. `state/` is watched too: only
+the names the live session's hooks and the drive give a slot there are left out, each row
+of `CLAUDE_LIVE_WRITES` carrying its writer and the observation behind it, so a name a
+session starts to write that no row knows reddens the sweep until a row is added. Its
+other runtime directories are still not watched, and each row of `CLAUDE_UNWATCHED` says
+why. A suite that exited non-zero AND wrote there is told for both in one line. The
+prevention half: the runner refuses to start when its temp directory has a `.git` above
+it, because every scratch directory a child is handed is made there.
+
 THE FILE IS RED IF ANYTHING WAS ADDED TO EITHER WATCHED DIRECTORY - or, the destructive
 half a strays-only check would call spotless, if the planted file was DELETED or REWRITTEN.
 Those are three different bugs with three different repairs, so they are worded apart
