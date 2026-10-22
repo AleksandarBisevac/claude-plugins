@@ -874,6 +874,12 @@
       "title": "A writer's task closes on its own work: the plugin's own state is never refused at commit, and an out-of-scope edit becomes a note instead of a refusal",
       "status": "done",
       "shard": "phases/P135.json"
+    },
+    {
+      "id": "P136",
+      "title": "The run-agent-session environment cases hold on Windows",
+      "status": "in_progress",
+      "shard": "phases/P136.json"
     }
   ],
   "fileIndex": {
@@ -11498,7 +11504,8 @@
       "P131.5",
       "P135.3-kux",
       "P135.4-kux",
-      "P135.5-kux"
+      "P135.5-kux",
+      "P136.1"
     ],
     "plugins/audit/scripts/governance/_clause_coverage.py": [
       "P131.7"
