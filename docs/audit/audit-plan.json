@@ -866,7 +866,7 @@
     {
       "id": "P134",
       "title": "No path is made relative across drives, in tests or tools",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P134.json"
     }
   ],
@@ -7970,7 +7970,8 @@
       "P130.40-ywo",
       "P130.54-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P134.1"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -11336,7 +11337,8 @@
       "P131.1"
     ],
     "tests/test_import_evidence.py": [
-      "P131.1"
+      "P131.1",
+      "P134.1"
     ],
     "tests/test_integrate_task.py": [
       "P131.1"
