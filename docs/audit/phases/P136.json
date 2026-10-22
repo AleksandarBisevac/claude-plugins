@@ -1,7 +1,7 @@
 {
   "id": "P136",
   "title": "The run-agent-session environment cases hold on Windows",
-  "status": "in_progress",
+  "status": "done",
   "description": "Windows stores environment keys upper-cased, so a decoy named in lower case is filtered out by the stub's recorder (a kept name is reported lost) or is trivially absent (a dropped name is reported dropped without the rule being exercised).",
   "desiredOutcome": "tests/test_run_agent_session.py is green on the Windows runners, and no case there passes because a lower-case decoy name cannot exist in a Windows environment",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "5c71066aa83db133548c6fa38ede785f78c015da",
   "branch": "audit/p136-the-run-agent-session-environm",
-  "mergedAt": null,
+  "mergedAt": "2026-10-22T16:20:42Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -102,5 +102,6 @@
     "runId": "2026-10-22T16:20:33Z.4c3dd2",
     "status": "passed",
     "at": "2026-10-22T16:20:33Z"
-  }
+  },
+  "mergedHead": "39b7e6a70fc4e2bece8c30f98af37b989f96ec27"
 }
