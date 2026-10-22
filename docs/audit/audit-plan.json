@@ -856,6 +856,12 @@
       "title": "Fix what the S1 phase code review found on the writer-session path",
       "status": "done",
       "shard": "phases/P132.json"
+    },
+    {
+      "id": "P133",
+      "title": "The task-gate exemption flag is added only to this plugin's own audit-status",
+      "status": "pending",
+      "shard": "phases/P133.json"
     }
   ],
   "fileIndex": {
@@ -4092,7 +4098,8 @@
       "P130.45-ywo",
       "P131.1",
       "P131.2",
-      "P131.12"
+      "P131.12",
+      "P133.1"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -11394,7 +11401,8 @@
     ],
     "tests/test_run_test_gate.py": [
       "P131.1",
-      "P131.12"
+      "P131.12",
+      "P133.1"
     ],
     "tests/test_set_priority.py": [
       "P131.1"

@@ -1,0 +1,73 @@
+{
+  "id": "P133",
+  "title": "The task-gate exemption flag is added only to this plugin's own audit-status",
+  "status": "pending",
+  "description": "Bugfix found by the stage 1 confirming measurement (register F780).",
+  "desiredOutcome": "A project whose gate step calls a different or older audit-status.py gets its gate run as declared, with a line saying the task exemption was not applied, instead of a red gate on every run.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P133.1",
+      "title": "run-test-gate appends --task only to a gate step that runs this plugin's own audit-status.py, and says so when it does not",
+      "status": "pending",
+      "description": "Register F780. run-test-gate.py with_gate_task (P131.12) appends `--task <id>` to any single `audit-status.py --gate` step. Stage 1 showed the project's gate naming an OLDER audit-status (this repo at base 48f2322d, plugin 3.3.0) that rejects the flag (`unrecognized arguments: --task`, exit 2), so the gate is red on every run. Resolve the step's script path (relative to the project, after the same word parsing with_gate_task already does) and append --task only when it is the same file as this runner's own status/audit-status.py (os.path.samefile, or realpath equality); otherwise run the step unchanged and print one line that the task-gate exemption was not applied because the step runs another copy of audit-status, naming it. Keep the existing refusals (compound commands etc.).",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_test_gate.py: a gate step naming an audit-status.py that is not this plugin's own copy runs unchanged with no --task and the output says the exemption was not applied and names the script, while a step naming the plugin's own audit-status.py still gets --task <id>"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ],
+  "request": "da, kreni tim redom (owner 2026-10-22: plugin fix first, then harness, then re-run stage 1)",
+  "openChoices": []
+}
