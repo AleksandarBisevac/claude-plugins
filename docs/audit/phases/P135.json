@@ -37,16 +37,23 @@
         "file": "tests/test_commit_task_work.py:2330-2347; tools/gate-parity.py:1048",
         "issue": "The new AUDITED_EXEMPTIONS row is ('live', 'tests/test_commit_task_work.py ctw-at9'). The checker only confirms that the file carries a case id starting 'ctw-at9 ', so the row is well formed and the instrument exists. ctw-at9 pins only the audit-backups and .gitignore rows plus non-empty reasons. The audit.config.json row has no pin: deleting it makes no case red, because ctw-at7 asserts it only through the config edit. The table comment says nothing forces a new writer to add its row.",
         "resolution": "Add the config file to ctw-at9's expected paths (os.path.join(root, '.claude', _mio.CONFIG_NAME) in paths), so all three rows are pinned."
+      },
+      {
+        "id": "P135-R3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:3541-3562 (settle_aside) and 3587-3606 (writer_commit)",
+        "issue": "The task note and ctx['did'] line say 'the commit carries the declared work' and are written before the re-proof, the re-measured gate and the second commit have run. If the re-measured gate goes red (or the second commit refuses), the paths are already reverted and the note already filed, so the task carries a note claiming a commit the run did not make. The patch path in the note is still correct, so nothing is lost; the sentence is only premature.",
+        "resolution": "Word the note as what was done ('set aside ... put back to HEAD; the drive asks the commit again') and leave the commit claim to the close line, or file the note after the second commit succeeds."
       }
     ],
-    "outcome": "[findings: 2 - 0 high, 0 med, 2 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P135.1",
       "title": "commit-task-work never refuses the plugin's own state - the manifest restore point under audit-backups/ and the .gitignore line that hides it - and one table of plugin-owned paths is read by both the writer and the check",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F782. Stage 1 run a2: the gate was green and commit-task-work's undeclared-path refusal (attempt_refusal, commit-task-work.py ~546) refused twice on paths no session created by a tool call: `.claude/.gitignore` gaining `audit-backups/`, then `audit-backups/audit-plan.json.bak-<stamp>`. The writers of those paths are in manifest/_manifest_io.py and migrate-manifest.py (grep audit-backups). Put the plugin-owned state paths (restore points, the .gitignore entry the plugin adds, its state dirs) in one table in a shared module both read; attempt_refusal treats them as plugin-owned: never refused as the task's edit, never silently left out of the record (name them on a line). Check the owner's earlier report of the same class: `.claude/audit.config.json` created mid-attempt was refused too (register F760) - cover it by the same table if it belongs there.",
       "files": [
         "plugins/audit/scripts/governance/commit-task-work.py",
@@ -76,29 +83,47 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fd037a4184f7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "NEEDS A SCOPE WIDENING: the new table PLUGIN_OWNED_IN_CLAUDE in _manifest_io.py is a reason-carrying table, so tools/gate-parity.py (exemption_audit_drift) is red on it until a row is added there: in AUDITED_EXEMPTIONS add `\"PLUGIN_OWNED_IN_CLAUDE\": (\"live\", \"tests/test_commit_task_work.py ctw-at9\"),` (proved on a committed copy in /tmp/p135cp.g5uhFM: gate-parity green, its --selftest 93/93). tools/gate-parity.py is not in P135.1.files, so I did not edit it. Changes: (1) _manifest_io.py: constants GITIGNORE_NAME and CONFIG_NAME beside BACKUP_DIR_NAME, the table PLUGIN_OWNED_IN_CLAUDE (name, why) = audit-backups dir, .gitignore, audit.config.json, and plugin_owned_under(claude_dir); ensure_claude_ignored now writes the file named by GITIGNORE_NAME. (2) commit-task-work.py: plugin_owned_rels(project, git_root) places the table under both the project's and the checkout's .claude; split_plugin_owned; attempt_refusal removes those paths from during/predates/undated before asking the refusal question, adds one note line 'plugin-owned state, not the task's edit, left out of this commit and not refused: <path> (<why>); ...', and records attribution['pluginOwned']. Module docstring gains the sentence. They are never staged (not in targets paths), so left out of the commit. (3) tests: ctw-at7 (restore point under audit-backups written by the real ensure_backup_dir + .gitignore line + config edited mid-attempt, beside an undeclared src/img.png: refusal line names img.png alone and no .claude path; after removing img.png the close commits OWNED only, carries no .claude/ path, and names .claude/.gitignore and .claude/audit.config.json as plugin-owned), ctw-at8 (a2's second state: restore point untracked because the ignore line was reverted; close succeeds, names it, does not carry it), ctw-at9 (the restore-point writer's directory and ignore file are rows of the table, each with a reason). Mutations: partition made to treat everything as plugin-owned -> sl1, sl2, ctw-at3, ctw-at5, ctw-at6, ctw-at7 red (129/135); note disabled -> ctw-at7, ctw-at8 red (133/135); both restored, 135/135. Verification on a committed copy (git archive HEAD + my 3 files, own git repo in /tmp): sweep-selftests: 191/194 files ok, red = check-example-ledgers, measure-context, and gate-parity (the missing row above; green with the row); ruff clean; vermin clean. EVIDENCE FROM a2 (<outside-repo>): refusal 1 (drive-state/P125.explain, orchestrator.stream.jsonl line 94): '.claude/.gitignore changed during this attempt and no in_progress task declares it (basis: the snapshot `start` recorded of every dirty path's bytes)'; the orchestrator then ran `git checkout -- .claude/.gitignore`, which made the ignored dir untracked, so refusal 2 (stream line 116): '.claude/audit-backups/audit-plan.json.bak-20261022T100219Z changed during this attempt ...'. Verb: _manifest_io.ensure_backup_dir called from migrate-manifest.py:370 (the layout migration, backup_dir_for at :257) writes both the restore point and the .gitignore line. By timestamp (bak-20261022T100219Z) it was written inside the writer session's whole-tree `python3 tools/sweep-selftests.py` run (its Bash call at 09:57:20Z, result back 10:02:27Z; transcripts/875cfdd8...jsonl), not by any listed tool call; the 524-byte restore point reads like a selftest fixture, so a suite that runs the layout migration likely leaked into the real checkout's .claude/ - INFERENCE, not verified, and worth its own fault. F760 (.claude/audit.config.json) is covered by the same table. NOT covered: the plan gate's exemption of .claude/** (hooks/require-plan.py) cannot import scripts/ and does not read this table - F760's 'both read it' half for the gate remains.",
+        "descriptive": "A task close no longer refuses on the plugin's own restore point, the ignore line for it or the config file; they are left out of the commit and named, while an undeclared source file still refuses."
       },
       "startedAt": "2026-10-22T12:01:44Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-22T13:13:57Z",
+      "verifiedBy": [
+        "ctw-at7: plugin-owned paths named and left out, ordinary undeclared file still refused alone",
+        "ctw-at8: untracked restore point not refused, named, not carried",
+        "ctw-at9: the restore-point writer's paths are rows of the shared table"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-22T13:13:55Z.c0e354",
         "status": "passed",
         "at": "2026-10-22T13:13:55Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "fd037a4184f7",
+        "at": "2026-10-22T13:13:57Z",
+        "return": "docs/audit/evidence/returns/P135.1/20261022T120144Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-22T12:41:29Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_commit_task_work.py` in a throwaway tree at HEAD exited 1 with failing cases ctw-at7 (house FAIL), ctw-at8 (house FAIL), tests/test_commit_task_work.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 132/135 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P135.2",
       "title": "On the writer path, an edit outside the task's declared files is left out of the commit and named, instead of refusing the whole task",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Register F783. Stage 1 runs a1 and a1b: the writer (plain prompt, which states no scope) edited PLUGIN-BUILD-GUIDE.md, which the task does not declare; commit-task-work refused the whole task. The writer prompt must stay equal to plain's, so the fix belongs in the drive: on the writer path (executor.writerModel set), before the commit, the drive reverts each undeclared changed path in the task tree after saving it as a patch under the run's state, records a task note naming each path and the patch, re-proves/re-gates if any reverted path was read by the gate, then commits the declared work. Leave the subagent-executor path unchanged (it keeps refusing). Plugin-owned paths (the table from the sibling task) are never reverted.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
-        "tests/test_drive_phase.py"
+        "tests/test_drive_phase.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "tests/test_commit_task_work.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -122,25 +147,32 @@
       "dependsOn": [
         "P135.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-22T13:13:59Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-22T14:55:54Z.3a756d",
+        "status": "passed",
+        "at": "2026-10-22T14:55:54Z"
+      }
     },
     {
       "id": "P135.3-kux",
       "title": "A writer or reviewer session starts as a clean top-level session: run-agent-session does not pass the orchestrator's Claude session variables to it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Found while diagnosing F784: run-agent-session._session_env (~249-253) copies the orchestrator's whole environment, so CLAUDECODE, CLAUDE_CODE_SESSION_ID and CLAUDE_EFFORT reach the writer, while a top-level session (and both measurement arms) start without them. Drop the parent's Claude session variables (CLAUDECODE and every CLAUDE_CODE_* / CLAUDE_EFFORT; keep any CLAUDE_* the runner sets on purpose and name them) so a writer starts like a plain top-level session.",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
-        "tests/test_run_agent_session.py"
+        "tests/test_run_agent_session.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -162,16 +194,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-22T13:14:01Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals"
     }
   ],
   "request": "Stage 1 measurement (2026-10-22): runs could not close because the commit check refused the plugin's own restore point and the writer's out-of-scope edit (register F782, F783)",

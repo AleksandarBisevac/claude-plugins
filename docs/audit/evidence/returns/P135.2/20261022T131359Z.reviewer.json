@@ -1,0 +1,20 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low",
+   "file": "plugins/audit/scripts/governance/drive-phase.py:3541-3562 (settle_aside) and 3587-3606 (writer_commit)",
+   "issue": "The task note and ctx['did'] line say 'the commit carries the declared work' and are written before the re-proof, the re-measured gate and the second commit have run. If the re-measured gate goes red (or the second commit refuses), the paths are already reverted and the note already filed, so the task carries a note claiming a commit the run did not make. The patch path in the note is still correct, so nothing is lost; the sentence is only premature.",
+   "resolution": "Word the note as what was done ('set aside ... put back to HEAD; the drive asks the commit again') and leave the commit claim to the close line, or file the note after the second commit succeeds."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause 'on the writer path (executor.writerModel set), before the commit, the drive reverts each undeclared changed path in the task tree after saving it as a patch under the run's state': close_task now calls writer_commit when writer_path_on(ctx) and recorded_session(state, task). On a refusal it re-asks commit-task-work --json and reads attempt.during (undeclared_only, which refuses to act when declaredPredates or mixed sit beside it). set_aside writes a binary patch to <stateDir>/set-aside/<phase>/<task>-<utc>.patch, checks it with git apply --check -R, then checks out tracked paths and removes created ones. Clause 'records a task note naming each path and the patch': one note_task names all paths and the project-relative patch. Clause 're-proves/re-gates if any reverted path was read by the gate': the diff re-proves via prove_and_hold and ALWAYS re-gates (rerun mark + gate_step), because the ledger records no read set. This is broader than the clause's condition but errs the safe way, at the cost of one extra gate run per set-aside. Clause 'subagent-executor path unchanged': the else branch keeps the text-mode commit with the same argv (commit_args and committed_sha are factored out), and xs3 pins it. Clause 'plugin-owned paths never reverted': plugin_owned_paths reads _manifest_io.PLUGIN_OWNED_IN_CLAUDE, placed under both the project's and the checkout's .claude/, and the refusal is relayed. One addition beyond the clause: a path cited by the writer's clause answer is also not reverted (aside_gap), which avoids silently turning a delivered clause into a gap. The executor's outcome describes the diff: the functions, the xs1-xs6 block and the docstring edits it names are all present. Its dependants claim holds, since there is no new import edge and no signature change. The one thing not verifiable by reading is the claimed 192/194 full sweep and the mutation table; the task's own gate is recorded as passed.",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "Executor filed could-not-prove, source red-first-helper, basis: the run of `python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD timed out ('no time was left of the 480-second deadline'). A timeout is a reason, not a red, so the word holds. The executor separately claims eight hand mutations each turned xs1-xs6 red; those are in its claims block only and are not a recorded red-first stamp.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "tests.gate is the literal `python3 tools/sweep-selftests.py tests/test_drive_phase.py`, which selects only tests/test_drive_phase.py. I grepped it for 'undeclared' and 'refuses by name'. The only hits outside the new xs block are wave cases (undeclared-change, integrate-task) that this diff does not touch, and the diff changes no existing case. I did not read all of the file's cases, so this covers the behaviour this diff adds, not every test in the file."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

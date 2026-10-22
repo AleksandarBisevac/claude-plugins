@@ -1316,6 +1316,228 @@ def _writer_files_cases(check):
     _writer_commit_cases(check, M, bindir, log)
 
 
+# --- a writer's edit outside the task's files ---------------------------------
+# A tracked document no task declares, as the measured writer edited one: the
+# writer's prompt states no scope, so its aside is set apart, never refused.
+_XS_ASIDE = "GUIDE.md"
+_XS_HEAD = "the guide as committed\n"
+_XS_EDIT = "the guide as the writer rewrote it\n"
+_XS_PATCH = re.compile(r"(\S+\.patch)\b")
+# And a file the writer creates that no task declares: untracked, so it is put
+# back to HEAD by being removed, and its patch is a new file's.
+_XS_NEW = "notes/scratch.md"
+_XS_NEW_TEXT = "a note the writer left beside its work\n"
+
+
+def _xs_with_aside(root):
+    """Commit `_XS_ASIDE` into the fixture: a path the plan never declares."""
+    _write_lf(os.path.join(root, _XS_ASIDE), _XS_HEAD)
+    _harness.git(root, "add", _XS_ASIDE)
+    _harness.git(root, "commit", "-qm", "fixture: a document no task declares")
+
+
+def _xs_patch_notes(mpath, task_id):
+    """`[(note, patch path)]` for each note on the task naming a patch."""
+    return [(n, _XS_PATCH.search(n).group(1)) for n in _notes(mpath, task_id)
+            if _XS_PATCH.search(n)]
+
+
+def _writer_scope_cases(check):
+    """On the writer path an edit outside the task's files is saved as a patch
+    under the run's state, put back to HEAD, named in a note, and left out of
+    a commit that carries the declared work; on the executor path the same
+    edit still refuses the close."""
+    M, why = _load("drive_phase_writer_scope")
+    if M is None:
+        check("xs1 the driver loads", False, why)
+        return
+    stubs = os.path.realpath(_harness.fixture_root("drive-xs-stub-"))
+    bindir = _writer_stub(stubs)
+    log = os.path.join(stubs, "runs.jsonl")
+    root, mpath = _tdd_writer_repo("xs-writer", (_wf_gate(),))
+    _xs_with_aside(root)
+    os.makedirs(os.path.join(root, "notes"))
+    _signal_next(M, root, mpath)
+    _writer_round(M, root, mpath, bindir, log, "0.41",
+                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST,
+                        _XS_ASIDE: _XS_EDIT, _XS_NEW: _XS_NEW_TEXT},
+                  result=_WF_CLAIM)
+    _file_reviewer(root, mpath, "P1.1")
+    code, line = _signal_next(M, root, mpath)
+    task = tasks_of(mpath).get("P1.1") or {}
+    committed = sorted(_git_out(root, "show", "--name-only", "--format=",
+                                task.get("commit") or "HEAD").split())
+    with open(os.path.join(root, _XS_ASIDE), encoding="utf-8") as fh:
+        left = fh.read()
+    noted = _xs_patch_notes(mpath, "P1.1")
+    patch = noted[0][1] if len(noted) == 1 else ""
+    held = ""
+    if patch and not os.path.isabs(patch) and os.path.isfile(
+            os.path.join(root, *patch.split("/"))):
+        with open(os.path.join(root, *patch.split("/")), encoding="utf-8") as fh:
+            held = fh.read()
+    # Mutations this is the red for: no revert at all (the commit refuses and
+    # the task stays in progress); a revert of every changed path (the
+    # declared work is gone from the commit); a revert with no patch kept, or
+    # no note, or a note that names a declared path or a machine path.
+    work = [p for p in committed if not p.startswith("docs/audit/")]
+    created = os.path.exists(os.path.join(root, *_XS_NEW.split("/")))
+    check("xs1 a writer session that also edited a tracked file and created one, "
+          "neither declared by the task: the task closes on a commit of its "
+          "declared files and the plan's records, without either; the edited "
+          "file is back at HEAD's bytes and the created one is gone; one note "
+          "names both and a patch under the run's state, relative to the "
+          "project, that holds both of the writer's changes and names no "
+          "declared file: %r"
+          % ((code, line[-400:], task.get("status"), committed, left, created,
+              noted, held[-600:]),),
+          task.get("status") == "done" and bool(task.get("commit"))
+          and work == sorted([_WF_SRC, _WF_TEST])
+          and left == _XS_HEAD and not created
+          and len(noted) == 1 and _XS_ASIDE in noted[0][0]
+          and _XS_NEW in noted[0][0]
+          and _WF_SRC not in noted[0][0] and _WF_TEST not in noted[0][0]
+          and root not in noted[0][0]
+          and patch.startswith(".claude/state/")
+          and _XS_EDIT.strip() in held and _XS_ASIDE in held
+          and _XS_NEW_TEXT.strip() in held and _XS_NEW in held
+          and _WF_SRC not in held and _WF_TEST not in held)
+    applies = subprocess.run(_GIT + ["apply", "--check", patch], cwd=root,
+                             capture_output=True, text=True, encoding="utf-8",
+                             errors="replace") if held else None
+    check("xs2 the kept patch is the writer's edit as git reads it: it applies "
+          "to the tree the commit left, so the aside can be taken back by hand: "
+          "%r" % ((applies.returncode, applies.stderr[-300:]) if applies else
+                  "no patch read",),
+          applies is not None and applies.returncode == 0)
+    project, config = _evio.project_config_for(mpath, root)
+    runs = [r for r in _evio.read_rows(project, config)["rows"]
+            if isinstance(r, dict) and r.get("taskId") == "P1.1"]
+    # The red for a set-aside that commits on the gate measured before it: the
+    # ledger records no list of what a run read, so the gate is measured again.
+    check("xs4 the gate is measured again on the tree the set-aside left: two "
+          "green runs of the task are recorded, the newest after the patch was "
+          "kept: %r" % (([(r.get("status"), r.get("ts")) for r in runs], patch),),
+          len(runs) == 2 and all(r.get("status") == "passed" for r in runs)
+          and bool(re.search(r"-(\d{8}T\d{6}Z)\.patch$", patch))
+          and max(str(r.get("ts") or "") for r in runs).replace("-", "")
+          .replace(":", "") >= re.search(r"-(\d{8}T\d{6}Z)", patch).group(1))
+
+    root_c, mpath_c = _tdd_writer_repo("xs-cited", (_wf_gate(),))
+    _xs_with_aside(root_c)
+    _signal_next(M, root_c, mpath_c)
+    _writer_round(M, root_c, mpath_c, bindir, log, "0.43",
+                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST,
+                        _XS_ASIDE: _XS_EDIT},
+                  result=_said("clause one is in the guide", (1,), _XS_ASIDE))
+    _file_reviewer(root_c, mpath_c, "P1.1")
+    code_c, line_c = _signal_next(M, root_c, mpath_c)
+    _c, block_c = _explain_of(M, root_c, mpath_c, PHASE)
+    with open(os.path.join(root_c, _XS_ASIDE), encoding="utf-8") as fh:
+        left_c = fh.read()
+    # The red for a set-aside blind to the writer's own answer: a clause the
+    # writer delivered in that file would become a gap nobody was told of.
+    check("xs5 a file the writer's answer cites for a clause is not set aside: "
+          "the commit's refusal is relayed with why, the edit stays and no "
+          "patch is noted: %r" % ((code_c, line_c, block_c[-600:], left_c,
+                                   _xs_patch_notes(mpath_c, "P1.1")),),
+          code_c != 0
+          and (tasks_of(mpath_c).get("P1.1") or {}).get("status") == "in_progress"
+          and "not set aside" in line_c + block_c and "clause" in line_c + block_c
+          and left_c == _XS_EDIT and _xs_patch_notes(mpath_c, "P1.1") == [])
+
+    root_d, mpath_d = _tdd_writer_repo("xs-dirty", (_wf_gate(),))
+    _xs_with_aside(root_d)
+    os.makedirs(os.path.join(root_d, "notes"))
+    # An edit that is not the writer's, there before the start: an owner's, or
+    # another session's in the shared checkout.
+    owner = _XS_HEAD + "an owner's line, uncommitted\n"
+    _write_lf(os.path.join(root_d, _XS_ASIDE), owner)
+    _signal_next(M, root_d, mpath_d)
+    both = owner + "and the writer's line\n"
+    _writer_round(M, root_d, mpath_d, bindir, log, "0.45",
+                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST,
+                        _XS_ASIDE: both, _XS_NEW: _XS_NEW_TEXT},
+                  result=_WF_CLAIM)
+    _file_reviewer(root_d, mpath_d, "P1.1")
+    code_d, line_d = _signal_next(M, root_d, mpath_d)
+    _c, block_d = _explain_of(M, root_d, mpath_d, PHASE)
+    with open(os.path.join(root_d, _XS_ASIDE), encoding="utf-8") as fh:
+        left_d = fh.read()
+    noted_d = _xs_patch_notes(mpath_d, "P1.1")
+    said_d = line_d + "\n" + block_d
+    # The red for a set-aside that reverts to HEAD whatever the start held: the
+    # owner's line would be gone and the note would call it the writer's.
+    check("xs7 a file dirty before the start and touched by the writer too is "
+          "never put back: its bytes stay as the tree held them, the task is "
+          "refused naming it as dirty before the attempt, and a file clean at "
+          "the start in the same run is still set aside, its patch noted: %r"
+          % ((code_d, said_d[-700:], left_d, noted_d),),
+          code_d != 0
+          and (tasks_of(mpath_d).get("P1.1") or {}).get("status") == "in_progress"
+          and left_d == both
+          and "%s %s not set aside: dirty before the attempt, or no start "
+              "snapshot to tell" % (M.PREFIX, _XS_ASIDE) in said_d
+          and not os.path.exists(os.path.join(root_d, *_XS_NEW.split("/")))
+          and len(noted_d) == 1 and _XS_NEW in noted_d[0][0]
+          and _XS_ASIDE not in noted_d[0][0])
+
+    refused = {"committed": False, "refused": "x"}
+    shapes = [
+        M.undeclared_split(dict(refused, attempt={
+            "during": ["c.md", "b.md", "a.md", "b.md"], "declaredPredates": [],
+            "mixed": [], "cleanAtStart": ["b.md", "a.md"]})),
+        M.undeclared_split(dict(refused, attempt={
+            "during": ["a.md"], "declaredPredates": [], "mixed": []})),
+        M.undeclared_split(dict(refused, attempt={
+            "during": ["a.md"], "declaredPredates": ["src/mine.py"], "mixed": [],
+            "cleanAtStart": ["a.md"]})),
+        M.undeclared_split(dict(refused, attempt={
+            "during": ["a.md"], "declaredPredates": [], "mixed": ["src/mine.py"],
+            "cleanAtStart": ["a.md"]})),
+        M.undeclared_split(dict(refused, attempt=None)),
+        M.undeclared_split({"committed": True, "refused": "x",
+                            "attempt": {"during": ["a.md"],
+                                        "cleanAtStart": ["a.md"]}}),
+        M.undeclared_split(None)]
+    owned = M.plugin_owned_paths({"project": root, "gitRoot": root}, [
+        ".claude/audit-backups/plan.json", ".claude/.gitignore",
+        ".claude/audit.config.json", ".claude/audit-backups-not/x", "GUIDE.md",
+        "docs/.claude/audit-backups/y"])
+    # Both directions: a refusal with any other part beside the undeclared
+    # paths sets nothing aside, and only the table's rows are plugin-owned.
+    check("xs6 only a refusal whose whole reason is undeclared paths names "
+          "paths to set aside - those the commit shows clean at the start, each "
+          "once and sorted - and holds back the rest; an answer naming no "
+          "cleanAtStart shows none clean; a declared file older than the start, "
+          "one of mixed age, any other arm, or a commit made names none - and "
+          "only the plugin-owned table's rows under .claude/ are never "
+          "reverted: %r" % ((shapes, owned),),
+          shapes == [(["a.md", "b.md"], ["c.md"]), ([], ["a.md"]), ([], []),
+                     ([], []), ([], []), ([], []), ([], [])]
+          and owned == [".claude/audit-backups/plan.json", ".claude/.gitignore",
+                        ".claude/audit.config.json"])
+
+    root_e, mpath_e = _repo("xs-executor", task_ids=TASKS[:1], per_task="phase")
+    _xs_with_aside(root_e)
+    _next(M, root_e, mpath_e)
+    _write_lf(os.path.join(root_e, _XS_ASIDE), _XS_EDIT)
+    _file_executor(root_e, mpath_e, "P1.1")
+    code_e, text_e = _next(M, root_e, mpath_e)
+    task_e = tasks_of(mpath_e).get("P1.1") or {}
+    with open(os.path.join(root_e, _XS_ASIDE), encoding="utf-8") as fh:
+        left_e = fh.read()
+    # The twin for a revert that fires on every path: the subagent executor
+    # path keeps refusing, the file untouched and no patch noted.
+    check("xs3 THE TWIN: the same undeclared edit on the executor path still "
+          "refuses the close by name, leaves the edit in the tree and keeps no "
+          "patch: %r" % ((code_e, task_e.get("status"), text_e[-500:], left_e,
+                          _xs_patch_notes(mpath_e, "P1.1")),),
+          code_e != 0 and task_e.get("status") == "in_progress"
+          and _XS_ASIDE in text_e and M.CLOSED not in text_e
+          and left_e == _XS_EDIT and _xs_patch_notes(mpath_e, "P1.1") == [])
+
+
 def _writer_commit_cases(check, M, bindir, log):
     """A session that committed is told from HEAD moved by something else: its
     own commit (descending from the dispatch, touching the task's files) is
@@ -10022,7 +10244,9 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("pv4-block", "_phase_cold_cases"),
           ("pv7-block", "_pv_unit_cases"),
           ("rw-block", "_reopened_writer_cases"),
-          ("wf-block", "_writer_files_cases"), ("wl-block", "_writer_lock_cases"),
+          ("wf-block", "_writer_files_cases"),
+          ("xs-block", "_writer_scope_cases"),
+          ("wl-block", "_writer_lock_cases"),
           ("wi-block", "_writer_invariant_cases"),
           ("wj-block", "_writer_reading_cases"),
           ("rrs-block", "_retry_reason_cases"),

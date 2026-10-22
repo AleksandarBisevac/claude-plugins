@@ -648,11 +648,19 @@ def attempt_refusal(manifest, task, project, git_root, config, targets,
         notes.append("%s could not be dated - no file to read an mtime from - "
                      "so whether this attempt changed %s is not asked"
                      % (", ".join(undated), _them(undated)))
+    # CLEAN AT THE START: the strays changed during the attempt that the start
+    # snapshot does not hold, so HEAD's bytes are the bytes the attempt began
+    # from. A stray dirty then and changed since (`attribute`'s `mixed`) holds an
+    # edit that is not the attempt's, and with no snapshot no path is shown
+    # clean at the start - so the list is empty, never `during` by default. A
+    # caller that puts a path back to HEAD reads this list and no other.
+    clean = (sorted(p for p in during if p not in record["paths"])
+             if record is not None else [])
     attribution = {"basis": strays["basis"], "during": during,
                    "predates": strays["predates"],
                    "pluginOwned": sorted(set(path for path, _why in named)),
                    "declaredPredates": mine["predates"],
-                   "mixed": mine["mixed"]}
+                   "mixed": mine["mixed"], "cleanAtStart": clean}
     refusal = ("%s. Nothing was staged" % ("; ".join(parts),)) if parts else ""
     return refusal, notes, attribution
 

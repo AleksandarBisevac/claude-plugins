@@ -206,9 +206,21 @@ run read - and `tree_since_proof` is the one reading of whether those three stil
 match. Every settle and `file_writer_return` itself ask it: a HEAD or a declared
 file that moved is proved again before anything is filed, the changed test files
 noted on the task. A file the task does not declare is not in that reading: one
-the diff touches after the proof is caught later, when `commit-task-work.py`'s
+the diff touches is caught at the close, where `commit-task-work.py`'s
 `attempt_refusal` refuses by name a path changed during the attempt that no
-in_progress task declares. A red the
+in_progress task declares. On the writer path that refusal, when it is the
+whole of what the commit refused, SETS THE PATHS ASIDE (`writer_commit`): the
+writer's prompt is plain's and names no scope, so its edit outside the task is
+kept as a patch under the drive's state, put back to HEAD and noted on the task;
+the proof is asked again (`prove_and_hold`), the gate is measured again - the
+ledger records no list of what a run read - and the commit is asked once more.
+Only a path the commit's own attribution shows clean at the start
+(`attempt.cleanAtStart`: absent from the start snapshot, so HEAD's bytes are the
+ones the attempt began from) is put back; one dirty before the attempt, or with
+no snapshot to tell, keeps the refusal, named with that reason. A plugin-owned
+path (`_manifest_io.PLUGIN_OWNED_IN_CLAUDE`), or one the writer's answer cites
+for a clause, is never set aside either: the refusal is relayed with why.
+The executor path keeps the refusal. A red the
 helper will not grade (a test that passes without the fix, a test file gone),
 or a re-proof that no longer proves what the held proof did, is
 `red-refused-writer`, whose `resume` sends the helper's words to the session;
@@ -2728,7 +2740,8 @@ def tree_since_proof(ctx, state, task, tree=None):
     implementation file - as phrases, and the test files among them. `([],
     [])` when those match, or no proof is held. A file the task does not
     declare is not read here; `commit-task-work.py`'s `attempt_refusal` is what
-    refuses one the attempt changed. THE ONE READING every filing and every
+    refuses one the attempt changed, and on the writer path `settle_aside`
+    sets it aside instead. THE ONE READING every filing and every
     re-proof decision asks."""
     proof = writer_state(state, task).get("proof")
     if not isinstance(proof, dict):
@@ -2922,7 +2935,8 @@ def file_writer_return(ctx, state, manifest, phase, task, tree=None):
     # THE INVARIANT: a return is filed only with a proof made over the HEAD and
     # the declared test and implementation files it is filed with. A HEAD or a
     # declared file that moved since the held proof is proved again first (or
-    # goes back to the writer); an undeclared file is commit-task-work's to refuse.
+    # goes back to the writer); an undeclared file is commit-task-work's to
+    # refuse, which the writer's close meets by setting it aside (`settle_aside`).
     stop = prove_and_hold(ctx, state, manifest, phase, task, "before the filing",
                           tree)
     if stop is not None:
@@ -2939,8 +2953,7 @@ def file_writer_return(ctx, state, manifest, phase, task, tree=None):
     if paths is None:
         return _stopped(ctx, "git could not list what the writer session of %s "
                         "changed, so nothing was filed" % (task["id"],))
-    streams = [r.get("stream") for r in held["runs"] if r.get("session")]
-    claim, why = session_last_message(streams[-1] if streams else None)
+    claim, why = writer_claim(state, task)
     # CLAUSE COVERAGE, after the proof and before the stamp: a clause the
     # writer left unanswered, or answered with a file the diff does not touch,
     # goes back to the session instead of being filed in silence. A message the
@@ -3435,6 +3448,323 @@ def ci_before_signoff(ctx, state):
     return ci_settle(ctx, state, cadence)[1]
 
 
+# --- a writer's edit outside the task's files -------------------------------------
+# The writer's prompt is plain's and states no scope, so a writer session may edit
+# a file the task does not declare. On the writer path that edit is SET ASIDE
+# before the commit instead of refusing the whole task: kept as a patch under the
+# drive's state, put back to HEAD, named in a note. Which paths those are is
+# `commit-task-work.py`'s own answer - the `attempt.during` of its `--json`
+# refusal, paths changed during the attempt that no in_progress task declares -
+# so the drive holds no second reading of "undeclared". The executor path keeps
+# the refusal: an agent's brief names the task's files.
+SET_ASIDE_DIR = "set-aside"
+_COMMITTED = re.compile(r"\bcommitted ([0-9a-f]{7,40})\b")
+
+
+def commit_args(ctx, task):
+    """The arguments every `commit-task-work.py` run of `task` takes."""
+    return [ctx["manifest"], task["id"], "--project", ctx["project"],
+            "--subject", str(task.get("title") or task["id"])]
+
+
+def committed_sha(out):
+    """The commit a `commit-task-work.py` run printed it made, or None."""
+    found = _COMMITTED.search(out or "")
+    return found.group(1) if found else None
+
+
+def refusal_answer(ctx, task):
+    """The JSON answer (`_scoped_commit.answer`'s shape) of a `commit-task-work.py
+    --json` run, asked after a refusal to read WHICH arm refused; None when its
+    stdout holds no object. A refusal stages nothing, so the run asks the same
+    question of the same tree - and a refusal that came and went commits here,
+    which the answer then says."""
+    _code, out, _err = run_verb(ctx, "commit-task-work.py",
+                                commit_args(ctx, task) + ["--json"])
+    try:
+        answer = json.loads(out)
+    except ValueError:
+        return None
+    return answer if isinstance(answer, dict) else None
+
+
+HELD_ASIDE = "dirty before the attempt, or no start snapshot to tell"
+
+
+def undeclared_split(answer):
+    """`(clean, held)` - the git-root paths a refused commit names as changed
+    during the attempt with no in_progress task declaring them, when that is the
+    WHOLE of its refusal (`attempt.during`, with no declared file older than the
+    start - `declaredPredates` - or of mixed age - `mixed` - beside them), split
+    by the commit's own `attempt.cleanAtStart`: `clean` the ones HEAD's bytes
+    were the start of, which alone may be put back to HEAD, and `held` the rest
+    - dirty before the attempt, or with no snapshot to tell - never reverted. An
+    answer naming no `cleanAtStart` shows none clean. `([], [])` for any other
+    refusal: one from another arm carries no `attempt`."""
+    if not isinstance(answer, dict) or answer.get("committed") \
+            or not answer.get("refused"):
+        return [], []
+    attempt = answer.get("attempt")
+    if not isinstance(attempt, dict) or attempt.get("declaredPredates") \
+            or attempt.get("mixed"):
+        return [], []
+    during = sorted(set(p for p in attempt.get("during") or []
+                        if isinstance(p, str) and p.strip()))
+    shown = attempt.get("cleanAtStart")
+    shown = set(shown) if isinstance(shown, list) else set()
+    return ([p for p in during if p in shown],
+            [p for p in during if p not in shown])
+
+
+def plugin_owned_paths(ctx, paths):
+    """The git-root paths among `paths` under a row of
+    `_manifest_io.PLUGIN_OWNED_IN_CLAUDE`, placed under the project's
+    `.claude/` and the checkout's. The commit leaves these out already; the
+    set-aside asks the same table again because a revert is not undone by a
+    refusal that follows it."""
+    rels = [_invariants._rel(path, ctx["gitRoot"])
+            for base in (ctx["project"], ctx["gitRoot"])
+            for path, _why in _mio.plugin_owned_under(os.path.join(base, ".claude"))]
+    return [p for p in paths
+            if any(rel and _invariants._under(p, rel) for rel in rels)]
+
+
+def writer_claim(state, task):
+    """`(text, None)` - the last session's final message, the writer's claim -
+    or `(None, why)`."""
+    streams = [r.get("stream") for r in writer_state(state, task)["runs"]
+               if r.get("session")]
+    return session_last_message(streams[-1] if streams else None)
+
+
+def aside_specs(ctx, plan_paths):
+    """`(hooks config, top, specs)` - the checkout's top and each of
+    `plan_paths` as the pathspec git reads from there (`_config.plan_to_git`);
+    `specs` None when one lies outside the checkout, which no set-aside
+    touches."""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    top = hc.checkout_top(ctx["gitRoot"]) or ctx["gitRoot"]
+    specs = [hc.plan_to_git(p, top, ctx["project"]) for p in plan_paths]
+    return hc, top, (None if any(s is None for s in specs) else specs)
+
+
+def aside_plan_paths(ctx, paths):
+    """`paths` as the refused commit names them - from the checkout's top - in
+    the plan's spelling (`_config.git_to_plan`), sorted."""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    top = hc.checkout_top(ctx["gitRoot"]) or ctx["gitRoot"]
+    return sorted(set(hc.git_to_plan(p, top, ctx["project"]) for p in paths))
+
+
+def aside_gap(ctx, state, phase, task, plan_paths):
+    """Why setting `plan_paths` aside would open a clause gap, or None: the
+    writer's answer read again (`_clause_coverage.check`) against the diff
+    without them and the commits the task carried. A clause whose `delivered`
+    answer cites one of them is work the writer claims, and a revert would turn
+    it into a gap nobody was told of."""
+    claim, _why = writer_claim(state, task)
+    now = diff_paths(ctx, phase)
+    carried, _left, why = carried_paths(ctx, phase, task)
+    if now is None or carried is None:
+        return ("what the tree changed, or the commits %s carried, could not be "
+                "read (%s), so whether a clause cites them is not established"
+                % (task["id"], why or "git could not list the diff"))
+    result = _cc.check(_cc.task_clauses(task), claim,
+                       sorted((set(now) - set(plan_paths)) | set(carried)),
+                       root=ctx["project"])
+    if result["covered"]:
+        return None
+    return "the writer's answer cites a path set aside for a clause (%s)" % (
+        _clip(_cc.gap_summary(result), 200),)
+
+
+def set_aside_file(ctx, task):
+    """Where one set-aside of `task` is kept: the drive's state directory, a file
+    per set-aside, never one written before."""
+    base = os.path.join(ctx["stateDir"], SET_ASIDE_DIR, ctx["phase"], "%s-%s" % (
+        task["id"], datetime.datetime.now(datetime.timezone.utc).strftime(
+            "%Y%m%dT%H%M%SZ")))
+    path, n = base + ".patch", 1
+    while os.path.exists(path):
+        n += 1
+        path = "%s-%d.patch" % (base, n)
+    return path
+
+
+def _git_literal(where, argv, env=None):
+    """`(returncode, stdout, stderr)` of one git call over literal pathspecs - a
+    path holding `*` names that path - or `(None, b"", why)`."""
+    try:
+        done = subprocess.run(["git", "-C", where, "--literal-pathspecs"] + list(argv),
+                              capture_output=True, env=env, timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, b"", exc.__class__.__name__.encode("utf-8")
+    return done.returncode, done.stdout, done.stderr
+
+
+def _git_said(argv, code, err):
+    return "git %s %s (%s)" % (argv[0], "could not be run" if code is None
+                               else "exited %d" % (code,),
+                               _clip(" ".join(err.decode("utf-8", "replace").split()),
+                                     160))
+
+
+def aside_patch(ctx, plan_paths):
+    """`(patch bytes, None)` - the binary diff from HEAD of `plan_paths`, a new
+    file included, from the checkout's top, in the form `git apply` takes back
+    there - or `(None, why)`. Read through a scratch copy of the index: a new
+    file has no diff against the index, and staging it in the real one is the
+    very stage the commit refuses."""
+    _hc, top, specs = aside_specs(ctx, plan_paths)
+    if specs is None:
+        return None, "a path lies outside the checkout, where git cannot name it"
+    code, out, err = _git_literal(top, ["rev-parse", "--git-path", "index"])
+    if code != 0:
+        return None, _git_said(["rev-parse"], code, err)
+    index = out.decode("utf-8", "replace").strip()
+    index = index if os.path.isabs(index) else os.path.join(top, index)
+    scratch = tempfile.mkdtemp(prefix="drive-aside-")
+    try:
+        copy = os.path.join(scratch, "index")
+        if os.path.isfile(index):
+            shutil.copyfile(index, copy)
+        env = dict(os.environ, GIT_INDEX_FILE=copy)
+        for argv in (["add", "-A", "--"] + specs,
+                     ["diff", "--cached", "--binary", "--no-renames", "HEAD", "--"]
+                     + specs):
+            code, out, err = _git_literal(top, argv, env=env)
+            if code != 0:
+                return None, _git_said(argv, code, err)
+        return out, None
+    except OSError as exc:
+        return None, "the scratch index could not be made (%s)" % (exc,)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def set_aside(ctx, task, plan_paths):
+    """Keep `plan_paths` as one patch under the drive's state, check that it
+    reverses to the tree as it stands, then put each back to HEAD - checked
+    out where HEAD holds it, removed where the writer created it. `(patch path,
+    None)`, or `(None, why)`. Before the first revert the patch is made,
+    written and checked to reverse to the tree, and HEAD's listing read; a
+    failure there reverts nothing. A removal that fails after the checkout
+    names the paths already put back, and the written patch holds them all."""
+    patch, why = aside_patch(ctx, plan_paths)
+    if why is not None:
+        return None, why
+    if not patch.strip():
+        return None, "git shows no change of them against HEAD"
+    hc, top, specs = aside_specs(ctx, plan_paths)
+    path = set_aside_file(ctx, task)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as fh:
+            fh.write(patch)
+    except OSError as exc:
+        return None, "the patch could not be written to %s (%s)" % (
+            project_relative(ctx, path), exc)
+    for argv in (["apply", "--check", "-R", path],
+                 ["ls-tree", "-r", "-z", "--name-only", "HEAD", "--"] + specs):
+        code, out, err = _git_literal(top, argv)
+        if code != 0:
+            return None, _git_said(argv, code, err)
+    # `ls-tree` prints from its cwd, the top it ran in.
+    held = set(hc.git_to_plan(p, top, ctx["project"], cwd=top)
+               for p in out.decode("utf-8", "replace").split("\0") if p)
+    tracked = [s for p, s in zip(plan_paths, specs) if p in held]
+    if tracked:
+        argv = ["checkout", "-q", "HEAD", "--"] + tracked
+        code, _out, err = _git_literal(top, argv)
+        if code != 0:
+            return None, _git_said(argv, code, err)
+    for plan, spec in zip(plan_paths, specs):
+        if plan in held:
+            continue
+        try:
+            os.remove(os.path.join(top, *spec.split("/")))
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            return None, "%s could not be removed (%s), after %s was put back" % (
+                plan, exc, ", ".join(tracked) or "nothing")
+    return path, None
+
+
+def settle_aside(ctx, state, phase, task, paths, code, text):
+    """Set `paths` aside (`set_aside`), note them on the task, and stand the
+    work on the tree that leaves: prove again where the proof's own reading
+    moved (`prove_and_hold`), and measure the gate again, as the ledger records
+    no list of what a gate run read and a reverted path may be one of them.
+    None when the commit may be asked again, else the stop or the decision.
+    Nothing is reverted, and the refusal `text` is relayed with why, when one of
+    `paths` is plugin-owned or a clause the writer answered cites it."""
+    owned = plugin_owned_paths(ctx, paths)
+    plan_paths = aside_plan_paths(ctx, paths)
+    why = (("%s %s plugin-owned state, which no set-aside reverts"
+            % (", ".join(owned), "is" if len(owned) == 1 else "are"))
+           if owned else aside_gap(ctx, state, phase, task, plan_paths))
+    patch = None
+    if why is None:
+        patch, why = set_aside(ctx, task, plan_paths)
+    if why is not None:
+        return relay_refusal(ctx, "commit-task-work.py", code, "%s\n%s %s not set "
+                             "aside: %s" % (text.rstrip("\n"), PREFIX,
+                                            ", ".join(plan_paths), why))
+    rel = project_relative(ctx, patch)
+    said = ("set aside before the commit, outside the task's files: %s - the "
+            "writer's change kept as %s (`git apply` it from the checkout's top to "
+            "take it back) and put back to HEAD; the declared work is proved and "
+            "gated again before it is committed" % (", ".join(plan_paths), rel))
+    refused = note_task(ctx, task, said)
+    ctx["did"].append("%s: %s%s" % (task["id"], said, "" if refused is None
+                                    else " (not noted: %s)" % (refused,)))
+    manifest, phase_now = load_phase(ctx)
+    task_now = _mio.tasks_by_id(manifest).get(task["id"]) or task
+    stop = prove_and_hold(ctx, state, manifest, phase_now, task_now,
+                          "after the set-aside")
+    if stop is not None:
+        return stop
+    _mark(state, "rerun", task_now)
+    write_state(ctx, state)
+    return gate_step(ctx, state, manifest, phase_now, task_now)
+
+
+def writer_commit(ctx, state, phase, task):
+    """`(sha, None)` for a commit made, `(None, None)` when there was nothing to
+    commit, else `(None, stop)`: the writer path's `commit-task-work.py`. A
+    refusal is read again through `--json` (`refusal_answer`); one whose whole
+    reason is paths no in_progress task declares (`undeclared_split`) sets aside
+    those clean at the start (`settle_aside`) and asks the commit once more. A
+    path dirty before the attempt, or with no snapshot to tell, is never put
+    back: the refusal is relayed naming it - after the clean ones are set aside
+    and the work gated again, so a later close stands on that gate. Any other
+    refusal is relayed in the verb's own words."""
+    code, out, err = run_verb(ctx, "commit-task-work.py", commit_args(ctx, task))
+    if code == 0:
+        return committed_sha(out), None
+    answer = refusal_answer(ctx, task)
+    if isinstance(answer, dict) and answer.get("committed") and answer.get("commit") \
+            and not answer.get("refused"):
+        return str(answer["commit"]), None
+    clean, held = undeclared_split(answer)
+    said = ("\n%s %s not set aside: %s" % (
+        PREFIX, ", ".join(aside_plan_paths(ctx, held)), HELD_ASIDE)) if held else ""
+    if not clean:
+        return None, relay_refusal(ctx, "commit-task-work.py", code,
+                                   (out + err).rstrip("\n") + said)
+    stop = settle_aside(ctx, state, phase, task, clean, code,
+                        (out + err).rstrip("\n") + said)
+    if stop is not None:
+        return None, stop
+    # Asked again, so a refusal relayed now names what the tree still holds.
+    code, out, err = run_verb(ctx, "commit-task-work.py", commit_args(ctx, task))
+    if code != 0:
+        return None, relay_refusal(ctx, "commit-task-work.py", code,
+                                   (out + err).rstrip("\n") + said)
+    return committed_sha(out), None
+
+
 def close_task(ctx, state, phase, task, intent_basis=None):
     """Findings, commit and close for a task whose returns are filed; None when
     the drive goes on, else the instruction or stop to print."""
@@ -3459,15 +3789,18 @@ def close_task(ctx, state, phase, task, intent_basis=None):
     if changed:
         return decision(ctx, state, "tests-moved", task, ", ".join(changed),
                         extra={"changed": changed})
-    out, stop = _verb_or_stop(ctx, "commit-task-work.py", [
-        ctx["manifest"], task["id"], "--project", ctx["project"],
-        "--subject", str(task.get("title") or task["id"])])
-    if stop is not None:
-        return stop
-    sha = re.search(r"\bcommitted ([0-9a-f]{7,40})\b", out)
+    if writer_path_on(ctx) and recorded_session(state, task):
+        sha, stop = writer_commit(ctx, state, phase, task)
+        if stop is not None:
+            return stop
+    else:
+        out, stop = _verb_or_stop(ctx, "commit-task-work.py", commit_args(ctx, task))
+        if stop is not None:
+            return stop
+        sha = committed_sha(out)
     if not sha:
         return decision(ctx, state, "no-change", task, "")
-    extra = ["--commit", sha.group(1), "--from-return"]
+    extra = ["--commit", sha, "--from-return"]
     done_args = _task_args(ctx, "done", task["id"], *extra)
     if intent_basis is None:
         _out, stop = _verb_or_stop(ctx, "audit-task.py", done_args)
@@ -3477,7 +3810,7 @@ def close_task(ctx, state, phase, task, intent_basis=None):
             "--intent-basis", intent_basis)
     if stop is not None:
         return stop
-    ctx["did"].append("%s %s at %s" % (CLOSED, task["id"], sha.group(1)[:7]))
+    ctx["did"].append("%s %s at %s" % (CLOSED, task["id"], sha[:7]))
     stop = ci_after_close(ctx, state, phase)
     if stop is not None:
         return stop

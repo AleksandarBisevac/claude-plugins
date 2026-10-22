@@ -2668,6 +2668,66 @@ def _earlier_commit_cases(check, repos):
           and "--commit" not in text)
 
 
+def _json_attempt(fx):
+    """`(code, attempt)` - the `attempt` attribution of one `--json` run."""
+    code, text = _run(fx, TASK, "--json")
+    try:
+        answer = json.loads(text)
+    except ValueError:
+        return code, None
+    return code, (answer or {}).get("attempt")
+
+
+@_own_repos
+def _clean_at_start_cases(check, repos):
+    """A refused commit's attribution names which of the strays changed during
+    the attempt were CLEAN at its start - absent from the snapshot `start`
+    recorded of every dirty path - so a caller that puts a path back to HEAD
+    never puts back bytes the attempt did not write. With no snapshot nothing
+    is clean at the start by any basis, and the list is empty."""
+    fx = repos.make()
+    _restartable(fx)
+    # Dirty before the start, and touched again after it: a stray of mixed age.
+    _write(os.path.join(fx["root"], "src", "dirty.txt"), "an owner's edit\n")
+    scode, said = _start(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # this attempt's work\n")
+    _write(os.path.join(fx["root"], "src", "dirty.txt"),
+           "an owner's edit\nand the attempt's line\n")
+    _write(os.path.join(fx["root"], "src", "img.png"), "copied in\n")
+    _gate(fx)
+    code, attempt = _json_attempt(fx)
+    attempt = attempt or {}
+    # The red for a list that is `during` itself: the stray of mixed age is in
+    # `during` and must not be in `cleanAtStart`.
+    check("ctw-cs1 the attribution of a refused commit lists, as cleanAtStart, "
+          "the strays changed during the attempt that the start snapshot does "
+          "not hold - the created file - and not the one dirty before the start "
+          "and changed since: %r" % ((scode, code, attempt),),
+          scode == 0 and code == 1
+          and sorted(attempt.get("during") or []) == ["src/dirty.txt", "src/img.png"]
+          and attempt.get("cleanAtStart") == ["src/img.png"])
+
+    fx = repos.make()
+    _restartable(fx)
+    scode, said = _start(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # this attempt's work\n")
+    _write(os.path.join(fx["root"], "src", "img.png"), "copied in\n")
+    os.remove(_scoped_commit.attempt_record_path(
+        M.attempt_state_dir(fx["root"], {}), TASK))
+    _gate(fx)
+    code, attempt = _json_attempt(fx)
+    attempt = attempt or {}
+    # The red for a list read off `during` whatever the basis: by mtime a
+    # change is dated, never shown clean at the start.
+    check("ctw-cs2 with no start snapshot the strays are dated by mtime and "
+          "cleanAtStart is empty - present and [] - though the created file is "
+          "in during: %r" % ((scode, code, attempt),),
+          scode == 0 and code == 1 and "src/img.png" in (attempt.get("during") or [])
+          and attempt.get("cleanAtStart") == []
+          and bool(attempt.get("basis"))
+          and attempt.get("basis") != _scoped_commit.BASIS_SNAPSHOT)
+
+
 STAGES = (("nm-block", "_no_maintenance_cases"),
           ("fg-block", "_fixture_git_cases"),("or-block", "_ordinary_cases"),("dc-block", "_declared_cases"),
           ("rc-block", "_records_cases"), ("ix-block", "_index_cases"),
@@ -2680,7 +2740,9 @@ STAGES = (("nm-block", "_no_maintenance_cases"),
           ("kd-block", "_kept_deletion_hook_cases"),
           ("cl-block", "_claims_cases"), ("sl-block", "_success_line_cases"),
           ("dp-block", "_default_project_cases"),
-          ("ae-block", "_attempt_cases"), ("bl-block", "_bug_link_cases"),
+          ("ae-block", "_attempt_cases"),
+          ("cs-block", "_clean_at_start_cases"),
+          ("bl-block", "_bug_link_cases"),
           ("ir-block", "_index_row_cases"),
           ("ce-block", "_close_evidence_cases"),
           ("ro-block", "_records_only_cases"),
