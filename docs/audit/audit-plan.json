@@ -1582,7 +1582,8 @@
       "P131.15-dau",
       "P131.18-dau",
       "P131.19-dau",
-      "P135.3-kux"
+      "P135.3-kux",
+      "P135.5-kux"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -11488,12 +11489,16 @@
     "plugins/audit/scripts/governance/run-agent-session.py": [
       "P131.3",
       "P131.5",
-      "P135.3-kux"
+      "P135.3-kux",
+      "P135.4-kux",
+      "P135.5-kux"
     ],
     "tests/test_run_agent_session.py": [
       "P131.3",
       "P131.5",
-      "P135.3-kux"
+      "P135.3-kux",
+      "P135.4-kux",
+      "P135.5-kux"
     ],
     "plugins/audit/scripts/governance/_clause_coverage.py": [
       "P131.7"
