@@ -1,7 +1,7 @@
 {
   "id": "P137",
   "title": "One answer to what an attempt changed that no task declares, and a committed task always closes",
-  "status": "in_progress",
+  "status": "done",
   "description": "In stage 1's a1c the restore point the base's suite parked under .claude/audit-backups/ was left out of the task commit by commit-task-work (it reads _manifest_io.PLUGIN_OWNED_IN_CLAUDE) and then refused by audit-task done's _uncommitted_leftovers, which skips only bookkeeping and run-state paths. Three readers compute the same question with their own skip lists (commit-task-work attempt_refusal, audit-task _uncommitted_leftovers, drive-phase's set-aside split), and a fix to one has twice missed another.",
   "desiredOutcome": "The commit step, the close and the writer's set-aside ask one shared function what an attempt changed that no in_progress task declares, so a path the plugin owns is never refused by one of them after another left it out; and a task whose work the drive committed closes on that commit instead of being offered no-change or retry",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "317197a556bc36bbab4c1de235891d0efd959b45",
   "branch": "audit/p137-one-answer-to-what-an-attempt",
-  "mergedAt": null,
+  "mergedAt": "2026-10-22T21:48:36Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -1013,5 +1013,6 @@
     "runId": "2026-10-22T21:48:16Z.1c1ced",
     "status": "passed",
     "at": "2026-10-22T21:48:16Z"
-  }
+  },
+  "mergedHead": "fd5850adc8cc87970569156480764aeadfba94d9"
 }
