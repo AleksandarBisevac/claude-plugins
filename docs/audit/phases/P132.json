@@ -23,7 +23,23 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P132-R1",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:6135-6143 (review_fix), 1712 (caller)",
+        "issue": "review_fix now returns the reviewFixes entry for every writer dispatch of the task for as long as the entry exists, and finish_task (KEPT_AT_TASK_CLOSE) now keeps that entry past the task's close. Before, the one-shot 'dispatched' flag ended the injection. The entry is only removed by resolve_fixed (all findings withdrawn) or replaced by a new hand_back. So a later, unrelated writer dispatch of the same task, for example after a manual /audit:task reopen once the fix has closed at a new commit with a finding not yet withdrawn, takes the old findings and the REVIEW_FIX_HEAD preamble, and is forced to a fresh session by the non-empty 'dispatched' list. Nothing in the diff separates a retry or brief re-issue of the hand-back round (wanted) from a later re-open (not wanted). The new tests cover only the retry.",
+        "resolution": "Bound the entry to the round it was written for. For example, have review_fix return None once task.commit is set and differs from fix['from'] (the hand-back guard already reads 'from' this way), or record the start that closed the fix in finish_task, and add a case: a fix closed at a new commit, the task re-opened by hand, and the next dispatch carries the plain brief."
+      },
+      {
+        "id": "P132-R2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:6797-6812 (finish_task)",
+        "issue": "With the 'writer' mark and reviewFixes kept, a task-scoped drive over a writer task never reaches the 'drop the state when nothing else is in it' branch. The state file now stays until a phase-level finish drops it. The docstring says so, but no case covers a task-scoped drive that is never followed by a phase drive (rw4 covers only a task with no writer record).",
+        "resolution": "Either state in the docstring or the PLUGIN-BUILD-GUIDE section that a task-scoped run of a writer task leaves its state file behind by design, or drop the state when the kept marks hold no re-opened entry and the task was never handed back."
+      }
+    ],
+    "outcome": "[findings: 2 - 0 high, 0 med, 2 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -66,7 +82,12 @@
       "startedAt": "2026-10-21T23:23:46Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-22T00:38:39Z.e33e47",
+        "status": "passed",
+        "at": "2026-10-22T00:38:39Z"
+      }
     },
     {
       "id": "P132.2",

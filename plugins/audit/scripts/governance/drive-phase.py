@@ -844,6 +844,8 @@ NOTED_FIELD = "findingNotes"
 # findings handed to it - is in the re-open's journal row (`reopen_record`),
 # whose reason is `REOPEN_REASON`.
 REVIEW_FIX_FIELD = "reviewFixes"
+# The marks of a task its close under a task-scoped drive keeps (`finish_task`).
+KEPT_AT_TASK_CLOSE = (REVIEW_FIX_FIELD, "writer")
 REOPEN_REASON = ("the phase review's finding(s) %s, confirmed by the validation "
                  "pass at %s, go back to this task's writer")
 _REOPEN_IDS = re.compile(r"^the phase review's finding\(s\) ([^\s,]+(?:,[^\s,]+)*),"
@@ -1707,9 +1709,16 @@ def dispatch(ctx, state, phase, task, role, tree=None):
           {"scope": brief_scope(task)} if role == "executor" else True)
     write_state(ctx, state)
     brief = project_relative(ctx, found.group(1).strip())
-    if writer and review_fix(state, task) is not None:
+    fix, spent, why_fix = (standing_review_fix(ctx, state, task) if writer
+                           else (None, None, None))
+    if why_fix is not None:
+        return _stopped(ctx, "%s, so whether %s's writer takes a phase review's "
+                        "findings is not known" % (why_fix, task["id"]))
+    if spent:
+        ctx["did"].append(_clip(spent, 160))
+    if fix is not None:
         return review_fix_dispatch(ctx, state, phase, task, writer, os.path.abspath(
-            os.path.join(ctx["project"], found.group(1).strip())), tree)
+            os.path.join(ctx["project"], found.group(1).strip())), fix, tree)
     if writer:
         prompt = os.path.abspath(os.path.join(ctx["project"], found.group(1).strip()))
         _record, argv = open_dispatch(ctx, state, task, 0, lambda record: writer_argv(
@@ -2494,6 +2503,67 @@ def diff_paths(ctx, phase, tree=None):
                       if p and not _invariants.is_record_path(p, records)))
 
 
+def _git_run(where, argv):
+    """`(returncode, stdout bytes, None)` of one git call in `where`, or `(None,
+    None, why)` when git could not be run at all."""
+    try:
+        done = subprocess.run(["git", "-C", where] + list(argv),
+                              capture_output=True, timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, None, exc.__class__.__name__
+    return done.returncode, done.stdout, None
+
+
+def carried_paths(ctx, phase, task, tree=None):
+    """`(paths, left, None)` - the paths changed by each commit `task` carried
+    before a re-open cleared it, read off the journal's `task.reopen` rows
+    (`reopen_record`) and spelled as `diff_paths` spells them, the plan's own
+    records left out - or `(None, None, why)` when the journal cannot be read
+    or git cannot be run. `([], [], None)` for a task never re-opened. A
+    re-opened task's first commit is already in HEAD, so `diff_paths` alone
+    never shows the files it wrote.
+
+    A carried commit counts only while `git merge-base --is-ancestor <sha>
+    HEAD` says it is in HEAD's history: one a reset took out, or a sha git does
+    not know, delivers nothing at this HEAD. It is left out and named in
+    `left`, one `"<sha12> <reason>"` each, never counted and never a stop."""
+    carried, _handed, why = reopen_record(ctx, phase)
+    if why is not None:
+        return None, None, why
+    shas = sorted(sha for sha, tid in carried.items() if tid == task["id"])
+    if not shas:
+        return [], [], None
+    where = tree or ctx["gitRoot"]
+    hc = _loader.load_hooks_config(modname="audit__config")
+    top = hc.checkout_top(where) or where
+    project = member_project(ctx, tree) or ctx["project"]
+    records = _invariants.record_rels(ctx["manifest"], phase, ctx["project"],
+                                      ctx["gitRoot"], config=ctx["config"])
+    paths, left = set(), []
+    for sha in shas:
+        code, _out, why = _git_run(where, ["merge-base", "--is-ancestor", sha, "HEAD"])
+        if why is not None:
+            return None, None, "git could not be run (%s)" % (why,)
+        if code == 1:
+            left.append("%s not in HEAD's history" % (sha[:12],))
+            continue
+        if code != 0:
+            left.append("%s unknown to git (merge-base exit %d)" % (sha[:12], code))
+            continue
+        code, out, why = _git_run(where, [
+            "diff-tree", "--root", "-r", "-z", "--no-commit-id", "--name-only",
+            "--no-renames", sha])
+        if why is not None:
+            return None, None, "git could not be run (%s)" % (why,)
+        if code != 0:
+            left.append("%s unlisted by git (diff-tree exit %d)" % (sha[:12], code))
+            continue
+        paths.update(hc.git_to_plan(p, top, project)
+                     for p in out.decode("utf-8", "replace").split("\0")
+                     if p and not _invariants.is_record_path(p, records))
+    return sorted(paths), left, None
+
+
 def locked_paths_now(ctx, lock, tree=None):
     """The locked digest's own paths hashed as the tree holds them now -
     `_journal_io.file_hash`, the sha256 of the bytes in the spelling
@@ -2628,12 +2698,15 @@ def red_refused(ctx, state, task, why):
     return decision(ctx, state, "red-refused", task, _clip(why, 160))
 
 
-def clauses_uncovered(ctx, state, task, result, clauses):
+def clauses_uncovered(ctx, state, task, result, clauses, left=()):
     """The decision a writer's unanswered clause asks, at a green gate: back to
     the session that wrote it while a round is left - the round counts toward
     `MAX_RESUME_ROUNDS`, as every resume does - else a fresh retry. Nothing is
-    filed and the held proof stays."""
+    filed and the held proof stays. `left` names each carried commit
+    `carried_paths` left out, which the reason carries after the gaps."""
     why = _clip(_cc.gap_summary(result), 160)
+    if left:
+        why = "%s; carried commit(s) left out: %s" % (why, _clip("; ".join(left), 160))
     session = recorded_session(state, task)
     if session and writer_state(state, task)["resumes"] < MAX_RESUME_ROUNDS:
         return decision(ctx, state, "clauses-uncovered-writer", task, why, extra={
@@ -2805,12 +2878,26 @@ def file_writer_return(ctx, state, manifest, phase, task, tree=None):
     # CLAUSE COVERAGE, after the proof and before the stamp: a clause the
     # writer left unanswered, or answered with a file the diff does not touch,
     # goes back to the session instead of being filed in silence. A message the
-    # stream could not give is a gap of every clause, never covered.
+    # stream could not give is a gap of every clause, never covered. A
+    # re-opened task's clauses are read against the commits it carried that
+    # HEAD still holds, as well as this start's diff: what such a commit
+    # delivered is its own work. A carried commit HEAD does not hold is named.
+    carried, left, why_carried = carried_paths(ctx, phase, task, tree)
+    if carried is None:
+        return _stopped(ctx, "%s, so the clauses of %s cannot be read against the "
+                        "commit it carried, and nothing was filed"
+                        % (why_carried, task["id"]))
     clauses = _cc.task_clauses(task)
-    covered = _cc.check(clauses, claim, paths,
+    covered = _cc.check(clauses, claim, sorted(set(paths) | set(carried)),
                         root=member_project(ctx, tree) or ctx["project"])
     if not covered["covered"]:
-        return clauses_uncovered(ctx, state, task, covered, clauses)
+        return clauses_uncovered(ctx, state, task, covered, clauses, left)
+    if left:
+        said = ("clause coverage left out the carried commit(s) %s, so no clause "
+                "was covered by them" % ("; ".join(left),))
+        refused = note_task(ctx, task, said)
+        ctx["did"].append("%s: %s%s" % (task["id"], said, "" if refused is None
+                                        else " (not noted: %s)" % (refused,)))
     if covered["declined"]:
         ctx["did"].append("%s: the writer reports clause %s as not delivered"
                           % (task["id"], ", ".join(str(n) for n in covered["declined"])))
@@ -6078,7 +6165,7 @@ def hand_back(ctx, state, phase, head, blocking):
         if stop is not None:
             return stop
         state.setdefault(REVIEW_FIX_FIELD, {})[tid] = dict(
-            session, findings=by_task[tid], head=head, dispatched=False,
+            session, findings=by_task[tid], head=head, dispatched=[],
             **{"from": task.get("commit")})
         write_state(ctx, state)
         ctx["did"].append("%s re-opened for %s" % (tid, finding_list(by_task[tid])))
@@ -6086,10 +6173,56 @@ def hand_back(ctx, state, phase, head, blocking):
 
 
 def review_fix(state, task):
-    """The handed-back findings `task`'s next writer dispatch takes, or None
-    once one took them."""
+    """The handed-back findings every writer dispatch of `task` takes while the
+    hand-back stands - a retry under a start of its own and a brief issued
+    again included - or None when there is none. Its `dispatched` lists the
+    start of each dispatch that carried them (a `true` written before it was
+    a list reads as one such dispatch), so only the first resumes a session.
+    The entry is bound to its round: None once the task records a commit other
+    than the one the hand-back cleared, which only a later close can write."""
     held = (state.get(REVIEW_FIX_FIELD) or {}).get(task["id"])
-    return held if isinstance(held, dict) and not held.get("dispatched") else None
+    if not isinstance(held, dict):
+        return None
+    if task.get("commit") and task.get("commit") != held.get("from"):
+        return None
+    return held
+
+
+def standing_review_fix(ctx, state, task):
+    """`(fix, spent, None)` - `review_fix`, while the newest `task.reopen` row
+    the journal holds for `task` is the drive's hand-back (its reason in
+    `REOPEN_REASON`'s shape). A re-open clears the commit `review_fix` reads,
+    so a human's re-open after the fix round closed is told apart here: that
+    start is not the hand-back's round, and `spent` says why its findings are
+    not carried. `(None, None, why)` when the journal cannot be read."""
+    fix = review_fix(state, task)
+    if fix is None:
+        return None, None, None
+    try:
+        rows = _journal_io.read_all(ctx["project"])
+    except Exception as exc:                                   # noqa: BLE001
+        return None, None, "the journal could not be read (%s)" % (exc,)
+    last = None
+    for row in rows:
+        details = row.get("details") if isinstance(row.get("details"), dict) else {}
+        if row.get("action") == TASK_REOPEN and details.get("taskId") == task["id"]:
+            last = details
+    if last is not None and _REOPEN_IDS.match(str(last.get("reason") or "")):
+        return fix, None, None
+    return None, ("%s's hand-back of %s is not carried: the newest re-open of it "
+                  "is %s, not the drive's hand-back" % (
+                      task["id"], finding_list(fix.get("findings") or []),
+                      "absent from the journal" if last is None
+                      else "a re-open for '%s'" % (
+                          _clip(str(last.get("reason") or ""), 60),))), None
+
+
+def _fix_dispatched(fix):
+    """The starts whose dispatch already carried `fix`'s findings."""
+    held = fix.get("dispatched")
+    if isinstance(held, list):
+        return list(held)
+    return ["unrecorded"] if held else []
 
 
 def warm_session(ctx, fix, tree=None):
@@ -6112,12 +6245,15 @@ def warm_session(ctx, fix, tree=None):
     return (fix["session"] if idle < CACHE_LIFE_SECONDS else None), said
 
 
-def review_fix_dispatch(ctx, state, phase, task, writer, brief, tree=None):
+def review_fix_dispatch(ctx, state, phase, task, writer, brief, fix, tree=None):
     """A re-opened task's writer dispatch, carrying the confirmed findings:
-    `--resume` on its last session while that is warm (`warm_session`),
-    prompted with the findings alone; otherwise a fresh session whose prompt
-    is the task's own brief - its text - and then the findings."""
-    fix = review_fix(state, task)
+    the first one `--resume`s its last session while that is warm
+    (`warm_session`), prompted with the findings alone; otherwise - a cold
+    session, or any dispatch after the first, which a resume would hand only
+    the findings and not the brief it was re-issued for - a fresh session
+    whose prompt is the task's own brief - its text - and then the findings.
+    `fix` is the entry `standing_review_fix` found standing."""
+    carried = _fix_dispatched(fix)
     _manifest, phase = load_phase(ctx)
     held = dict((f.get("id"), f) for f in (phase.get("review") or {}).get("findings")
                 or [] if isinstance(f, dict))
@@ -6129,7 +6265,12 @@ def review_fix_dispatch(ctx, state, phase, task, writer, brief, tree=None):
                   "  resolution asked: %s" % (found.get("resolution") or "none",)]
     if ((task.get("tests") or {}).get("mode")) == "tdd":
         lines.append("Prove each with a case that fails on the code at HEAD.")
-    session, why = warm_session(ctx, fix, tree)
+    if carried:
+        session, why = None, ("a dispatch of start %s already carried them, so "
+                              "this one starts afresh with the task's brief"
+                              % (carried[-1],))
+    else:
+        session, why = warm_session(ctx, fix, tree)
     prompt = session_record(ctx, task, writer_state(state, task)["seq"])[
         :-len(".jsonl")] + ".prompt.md"
     try:
@@ -6144,8 +6285,8 @@ def review_fix_dispatch(ctx, state, phase, task, writer, brief, tree=None):
                                        "\n".join(lines)))
     _record, argv = open_dispatch(ctx, state, task, 0, lambda record: writer_argv(
         ctx, task, writer, prompt, record, tree, resume=session), tree)
-    state[REVIEW_FIX_FIELD][task["id"]] = dict(fix, dispatched=True,
-                                               resumed=session, why=why)
+    state[REVIEW_FIX_FIELD][task["id"]] = dict(
+        fix, dispatched=carried + [start_key(task)], resumed=session, why=why)
     write_state(ctx, state)
     said = "%s go to %s (%s)" % (
         finding_list(fix.get("findings") or []), "a resume of session %s" % (
@@ -6730,11 +6871,16 @@ def blocked_stop(name, tasks, **fields):
 
 def finish_task(ctx, state, task):
     """A task-scoped drive is through: give back a lock this drive took, drop the
-    marks of this task, and drop the state when nothing else is in it."""
+    marks of this task but those `KEPT_AT_TASK_CLOSE` names, and drop the state
+    when nothing else is in it. Those two stay until the phase's own `finish`
+    drops the whole state: a later phase review hands findings back through
+    them - the hand-back's record holds the closed-at-no-new-commit guard, and
+    the writer's record of the start is the session a hand-back resumes."""
     stop = release_lock(ctx, state)
     if stop is not None:
         return stop
-    for kind in [k for k, v in state.items() if isinstance(v, dict)]:
+    for kind in [k for k, v in state.items()
+                 if isinstance(v, dict) and k not in KEPT_AT_TASK_CLOSE]:
         state[kind].pop(task["id"], None)
         if not state[kind]:
             state.pop(kind)

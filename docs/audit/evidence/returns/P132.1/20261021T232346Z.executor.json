@@ -1,0 +1,35 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-21T23:50:29Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 480-second deadline; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: (1) new carried_paths(ctx, phase, task, tree) reads the commits the task carried off the journal's task.reopen rows (reopen_record) and lists each one's paths with git diff-tree --root -r -z --name-only, spelled as diff_paths spells them, plan records excluded; file_writer_return checks clause coverage against diff_paths union carried_paths, stops loudly when the journal or git cannot say; the filed diffPaths stays this start's diff. (2) reviewFixes[tid].dispatched is now the list of start keys whose dispatch carried the findings (hand_back writes []; legacy true reads as one dispatch via _fix_dispatched); review_fix returns the entry for every dispatch while the hand-back stands, so a retry (new start) or a stale-brief re-issue carries the findings; only the first dispatch may resume the warm session, later ones start fresh with brief + findings. (3) finish_task keeps KEPT_AT_TASK_CLOSE = (reviewFixes, writer) marks until the phase's finish drops the state; other marks still dropped and an empty state still removed. tests/test_drive_phase.py: new stage rw-block (_reopened_writer_cases, _reopened_finish_cases, fixture _rw_handed_back). Runs: stage rw-block 5/5 after the fix; gate python3 tools/sweep-selftests.py tests/test_drive_phase.py exit 0, 512 cases; ruff check and vermin -t=3.8- on both files exit 0. Committed throwaway copy (/tmp/p1321-copy.Kxnh, git archive HEAD + working-tree diff, committed): python3 tools/sweep-selftests.py -> 192/194 files ok, the two red being tools/check-example-ledgers.py (fixedIn commits unresolvable in a history-less copy) and tools/measure-context.py, both allowed by the brief. Mutations in a second copy (/tmp/p1321-mut.7bXq, pycache purged each time, anchor count asserted 1): M1 carried_paths -> git ls-files (over-fire): rw0, rw1 red; M2 finish_task keeps every mark: rw3, rw4 red; M3 every fix dispatch resumes warm: rw2 red; each restored (diff -q vs project file: identical). Dependants: tests/test_drive_phase.py - changed, new stage added, all 512 cases green. PLUGIN-BUILD-GUIDE.md - still correct: its finish_task line (dt cases) states the done print, not state removal; its _clause_coverage section says check reads 'whether the cited path changed', still true with the carried commit's paths passed as changed; no edit (outside files scope). README.md, docs/research/pipeline-cost-design.md, docs/research/pipeline-cost-levers.md - still correct: grep for reviewFixes/finish_task/diff_paths/clause coverage finds no statement about these paths ('hand-back' there is the subagent hand-back). plugins/audit/hooks/detect-plan-skip.py, governance/record-risk-confirmation.py, governance/stamp-verification.py, manifest/_areas.py - still correct: they reference drive-phase.py by basename and none reads reviewFixes, the writer mark or finish_task; no exported name was renamed or removed (diff_paths, review_fix, hand_back, finish_task keep their signatures). .github/sweep-costs.json, tests/test__runner_output.py, tests/test_run_test_gate.py, tools/sweep-selftests.py - still correct: whole-sweep run on the committed copy green for each; the sweep cost entry for the file is unchanged (one new stage, timing recorded run 196.3s, within its timeout).",
+    "descriptive": "A task the phase review hands back is judged on its own work: clauses its first commit delivered still count, every re-dispatch carries the confirmed findings, and a task-scoped close keeps the hand-back record and warm session"
+  },
+  "testsAdded": [
+    "rw0 over-fire twin: in a hand-back fix round a clause cited to a file neither commit touched (src/f2.txt) is still path-not-in-diff",
+    "rw1 a re-opened task whose fix touches src/mine.py and its suite only, clause 2 cited to src/notes.txt its first commit wrote, is filed with that claim",
+    "rw2 after the first fix dispatch resumed the warm session, a gate-red retry starts a fresh writer whose prompt is the brief then REVIEW_FIX_HEAD and the finding id",
+    "rw3 finish_task keeps reviewFixes.from and the writer session (last_writer_session finds it), drops other marks, and a second hand-back of a no-new-commit close is refused",
+    "rw4 twin: a task with no hand-back and no writer record leaves no drive state after finish_task"
+  ],
+  "casesAdded": [
+    [
+      "rw0",
+      "rw1",
+      "rw2",
+      "rw3",
+      "rw4"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py carried_paths (after diff_paths) and its call in file_writer_return do what the new comment says; review_fix/_fix_dispatched/review_fix_dispatch carry findings on every dispatch and resume only the first; finish_task skips KEPT_AT_TASK_CLOSE\n2 pre-fix: rw1, rw2, rw3 red; M1 (carried_paths over-fire) -> rw0 red; M2 (finish_task keeps all) -> rw3, rw4 red; M3 (always resume) -> rw2 red; each restored, copy identical to project file\n3 grep 'dispatched\")|\"resumed\"|REVIEW_FIX_FIELD|reviewFixes' over plugins/audit/scripts+hooks: hits only in drive-phase.py hand_back, review_fix, _fix_dispatched, review_fix_dispatch, resolve_fixed - each read; diff_paths has one caller (file_writer_return), the clause check is its only consumer of the widened set\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written into repo prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:edb7bcfe8812876063b2193884e06b85ca9dc72910547dea0efbff99331bf4ae\",\"dirtyDigest\":\"sha256:759d7821ec55775caff3b9009f2b632a6237cbf467f3b0d51e662f8dd02b0043\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/drive-phase.py\":\"c282a670193744a7\",\"tests/test_drive_phase.py\":\"a4e17d50914b31e1\"},\"head\":\"85a9d38b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:3953b2bc647f6474c2563f699434625e29617c8c9a5e892d7a1804c3872581d0\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

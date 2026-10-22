@@ -2541,6 +2541,312 @@ def _pv_validation_run(M, root, head, phase, finding, reads, answer):
     return done, said, held.get("verdict")
 
 
+# --- a task the phase review handed back is judged on its own work -------------
+# A file only the task's FIRST commit writes: a clause cited to it is delivered
+# by that commit, and the fix round that follows a hand-back never touches it.
+_RW_NOTES = "src/notes.txt"
+_RW_FINDING = ({"severity": "high", "file": "src/mine.py:1",
+                "issue": "rw-confirmed: the phase asked for v three and the code "
+                         "sets two",
+                "resolution": "set v to three"},)
+# A gate command red while `bad.flag` exists, so a fix round can leave the
+# proof standing and the gate red - the decision that offers a retry.
+_RW_FLAG_GATE = ('"%s" -c "import os, sys; sys.exit(1 if os.path.exists('
+                 '\'bad.flag\') else 0)"' % (sys.executable.replace("\\", "/"),))
+
+
+def _rw_answer(cites):
+    """A writer's last message: a sentence, then one delivered answer per
+    clause, `cites` mapping each clause number to the file it is cited to."""
+    return "Done.\n%s" % (json.dumps(dict(
+        (str(n), {"delivered": True, "file": path, "line": 1})
+        for n, path in sorted(cites.items())), sort_keys=True),)
+
+
+def _rw_handed_back(M, prefix, gate, bindir, log):
+    """A writer task over `src/mine.py`, its suite and `src/notes.txt`, whose
+    first session writes all three and cites clause 2 to the notes; the phase
+    review files one high finding on `src/mine.py:1`, the validation pass
+    confirms it, and the next step hands it back. Returns `(root, mpath,
+    finding id, the task's first commit, (code, line) of the hand-back step)`."""
+    root, mpath = _tdd_writer_repo(prefix, gate, _WC_DESCRIPTION, per_task="phase")
+    with open(mpath, encoding="utf-8") as fh:
+        plan = json.load(fh)
+    plan["phases"][0]["tasks"][0]["files"].append(_RW_NOTES)
+    plan["fileIndex"][_RW_NOTES] = ["P1.1"]
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh, indent=2)
+    _write_lf(os.path.join(root, *_RW_NOTES.split("/")), "v0\n")
+    for argv in (["add", "-A"], ["commit", "-qm", "the notes the task owns"]):
+        _harness.git(root, *argv)
+    _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    _play_session(root, _run_argv(block) or [], bindir, log, "0.61",
+                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST,
+                        _RW_NOTES: "v is two\n"},
+                  result=_rw_answer({1: _WF_SRC, 2: _RW_NOTES, 3: _WF_SRC}))
+    _signal_next(M, root, mpath)
+    _c, review = _explain_of(M, root, mpath, PHASE)
+    first = tasks_of(mpath)["P1.1"].get("commit")
+    _file_phase_review(root, mpath, review, _RW_FINDING, _PV_ENTRY)
+    _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, PHASE)
+    fid = (_pv_findings(mpath).get("rw-confirmed") or {}).get("id")
+    _play_session(root, _run_argv(block) or [], bindir, log, "0.62",
+                  session=PV_SESSIONS[0],
+                  result=_pv_verdicts([(fid, "confirmed", "requirement")]),
+                  reads=["src/mine.py"])
+    return root, mpath, fid, first, _signal_next(M, root, mpath)
+
+
+def _rw_unreachable_commit(root, rel, text):
+    """A commit of HEAD's tree plus `rel` holding `text`, whose parent is HEAD
+    and which no ref names - a commit reset out of history - made without
+    touching the work tree or the index. Its sha."""
+    blob_src = os.path.join(_harness.fixture_root("drive-rw-blob-"), "blob")
+    _write_lf(blob_src, text)
+    blob = _harness.git(root, "hash-object", "-w", blob_src).strip()
+    index = os.path.join(os.path.dirname(blob_src), "index")
+
+    def run(*argv):
+        done = subprocess.run(_GIT + ["-C", root] + list(argv), capture_output=True,
+                              text=True, encoding="utf-8", errors="replace",
+                              env=dict(os.environ, GIT_INDEX_FILE=index), timeout=60)
+        if done.returncode != 0:
+            raise RuntimeError("%r: %s" % (argv, done.stderr))
+        return done.stdout.strip()
+    run("read-tree", "HEAD")
+    run("update-index", "--add", "--cacheinfo", "100644,%s,%s" % (blob, rel))
+    written = run("write-tree")
+    return run("commit-tree", written, "-p", "HEAD", "-m", "reset out of history")
+
+
+def _reopened_writer_cases(check):
+    """A task the phase review handed back is judged on its own work: a clause
+    its first commit delivered still counts once the fix round leaves that file
+    alone, a dispatch after the first fix dispatch still carries the confirmed
+    findings, and closing the task under a task-scoped drive keeps the
+    hand-back's record and the writer's session for the next hand-back."""
+    M, why = _load("drive_phase_reopened_writer")
+    if M is None:
+        check("rw1 the driver loads", False, why)
+        return
+    stubs = os.path.realpath(_harness.fixture_root("drive-rw-stub-"))
+    bindir = _writer_stub(stubs)
+    log = os.path.join(stubs, "runs.jsonl")
+    root, mpath, fid, first, handed = _rw_handed_back(
+        M, "rw-clause", (_wf_gate(),), bindir, log)
+    # Besides the commit the hand-back cleared, the record names one commit a
+    # reset took out of HEAD's history - the only one that wrote src/side.txt -
+    # and one sha git does not know at all.
+    gone = _rw_unreachable_commit(root, "src/side.txt", "only the reset commit\n")
+    unknown = "f" * 40
+    real_record = M.reopen_record
+
+    def record_with_strays(ctx, phase):
+        carried, handed_ids, why_r = real_record(ctx, phase)
+        if carried is None:
+            return carried, handed_ids, why_r
+        return dict(carried, **{gone: "P1.1", unknown: "P1.1"}), handed_ids, why_r
+    M.reopen_record = record_with_strays
+    try:
+        _reopened_clause_steps(check, M, root, mpath, bindir, log,
+                               (fid, first, handed, gone, unknown))
+    finally:
+        M.reopen_record = real_record
+    _reopened_retry_cases(check, M, bindir, log)
+    _reopened_finish_cases(check, M)
+    _review_fix_bound_cases(check, M)
+
+
+def _reopened_clause_steps(check, M, root, mpath, bindir, log, held):
+    """The fix rounds of a handed-back task whose re-open record also names a
+    commit out of HEAD's history and an unknown sha (`held`)."""
+    fid, first, handed, gone, unknown = held
+    fix = {_WF_SRC: "v = 3\n", _WF_TEST: _PV_THREE_TEST}
+    _c, untouched = _writer_round(M, root, mpath, bindir, log, "0.63", edit=fix,
+                                  result=_rw_answer({1: _WF_SRC, 2: "src/f2.txt",
+                                                     3: _WF_SRC}))
+    _c, untouched_block = _explain_of(M, root, mpath, "P1.1")
+    check("rw0 THE OVER-FIRE TWIN: the hand-back re-opened P1.1 with its first "
+          "commit recorded, and in the fix round a clause cited to a file neither "
+          "that commit nor the fix touched is still a gap naming the file - the "
+          "first commit's paths are added, not every path in the tree: %r"
+          % ((handed, first, untouched, untouched_block[-300:]),),
+          handed[0] == 0 and "run-agent-session.py --role writer" in handed[1]
+          and fid and first
+          and "clauses-uncovered-writer" in untouched
+          and "src/f2.txt" in untouched + untouched_block
+          and _filed_body(mpath, "P1.1") is None)
+    _signal_next(M, root, mpath, "--answer", "resume")
+    _c, reset = _writer_round(M, root, mpath, bindir, log, "0.66", edit={},
+                              result=_rw_answer({1: _WF_SRC, 2: "src/side.txt",
+                                                 3: _WF_SRC}))
+    _c, reset_block = _explain_of(M, root, mpath, "P1.1")
+    check("rw5 a carried commit reset out of HEAD's history does not cover its "
+          "clause: clause 2 cited to src/side.txt, which only that commit wrote, "
+          "is a gap naming the file, the decision names the commit as left out "
+          "of the carried paths, and nothing is filed: %r"
+          % ((gone[:12], reset, reset_block[-400:]),),
+          "clauses-uncovered-writer" in reset
+          and "src/side.txt" in reset + reset_block
+          and gone[:12] in reset_block and "not in HEAD's history" in reset_block
+          and _filed_body(mpath, "P1.1") is None)
+    _signal_next(M, root, mpath, "--answer", "resume")
+    claim = _rw_answer({1: _WF_SRC, 2: _RW_NOTES, 3: _WF_SRC})
+    _c, covered = _writer_round(M, root, mpath, bindir, log, "0.64", edit={},
+                                result=claim)
+    body = _filed_body(mpath, "P1.1") or {}
+    named = [n for n in _notes(mpath, "P1.1")
+             if unknown[:12] in n and gone[:12] in n and "unknown" in n]
+    check("rw6 an unknown sha in the re-open record is named and the filing "
+          "proceeds on the rest: the return is filed, and one note on the task "
+          "names the unknown sha and the commit out of history as left out of "
+          "clause coverage: %r" % ((covered, _notes(mpath, "P1.1")),),
+          body.get("writerClaim") == claim and len(named) == 1)
+    check("rw1 a re-opened task whose fix round touches src/mine.py and its suite "
+          "only, with clause 2 cited to src/notes.txt that its first commit "
+          "wrote, passes clause coverage: the return is filed with that message "
+          "as the claim, and the step names no uncovered clause: %r"
+          % ((covered, body.get("writerClaim"), body.get("diffPaths")),),
+          "clauses-uncovered" not in covered
+          and body.get("writerClaim") == claim
+          and _RW_NOTES not in (body.get("diffPaths") or []))
+    # The fix round closes at its own commit under a task-scoped drive, as
+    # `/audit:run P1.1` closes it - which keeps the hand-back's entry - and a
+    # human then re-opens P1.1 for a reason of their own, which is no hand-back.
+    def task_next(*extra):
+        with _Env(root):
+            said = []
+            code = M.main(["next", "P1.1", mpath, "--project-dir", root]
+                          + list(extra), out=said.append)
+        return code, "\n".join(said)
+    task_next("--signal")
+    closed = dict(tasks_of(mpath)["P1.1"])
+    reopened = _verb(root, "audit-task.py", [
+        "reopen", "P1.1", mpath, "--project-dir", root, "--reason",
+        "the human wants the docstring reworded"])
+    later_code, later = task_next("--signal")
+    said = [task_next("--explain", "P1.1")[1]]
+    later_argv = _run_argv("\n".join(said)) or []
+    fed = _flag(later_argv, "--prompt-file")
+    later_prompt = (_read(fed).decode("utf-8", "replace")
+                    if fed and os.path.isfile(fed) else "")
+    check("rw8 a later manual re-open does not re-inject the old findings: once "
+          "the fix round closed at a commit of its own and a human re-opened "
+          "P1.1, its next writer dispatch is the plain brief - no confirmed "
+          "finding and no resume: %r"
+          % ((closed.get("status"), closed.get("commit"), reopened, later_code,
+              later, later_argv, later_prompt[-300:]),),
+          closed.get("status") == "done" and closed.get("commit")
+          and closed.get("commit") != first and reopened[0] == 0
+          and "run-agent-session.py --role writer" in later
+          and "--resume" not in later_argv
+          and later_prompt.startswith("Implement the following task")
+          and M.REVIEW_FIX_HEAD not in later_prompt and fid not in later_prompt)
+
+
+def _reopened_retry_cases(check, M, bindir, log):
+    """A retry after the first fix dispatch still carries the findings."""
+    fix = {_WF_SRC: "v = 3\n", _WF_TEST: _PV_THREE_TEST}
+    root_r, mpath_r, fid_r, _first_r, handed_r = _rw_handed_back(
+        M, "rw-retry", (_wf_gate(), _RW_FLAG_GATE), bindir, log)
+    first_argv, first_prompt = _clause_prompt(M, root_r, mpath_r)
+    spent = _attempts(mpath_r, "P1.1")
+    _c, red = _writer_round(M, root_r, mpath_r, bindir, log, "0.65",
+                            edit=dict(fix, **{"bad.flag": "x\n"}),
+                            result=_rw_answer({1: _WF_SRC, 2: _RW_NOTES, 3: _WF_SRC}))
+    retried_code, retried = _signal_next(M, root_r, mpath_r, "--answer", "retry")
+    argv, prompt = _clause_prompt(M, root_r, mpath_r)
+    check("rw2 a retry after the first fix dispatch still carries the confirmed "
+          "finding: the first dispatch resumed the warm session with it, the "
+          "gate went red, and `retry` - an attempt spent - starts a fresh writer "
+          "session whose prompt is the task's brief and then the finding: %r"
+          % ((handed_r, red, retried_code, retried, argv, prompt[-400:]),),
+          fid_r and _flag(first_argv, "--resume") == WRITER_SESSION
+          and fid_r in first_prompt
+          and "gate-red-writer" in red and retried_code == 0
+          and "run-agent-session.py --role writer" in retried
+          and _attempts(mpath_r, "P1.1") == (spent or 0) + 1
+          and "--resume" not in argv
+          and prompt.startswith("Implement the following task")
+          and M.REVIEW_FIX_HEAD in prompt and fid_r in prompt)
+
+
+def _review_fix_bound_cases(check, M):
+    """A hand-back's entry reads only for its own round, by the task's commit."""
+    state = {M.REVIEW_FIX_FIELD: {"P1.1": {"from": "a" * 40, "findings": ["P1-R1"],
+                                           "dispatched": []}}}
+    seen = dict((label, M.review_fix(state, {"id": "P1.1", "commit": commit})
+                 is not None)
+                for label, commit in (("closed-anew", "b" * 40), ("open", None),
+                                      ("closed-at-from", "a" * 40)))
+    check("rw7 a hand-back's entry is bound to its round: once the task records "
+          "a commit other than the one the hand-back cleared, review_fix gives "
+          "nothing; while it records none (the fix round open) or the cleared "
+          "one (closed at no new commit), the entry still reads (the twin): %r"
+          % (seen,),
+          seen == {"closed-anew": False, "open": True, "closed-at-from": True})
+
+
+def _reopened_finish_cases(check, M):
+    """`finish_task` over a re-opened writer task keeps the hand-back's record
+    and the writer's session, and still drops every other mark of the task."""
+    where = os.path.realpath(_harness.fixture_root("drive-rw-finish-"))
+    ctx = {"stateDir": os.path.join(where, "state"), "phase": PHASE, "did": [],
+           "gitRoot": where, "project": where}
+    task = {"id": "P1.1", "status": "done", "commit": "a" * 40,
+            "startedAt": "2026-10-21T10:00:00Z"}
+    stream = os.path.join(where, "writer.jsonl")
+    _write_lf(stream, "{}\n")
+    state = {M.REVIEW_FIX_FIELD: {"P1.1": {
+        "from": "a" * 40, "findings": ["P1-R1"], "head": "c" * 40,
+        "session": WRITER_SESSION, "stream": stream, "tree": None,
+        "dispatched": True}}}
+    M._mark(state, "writer", task, {
+        "seq": 1, "runs": [{"seq": 0, "session": WRITER_SESSION, "stream": stream}],
+        "dispatches": [{"seq": 0, "round": 0, "record": "r", "argv": []}]})
+    M._mark(state, "dispatched-executor", task, {"scope": "s"})
+    said = M.finish_task(ctx, state, task)
+    kept = M.read_state(ctx)
+    session = M.last_writer_session(kept, task) or {}
+    phase = {"id": PHASE, "tasks": [task]}
+    finding = {"id": "P1-R1", "severity": "high", "file": "src/mine.py:1",
+               "issue": "i", "resolution": "r"}
+    reopened = []
+
+    def took(_ctx, script, args, flag, text):
+        reopened.append(args[1])
+        return "re-opened", None
+    real = M._verb_with_text
+    M._verb_with_text = took
+    try:
+        again = M.hand_back(dict(ctx, manifest=os.path.join(where, "plan.json")),
+                            kept, phase, "d" * 40, [(finding, ["P1.1"])])
+    finally:
+        M._verb_with_text = real
+    check("rw3 after a task-scoped drive closes the task, the hand-back's "
+          "from-commit and the warm session are still found: the state keeps "
+          "the review-fix entry and the writer's record of the start, so a "
+          "second hand-back of a fix closed at no new commit is refused, while "
+          "the task's other marks are dropped: %r"
+          % ((said, kept, session, again, reopened),),
+          (kept.get(M.REVIEW_FIX_FIELD) or {}).get("P1.1", {}).get("from") == "a" * 40
+          and session.get("session") == WRITER_SESSION
+          and "dispatched-executor" not in kept
+          and again is not None and "closed again at no new commit" in again[1]
+          and reopened == [])
+    bare_ctx = dict(ctx, stateDir=os.path.join(where, "bare-state"), did=[])
+    bare = {}
+    M._mark(bare, "dispatched-executor", task, {"scope": "s"})
+    M.finish_task(bare_ctx, bare, task)
+    check("rw4 THE TWIN: a task with no hand-back and no writer record leaves no "
+          "drive state behind once it closes: %r"
+          % (os.listdir(os.path.dirname(M.state_path(bare_ctx)))
+             if os.path.isdir(os.path.dirname(M.state_path(bare_ctx))) else [],),
+          not os.path.exists(M.state_path(bare_ctx)))
+
+
 def _gate_calls(module):
     """Wrap `module.run_verb` so each `run-test-gate.py` call is kept as
     `(args, output)` - which flags it was given, and what it printed."""
@@ -9448,6 +9754,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("pv-block", "_phase_validation_cases"),
           ("pv4-block", "_phase_cold_cases"),
           ("pv7-block", "_pv_unit_cases"),
+          ("rw-block", "_reopened_writer_cases"),
           ("wf-block", "_writer_files_cases"), ("wl-block", "_writer_lock_cases"),
           ("wi-block", "_writer_invariant_cases"),
           ("wj-block", "_writer_reading_cases"),
