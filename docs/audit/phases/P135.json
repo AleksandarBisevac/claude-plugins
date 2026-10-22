@@ -50,8 +50,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:78-89",
         "issue": "contradicts task clause: the description says 'Drop the parent's Claude session variables (CLAUDECODE and every CLAUDE_CODE_* / CLAUDE_EFFORT; keep any CLAUDE_* the runner sets on purpose and name them)'. The diff drops a closed list of 14 exact names (PARENT_SESSION_VARS), not every CLAUDE_CODE_*. Any CLAUDE_CODE_* session variable the CLI exports that is not on the list (a new one in a later CLI release, or one the harness list never knew) still reaches the writer, so the writer does not reliably start like a top-level session. The executor's reasoning (a prefix drop would also take CLAUDE_CODE_USE_BEDROCK and credential switches a plain session inherits) is sound, but it is a narrowing of the clause that the task's own text does not record, and the filed outcome states the narrowing as a design choice rather than a divergence.",
-        "resolution": "Decide the scope explicitly. Either drop by prefix (CLAUDECODE, CLAUDE_EFFORT, CLAUDE_PID, AUDIT_LOCK_TOKENS and every CLAUDE_CODE_*) with a named KEEP tuple for the provider and credential switches (CLAUDE_CODE_USE_*, auth-token names), and add a case with an unlisted CLAUDE_CODE_* name to ras30; or amend the task description to say 'the names run-plain.sh unsets' so the closed list is the asked-for scope. The ras30 decoy for an unlisted CLAUDE_CODE_* name is missing either way, so the closed-list behaviour is untested in both directions.",
-        "fixTask": "P135.4-kux"
+        "resolution": "fixed in P135.4-kux (eb723fd7d3f2): Decide the scope explicitly. Either drop by prefix (CLAUDECODE, CLAUDE_EFFORT, CLAUDE_PID, AUDIT_LOCK_TOKENS and every CLAUDE_CODE_*) with a named KEEP tuple for the provider and credential switches (CLAUDE_CODE_USE_*, auth-token names), and add a case with an unlisted CLAUDE_CODE_* name to ras30; or amend the task description to say 'the names run-plain.sh unsets' so the closed list is the asked-for scope. The ras30 decoy for an unlisted CLAUDE_CODE_* name is missing either way, so the closed-list behaviour is untested in both directions.",
+        "fixTask": "P135.4-kux",
+        "commit": "eb723fd7d3f2",
+        "status": "fixed"
       },
       {
         "id": "P135-R5",
@@ -81,9 +83,23 @@
         "file": "plugins/audit/scripts/governance/run-agent-session.py:131-132 and PLUGIN-BUILD-GUIDE.md:5074",
         "issue": "Both still say the harness's plain arm unsets 'this same list' / 'the list'. After this diff the runner drops by rule (prefix plus keep), so the sentence no longer describes it. The executor named this and left it for P135.5.",
         "resolution": "Confirm P135.5 owns the sentence in both places; otherwise reword them here."
+      },
+      {
+        "id": "P135-R9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-agent-session.py:130-139",
+        "issue": "The comment says of every listed name 'Passed on, each makes the child a child of the orchestrator's session'. Nothing in the repo or the diff probes that for CLAUDE_EFFORT, CLAUDE_PID or CLAUDE_PROJECT_DIR; those are plausibly dropped because they carry the parent's settings or location, not because they mark parentage. The task asked 'what each name is and why a top-level session starts without it'; the why is given once for the whole set, as a claim no run backs.",
+        "resolution": "Give the reason per group (parent marker: CLAUDECODE, CLAUDE_CODE_CHILD_SESSION; the parent's own settings and location: CLAUDE_EFFORT, CLAUDE_PROJECT_DIR; the plugin's lock state: AUDIT_LOCK_TOKENS), or soften 'each makes the child a child' to what is known: a top-level session does not have them."
+      },
+      {
+        "id": "P135-R10",
+        "severity": "low",
+        "file": "tests/test_run_agent_session.py:130-144",
+        "issue": "ras30d asserts word presence (CLAUDE_CODE_, KEEP_SESSION_VARS, KEEP_SESSION_PREFIXES, top-level) in a comment slice and a 6000-character guide window, plus a four-string denylist of outside names. It does not check that the 14 names (or the 5 in PARENT_SESSION_VARS) the prose describes are the ones the code holds, so the comment can drift from the tuple and stay green; the second option in the task (a case tying the prose to the list) is only partly met.",
+        "resolution": "Add an assertion that every name in PARENT_SESSION_VARS appears in both the comment and the guide paragraph."
       }
     ],
-    "outcome": "[findings: 8 - 0 high, 1 med, 7 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 10 - 0 high, 1 med, 9 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -285,7 +301,7 @@
     {
       "id": "P135.4-kux",
       "title": "fix P135-R4: contradicts task clause: the description says 'Drop the parent's...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause: the description says 'Drop the parent's Claude session variables (CLAUDECODE and every CLAUDE_CODE_* / CLAUDE_EFFORT; keep any CLAUDE_* the runner sets on purpose and name them)'. The diff drops a closed list of 14 exact names (PARENT_SESSION_VARS), not every CLAUDE_CODE_*. Any CLAUDE_CODE_* session variable the CLI exports that is not on the list (a new one in a later CLI release, or one the harness list never knew) still reaches the writer, so the writer does not reliably start like a top-level session. The executor's reasoning (a prefix drop would also take CLAUDE_CODE_USE_BEDROCK and credential switches a plain session inherits) is sound, but it is a narrowing of the clause that the task's own text does not record, and the filed outcome states the narrowing as a design choice rather than a divergence.\n\nResolution asked: Decide the scope explicitly. Either drop by prefix (CLAUDECODE, CLAUDE_EFFORT, CLAUDE_PID, AUDIT_LOCK_TOKENS and every CLAUDE_CODE_*) with a named KEEP tuple for the provider and credential switches (CLAUDE_CODE_USE_*, auth-token names), and add a case with an unlisted CLAUDE_CODE_* name to ras30; or amend the task description to say 'the names run-plain.sh unsets' so the closed list is the asked-for scope. The ras30 decoy for an unlisted CLAUDE_CODE_* name is missing either way, so the closed-list behaviour is untested in both directions.",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
@@ -309,14 +325,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "eb723fd7d3f2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "run-agent-session.py: drop is now by rule. PARENT_SESSION_VARS keeps the names outside the CLAUDE_CODE_ namespace (CLAUDECODE, CLAUDE_PID, CLAUDE_EFFORT, AUDIT_LOCK_TOKENS, CLAUDE_PROJECT_DIR); new PARENT_SESSION_PREFIXES=('CLAUDE_CODE_',) drops every CLAUDE_CODE_* name; new KEEP_SESSION_VARS (CLAUDE_CODE_OAUTH_TOKEN, CLAUDE_CODE_API_KEY_HELPER_TTL_MS, CLAUDE_CODE_SKIP_{BEDROCK,VERTEX,FOUNDRY}_AUTH) and KEEP_SESSION_PREFIXES=('CLAUDE_CODE_USE_',) exempt the provider and credential switches; new _is_parent_session_var(name) is read by _session_env. The runner sets no CLAUDE_* of its own, so nothing else is exempted. Module docstring paragraph and the constants comment updated to the rule; the sentence saying the harness's plain arm unsets 'this same list' and the PLUGIN-BUILD-GUIDE wording were left untouched for P135.5 (that sentence is now less exact since the list is a rule). tests/test_run_agent_session.py: ras30b (unlisted CLAUDE_CODE_FUTURE_SESSION_FLAG_q81z must not reach the child) and ras30c (CLAUDE_CODE_OAUTH_TOKEN and CLAUDE_CODE_USE_VERTEX must survive); ras30/ras31 unchanged in assertion, one comment reworded. sweep-selftests on the file: exit 0, 37 cases; ruff check on both files: clean. Dependants: PLUGIN-BUILD-GUIDE.md names PARENT_SESSION_VARS, which still exists (kept the name for the exact-name tuple), so the reference resolves; its 'the list the plain arm unsets' wording is P135.5's. drive-phase.py, test_drive_phase.py (names _run/write_record/_read_text) do not use the env constants: grep for PARENT_SESSION_VARS/_session_env finds only run-agent-session.py and the guide; _config_rules.py, _panel_settings.py, audit-config.schema.json, test__config_rules.py are basename dependants of unchanged names and untouched. test_run_agent_session.py's _under, used by the guide, is unchanged.",
+        "descriptive": "The writer session now drops every CLAUDE_CODE_* variable by prefix (including ones a later CLI exports), keeping a named set of provider and credential switches."
       },
       "startedAt": "2026-10-22T15:01:22Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-22T15:08:19Z",
+      "verifiedBy": [
+        "ras30b: an unlisted CLAUDE_CODE_* decoy in the parent environment must not reach the child",
+        "ras30c: named credential/provider switches (CLAUDE_CODE_OAUTH_TOKEN, CLAUDE_CODE_USE_VERTEX) survive the prefix drop"
+      ],
       "notes": [
         {
           "at": "2026-10-22T15:01:17Z",
@@ -335,12 +354,24 @@
         "runId": "2026-10-22T15:06:41Z.eb914f",
         "status": "passed",
         "at": "2026-10-22T15:06:41Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "eb723fd7d3f2",
+        "at": "2026-10-22T15:08:19Z",
+        "return": "docs/audit/evidence/returns/P135.4-kux/20261022T150122Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-22T15:04:10Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py` in a throwaway tree at HEAD exited 1 with failing cases ras30b (house FAIL), tests/test_run_agent_session.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 36/37 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P135.5-kux",
       "title": "fix P135-R5: The comment and the guide say the list is 'the measurement harne...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The comment and the guide say the list is 'the measurement harness's plain arm' list. That harness (run-plain.sh) lives in the private quality-gates-internal repo, not in this one, so a reader of the public tree cannot check the equivalence and nothing keeps the two lists together. I checked it by hand: the 14 names match run-plain.sh lines 62-64 today.\n\nResolution asked: State the list's basis in this repo (what each name is and why a top-level session starts without it) rather than pointing at a file outside the repository, or add a case that reads a committed copy of the list.",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
@@ -363,14 +394,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-22T15:08:20Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -389,7 +420,13 @@
       ],
       "fixes": [
         "P135-R5"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-22T15:14:42Z.5e0605",
+        "status": "passed",
+        "at": "2026-10-22T15:14:42Z"
+      }
     }
   ],
   "request": "Stage 1 measurement (2026-10-22): runs could not close because the commit check refused the plugin's own restore point and the writer's out-of-scope edit (register F782, F783)",

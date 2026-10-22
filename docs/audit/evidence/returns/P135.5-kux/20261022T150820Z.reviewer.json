@@ -1,0 +1,22 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/scripts/governance/run-agent-session.py:130-139",
+   "issue": "The comment says of every listed name 'Passed on, each makes the child a child of the orchestrator's session'. Nothing in the repo or the diff probes that for CLAUDE_EFFORT, CLAUDE_PID or CLAUDE_PROJECT_DIR; those are plausibly dropped because they carry the parent's settings or location, not because they mark parentage. The task asked 'what each name is and why a top-level session starts without it'; the why is given once for the whole set, as a claim no run backs.",
+   "resolution": "Give the reason per group (parent marker: CLAUDECODE, CLAUDE_CODE_CHILD_SESSION; the parent's own settings and location: CLAUDE_EFFORT, CLAUDE_PROJECT_DIR; the plugin's lock state: AUDIT_LOCK_TOKENS), or soften 'each makes the child a child' to what is known: a top-level session does not have them."},
+  {"id": 2, "severity": "low", "file": "tests/test_run_agent_session.py:130-144",
+   "issue": "ras30d asserts word presence (CLAUDE_CODE_, KEEP_SESSION_VARS, KEEP_SESSION_PREFIXES, top-level) in a comment slice and a 6000-character guide window, plus a four-string denylist of outside names. It does not check that the 14 names (or the 5 in PARENT_SESSION_VARS) the prose describes are the ones the code holds, so the comment can drift from the tuple and stay green; the second option in the task (a case tying the prose to the list) is only partly met.",
+   "resolution": "Add an assertion that every name in PARENT_SESSION_VARS appears in both the comment and the guide paragraph."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'State the list's basis in this repo (what each name is and why a top-level session starts without it) rather than pointing at a file outside the repository'. The diff rewrites the comment above PARENT_SESSION_VARS (run-agent-session.py:130-141) and the guide paragraph (PLUGIN-BUILD-GUIDE.md ~5071-5081) to state the rule on public terms (names, the CLAUDE_CODE_ prefix drop, the keep list, the top-level basis), removes every 'plain arm / run-plain / measurement harness' mention (my grep over plugins, the guide, CONTRIBUTING.md and COMPATIBILITY.md finds none left; the one remaining hit is the denylist literal in the test), and adds ras30d. The claim ('No behaviour change', prose and one test only) describes the diff: only comments, guide prose and a test changed; the tuples are untouched. The why is given collectively rather than per name (finding 1). Dependants (drive-phase.py, _config_rules.py, _panel_settings.py, the schema, their tests) are untouched in name and behaviour, so the executor's 'still correct' holds.",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "Echoed from the executor: its helper ran `python3 tools/sweep-selftests.py tests/test_run_agent_session.py` at HEAD and saw ras30d fail (37/38), but the second run with the working tree's implementation did not reach a readable green tally, so the helper refused 'proved' (its words: 'the red is not one the fix turns green'). I ran the test once (`python3 tests/test_run_agent_session.py --selftest`): ALL PASS, 38/38, ras30d PASS, so it is green on the working tree; I did not see it red.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "tests.gate is the literal `python3 tools/sweep-selftests.py tests/test_run_agent_session.py`, which selects only tests/test_run_agent_session.py. The task changes prose, not behaviour, so no behaviour is there to delete; the environment cases it already holds (parent_session, kept_decoys, unlisted_session, tests/test_run_agent_session.py:404-452) exercise the code's drop and keep logic and are not touched by it. Read, not run."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

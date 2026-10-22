@@ -127,14 +127,19 @@ BUDGET_STOP = "error_max_budget_usd"
 SESSION_ID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
                         r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
-# The variables a parent Claude session exports to its children and a top-level
-# session starts without; the measurement harness's plain arm unsets this same
-# list. A name outside the CLAUDE_CODE_ namespace is dropped by name
-# (`PARENT_SESSION_VARS`), and everything in that namespace is dropped by prefix
-# (`PARENT_SESSION_PREFIXES`), so a session variable a later CLI release exports
-# is dropped without this file being told its name. The prefix would also take the
-# provider and credential switches a plain top-level session inherits, so those
-# are exempted by name (`KEEP_SESSION_VARS`) or by prefix (`KEEP_SESSION_PREFIXES`:
+# What a parent Claude session exports to its children, and so what a top-level
+# session never has: the marker that a Claude process is the parent (CLAUDECODE),
+# its pid and effort (CLAUDE_PID, CLAUDE_EFFORT), its project directory
+# (CLAUDE_PROJECT_DIR), the plugin's lock tokens (AUDIT_LOCK_TOKENS), and the
+# session's own state under CLAUDE_CODE_ - session id, entrypoint, executable,
+# messaging socket and token, SSE port, child-session marker. Passed on, each makes
+# the child a child of the orchestrator's session, so the rule is: the names
+# outside CLAUDE_CODE_ are dropped by name (`PARENT_SESSION_VARS`), and everything
+# in that namespace is dropped by prefix (`PARENT_SESSION_PREFIXES`), which also
+# takes a session variable a later CLI release exports without this file being told
+# its name. The prefix would take what a top-level session does start with - the
+# provider and credential switches - so those are kept by name
+# (`KEEP_SESSION_VARS`) or by prefix (`KEEP_SESSION_PREFIXES`:
 # CLAUDE_CODE_USE_BEDROCK, CLAUDE_CODE_USE_VERTEX and the like). This runner sets
 # no CLAUDE_* variable of its own.
 PARENT_SESSION_VARS = ("CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "AUDIT_LOCK_TOKENS",

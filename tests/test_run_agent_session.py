@@ -44,7 +44,7 @@ import sys
 import tempfile
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
-from _output import safe_stdio                     # noqa: E402
+from _output import REPO_ROOT, safe_stdio          # noqa: E402
 import _loader                                     # noqa: E402
 
 SCRIPT = os.path.join(_harness.SCRIPTS_DIR, "governance", "run-agent-session.py")
@@ -401,9 +401,8 @@ def _cases(check):
               "exit %r out %r err %r" % (code, out[-300:], err[-300:]))
 
         # --- the environment the session starts in -------------------------------
-        # The names a top-level session starts without, as the measurement
-        # harness's plain arm unsets them - written out here, not read from the
-        # script, so the case compares two lists.
+        # The names a top-level session starts without, written out here and not
+        # read from the script, so the case compares two lists.
         parent_session = ["CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_PID",
                           "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_CHILD_SESSION",
                           "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_MESSAGING_SOCKET",
@@ -451,6 +450,34 @@ def _cases(check):
               "directory; lost: %r" % (lost,),
               rec is not None and not lost and bindir in seen.get("PATH", "")
               and _under(rec["tmpdir"], dirs["scratch"]), repr(seen))
+
+        # The basis of the drop list is stated where the list is, in this repository:
+        # the prose naming it points at no file outside the repo (nothing here could
+        # keep such a copy in step) and says what the rule drops and what it keeps.
+        with open(SCRIPT, encoding="utf-8") as fh:
+            script_text = fh.read()
+        with open(os.path.join(REPO_ROOT, "PLUGIN-BUILD-GUIDE.md"),
+                  encoding="utf-8") as fh:
+            guide_text = fh.read()
+        guide_at = guide_text.index("### `plugins/audit/scripts/governance/run-agent-session.py`")
+        guide_text = guide_text[guide_at:guide_at + 6000]
+        const_at = script_text.index("PARENT_SESSION_VARS = (")
+        const_comment = script_text[script_text.rindex("\n\n", 0, const_at):const_at]
+        outside = ("run-plain", "plain arm", "measurement harness", "quality-gates-internal")
+        pointing = sorted(name for name in outside
+                          if name in script_text or name in guide_text)
+        check("ras30d the drop list's prose names no file outside this repository "
+              "(%r), and states the rule - the prefix drop, the named keep list and "
+              "why a top-level session starts without the names - in the script "
+              "comment and in the guide; pointing: %r" % (outside, pointing),
+              not pointing
+              and all(word in const_comment for word in
+                      ("CLAUDE_CODE_", "KEEP_SESSION_VARS", "KEEP_SESSION_PREFIXES",
+                       "top-level"))
+              and all(word in guide_text for word in
+                      ("PARENT_SESSION_PREFIXES", "KEEP_SESSION_VARS",
+                       "KEEP_SESSION_PREFIXES", "top-level")),
+              "pointing %r comment %r" % (pointing, const_comment[:400]))
 
         # --- the --record file ---------------------------------------------------
         # One JSON line per run, appended: the same printed command run twice

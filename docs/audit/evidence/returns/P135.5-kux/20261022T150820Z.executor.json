@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_agent_session.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-22T15:12:19Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py` in a throwaway tree at HEAD exited 1 with failing cases ras30d (house FAIL), tests/test_run_agent_session.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 37/38 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Rewrote the comment above PARENT_SESSION_VARS in run-agent-session.py and the run-agent-session paragraph in PLUGIN-BUILD-GUIDE.md so they state the rule the code holds: names outside CLAUDE_CODE_ dropped by name (CLAUDECODE marker, pid, effort, project dir, lock tokens), CLAUDE_CODE_* dropped by prefix, provider/credential switches kept by KEEP_SESSION_VARS/KEEP_SESSION_PREFIXES, why a top-level session lacks them; no private file named, 'this same list' gone. Also reworded the test comment that cited the harness. Added ras30d reading the script and the guide section: neither contains run-plain / plain arm / measurement harness / quality-gates-internal, and both name the prefix drop, the keep list and 'top-level'. No behaviour change. sweep-selftests tests/test_run_agent_session.py: 1/1 files ok, 38 cases; ruff check on both .py: pass; tests/test__deps.py (254 cases) and tests/test__output_lints.py (169 cases) via sweep-selftests: ok. Dependants: drive-phase.py, _config_rules.py, _panel_settings.py, audit-config.schema.json, test__config_rules.py, test_drive_phase.py - still correct, only a comment/prose changed, no name or behaviour moved. PLUGIN-BUILD-GUIDE.md other sections unchanged. tests/test_run_agent_session.py: _under unchanged; added REPO_ROOT import from _output.\n\nclaims:\n1 run-agent-session.py:130-143 comment describes the constants that follow and the drop predicate; guide paragraph rewritten to the same rule\n2 ras30d red on old prose (37/38), green after (38/38); over-fire direction not mutated\n3 grep -rnE 'plain arm|run-plain|measurement harness' plugins tests PLUGIN-BUILD-GUIDE.md CONTRIBUTING.md: 3 hits (script comment, guide, test comment) - all rewritten\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+    "descriptive": "The drop-list comment and the build guide now state the rule on public code alone, with no pointer to a private harness file."
+  },
+  "testsAdded": [
+    "ras30d: the script's drop-list comment and the guide section name no file outside the repo and state the prefix drop, the keep list and the top-level basis"
+  ],
+  "casesAdded": [
+    "ras30d"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:70ba701e320871746c91c43e9e382a020fefe54939c897d34d51f6ba8de472ee\",\"dirtyDigest\":\"sha256:2aca8ebd8986f2a5f9589dd4290c57b820ea67bef82d866f10ac70e36bfcd6ed\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"85e0654922af580d\",\"plugins/audit/scripts/governance/run-agent-session.py\":\"c02bb474bb6bce86\",\"tests/test_run_agent_session.py\":\"1f6c9b4e780ecb5a\"},\"head\":\"eb723fd7\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/run-agent-session.py\",\"tests/test_run_agent_session.py\"],\"scopeDigest\":\"sha256:502baf29c6424766a3c3daaefc4fc694ee2c98b21d2b3eb36caeffac232d69f9\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -5071,8 +5071,13 @@ with `--` cannot reach the argv as a flag. The budget must be a finite positive 
 lines; the script reads its own prompt off stdin or `--prompt-file` for the same reason. The child
 runs in a process group of its own (`_proc_group.group_kwargs`, torn down whole on SIGINT/SIGTERM)
 with a TMPDIR of its own under the task's scratch, and without the parent's Claude session
-variables (`PARENT_SESSION_VARS`, the list the measurement harness's plain arm unsets), so it
-starts as a plain top-level session does; its stream is saved under
+variables, so it starts as a top-level session does and not as a child of the orchestrator's: the
+names outside `CLAUDE_CODE_` that mark a parent (`PARENT_SESSION_VARS`: the `CLAUDECODE` marker,
+pid, effort, project directory and the plugin's lock tokens) are dropped by name, and every name
+under `CLAUDE_CODE_` (`PARENT_SESSION_PREFIXES`) is dropped by prefix, so a session variable a later
+CLI release exports needs no entry. A top-level session does start with the provider and
+credential switches, so those are kept (`KEEP_SESSION_VARS`, `KEEP_SESSION_PREFIXES`); the rest of
+the environment is passed on. Its stream is saved under
 `<state-dir>/sessions/`, one file per run, with stderr beside it.
 
 **What it prints**: one line, `session=<id> subtype=<subtype> is_error=<is_error>
