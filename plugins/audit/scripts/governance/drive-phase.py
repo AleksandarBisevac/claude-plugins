@@ -364,6 +364,7 @@ import _tree_stamp  # noqa: E402  (parse_stamp, declared_scope: the scope a fili
 import _clause_coverage as _cc  # noqa: E402  (check: whether the writer answered every clause)
 import _scope_companions  # noqa: E402  (derive: the runner config a widen declares)
 import _worktrees  # noqa: E402  (read_provenance: whether a kept tree's marker names its task)
+import _scoped_commit  # noqa: E402  (plugin_owned_rels: the one table of what the plugin owns under .claude/)
 
 E_OK, E_STOPPED, E_USAGE = 0, 1, 2
 PREFIX = "[drive-phase]"
@@ -3521,12 +3522,11 @@ def plugin_owned_paths(ctx, paths):
     `_manifest_io.PLUGIN_OWNED_IN_CLAUDE`, placed under the project's
     `.claude/` and the checkout's. The commit leaves these out already; the
     set-aside asks the same table again because a revert is not undone by a
-    refusal that follows it."""
-    rels = [_invariants._rel(path, ctx["gitRoot"])
-            for base in (ctx["project"], ctx["gitRoot"])
-            for path, _why in _mio.plugin_owned_under(os.path.join(base, ".claude"))]
-    return [p for p in paths
-            if any(rel and _invariants._under(p, rel) for rel in rels)]
+    refusal that follows it. The table and its placement are
+    `_scoped_commit.plugin_owned_rels`, the same the commit and the close ask."""
+    _others, named = _scoped_commit.split_plugin_owned(
+        paths, _scoped_commit.plugin_owned_rels(ctx["project"], ctx["gitRoot"]))
+    return [path for path, _why in named]
 
 
 def writer_claim(state, task):

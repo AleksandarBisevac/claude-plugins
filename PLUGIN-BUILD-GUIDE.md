@@ -441,7 +441,7 @@ L9:
   commit-manifest-index -> _claude_home, _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
   commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _invariants, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _utc_stamp
-  drive-phase -> _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _output, _runner_collects, _scope_companions, _status_facts, _tree_stamp, _verdict_binding, _wave, _worktrees
+  drive-phase -> _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _output, _runner_collects, _scope_companions, _scoped_commit, _status_facts, _tree_stamp, _verdict_binding, _wave, _worktrees
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
@@ -3825,9 +3825,12 @@ state directory. A re-start keeps the record (an earlier attempt's own edits are
 `/audit:task done` drops it. `attribute()` then sorts paths into `predates` (dirty at the start
 at the same bytes), `during`, and `mixed` (dirty then and changed since, which no commit can
 split); with no record it falls back to each file's mtime against `startedAt` and says so in its
-`basis`. `attempt_strays()` is that sort over every path no in_progress task covers.
-`commit-task-work.py` refuses older dirt in a declared file and a stray made during the attempt;
-`done --commit` refuses the stray too.
+`basis`. `undeclared_changes()` is that sort over every path no in_progress task covers, and the one
+function the task commit, the close and the writer's set-aside all ask: the plugin's runtime
+directories and every row of `_manifest_io.PLUGIN_OWNED_IN_CLAUDE` are taken out there and named
+apart (`pluginOwned`), so a path the commit leaves out as plugin-owned is never one the close
+refuses. `commit-task-work.py` refuses older dirt in a declared file and a stray made during the
+attempt; `done --commit` refuses the stray too.
 
 ### `plugins/audit/scripts/governance/commit-audit-state.py`
 `commit-audit-state.py <manifest> <phaseId>` — **commit any uncommitted audit state, or say

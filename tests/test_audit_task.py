@@ -16018,6 +16018,66 @@ def _leftover_cases(check):
         check("lo9 ALLOW: the same empty files starts when the task is "
               "--no-change shaped (gate-only, or naming "
               "`outputs` beside a test of its own): %r" % ((code2, code3, _t[-400:]),), code2 == 0 and code3 == 0)
+
+        # THE COMMIT STEP AND THE CLOSE ASK ONE FUNCTION which paths an attempt
+        # changed that no task declares. A restore point the plugin parks under
+        # `.claude/audit-backups/` mid-attempt is left out of the task commit and
+        # named, so the close on that commit must neither refuse it nor stay
+        # silent about it.
+        restore = ".claude/audit-backups/audit-plan.json.bak-20261022T155614Z"
+
+        def commit_work(proj):
+            write(proj, "src/a.ts", "the task's work\n")
+            git(proj, "add", "src/a.ts")
+            git(proj, "commit", "-q", "-m", "the work")
+
+        proj, mpath = project("plugin-owned", [
+            task("P1.1", ["src/a.ts"], status="pending", attempts=0)])
+        code0, said = start(proj, "P1.1")
+        commit_work(proj)
+        write(proj, restore, "{}\n")
+        code, text = close(proj)
+        check("lo-po1 ALLOW: a restore point the plugin parked under "
+              ".claude/audit-backups/ during the attempt does not refuse the "
+              "close on the task's commit, and the close names it as "
+              "plugin-owned state it left out: %r"
+              % ((code0, said[-120:], code, text[:600]),),
+              code0 == 0 and code == 0 and restore in text
+              and "plugin-owned" in text and "REFUSED" not in text)
+
+        # The second direction: a guard weakened until it skips everything under
+        # `.claude/`, or every path made during the attempt, passes the case
+        # above. A stray beside the restore point, and a sibling directory that
+        # only starts the table's row name, are still refused - and alone.
+        proj, mpath = project("plugin-owned-stray", [
+            task("P1.1", ["src/a.ts"], status="pending", attempts=0)])
+        code0, said = start(proj, "P1.1")
+        commit_work(proj)
+        write(proj, restore, "{}\n")
+        write(proj, "src/c.ts", "made during the attempt\n")
+        write(proj, ".claude/audit-backups-not/x", "not the plugin's\n")
+        before = read(mpath)
+        code, text = close(proj)
+        refusal = [ln for ln in text.splitlines() if "REFUSED" in ln]
+        check("lo-po2 a stray made during the attempt, and a directory that "
+              "only begins like a plugin-owned row, still refuse the close by "
+              "name while the restore point beside them is not blamed: %r"
+              % ((code0, code, text[:700]),),
+              code0 == 0 and code == M.E_USAGE and len(refusal) == 1
+              and "src/c.ts" in refusal[0]
+              and ".claude/audit-backups-not/x" in refusal[0]
+              and "audit-plan.json.bak" not in refusal[0]
+              and read(mpath) == before)
+
+        # A task declaring no files owns whatever no other running task covers,
+        # and the plugin's own state is still not that.
+        proj, mpath = project("plugin-owned-nofiles", [
+            task("P1.1", [], outputs=["x.md"])])
+        write(proj, restore, "{}\n")
+        code, text = close(proj)
+        check("lo-po3 ALLOW: a task declaring no files does not refuse a "
+              "plugin-owned restore point either: %r" % ((code, text[:400]),),
+              code == 0 and restore in text)
     finally:
         _harness.remove_tree(root)
 

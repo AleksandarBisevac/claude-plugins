@@ -1,0 +1,189 @@
+{
+  "id": "P137",
+  "title": "One answer to what an attempt changed that no task declares, and a committed task always closes",
+  "status": "in_progress",
+  "description": "In stage 1's a1c the restore point the base's suite parked under .claude/audit-backups/ was left out of the task commit by commit-task-work (it reads _manifest_io.PLUGIN_OWNED_IN_CLAUDE) and then refused by audit-task done's _uncommitted_leftovers, which skips only bookkeeping and run-state paths. Three readers compute the same question with their own skip lists (commit-task-work attempt_refusal, audit-task _uncommitted_leftovers, drive-phase's set-aside split), and a fix to one has twice missed another.",
+  "desiredOutcome": "The commit step, the close and the writer's set-aside ask one shared function what an attempt changed that no in_progress task declares, so a path the plugin owns is never refused by one of them after another left it out; and a task whose work the drive committed closes on that commit instead of being offered no-change or retry",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "317197a556bc36bbab4c1de235891d0efd959b45",
+  "branch": "audit/p137-one-answer-to-what-an-attempt",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": [
+      {
+        "id": "P137-R1",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_scoped_commit.py:1114-1119; plugins/audit/scripts/manifest/audit-task.py:6269-6295",
+        "issue": "The close now leaves out every PLUGIN_OWNED_IN_CLAUDE row, including the plugin's own `.claude/audit.config.json` and `.claude/.gitignore`, whether git tracks them or not. A task that edits a TRACKED config without declaring it used to be refused by the close as an undeclared change made during the attempt. It is now named in an informational line and the close goes ahead with that edit left uncommitted. The commit step already did the same (ctw-at7 pins the config as left out), so the two readers agree, which is the point of the task. But the new lo-po cases pin only the restore point; none pins a tracked config edit, so the widening is unexamined.",
+        "resolution": "Keep the commit and the close in agreement, since exempting only untracked config in the close alone would bring back the divergence this task removes. Add a case in test_audit_task for a tracked `.claude/audit.config.json` edited during the attempt, so the behaviour is pinned either way. If the owner wants a tracked config edit refused, change the table row or the shared function once so both readers follow."
+      },
+      {
+        "id": "P137-R2",
+        "severity": "low",
+        "file": "tests/test__scoped_commit.py:486-545 (sc-ua5, sc-ua6)",
+        "issue": "The comment says the scan is 'on what the readers MAY NOT NAME rather than on the instance that was found', and the task asked for the invariant, not the instance. What sc-ua5 does is a name blacklist: plugin_owned_under, PLUGIN_OWNED_IN_CLAUDE, attempt_strays and logs_dir. A reader that hardcodes `.claude/audit-backups`, keeps its own `under_any` list, or imports the table under another alias passes it (an `ImportFrom` alias is not a Name node). sc-ua6 only counts calls to `undeclared_changes`. It does not stop a reader from filtering the result again with a skip list of its own. The comment and docstring promise more than the check delivers.",
+        "resolution": "Either state the limit in the comment ('names the three primitives that were found; a differently spelled skip list is not seen') or widen the check to something the readers share. For example, assert that each reader has no local `skip`/`bookkeeping` list beyond its documented bookkeeping argument, and that it does not call `status_paths` or `under_any` itself."
+      },
+      {
+        "id": "P137-R3",
+        "severity": "low",
+        "file": "tests/test__scoped_commit.py:558-569 (sc-ua8)",
+        "issue": "The tree-wide scan passes on `outside == []` without counting the files it read. If the `os.walk(_output.SCRIPTS_DIR)` found no `.py` (a wrong anchor, or a skipped directory), the check would read as 'nobody else reads plugin_owned_under' and stay green. That is a filter narrowing to nothing, the shape the repo's no-silent-pass rule names. sc-ua7 shows the per-source scan can fail, but not that this walk reaches files.",
+        "resolution": "Collect the scanned names and assert the walk reached the home modules (`_manifest_io.py` and `_scoped_commit.py` among the files read) and more than a handful of files. Put the count in the check text so a narrowed walk goes red."
+      }
+    ],
+    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 0 with a recorded fix commit]"
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P137.1",
+      "title": "One function answers which paths an attempt changed that no in_progress task declares, and every reader asks it",
+      "status": "in_progress",
+      "description": "Move the question - paths changed during the attempt (by the start snapshot, else mtime against startedAt) that no in_progress task covers, with the plan's bookkeeping, the plugin's run state and every _manifest_io.PLUGIN_OWNED_IN_CLAUDE row taken out and returned separately as named plugin-owned state - into one function in _scoped_commit, and make commit-task-work.py's attempt refusal, audit-task.py's _uncommitted_leftovers (the close) and drive-phase.py's set-aside split call it, deleting their own skip lists. The close then never refuses a path the commit step left out as plugin-owned. Add a case per reader in which a restore point appears under .claude/audit-backups/ during the attempt: the commit leaves it out and names it, and the close on that commit is accepted; and a lint or case that fails when a reader computes the skip list itself (the invariant, not the instance).",
+      "files": [
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test__scoped_commit.py",
+        "tests/test_commit_task_work.py",
+        "tests/test_audit_task.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_task.py: a close on a task commit is accepted when a plugin-owned restore point under .claude/audit-backups/ appeared during the attempt, and the close names it",
+          "tests/test__scoped_commit.py: the shared function returns plugin-owned state apart from the undeclared changes, and every reader of the question calls it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__scoped_commit.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-22T16:33:07Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-22T17:20:08Z.e7b0ba",
+        "status": "passed",
+        "at": "2026-10-22T17:20:08Z"
+      }
+    },
+    {
+      "id": "P137.2",
+      "title": "A task whose work the drive committed closes on that commit when the close was refused after it",
+      "status": "pending",
+      "description": "When the drive committed a task's work (a commit after the attempt's start head carrying the task's Audit-Row) and the close was then refused, the next step finds nothing to commit and offers only no-change (which records a false outcome) or retry (which pays a writer to redo committed work). Make the drive recognise that commit and close the task on it - the close re-asked through the same checks, refusing as before when they still refuse - and never offer no-change for a task whose own commit is in the range. Add a case reproducing a1c's sequence: commit lands, close refused, the refusal's cause removed, next step closes on the commit.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: after a commit landed and the close was refused, the next step closes the task on that commit and never offers no-change"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P137.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P137.3-3y3",
+      "title": "No suite writes into the real checkout's .claude/, and the sweep names one that does",
+      "status": "pending",
+      "description": "Stage 1 runs a2 and a1c each found a 524-byte demo-plan restore point (.claude/audit-backups/audit-plan.json.bak-<UTC>) and a .gitignore line appear in the clone's .claude/ during the writer's whole-tree sweep, with no layout verb in any tool call: a suite resolves its project from its own location (REPO_ROOT) instead of its scratch and runs the layout migration's backup against the real checkout. Find the suite (run the sweep over a clean checkout and diff .claude/ before and after; grep tests/ for migrate-manifest, ensure_backup_dir, backup_dir_for and REPO_ROOT used as a project), make it use a scratch project, and extend tools/sweep-selftests.py's watched set to the checkout's own .claude/ so a write there is a finding naming the suite. Red first: the watched-set case fails on the unfixed sweep with a suite that writes there.",
+      "files": [
+        "tools/sweep-selftests.py",
+        "tests/"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/sweep-selftests.py: a suite that writes under the checkout's .claude/ is a finding naming the suite"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/sweep-selftests.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P137.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ],
+  "request": "Stage 1 a1c (export 5c71066a): P125.23's work committed as a0dd3509, then audit-task done refused the close over .claude/audit-backups/audit-plan.json.bak-*, a restore point commit-task-work had already named plugin-owned; the drive then saw nothing to commit and offered only no-change or retry",
+  "openChoices": [],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "bf837df2-37bc-4c94-9233-61f7d70c1d7f",
+    "branch": "audit/p137-one-answer-to-what-an-attempt",
+    "at": "2026-10-22T16:33:07Z"
+  },
+  "startedAt": "2026-10-22T16:33:07Z"
+}

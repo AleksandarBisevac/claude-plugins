@@ -220,6 +220,161 @@ def _cases(check):
     _staging_cases(check, tmp, outside)
     _close_evidence_cases(check, tmp)
     _earlier_attempt_cases(check, tmp)
+    _undeclared_changes_cases(check, tmp, outside)
+    _readers_share_the_question_cases(check)
+
+
+# --- which paths an attempt changed that no task declares ----------------------
+# Three readers ask it - the task commit, the close, the writer's set-aside - and
+# each used to keep its own skip list, so a restore point the commit step named and
+# left out was refused by the close. The function is one; these cases hold it, and
+# hold the readers to calling it.
+LONG_AGO = "2000-01-01T00:00:00Z"
+RESTORE = ".claude/audit-backups/audit-plan.json.bak-20261022T155614Z"
+
+
+def _undeclared_changes_cases(check, tmp, outside):
+    repo = _repo(tmp, "undeclared")
+    for rel in ("src/mine.py", "docs/book/journal.jsonl", RESTORE,
+                ".claude/state/attempts/P1.1.json", ".claude/logs/gate.log",
+                "stray.txt", ".claude/audit-backups-not/y"):
+        _write(os.path.join(repo, *rel.split("/")), "x\n")
+    asked = getattr(M, "undeclared_changes", None)
+    got, why = (("missing", "missing") if asked is None else
+                asked(repo, repo, {}, None, LONG_AGO, ["src"],
+                      ["docs/book"]))
+    shaped = isinstance(got, dict)
+    during = got.get("during") if shaped else None
+    check("sc-ua1 the one function answers which paths the attempt changed that "
+          "no running task declares: what an owned entry covers is `covered`, the "
+          "reader's bookkeeping and the plugin's state and log directories are "
+          "gone, the plugin-owned restore point is named apart with its reason "
+          "and is in NONE of during/predates/undated/strays, and a directory that "
+          "only begins like a plugin-owned row stays a stray: %r" % ((got, why),),
+          shaped and why == ""
+          and sorted(during) == [".claude/audit-backups-not/y", "stray.txt"]
+          and got["strays"] == during and got["undated"] == []
+          and got["predates"] == [] and got["covered"] == ["src/mine.py"]
+          and [p for p, _w in got["pluginOwned"]] == [RESTORE]
+          and got["pluginOwned"][0][1].startswith("a restore point")
+          and RESTORE not in during + got["strays"])
+
+    # The other direction: the same tree with the restore point as the ONLY
+    # change reports nothing to refuse and still names it - a function that
+    # dropped plugin-owned state in silence passes the case above, since it
+    # sees only what is missing from the strays.
+    quiet = _repo(tmp, "undeclared-quiet")
+    _write(os.path.join(quiet, *RESTORE.split("/")), "{}\n")
+    only, _w = (("missing", "") if asked is None else
+                asked(quiet, quiet, {}, None, LONG_AGO, [], []))
+    check("sc-ua2 a restore point alone leaves nothing undeclared and is named: %r"
+          % (only,),
+          isinstance(only, dict) and only["strays"] == [] and only["during"] == []
+          and [p for p, _w in only["pluginOwned"]] == [RESTORE])
+
+    blind, blind_why = (("missing", "") if asked is None else
+                        asked(outside, outside, {}, None, LONG_AGO, [], []))
+    check("sc-ua3 a tree git will not list is a reason, never an empty answer: %r"
+          % ((blind, blind_why[:60]),),
+          blind is None and blind_why.startswith("git would not describe"))
+
+    # A START SNAPSHOT DECIDES WHEN ONE EXISTS: the restore point's bytes at the
+    # start do not matter - plugin-owned state is never attributed at all.
+    record = {"paths": {"stray.txt": M.path_marks(repo, ["stray.txt"])["stray.txt"]}}
+    kept, _w = (("missing", "") if asked is None else
+                asked(repo, repo, {}, record, LONG_AGO, ["src"], ["docs/book"]))
+    check("sc-ua4 with a start snapshot, a path dirty at the same bytes predates "
+          "the attempt and the plugin-owned one is still named, not attributed: %r"
+          % (kept,),
+          isinstance(kept, dict) and kept["predates"] == ["stray.txt"]
+          and kept["during"] == [".claude/audit-backups-not/y"]
+          and [p for p, _w in kept["pluginOwned"]] == [RESTORE])
+
+
+# --- every reader asks it ------------------------------------------------------
+# NOT A COMMENT, A SCAN. The defect is a reader computing the skip list itself,
+# and a reader can do that in a way no one has written yet, so the check is on
+# what the readers MAY NOT NAME rather than on the instance that was found.
+READERS = (("governance", "commit-task-work.py"), ("manifest", "audit-task.py"),
+           ("governance", "drive-phase.py"))
+# The table of plugin-owned rows and the runtime directories are asked through
+# `_scoped_commit` and nowhere else. `attempt_strays` is the retired door: a
+# caller handing it a `skip` is exactly the reader-owned list.
+ONLY_IN_THE_SHARED_FUNCTION = ("plugin_owned_under", "PLUGIN_OWNED_IN_CLAUDE",
+                               "attempt_strays")
+READER_NAMES = ("logs_dir",)
+HOME_OF_THE_TABLE = ("_manifest_io.py", "_scoped_commit.py")
+
+
+def _names_in(source):
+    """Every identifier `source` reads or writes as a Name or an attribute -
+    code only, so a comment or a docstring explaining the rule cannot trip it."""
+    import ast
+    names = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Name):
+            names.append(node.id)
+        elif isinstance(node, ast.Attribute):
+            names.append(node.attr)
+    return names
+
+
+def reader_violations(source, shared=ONLY_IN_THE_SHARED_FUNCTION):
+    """The names in `source` a reader may not use, each as often as it appears."""
+    names = _names_in(source)
+    return sorted(n for n in names if n in shared + READER_NAMES)
+
+
+def _calls_of(source, attr):
+    import ast
+    return len([n for n in ast.walk(ast.parse(source))
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                and n.func.attr == attr])
+
+
+def _readers_share_the_question_cases(check):
+    import _output
+    sources = {}
+    for folder, name in READERS:
+        with io.open(os.path.join(_output.SCRIPTS_DIR, folder, name),
+                     encoding="utf-8") as fh:
+            sources[name] = fh.read()
+    found = dict((name, reader_violations(src)) for name, src in sources.items())
+    check("sc-ua5 none of the three readers - the task commit, the close, the "
+          "set-aside - names the plugin-owned table, the runtime-directory "
+          "lookup or the retired door that took a caller's skip list: %r"
+          % (found,), all(v == [] for v in found.values()))
+    asks = dict((name, _calls_of(sources[name], "undeclared_changes"))
+                for name in ("commit-task-work.py", "audit-task.py"))
+    places = _calls_of(sources["drive-phase.py"], "plugin_owned_rels")
+    check("sc-ua6 the commit and the close each ask `undeclared_changes` exactly "
+          "once - a second ask in one reader is a second answer - and the "
+          "set-aside asks the shared table: %r" % ((asks, places),),
+          asks == {"commit-task-work.py": 1, "audit-task.py": 1} and places == 1)
+
+    # THE SCAN MUST BE ABLE TO FAIL, in both directions: a reader that computes
+    # the list itself is named, and the shared spelling is not.
+    own = ("def f(project):\n    for p, w in _mio.plugin_owned_under(project):\n"
+           "        pass\n    return hc.logs_dir(root, {})\n")
+    shared_ok = ("def f():\n    return _scoped_commit.undeclared_changes(1)\n"
+                 "# plugin_owned_under named in a comment is not code\n")
+    check("sc-ua7 the scan names a reader's own skip list and passes the shared "
+          "call: %r" % ((reader_violations(own), reader_violations(shared_ok)),),
+          reader_violations(own) == ["logs_dir", "plugin_owned_under"]
+          and reader_violations(shared_ok) == [])
+
+    # THE TABLE'S HOME, tree-wide: whoever else reads the rows is a reader with a
+    # list of its own, whichever file it sits in.
+    outside = []
+    for dirpath, _dirs, files in os.walk(_output.SCRIPTS_DIR):
+        for name in sorted(files):
+            if not name.endswith(".py") or name in HOME_OF_THE_TABLE:
+                continue
+            with io.open(os.path.join(dirpath, name), encoding="utf-8") as fh:
+                if "plugin_owned_under" in _names_in(fh.read()):
+                    outside.append(name)
+    check("sc-ua8 under scripts/, only the table's own module and the shared "
+          "function read `plugin_owned_under`: %r" % (outside,), outside == [])
 
 
 # --- the span an attempt's commits are read over -------------------------------

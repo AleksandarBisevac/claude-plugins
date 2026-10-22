@@ -6255,19 +6255,10 @@ def _run_state_dir(project, config):
     return str(hc.state_dir(pathlib.Path(project), config or {}))
 
 
-def _run_state_rels(project, config, git_root):
-    """The plugin's own runtime directories, git-root relative: a start
-    snapshot written there is the run's record, never a task's work."""
-    hc = _loader.load_hooks_config(modname="audit__config")
-    root = pathlib.Path(project)
-    rels = [_invariants._rel(str(hc.state_dir(root, config or {})), git_root),
-            _invariants._rel(str(hc.logs_dir(root, config or {})), git_root)]
-    return [rel for rel in rels if rel is not None]
-
-
 def _uncommitted_leftovers(project, config, mpath, raw_index, git_root, plan,
                            task):
-    """`(left, during, basis)` - the changes `task`'s close would not carry.
+    """`(left, during, basis, named)` - the changes `task`'s close would not
+    carry, and `[(path, why)]` for the plugin-owned state left out of both.
 
     `left` is what the task owns and left in the tree. A task that declares
     files owns the changes those files cover; a task that declares none owns
@@ -6278,30 +6269,30 @@ def _uncommitted_leftovers(project, config, mpath, raw_index, git_root, plan,
     changed SINCE THE ATTEMPT BEGAN, by the snapshot `start` recorded or, with
     none, by its mtime against `startedAt` - `basis` says which. A change from
     before the attempt is in neither list: it is not this close's to answer
-    for. The plan's own bookkeeping and the plugin's runtime state are never
-    counted. All empty when git cannot be asked: a project outside git has no
-    tree to leave work in."""
-    paths = _porcelain_paths(git_root)
-    if not paths:
-        return [], [], None
-    skip = (_bookkeeping_rels(project, config, mpath, raw_index, git_root)
-            + _run_state_rels(project, config, git_root))
-    paths = [p for p in paths if not any(_touts.covers(s, p) for s in skip)]
+    for. The plan's own bookkeeping is the one list this reader supplies; the
+    plugin's runtime state and every plugin-owned path are
+    `_scoped_commit.undeclared_changes`'s to take out - the commit step leaves
+    them out and names them, so the close that follows never refuses them.
+    All empty when git cannot be asked: a project outside git has no tree to
+    leave work in."""
     mine = _declared_rels(project, git_root, task)
     others = [rel for t in _mio.tasks_by_id(plan).values()
               if isinstance(t, dict) and t.get("id") != task.get("id")
               and t.get("status") == "in_progress"
               for rel in _declared_rels(project, git_root, t)]
-    unowned = [p for p in paths if not any(_touts.covers(f, p) for f in others)]
-    if not mine:
-        return unowned, [], None
-    left = [p for p in paths if any(_touts.covers(f, p) for f in mine)]
     record, _why = _scoped_commit.read_attempt(_run_state_dir(project, config),
                                                task.get("id"))
-    seen = _scoped_commit.attribute(git_root,
-                                    [p for p in unowned if p not in left],
-                                    record, task.get("startedAt"))
-    return left, seen["during"], seen["basis"]
+    changes, _why = _scoped_commit.undeclared_changes(
+        git_root, project, config, record, task.get("startedAt"), mine + others,
+        _bookkeeping_rels(project, config, mpath, raw_index, git_root))
+    if changes is None:
+        return [], [], None, []
+    if not mine:
+        # A task declaring no files owns what no other running task covers.
+        return changes["strays"], [], None, changes["pluginOwned"]
+    left = [p for p in changes["covered"]
+            if any(_touts.covers(f, p) for f in mine)]
+    return left, changes["during"], changes["basis"], changes["pluginOwned"]
 
 
 def _commit_touches(project, git_root, task, sha):
@@ -6903,8 +6894,12 @@ def _locked_done(args, project, config, mpath, tid, out):
         if refusal:
             out(refusal)
             return E_USAGE
-        left, during, basis = _uncommitted_leftovers(
+        left, during, basis, named = _uncommitted_leftovers(
             project, config, mpath, raw_index, git_root, assembled, node)
+        if named:
+            out("[audit-task] plugin-owned state, not the task's edit, left out "
+                "of this close and not refused: %s"
+                % ("; ".join("%s (%s)" % item for item in named),))
         if left:
             out("[audit-task] REFUSED: %s closes on %s, but the working tree "
                 "still holds changes that commit does not carry: %s. %s "
@@ -6935,7 +6930,8 @@ def _locked_done(args, project, config, mpath, tid, out):
                 "startHead": _start_head(project, config, node),
                 "records": (_bookkeeping_rels(project, config, mpath,
                                               raw_index, git_root)
-                            + _run_state_rels(project, config, git_root))})
+                            + _scoped_commit.run_state_rels(project, config,
+                                                            git_root))})
         if evidence:
             out("[audit-task] REFUSED: %s closes on %s, but %s. Nothing "
                 "written." % (tid, sha[:7], evidence))

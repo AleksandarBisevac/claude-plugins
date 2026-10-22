@@ -537,44 +537,6 @@ def attempt_state_dir(project, config):
     return str(_hooks_config().state_dir(pathlib.Path(project), config or {}))
 
 
-def run_state_rels(project, config, git_root):
-    """The plugin's own runtime directories, git-root relative: the state
-    directory the start record lives in, and the logs beside it."""
-    hc, root = _hooks_config(), pathlib.Path(project)
-    rels = [_invariants._rel(str(hc.state_dir(root, config or {})), git_root),
-            _invariants._rel(str(hc.logs_dir(root, config or {})), git_root)]
-    return [rel for rel in rels if rel is not None]
-
-
-def plugin_owned_rels(project, git_root):
-    """`[(git-root-relative path, why), ...]` - `_manifest_io.PLUGIN_OWNED_IN_CLAUDE`
-    placed under the project's `.claude/` and under the checkout's, which are
-    two directories when the project sits below the git root and the one
-    restore-point writer parks its copy in the checkout's."""
-    rows, seen = [], set()
-    for base in (project, git_root):
-        for path, why in _mio.plugin_owned_under(os.path.join(base, ".claude")):
-            rel = _invariants._rel(path, git_root)
-            if rel is not None and rel not in seen:
-                seen.add(rel)
-                rows.append((rel, why))
-    return rows
-
-
-def split_plugin_owned(paths, owned):
-    """`(others, named)` - `paths` without the ones under a row of `owned`, and
-    `[(path, why)]` for those that were."""
-    others, named = [], []
-    for path in paths:
-        why = next((why for rel, why in owned
-                    if _invariants._under(path, rel)), None)
-        if why is None:
-            others.append(path)
-        else:
-            named.append((path, why))
-    return others, named
-
-
 def attempt_refusal(manifest, task, project, git_root, config, targets,
                     pending):
     """`(refusal, notes, attribution)` - whether this commit would carry
@@ -606,28 +568,24 @@ def attempt_refusal(manifest, task, project, git_root, config, targets,
     if mine["mixed"]:
         parts.append("%s - %s (basis: %s)" % (", ".join(mine["mixed"]), MIXED,
                                               mine["basis"]))
-    skip = (list(targets["paths"]) + list(targets.get("records") or [])
-            + run_state_rels(project, config, git_root)
-            + ([targets["indexRel"]] if targets.get("indexRel") else []))
-    strays, why = _scoped_commit.attempt_strays(
-        git_root, record, started,
-        owned_rels(manifest, project, git_root, task), skip)
+    # THE QUESTION IS `_scoped_commit.undeclared_changes`, ASKED OF THE SAME
+    # FUNCTION THE CLOSE AND THE SET-ASIDE ASK. What this commit stages beside
+    # the task's files is the only list this reader supplies; the plugin's own
+    # state is taken out there, and named on a line of its own below: a path
+    # left out of the commit and not said would be the silence this check
+    # exists to refuse.
+    bookkeeping = (list(targets["paths"]) + list(targets.get("records") or [])
+                   + ([targets["indexRel"]] if targets.get("indexRel") else []))
+    strays, why = _scoped_commit.undeclared_changes(
+        git_root, project, config, record, started,
+        owned_rels(manifest, project, git_root, task), bookkeeping)
     if strays is None:
         return why, notes, None
-    # THE PLUGIN'S OWN STATE IS NOT THE ATTEMPT'S EDIT. Taken out of every
-    # list before the question is asked, and named on a line of its own below:
-    # a path left out of the commit and not said would be the silence this
-    # check exists to refuse.
-    owned_state = plugin_owned_rels(project, git_root)
-    named = []
-    for key in ("during", "predates", "undated"):
-        strays[key], found = split_plugin_owned(strays[key], owned_state)
-        named.extend(found)
+    named = strays["pluginOwned"]
     if named:
         notes.append("plugin-owned state, not the task's edit, left out of "
                      "this commit and not refused: %s"
-                     % ("; ".join("%s (%s)" % item
-                                  for item in sorted(set(named))),))
+                     % ("; ".join("%s (%s)" % item for item in named),))
     during = strays["during"]
     if during:
         recorded = set(_hooks_config().out_of_scope_record(

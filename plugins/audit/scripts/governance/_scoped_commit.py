@@ -51,6 +51,7 @@ import binascii
 import calendar
 import json
 import os
+import pathlib
 import re
 import shutil
 import subprocess
@@ -1065,22 +1066,83 @@ def attribute(git_root, paths, record, started_at):
     return out
 
 
-def attempt_strays(git_root, record, started_at, owned, skip):
-    """`(attribution, why)` - `attribute` over every path `git status` lists
-    that no entry of `owned` covers and no entry of `skip` holds.
+def run_state_rels(project, config, git_root):
+    """The plugin's own runtime directories, git-root relative: the state
+    directory a start record lives in, and the logs beside it."""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    root = pathlib.Path(project)
+    rels = [_invariants._rel(str(hc.state_dir(root, config or {})), git_root),
+            _invariants._rel(str(hc.logs_dir(root, config or {})), git_root)]
+    return [rel for rel in rels if rel is not None]
 
-    `owned` is every declared entry of every in_progress task, git-root
-    relative: a change one of them covers is that task's work in flight. `skip`
-    is the run's own bookkeeping - the manifest, the journal, the evidence, the
-    state directory this record lives in. What is left and changed DURING the
-    attempt is a change no running task answers for."""
+
+def plugin_owned_rels(project, git_root):
+    """`[(git-root-relative path, why), ...]` - `_manifest_io.PLUGIN_OWNED_IN_CLAUDE`
+    placed under the project's `.claude/` and under the checkout's, which are
+    two directories when the project sits below the git root and the one
+    restore-point writer parks its copy in the checkout's."""
+    rows, seen = [], set()
+    for base in (project, git_root):
+        for path, why in _mio.plugin_owned_under(os.path.join(base, ".claude")):
+            rel = _invariants._rel(path, git_root)
+            if rel is not None and rel not in seen:
+                seen.add(rel)
+                rows.append((rel, why))
+    return rows
+
+
+def split_plugin_owned(paths, owned):
+    """`(others, named)` - `paths` without the ones under a row of `owned`, and
+    `[(path, why)]` for those that were."""
+    others, named = [], []
+    for path in paths:
+        why = next((why for rel, why in owned
+                    if _invariants._under(path, rel)), None)
+        if why is None:
+            others.append(path)
+        else:
+            named.append((path, why))
+    return others, named
+
+
+def undeclared_changes(git_root, project, config, record, started_at, owned,
+                       bookkeeping):
+    """`(changes, why)` - the ONE ANSWER to which paths an attempt changed that
+    no in_progress task declares, and `(None, why)` when git would not list the
+    tree.
+
+    `changes` is `attribute`'s answer over the undeclared paths, plus:
+    `covered` (the paths an entry of `owned` covers - work in flight, not this
+    function's to judge), `strays` (the undeclared paths, whichever way they
+    attribute) and `pluginOwned` (`[(path, why)]`, sorted: the plugin's own
+    state, named and left out).
+
+    `owned` is every declared entry of the in_progress tasks the caller counts
+    as running, git-root relative. `bookkeeping` is the caller's own record
+    paths - what a commit stages beside the task's files, what a close writes
+    itself - which differ by reader and so arrive as an argument. Everything
+    else a reader would have to know is decided here and nowhere else: the
+    plugin's runtime directories (`run_state_rels`) and every row of
+    `_manifest_io.PLUGIN_OWNED_IN_CLAUDE` (`plugin_owned_rels`) are never a
+    task's edit, so a path the commit step leaves out as plugin-owned is
+    never one the close refuses, nor one the set-aside reverts. A reader that
+    kept a skip list of its own is the defect this function exists to remove;
+    `tests/test__scoped_commit.py` fails by name when one reappears."""
     paths, why = status_paths(git_root)
     if paths is None:
         return None, why
-    rest = [p for p in paths
-            if not any(_task_outputs.covers(entry, p) for entry in owned)
-            and not under_any(p, skip)]
-    return attribute(git_root, rest, record, started_at), ""
+    skip = list(bookkeeping) + run_state_rels(project, config, git_root)
+    live = [p for p in paths if not under_any(p, skip)]
+    mine = [p for p in live
+            if any(_task_outputs.covers(entry, p) for entry in owned)]
+    held = set(mine)
+    rest = [p for p in live if p not in held]
+    strays, named = split_plugin_owned(rest, plugin_owned_rels(project, git_root))
+    changes = attribute(git_root, strays, record, started_at)
+    changes["covered"] = mine
+    changes["strays"] = strays
+    changes["pluginOwned"] = sorted(set(named))
+    return changes, ""
 
 
 # --- what a close stands on ---------------------------------------------------

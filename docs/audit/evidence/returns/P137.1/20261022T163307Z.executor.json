@@ -1,0 +1,43 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py (full tree)": "pass",
+    "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__scoped_commit.py tests/test_commit_task_work.py tests/test_drive_phase.py tests/test__output_lints.py tests/test__deps.py": "pass after regenerating the module map (first run: test__deps g1 failed, see outcome)",
+    "ruff check plugins/audit tools tests": "pass",
+    "vermin -t=3.8- (scripts, hooks, tests, tools/lints)": "pass",
+    "python3 tools/gate-parity.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-22T16:58:09Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__scoped_commit.py` in a throwaway tree at HEAD exited 1 with failing cases sc-ua1 (house FAIL), sc-ua2 (house FAIL), sc-ua3 (house FAIL), sc-ua4 (house FAIL), sc-ua5 (house FAIL), sc-ua6 (house FAIL), sc-ua8 (house FAIL) and 5 more, but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 1105/1108 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added _scoped_commit.undeclared_changes(git_root, project, config, record, started_at, owned, bookkeeping) -> (changes, why): status_paths, drops the reader's bookkeeping and run_state_rels, splits covered-by-owned, splits every PLUGIN_OWNED_IN_CLAUDE row (plugin_owned_rels/split_plugin_owned, moved here from commit-task-work), then attribute(); returns attribute's dict plus covered, strays, pluginOwned. Removed attempt_strays. commit-task-work.attempt_refusal now passes only its staging list as bookkeeping and reads pluginOwned; its run_state_rels/plugin_owned_rels/split_plugin_owned deleted. audit-task._uncommitted_leftovers now returns (left, during, basis, named) through the same call (its _run_state_rels deleted; the evidence 'records' use _scoped_commit.run_state_rels); the close prints a '[audit-task] plugin-owned state, not the task's edit, left out of this close and not refused: ...' line and the REFUSED texts are unchanged. drive-phase.plugin_owned_paths delegates to _scoped_commit.plugin_owned_rels/split_plugin_owned (new import _scoped_commit). New cases: test_audit_task lo-po1 (restore point appears after start: close accepted, restore point named), lo-po2 (second direction: stray + audit-backups-not sibling still refused alone), lo-po3 (task with no files); test__scoped_commit sc-ua1..sc-ua4 (function over a real repo, both directions, with and without a snapshot, git blind) and sc-ua5..sc-ua8 (AST scan: no reader names plugin_owned_under/PLUGIN_OWNED_IN_CLAUDE/attempt_strays/logs_dir; commit and close each call undeclared_changes once; drive-phase asks plugin_owned_rels once; the scan is shown to flag a reader-owned list and pass the shared call and a comment; tree-wide only _manifest_io/_scoped_commit read plugin_owned_under). Existing pins unchanged and green: ctw-at7/at8 (commit side), xs6 (drive-phase). PLUGIN-BUILD-GUIDE.md: the attempt_strays sentence rewritten for undeclared_changes and the module-map fence regenerated with tools/lints/_deps.py --write-map (drive-phase gained the _scoped_commit edge; test__deps g1 was red until then). Evidence: python3 tools/sweep-selftests.py (whole tree) exit 0, 194/194 files, 17007 cases, after the last edit; tests/test_audit_task.py alone 1108/1108. Tests were written after I had read the implementation (the brief gives the files), so red-first rests on the helper's run against HEAD. Dependants: commit-task-work.py (8 listed readers incl. _invariants, _verdict_binding, commit-manifest-index, run-test-gate, drive-phase) - still correct: its CLI, JSON answer keys (attempt.during/predates/pluginOwned/cleanAtStart), note wording and exit codes are unchanged; only the three helper functions left, and no listed file or test named them (grep of tests/tools/plugins). audit-task.py (96 names used elsewhere) - still correct: only the private _uncommitted_leftovers arity (3 to 4) and _run_state_rels (deleted) changed, grep shows no outside user; one new informational output line on a close that has plugin-owned state. drive-phase.py - changed: new import of _scoped_commit and plugin_owned_paths now delegates (same return, pinned by xs6); the module-map fence in PLUGIN-BUILD-GUIDE.md changed accordingly. Edited under P137.1 although the brief lists it as last declared by P137.2 (pending); the plan gate did not refuse the write. _scoped_commit.py - changed: attempt_strays removed (only user was commit-task-work; PLUGIN-BUILD-GUIDE.md named it and was updated), five names added; close-phase, commit-audit-state, commit-manifest-index, _live_copy import it for other names, untouched. tests/test__scoped_commit.py, test_commit_task_work.py, test_audit_task.py, test_drive_phase.py - test_commit_task_work.py and test_drive_phase.py were not edited (their existing ctw-at7/at8 and xs6 cases are the commit and set-aside readers' cases and pass); the other two gained the cases above. Not done: no new case in test_commit_task_work/test_drive_phase beyond the existing ones, since they already carry a restore point under audit-backups for those readers.",
+    "descriptive": "The commit step, the close and the set-aside now ask one function what an attempt changed that no task declares, so a plugin-owned restore point the commit leaves out is no longer refused by the close; a scan fails when a reader keeps a skip list of its own."
+  },
+  "testsAdded": [
+    "test_audit_task: a close on a task commit is accepted when a restore point appears under .claude/audit-backups/ after start, and names it (plus the refusal twin and the no-files task)",
+    "test__scoped_commit: undeclared_changes returns plugin-owned state apart from the undeclared changes in both directions, and an AST scan fails when a reader computes the skip list itself or does not call the shared function"
+  ],
+  "casesAdded": [
+    [
+      "lo-po1",
+      "lo-po2",
+      "lo-po3"
+    ],
+    [
+      "sc-ua1",
+      "sc-ua2",
+      "sc-ua3",
+      "sc-ua4",
+      "sc-ua5",
+      "sc-ua6",
+      "sc-ua7",
+      "sc-ua8"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:63467bbcbd7451b3e5be66075ea9e240785f7802e5c2115af2b96bf1bf6adf11\",\"dirtyDigest\":\"sha256:482974523dfdf98b3d524ddbc52f8f503d79c01e9ff140bcb67f17f76e8ab5c7\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"e79425530a9ffb0a\",\"plugins/audit/scripts/governance/_scoped_commit.py\":\"e35cf6595b698b0a\",\"plugins/audit/scripts/governance/commit-task-work.py\":\"9ffe03bf9dbf50b0\",\"plugins/audit/scripts/governance/drive-phase.py\":\"a4e4e509d9b515bb\",\"plugins/audit/scripts/manifest/audit-task.py\":\"61ae2f6b7b5dd96f\",\"tests/test__scoped_commit.py\":\"5855c201d0e36f82\",\"tests/test_audit_task.py\":\"ba351d72714e8a8b\"},\"head\":\"317197a5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_scoped_commit.py\",\"plugins/audit/scripts/governance/commit-task-work.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"tests/test__scoped_commit.py\",\"tests/test_audit_task.py\",\"tests/test_commit_task_work.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:e66e2778d7686e920ba78df001cab05a4021f79ecb5bd1bceb78317e40112a72\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
