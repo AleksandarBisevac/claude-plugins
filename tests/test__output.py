@@ -342,7 +342,10 @@ def _cases(check):
         _harness.git(mv_fix, "add", "kept.py")
         mv_fix_lits, mv_fix_bad = _shipped_literals(mv_fix)
     finally:
-        shutil.rmtree(mv_fix, ignore_errors=True)
+        # `remove_tree`, not `rmtree(ignore_errors=True)`: git writes its objects
+        # read-only, and on Windows the plain call leaves the fixture behind for
+        # the sweep's watched TMPDIR to report.
+        _harness.remove_tree(mv_fix)
     check("mv11 an untracked .py or .json that does not parse is reported as "
           "unreadable BY NAME and the scan carries on: unreadable %r, read %r"
           % (mv_fix_bad, sorted(set(r for r, _t in mv_fix_lits))),

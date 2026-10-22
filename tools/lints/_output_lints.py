@@ -2211,11 +2211,18 @@ def suite_elsewhere_paths(repo_root=None):
     """
     root = repo_root if repo_root is not None else REPO_ROOT
     out = []
-    for _kind, directory in DEV_DIRS:
+    for _kind, real_dir in DEV_DIRS:
+        # `DEV_DIRS` and `DEV_FILES` are absolute under THIS repo. Re-rooting each
+        # at `root` before walking keeps every relpath between two paths under
+        # `root`: relpath-ing this repo's paths against a fixture root raises
+        # across drives on Windows and returns `../` climbs on posix.
+        directory = os.path.join(root, posix_rel(real_dir, REPO_ROOT))
         if os.path.isdir(directory):
             out.extend(posix_rel(path, root) for _rel, path in lint_py_files(directory))
-    out.extend(posix_rel(path, root) for _kind, path in DEV_FILES
-               if os.path.isfile(path))
+    for _kind, real_path in DEV_FILES:
+        path = os.path.join(root, posix_rel(real_path, REPO_ROOT))
+        if os.path.isfile(path):
+            out.append(posix_rel(path, root))
     return sorted(out)
 
 

@@ -1857,6 +1857,9 @@ def _cases(check):
             with open(os.path.join(_d_root, _rel), "w") as _fh:
                 _fh.write("\n")
         _nested = sweep_files(_d_root)
+        # The exclusion list asked about the FIXTURE: its paths are relative to the
+        # fixture, never to the repository this suite runs in.
+        _d_else = _output_lints.suite_elsewhere_paths(_d_root)
     finally:
         shutil.rmtree(_d_root, ignore_errors=True)
     check("d0 discovery is RECURSIVE and reaches files in subdirectories - a "
@@ -1865,6 +1868,16 @@ def _cases(check):
           % (_nested, len(found)),
           "tests/deep/er/test_nested" + _ext in _nested
           and "tests/test_flat" + _ext in _nested and len(found) > 100)
+
+    check("d0b the exclusion list is rooted at the repository it is asked about: "
+          "a development module that exists only in a fixture repo is left out "
+          "of that fixture's sweep, and the fixture's list holds no path "
+          "climbing out of it (rooting the walk at THIS repo relpaths across "
+          "drives on Windows and yields `../` paths on posix): %r, list %r"
+          % ("tools/lints/_not_swept" + _ext in _nested, _d_else),
+          "tools/lints/_not_swept" + _ext not in _nested
+          and "tools/lints/_not_swept" + _ext in _d_else
+          and not [p for p in _d_else if p.startswith("..")])
 
     check("d1 the list is sorted and carries no duplicate, so two green runs "
           "produce byte-identical logs and a path is swept once",

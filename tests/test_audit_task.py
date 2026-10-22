@@ -18220,7 +18220,7 @@ def _batch_fix_cases(check):
                                     ("gate-only", False, False),
                                     ("gate-only", False, False)])
     finally:
-        shutil.rmtree(root, ignore_errors=True)
+        _harness.remove_tree(root)
 
 
 # --- (xf) a fact two files share is written whole, by a verb ------------------
@@ -18993,7 +18993,7 @@ def _retired_flag_cases(check):
         check("rf2 no verb's flag table holds `falsifiers` (held by %r)"
               % (holders,), holders == [])
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 GATE_ENTRY_CLAUSE = (
@@ -19304,7 +19304,7 @@ def _gate_entry_cases(check):
               and code_q == 0 and notplan == ["a", "notes.json"]
               and all(c == 2 and named and same for c, named, same in refusals))
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),

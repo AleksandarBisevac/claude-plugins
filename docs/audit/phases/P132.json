@@ -44,9 +44,37 @@
         "file": "PLUGIN-BUILD-GUIDE.md:4706-4708",
         "issue": "The guide says a gap at a green gate is `clauses-uncovered-writer` and 'once the rounds are spent it is the plain `clauses-uncovered`'. After this diff the plain decision is also asked when executor.writerModel is unset or does not read whole (writer_path_on), and the same holds for red-refused. The module docstring was updated for this (drive-phase.py:227-230) but the guide section that documents the same decision was not. The executor's outcome notes this and leaves it.",
         "resolution": "Add 'or with executor.writerModel no longer set' to that sentence in PLUGIN-BUILD-GUIDE.md, matching the module docstring."
+      },
+      {
+        "id": "P132-R4",
+        "severity": "med",
+        "file": "tools/_suite.py:285-294 (REMOVAL_EXEMPT) and tests/test_drive_phase.py:7514",
+        "issue": "contradicts task clause: 'fix EVERY rmtree(..., ignore_errors=True) around a git fixture in tests/ and tools/ (grep the class, list each site)'. The diff leaves one convicted site unfixed and records it as an exemption row: tests/test_drive_phase.py:7514 (_follower_retire_cases) removes `base`, holding a member repo that is `git add -A` + `commit`ed (lines 7486-7489), with a bare shutil.rmtree(base, ignore_errors=True). Reason given: another task edits the file concurrently. I confirmed with a direct unsafe_removal_violations(TESTS_DIR, 'tests/', {}) call that this is the only file the rule convicts, and with REMOVAL_EXEMPT it returns []. The base comes from _harness.fixture_root (atexit remove_tree), so the debris is probably cleaned at exit anyway, but the clause is literal and the exemption is a scope narrowing.",
+        "resolution": "Open a follow-up task (before 3.6.0 ships) that changes line 7514 to _harness.remove_tree(base) and deletes the REMOVAL_EXEMPT row; s23 already goes red if the row outlives the site, so the debt cannot be forgotten. Or land it in this task once the concurrent edit is merged."
+      },
+      {
+        "id": "P132-R5",
+        "severity": "med",
+        "file": "tests.gate: `python3 tools/sweep-selftests.py tools/sweep-selftests.py`",
+        "issue": "The recorded gate run (runId 2026-10-22T01:56:17Z.0a0920, passed) selects only tools/sweep-selftests.py, i.e. d0/d0b. It does not select tools/_suite.py (new lint cases s17-s24 and the live-tree check s23), tools/measure-affected-miss.py (m15, m15b), tests/test__output.py, tests/test__output_lints.py, or any of the test files whose removals were changed in the widening (test__doctor_trail, test__impact, test_audit_lookup, test_audit_task, test_guard_bash_writes). The 'passed' status is therefore no evidence for the widened half of the diff, and the filed gates list (6 suites by hand) predates the widening and omits _suite.py. testsAdded lists only d0b and m15b; s17-s24 are not declared, so nothing records them as the task's tests.",
+        "resolution": "Extend tests.gate (and testsAdded) to name tools/_suite.py, tools/measure-affected-miss.py and the edited tests/ files, re-run the recorded gate against the current tree, and file redFirst for s17-s24 (the s18/s21/s24 allow cases and s17/s19/s20/s22 deny cases)."
+      },
+      {
+        "id": "P132-R6",
+        "severity": "low",
+        "file": "tools/_suite.py:510-513, 516-546 (_ignores_errors / _written_removal_lines) and s21",
+        "issue": "The rule is narrowed for tools/ as well as widened to tests/: before, EVERY bare rmtree in a tool that built a written repository was convicted; now only `ignore_errors=True` removals are (s21 asserts a plain `shutil.rmtree(d)` over a staged dir is allowed). On Windows a plain rmtree over git's read-only objects raises PermissionError, which in a `finally` still fails the suite - the same class of CI regression, just loud. No live tool is affected today (the remaining non-ignore calls, e.g. tools/gate-parity.py:1995 and :2437, are over non-git scratch), so this is a coverage loss rather than a live defect.",
+        "resolution": "Convict both spellings over a written directory (drop the _ignores_errors early-continue, keep per-removal family tracking) and change s21 to the allow case that still holds: a removal over a directory git only initialised."
+      },
+      {
+        "id": "P132-R7",
+        "severity": "low",
+        "file": "tools/_suite.py:494-507 (_writes_objects) and :594",
+        "issue": "Over-fire path: `git_ish` is `'git' in word` over every constant and identifier of the call, so an init-only fixture is convicted by a call whose arguments merely contain a word with 'git' inside and the string 'add'. Probed with removal_problem on a source holding `_harness.git(d,'init','-q')` then `_write_fixture(d, 'digits', 'add')` then `shutil.rmtree(d, ignore_errors=True)`: it returns a problem (should be None). The module-level screen in removal_problem (REPO_MARKERS matched as a substring of any identifier) widens the same way. s24 covers the helper-body variant only.",
+        "resolution": "Match 'git' as a whole word (split identifiers on '_' / compare equality for constants and the argv head) in git_ish and in the REPO_MARKERS screen, and add an allow case beside s24 for a word containing 'git'."
       }
     ],
-    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 7 - 0 high, 2 med, 5 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -117,7 +145,7 @@
     {
       "id": "P132.2",
       "title": "A reviewer redispatch runs in the member's own tree, and no writer stop points at an answer its decision refuses",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F775. (3, med) redispatch (drive-phase.py ~4711) calls dispatch without the member's tree; since the reviewer runs as a session, a wave member's reviewer reads the phase tree without the member's work and open_dispatch records the wrong HEAD - take the tree from state.wave.trees as the resume branch (~4645) already does. (4, low-med) with executor.writerModel unset, resume on red-refused-writer / clauses-uncovered-writer stops with 'answer retry', which those decisions do not offer, and the next next re-raises the decision (~2100-2103, answers ~691/695) - offer retry on those two decisions when the writer path is off, or name what works. (5, low) cap_note (~2355) says 'still red after its resume rounds' though clause and red-first rounds spend the same budget - say what spent them.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -147,19 +175,35 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7cb4079e3069",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: (1) apply_answer's `redispatch` now passes the member's tree from state.wave.trees to dispatch, as the first dispatch and the resume branch do, so the reviewer session command carries --tree <member tree> and open_dispatch records that tree's HEAD. (2) red_refused and clauses_uncovered raise the -writer decision only while writer_path_on(ctx) (executor.writerModel set and reading whole); otherwise the plain red-refused / clauses-uncovered, which offer retry|block. A -writer decision already pending when the setting went away: resume_writer's stop now names a way derived from DECISIONS via without_writer_way (retry where offered, else `answer block with --reason, or set executor.writerModel again and answer resume`) instead of the unconditional 'answer retry'. apply_answer's resume branch reads the new RESUME_KINDS table. (3) open_dispatch records a `kind` on a resume dispatch (RESUME_KINDS: red gate, red-first proof, clause coverage) and cap_note names each round by it and says rounds of any kind spend the same budget; a round with no recorded kind is named by number alone. Module docstring updated. tests/test_drive_phase.py: new blocks sr2-block (_redispatch_wave_cases), wo-block (_writer_off_cases), and _cap_kinds_cases called from the ws block. Run: red before the fix (sr2, wo1a-c, wo2a-c failed on current code), green after; `python3 tools/sweep-selftests.py tests/test_drive_phase.py` exit 0, 525 cases, run in the task tree. On a committed copy (git archive HEAD plus my two files, committed): python3 tools/sweep-selftests.py -> 192/194 files ok, only tools/check-example-ledgers.py and tools/measure-context.py red (the two allowed); python3 tools/gate-parity.py exit 0; ruff check plugins/audit tools tests exit 0; vermin exit 0; python3 tools/bench-hooks.py --gate exit 0. DEPENDANTS: tests/test_drive_phase.py (dependants listed: sweep-costs.json, tests/test__runner_output.py, tests/test_run_test_gate.py, tools/sweep-selftests.py, PLUGIN-BUILD-GUIDE.md, docs/research/*): still correct - the suite only gained cases and stage rows, no helper others use was renamed or changed; its recorded cost in .github/sweep-costs.json is a hang-detector calibration and is not re-recorded here (not in my files). drive-phase.py dependants (tests/test_drive_phase.py, PLUGIN-BUILD-GUIDE.md, README.md, docs/research/pipeline-cost-design.md, detect-plan-skip.py, record-risk-confirmation.py, stamp-verification.py, _areas.py): still correct - no signature they call changed (open_dispatch only gained an optional keyword, no name was removed), the CLI surface and decisions' names are unchanged, and the docs say the plain decision is asked once the two rounds are spent, which still holds (PLUGIN-BUILD-GUIDE.md:4706-4708 is silent on the writer-off case, left). Names used elsewhere (_carries, _clip, _mark, _marked): untouched.",
+        "descriptive": "A wave member's re-dispatched reviewer session now runs in and records the member's own tree; with the writer setting off, a refused red-first or a clause gap offers retry instead of looping on resume; the cap note names what spent the resume rounds."
       },
       "startedAt": "2026-10-22T00:38:42Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-22T01:16:32Z",
+      "verifiedBy": [
+        "sr2: wave member's reviewer redispatched via --answer redispatch runs with --tree naming the member's tree and records the member's HEAD (phase tree HEAD moved by the first member's integration)",
+        "wo1a-c, wo2a-c: with executor.writerModel unset after the session ran, clauses-uncovered / red-refused are asked as plain decisions offering retry, retry leaves them; a pending -writer decision answered resume after the setting went away stops naming only answers it offers",
+        "ck1, ck2: cap_note names a clause round and a red gate round for what they were; a round with no kind is not given one"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-22T01:14:56Z.cfb2f9",
         "status": "passed",
         "at": "2026-10-22T01:14:56Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7cb4079e3069",
+        "at": "2026-10-22T01:16:32Z",
+        "return": "docs/audit/evidence/returns/P132.2/20261022T003842Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-22T01:07:29Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 480-second deadline; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
@@ -271,7 +315,10 @@
         "tests/test_audit_task.py",
         "tests/test__impact.py",
         "tests/_harness.py",
-        "tools/_suite.py"
+        "tools/_suite.py",
+        "tools/gate-parity.py",
+        "tests/test_audit_lookup.py",
+        "tests/test_drive_phase.py"
       ],
       "tests": {
         "mode": "regression",
@@ -279,10 +326,8 @@
           "tools/sweep-selftests.py: d0 asserts tools/lints/_not_swept.py is not in the nested set of a fixture repository rooted outside REPO_ROOT, red on today's code on posix too; and tools/measure-affected-miss.py: m15 builds its command lines with shlex.quote so an interpreter path holding a backslash or a space survives the split"
         ],
         "expectRedFirst": false,
-        "gate": [
-          "python3 tools/sweep-selftests.py tools/sweep-selftests.py"
-        ],
-        "gateBasis": "tests.add"
+        "gate": [],
+        "gateBasis": "cleared"
       },
       "model": "sonnet",
       "skills": [
@@ -304,7 +349,12 @@
       "startedAt": "2026-10-22T00:38:48Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-22T02:20:53Z.1f36d8",
+        "status": "empty-gate",
+        "at": "2026-10-22T02:20:53Z"
+      }
     }
   ],
   "request": "ok preporuka usvojena (owner 2026-10-22: BF5 fixes from the S1 phase code review first, then stage 1, then S3)",

@@ -1203,23 +1203,40 @@ def _cases(check):
               "window says so, in words, instead of a bare zero of zero",
               "0 of 0 runs (CI) - gh answered" in quiet)
 
+        def _line(*argv):
+            # The tool splits these two options with `shlex.split` (POSIX rules),
+            # which eats the backslashes of a Windows path and breaks a path
+            # holding a space; quoting each word is what survives that split.
+            return " ".join(shlex.quote(a) for a in argv)
+
         out = io.StringIO()
         code = main(["--repo", fx["repo"], "--no-ci", "--sweep-cmd",
-                     "%s %s" % (sys.executable, os.path.join("tools", _py("fake_sweep"))),
+                     _line(sys.executable, os.path.join("tools", _py("fake_sweep"))),
                      "--affected-cmd",
-                     "%s %s --json --base {base}" % (
-                         sys.executable, os.path.join("tools", _py("fake_affected")))],
+                     _line(sys.executable, os.path.join("tools", _py("fake_affected")))
+                     + " --json --base {base}"],
                     out)
         check("m15 the command line runs the same measurement and exits zero when "
               "a commit was measured, nonzero when none was, and two on a usage "
               "error",
               code == 0 and "misses 1 of 1 commits (mutation); CI not asked"
               in out.getvalue()
-              and main(["--repo", fx["repo"], "--no-ci", "--sweep-cmd", sys.executable
-                        + " -c pass"], io.StringIO()) == 1
+              and main(["--repo", fx["repo"], "--no-ci", "--sweep-cmd",
+                        _line(sys.executable) + " -c pass"], io.StringIO()) == 1
               and main(["--commits", "0"], io.StringIO()) == 2
               and main(["--repo", tempfile.gettempdir(), "--no-ci"],
                        io.StringIO()) == 2)
+
+        # The words a command line must survive: a Windows interpreter path and
+        # one holding a space, round-tripped through the split the tool applies.
+        # The second clause is the other direction: joined WITHOUT quoting, the
+        # same words do not survive, so the first clause cannot pass vacuously.
+        _hard = ["C:\\Python 3\\python.exe", "tools\\fake sweep.txt", "plain"]
+        check("m15b a command line built with _line() survives the tool's own "
+              "split word for word, backslashes and spaces included: %r"
+              % (shlex.split(_line(*_hard)),),
+              shlex.split(_line(*_hard)) == _hard
+              and shlex.split(" ".join(_hard)) != _hard)
     finally:
         for r in roots:
             remove_tree(r)

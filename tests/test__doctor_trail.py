@@ -1755,7 +1755,7 @@ def _cases(check):
               and "run-whole" in _detail(rep, "full run")
               and repo["second"] in _detail(rep, "full run"))
     finally:
-        shutil.rmtree(full_whole, ignore_errors=True)
+        _harness.remove_tree(full_whole)
 
     # --- check_full_run: the newest run is the newest MOMENT -------------------
     # Two whole runs, each the answer for one phase: run-first (head = the first
@@ -1793,7 +1793,7 @@ def _cases(check):
               and M._run_age("2026-01-02T04:30:00+02:00")
               == M._run_age("2026-01-02T02:30:00Z"))
     finally:
-        shutil.rmtree(full_moment, ignore_errors=True)
+        _harness.remove_tree(full_moment)
 
     # --- check_full_run: the SAME phases every other surface asks about -------
     # The doctor, the status, the report and the panel all read this same
@@ -2400,7 +2400,7 @@ def _coupling_cases(check):
                   and not any("test_gadget" in (r.get("fix") or "")
                               for r in _rows(rep)))
         finally:
-            shutil.rmtree(root, ignore_errors=True)
+            _harness.remove_tree(root)
 
     # dcp5: not a git repository is a STATED basis, never a crash and never
     # read as "every path tracked".

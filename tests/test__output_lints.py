@@ -1670,7 +1670,9 @@ def _cases(check):
               % (_pn_gone,),
               _pn_gone == (["fresh.py"], None))
     finally:
-        shutil.rmtree(_pn_git, ignore_errors=True)
+        # A real repository: git's objects are read-only, which the plain
+        # `rmtree(ignore_errors=True)` cannot unlink on Windows.
+        _harness.remove_tree(_pn_git)
     _pn_fixture_row = [_w for _p, _w in L.PROSE_SCAN_EXEMPT
                        if _p == "tools/measure-affected-miss.py"]
     check("pn39 the miss-rate tool's fixtures have an exemption row whose reason "

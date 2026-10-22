@@ -2480,7 +2480,7 @@ def _dependants_cases(check):
           and any(ln.startswith("- docs/p29.md") for ln in mbody)
           and lcode == M.E_OK and len(listed) == count
           and len(set(ln.split(":")[0] for ln in listed)) == count)
-    shutil.rmtree(root, ignore_errors=True)
+    _harness.remove_tree(root)
 
 
 def _selftest():

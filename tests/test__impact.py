@@ -30,7 +30,6 @@ reads a file a task is about to change.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 import os
-import shutil
 import sys
 import time
 
@@ -129,7 +128,7 @@ def _cases(check):
     try:
         _run_cases(check, root)
     finally:
-        shutil.rmtree(os.path.dirname(root), ignore_errors=True)
+        _harness.remove_tree(os.path.dirname(root))
 
 
 def _run_cases(check, root):
@@ -280,7 +279,7 @@ def _js_cases(check):
               and len(quiet) == 1 and "import stem" in quiet[0]
               and "aliased or dynamic imports are not seen" in quiet[0])
     finally:
-        shutil.rmtree(os.path.dirname(root), ignore_errors=True)
+        _harness.remove_tree(os.path.dirname(root))
 
 
 def _ranking_cases(check):
@@ -295,7 +294,7 @@ def _ranking_cases(check):
               vias == ["import", "import", "path", "basename"]
               and [f["via"] for f in one] == ["import"])
     finally:
-        shutil.rmtree(os.path.dirname(root), ignore_errors=True)
+        _harness.remove_tree(os.path.dirname(root))
 
 
 def _budget_repo(count):
@@ -364,7 +363,7 @@ def _budget_cases(check):
               len(small["lines"]) == 3 and small["shown"] == 3
               and not any("declared files shown" in ln for ln in small["lines"]))
     finally:
-        shutil.rmtree(os.path.dirname(root), ignore_errors=True)
+        _harness.remove_tree(os.path.dirname(root))
 
 
 def _selftest():

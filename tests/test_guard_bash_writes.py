@@ -2264,7 +2264,6 @@ def _journal_origin_cases(check):
     anything else keeps the tamper notice. Every allow-shaped verdict below
     stands beside the tamper case that proves it did not open a hole.
     """
-    import shutil
     root = Path(_harness.fixture_root("bash-writes-journal-origin-"))
     repo = root / "repo"
     (repo / "docs" / "audit").mkdir(parents=True)
@@ -2465,7 +2464,7 @@ def _journal_origin_cases(check):
             os.environ.pop("CLAUDE_PROJECT_DIR", None)
         else:
             os.environ["CLAUDE_PROJECT_DIR"] = prev_env
-        shutil.rmtree(str(root), ignore_errors=True)
+        _harness.remove_tree(str(root))
 
 
 def _slot_size_cases(check):
@@ -2482,7 +2481,6 @@ def _slot_size_cases(check):
     of a tracked file is read off its diff, so an injected dirty list could not
     exercise it.
     """
-    import shutil
     root = Path(_harness.fixture_root("bash-writes-slot-size-"))
     repo = root / "repo"
     (repo / "src").mkdir(parents=True)
@@ -2592,7 +2590,7 @@ def _slot_size_cases(check):
             os.environ.pop("CLAUDE_PROJECT_DIR", None)
         else:
             os.environ["CLAUDE_PROJECT_DIR"] = prev_env
-        shutil.rmtree(str(root), ignore_errors=True)
+        _harness.remove_tree(str(root))
 
 
 def _copy_outcome_cases(check):

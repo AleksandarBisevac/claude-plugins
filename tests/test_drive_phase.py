@@ -7545,7 +7545,7 @@ def _follower_retire_cases(check):
         check("fr3 retiring a member hands the check the follower paths its "
               "integration wrote: %r" % (seen,), seen == [["map.md"]])
     finally:
-        shutil.rmtree(base, ignore_errors=True)
+        _harness.remove_tree(base)
 
 
 # --- an undeclared path only a browser recipe writes -----------------------------
