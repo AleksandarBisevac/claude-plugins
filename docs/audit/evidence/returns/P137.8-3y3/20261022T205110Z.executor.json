@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tools/sweep-selftests.py tests/test__refs.py tools/gate-parity.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+    "at": "2026-10-22T20:55:30Z"
+  },
+  "outcome": {
+    "technical": "tools/sweep-selftests.py only. R22: grade() with code None now keeps the kill exemption for the working-directory and home-directory findings only; findings starting with the checkout .claude channel label are still reported, in the form '<output>; and wrote outside the fixtures it makes for itself: checkout .claude: ADDED stray.txt'. The grade() docstring was updated to say so. New case cw14b: code None with debris=['checkout .claude: ADDED stray.txt'] names stray.txt once beside 'did not finish within 9s'; with working directory and home directory leftovers alongside, only the .claude write is named. Red proof (scratch copy under $TMPDIR, since removed): mutation A, the None branch reverted to the original bare return, gave 'FAIL cw14b ...' (SELFTEST FAILED: 124/125); mutation B, the None branch accusing all debris, gave FAIL cw14 and FAIL cw14b (123/125). R23: new case cw15b drives main() with tempfile.tempdir swapped to a dir with a .git above it: asserts exit 2 and stderr containing 'refusing to start - the temp directory'; and a clean temp dir, which gets past that refusal to the next, cheap one (an unknown suite name) rather than running a sweep, asserting the refusal text is absent and 'is not a suite this sweep covers' is present. tempfile.tempdir and sys.stderr are restored in finally. Red proof: mutation C, main()'s scratch_refusal call replaced with `refusal = None`, gave 'FAIL cw15b main() exits 2 ...' (SELFTEST FAILED: 124/125) with cw15 still PASS, which is the gap this closes. Fixture names carry no .py basename. Gate: `python3 tools/sweep-selftests.py tools/sweep-selftests.py tests/test__refs.py tools/gate-parity.py` run in the worktree with no pipe (output redirected to a file, exit read directly): exit 0, '3/3 files ok, 510 cases' (sweep-selftests 125, test__refs 292, gate-parity 93). `--selftest` alone: exit 0, 125/125. Dependants (the 42 files listed for tools/sweep-selftests.py and its names budget_line, coverage_findings, locale_decision, named_suites): still correct. None of those names was edited; grade() keeps its signature and its output for every input except code None with a checkout .claude finding, which the sweep produces only for a run that wrote there and then timed out; main() is unchanged. The files that read the sweep's output, such as the CI workflow and the cost table, see the same row shape (path, ok, why, cases, output).",
+    "descriptive": "A suite that wrote into the checkout's .claude/ and then timed out is now named for the write, and the sweep's refusal to start with a temp dir inside a checkout is pinned through main()."
+  },
+  "testsAdded": [
+    "cw14b: grade() with code None names a checkout .claude finding and only that one, dropping the cwd and home leftovers",
+    "cw15b: main() exits 2 with the refusal text for a temp dir under a .git, and a clean temp dir gets past it to the next refusal"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:9ba0906ae18c9423941707f9274a4c6d9bbfa55a60de6d7fb6626816975d85df\",\"dirtyDigest\":\"sha256:5c51a1bd1b36b41af28a116b9a27a391565cfc4d383b70bb14492fedbfb7923f\",\"dirtyPaths\":{\"tools/sweep-selftests.py\":\"95aceb31f5699180\"},\"head\":\"794aa0d8\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/sweep-selftests.py\"],\"scopeDigest\":\"sha256:228c509ec4250f3cf114811d2b250386499d6448c364c3ae8a161e5a01ce130a\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

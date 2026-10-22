@@ -1,0 +1,34 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__scoped_commit.py tests/test_drive_phase.py tests/test_commit_task_work.py tests/test_audit_task.py tests/test__deps.py (run in the worktree, no pipe)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-22T21:17:05Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__scoped_commit.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 480-second deadline; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "_scoped_commit.py: _is_tracked replaced by tracking() returning TRACKED/UNTRACKED/UNKNOWN; plugin_owned_rels(project, git_root, when_unknown) takes a REQUIRED direction (UNKNOWN_REFUSES leaves an unknown config unplaced, UNKNOWN_PROTECTS places it; any other value raises ValueError; no default). undeclared_changes (the commit and the close) passes UNKNOWN_REFUSES, so behaviour there is unchanged: a config git cannot place is an undeclared change. drive-phase.py plugin_owned_paths (the set-aside's protection list) passes UNKNOWN_PROTECTS, so settle_aside neither reverts nor os.removes it and relays 'is plugin-owned state, which no set-aside reverts'. Tests: tests/test__scoped_commit.py gains sc-ua12 (allow: known answers ignore the direction), sc-ua13 (placement under a git that cannot answer, both directions, tracked and untracked config), sc-ua14 (direction required and validated), sc-ua15 (commit step attempt_refusal with git blind refuses the config; with git able it is left out), sc-ua16 (close _uncommitted_leftovers likewise), sc-ua17 (tree-wide AST scan: plugin_owned_rels asked in exactly two places, each naming its direction; flipped constant and missing argument both read as such); sc-ua9 updated to pass the direction. tests/test_drive_phase.py gains xs6b (unit placement plus whole drive: writer edits the committed config while ls-files fails; config bytes unchanged, no patch noted, task stays in_progress, refusal says plugin-owned state no set-aside reverts). sc-ua10/11 (result_scan over the commit and close readers) needed no change: neither reader calls plugin_owned_rels, they reach it only through undeclared_changes. Gate: python3 tools/sweep-selftests.py tests/test__scoped_commit.py tests/test_drive_phase.py tests/test_commit_task_work.py tests/test_audit_task.py tests/test__deps.py run in the worktree without a pipe: exit 0, 5/5 files ok. Dependants: commit-task-work.py and audit-task.py reach the rows only via undeclared_changes (unchanged refusing direction, still correct); close-phase, commit-audit-state, commit-manifest-index, _live_copy do not call plugin_owned_rels (grep over plugins/tests/tools/docs: three call sites total); tests/test_commit_task_work.py, test_audit_task.py, test__deps.py green; no doc names _is_tracked or the old signature. In scratch copies the other fm-block/fi-block/locale fails under the drive-phase mutation run are copy-environment noise, not read as part of the proof. Note: the submit command runs from the project tree, which does not hold these bytes until the driver carries them in.",
+    "descriptive": "When git cannot say whether the config is tracked, the writer's set-aside now protects it (never reverts or deletes it) while the commit and the close still refuse it, with the direction an explicit required argument."
+  },
+  "testsAdded": [
+    "sc-ua12..sc-ua17 in tests/test__scoped_commit.py: tri-state placement in both directions, commit and close readers with git unable to answer, required-direction argument, tree-wide direction scan",
+    "xs6b in tests/test_drive_phase.py: set-aside with git unable to answer neither reverts nor deletes the config and says why"
+  ],
+  "casesAdded": [
+    [
+      "sc-ua12",
+      "sc-ua13",
+      "sc-ua14",
+      "sc-ua15",
+      "sc-ua16",
+      "sc-ua17",
+      "xs6b"
+    ]
+  ],
+  "claims": "claims:\n1 _scoped_commit.py plugin_owned_rels (when_unknown validated, UNKNOWN_REFUSES leaves the row out, UNKNOWN_PROTECTS keeps it) and tracking(); drive-phase.py plugin_owned_paths passes UNKNOWN_PROTECTS; the docstring claim is exercised by sc-ua13 and xs6b\n2 M1-M6 mutations landed and went red as listed in redFirst.basis; allow case sc-ua12 red under M3/M4; restored by discarding the scratch copies, the worktree was never mutated\n3 grep -rn '_is_tracked\\|plugin_owned_rels(' plugins tests tools *.md: three call sites (shared function, set-aside, definition) all name a direction; sc-ua17 pins it tree-wide\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded\n6 n/a - no guard reading a command\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:604804b36a2f5b267c65bf39fe24c81adba7d0ec9f1d7c6601ade605de7babe8\",\"dirtyDigest\":\"sha256:90217f5a9acc938ed7137c15287cf9e558184cbd78a733b5f2c6d09e4e459db7\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_scoped_commit.py\":\"05df434143de180a\",\"plugins/audit/scripts/governance/drive-phase.py\":\"14715638326c3a3c\",\"tests/test__scoped_commit.py\":\"524759cb0c20951f\",\"tests/test_drive_phase.py\":\"330bc353ec6a2302\"},\"head\":\"794aa0d8\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_scoped_commit.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test__scoped_commit.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:e446ac121779d830a157c174bcc2e1f369eb6e2360a2471d16a3bf8573516edc\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

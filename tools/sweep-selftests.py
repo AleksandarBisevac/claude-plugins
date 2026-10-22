@@ -1218,8 +1218,9 @@ def grade(rel_path, code, output, debris=()):
         left. The finding used to wait behind the exit code, so the first run
         taught nothing about it and a leak surfaced one fix later. The line names
         WHICH directory it landed in. A run that never finished (`code is None`)
-        is not accused: the fixtures its kill left are the kill's, not the
-        suite's.
+        is not accused of the cwd and home fixtures its kill left - those are the
+        kill's, not the suite's - but a write into the checkout's `.claude/` is
+        still named, because no kill produces one.
       * every file must exit 0 AND print the contract. This is the rule
         `verify.sh` did not have, and the reason a suite could be deleted from a
         file without anything going red locally.
@@ -1236,6 +1237,13 @@ def grade(rel_path, code, output, debris=()):
                 "output": output}
 
     if code is None:
+        # The kill litters the cwd and the home it was handed, and only those: no
+        # kill writes into the checkout's `.claude/`, so that channel's findings
+        # are still the suite's and are named beside why it never finished.
+        checkout = [f for f in debris if f.startswith(CLAUDE_CHANNEL + ": ")]
+        if checkout:
+            return row(False, "%s; and wrote outside the fixtures it makes for "
+                              "itself: %s" % (output, "; ".join(checkout)))
         return row(False, output)
     if code != 0 and debris:
         return row(False, "exited %d; and wrote outside the fixtures it makes for "
@@ -2458,6 +2466,26 @@ def _claude_watch_cases(check):
           and g_leak["why"].startswith("wrote outside the fixtures")
           and g_late["why"] == "did not finish within 9s")
 
+    # The kill exemption belongs to the two channels a kill litters (the cwd and
+    # the home it was handed); no kill writes into the checkout's `.claude/`, so a
+    # suite that wrote there and THEN hung is still named, and only that finding.
+    g_hung = grade("tests/x", None, "did not finish within 9s",
+                   debris=["checkout .claude: ADDED stray.txt"])
+    g_hung_mixed = grade("tests/x", None, "did not finish within 9s",
+                         debris=["working directory: left behind: fixture",
+                                 "checkout .claude: ADDED stray.txt",
+                                 "home directory: left behind: dot-probe"])
+    check("cw14b a run that never finished but wrote into the checkout's .claude/ "
+          "is red and NAMES the write, once, beside why it never finished; with "
+          "the kill's own cwd and home leftovers alongside, only the .claude/ "
+          "write is named: %r / %r" % (g_hung, g_hung_mixed),
+          not g_hung["ok"] and g_hung["why"].count("ADDED stray.txt") == 1
+          and "did not finish within 9s" in g_hung["why"]
+          and not g_hung_mixed["ok"]
+          and g_hung_mixed["why"].count("ADDED stray.txt") == 1
+          and "left behind" not in g_hung_mixed["why"]
+          and "dot-probe" not in g_hung_mixed["why"])
+
     # -- cw15: the sweep will not start where its scratch is inside a checkout ---
     ref_box = tempfile.mkdtemp(prefix="sweep-ref-")
     try:
@@ -2478,6 +2506,38 @@ def _claude_watch_cases(check):
           % (inside, outside, live_tmp),
           inside is not None and "co" in inside and "tmp" in inside
           and ".git" in inside and outside is None and live_tmp is None)
+
+    # The refusal is only worth anything if `main` ASKS it. `scratch_refusal` is
+    # pinned above on its own; this drives `main` with the temp directory swapped
+    # (what `tempfile.gettempdir()` answers), so a `main` that stopped calling it
+    # turns red here. The clean directory is shown to get PAST the refusal by a
+    # cheaper refusal further down (an unknown suite name), not by running a sweep.
+    ref_main_box = tempfile.mkdtemp(prefix="sweep-refmain-")
+    ref_main_was = tempfile.tempdir
+    ref_main_err = sys.stderr
+    ref_main = {}
+    try:
+        os.makedirs(os.path.join(ref_main_box, "co", ".git"))
+        os.makedirs(os.path.join(ref_main_box, "co", "tmp"))
+        os.makedirs(os.path.join(ref_main_box, "plain", "tmp"))
+        for ref_name in ("co", "plain"):
+            tempfile.tempdir = os.path.join(ref_main_box, ref_name, "tmp")
+            sys.stderr = io.StringIO()
+            ref_main[ref_name] = (main(["no-such-suite-for-the-refusal-case"]),
+                                  sys.stderr.getvalue())
+    finally:
+        sys.stderr = ref_main_err
+        tempfile.tempdir = ref_main_was
+        remove_tree(ref_main_box)
+    check("cw15b main() exits 2 with 'refusing to start - the temp directory' when "
+          "its temp directory has a .git above it, and a temp directory with none "
+          "does not take that exit - it reaches the next refusal (an unknown suite "
+          "name) instead: %r" % (ref_main,),
+          ref_main["co"][0] == 2
+          and "refusing to start - the temp directory" in ref_main["co"][1]
+          and "is not a suite this sweep covers" not in ref_main["co"][1]
+          and "refusing to start - the temp directory" not in ref_main["plain"][1]
+          and "is not a suite this sweep covers" in ref_main["plain"][1])
 
     # -- cw16: the three documents that describe the watched set say it ----------
     docs_text = {}

@@ -29,24 +29,30 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_scoped_commit.py:1114-1119; plugins/audit/scripts/manifest/audit-task.py:6269-6295",
         "issue": "The close now leaves out every PLUGIN_OWNED_IN_CLAUDE row, including the plugin's own `.claude/audit.config.json` and `.claude/.gitignore`, whether git tracks them or not. A task that edits a TRACKED config without declaring it used to be refused by the close as an undeclared change made during the attempt. It is now named in an informational line and the close goes ahead with that edit left uncommitted. The commit step already did the same (ctw-at7 pins the config as left out), so the two readers agree, which is the point of the task. But the new lo-po cases pin only the restore point; none pins a tracked config edit, so the widening is unexamined.",
-        "resolution": "Keep the commit and the close in agreement, since exempting only untracked config in the close alone would bring back the divergence this task removes. Add a case in test_audit_task for a tracked `.claude/audit.config.json` edited during the attempt, so the behaviour is pinned either way. If the owner wants a tracked config edit refused, change the table row or the shared function once so both readers follow.",
-        "fixTask": "P137.7-3y3"
+        "resolution": "fixed in P137.7-3y3 (794aa0d817c8): Keep the commit and the close in agreement, since exempting only untracked config in the close alone would bring back the divergence this task removes. Add a case in test_audit_task for a tracked `.claude/audit.config.json` edited during the attempt, so the behaviour is pinned either way. If the owner wants a tracked config edit refused, change the table row or the shared function once so both readers follow.",
+        "fixTask": "P137.7-3y3",
+        "commit": "794aa0d817c8",
+        "status": "fixed"
       },
       {
         "id": "P137-R2",
         "severity": "low",
         "file": "tests/test__scoped_commit.py:486-545 (sc-ua5, sc-ua6)",
         "issue": "The comment says the scan is 'on what the readers MAY NOT NAME rather than on the instance that was found', and the task asked for the invariant, not the instance. What sc-ua5 does is a name blacklist: plugin_owned_under, PLUGIN_OWNED_IN_CLAUDE, attempt_strays and logs_dir. A reader that hardcodes `.claude/audit-backups`, keeps its own `under_any` list, or imports the table under another alias passes it (an `ImportFrom` alias is not a Name node). sc-ua6 only counts calls to `undeclared_changes`. It does not stop a reader from filtering the result again with a skip list of its own. The comment and docstring promise more than the check delivers.",
-        "resolution": "Either state the limit in the comment ('names the three primitives that were found; a differently spelled skip list is not seen') or widen the check to something the readers share. For example, assert that each reader has no local `skip`/`bookkeeping` list beyond its documented bookkeeping argument, and that it does not call `status_paths` or `under_any` itself.",
-        "fixTask": "P137.7-3y3"
+        "resolution": "fixed in P137.7-3y3 (794aa0d817c8): Either state the limit in the comment ('names the three primitives that were found; a differently spelled skip list is not seen') or widen the check to something the readers share. For example, assert that each reader has no local `skip`/`bookkeeping` list beyond its documented bookkeeping argument, and that it does not call `status_paths` or `under_any` itself.",
+        "fixTask": "P137.7-3y3",
+        "commit": "794aa0d817c8",
+        "status": "fixed"
       },
       {
         "id": "P137-R3",
         "severity": "low",
         "file": "tests/test__scoped_commit.py:558-569 (sc-ua8)",
         "issue": "The tree-wide scan passes on `outside == []` without counting the files it read. If the `os.walk(_output.SCRIPTS_DIR)` found no `.py` (a wrong anchor, or a skipped directory), the check would read as 'nobody else reads plugin_owned_under' and stay green. That is a filter narrowing to nothing, the shape the repo's no-silent-pass rule names. sc-ua7 shows the per-source scan can fail, but not that this walk reaches files.",
-        "resolution": "Collect the scanned names and assert the walk reached the home modules (`_manifest_io.py` and `_scoped_commit.py` among the files read) and more than a handful of files. Put the count in the check text so a narrowed walk goes red.",
-        "fixTask": "P137.7-3y3"
+        "resolution": "fixed in P137.7-3y3 (794aa0d817c8): Collect the scanned names and assert the walk reached the home modules (`_manifest_io.py` and `_scoped_commit.py` among the files read) and more than a handful of files. Put the count in the check text so a narrowed walk goes red.",
+        "fixTask": "P137.7-3y3",
+        "commit": "794aa0d817c8",
+        "status": "fixed"
       },
       {
         "id": "P137-R4",
@@ -218,14 +224,16 @@
         "severity": "med",
         "file": "tools/sweep-selftests.py:1237-1241 (grade) with 1634-1636 (sweep)",
         "issue": "contradicts task clause (P137-R13, 'a write there is a finding naming the suite' even when the suite failed; task title 'names it even when the suite also failed'): grade() now reports the finding beside a non-zero exit, but `if code is None: return row(False, output)` still runs first, so a suite that wrote into the checkout's .claude/ and then TIMED OUT keeps its attributed lines in by_suite and they are dropped: not in the suite's row, not in the loose row. R13 named 'or the raw timeout text' explicitly. The docstring reasons 'the fixtures its kill left are the kill's, not the suite's', which is true of the cwd and home channels and false of a write into the checkout's .claude/, which no kill makes. cw14's g_late only drives a working-directory finding, so the checkout channel on a timeout is unpinned. The executor's descriptive claim ('names it even when the suite also failed') overstates the diff for this case.",
-        "resolution": "In grade() let the kill exemption apply only to the cwd/home findings: for code None, still append findings whose channel is CLAUDE_CHANNEL ('timed out; and wrote into the checkout .claude: ...'). Add a cw14 case: code None with debris=['checkout .claude: ADDED stray.txt'] must name stray.txt."
+        "resolution": "In grade() let the kill exemption apply only to the cwd/home findings: for code None, still append findings whose channel is CLAUDE_CHANNEL ('timed out; and wrote into the checkout .claude: ...'). Add a cw14 case: code None with debris=['checkout .claude: ADDED stray.txt'] must name stray.txt.",
+        "fixTask": "P137.8-3y3"
       },
       {
         "id": "P137-R23",
         "severity": "med",
         "file": "tools/sweep-selftests.py:1971-1974 (main) and 2463-2480 (cw15)",
         "issue": "The refusal-to-start behaviour that tests.add names ('a temp dir inside a checkout is refused') is pinned only on the helper. cw15 calls scratch_refusal() directly; nothing runs main() or reads its exit code, so deleting the four lines in main() that call it leaves every case, and the gate, green. The documents (CONTRIBUTING.md paragraph, _harness.py docstring, cw16) all say the sweep 'refuses to start'. Shape: an assertion the behaviour (the call and `return 2`) never reaches.",
-        "resolution": "Add a case that drives main() (or a thin wrapper taking tmp) with a temp dir containing a .git above it and asserts exit 2 plus the 'refusing to start' text on stderr, and a clean temp dir that does not take that exit."
+        "resolution": "Add a case that drives main() (or a thin wrapper taking tmp) with a temp dir containing a .git above it and asserts exit 2 plus the 'refusing to start' text on stderr, and a clean temp dir that does not take that exit.",
+        "fixTask": "P137.8-3y3"
       },
       {
         "id": "P137-R24",
@@ -253,7 +261,8 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_scoped_commit.py:1093-1106 (read by plugins/audit/scripts/governance/drive-phase.py:3520-3529,3702)",
         "issue": "`_is_tracked` returns True when git cannot answer, which is the loud direction for the commit and the close (the config counts as an undeclared change and the verb refuses; nothing is written) but the unsafe one for the set-aside. There `plugin_owned_rels` is read as a PROTECTION list (`plugin_owned_paths` -> `settle_aside`: 'Nothing is reverted ... when one of paths is plugin-owned'). A config wrongly judged tracked is not in that list, so it is reverted by `git checkout HEAD` or, when HEAD does not hold it, deleted by `os.remove` (drive-phase.py:3685-3691). Reaching that needs `ls-files` to fail (or `plan_to_git` to return None) while `ls-tree` and `checkout` succeed, so it is narrow, and the patch keeps the bytes; but one function now serves three readers with opposite safe directions and the diff chose the direction by the two that refuse. `plan_to_git` None (outside the checkout) is also read as tracked, though nothing outside the checkout is listed by status in the first place. Judgement from reading; sc-ua9's `blind_rows` pins only the 'not exempted' side and no case pins the set-aside side of a failed answer.",
-        "resolution": "Return a tri-state from `_is_tracked` (tracked / untracked / unknown) and let `plugin_owned_rels` place the config for the refusing readers when unknown, while `plugin_owned_paths` treats unknown as owned (protected), or have set_aside refuse to revert a path whose tracked state is unknown. Add a case with git unavailable for the set-aside reader."
+        "resolution": "Return a tri-state from `_is_tracked` (tracked / untracked / unknown) and let `plugin_owned_rels` place the config for the refusing readers when unknown, while `plugin_owned_paths` treats unknown as owned (protected), or have set_aside refuse to revert a path whose tracked state is unknown. Add a case with git unavailable for the set-aside reader.",
+        "fixTask": "P137.9-3y3"
       },
       {
         "id": "P137-R28",
@@ -263,7 +272,7 @@
         "resolution": "Add tests/test_drive_phase.py to the task's files and to tests.gate (retarget --gate-set) so the dependant suite is part of the recorded gate, or record the widening as a scope note on the task."
       }
     ],
-    "outcome": "[findings: 28 - 0 high, 6 med, 22 low; 13 with a recorded fix commit]"
+    "outcome": "[findings: 28 - 0 high, 6 med, 22 low; 16 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -707,7 +716,7 @@
     {
       "id": "P137.7-3y3",
       "title": "The close counts a tracked audit.config.json edit as the task's, and the one-reader lint is structural and counts what it scanned",
-      "status": "in_progress",
+      "status": "done",
       "description": "",
       "files": [
         "plugins/audit/scripts/governance/_scoped_commit.py",
@@ -741,14 +750,19 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "794aa0d817c8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Retry. (1) gb1: _scoped_commit._is_tracked now sends its git-root-relative path through hooks _config.plan_to_git(rel, git_root, git_root) (entry of a project that is the top) before git ls-files; None (outside the checkout) reads as tracked, the loud side. No GIT_PATH_BASE_EXEMPT row added: tools/lints/_deps.py is outside the task and the plan gate refused the edit, and the routing makes it unnecessary; the lint's fixpoint sees _is_tracked reach the pair. (2) xs6: the set-aside's plugin_owned_rels deliberately leaves a TRACKED audit.config.json out (a task's edit of a project file is an undeclared change, set aside like any other, same answer as the commit and the close), so the right fix is the fixture: xs6 now builds its own repo (xs-owned), asks plugin_owned_paths once with the config tracked (expects only audit-backups/plan.json and .claude/.gitignore) and once after git rm --cached (expects the config as well), so both directions are pinned. Gate: python3 tools/sweep-selftests.py tests/test__scoped_commit.py tests/test_audit_task.py tests/test_commit_task_work.py tests/test_drive_phase.py tests/test__deps.py tests/test__output_lints.py exited 0, 6/6 files ok, 2267 cases (test__deps 254, test__output_lints 169, test__scoped_commit 54, test_audit_task 1110, test_commit_task_work 138, test_drive_phase 542); ruff check plugins/audit tests tools exit 0. Dependants: drive-phase.py unchanged, its set-aside asks plugin_owned_rels and now agrees with the commit and the close (xs6 pins it); commit-task-work.py, audit-task.py, _live_copy.py, close-phase.py, commit-audit-state.py, commit-manifest-index.py unchanged and still correct (they do not call _is_tracked; plugin_owned_rels' answer is the same as attempt 1); test files test_audit_task.py, test_commit_task_work.py, test__scoped_commit.py unchanged this retry.",
+        "descriptive": "A tracked audit.config.json edit is the task's undeclared change at commit, close and set-aside alike; the one-reader lint is structural and counts what it scanned; _is_tracked now goes through the git-path door and xs6 pins both readings of the config."
       },
       "startedAt": "2026-10-22T20:24:06Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-22T20:50:07Z",
+      "verifiedBy": [
+        "sc-ua9/ctw-at10/lo-po4: a tracked audit.config.json edit is undeclared at the commit, the close and the shared answer (lo-po5 and ctw-at7 the untracked twins)",
+        "sc-ua10/sc-ua11: structural result_scan of the readers, red twin mutating the real commit-task-work source",
+        "sc-ua8: the scan counts what it reached and fails on zero files, below the floor, or a missed home module",
+        "xs6 (extended): set-aside placement with the config tracked and untracked"
+      ],
       "notes": [
         {
           "at": "2026-10-22T19:08:12Z",
@@ -781,6 +795,141 @@
         "runId": "2026-10-22T20:50:05Z.82d7d0",
         "status": "passed",
         "at": "2026-10-22T20:50:05Z"
+      },
+      "intentCheck": {
+        "answer": "cannot-tell",
+        "commit": "794aa0d817c8",
+        "at": "2026-10-22T20:50:07Z",
+        "return": "docs/audit/evidence/returns/P137.7-3y3/20261022T202406Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-22T20:34:41Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__scoped_commit.py tests/test_audit_task.py tests/test_commit_task_work.py` in a throwaway tree at HEAD exited 1 with failing cases sc-ua9 (house FAIL), lo-po4 (house FAIL), ctw-at10 (house FAIL), tests/test__scoped_commit.py: exited 1 (house FAIL) and 2 more, but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 137/138 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P137.8-3y3",
+      "title": "A sweep names a checkout .claude/ write after a timeout too, and its refusal to start is pinned through main()",
+      "status": "in_progress",
+      "description": "",
+      "files": [
+        "tools/sweep-selftests.py",
+        "tools/sweep-selftests.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/sweep-selftests.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-22T20:51:10Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-22T20:50:55Z",
+          "text": "scope: tools/sweep-selftests.py, every path the finding(s) P137-R22, P137-R23 name"
+        },
+        {
+          "at": "2026-10-22T20:50:55Z",
+          "text": "no suite: tools/sweep-selftests.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-10-22T20:50:55Z",
+          "text": "no tests.add clause for P137-R22, P137-R23: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P137-R22",
+        "P137-R23"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-22T21:18:01Z.f31689",
+        "status": "passed",
+        "at": "2026-10-22T21:18:01Z"
+      }
+    },
+    {
+      "id": "P137.9-3y3",
+      "title": "When git cannot say whether the config is tracked, the set-aside protects it and the commit and close refuse it",
+      "status": "in_progress",
+      "description": "",
+      "files": [
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test__scoped_commit.py",
+        "tests/test_drive_phase.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test__scoped_commit.py",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__scoped_commit.py: Return a tri-state from `_is_tracked` (tracked / untracked / unknown) and let `plugin_owned_rels` place the config for the refusing readers when unknown, while ..."
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__scoped_commit.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-22T20:51:13Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-22T20:51:03Z",
+          "text": "scope: plugins/audit/scripts/governance/_scoped_commit.py, plugins/audit/scripts/governance/drive-phase.py, every path the finding(s) P137-R27 name"
+        },
+        {
+          "at": "2026-10-22T20:51:03Z",
+          "text": "scope: tests/test__scoped_commit.py, the suite that tests plugins/audit/scripts/governance/_scoped_commit.py (python: its import closure reaches plugins/audit/scripts/governance/_scoped_commit.py)"
+        },
+        {
+          "at": "2026-10-22T20:51:03Z",
+          "text": "scope: tests/test_drive_phase.py, the suite that tests plugins/audit/scripts/governance/drive-phase.py (python: it hands drive-phase.py to a loader through a module constant)"
+        }
+      ],
+      "fixes": [
+        "P137-R27"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-22T21:25:35Z.50df31",
+        "status": "passed",
+        "at": "2026-10-22T21:25:35Z"
       }
     }
   ],
