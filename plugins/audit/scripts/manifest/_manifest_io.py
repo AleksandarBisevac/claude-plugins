@@ -1333,6 +1333,35 @@ def checkout_of(path):
 # beside the plan: a `<manifest>.bak-<UTC>` next to the plan reads as a second plan
 # and nothing ignores that name.
 BACKUP_DIR_NAME = "audit-backups"
+GITIGNORE_NAME = ".gitignore"
+CONFIG_NAME = "audit.config.json"
+
+# EVERY PATH UNDER A `.claude/` THE PLUGIN WRITES FOR ITS OWN REASONS, as
+# `(name, why)`: the one table the writers' constants above and the commit check
+# both read. A task commit asks what changed during an attempt that no
+# in_progress task declares; these are changes no task made - a restore point a
+# layout change parked, the ignore line that hides it, the configuration file a
+# session or the panel creates - so that check names them as plugin-owned and
+# leaves them out of the commit instead of refusing the close for them. A path
+# the plugin starts writing under `.claude/` belongs here, beside the writer
+# that creates it; the check reads the table and has no list of its own. Nothing
+# forces a new writer to add its row: the `ctw-at9` case pins the restore-point
+# writer's paths only, and the panel's own files stay out because git
+# ignores them.
+PLUGIN_OWNED_IN_CLAUDE = (
+    (BACKUP_DIR_NAME, "a restore point the plugin parked before a layout change"),
+    (GITIGNORE_NAME, "the ignore lines the plugin adds for its restore points "
+                     "and panel files"),
+    (CONFIG_NAME, "the plugin's own configuration"),
+)
+
+
+def plugin_owned_under(claude_dir):
+    """`[(absolute path, why), ...]` - the table's rows placed under `claude_dir`.
+
+    A directory row is the directory: everything under it is the plugin's."""
+    return [(os.path.join(claude_dir, name), why)
+            for name, why in PLUGIN_OWNED_IN_CLAUDE]
 
 
 def ensure_claude_ignored(claude_dir, rows):
@@ -1345,7 +1374,7 @@ def ensure_claude_ignored(claude_dir, rows):
     commits. Returns True when every pattern is in place, False when any could not
     be ensured - the caller warns then and does not claim."""
     try:
-        gi = os.path.join(claude_dir, ".gitignore")
+        gi = os.path.join(claude_dir, GITIGNORE_NAME)
         try:
             with open(gi, "r", encoding="utf-8") as fh:
                 content = fh.read()

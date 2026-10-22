@@ -1045,6 +1045,7 @@ AUDITED_EXEMPTIONS = {
     # does not read the sentence, so this is the weaker of the two strengths.
     "SCHEMA_EXEMPTIONS": ("live", "schema_coverage"),
     "NOT_A_GATE": ("live", "coverage"),
+    "PLUGIN_OWNED_IN_CLAUDE": ("live", "tests/test_commit_task_work.py ctw-at9"),
     "ALLOW_EXEMPT": ("live", "prove"),
     "PROSE_SCAN_EXEMPT": ("live", "prose_number_claims"),
     "CITATION_SCAN_EXEMPT": ("live", "register_citation_violations"),

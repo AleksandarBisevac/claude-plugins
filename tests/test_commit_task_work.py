@@ -2269,6 +2269,84 @@ def _attempt_cases(check, repos):
           scode == 0 and code == 1 and "src/img.png" in text
           and "bash-write guard" not in text)
 
+    # THE PLUGIN'S OWN STATE. A layout change parks a restore point under
+    # `.claude/audit-backups/` and adds the ignore line for it to
+    # `.claude/.gitignore`; neither is anything a session's tool call wrote,
+    # and neither is the task's edit. One fixture holds every plugin-owned
+    # shape beside an ordinary undeclared source file, so the refusal can be
+    # seen to name the ordinary file ALONE (the over-fire mutation: a table
+    # that waves through everything under `.claude/` or a refusal that lists
+    # the plugin's paths too), and the close that follows must carry the
+    # task's file, leave the plugin's paths out of the commit and name each.
+    fx = repos.make()
+    _restartable(fx)
+    scode, said = _start(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # this attempt's work\n")
+    claude = os.path.join(fx["root"], ".claude")
+    backups, _ignored = _mio.ensure_backup_dir(fx["manifest"])
+    restore = os.path.join(backups, "audit-plan.json.bak-20261022T100219Z")
+    _write(restore, "{}\n")
+    config_path = os.path.join(claude, "audit.config.json")
+    held_config = _mio.read_json(config_path)
+    held_config["executor"] = {"waveWidth": 3}
+    _write(config_path, json.dumps(held_config, indent=2) + "\n")
+    _write(os.path.join(fx["root"], "src", "img.png"), "copied in\n")
+    _gate(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    held = _head(fx)
+    os.remove(os.path.join(fx["root"], "src", "img.png"))
+    code2, text2 = _run(fx)
+    carried = _carried(fx, _head(fx))
+    check("ctw-at7 a restore point under audit-backups/, the .gitignore line "
+          "that hides it and a config file created mid-attempt do not refuse "
+          "the close: an undeclared ordinary file still refuses, by name and "
+          "alone; removed, the task's own file is committed, none of the "
+          "plugin's paths is, and each is named as plugin-owned and left out: "
+          "%r" % ((scode, code, text[:500], code2, text2[:700], carried),),
+          scode == 0 and code == 1 and "src/img.png" in text
+          and ".claude" not in [ln for ln in text.splitlines()
+                                if ln.startswith("[commit-task-work] REFUSED")][0]
+          and held == before and code2 == 0 and OWNED in carried
+          and not [p for p in carried if p.startswith(".claude/")]
+          and ".claude/.gitignore" in text2
+          and ".claude/audit.config.json" in text2
+          and "plugin-owned" in text2)
+
+    # The a2 state: the ignore line had been reverted, so the restore point
+    # itself is an untracked file git lists - and is named, not refused.
+    fx = repos.make()
+    _restartable(fx)
+    scode, said = _start(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 2  # this attempt's work\n")
+    backups = os.path.join(fx["root"], ".claude", _mio.BACKUP_DIR_NAME)
+    os.makedirs(backups)
+    restore_rel = ".claude/%s/audit-plan.json.bak-20261022T100219Z" % (
+        _mio.BACKUP_DIR_NAME,)
+    _write(os.path.join(fx["root"], restore_rel), "{}\n")
+    _gate(fx)
+    code, text = _run(fx)
+    carried = _carried(fx, _head(fx))
+    check("ctw-at8 a restore point git lists as untracked is not refused as "
+          "the task's edit, is named in the close and is not carried: %r"
+          % ((scode, code, text[:500], carried),),
+          scode == 0 and code == 0 and restore_rel in text
+          and restore_rel not in carried and OWNED in carried)
+
+    # The table is the writers' as well as the check's: what the restore-point
+    # writer creates - the directory and the ignore file it adds a line to - is
+    # a row of it, so a rename in one place cannot leave the other behind.
+    fx = repos.make()
+    backups, _ignored = _mio.ensure_backup_dir(fx["manifest"])
+    owned = _mio.plugin_owned_under(os.path.join(fx["root"], ".claude"))
+    paths = [p for p, _why in owned]
+    check("ctw-at9 the directory the restore-point writer creates and the "
+          "ignore file it appends to are rows of the plugin-owned table the "
+          "commit check reads, each with a reason: %r" % (owned,),
+          backups in paths
+          and os.path.join(fx["root"], ".claude", ".gitignore") in paths
+          and all(isinstance(why, str) and why for _p, why in owned))
+
 
 CE_TEST = "tests/test_a.py"
 

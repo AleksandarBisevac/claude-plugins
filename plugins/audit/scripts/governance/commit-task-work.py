@@ -70,7 +70,10 @@ file whose uncommitted change predates the task's start, by the snapshot `start`
 recorded, is another run's work and is refused rather than staged; a path that
 changed during the attempt and that no in_progress task declares is refused by
 name rather than left out in silence. With no snapshot a file's mtime against
-`startedAt` decides, and the refusal says so.
+`startedAt` decides, and the refusal says so. The plugin's own state under a
+`.claude/` - a restore point, the ignore line beside it, the configuration file,
+the rows of `_manifest_io.PLUGIN_OWNED_IN_CLAUDE` - is not the task's edit: it is
+left out of the commit and named on a line of the output, never refused.
 
 A REFUSAL LEAVES THE INDEX AS IT WAS FOUND. Every refusal reached before staging
 touches nothing; every one after it puts the allowed paths' index entries back
@@ -543,6 +546,35 @@ def run_state_rels(project, config, git_root):
     return [rel for rel in rels if rel is not None]
 
 
+def plugin_owned_rels(project, git_root):
+    """`[(git-root-relative path, why), ...]` - `_manifest_io.PLUGIN_OWNED_IN_CLAUDE`
+    placed under the project's `.claude/` and under the checkout's, which are
+    two directories when the project sits below the git root and the one
+    restore-point writer parks its copy in the checkout's."""
+    rows, seen = [], set()
+    for base in (project, git_root):
+        for path, why in _mio.plugin_owned_under(os.path.join(base, ".claude")):
+            rel = _invariants._rel(path, git_root)
+            if rel is not None and rel not in seen:
+                seen.add(rel)
+                rows.append((rel, why))
+    return rows
+
+
+def split_plugin_owned(paths, owned):
+    """`(others, named)` - `paths` without the ones under a row of `owned`, and
+    `[(path, why)]` for those that were."""
+    others, named = [], []
+    for path in paths:
+        why = next((why for rel, why in owned
+                    if _invariants._under(path, rel)), None)
+        if why is None:
+            others.append(path)
+        else:
+            named.append((path, why))
+    return others, named
+
+
 def attempt_refusal(manifest, task, project, git_root, config, targets,
                     pending):
     """`(refusal, notes, attribution)` - whether this commit would carry
@@ -582,6 +614,20 @@ def attempt_refusal(manifest, task, project, git_root, config, targets,
         owned_rels(manifest, project, git_root, task), skip)
     if strays is None:
         return why, notes, None
+    # THE PLUGIN'S OWN STATE IS NOT THE ATTEMPT'S EDIT. Taken out of every
+    # list before the question is asked, and named on a line of its own below:
+    # a path left out of the commit and not said would be the silence this
+    # check exists to refuse.
+    owned_state = plugin_owned_rels(project, git_root)
+    named = []
+    for key in ("during", "predates", "undated"):
+        strays[key], found = split_plugin_owned(strays[key], owned_state)
+        named.extend(found)
+    if named:
+        notes.append("plugin-owned state, not the task's edit, left out of "
+                     "this commit and not refused: %s"
+                     % ("; ".join("%s (%s)" % item
+                                  for item in sorted(set(named))),))
     during = strays["during"]
     if during:
         recorded = set(_hooks_config().out_of_scope_record(
@@ -604,6 +650,7 @@ def attempt_refusal(manifest, task, project, git_root, config, targets,
                      % (", ".join(undated), _them(undated)))
     attribution = {"basis": strays["basis"], "during": during,
                    "predates": strays["predates"],
+                   "pluginOwned": sorted(set(path for path, _why in named)),
                    "declaredPredates": mine["predates"],
                    "mixed": mine["mixed"]}
     refusal = ("%s. Nothing was staged" % ("; ".join(parts),)) if parts else ""
