@@ -1,0 +1,29 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_agent_session.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-22T15:04:10Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py` in a throwaway tree at HEAD exited 1 with failing cases ras30b (house FAIL), tests/test_run_agent_session.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 36/37 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "run-agent-session.py: drop is now by rule. PARENT_SESSION_VARS keeps the names outside the CLAUDE_CODE_ namespace (CLAUDECODE, CLAUDE_PID, CLAUDE_EFFORT, AUDIT_LOCK_TOKENS, CLAUDE_PROJECT_DIR); new PARENT_SESSION_PREFIXES=('CLAUDE_CODE_',) drops every CLAUDE_CODE_* name; new KEEP_SESSION_VARS (CLAUDE_CODE_OAUTH_TOKEN, CLAUDE_CODE_API_KEY_HELPER_TTL_MS, CLAUDE_CODE_SKIP_{BEDROCK,VERTEX,FOUNDRY}_AUTH) and KEEP_SESSION_PREFIXES=('CLAUDE_CODE_USE_',) exempt the provider and credential switches; new _is_parent_session_var(name) is read by _session_env. The runner sets no CLAUDE_* of its own, so nothing else is exempted. Module docstring paragraph and the constants comment updated to the rule; the sentence saying the harness's plain arm unsets 'this same list' and the PLUGIN-BUILD-GUIDE wording were left untouched for P135.5 (that sentence is now less exact since the list is a rule). tests/test_run_agent_session.py: ras30b (unlisted CLAUDE_CODE_FUTURE_SESSION_FLAG_q81z must not reach the child) and ras30c (CLAUDE_CODE_OAUTH_TOKEN and CLAUDE_CODE_USE_VERTEX must survive); ras30/ras31 unchanged in assertion, one comment reworded. sweep-selftests on the file: exit 0, 37 cases; ruff check on both files: clean. Dependants: PLUGIN-BUILD-GUIDE.md names PARENT_SESSION_VARS, which still exists (kept the name for the exact-name tuple), so the reference resolves; its 'the list the plain arm unsets' wording is P135.5's. drive-phase.py, test_drive_phase.py (names _run/write_record/_read_text) do not use the env constants: grep for PARENT_SESSION_VARS/_session_env finds only run-agent-session.py and the guide; _config_rules.py, _panel_settings.py, audit-config.schema.json, test__config_rules.py are basename dependants of unchanged names and untouched. test_run_agent_session.py's _under, used by the guide, is unchanged.",
+    "descriptive": "The writer session now drops every CLAUDE_CODE_* variable by prefix (including ones a later CLI exports), keeping a named set of provider and credential switches."
+  },
+  "testsAdded": [
+    "ras30b: an unlisted CLAUDE_CODE_* decoy in the parent environment must not reach the child",
+    "ras30c: named credential/provider switches (CLAUDE_CODE_OAUTH_TOKEN, CLAUDE_CODE_USE_VERTEX) survive the prefix drop"
+  ],
+  "casesAdded": [
+    [
+      "ras30b",
+      "ras30c"
+    ]
+  ],
+  "claims": "claims: (1) 'drops every CLAUDE_CODE_* name except the keep list' - evidence: ras30b green after the fix, red before; ras30c red with KEEP mutated away in a throwaway copy. (2) KEEP_SESSION_VARS names are a judgement of which credential switches a plain session inherits, not read from the CLI; unverified against a CLI release.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:7917ee78245d07ef6ff5aa561d535060fd62c956a42ee870adb4e842ecf2cd35\",\"dirtyDigest\":\"sha256:c35a5a2d73ccf3b4ead361427c750a0ea44cd4826acdaaaba715f7cdc9ac075d\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/run-agent-session.py\":\"d070ba39facce8e6\",\"tests/test_run_agent_session.py\":\"e3569cade7817bf7\"},\"head\":\"57ce5f15\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/run-agent-session.py\",\"tests/test_run_agent_session.py\"],\"scopeDigest\":\"sha256:084ea136f34b45daae6dff2a87aa4ceab95b59b429542226055720355495a0c9\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

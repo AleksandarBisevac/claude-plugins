@@ -46,8 +46,11 @@ place afterwards: it is the task's scratch, and removing it is the task's teardo
 THE CHILD STARTS WITHOUT THE PARENT'S CLAUDE SESSION VARIABLES (`PARENT_SESSION_VARS`),
 as a top-level session does: copied through, `CLAUDECODE` and the session id would
 make the writer start as a child of the orchestrator's session, and a measured
-pipeline would not be the thing a plain session is compared against. Everything else
-in the environment (PATH, HOME, credentials, provider switches) is passed on.
+pipeline would not be the thing a plain session is compared against. A few names are
+dropped (`PARENT_SESSION_VARS`) and so is every name under `CLAUDE_CODE_`
+(`PARENT_SESSION_PREFIXES`), except the provider and credential switches a plain
+session inherits (`KEEP_SESSION_VARS`, `KEEP_SESSION_PREFIXES`). Everything else in
+the environment (PATH, HOME, credentials, provider switches) is passed on.
 
 THE STREAM IS SAVED under `<state-dir>/sessions/`, one file per run (a resumed
 session is a second stream, which is how a transcript re-price reads a session),
@@ -126,16 +129,21 @@ SESSION_ID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
 
 # The variables a parent Claude session exports to its children and a top-level
 # session starts without; the measurement harness's plain arm unsets this same
-# list. Named one by one and not as a CLAUDE_CODE_* prefix, because a prefix would
-# also take the provider and credential switches (CLAUDE_CODE_USE_BEDROCK and the
-# like) a plain top-level session inherits. This runner sets no CLAUDE_* variable of
-# its own, so nothing is exempted from the drop.
-PARENT_SESSION_VARS = ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_PID",
-                       "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_CHILD_SESSION",
-                       "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_MESSAGING_SOCKET",
-                       "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_CODE_SESSION_ATTENDED",
-                       "CLAUDE_CODE_SSE_PORT", "CLAUDE_EFFORT", "AUDIT_LOCK_TOKENS",
-                       "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL", "CLAUDE_PROJECT_DIR")
+# list. A name outside the CLAUDE_CODE_ namespace is dropped by name
+# (`PARENT_SESSION_VARS`), and everything in that namespace is dropped by prefix
+# (`PARENT_SESSION_PREFIXES`), so a session variable a later CLI release exports
+# is dropped without this file being told its name. The prefix would also take the
+# provider and credential switches a plain top-level session inherits, so those
+# are exempted by name (`KEEP_SESSION_VARS`) or by prefix (`KEEP_SESSION_PREFIXES`:
+# CLAUDE_CODE_USE_BEDROCK, CLAUDE_CODE_USE_VERTEX and the like). This runner sets
+# no CLAUDE_* variable of its own.
+PARENT_SESSION_VARS = ("CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "AUDIT_LOCK_TOKENS",
+                       "CLAUDE_PROJECT_DIR")
+PARENT_SESSION_PREFIXES = ("CLAUDE_CODE_",)
+KEEP_SESSION_VARS = ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_API_KEY_HELPER_TTL_MS",
+                     "CLAUDE_CODE_SKIP_BEDROCK_AUTH", "CLAUDE_CODE_SKIP_VERTEX_AUTH",
+                     "CLAUDE_CODE_SKIP_FOUNDRY_AUTH")
+KEEP_SESSION_PREFIXES = ("CLAUDE_CODE_USE_",)
 
 ROLES = ("writer", "reviewer")
 REVIEWER = "audit-reviewer"
@@ -265,10 +273,18 @@ def _stream_path(state_dir, task, role):
     return os.path.join(os.path.abspath(state_dir), "sessions", base + ".jsonl")
 
 
+def _is_parent_session_var(name):
+    """True when `name` is session state a top-level session starts without: a
+    listed name or anything under a dropped prefix, unless it is on the keep list."""
+    if name in KEEP_SESSION_VARS or name.startswith(KEEP_SESSION_PREFIXES):
+        return False
+    return name in PARENT_SESSION_VARS or name.startswith(PARENT_SESSION_PREFIXES)
+
+
 def _session_env(tmpdir):
     """The child's environment: the parent's, less its Claude session variables
-    (`PARENT_SESSION_VARS`), with the session's own TMPDIR."""
-    env = dict((k, v) for k, v in os.environ.items() if k not in PARENT_SESSION_VARS)
+    (`_is_parent_session_var`), with the session's own TMPDIR."""
+    env = dict((k, v) for k, v in os.environ.items() if not _is_parent_session_var(k))
     for name in ("TMPDIR", "TEMP", "TMP"):
         env[name] = tmpdir
     return env

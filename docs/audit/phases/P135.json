@@ -50,17 +50,40 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:78-89",
         "issue": "contradicts task clause: the description says 'Drop the parent's Claude session variables (CLAUDECODE and every CLAUDE_CODE_* / CLAUDE_EFFORT; keep any CLAUDE_* the runner sets on purpose and name them)'. The diff drops a closed list of 14 exact names (PARENT_SESSION_VARS), not every CLAUDE_CODE_*. Any CLAUDE_CODE_* session variable the CLI exports that is not on the list (a new one in a later CLI release, or one the harness list never knew) still reaches the writer, so the writer does not reliably start like a top-level session. The executor's reasoning (a prefix drop would also take CLAUDE_CODE_USE_BEDROCK and credential switches a plain session inherits) is sound, but it is a narrowing of the clause that the task's own text does not record, and the filed outcome states the narrowing as a design choice rather than a divergence.",
-        "resolution": "Decide the scope explicitly. Either drop by prefix (CLAUDECODE, CLAUDE_EFFORT, CLAUDE_PID, AUDIT_LOCK_TOKENS and every CLAUDE_CODE_*) with a named KEEP tuple for the provider and credential switches (CLAUDE_CODE_USE_*, auth-token names), and add a case with an unlisted CLAUDE_CODE_* name to ras30; or amend the task description to say 'the names run-plain.sh unsets' so the closed list is the asked-for scope. The ras30 decoy for an unlisted CLAUDE_CODE_* name is missing either way, so the closed-list behaviour is untested in both directions."
+        "resolution": "Decide the scope explicitly. Either drop by prefix (CLAUDECODE, CLAUDE_EFFORT, CLAUDE_PID, AUDIT_LOCK_TOKENS and every CLAUDE_CODE_*) with a named KEEP tuple for the provider and credential switches (CLAUDE_CODE_USE_*, auth-token names), and add a case with an unlisted CLAUDE_CODE_* name to ras30; or amend the task description to say 'the names run-plain.sh unsets' so the closed list is the asked-for scope. The ras30 decoy for an unlisted CLAUDE_CODE_* name is missing either way, so the closed-list behaviour is untested in both directions.",
+        "fixTask": "P135.4-kux"
       },
       {
         "id": "P135-R5",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-agent-session.py:78-80, PLUGIN-BUILD-GUIDE.md:5073-5075",
         "issue": "The comment and the guide say the list is 'the measurement harness's plain arm' list. That harness (run-plain.sh) lives in the private quality-gates-internal repo, not in this one, so a reader of the public tree cannot check the equivalence and nothing keeps the two lists together. I checked it by hand: the 14 names match run-plain.sh lines 62-64 today.",
-        "resolution": "State the list's basis in this repo (what each name is and why a top-level session starts without it) rather than pointing at a file outside the repository, or add a case that reads a committed copy of the list."
+        "resolution": "State the list's basis in this repo (what each name is and why a top-level session starts without it) rather than pointing at a file outside the repository, or add a case that reads a committed copy of the list.",
+        "fixTask": "P135.5-kux"
+      },
+      {
+        "id": "P135-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-agent-session.py:140-146",
+        "issue": "The prefix drop moves the closed-list problem to the keep list. Every CLAUDE_CODE_* name not on KEEP_SESSION_VARS or under CLAUDE_CODE_USE_ is now dropped, including names that carry user configuration a plain top-level session launched from the same shell inherits (for example CLAUDE_CODE_MAX_OUTPUT_TOKENS, CLAUDE_CODE_CLIENT_CERT/KEY, CLAUDE_CODE_DISABLE_* switches, CLAUDE_CODE_SUBAGENT_MODEL, if the operator exports them). The writer would then differ from the plain arm in the other direction. The executor's own claim (2) says the keep names are a judgement, not read from the CLI, and no case or document records which CLAUDE_CODE_* names are expected to survive beyond five. I could not verify the CLI's names from here.",
+        "resolution": "Either read the CLI's documented env-var list and name the configuration switches the keep rule must cover, or write down in the docstring that any CLAUDE_CODE_* name outside the keep rule is deliberately dropped and how an operator keeps one. Keep the claim 'unverified against a CLI release' wherever the keep list is described."
+      },
+      {
+        "id": "P135-R7",
+        "severity": "low",
+        "file": "tests/test_run_agent_session.py:424-433",
+        "issue": "ras30c exercises one of the five KEEP_SESSION_VARS names (CLAUDE_CODE_OAUTH_TOKEN) and one CLAUDE_CODE_USE_ name (VERTEX; BEDROCK sits in ras31's decoys). A misspelled CLAUDE_CODE_API_KEY_HELPER_TTL_MS or CLAUDE_CODE_SKIP_*_AUTH entry would drop that variable silently and stay green.",
+        "resolution": "Derive the case's kept_credentials from the keep tuples written out in the test (all five names), or add the other four names to kept_credentials."
+      },
+      {
+        "id": "P135-R8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-agent-session.py:131-132 and PLUGIN-BUILD-GUIDE.md:5074",
+        "issue": "Both still say the harness's plain arm unsets 'this same list' / 'the list'. After this diff the runner drops by rule (prefix plus keep), so the sentence no longer describes it. The executor named this and left it for P135.5.",
+        "resolution": "Confirm P135.5 owns the sentence in both places; otherwise reword them here."
       }
     ],
-    "outcome": "[findings: 5 - 0 high, 1 med, 4 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 8 - 0 high, 1 med, 7 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -200,7 +223,7 @@
     {
       "id": "P135.3-kux",
       "title": "A writer or reviewer session starts as a clean top-level session: run-agent-session does not pass the orchestrator's Claude session variables to it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Found while diagnosing F784: run-agent-session._session_env (~249-253) copies the orchestrator's whole environment, so CLAUDECODE, CLAUDE_CODE_SESSION_ID and CLAUDE_EFFORT reach the writer, while a top-level session (and both measurement arms) start without them. Drop the parent's Claude session variables (CLAUDECODE and every CLAUDE_CODE_* / CLAUDE_EFFORT; keep any CLAUDE_* the runner sets on purpose and name them) so a writer starts like a plain top-level session.",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
@@ -229,20 +252,144 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "57ce5f158800",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "run-agent-session.py: new PARENT_SESSION_VARS tuple (the 14 names the measurement harness run-plain.sh unsets: CLAUDECODE, CLAUDE_CODE_SESSION_ID, CLAUDE_PID, CLAUDE_CODE_ENTRYPOINT, CLAUDE_CODE_CHILD_SESSION, CLAUDE_CODE_EXECPATH, CLAUDE_CODE_MESSAGING_SOCKET, CLAUDE_CODE_MESSAGING_TOKEN, CLAUDE_CODE_SESSION_ATTENDED, CLAUDE_CODE_SSE_PORT, CLAUDE_EFFORT, AUDIT_LOCK_TOKENS, CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL, CLAUDE_PROJECT_DIR); _session_env copies os.environ less those, then sets TMPDIR/TEMP/TMP as before. Exact names, not a CLAUDE_CODE_* prefix, so provider/credential switches (CLAUDE_CODE_USE_BEDROCK etc.) a plain session inherits are kept; the runner sets no CLAUDE_* of its own, so nothing is exempted (said in the constant's comment). Module docstring gained a paragraph. PLUGIN-BUILD-GUIDE.md (outside my files; the plan gate allowed the edit) gets one clause in the run-agent-session section. tests/test_run_agent_session.py: stub records CLAUDE*/AUDIT_*/PATH/HOME/ORCH_KEEP env; _run takes env_extra; ras30 (all 14 names, written out independently in the case, absent from the child env) and ras31 (PATH with stub dir, HOME, CLAUDE_CODE_USE_BEDROCK and an unrelated variable kept; TMPDIR under scratch). Gate: python3 tools/sweep-selftests.py tests/test_run_agent_session.py exit 0, 35/35 cases. Committed copy (rsync of tree minus .git into a fresh git repo, one commit, tools/verify.sh --fast): red steps were selftests (only tools/check-example-ledgers.py and tools/measure-context.py FAILED, per the sweep output), committed-ledgers check (same tool), and the three doctor steps, whose one finding is 'manifest names a commit git does not have: P1.1 (904dbb8)...' - the history-less copy, not this change. All other steps ok (lint, js, manifests, plugin, report, panel, e2e, runner, cp1252/stress selftests). Dependants: PLUGIN-BUILD-GUIDE.md - changed, one clause added to the run-agent-session section (it is the doc of this behaviour); its tree line/layer entry unaffected. plugins/audit/schema/audit-config.schema.json, _config_rules.py, _panel_settings.py, tests/test__config_rules.py - still correct: they reference the script by basename for its flags/config (budget, model, effort), none reads _session_env or the child environment; the argv and exit codes are unchanged. drive-phase.py - still correct: it uses write_record and the printed line/record format, untouched. tests/test_drive_phase.py - still correct: it uses _read_text/_run of its own and the script's printed line and record, untouched. tests/test_run_agent_session.py dependant PLUGIN-BUILD-GUIDE.md (_under) - still correct, _under unchanged. The 9th file of the first list was not shown by the brief (8 of 9 shown); I did not grep to find it.\n\nclaims:\n1 run-agent-session.py _session_env filters os.environ by PARENT_SESSION_VARS; the docstring paragraph and the guide clause say only that (and that the rest is passed on, shown by ras31)\n2 ras30 red on HEAD code (14 leaked) -> fix -> green 35/35; over-drop mutation (not k.startswith CLAUDE_CODE_ added) -> ras31 red, lost CLAUDE_CODE_USE_BEDROCK -> restored, pycache purged, 35/35; under-drop is ras30, over-drop is ras31\n3 grep of environ use in the script: _session_env is the only reader of os.environ for the child (grep -n 'environ' run-agent-session.py: 2 hits, both in _session_env); other claude launchers not swept, left because outside this task's files\n4 n/a - no rule addressed to an agent; the list is enforced by ras30\n5 n/a - no property recorded\n6 n/a - no guard; the decision is the exact variable name in the child's environment\n7 ras30 title prints len(parent_session) rather than a written number; no count written in prose",
+        "descriptive": "A writer or reviewer session no longer inherits the orchestrator's Claude session variables, so it starts like a plain top-level session as the measurement arms do."
       },
       "startedAt": "2026-10-22T13:14:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-22T15:00:52Z",
+      "verifiedBy": [
+        "ras30 the child environment carries none of the 14 parent session variables the harness unsets",
+        "ras31 PATH, HOME, a provider switch and an unrelated variable are kept and TMPDIR is the runner's own"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-22T14:59:32Z.559df5",
         "status": "passed",
         "at": "2026-10-22T14:59:32Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "57ce5f158800",
+        "at": "2026-10-22T15:00:52Z",
+        "return": "docs/audit/evidence/returns/P135.3-kux/20261022T131401Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-22T13:33:39Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py` in a throwaway tree at HEAD exited 1 with failing cases ras30 (house FAIL), tests/test_run_agent_session.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 34/35 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P135.4-kux",
+      "title": "fix P135-R4: contradicts task clause: the description says 'Drop the parent's...",
+      "status": "in_progress",
+      "description": "contradicts task clause: the description says 'Drop the parent's Claude session variables (CLAUDECODE and every CLAUDE_CODE_* / CLAUDE_EFFORT; keep any CLAUDE_* the runner sets on purpose and name them)'. The diff drops a closed list of 14 exact names (PARENT_SESSION_VARS), not every CLAUDE_CODE_*. Any CLAUDE_CODE_* session variable the CLI exports that is not on the list (a new one in a later CLI release, or one the harness list never knew) still reaches the writer, so the writer does not reliably start like a top-level session. The executor's reasoning (a prefix drop would also take CLAUDE_CODE_USE_BEDROCK and credential switches a plain session inherits) is sound, but it is a narrowing of the clause that the task's own text does not record, and the filed outcome states the narrowing as a design choice rather than a divergence.\n\nResolution asked: Decide the scope explicitly. Either drop by prefix (CLAUDECODE, CLAUDE_EFFORT, CLAUDE_PID, AUDIT_LOCK_TOKENS and every CLAUDE_CODE_*) with a named KEEP tuple for the provider and credential switches (CLAUDE_CODE_USE_*, auth-token names), and add a case with an unlisted CLAUDE_CODE_* name to ras30; or amend the task description to say 'the names run-plain.sh unsets' so the closed list is the asked-for scope. The ras30 decoy for an unlisted CLAUDE_CODE_* name is missing either way, so the closed-list behaviour is untested in both directions.",
+      "files": [
+        "plugins/audit/scripts/governance/run-agent-session.py",
+        "tests/test_run_agent_session.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_agent_session.py: Decide the scope explicitly"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_agent_session.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-22T15:01:22Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-22T15:01:17Z",
+          "text": "scope: plugins/audit/scripts/governance/run-agent-session.py, every path the finding(s) P135-R4 name"
+        },
+        {
+          "at": "2026-10-22T15:01:17Z",
+          "text": "scope: tests/test_run_agent_session.py, the suite that tests plugins/audit/scripts/governance/run-agent-session.py (python: its import closure reaches plugins/audit/scripts/governance/run-agent-session.py)"
+        }
+      ],
+      "fixes": [
+        "P135-R4"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-22T15:06:41Z.eb914f",
+        "status": "passed",
+        "at": "2026-10-22T15:06:41Z"
+      }
+    },
+    {
+      "id": "P135.5-kux",
+      "title": "fix P135-R5: The comment and the guide say the list is 'the measurement harne...",
+      "status": "pending",
+      "description": "The comment and the guide say the list is 'the measurement harness's plain arm' list. That harness (run-plain.sh) lives in the private quality-gates-internal repo, not in this one, so a reader of the public tree cannot check the equivalence and nothing keeps the two lists together. I checked it by hand: the 14 names match run-plain.sh lines 62-64 today.\n\nResolution asked: State the list's basis in this repo (what each name is and why a top-level session starts without it) rather than pointing at a file outside the repository, or add a case that reads a committed copy of the list.",
+      "files": [
+        "plugins/audit/scripts/governance/run-agent-session.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test_run_agent_session.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_agent_session.py: State the list's basis in this repo (what each name is and why a top-level session starts without it) rather than pointing at a file outside the repository, or ..."
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_agent_session.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-22T15:01:21Z",
+          "text": "scope: plugins/audit/scripts/governance/run-agent-session.py, PLUGIN-BUILD-GUIDE.md, every path the finding(s) P135-R5 name"
+        },
+        {
+          "at": "2026-10-22T15:01:21Z",
+          "text": "scope: tests/test_run_agent_session.py, the suite that tests plugins/audit/scripts/governance/run-agent-session.py (python: its import closure reaches plugins/audit/scripts/governance/run-agent-session.py)"
+        },
+        {
+          "at": "2026-10-22T15:01:21Z",
+          "text": "no suite: PLUGIN-BUILD-GUIDE.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__affected_tests.py, tests/test__deps.py, tests/test__doctor_trail.py, tests/test__output.py, tests/test__refs.py, tests/test_drive_phase.py and 5 more"
+        }
+      ],
+      "fixes": [
+        "P135-R5"
+      ]
     }
   ],
   "request": "Stage 1 measurement (2026-10-22): runs could not close because the commit check refused the plugin's own restore point and the writer's out-of-scope edit (register F782, F783)",

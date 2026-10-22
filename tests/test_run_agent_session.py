@@ -411,15 +411,33 @@ def _cases(check):
                           "CLAUDE_CODE_SSE_PORT", "CLAUDE_EFFORT", "AUDIT_LOCK_TOKENS",
                           "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL", "CLAUDE_PROJECT_DIR"]
         # Not session state: a provider switch a plain top-level session also
-        # inherits. A drop of every CLAUDE_CODE_* prefix would take it, which is
+        # inherits. The prefix drop would take it without the keep list, which is
         # the over-drop this name is here to catch.
         kept_decoys = {"CLAUDE_CODE_USE_BEDROCK": "1", "ORCH_KEEP_q81z": "kept",
                        "HOME": os.path.join(root, "decoy-home")}
+        # A CLAUDE_CODE_* name no list here or in the script has ever heard of - a
+        # variable a later CLI release exports. A top-level session does not carry
+        # it, so the writer must not either: only a prefix rule drops it.
+        unlisted_session = ["CLAUDE_CODE_FUTURE_SESSION_FLAG_q81z"]
+        # Credential names a plain top-level session inherits - the named keep list.
+        kept_credentials = {"CLAUDE_CODE_OAUTH_TOKEN": "tok-q81z",
+                            "CLAUDE_CODE_USE_VERTEX": "1"}
         parent = dict((name, "parent-" + name) for name in parent_session)
+        parent.update(dict((name, "parent-" + name) for name in unlisted_session))
         parent.update(kept_decoys)
+        parent.update(kept_credentials)
         code, out, err, rec, dirs = _run(root, bindir, "writer", tag="env",
                                          env_extra=parent)
         seen = (rec or {}).get("env") or {}
+        leaked_unlisted = sorted(name for name in unlisted_session if name in seen)
+        check("ras30b a CLAUDE_CODE_* name on no list reaches no child either - the "
+              "drop is by prefix, not by a closed list; leaked: %r" % (leaked_unlisted,),
+              rec is not None and "env" in rec and not leaked_unlisted, repr(seen))
+        lost_credentials = sorted(name for name, value in kept_credentials.items()
+                                  if seen.get(name) != value)
+        check("ras30c ...while the named credential and provider switches under the "
+              "same prefix survive the drop; lost: %r" % (lost_credentials,),
+              rec is not None and "env" in rec and not lost_credentials, repr(seen))
         leaked = sorted(name for name in parent_session if name in seen)
         check("ras30 the child environment carries none of the parent's Claude session "
               "variables (%d names written out in the case) - leaked: %r"
