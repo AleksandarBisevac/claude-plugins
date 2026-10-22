@@ -4259,7 +4259,10 @@ def _locked_add(args, project, config, mpath, title, out):
     for line in _gate_directory_notes(project, task["tests"]["gate"],
                                       assembled.get("meta")):
         out(line)
-    if task["tests"]["mode"] == "tdd" and not task["tests"]["add"]:
+    if task["tests"]["expectRedFirst"] and not task["tests"]["add"]:
+        # The stored expectation, not the mode: a fix task born tdd with no case
+        # to place has it false (`_expects_red_first`), owes no red, and is not
+        # told to name one.
         # SAID HERE AS WELL AS BY THE VALIDATOR, and the reason is when. A
         # live run created two tdd tasks with no case named, and the operator only
         # noticed later — by which point the plan was written and the work was

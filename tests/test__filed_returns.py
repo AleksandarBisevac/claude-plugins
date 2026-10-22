@@ -1041,6 +1041,7 @@ def _selftest():
         _harness.stage(check, "um-block", _um_cases)
         _harness.stage(check, "ma-block", _mechanical_cases)
         _harness.stage(check, "pk-block", _held_cases)
+        _harness.stage(check, "orf-block", _owes_red_first_cases)
         _harness.stage(check, "hn-block", _human_cases)
         _harness.stage(check, "dm-block", _drive_mark_cases)
         _harness.stage(check, "rd-block", _read_set_cases)
@@ -1782,6 +1783,27 @@ def _read_set_cases(check):
     finally:
         _harness.remove_tree(root)
         _harness.remove_tree(outside)
+
+
+def _owes_red_first_cases(check):
+    """`owes_red_first`: tdd with the stored `expectRedFirst` not false. The
+    absent field is the discriminator between reading the field and reading the
+    mode alone, so it is a case of its own."""
+    def task(mode, expect="unset"):
+        tests = {"mode": mode, "add": [], "gate": []}
+        if expect != "unset":
+            tests["expectRedFirst"] = expect
+        return {"id": "P1.1", "tests": tests}
+    got = [M.owes_red_first(task("tdd", False)), M.owes_red_first(task("tdd")),
+           M.owes_red_first(task("tdd", True)),
+           M.owes_red_first(task("regression", True)),
+           M.owes_red_first(task("gate-only", False)),
+           M.owes_red_first({"id": "P1.1"}), M.owes_red_first(None)]
+    check("orf1 a task owes a red-first proof when it is tdd and its stored "
+          "expectRedFirst is not false: tdd+false no, tdd+absent yes (a plan "
+          "written before the field), tdd+true yes, regression no even with the "
+          "field true, gate-only no, no tests object no, no task no: %r" % (got,),
+          got == [False, True, True, False, False, False, False])
 
 
 if __name__ == "__main__":

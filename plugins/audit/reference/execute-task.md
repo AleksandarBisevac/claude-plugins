@@ -104,7 +104,7 @@ verb writes and refuses, and what the run commands leave behind, is
        text, before reading the implementation it will run against** (a test written
        after seeing the code tends to confirm what the code already does rather than
        probe what the task asked for), confirm it **FAILS on current code** first
-       (run it, confirm red — proves the bug), THEN implement until green. (`tests.expectRedFirst` should be true.)
+       (run it, confirm red — proves the bug), THEN implement until green. (`tests.expectRedFirst` is true here; a tdd fix task that names no case has it false, owes no red, and `submit` files red-first `not-attempted` for it with no command after `--`.)
      - `regression` → implement the fix and add a test locking the corrected behavior (`task.tests.add`).
      - `gate-only` → no new test; only ensure `task.tests.gate` stays green.
 

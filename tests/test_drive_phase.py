@@ -4133,6 +4133,97 @@ def _submit_cases(check):
     _handback_cases(check, M, ((code, text), (code_2, text_2)))
 
 
+def _owed_task_repo(M, prefix, expect):
+    """A one-task repository whose task is tdd over `src/mine.py` with an EMPTY
+    `tests.add` - a fix task born from a finding that named no case - and
+    `expectRedFirst` as `expect`, started and its file changed. Only that stored
+    field differs between the two repositories a case builds."""
+    plan = _plan(TASKS[:1], ("true",))
+    task = plan["phases"][0]["tasks"][0]
+    task["files"] = ["src/mine.py"]
+    plan["fileIndex"] = {"src/mine.py": ["P1.1"]}
+    task["tests"] = {"mode": "tdd", "add": [], "gate": ["true"],
+                     "expectRedFirst": expect}
+    root, mpath = _repo(prefix, task_ids=TASKS[:1])
+    _write_lf(os.path.join(root, "src", "mine.py"), "v = 1\n")
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh, indent=2)
+    _harness.git(root, "add", "-A")
+    _harness.git(root, "commit", "-qm", "tdd fix task")
+    with _Env(root):
+        M.main(["next", PHASE, mpath, "--project-dir", root], out=[].append)
+    _write_lf(os.path.join(root, "src", "mine.py"), "v = 2\n")
+    return root, mpath
+
+
+def _owed_red_first_cases(check):
+    """Every reader of a fix task's red-first obligation asks the stored
+    `expectRedFirst` beside the mode: `submit`, the writer path's command and
+    block, and the fix prompt. Each case pairs a task with the field false and a
+    twin with it true - same mode, same empty `tests.add`, same gate."""
+    M, why = _load("drive_phase_owed_red_first")
+    if M is None:
+        check("ow1 the driver loads", False, why)
+        return
+    root, mpath = _owed_task_repo(M, "ow-false", False)
+    body = _executor_body("P1.1", {"testsAdded": []})
+    del body["redFirst"]
+    code, text = _submit(None, root, mpath, "P1.1", body)
+    path = _filed_path(mpath, "P1.1")
+    filed = json.loads(_read(path).decode("utf-8")) if path and os.path.exists(path) else {}
+    red = filed.get("redFirst") or {}
+    check("ow1 a tdd task whose stored expectRedFirst is false submits with no "
+          "command after `--`: it is filed, red-first not-attempted, the basis "
+          "naming the field and saying nothing is owed, and no helper mark on "
+          "it: %r" % ((code, text, red),),
+          code == 0 and red.get("status") == "not-attempted"
+          and "expectRedFirst" in str(red.get("basis")) and red.get("at")
+          and "source" not in red and "after `--`" not in text)
+    root, mpath = _owed_task_repo(M, "ow-typed", False)
+    code, text = _submit(None, root, mpath, "P1.1", _executor_body(
+        "P1.1", {"testsAdded": [], "redFirst": {
+            "status": "proved", "basis": "typed, no helper ran", "at": "z"}}))
+    path = _filed_path(mpath, "P1.1")
+    filed = json.loads(_read(path).decode("utf-8")) if path and os.path.exists(path) else {}
+    check("ow2 a `proved` the agent typed on such a task is not what is filed: "
+          "no helper ran, so the driver's not-attempted block replaces it: %r"
+          % ((code, filed.get("redFirst")),),
+          code == 0 and (filed.get("redFirst") or {}).get("status") == "not-attempted")
+    root, mpath = _owed_task_repo(M, "ow-true", True)
+    body = _executor_body("P1.1", {"testsAdded": []})
+    del body["redFirst"]
+    code, text = _submit(None, root, mpath, "P1.1", body)
+    path = _filed_path(mpath, "P1.1")
+    check("ow3 THE TWIN: the same task with expectRedFirst true is still "
+          "refused without a command, naming it, and files nothing - the mutant "
+          "that stops asking at all goes red here: %r" % (text,),
+          code == 1 and "after `--`" in text and path is not None
+          and not os.path.exists(path))
+
+    unowed = {"id": "P1.1", "tests": {"mode": "tdd", "add": [],
+                                      "expectRedFirst": False, "gate": []}}
+    owed = {"id": "P1.1", "tests": {"mode": "tdd", "add": [],
+                                    "expectRedFirst": True, "gate": []}}
+    got = (M.writer_test_command({}, {}, unowed), M.writer_test_command({}, {}, owed))
+    check("ow4 the writer path derives no command and no could-not-prove basis "
+          "for the unowed task, and keeps its basis for the owed twin: %r" % (got,),
+          got[0] == (None, None) and got[1][0] is None
+          and isinstance(got[1][1], str) and "no file" in got[1][1])
+    blocks = (M.unowed_red_first(unowed), M.unowed_red_first(owed),
+              M.unowed_red_first({"id": "P1.2", "tests": {
+                  "mode": "regression", "add": [], "expectRedFirst": False}}))
+    check("ow5 the not-attempted block says why: the field for a tdd task, the "
+          "mode for another, and none for a task that owes the proof: %r" % (blocks,),
+          blocks[0].get("status") == "not-attempted"
+          and "expectRedFirst" in blocks[0].get("basis", "")
+          and blocks[1] is None
+          and "regression" in blocks[2].get("basis", ""))
+    check("ow6 the fix prompt asks for a case that fails at HEAD only of a task "
+          "that owes a red-first proof: %r" % ((M.fix_prove_lines(unowed),
+                                               M.fix_prove_lines(owed)),),
+          M.fix_prove_lines(unowed) == [] and len(M.fix_prove_lines(owed)) == 1)
+
+
 def _submit_mutant_cases(check):
     """Each refusal of `submit`, red against a driver with that refusal taken
     out. In-process, the one way a replaced function is reached, and after the
@@ -9943,6 +10034,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("fx-block", "_fix_batch_cases"), ("ht-block", "_handed_triage_cases"),
           ("dt-block", "_single_task_cases"), ("dl-block", "_lock_stop_cases"),
           ("dk-block", "_key_cases"), ("ds-block", "_submit_cases"),
+          ("ow-block", "_owed_red_first_cases"),
           ("dsm-block", "_submit_mutant_cases"), ("sg-block", "_signoff_cases"),
           ("sgf-block", "_signoff_findings_cases"),
           ("sq-block", "_advance_signoff_cases"),

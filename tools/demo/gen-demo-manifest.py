@@ -140,6 +140,13 @@ def _load_manifest_io():
     return _loader.load_script("_manifest_io.py", modname="_manifest_io")
 
 
+def _expects_red_first(mode, tests_add):
+    """`expectRedFirst` as `/audit:task add` writes it: the one rule is
+    `audit-task._expects_red_first`, asked rather than copied."""
+    verb = _loader.load_script("audit-task.py", modname="audit_task_for_demo")
+    return verb._expects_red_first(mode, tests_add)
+
+
 def _iso(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -186,7 +193,7 @@ def _task_statuses(phase_status, n_tasks, rng):
 def _tests_add(mode, rel):
     """The tests a task promises to author, in the wording its MODE gives them.
 
-    `audit-task.py` writes `expectRedFirst = mode == "tdd"` beside this list, and
+    `audit-task.py` writes `expectRedFirst` beside this list, and
     the schema says the list's meaning is mode-dependent. So the two must be
     generated together or the fixture would ship a manifest that disagrees with
     itself about what its own tests are for.
@@ -576,7 +583,8 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
                     # empty on purpose - the fixture carries that case too,
                     # because an always-populated list never shows it.
                     "add": _tests_add(mode, rel),
-                    "expectRedFirst": mode == "tdd",
+                    "expectRedFirst": _expects_red_first(
+                        mode, _tests_add(mode, rel)),
                     "gate": ([] if ungraded
                              else _task_gate(tstatus, [rel], area_roots)),
                     # WHICH ARM PRODUCED THAT LIST, in `/audit:task`'s own

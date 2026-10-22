@@ -657,7 +657,9 @@ one task and reading the report. Copying the starter manifest by hand instead of
 
 A bug is not a plan — bugs live in the manifest's top-level `bugs[]` until `fix`
 materializes one into a task whose repro test **must fail on current code first**
-(`tests.mode: "tdd"`, `expectRedFirst: true`). The orchestrator links them
+(`tests.mode: "tdd"`, `expectRedFirst: true` - the stored field is what the red-first
+obligation is read from, so a tdd fix task naming no case, written with it false, owes none).
+The orchestrator links them
 (`bug.taskId ↔ task.bugId` — the validator enforces reciprocity) and flips the bug to
 `fixed` + `fixedIn: <sha>` when the task commits.
 

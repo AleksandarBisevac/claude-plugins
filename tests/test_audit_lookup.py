@@ -2494,6 +2494,7 @@ def _selftest():
         _harness.stage(check, "nm-block", _nested_member_cases)
         _harness.stage(check, "wp-block", _writer_prompt_cases)
         _harness.stage(check, "rq-block", _red_command_reader_cases)
+        _harness.stage(check, "ow-block", _owed_red_first_brief_cases)
     return _harness.run(body)
 
 
@@ -2517,6 +2518,56 @@ def _red_command_reader_cases(check):
           "over the same gate, so a gate naming tests/test_a.py_old gives none "
           "and one naming tests/test_a.py gives it: %r" % (got,),
           got == [(None, None), ("python3 tests/test_a.py", "python3 tests/test_a.py")])
+
+
+def _owed_red_first_brief_cases(check):
+    """The executor's brief asks for a test command after `--` of the task that
+    owes a red-first proof, read off the stored `expectRedFirst`: the same tdd
+    task with an empty `tests.add` and a gate naming no file, the field being
+    all that differs between the two briefs."""
+    root = _harness.fixture_root("audit-lookup-ow-")
+
+    def brief_of(name, expect):
+        manifest = _bf_manifest()
+        tests = manifest["phases"][0]["tasks"][0]["tests"]
+        tests.update({"add": [], "gate": ["test"], "expectRedFirst": expect})
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        with open(os.path.join(proj, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh)
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = M.main([mpath, "brief", "P1.1", "--role", "executor",
+                           "--project", proj])
+        path = os.path.join(proj, ".claude", "state", "briefs", "P1.1",
+                            "20260101T000000Z.executor.md")
+        try:
+            with open(path, "r", encoding="utf-8", newline="") as fh:
+                return code, fh.read()
+        except OSError:
+            return code, ""
+
+    code_f, unowed = brief_of("ow-false", False)
+    code_t, owed = brief_of("ow-true", True)
+    submit_f = [ln for ln in unowed.splitlines() if "submit P1.1 --role executor" in ln]
+    submit_t = [ln for ln in owed.splitlines() if "submit P1.1 --role executor" in ln]
+    check("ow1 the brief of a tdd task whose stored expectRedFirst is false asks "
+          "for no test command: the submit block carries no ` -- `, and the "
+          "text says the red-first block is the driver's: %r" % (submit_f,),
+          code_f == M.E_OK and len(submit_f) == 1 and " -- " not in submit_f[0]
+          and "<the command that runs your new test>" not in unowed
+          and "owes a test command" not in unowed
+          and "no red-first proof is owed" in unowed)
+    check("ow2 THE TWIN: the same task with expectRedFirst true is still asked "
+          "for the command: %r" % (submit_t,),
+          code_t == M.E_OK and len(submit_t) == 1
+          and "-- <the command that runs your new test>" in submit_t[0]
+          and "owes a test command" in owed)
 
 
 if __name__ == "__main__":

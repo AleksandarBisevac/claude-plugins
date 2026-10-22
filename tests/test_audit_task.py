@@ -18219,6 +18219,35 @@ def _batch_fix_cases(check):
                                     ("tdd", False, False),
                                     ("gate-only", False, False),
                                     ("gate-only", False, False)])
+
+        # ---- the add-time NOTE follows the stored field, not the mode ---------
+        # Both tasks below are tdd with an empty tests.add; only the stored
+        # expectRedFirst differs (a fix task is born false, a planned one true).
+        # The twin is the mutant that keys the NOTE on the mode again: it would
+        # print for the fix task; one that never prints would miss the planned one.
+        # `--verbose`: the short form keeps only the lines naming an id the
+        # write decided, and drops this one, so a case reading the short form
+        # would pass whichever way the NOTE is keyed.
+        note = "NOTE: mode is 'tdd' and tests.add is empty"
+        proj, mpath = project("noteowed", findings[3:4], ())
+        code_f, txt_f = _cli_in(["add", "fix it", "--phase", "P1", "--fixes",
+                                 "P1-R4", "--verbose"], proj, "")
+        code_p, txt_p = _cli_in(["add", "plan it", "--phase", "P1",
+                                 "--tests-mode", "tdd", "--verbose"], proj, "")
+        txt_f, txt_p = " ".join(txt_f.split()), " ".join(txt_p.split())
+        tasks, _named = state(mpath)
+        mode_f = (tasks.get("P1.2") or {}).get("tests") or {}
+        mode_p = (tasks.get("P1.3") or {}).get("tests") or {}
+        check("bx13 a tdd fix task born with expectRedFirst false is not told to "
+              "name a case to prove a red by, while the planned tdd task with an "
+              "empty tests.add (expectRedFirst true) still is: %r"
+              % ((code_f, code_p, mode_f.get("mode"), mode_f.get("expectRedFirst"),
+                  mode_p.get("mode"), mode_p.get("expectRedFirst"),
+                  note in txt_f, note in txt_p),),
+              code_f == 0 and code_p == 0
+              and (mode_f.get("mode"), mode_f.get("expectRedFirst")) == ("tdd", False)
+              and (mode_p.get("mode"), mode_p.get("expectRedFirst")) == ("tdd", True)
+              and note not in txt_f and note in txt_p)
     finally:
         _harness.remove_tree(root)
 

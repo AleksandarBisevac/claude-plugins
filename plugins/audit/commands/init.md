@@ -286,7 +286,8 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
    the phase spans two, in the order you want them to resolve (written order decides the reviewer
    and the skill order). Skip entirely when step 3.5 found no workspace.
 3. **Finding → task** using the conventions doc's new-task template. Rules:
-   - Incorrect behavior (bug-like) → `tests.mode: "tdd"`, `expectRedFirst: true`,
+   - Incorrect behavior (bug-like) → `tests.mode: "tdd"`, `expectRedFirst: true`
+     (the stored field that decides whether a failing test is owed),
      `tests.add` from `suggestedTests` (each must FAIL on current code), **each
      entry opening with the repo-relative path of the file the case will live in**:
      `"<testFile>: <what it asserts>"`. That leading path is what joins the task's

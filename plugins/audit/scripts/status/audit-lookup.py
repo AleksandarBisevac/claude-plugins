@@ -1051,12 +1051,20 @@ def executor_return_lines():
 
 def executor_submit_lines(manifest, phase, task, ctx):
     """The executor's filing: one `submit`, as a block carrying the task's id.
-    A tdd task owes the test command after `--`; it is printed resolved when a
-    gate entry names a `tests.add` file, and asked for when none does."""
+    A task that owes a red-first proof (`_filed_returns.owes_red_first`) owes the
+    test command after `--`; it is printed resolved when a gate entry names a
+    `tests.add` file, and asked for when none does. A tdd task whose stored
+    `expectRedFirst` is false owes none, and `submit` files its `redFirst`."""
     tid = str(task.get("id"))
-    tdd = (task.get("tests") or {}).get("mode") == "tdd"
+    tdd = _fr.owes_red_first(task)
     cmd = red_command(manifest, phase, task) if tdd else None
-    if cmd:
+    if (task.get("tests") or {}).get("mode") == "tdd" and not tdd:
+        tail, note = "", [
+            "This tdd task's expectRedFirst is false (it names no case to prove "
+            "a red by), so no red-first proof is owed: run `submit` with no "
+            "command after `--`, and it files `redFirst` as not-attempted "
+            "itself."]
+    elif cmd:
         tail, note = " -- %s" % (cmd,), [
             "The command after `--` is the gate entry that names your tests.add "
             "file; narrow it to your cases if HEAD's own tests are red under it."]

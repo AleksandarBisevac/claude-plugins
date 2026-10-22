@@ -132,8 +132,11 @@ and the prompt only names the call:
     `submit` fills set aside, so a malformed one costs no red run and writes
     nothing;
   * an executor's red-first block is `stamp-verification.py red`'s, run with
-    the test command given after `--` - owed on a `tdd` task, and refused
-    there without one;
+    the test command given after `--` - owed on a task that owes a red-first
+    proof (`_filed_returns.owes_red_first`: `tdd`, its stored `expectRedFirst`
+    not false), and refused there without one; a `tdd` task whose
+    `expectRedFirst` is false needs none and is filed `not-attempted` with
+    that as the basis;
   * an executor's `stamp` is `stamp-verification.py take`'s, taken after the
     red run, the last claim; a take that names no tree (no `audit-stamp:`
     line, or a stamp git could put no HEAD in) is refused as a missing stamp;
@@ -192,8 +195,9 @@ Otherwise the work is proved - `stamp-verification.py red` with `red_args`, the
 arguments `submit` builds, over `_filed_returns.red_command`, the gate command
 naming a `tests.add` file, in a throwaway at HEAD with the task's test files
 copied over it - and the proof is HELD until the recorded gate is green: a filing
-is once per start, and a resume round may change the work. Only a `tdd` task owes
-the red; any other mode is `not-attempted` with its mode as the basis, and a tdd
+is once per start, and a resume round may change the work. Only a task that
+`_filed_returns.owes_red_first` names owes the red; any other is `not-attempted`
+with its mode, or for a `tdd` task its false `expectRedFirst`, as the basis, and a tdd
 task whose gate names no `tests.add` file is `could-not-prove` with that basis.
 THE INVARIANT: the held proof records what it was made over - the HEAD its
 throwaway ran at, the `testDigest` of the task's declared test files (locked) and
@@ -2473,11 +2477,12 @@ def writer_test_command(manifest, phase, task):
     """`(argv, None)` - the resolved gate command naming one of the task's
     `tests.add` files, split into words: `_filed_returns.red_command`, the one
     reader the executor's brief prints after `--` - or `(None, basis)` saying
-    why there is none. A task that is not `tdd` owes no red-first proof and is
-    `(None, None)`, whatever its `tests.add` names."""
+    why there is none. A task that owes no red-first proof
+    (`_filed_returns.owes_red_first`: not `tdd`, or its stored `expectRedFirst`
+    false) is `(None, None)`, whatever its `tests.add` names."""
     tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
     added = _fr.tests_add_files(task)
-    if tests.get("mode") != "tdd":
+    if not _fr.owes_red_first(task):
         return None, None
     if not added:
         return None, ("%s is %s and its tests.add names no file, so no test "
@@ -2643,20 +2648,41 @@ def lock_moved(ctx, state, task, tree=None):
     return changed_tests(lock, locked_paths_now(ctx, lock, tree))
 
 
+def unowed_red_first(task):
+    """The `not-attempted` block, without its time, of a task that owes no
+    red-first proof (`_filed_returns.owes_red_first`), its basis naming which
+    stored field says so - or None for a task that does owe one."""
+    if _fr.owes_red_first(task):
+        return None
+    tests = task.get("tests") or {}
+    if tests.get("mode") == "tdd":
+        basis = ("tests.expectRedFirst is false on this tdd task: it names no "
+                 "case to prove a red by, so no red-first proof is owed")
+    else:
+        basis = ("tests.mode %s: only a tdd task owes a red-first proof"
+                 % (tests.get("mode") or "unset",))
+    return {"status": "not-attempted", "basis": basis}
+
+
+def fix_prove_lines(task):
+    """The fix prompt's instruction to prove each finding with a case failing at
+    HEAD, as lines: empty for a task that owes no red-first proof."""
+    if not _fr.owes_red_first(task):
+        return []
+    return ["Prove each with a case that fails on the code at HEAD."]
+
+
 def writer_prove(ctx, manifest, phase, task, tree=None):
     """`(block, payload, None)` - the red-first block for the writer's work: the
     helper's over the derived test command, carrying the digest it was proved
     over and the HEAD its throwaway ran at; `could-not-prove` naming the basis
-    where no command can be derived; `not-attempted` where the task is not tdd
-    - or `(None, None, why)` with the helper's own words when it gave no block
-    or refused."""
+    where no command can be derived; `not-attempted` where the task owes no
+    red-first proof (`unowed_red_first`) - or `(None, None, why)` with the
+    helper's own words when it gave no block or refused."""
     cmd, basis = writer_test_command(manifest, phase, task)
     if cmd is None and basis is None:
-        return {"status": "not-attempted", "at": _utc_stamp(),
-                "head": tree_head(ctx, tree),
-                "basis": "tests.mode %s: only a tdd task owes a red-first proof"
-                         % ((task.get("tests") or {}).get("mode") or "unset",)}, \
-            None, None
+        return dict(unowed_red_first(task), at=_utc_stamp(),
+                    head=tree_head(ctx, tree)), None, None
     if cmd is None:
         return {"status": "could-not-prove", "at": _utc_stamp(),
                 "head": tree_head(ctx, tree), "basis": basis}, None, None
@@ -6304,8 +6330,7 @@ def review_fix_dispatch(ctx, state, phase, task, writer, brief, fix, tree=None):
         lines += ["- %s %s %s: %s" % (fid, found.get("severity"), found.get("file"),
                                       found.get("issue")),
                   "  resolution asked: %s" % (found.get("resolution") or "none",)]
-    if ((task.get("tests") or {}).get("mode")) == "tdd":
-        lines.append("Prove each with a case that fails on the code at HEAD.")
+    lines += fix_prove_lines(task)
     if carried:
         session, why = None, ("a dispatch of start %s already carried them, so "
                               "this one starts afresh with the task's brief"
@@ -7458,12 +7483,19 @@ def submit(ctx, manifest, args, cmd, text):
     except ValueError as exc:
         return _stopped(ctx, "the return on stdin does not parse as JSON (%s). "
                         "Nothing filed." % (exc,))
-    tdd = task is not None and (task.get("tests") or {}).get("mode") == "tdd"
+    owed = task is not None and _fr.owes_red_first(task)
     executor = task is not None and args.role == "executor"
-    if executor and tdd and not cmd:
+    if executor and owed and not cmd:
         return _stopped(ctx, "%s is a tdd task, so its red-first block is the "
                         "helper's: name the test command after `--`. Nothing "
                         "filed." % (task["id"],))
+    # A tdd task that owes nothing (`expectRedFirst` false) and is given no
+    # command: the driver files the not-attempted block itself, since no helper
+    # ran and a typed block would claim a proof nothing made.
+    unowed = (executor and not cmd and isinstance(body, dict) and
+              (task.get("tests") or {}).get("mode") == "tdd" and not owed)
+    if unowed:
+        body["redFirst"] = dict(unowed_red_first(task), at=_utc_stamp())
     fills = (["stamp"] + (["redFirst"] if cmd else [])) if executor else []
     problems = (submitted_shape(args.role, body, fills, task)
                if task is not None else [])

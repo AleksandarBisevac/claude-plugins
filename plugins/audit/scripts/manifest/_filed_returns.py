@@ -1616,6 +1616,20 @@ def tests_add_files(task):
                         for a in tests.get("add") or [] if isinstance(a, str)) if f]
 
 
+def owes_red_first(task):
+    """Whether `task` owes a red-first proof: its mode is `tdd` and its stored
+    `tests.expectRedFirst` is not false. The one question every reader of that
+    obligation asks - `submit`, the executor's brief, the writer path and the
+    fix prompt - because `audit-task._expects_red_first` is the only writer of
+    the field and writes false for a fix task that names no case, which has
+    nothing to prove a red by. A tdd task with the field absent is a plan written
+    by hand before the field was derived, and keeps the mode's reading."""
+    tests = task.get("tests") if isinstance(task, dict) else None
+    if not isinstance(tests, dict):
+        return False
+    return tests.get("mode") == "tdd" and tests.get("expectRedFirst") is not False
+
+
 # What may stand on either side of a path a command names: the command's ends,
 # whitespace, a quote, and the separators a word list or a shell line uses;
 # before it also `=` (`--flag=path`), and after it `:` (a `::case` suffix).

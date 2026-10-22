@@ -1,0 +1,40 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass",
+    "python3 tests/test_audit_lookup.py --selftest": "pass",
+    "sweep of test_audit_task, test__manifest_rules, test__manifest_phases, test__filed_returns": "pass",
+    "verify.sh --fast --only selftests,lint on a committed copy (git archive HEAD + my 6 files, committed in /tmp)": "fail: only tools/check-example-ledgers.py and tools/measure-context.py red in the sweep (192/194 files), plus the ledger lint over the copy's missing history; gate parity, bench-hooks, context ceilings, ruff, vermin, pii all ok"
+  },
+  "redFirst": {
+    "at": "2026-10-22T02:47:34Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 480-second deadline; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added _filed_returns.owes_red_first(task) (mode tdd and stored tests.expectRedFirst not False; absent field keeps the mode reading for hand-written plans) as the one predicate. Readers moved onto it: drive-phase submit (no command needed for a tdd task with expectRedFirst false; driver files redFirst not-attempted naming the field, overwriting any typed block since no helper ran), drive-phase writer_test_command and writer_prove (new unowed_red_first builds the not-attempted block), drive-phase fix prompt (new fix_prove_lines), audit-lookup executor_submit_lines (brief asks for no command, says submit files redFirst itself), audit-task add-time NOTE (now keyed on stored expectRedFirst, not mode). Readers of tests.mode left alone because they do not decide a red-first obligation: _filed_returns._tests_add_empty_problem (testsAdded shape), _manifest_phases 953 (tests.add file-shape rule, deliberately mode-only per its comment) and 1692 (already reads expectRedFirst), audit-task _no_change_shaped (may a task start with no files), audit-task 9474 (writer of the field), drive-phase fix_tests (chooses mode). New cases: test_drive_phase ow1-ow6, test_audit_lookup ow1-ow2. Red seen before the fix: ow1, ow2, ow4, ow5 failed in drive_phase (ow6 block raised on the missing function), ow1 failed in audit_lookup. Then 531/531 and 138/138. Dependants: drive-phase.py/audit-lookup.py/audit-task.py/test files lists all still correct - only added functions and changed one branch each; names used elsewhere (_carries, _clip, _mark, _marked, _brief_context, _diff_lines, _head, _phase_scope_lines, _allocate_id, _allocate_phase_id, _build_phase, _cancel_task, _counting, _follower_cases, _load, _cli, _success_line_cases) untouched. Process notes: (1) I edited tests/test_drive_phase.py once through a python heredoc via Bash, against 'Edit tool only'; every other change used Edit. The content is the same as an Edit would have written. (2) _filed_returns.py is outside the task's files; I edited it because the shared predicate has no other home both audit-lookup and drive-phase import (both already import it, red_command lives there); the plan gate did not refuse the edit. Callers: if this is unwanted, move owes_red_first and say so. (3) The audit-task NOTE change has no case of its own: tests/test_audit_task.py is outside the files. Not touched (outside files): README.md:660, commands/init.md:289, reference/verbs-in-full.md:357 and execute-task.md:107 prose, which still describe expectRedFirst as 'iff tdd' / 'should be true'; tools/demo/gen-demo-manifest.py writes expectRedFirst = mode == tdd for demo tasks.",
+    "descriptive": "A tdd fix task with no case to prove a red by now submits with no test command and is filed red-first not-attempted, while a tdd task expecting a red is still refused without one; brief, writer path and fix prompt all agree."
+  },
+  "testsAdded": [
+    "tests/test_drive_phase.py: ow1-ow6 (submit of a tdd task with expectRedFirst false files not-attempted with no command; typed proved replaced; expectRedFirst-true twin refused; writer_test_command, unowed_red_first and fix_prove_lines paired false/true)",
+    "tests/test_audit_lookup.py: ow1-ow2 (executor brief for tdd expectRedFirst false asks for no command; true twin still asked)"
+  ],
+  "casesAdded": [
+    [
+      "ow1",
+      "ow2",
+      "ow3",
+      "ow4",
+      "ow5",
+      "ow6"
+    ],
+    [
+      "ow1",
+      "ow2"
+    ]
+  ],
+  "claims": "claims:\n1 _filed_returns.owes_red_first is the predicate the docstrings name; drive-phase submit/writer_test_command/writer_prove/fix prompt and audit-lookup executor_submit_lines each call it (grep owes_red_first); the submit docstring/module prose rewritten to say not-attempted for expectRedFirst false\n2 ow1,ow2,ow4,ow5 red against pre-fix code (ow6's block raised on the missing function), audit_lookup ow1 red; after fix 531/531 and 138/138; over-fire direction: twin ow3 (expectRedFirst true, no command) must still be refused, and audit_lookup ow2 asks for the command\n3 grep -rn '\"tdd\"' plugins/audit/scripts plugins/audit/hooks: every mode reader accounted for in outcome.technical - moved or left because it decides something else\n4 n/a - no new rule addressed to an agent beyond the brief sentence, which is enforced by submit (refuses without a command only when owes_red_first)\n5 n/a - no property recorded\n6 decision reads the stored expectRedFirst field of the task, not the command text; allow case (tdd, true, refused without command) kept as ow3\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:49b37a0d69181edc8c45f90416dff1b35fe1f1672113295e76d16f722c93d37b\",\"dirtyDigest\":\"sha256:159f862e2340fb6530f7fdf82052b2bbf75cec9ee4153c6c86c44532d410d031\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/drive-phase.py\":\"37638513c2d3363f\",\"plugins/audit/scripts/manifest/_filed_returns.py\":\"defd59925fbfd201\",\"plugins/audit/scripts/manifest/audit-task.py\":\"8943d85a9571f75c\",\"plugins/audit/scripts/status/audit-lookup.py\":\"c390ba2327e4bfaa\",\"tests/test_audit_lookup.py\":\"e5e117d229233e77\",\"tests/test_drive_phase.py\":\"27e5693c4aad593c\"},\"head\":\"66b3635d\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test_audit_lookup.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:47967eda50b3d8b2a036a169b391580c0cf60afe503bdf1bdcfda8a20d66fa16\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

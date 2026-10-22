@@ -247,7 +247,9 @@ per add is the class of error the script exists to delete.
      task down.
    - `--tests-mode` (`tdd` for incorrect current behavior / `regression` for
      behavior-preserving / `gate-only` for mechanical — the script sets
-     `expectRedFirst` true iff tdd), `--tests-add "<desc>"` (repeatable, one test
+     `expectRedFirst` true for tdd, except a fix task that names no case, where it is
+     false: `_expects_red_first` is the one writer and every reader asks the stored
+     field), `--tests-add "<desc>"` (repeatable, one test
      description each — **write it as `"<path>: <what it asserts>"`**, because
      the leading path is what joins `files` and the `fileIndex`, and an entry
      that names no file adds nothing to either and is reported as adding
