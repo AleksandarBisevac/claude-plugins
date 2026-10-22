@@ -824,6 +824,14 @@ TABLE = (
   '    shutil.rmtree(os.path.join(fx["root"], "docs", "audit", "journal"),\n'
   '                  ignore_errors=True)',
   "tools/_suite.py", "s16"),
+ # THE PAYLOAD IS THE DEFECT VERBATIM: a relative path between a `mkdtemp` result
+ # and the checkout, planted in a tool that already imports both names. It sits at
+ # the top of `_selftest` and the case that goes red only READS the file, so the
+ # line is never executed; `s33` is the case that reads every tool.
+ ("unsafe_relpath_violations", "tools/check-git-pipeline.py", "after",
+  "def _selftest():\n",
+  "    os.path.relpath(tempfile.mkdtemp(), REPO)\n",
+  "tools/_suite.py", "s33"),
  # THE READ AND THE TRIM DO NOT HAVE TO SHARE A LINE, which is the half of this
  # rule the defect it is named for actually needed: the bug type is read on one
  # line and its whitespace decided two lines down. Stop looking past the
@@ -1495,6 +1503,14 @@ ALLOW = (
  ("unsafe_removal_violations", "tools/_suite.py", "replace",
   "    if not any(marker in words for marker in OBJECT_MARKERS):",
   "    if False:", "tools/_suite.py", "s14"),
+ # THE RELATIVE-PATH RULE CONVICTING EVERY PAIR is the over-eager version: a call
+ # whose two sides are both scratch, both checkout, or unknown can sit on one drive
+ # by construction, and a rule that named them would be routed around within a
+ # day. `s29` asserts three such calls are NOT reported, so it reads as vacuous and
+ # passes on every version except this one.
+ ("unsafe_relpath_violations", "tools/_suite.py", "replace",
+  '        if {first, second} == {"scratch", "checkout"}:',
+  "        if True:", "tools/_suite.py", "s29"),
  # --- The quiet half for the two lints nothing used to derive -----------------
  # THE NARROWING IS THE IMPORT LINE. A tool's `_selftest` is two statements, and
  # only one of them is the delegation; the other is what makes the runner

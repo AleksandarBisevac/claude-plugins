@@ -528,11 +528,15 @@ def _cases(check):
 
         # A RELATIVE MANIFEST is printed absolute, so the command does not
         # depend on the directory it is pasted into.
-        rel = os.path.relpath(mp10)
+        # Across drives (windows, the run started on another drive than the
+        # scratch directory) there is no relative spelling and `rel_or_abs`
+        # answers the absolute path; the title says which was exercised.
+        rel = _harness.rel_or_abs(mp10, os.getcwd())
         code, out = run([rel, red_src, "--project-dir", d10, "--json"])
         words = shlex.split((json.loads(out).get("learnFrom") or [""])[0])
-        check("i31 RED-FIRST: an import given a relative manifest (%s) prints "
-              "it absolute: %r" % (rel, words[2:3]),
+        check("i31 RED-FIRST: an import given a relative manifest (%s; relative "
+              "here: %s) prints it absolute: %r"
+              % (rel, not os.path.isabs(rel), words[2:3]),
               code == 0 and len(words) > 2 and os.path.isabs(words[2])
               and os.path.samefile(words[2], mp10))
 

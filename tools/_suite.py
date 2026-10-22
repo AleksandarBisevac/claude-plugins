@@ -652,6 +652,220 @@ def unsafe_removal_violations(tools_dir=None, label="", exempt=None):
     return out
 
 
+# --- the rule: no relative path between a scratch directory and the checkout ---
+# `rel_or_abs` is the same kind of binding as `remove_tree` above: the fact has one
+# home in the harness, and a tool that needs it reaches it from here.
+rel_or_abs = _harness.rel_or_abs
+
+# THE TWO SETS ARE WHAT A READER CAN SEE WITHOUT RUNNING THE CODE. A scratch path is
+# one that came out of a call that makes a directory; a checkout path is one built
+# from the names the anchor and the tools give the repository's own directories. A
+# call is convicted when one side is the first kind only and the other the second
+# kind only: those are the two that can sit on different drives, and a pair under one
+# scratch root or one checkout root cannot.
+SCRATCH_MAKERS = frozenset(("mkdtemp", "mkstemp", "TemporaryDirectory",
+                            "NamedTemporaryFile", "gettempdir", "fixture_root"))
+CHECKOUT_NAMES = frozenset(("REPO", "REPO_ROOT", "SCRIPTS_DIR", "PLUGIN_ROOT",
+                            "TESTS_DIR", "HOOKS_DIR", "LINTS_DIR", "TOOLS_DIR",
+                            "UI_DIR", "__file__"))
+RELATIVE_CALLS = frozenset(("relpath", "posix_rel"))
+
+
+def _callee(call):
+    """The bare name a call is made through: `f` for `f()` and `m.f()`."""
+    if isinstance(call.func, ast.Name):
+        return call.func.id
+    if isinstance(call.func, ast.Attribute):
+        return call.func.attr
+    return None
+
+
+def _scratch_makers(tree):
+    """`SCRATCH_MAKERS` plus every function in `tree` that calls one, to a fixed point.
+
+    This is how `_mini_repo()` - a local function whose whole body is a call to the
+    harness - is known to hand back a scratch path, and it was that function's result
+    that took the suite down. It reads names, not return values, so a function that
+    makes a directory and returns something else is also a maker: the cost is a
+    possible false finding on a call that feeds such a result to a relative path,
+    and nothing in this tree does.
+    """
+    makers = set(SCRATCH_MAKERS)
+    defs = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
+    changed = True
+    while changed:
+        changed = False
+        for fn in defs:
+            if fn.name in makers:
+                continue
+            if any(isinstance(n, ast.Call) and _callee(n) in makers
+                   for n in ast.walk(fn)):
+                makers.add(fn.name)
+                changed = True
+    return makers
+
+
+def _name_bindings(nodes):
+    """`{name: [expression bound to it]}` over the statements in `nodes`, nested
+    functions included. A tuple target binds every name in it to the whole right
+    side, which over-approximates and never under-approximates."""
+    out = {}
+    for top in nodes:
+        for node in ast.walk(top):
+            pairs = []
+            if isinstance(node, ast.Assign):
+                pairs = [(t, node.value) for t in node.targets]
+            elif isinstance(node, (ast.For, ast.comprehension)):
+                pairs = [(node.target, node.iter)]
+            elif isinstance(node, ast.With):
+                pairs = [(i.optional_vars, i.context_expr) for i in node.items
+                         if i.optional_vars is not None]
+            for target, value in pairs:
+                for name in ast.walk(target):
+                    # A STORE only: `os.environ[k] = v` holds the name `os` in a
+                    # target too, and binding it made every `os.path` after it
+                    # read as the right-hand side.
+                    if isinstance(name, ast.Name) and isinstance(name.ctx, ast.Store):
+                        out.setdefault(name.id, []).append(value)
+    return out
+
+
+def _path_kinds(expr, chain, makers, seen=frozenset()):
+    """(scratch, checkout): whether `expr` can be a scratch path, a checkout path.
+
+    A name is followed through the innermost scope that binds it, then outward, the
+    way the interpreter would; a name nothing binds (a parameter) is unknown and
+    contributes nothing, so a helper that is handed both sides is never convicted
+    for what its callers pass.
+    """
+    scratch = checkout = False
+    for node in ast.walk(expr):
+        if isinstance(node, ast.Call) and _callee(node) in makers:
+            scratch = True
+        elif isinstance(node, ast.Attribute) and node.attr in CHECKOUT_NAMES:
+            checkout = True
+        elif isinstance(node, ast.Name):
+            if node.id in CHECKOUT_NAMES:
+                checkout = True
+            elif node.id not in seen:
+                for bindings in chain:
+                    if node.id in bindings:
+                        for value in bindings[node.id]:
+                            s, c = _path_kinds(value, chain, makers,
+                                               seen | {node.id})
+                            scratch, checkout = scratch or s, checkout or c
+                        break
+    return scratch, checkout
+
+
+def _enclosing_functions(tree):
+    """`{id(call): [innermost function, ..., outermost function]}` for every call."""
+    chains = {}
+
+    def visit(node, stack):
+        if isinstance(node, ast.FunctionDef):
+            stack = [node] + stack
+        if isinstance(node, ast.Call):
+            chains[id(node)] = stack
+        for child in ast.iter_child_nodes(node):
+            visit(child, stack)
+
+    visit(tree, [])
+    return chains
+
+
+def _relative_call_lines(tree):
+    """The lines of every relative-path call whose sides can be on two drives."""
+    makers = _scratch_makers(tree)
+    chains = _enclosing_functions(tree)
+    module_scope = _name_bindings(
+        [n for n in tree.body if not isinstance(n, (ast.FunctionDef, ast.ClassDef))])
+    cache = {}
+    lines = set()
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and _callee(node) in RELATIVE_CALLS):
+            continue
+        sides = list(node.args[:2])
+        sides += [k.value for k in node.keywords if k.arg == "start"]
+        if not sides:
+            continue
+        chain = []
+        for fn in chains.get(id(node), []):
+            if id(fn) not in cache:
+                cache[id(fn)] = _name_bindings([fn])
+            chain.append(cache[id(fn)])
+        chain.append(module_scope)
+        kinds = [_path_kinds(side, chain, makers) for side in sides]
+        # Only the call's own relative-path callee counts, not a call it contains:
+        # `walk` above visits the inner call on its own turn.
+        first = ("scratch" if kinds[0][0] and not kinds[0][1]
+                 else "checkout" if kinds[0][1] and not kinds[0][0] else "")
+        if len(kinds) == 1:
+            # `start` is the working directory, which is the checkout when a suite
+            # is run by hand and a scratch directory only under the sweep.
+            if first == "scratch":
+                lines.add(node.lineno)
+            continue
+        second = ("scratch" if kinds[1][0] and not kinds[1][1]
+                  else "checkout" if kinds[1][1] and not kinds[1][0] else "")
+        if {first, second} == {"scratch", "checkout"}:
+            lines.add(node.lineno)
+    return sorted(lines)
+
+
+def relpath_problem(source):
+    """Why `source` can raise building a relative path across two drives, or None.
+
+    A PURE FUNCTION OVER TEXT, for the reasons `removal_problem()` is: both
+    directions are driven from strings, and a fixture spelled as a file would need
+    a `.py` basename the tree does not contain.
+
+    WHAT IT CANNOT SEE, SAID BECAUSE A GREEN RESULT IS NOT A PROOF. A side that
+    arrives as a function PARAMETER is unknown, so a helper handed both paths is
+    judged by none of its callers; a scratch path read back out of a data structure
+    or a file is not followed; and a relative path built any other way than the
+    two calls named in `RELATIVE_CALLS` (`pathlib`'s `relative_to`, which raises a
+    different error) is not read at all.
+    """
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError) as exc:
+        return "does not parse, so nothing can be said about its relative paths: %s" % (exc,)
+    lines = _relative_call_lines(tree)
+    if not lines:
+        return None
+    return ("it makes a path relative between a scratch directory and a checkout "
+            "path at line(s) %s. On windows those sit on different drives (the "
+            "runner's temp directory on one, the checkout on another), `relpath` "
+            "has no answer for two drives and raises ValueError, and it did so "
+            "while a suite's cases were still being built, which ended the run "
+            "with every later case unrun. `from _suite import %s`, which is "
+            "`_harness.%s` and answers the absolute path instead of raising"
+            % (", ".join(str(line) for line in lines), rel_or_abs.__name__,
+               rel_or_abs.__name__))
+
+
+def unsafe_relpath_violations(root=None, label=""):
+    """[(rel, problem)] for every file under `root` that can raise building a
+    relative path across drives. Empty when clean. `tools/` by default; `tests/`
+    goes through the same function as `unsafe_relpath_violations(TESTS_DIR,
+    "tests/")`, for the reason `unsafe_removal_violations()` gives. Walks with
+    `_output.py_files()`, and `label` is put before each `rel`.
+    """
+    root = root if root is not None else TOOLS_DIR
+    out = []
+    for rel, path in _output.py_files(root):
+        try:
+            source = io.open(path, encoding="utf-8").read()
+        except OSError as exc:
+            out.append((label + rel, "could not be read: %s" % (exc,)))
+            continue
+        problem = relpath_problem(source)
+        if problem is not None:
+            out.append((label + rel, problem))
+    return out
+
+
 # --- selftest -----------------------------------------------------------------
 def _cases(check):
     check("s1 `run` IS `_harness.run`, the same function object the suites under "
@@ -979,6 +1193,142 @@ def _cases(check):
           _live_tests == []
           and [r for r, _p in _unexempted]
           == ["tests/%s" % name for name in sorted(REMOVAL_EXEMPT)])
+
+    # --- the rule: no relpath between a scratch path and a checkout path ----------
+    # The planted sources are strings, so the rule is driven from text exactly as
+    # `removal_problem` is. Windows is emulated with `ntpath`, which raises on
+    # posix the way `os.path` raises there: the scratch directory sits on one
+    # drive and the checkout on another.
+    import ntpath
+    _across = ("import os\n"
+               "import tempfile\n"
+               "import _output\n"
+               "\n"
+               "def _cases(check):\n"
+               "    scratch = tempfile.mkdtemp()\n"
+               "    here = os.path.join(_output.SCRIPTS_DIR, 'x.txt')\n"
+               "    rel = os.path.relpath(here, scratch)\n"
+               "    check('r1', rel)\n")
+    _across_problem = relpath_problem(_across)
+    try:
+        ntpath.relpath("C:\\scratch\\x", "D:\\checkout")
+        _nt_raises = False
+    except ValueError:
+        _nt_raises = True
+    _nt_cross = rel_or_abs("C:\\scratch\\x", "D:\\checkout", ntpath)
+    _nt_same = rel_or_abs("D:\\checkout\\a\\b.txt", "D:\\checkout", ntpath)
+    check("s26 a relpath between a mkdtemp-derived path and a checkout path is "
+          "named, with its line: %r" % (_across_problem,),
+          _across_problem is not None and "line(s) 8." in _across_problem
+          and "rel_or_abs" in _across_problem)
+    check("s27 THE WINDOWS FACT, AND THE HELPER'S ANSWER: `ntpath.relpath` across "
+          "C: and D: raises (%s), and `rel_or_abs` answers the absolute path in "
+          "`/` spelling instead of raising, while a same-drive pair still comes "
+          "back relative: %r / %r" % (_nt_raises, _nt_cross, _nt_same),
+          _nt_raises and _nt_cross == "C:/scratch/x"
+          and _nt_same == "a/b.txt"
+          and rel_or_abs(os.path.join(REPO, "tools", "_suite.py"), REPO)
+          == "tools/_suite.py")
+    check("s28 the same pair routed through the helper is not a finding: %r"
+          % (relpath_problem(_across.replace("os.path.relpath(here, scratch)",
+                                             "rel_or_abs(here, scratch)")),),
+          relpath_problem(_across.replace("os.path.relpath(here, scratch)",
+                                          "rel_or_abs(here, scratch)")) is None)
+    # Each of these has to be quiet, and each is the mutation of one wrong
+    # implementation: a rule that convicted every relpath in a file that mentions
+    # a scratch directory, or every one with a repo name beside it.
+    _same_root = _across.replace("here = os.path.join(_output.SCRIPTS_DIR, 'x.txt')",
+                                 "here = os.path.join(scratch, 'x.txt')")
+    _both_repo = ("import os\n"
+                  "import tempfile\n"
+                  "import _output\n"
+                  "\n"
+                  "def _cases(check):\n"
+                  "    scratch = tempfile.mkdtemp()\n"
+                  "    rel = os.path.relpath(_output.SCRIPTS_DIR, _output.REPO_ROOT)\n"
+                  "    check('r1', rel, scratch)\n")
+    _unknown = ("import os\n"
+                "\n"
+                "def inside(path, start):\n"
+                "    return os.path.relpath(path, start)\n")
+    check("s29 ALLOW CASES - a pair under ONE scratch root, a pair of checkout "
+          "paths in a file that also makes a scratch directory, and a call whose "
+          "sides arrive as parameters are not findings: %r / %r / %r"
+          % (relpath_problem(_same_root), relpath_problem(_both_repo),
+             relpath_problem(_unknown)),
+          relpath_problem(_same_root) is None and relpath_problem(_both_repo) is None
+          and relpath_problem(_unknown) is None)
+    _posix_form = _across.replace("os.path.relpath(here, scratch)",
+                                  "_output.posix_rel(scratch, here)")
+    _one_arg = ("import os\n"
+                "import tempfile\n"
+                "\n"
+                "def _cases(check):\n"
+                "    d = tempfile.mkdtemp()\n"
+                "    rel = os.path.relpath(os.path.join(d, 'm.json'))\n"
+                "    check('r1', rel)\n")
+    check("s30 the other spellings: `posix_rel`, which is `os.path.relpath` with "
+          "the separators respelled and raises the same way, and the one-argument "
+          "call, whose start is the working directory - the checkout when the "
+          "suite is run by hand: %r / %r"
+          % (relpath_problem(_posix_form), relpath_problem(_one_arg)),
+          "line(s) 8." in (relpath_problem(_posix_form) or "")
+          and "line(s) 6." in (relpath_problem(_one_arg) or ""))
+    _via_helper_def = ("import os\n"
+                       "import _harness\n"
+                       "import _output\n"
+                       "\n"
+                       "def _mini_repo(prefix):\n"
+                       "    return _harness.fixture_root(prefix)\n"
+                       "\n"
+                       "def _cases(check):\n"
+                       "    own = os.path.join(_output.SCRIPTS_DIR, 'a.txt')\n"
+                       "    repo = _mini_repo('p-')\n"
+                       "    rel = os.path.relpath(os.path.realpath(own),\n"
+                       "                          os.path.realpath(repo))\n"
+                       "    check('r1', rel)\n")
+    _unpacked = ("import os\n"
+                 "import tempfile\n"
+                 "import _output\n"
+                 "\n"
+                 "def _cases(check):\n"
+                 "    def project():\n"
+                 "        d = tempfile.mkdtemp()\n"
+                 "        return d, os.path.join(d, 'm.json')\n"
+                 "    d1, m1 = project()\n"
+                 "    rel = os.path.relpath(m1, _output.REPO_ROOT)\n"
+                 "    check('r1', rel)\n")
+    check("s31 a scratch directory that arrives through a local function, the "
+          "shape `_mini_repo()` has and the one that failed on windows, and one "
+          "that arrives through a tuple unpacking, are followed: %r / %r"
+          % (relpath_problem(_via_helper_def), relpath_problem(_unpacked)),
+          "line(s) 11." in (relpath_problem(_via_helper_def) or "")
+          and "line(s) 10." in (relpath_problem(_unpacked) or "")
+          and (relpath_problem("def f(:\n") or "").startswith("does not parse"))
+    _env_store = ("import os\n"
+                  "import _harness\n"
+                  "import _output\n"
+                  "\n"
+                  "def _cases(check):\n"
+                  "    os.environ['ROOT'] = _output.REPO_ROOT\n"
+                  "    scratch = _harness.fixture_root('p-')\n"
+                  "    rel = os.path.relpath(_output.SCRIPTS_DIR, os.path.realpath(scratch))\n"
+                  "    check('r1', rel)\n")
+    check("s32 a subscript target (`os.environ[k] = ...`) holds the name `os` and "
+          "binds nothing: read as a binding, it made every later `os.path` side a "
+          "checkout path as well, a scratch side became mixed, and a call such as "
+          "this one went unnamed: %r" % (relpath_problem(_env_store),),
+          "line(s) 8." in (relpath_problem(_env_store) or ""))
+    _live_relpaths = unsafe_relpath_violations()
+    check("s33 no tool under tools/ makes a path relative between a scratch "
+          "directory and the checkout: %r" % (_live_relpaths,),
+          _live_relpaths == [])
+    _live_suite_relpaths = unsafe_relpath_violations(TESTS_DIR, "tests/")
+    check("s34 ...and no suite under tests/ does either - the half that "
+          "convicted the gate suite's foreign-status block and a one-argument "
+          "call whose start is the working directory: %r"
+          % (_live_suite_relpaths,),
+          _live_suite_relpaths == [])
 
 
 def _selftest():

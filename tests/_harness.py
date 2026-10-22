@@ -592,6 +592,39 @@ def between(text, start, end):
     return body[i + len(start):j]
 
 
+# --- a relative path that does not raise across drives -------------------------
+def rel_or_abs(path, start, pathmod=None):
+    """`path` relative to `start` in `/` spelling, or `path` absolute when no
+    relative spelling exists.
+
+    WHY A SUITE MAY NOT CALL `os.path.relpath` BETWEEN A SCRATCH PATH AND THE
+    CHECKOUT. On windows a path has a drive, and a relative path between two drives
+    does not exist: `os.path.relpath` raises `ValueError` (`path is on mount 'D:',
+    start on mount 'C:'`). The checkout and `tempfile`'s directory are on the same
+    drive on a developer's machine and on different ones on the hosted runner, so
+    the call is green everywhere a developer looks and takes the suite down on the
+    one machine nobody does. It raised while a suite's cases were still being BUILT,
+    so no case after it ran and the tally was the only thing that said so.
+
+    THE ANSWER ACROSS DRIVES IS THE ABSOLUTE PATH, not an empty string, not `None`
+    and not a `..` climb that names a different file: every caller here puts the
+    result back into a command line or a path join, where the absolute spelling
+    still names the file and the relative one is a convenience. A caller whose
+    CASE is about the relative spelling checks `os.path.isabs()` on the answer and
+    says so in its title, instead of reading a pass that never exercised it.
+
+    `pathmod` is `os.path` unless a case names another: `ntpath` on posix raises
+    for the same inputs the windows runner does, which is how the cross-drive branch
+    is exercised on a machine that has only one drive.
+    """
+    mod = pathmod if pathmod is not None else os.path
+    try:
+        rel = mod.relpath(path, start)
+    except ValueError:
+        rel = mod.abspath(path)
+    return rel.replace("\\", "/")
+
+
 # --- a needle spelled the way the haystack spells it ---------------------------
 def in_json(text):
     """`text` as a JSON string spells it - the needle for counting a path in JSON.

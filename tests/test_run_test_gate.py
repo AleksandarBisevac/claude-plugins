@@ -10720,9 +10720,12 @@ def _foreign_status_cases(check):
     # From the REAL paths: a temp dir behind a symlink (macOS /var) makes a
     # textual relpath climb one level too few, and the OS resolves `..`
     # from where the directory really is.
-    own_rel = gate(shlex.quote(
-        os.path.relpath(os.path.realpath(own),
-                        os.path.realpath(repo)).replace(os.sep, "/")))
+    # Across drives (windows: the checkout on one, the scratch repo on another)
+    # there is no relative spelling, `rel_or_abs` answers the absolute path, and
+    # `gtf4` says which of the two it exercised.
+    own_rel_path = _harness.rel_or_abs(os.path.realpath(own),
+                                       os.path.realpath(repo))
+    own_rel = gate(shlex.quote(own_rel_path))
     # The spelling a user project's gate uses; set around the runs below.
     var_name = "RTG_FOREIGN_CASES_PLUGIN_ROOT"
     via_var = gate('"${%s}/scripts/status/audit-status.py"' % var_name)
@@ -10792,9 +10795,11 @@ def _foreign_status_cases(check):
           and foreign_out.count("does not declare --task") == 1)
     # The other direction: a guard that refuses everything would pass gtf2/gtf3.
     check("gtf4 a step naming the runner's own audit-status.py - by absolute "
-          "path and by a project-relative path - still gets `--task <id>` and "
-          "prints no such line: %r / %r / %r"
-          % (abs_seen, rel_seen, (abs_out, rel_out)),
+          "path and by a project-relative path (relative here: %s; across "
+          "drives there is none and it is the absolute path again) - still gets "
+          "`--task <id>` and prints no such line: %r / %r / %r"
+          % (not os.path.isabs(own_rel_path), abs_seen, rel_seen,
+             (abs_out, rel_out)),
           abs_seen == [own_abs + " --task P1.2"]
           and rel_seen == [own_rel + " --task P1.2"]
           and "not applied" not in abs_out + rel_out)

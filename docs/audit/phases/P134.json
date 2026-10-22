@@ -1,7 +1,7 @@
 {
   "id": "P134",
   "title": "No path is made relative across drives, in tests or tools",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Second instance of the cross-drive relpath class (P132.5 fixed suite_elsewhere_paths; P133.1's gtf-block fixture reintroduced it), so the class is closed by a check, not another instance fix.",
   "desiredOutcome": "The release tier is green on Windows, and a relpath between a scratch directory (C:) and the checkout (D:) can no longer be written without a lint naming it.",
   "testGate": [
@@ -16,26 +16,51 @@
     "vitest"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "b451946dd300f0231ca894da71e5e8f4b9286a6c",
+  "branch": "audit/p134-no-path-is-made-relative-acros",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P134-R1",
+        "severity": "low",
+        "file": "tests/test_import_evidence.py:531-539",
+        "issue": "rel_or_abs(mp10, os.getcwd()) returns the ABSOLUTE path whenever scratch and cwd are on different drives, which is exactly the hosted windows runner (checkout on D:, scratch on C:). i31 then feeds an absolute manifest to a case titled 'an import given a relative manifest ... prints it absolute' and its assertion (isabs(words[2]) and samefile) is trivially true: the case is green on the one machine it was fixed for without exercising the relative-to-absolute conversion. The title now says 'relative here: False', but a title is not an assertion, and nothing makes a green run on that runner read as vacuous. The helper's docstring asks such a caller to check isabs and say so; this one says so only in text.",
+        "resolution": "Make the case exercise the relative spelling on every drive layout: run the CLI with the working directory moved into os.path.dirname(mp10) (os.chdir in try/finally, M.main runs in-process) and pass os.path.basename(mp10); then no cross-drive question exists. Failing that, assert the 'relative here' leg only when it is relative and record the absolute leg as a separate, honestly-titled case."
+      },
+      {
+        "id": "P134-R2",
+        "severity": "low",
+        "file": "tools/_suite.py:SCRATCH/CHECKOUT classification (_path_kinds, lines ~228-253) and tests/test_import_evidence.py:536",
+        "issue": "os.getcwd() is classified as neither scratch nor checkout, so the exact call the executor wrote to repair i31, relpath(scratch_path, os.getcwd()), is invisible to the new lint, while the one-argument spelling of the same thing is convicted (s30). The one-arg branch carries the comment that the working directory is the checkout when a suite is run by hand; the two-arg spelling of that same fact is a hole. A future relpath(mkdtemp(), os.getcwd()) goes unnamed.",
+        "resolution": "Treat a call to getcwd as a checkout-kind source in _path_kinds (or normalise relpath(x, getcwd()) to the one-argument rule), and add a planted case beside s30."
+      },
+      {
+        "id": "P134-R3",
+        "severity": "low",
+        "file": "docs/audit/evidence/returns/P134.1 (filed return; stamp)",
+        "issue": "The filed outcome and claims describe a 3-file task with cases s26-s33, listing tests/test_import_evidence.py:531 and tools/prove-gates.py rows as out-of-scope follow-ups; the diff now holds 5 files and s26-s34, and both follow-ups are done. stamp-verification.py compare reports the stamp stale (moved: tests/test_import_evidence.py, tools/_suite.py, tools/prove-gates.py), so the filed gate results (33/33, 'prove-gates c1/a4 red') are claims about a tree that no longer exists and the redFirst/gate claims are unverified against the diff reviewed.",
+        "resolution": "Re-file the return (outcome, testsAdded including s34 and the prove-gates TABLE/ALLOW rows, gates) on the current tree and re-take the stamp."
+      }
+    ],
+    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P134.1",
       "title": "Every relpath in tests/ and tools/ whose two sides can sit on different drives goes through one helper that never raises across drives, and a lint names any bare one",
-      "status": "pending",
+      "status": "in_progress",
       "description": "CI run 39746079909 (ci/P133 @c339c804): tests/test_run_test_gate.py gtf-block raises `ValueError: path is on mount 'D:', start on mount 'C:'` while building its cases (546/547) on windows plain 2, cp1252 2 and resample - the checkout is on D:, tempfile scratch on C:. P132.5 fixed the same thing in tools/lints/_output_lints.suite_elsewhere_paths. Find every os.path.relpath / posix_rel call in tests/ and tools/ (and plugins/audit/scripts if a call can see a scratch path), classify each (both sides inside one root by construction vs a side that can be a tempfile path), route the risky ones through one helper (in tests/_harness.py for suites, _output for shipped code if needed) that returns a usable answer across drives (the absolute path, or a stated refusal) instead of raising, and add a lint case (in tools/_suite.py, the home of the removal lint) that names a bare relpath between a tempfile/mkdtemp-derived path and a repo path. Emulate Windows with ntpath on posix to prove the red.",
       "files": [
         "tests/test_run_test_gate.py",
         "tests/_harness.py",
-        "tools/_suite.py"
+        "tools/_suite.py",
+        "tests/test_import_evidence.py",
+        "tools/prove-gates.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -58,18 +83,31 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-22T08:42:18Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-22T10:25:08Z.9f84a6",
+        "status": "passed",
+        "at": "2026-10-22T10:25:08Z"
+      }
     }
   ],
   "request": "Owner rule: CI after every phase; CI on ci/P133 (run 39746079909) red on Windows from a cross-drive relpath in a new test fixture - the same class P132.5 fixed in one place",
-  "openChoices": []
+  "openChoices": [],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "bf837df2-37bc-4c94-9233-61f7d70c1d7f",
+    "branch": "audit/p134-no-path-is-made-relative-acros",
+    "at": "2026-10-22T08:42:18Z"
+  },
+  "startedAt": "2026-10-22T08:42:18Z"
 }
