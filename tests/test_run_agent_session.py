@@ -74,7 +74,7 @@ record = {
     "pgrp": os.getpgrp() if hasattr(os, "getpgrp") else None,
     "agents_file": None,
     "env": {k: v for k, v in os.environ.items()
-            if k.startswith(("CLAUDE", "AUDIT_")) or k in ("PATH", "HOME", "ORCH_KEEP_q81z")},
+            if k.startswith(("CLAUDE", "AUDIT_")) or k in ("PATH", "HOME", "ORCH_KEEP_Q81Z")},
 }
 argv = sys.argv[1:]
 if "--agents" in argv:
@@ -412,12 +412,16 @@ def _cases(check):
         # Not session state: a provider switch a plain top-level session also
         # inherits. The prefix drop would take it without the keep list, which is
         # the over-drop this name is here to catch.
-        kept_decoys = {"CLAUDE_CODE_USE_BEDROCK": "1", "ORCH_KEEP_q81z": "kept",
+        # Every decoy name below is upper case: Windows upper-cases the keys of
+        # os.environ, so a lower-case letter would reach the child as another
+        # name and the stub's recorder, which filters on the exact spelling,
+        # would never see it.
+        kept_decoys = {"CLAUDE_CODE_USE_BEDROCK": "1", "ORCH_KEEP_Q81Z": "kept",
                        "HOME": os.path.join(root, "decoy-home")}
         # A CLAUDE_CODE_* name no list here or in the script has ever heard of - a
         # variable a later CLI release exports. A top-level session does not carry
         # it, so the writer must not either: only a prefix rule drops it.
-        unlisted_session = ["CLAUDE_CODE_FUTURE_SESSION_FLAG_q81z"]
+        unlisted_session = ["CLAUDE_CODE_FUTURE_SESSION_FLAG_Q81Z"]
         # Credential names a plain top-level session inherits - the named keep list.
         kept_credentials = {"CLAUDE_CODE_OAUTH_TOKEN": "tok-q81z",
                             "CLAUDE_CODE_USE_VERTEX": "1"}
@@ -450,6 +454,19 @@ def _cases(check):
               "directory; lost: %r" % (lost,),
               rec is not None and not lost and bindir in seen.get("PATH", "")
               and _under(rec["tmpdir"], dirs["scratch"]), repr(seen))
+        # What a Windows child would see: the keys of the parent's environment
+        # upper-cased. Every decoy must survive that unchanged, and the stub's
+        # recorder must name each kept decoy in the form it will be handed.
+        decoy_names = (list(kept_decoys) + list(kept_credentials) + unlisted_session
+                       + parent_session)
+        shifted = sorted(name for name in decoy_names if name != name.upper())
+        unrecorded = sorted(name for name in ("ORCH_KEEP_Q81Z",)
+                            if '"%s"' % name not in STUB)
+        check("ras31b every child-environment decoy is named in upper case, so the "
+              "same name reaches the child on a platform that upper-cases environment "
+              "keys, and the stub's recorder filters on it; shifted: %r unrecorded: %r"
+              % (shifted, unrecorded),
+              decoy_names and not shifted and not unrecorded)
 
         # The basis of the drop list is stated where the list is, in this repository:
         # the prose naming it points at no file outside the repo (nothing here could

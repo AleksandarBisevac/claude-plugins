@@ -1,0 +1,90 @@
+{
+  "id": "P136",
+  "title": "The run-agent-session environment cases hold on Windows",
+  "status": "in_progress",
+  "description": "Windows stores environment keys upper-cased, so a decoy named in lower case is filtered out by the stub's recorder (a kept name is reported lost) or is trivially absent (a dropped name is reported dropped without the rule being exercised).",
+  "desiredOutcome": "tests/test_run_agent_session.py is green on the Windows runners, and no case there passes because a lower-case decoy name cannot exist in a Windows environment",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "5c71066aa83db133548c6fa38ede785f78c015da",
+  "branch": "audit/p136-the-run-agent-session-environm",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": [
+      {
+        "id": "P136-R1",
+        "severity": "low",
+        "file": "tests/test_run_agent_session.py:463-464",
+        "issue": "ras31b's 'unrecorded' check is hardcoded to the one tuple ('ORCH_KEEP_Q81Z',), not derived from kept_decoys. A renamed or newly added filter-only decoy would be unchecked, so the recorder-agrees-with-decoys guarantee holds only for that literal.",
+        "resolution": "Derive the names to check from kept_decoys (names not starting with CLAUDE or AUDIT_) and assert each appears quoted in STUB."
+      }
+    ],
+    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]"
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P136.1",
+      "title": "The child-environment cases name their decoys in a form every platform preserves",
+      "status": "in_progress",
+      "description": "In tests/test_run_agent_session.py the stub's environment recorder and the ras30/ras30b/ras30c/ras31 decoys use names with lower-case letters (ORCH_KEEP_q81z, CLAUDE_CODE_FUTURE_SESSION_FLAG_q81z). On Windows os.environ upper-cases keys, so ras31 reports ORCH_KEEP_q81z lost (CI run 39805287981, windows plain 3 and cp1252 3) and ras30b's absence check passes without the prefix rule being exercised. Name every decoy in upper case, and make the recorder's own filter and every lookup agree with it, so each case fails on the unfixed rule on Windows as on posix. Behaviour of run-agent-session.py does not change.",
+      "files": [
+        "tests/test_run_agent_session.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_run_agent_session.py: every child-environment decoy is named in upper case, so ras30b and ras31 exercise the rule on Windows as on posix"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_agent_session.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-22T16:01:35Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-10-22T16:05:41Z.278584",
+        "status": "passed",
+        "at": "2026-10-22T16:05:41Z"
+      }
+    }
+  ],
+  "request": "CI on ci/P135 (run 39805287981) red on Windows: ras31 loses ORCH_KEEP_q81z because Windows upper-cases environment keys; fix the suite so its decoys hold on every platform",
+  "openChoices": [],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "bf837df2-37bc-4c94-9233-61f7d70c1d7f",
+    "branch": "audit/p136-the-run-agent-session-environm",
+    "at": "2026-10-22T16:01:35Z"
+  },
+  "startedAt": "2026-10-22T16:01:35Z"
+}

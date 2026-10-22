@@ -1,0 +1,25 @@
+{
+  "gates": {
+    "python3 tests/test_run_agent_session.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py tests/test_run_agent_session.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "mode regression, expectRedFirst false. Windows cannot be run here; the flaw was shown on posix by SIMULATING the upper-casing a Windows child does (dict((n.upper(), v)) over the old names): child keys became ORCH_KEEP_Q81Z and CLAUDE_CODE_FUTURE_SESSION_FLAG_Q81Z; the old recorder filter kept [] ; the old ras31 lookup reported lost ['ORCH_KEEP_q81z']; the old ras30b absence check leaked [] (vacuous). This is a simulation, not a Windows run. The new ras31b predicate applied to the old names reports shifted ['CLAUDE_CODE_FUTURE_SESSION_FLAG_q81z', 'ORCH_KEEP_q81z'], i.e. it goes red on them.",
+    "at": "2026-10-22"
+  },
+  "outcome": {
+    "technical": "tests/test_run_agent_session.py only: the stub recorder's filter name, the kept decoy and the unlisted CLAUDE_CODE_* decoy renamed to ORCH_KEEP_Q81Z and CLAUDE_CODE_FUTURE_SESSION_FLAG_Q81Z (lookups use the same variables, so they agree); a comment explaining why decoys are upper case; new case ras31b asserting every decoy name (kept_decoys, kept_credentials, unlisted_session, parent_session) equals its .upper() and that the STUB text names the kept decoy in that form. python3 tests/test_run_agent_session.py --selftest exit 0, 39/39 cases passed; python3 tools/sweep-selftests.py tests/test_run_agent_session.py exit 0, 1/1 files ok, 39 cases. run-agent-session.py untouched. Dependant PLUGIN-BUILD-GUIDE.md (names _under): still correct - _under is unchanged and no name it uses was touched.",
+    "descriptive": "The child-environment cases name every decoy in upper case, so ras30b and ras31 exercise the rule on Windows as on posix."
+  },
+  "testsAdded": [
+    "ras31b: every child-environment decoy is named in upper case and the stub's recorder filters on the same spelling"
+  ],
+  "casesAdded": [
+    "ras31b"
+  ],
+  "claims": "claims:\n- The comment above kept_decoys says Windows upper-cases os.environ keys; basis: the CI failure text of run 39805287981 (ORCH_KEEP_q81z lost on windows) in the task brief, not re-measured on Windows here.\n- The posix demonstration is a simulation (.upper() over the old names), stated as such; no Windows run was made.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:744bd2d594c027ba511da4ab9746af78b8b731988d214f68ef269d1beaee55fa\",\"dirtyDigest\":\"sha256:80fda5906a1d3674c380c0cace354f468afcf60882bf58e3b0b9af042ca94af1\",\"dirtyPaths\":{\"tests/test_run_agent_session.py\":\"787f842b97a0bf34\"},\"head\":\"5c71066a\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test_run_agent_session.py\"],\"scopeDigest\":\"sha256:993e89a6bee2e9c86e3de855eede5cf4124d572d1cb61c236da1b09b83419123\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
