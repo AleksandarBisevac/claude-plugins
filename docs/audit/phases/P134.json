@@ -1,7 +1,7 @@
 {
   "id": "P134",
   "title": "No path is made relative across drives, in tests or tools",
-  "status": "in_progress",
+  "status": "done",
   "description": "Second instance of the cross-drive relpath class (P132.5 fixed suite_elsewhere_paths; P133.1's gtf-block fixture reintroduced it), so the class is closed by a check, not another instance fix.",
   "desiredOutcome": "The release tier is green on Windows, and a relpath between a scratch directory (C:) and the checkout (D:) can no longer be written without a lint naming it.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "b451946dd300f0231ca894da71e5e8f4b9286a6c",
   "branch": "audit/p134-no-path-is-made-relative-acros",
-  "mergedAt": null,
+  "mergedAt": "2026-10-22T10:41:09Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -130,5 +130,6 @@
     "runId": "2026-10-22T10:41:02Z.f5012c",
     "status": "passed",
     "at": "2026-10-22T10:41:02Z"
-  }
+  },
+  "mergedHead": "6438d9a12072cba22e91cf59ebd90b091947992d"
 }
