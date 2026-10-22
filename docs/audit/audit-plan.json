@@ -884,7 +884,7 @@
     {
       "id": "P137",
       "title": "One answer to what an attempt changed that no task declares, and a committed task always closes",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P137.json"
     }
   ],
