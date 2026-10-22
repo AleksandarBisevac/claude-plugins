@@ -1,0 +1,116 @@
+{
+  "id": "P135",
+  "title": "A writer's task closes on its own work: the plugin's own state is never refused at commit, and an out-of-scope edit becomes a note instead of a refusal",
+  "status": "pending",
+  "description": "Fixes from the stage 1 confirming measurement; the writer's prompt stays equal to plain's.",
+  "desiredOutcome": "A task whose gate is green commits even when the plugin itself wrote a restore point, and a writer edit outside the task's files is left out of the commit and named, so the measured pipeline can finish a task.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P135.1",
+      "title": "commit-task-work never refuses the plugin's own state - the manifest restore point under audit-backups/ and the .gitignore line that hides it - and one table of plugin-owned paths is read by both the writer and the check",
+      "status": "pending",
+      "description": "Register F782. Stage 1 run a2: the gate was green and commit-task-work's undeclared-path refusal (attempt_refusal, commit-task-work.py ~546) refused twice on paths no session created by a tool call: `.claude/.gitignore` gaining `audit-backups/`, then `audit-backups/audit-plan.json.bak-<stamp>`. The writers of those paths are in manifest/_manifest_io.py and migrate-manifest.py (grep audit-backups). Put the plugin-owned state paths (restore points, the .gitignore entry the plugin adds, its state dirs) in one table in a shared module both read; attempt_refusal treats them as plugin-owned: never refused as the task's edit, never silently left out of the record (name them on a line). Check the owner's earlier report of the same class: `.claude/audit.config.json` created mid-attempt was refused too (register F760) - cover it by the same table if it belongs there.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "tests/test_commit_task_work.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_commit_task_work.py: a task whose attempt left the plugin's restore point under audit-backups/ and the .gitignore line for it commits its own files and names the plugin-owned paths it did not refuse, while an undeclared edit to an ordinary source file is still refused"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_commit_task_work.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P135.2",
+      "title": "On the writer path, an edit outside the task's declared files is left out of the commit and named, instead of refusing the whole task",
+      "status": "pending",
+      "description": "Register F783. Stage 1 runs a1 and a1b: the writer (plain prompt, which states no scope) edited PLUGIN-BUILD-GUIDE.md, which the task does not declare; commit-task-work refused the whole task. The writer prompt must stay equal to plain's, so the fix belongs in the drive: on the writer path (executor.writerModel set), before the commit, the drive reverts each undeclared changed path in the task tree after saving it as a patch under the run's state, records a task note naming each path and the patch, re-proves/re-gates if any reverted path was read by the gate, then commits the declared work. Leave the subagent-executor path unchanged (it keeps refusing). Plugin-owned paths (the table from the sibling task) are never reverted.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a writer session that also edited an undeclared file has that file reverted and saved as a named patch, a note names it, and the task commits its declared work; the same edit on the executor path is still refused"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P135.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ],
+  "request": "Stage 1 measurement (2026-10-22): runs could not close because the commit check refused the plugin's own restore point and the writer's out-of-scope edit (register F782, F783)",
+  "openChoices": []
+}

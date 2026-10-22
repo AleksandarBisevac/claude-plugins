@@ -868,6 +868,12 @@
       "title": "No path is made relative across drives, in tests or tools",
       "status": "done",
       "shard": "phases/P134.json"
+    },
+    {
+      "id": "P135",
+      "title": "A writer's task closes on its own work: the plugin's own state is never refused at commit, and an out-of-scope edit becomes a note instead of a refusal",
+      "status": "pending",
+      "shard": "phases/P135.json"
     }
   ],
   "fileIndex": {
@@ -4007,7 +4013,8 @@
       "P130.52-ywo",
       "P130.56-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P135.1"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
       "P42.6",
@@ -4297,7 +4304,8 @@
       "P125.38-0h5",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P135.1"
     ],
     "plugins/audit/scripts/manifest/_manifest_merge.py": [
       "P60.1"
@@ -9862,7 +9870,8 @@
       "P131.20-dau",
       "P132.1",
       "P132.2",
-      "P132.3"
+      "P132.3",
+      "P135.2"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11268,7 +11277,8 @@
       "P131.1"
     ],
     "tests/test_commit_task_work.py": [
-      "P131.1"
+      "P131.1",
+      "P135.1"
     ],
     "tests/test_derive_phase_gate.py": [
       "P131.1"
@@ -11294,7 +11304,8 @@
       "P132.1",
       "P132.2",
       "P132.3",
-      "P132.5-5mm"
+      "P132.5-5mm",
+      "P135.2"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
