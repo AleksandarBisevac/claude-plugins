@@ -3765,20 +3765,68 @@ def writer_commit(ctx, state, phase, task):
     return committed_sha(out), None
 
 
+def _attempt_start_moment(rows, task):
+    """The moment of the newest `task.start` row of `task`'s current attempt,
+    or None. It is the row `_scoped_commit.start_head_of` reads its head from,
+    found by the same three fields."""
+    moment = None
+    for row in rows or []:
+        details = row.get("details") if isinstance(row, dict) else None
+        if (row.get("action") == "task.start" and isinstance(details, dict)
+                and details.get("taskId") == task.get("id")
+                and details.get("attempt") == task.get("attempts")):
+            moment = _journal_io.row_moment(row)
+    return moment
+
+
+def _attempt_nonces(rows, task, began):
+    """The `Audit-Row` nonces of `task`'s rows written at or after `began` (the
+    attempt's start moment, epoch seconds), each once, in journal order, leaving
+    out every nonce a withdrawal row took back. `>=` and not `>`: the trail's
+    grain is a second, so a row written in the start's own second is on the
+    attempt's side of it, and an earlier attempt's row in that second is kept
+    out by the span, not by this."""
+    withdrawn = _invariants.withdrawn_nonces(rows)
+    nonces = []
+    for row in rows:
+        details = row.get("details") if isinstance(row, dict) else None
+        if not isinstance(details, dict) or details.get("taskId") != task["id"]:
+            continue
+        moment = _journal_io.row_moment(row)
+        if moment is None or moment < began:
+            continue
+        nonce = str(details.get(_invariants.NONCE_KEY) or "")
+        if nonce and nonce not in withdrawn and nonce not in nonces:
+            nonces.append(nonce)
+    return nonces
+
+
 def own_commit(ctx, task):
     """The SHA of the commit the drive already made of `task`'s work this
-    attempt, or None: an in_progress task with no recorded commit, a commit
-    after the head the attempt's start recorded (`start_head_of`), and the
-    commit carries the `Audit-Row` trailer of a journal row naming the task
-    (`trailer_carriers`, in the last paragraph where the writer puts it; a row
-    a withdrawal took back names none).
+    attempt, or None: an in_progress task with no recorded commit, and a commit
+    that
+    - carries the `Audit-Row` trailer of a journal row of this attempt naming the
+      task (`_attempt_nonces`; a row a withdrawal took back names none), in the
+      last paragraph where the writer puts it (`trailer_carriers`), under the
+      subject header a task commit opens with (`type(<taskId>): `, which a
+      squash or a commit that absorbed the message does not), and
+    - is the NEWEST commit of the attempt's span that changed a declared file
+      (`_scoped_commit.attempt_span`, the one reader of that span).
 
     WHY THE COMMIT STEP CANNOT BE THE ONLY ANSWER. A close refused after the
     commit landed leaves the work committed and the task open; the commit step,
     asked again, finds nothing to commit and says so - which reads as a task
     that changed nothing. None here is "no such commit found", including when
     the start head or the journal cannot be read: the caller then keeps the
-    decision it always made, and never claims a commit it could not name."""
+    decision it always made, and never claims a commit it could not name.
+
+    WHY ONLY THE NEWEST ONE. A later commit that changed a declared file again
+    - a revert is the plain case - means the tree no longer holds what the
+    carrier committed, and closing on the carrier would record work that is not
+    there. `attempt_span` is also what answers a start head that is no ancestor
+    of HEAD (a rebase or a reset since): `touched` is then None, the span is
+    unread, and a listing of everything since the merge base is never taken for
+    the attempt's commits."""
     if task.get("status") != "in_progress" or task.get("commit"):
         return None
     try:
@@ -3786,29 +3834,24 @@ def own_commit(ctx, task):
     except Exception:                                          # noqa: BLE001
         return None
     start = _scoped_commit.start_head_of(rows, task)
-    if not start:
+    began = _attempt_start_moment(rows, task)
+    if not start or began is None:
         return None
-    withdrawn = _invariants.withdrawn_nonces(rows)
-    nonces = []
-    for row in rows:
-        details = row.get("details") if isinstance(row, dict) else None
-        if not isinstance(details, dict) or details.get("taskId") != task["id"]:
-            continue
-        nonce = str(details.get(_invariants.NONCE_KEY) or "")
-        if nonce and nonce not in withdrawn and nonce not in nonces:
-            nonces.append(nonce)
-    carried, _why = _invariants.trailer_carriers(ctx["gitRoot"], nonces)
+    names = [name for name, _rel in _scoped_commit.declared_work(
+        task, ctx["project"], ctx["gitRoot"])]
+    touched, _why = _scoped_commit.attempt_span(
+        ctx["gitRoot"], ctx["project"], None, task, names, start)
+    if not touched:
+        return None
+    carried, _why = _invariants.trailer_carriers(
+        ctx["gitRoot"], _attempt_nonces(rows, task, began))
     if not carried:
         return None
-    code, out, _err = _git_literal(ctx["gitRoot"],
-                                   ["rev-list", "%s..HEAD" % (start,)])
-    if code != 0:
-        return None
-    since = out.decode("utf-8", "replace").split()
+    header = re.compile(r"^[^\s()]+\(%s\): " % (re.escape(str(task["id"])),))
     held = set(c["sha"] for found in carried.values() for c in found
-               if c["inLast"])
-    # Newest first: rev-list's own order, so two carriers name the later one.
-    return next((sha for sha in since if sha in held), None)
+               if c["inLast"] and header.match(c["subject"]))
+    newest = touched[0][1]
+    return newest if newest in held else None
 
 
 def close_task(ctx, state, phase, task, intent_basis=None):

@@ -1,0 +1,53 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-22T19:37:09Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD: the run timed out: no time was left of the 480-second deadline; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py own_commit rewritten; new helpers _attempt_start_moment and _attempt_nonces. It now (D1) reads the span through _scoped_commit.attempt_span with the task's declared files (declared_work), so a start head that is no ancestor of HEAD yields touched None and own_commit None, and rev-list is gone; (D1) takes nonces only from rows whose moment is >= the current attempt's task.start row moment (>= because the trail's grain is a second), minus withdrawn ones; (D2) names the carrier only when it is touched[0], the NEWEST commit of the span that changed a declared file, so a revert or any later change to a declared file closes nothing; (D3) requires the subject to open with `<type>(<taskId>): ` as well as inLast. tests/test_drive_phase.py: new stage oc-block (_own_commit_cases) with oc1 (all conditions hold, names the commit), oc2 (start recorded after the commit), oc3 (reopen and restart past attempt 1's commit), oc4 (earlier attempt's row, commit inside the span), oc5 (start head off history), oc6 (revert) and oc6b (allow: later commit on an undeclared file), oc7-squash/oc7-other (header), oc8 (trailer not in last paragraph), oc9 (withdrawn), oc10 (recorded commit / status not in_progress), oc11 (no start head / other attempt / unreadable journal). tcc4 now builds a REAL carrier (the commit step makes the commit, reports nothing to commit, a real withdrawal row is appended) and expects no-change; the old no-commit twin is tcc5. Gate: python3 tools/sweep-selftests.py tests/test_drive_phase.py -> exit 0, 556 cases ok (461.7s under sibling load). MUTATIONS, each applied in a scratch copy of the worktree under $TMPDIR (rsync without .git; worktree untouched; __pycache__ purged before every run; scratch confirmed byte-identical to the worktree with cmp afterwards), run as `python3 tests/test_drive_phase.py --selftest --stage tcc-block --stage oc-block`: [range dropped = drop `if not touched` and return any held carrier] -> FAIL oc2, oc5, oc6 (15/18); same plus nonce-time filter dropped -> FAIL oc2, oc3, oc4, oc5, oc6 (13/18) (oc3 is held by two filters, so only the pair turns it red); [nonce rows before the attempt start kept: `moment < began` dropped] -> FAIL oc4 (17/18); [revert: newest-only weakened to any touching carrier] -> FAIL oc6 (17/18); [over-fire: carrier must be HEAD itself] -> FAIL oc6b (17/18); [withdrawn filter dropped: withdrawn = set()] -> FAIL tcc4, oc9 (16/18); [inLast dropped] -> FAIL oc8 (17/18); [header match dropped] -> FAIL oc7-squash, oc7-other (16/18); [task.get(commit) guard dropped] -> FAIL oc10 (17/18); [status guard dropped] -> FAIL oc10 (17/18); [except Exception around read_all narrowed to KeyError] -> oc-block RAISED OSError, oc11 did not run (17/18); [ancestry, in _scoped_commit.attempt_span: both `if code == 1` and `if code != 0` made `if False`] -> FAIL oc5 (17/18) (dropping only the code == 1 branch stayed 18/18, because the `code != 0` branch also returns None for exit 1; that is the redundancy in attempt_span, not a gap in oc5). Not done: the optional `git diff --quiet C HEAD` check (newest-touching == C already covers a later change); the nonce filter duplicates the task.start predicate of _scoped_commit.start_head_of locally because that file is outside this task's files. DEPENDANTS: own_commit's only caller is close_task (signature unchanged) and no .md or other file names it (git grep own_commit: only drive-phase.py, tests/test_drive_phase.py and past evidence), so README.md, PLUGIN-BUILD-GUIDE.md, docs/research/pipeline-cost-design.md and the basename importers (detect-plan-skip.py, record-risk-confirmation.py, stamp-verification.py, _areas.py) are still correct; test dependants (sweep-costs.json, tools/sweep-selftests.py etc.) read the suite only through its printed tally, and the new stage oc-block is registered once in STAGES (sb1 passes). claims:\n1 drive-phase.py own_commit docstring sentences map to: header regex and inLast in the held set, newest = touched[0][1], attempt_span call, _attempt_nonces (withdrawn, moment >= began)\n2 12 mutations above, each red on the named case, restored (scratch cmp identical to worktree)\n3 n/a \u2014 not a fix of a reported defect id; filters grepped in the one function (git grep own_commit: one caller)\n4 n/a \u2014 no rule to an agent\n5 sweep ran once under sibling load (461.7s); no timing property claimed\n6 n/a \u2014 no guard on commands\n7 no number written in prose besides the dated tallies above",
+    "descriptive": "own_commit now closes only on this attempt's own, still-present task commit, and each of its filters has a case proven red by its own mutation."
+  },
+  "testsAdded": [
+    "oc1-oc11 (oc6b, oc7-squash, oc7-other) unit-call own_commit over a real git fixture with one condition failing at a time",
+    "tcc4 rebuilt with a real withdrawn carrier, tcc5 the old no-commit twin"
+  ],
+  "casesAdded": [
+    [
+      "oc5"
+    ],
+    [
+      "oc6",
+      "oc6b"
+    ],
+    [
+      "oc7-squash",
+      "oc7-other"
+    ],
+    [
+      "oc2",
+      "oc3",
+      "oc4"
+    ],
+    [
+      "oc8"
+    ],
+    [
+      "oc9"
+    ],
+    [
+      "oc10"
+    ],
+    [
+      "tcc4",
+      "oc11"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:c7cee96ff4a27454b0d2f4ca38d44ccc010e9db3da3638de729f8af8ad15b00b\",\"dirtyDigest\":\"sha256:759d7821ec55775caff3b9009f2b632a6237cbf467f3b0d51e662f8dd02b0043\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/drive-phase.py\":\"079c6311bb769457\",\"tests/test_drive_phase.py\":\"ba6ebfe63bcb5fe3\"},\"head\":\"17563b1b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:d0e728bd4d596f2c96e54b86662d222f9dcc75524bac30153dd9fc01741b6921\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -10322,6 +10322,7 @@ STAGES = (("dp-block", "_drive_cases"), ("dpm-block", "_drive_mutant_cases"),
           ("np-block", "_nested_project_cases"),
           ("bb-block", "_base_red_drive_cases"),
           ("tcc-block", "_committed_close_cases"),
+          ("oc-block", "_own_commit_cases"),
           ("sb-block", "_stage_cases"))
 
 
@@ -11928,11 +11929,47 @@ def _committed_close_cases(check):
           and carriers[0].startswith(str(task3.get("commit")))
           and head.startswith(str(task3.get("commit"))))
 
-    # The twin that keeps the fix from firing on everything: a commit step that
-    # made no commit and left the work in the tree is a task with no commit of
-    # its own, and no-change is still the question it is asked.
+    # The twin that keeps the fix from firing on everything, with a REAL carrier:
+    # the commit step makes the commit and reports nothing to commit, and a
+    # withdrawal row then takes its row back (as the writer appends when the
+    # commit it announced was not made). The commit stands in history carrying
+    # its trailer, and the task still has no commit of its own - no-change is
+    # the question it is asked. A step that listed every carrier would close it.
     root_n, mpath_n = _repo("tcc-none", task_ids=TASKS[:1])
     _to_close(M, root_n, mpath_n)
+
+    def commit_then_withdraw(code, out, err):
+        for row in M._journal_io.read_all(root_n):
+            details = row.get("details") if isinstance(row, dict) else None
+            nonce = (details or {}).get(M._invariants.NONCE_KEY)
+            if nonce and details.get("taskId") == "P1.1":
+                M._journal_io.append(root_n, {
+                    "action": M._invariants.ACTION_COMMIT_WITHDRAWN,
+                    "actor": {"via": "fixture"}, "target": "P1.1",
+                    "summary": "the commit was refused",
+                    "details": {"taskId": "P1.1", M._invariants.NONCE_KEY: nonce,
+                                "reason": "a hook refused it"}})
+        return 0, "nothing to commit\n", ""
+
+    real = _after_verb(M, "commit-task-work.py", commit_then_withdraw)
+    try:
+        code_n, text_n = _next_text(M, root_n, mpath_n)
+    finally:
+        M.run_verb = real
+    task_n = tasks_of(mpath_n).get("P1.1") or {}
+    carriers_n = _git_out(root_n, "log", "--format=%H", "--grep=Audit-Row: ").split()
+    check("tcc4 a task whose only carrier in the range is a commit its row "
+          "withdrew is still asked no-change - the carrier is really in history: %r"
+          % ((code_n, text_n[-300:], task_n.get("status"), carriers_n),),
+          len(carriers_n) == 1
+          and instruction(text_n) == ("decide", "no-change", None)
+          and "no-change" in text_n and task_n.get("status") == "in_progress"
+          and not task_n.get("commit"))
+
+    # ...and the plain twin: a commit step that made no commit and left the work
+    # in the tree is a task with no commit of its own.
+    root_p, mpath_p = _repo("tcc-plain", task_ids=TASKS[:1])
+    _to_close(M, root_p, mpath_p)
     real = M.run_verb
 
     def no_commit(ctx, name, args, *rest, **kw):
@@ -11941,14 +11978,234 @@ def _committed_close_cases(check):
         return real(ctx, name, args, *rest, **kw)
     M.run_verb = no_commit
     try:
-        code_n, text_n = _next_text(M, root_n, mpath_n)
+        code_p, text_p = _next_text(M, root_p, mpath_p)
     finally:
         M.run_verb = real
-    task_n = tasks_of(mpath_n).get("P1.1") or {}
-    check("tcc4 a task that has no commit of its own in the range is still "
-          "asked no-change: %r" % ((code_n, text_n[-300:], task_n.get("status")),),
-          instruction(text_n) == ("decide", "no-change", None)
-          and "no-change" in text_n and task_n.get("status") == "in_progress")
+    task_p = tasks_of(mpath_p).get("P1.1") or {}
+    check("tcc5 a task that made no commit at all is still asked no-change: %r"
+          % ((code_p, text_p[-300:], task_p.get("status")),),
+          instruction(text_p) == ("decide", "no-change", None)
+          and task_p.get("status") == "in_progress")
+
+
+# --- own_commit, one filter at a time ----------------------------------------
+# Each case below builds the one scenario in which exactly ONE condition of
+# `own_commit` is what refuses, every other condition holding; `oc1` is the
+# scenario with all of them holding, so a refusal elsewhere is not a fixture
+# that can never close.
+_OWN_EPOCH = 1760000000
+
+
+def _own_stamp(offset):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(_OWN_EPOCH + offset))
+
+
+def _own_row(action, offset, **details):
+    return {"action": action, "ts": _own_stamp(offset), "details": details}
+
+
+def _own_start(offset, head, attempt=1):
+    return _own_row("task.start", offset, taskId="P1.1", attempt=attempt,
+                    commit=head)
+
+
+def _own_nonce(offset, nonce):
+    return _own_row("task.commit", offset, taskId="P1.1", commitNonce=nonce)
+
+
+def _own_withdrawn(M, offset, nonce):
+    return _own_row(M._invariants.ACTION_COMMIT_WITHDRAWN, offset, taskId="P1.1",
+                    commitNonce=nonce)
+
+
+def _own_task(**over):
+    task = {"id": "P1.1", "status": "in_progress", "attempts": 1, "commit": None,
+            "files": ["src/f1.txt"]}
+    task.update(over)
+    return task
+
+
+def _own_made(root, nonce, text, subject="chore(P1.1): audit - the work",
+              last=True, path="src/f1.txt"):
+    """Commit `text` to `path` under `subject`, its `Audit-Row` line in the last
+    paragraph (or, with `last` False, in a paragraph another follows). The SHA."""
+    _write_lf(os.path.join(root, *path.split("/")), text)
+    paragraphs = [subject, "Audit-Row: %s" % (nonce,)]
+    if not last:
+        paragraphs.append("Reviewed-by: a paragraph after the trailer")
+    _harness.git(root, "add", "-A")
+    argv = ["commit", "-q"]
+    for paragraph in paragraphs:
+        argv += ["-m", paragraph]
+    _harness.git(root, *argv)
+    return _head_of(root)
+
+
+def _own_ask(M, root, task, rows):
+    """`own_commit` over the repository `root` with `rows` as the journal."""
+    ctx = {"project": root, "gitRoot": root, "config": None}
+    real = M._journal_io.read_all
+    M._journal_io.read_all = lambda project, config=None: list(rows)
+    try:
+        return M.own_commit(ctx, task)
+    finally:
+        M._journal_io.read_all = real
+
+
+def _own_repo(prefix):
+    root, _mpath = _repo(prefix, task_ids=TASKS[:1])
+    return root, _head_of(root)
+
+
+def _own_commit_cases(check):
+    """`own_commit` closes on the attempt's own, still-present task commit and
+    on nothing else. Every case but `oc1` expects None - the caller then keeps
+    asking no-change - and names the condition it isolates."""
+    M, why = _load("drive_phase_own_commit")
+    if M is None:
+        check("oc0 the driver loads", False, why)
+        return
+
+    root, base = _own_repo("oc1")
+    sha = _own_made(root, "n1", "v1\n")
+    rows = [_own_start(0, base), _own_nonce(5, "n1")]
+    got = _own_ask(M, root, _own_task(), rows)
+    check("oc1 with every condition holding - a carrier of this attempt's row, "
+          "its header, the trailer last, the newest commit to change a declared "
+          "file - the commit is named: %r" % ((got, sha),),
+          got is not None and got == sha)
+
+    # RANGE: the start was recorded after the commit, so the span holds nothing.
+    # The row is ordered after the start row and unwithdrawn, so only the span
+    # refuses.
+    root, base = _own_repo("oc2")
+    sha = _own_made(root, "n1", "v1\n")
+    rows = [_own_start(0, sha), _own_nonce(5, "n1")]
+    got = _own_ask(M, root, _own_task(), rows)
+    check("oc2 a carrier before the head the attempt's start recorded is not the "
+          "attempt's: %r" % ((got, sha),), got is None)
+
+    # REOPEN AND RESTART with attempt 1's commit present: the second start
+    # records a head past it.
+    root, base = _own_repo("oc3")
+    sha = _own_made(root, "n1", "v1\n")
+    rows = [_own_start(0, base), _own_nonce(5, "n1"),
+            _own_start(100, sha, attempt=2)]
+    got = _own_ask(M, root, _own_task(attempts=2), rows)
+    check("oc3 a task reopened and restarted past attempt 1's commit has no "
+          "commit of its own - no-change is still asked: %r" % ((got, sha),),
+          got is None)
+
+    # NONCES OF THIS ATTEMPT ONLY: the second start records a head OLDER than
+    # attempt 1's commit, so the commit is inside the span and only the
+    # attempt's own rows can tell it is not this attempt's.
+    root, base = _own_repo("oc4")
+    sha = _own_made(root, "n1", "v1\n")
+    rows = [_own_start(0, base), _own_nonce(5, "n1"),
+            _own_start(100, base, attempt=2)]
+    got = _own_ask(M, root, _own_task(attempts=2), rows)
+    check("oc4 a row written before the current attempt's start names no commit "
+          "of it, though the commit stands in the span: %r" % ((got, sha),),
+          got is None)
+
+    # ANCESTRY: the recorded head survives off HEAD's history (a rebase or a
+    # reset since); `head..HEAD` over it lists every commit since the merge
+    # base, the carrier among them.
+    root, base = _own_repo("oc5")
+    branch = _git_out(root, "rev-parse", "--abbrev-ref", "HEAD").strip()
+    _harness.git(root, "checkout", "-q", "--detach", base)
+    _write_lf(os.path.join(root, "src", "f2.txt"), "side\n")
+    _harness.git(root, "add", "-A")
+    _harness.git(root, "commit", "-qm", "a commit off the branch")
+    off = _head_of(root)
+    _harness.git(root, "checkout", "-q", branch)
+    sha = _own_made(root, "n1", "v1\n")
+    rows = [_own_start(0, off), _own_nonce(5, "n1")]
+    got = _own_ask(M, root, _own_task(), rows)
+    check("oc5 a start head that is no ancestor of HEAD bounds no span: the "
+          "carrier past the merge base is not named: %r" % ((got, sha, off),),
+          got is None)
+
+    # REVERT: the carrier's change was taken back, and closing on it would
+    # record work that is not in the tree.
+    root, base = _own_repo("oc6")
+    sha = _own_made(root, "n1", "v1\n")
+    _harness.git(root, "revert", "--no-edit", sha)
+    rows = [_own_start(0, base), _own_nonce(5, "n1")]
+    got = _own_ask(M, root, _own_task(), rows)
+    check("oc6 a carrier whose change a later commit reverted is not named: %r"
+          % ((got, sha, _git_out(root, "log", "--format=%s", "-3")),),
+          got is None)
+    # ...and the allow case for it: a later commit that changes only a file no
+    # task declares leaves the carrier the newest to touch a declared one.
+    root, base = _own_repo("oc6b")
+    sha = _own_made(root, "n1", "v1\n")
+    _write_lf(os.path.join(root, "src", "f2.txt"), "another task's file\n")
+    _harness.git(root, "add", "-A")
+    _harness.git(root, "commit", "-qm", "chore(P1.2): audit - elsewhere")
+    got = _own_ask(M, root, _own_task(), [_own_start(0, base), _own_nonce(5, "n1")])
+    check("oc6b a later commit that leaves the declared files alone does not "
+          "hide the carrier: %r" % ((got, sha),), got == sha)
+
+    # HEADER: a carrier is the task commit only under the task commit's header.
+    for tag, subject in (("squash", "Squashed work of several tasks"),
+                         ("other", "chore(P1.2): audit - another task's header")):
+        root, base = _own_repo("oc7-" + tag)
+        sha = _own_made(root, "n1", "v1\n", subject=subject)
+        got = _own_ask(M, root, _own_task(),
+                       [_own_start(0, base), _own_nonce(5, "n1")])
+        check("oc7-%s a carrier whose subject does not open with this task's "
+              "header is not named: %r" % (tag, (got, sha)), got is None)
+
+    # LAST PARAGRAPH: a message that absorbed the trailer in its middle.
+    root, base = _own_repo("oc8")
+    sha = _own_made(root, "n1", "v1\n", last=False)
+    got = _own_ask(M, root, _own_task(), [_own_start(0, base), _own_nonce(5, "n1")])
+    check("oc8 a carrier with the Audit-Row line in a paragraph another follows "
+          "is not named: %r" % ((got, sha),), got is None)
+
+    # WITHDRAWN: the row was taken back, the commit it announced was not made.
+    root, base = _own_repo("oc9")
+    sha = _own_made(root, "n1", "v1\n")
+    rows = [_own_start(0, base), _own_nonce(5, "n1"), _own_withdrawn(M, 6, "n1")]
+    got = _own_ask(M, root, _own_task(), rows)
+    check("oc9 a carrier of a nonce a withdrawal row took back is not named: %r"
+          % ((got, sha),), got is None)
+
+    # RECORDED COMMIT and STATUS: a closed (or not started) task is nobody's
+    # to close; the carrier is otherwise exactly oc1's.
+    root, base = _own_repo("oc10")
+    sha = _own_made(root, "n1", "v1\n")
+    rows = [_own_start(0, base), _own_nonce(5, "n1")]
+    recorded = _own_ask(M, root, _own_task(commit="abc1234"), rows)
+    pending = _own_ask(M, root, _own_task(status="pending"), rows)
+    check("oc10 a task with a recorded commit, or one not in progress, is "
+          "named no commit though a carrier stands in its range: %r"
+          % ((recorded, pending, sha),), recorded is None and pending is None)
+
+    # CANNOT TELL: no start head, a start row of another attempt, no readable
+    # journal - none of them a licence to name a commit.
+    root, base = _own_repo("oc11")
+    sha = _own_made(root, "n1", "v1\n")
+    nonce_only = [_own_nonce(5, "n1")]
+    other_attempt = [_own_start(0, base, attempt=2), _own_nonce(5, "n1")]
+    no_head = [_own_row("task.start", 0, taskId="P1.1", attempt=1),
+               _own_nonce(5, "n1")]
+    got = [_own_ask(M, root, _own_task(), rows)
+           for rows in (nonce_only, other_attempt, no_head)]
+    real = M._journal_io.read_all
+
+    def unreadable(project, config=None):
+        raise OSError("the journal is gone")
+    M._journal_io.read_all = unreadable
+    try:
+        got.append(M.own_commit({"project": root, "gitRoot": root, "config": None},
+                                _own_task()))
+    finally:
+        M._journal_io.read_all = real
+    check("oc11 a start that names no head of this attempt, or a journal that "
+          "cannot be read, names no commit: %r" % ((got, sha),),
+          got == [None, None, None, None])
 
 
 def _stage_cases(check):

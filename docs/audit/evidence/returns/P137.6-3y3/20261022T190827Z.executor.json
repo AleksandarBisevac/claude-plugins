@@ -1,0 +1,44 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tools/sweep-selftests.py tools/gate-parity.py": "pass",
+    "python3 tools/sweep-selftests.py --selftest": "pass",
+    "ruff check tools/sweep-selftests.py tools/gate-parity.py tests/_harness.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-22T19:34:09Z",
+    "basis": "`python3 tools/sweep-selftests.py --selftest` in a throwaway tree at HEAD exited 1 with 9 of 123 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, the task's run with its inline suite tools/sweep-selftests.py laid over as HEAD's copy plus its 17 test hunk(s), 20 other hunk(s) held at HEAD, and pulled in for the names its test hunks reference: _SID = \"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\" (line 657); _SLOT = \"(?:[.-][0-9a-f]+)*\" (line 658); CLAUDE_LIVE_WRITES = ( (line 665); _LIVE_WRITES_RE = tuple(re.compile(row[0]) for row in CLAUDE_LIVE_WRITES) (line 700); def claude_live_written(rel): (line 727); def scratch_refusal(tmp, locate=None): (line 734)), each passing with the working tree's implementation - cw2 (house FAIL), cw9 (house FAIL), cw11 (house FAIL), cw12 (house FAIL), cw5 (house FAIL), cw6 (house FAIL), cw13 (house FAIL), cw14 (house FAIL) and 1 more: SELFTEST FAILED: 114/123 cases passed; run without CLAUDE_PROJECT_DIR, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/sweep-selftests.py: state/ is watched again; CLAUDE_LIVE_WRITES leaves out only the live session's hook and drive slots by name; scratch_refusal makes main exit 2 when the temp dir has a .git above it; grade() reports exit code and finding together; removals are untimed and unattributed, added non-empty directories are reported through their content; sweep waits CLAUDE_SERIAL_GAP_S between children at --jobs 1; rows carry window; a child that never started no longer raises a KeyError. tools/gate-parity.py: AUDITED_EXEMPTIONS row for CLAUDE_LIVE_WRITES (instrument cw10). CONTRIBUTING.md and the fixture_root docstring in tests/_harness.py describe the third watched directory and the refusal. CLAUDE.md untouched; its Tests sentence 'The working directory and the home directory are the watched pair ...' is stale. Gates: python3 tools/sweep-selftests.py tools/sweep-selftests.py tools/gate-parity.py exit 0 (2/2 files ok, 216 cases); python3 tools/sweep-selftests.py --selftest 123/123; four-suite sweep (test__output_lints, test__deps, test_drive_phase, _harness) exit 0; ruff exit 0. Dependants: sweep-selftests.py callers still correct (FAIL <path>: <why> spelling kept, new exit 2 only when TMPDIR is inside a checkout); _harness.py docstring only; gate-parity.py one row; CONTRIBUTING.md one paragraph added. Disclosure: one large edit to tools/sweep-selftests.py went through a python heredoc script, against the brief; all others used Edit. CLAUDE_UNWATCHED still hides logs, usage, worktrees, settings.local.json, audit-panel.json and __pycache__.",
+    "descriptive": "The sweep watches .claude/state/, shows a suite's leak even when it also failed, names no suite for removals, and refuses to start when its scratch is inside a checkout."
+  },
+  "testsAdded": [
+    "cw16 CONTRIBUTING.md and the fixture_root docstring name the third watched directory",
+    "cw9 a suite writing its own file in .claude/state is red",
+    "cw11 non-zero exit plus a .claude write is reported for both",
+    "cw13 a removal is unattributed with its own reason",
+    "cw15 scratch_refusal refuses a temp dir inside a checkout",
+    "cw10 table rows skip their example and not a misspelling",
+    "cw12 serial windows separated by more than the slack",
+    "cw14 grade reports code and finding together"
+  ],
+  "casesAdded": [
+    [
+      "cw16"
+    ],
+    [
+      "cw9",
+      "cw11",
+      "cw13",
+      "cw15"
+    ]
+  ],
+  "claims": "claims:\n- 7/13 pre-implementation run: cw2 cw5 cw9 cw11 cw12 failed assertions; cw10 and cw13-cw16 did not run (NameError on a new symbol).\n- Mutations both directions turned the named cases red, repeated three times for the second set.\n- 123/123 cases after the change; requested command exit 0, 216 cases over 2 files.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:25cd388a3d87649cfac35b62e816a6635b8998d6fd4fa2fc30be6553fc605852\",\"dirtyDigest\":\"sha256:66a7024e2a3519398522ce5f9bcb6cb8c5bde3e005affa240d777ef7917a048a\",\"dirtyPaths\":{\"CONTRIBUTING.md\":\"4a679b8c3f7dab0e\",\"tests/_harness.py\":\"eb8934ab5bd4dd4c\",\"tools/gate-parity.py\":\"5e87bc4cfe145ab1\",\"tools/sweep-selftests.py\":\"79ea6dbb5f26c95e\"},\"head\":\"17563b1b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CLAUDE.md\",\"CONTRIBUTING.md\",\"tests/_harness.py\",\"tools/gate-parity.py\",\"tools/sweep-selftests.py\"],\"scopeDigest\":\"sha256:73c20b866eb5da24e4e68e7a9759569af21a8d5aba1f19a80a732eefc29dec21\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": [
+    "tests/_harness.py: Update the three sentences in this task or file a follow-up task for them - not checked: the submit's command did not run `tests/_harness.py`, so the ids bound to it were not compared with any printed label"
+  ]
+}

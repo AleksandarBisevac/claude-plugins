@@ -1,0 +1,42 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__scoped_commit.py tests/test_audit_task.py tests/test_commit_task_work.py": "pass",
+    "ruff check plugins/audit tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-10-22T19:29:10Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__scoped_commit.py tests/test_audit_task.py tests/test_commit_task_work.py` in a throwaway tree at HEAD exited 1 with failing cases sc-ua9 (house FAIL), lo-po4 (house FAIL), ctw-at10 (house FAIL), tests/test__scoped_commit.py: exited 1 (house FAIL) and 2 more, but the fix run could not be made: the run timed out after 65 s and its process group was torn down - SELFTEST FAILED: 137/138 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "R1: _manifest_io.PLUGIN_OWNED_WHILE_UNTRACKED = (CONFIG_NAME,) names the table rows that are the plugin's only while git does not track them; _scoped_commit.plugin_owned_rels places such a row only when the new _is_tracked (git ls-files -z -- rel; git unable to answer counts as tracked, the loud side) says it is untracked. undeclared_changes, the close and the writer's set-aside (drive-phase plugin_owned_paths -> split_plugin_owned(plugin_owned_rels)) all place the rows there, so a tracked+modified .claude/audit.config.json is an undeclared change at commit and close alike; .gitignore and audit-backups rows unchanged. R2: tests/test__scoped_commit.py gains result_scan (AST, per function that asks undeclared_changes): the answer must be bound to a name, read only as R[\"key\"] or `R is None` (so no dict(R), R.get, iteration, hand-over), and the undeclared lists (during/predates/undated/strays/mixed/pluginOwned, plus names assigned from them) may be narrowed in a comprehension only by a plain membership test against a non-literal, non-UPPERCASE value (covered is outside the set: the close narrows it to the task's own files); for-with-continue and filter() on them are violations. sc-ua10 runs it on the commit step and the close and requires bound == 1 each (a scan that reached nothing is not clean); sc-ua11 mutates the REAL commit-task-work source (anchor asserted to land) with a post-filter, dict(strays), an UPPERCASE skip list and filter(), shows reader_violations (the old name scan) returns [] on the post-filter and result_scan names all four, and that a membership test against a computed value passes. The undeclared_changes docstring now states what is and is not caught. R3: sc-ua8 collects every scanned .py name, prints the count, and fails through scan_gaps on zero files, fewer than SCAN_FLOOR (60; the tree holds more, the three readers and two home modules far fewer), or a missed home module or reader; it also asserts scan_gaps([]) and a short list are non-empty. Existing ctw-at7 claimed 'a config file created mid-attempt' but edited the COMMITTED fixture config - the exact bug - so it now takes the config out of the index first (_untrack_config helper). Dependants: commit-task-work.py unchanged and still correct (reads the answer by key; sc-ua10 shows it clean); audit-task.py unchanged and correct (same, covered narrowed by own files); drive-phase.py unchanged, its set-aside asks plugin_owned_rels so it agrees; _live_copy.py, close-phase.py, commit-audit-state.py, commit-manifest-index.py do not call plugin_owned_rels/undeclared_changes and are unaffected; tools/gate-parity.py row for PLUGIN_OWNED_IN_CLAUDE (live, ctw-at9) unchanged and ctw-at9 still passes. Gate: python3 tools/sweep-selftests.py tests/test__scoped_commit.py tests/test_audit_task.py tests/test_commit_task_work.py exit 0, 3/3 files ok, 1302 cases; with test__output_lints.py and test__manifest_io.py also 5/5 ok; ruff check plugins/audit tests clean.",
+    "descriptive": "A committed audit.config.json edited by a task is now refused at the commit, the close and the set-aside alike, and the one-reader lint reads the shape of a reader's use and the number of files it scanned instead of a list of retired names."
+  },
+  "testsAdded": [
+    "sc-ua9: committed+edited config is a stray, untracked config is plugin-owned, tracked+edited .gitignore stays plugin-owned, git unable to answer does not exempt, set-aside split agrees",
+    "ctw-at10: commit step refuses a tracked edited config by name, commits once it is put back",
+    "lo-po4/lo-po5: close refuses a tracked edited config; allows and names the untracked one",
+    "sc-ua10: shape scan clean on the commit and close with exactly one bound answer each",
+    "sc-ua11: real-source mutations the old name scan missed, caught by the shape scan; membership-only narrowing allowed",
+    "sc-ua8 (rewritten): counts scanned files, fails on zero/short walk/missing home module or reader"
+  ],
+  "casesAdded": [
+    [
+      "sc-ua9",
+      "ctw-at10",
+      "lo-po4",
+      "lo-po5"
+    ],
+    [
+      "sc-ua10",
+      "sc-ua11"
+    ],
+    [
+      "sc-ua8"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:e1ab4badb6e9a8c8f22756068e363a539603dfcabc8a9ddf30daa5142bb15069\",\"dirtyDigest\":\"sha256:525079c1aa23f0f45e6fdc1a39c93e67c3bef16bfa078ff6a58546823020cb4d\",\"dirtyPaths\":{\"plugins/audit/scripts/governance/_scoped_commit.py\":\"eaa9a780378a0277\",\"plugins/audit/scripts/manifest/_manifest_io.py\":\"42e6d7d72cdaa3d2\",\"tests/test__scoped_commit.py\":\"e3db468d4f42affa\",\"tests/test_audit_task.py\":\"1eac47480535f916\",\"tests/test_commit_task_work.py\":\"7d9e8dfd74aeaad0\"},\"head\":\"17563b1b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/governance/_scoped_commit.py\",\"plugins/audit/scripts/manifest/_manifest_io.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"tests/test__scoped_commit.py\",\"tests/test_audit_task.py\",\"tests/test_commit_task_work.py\"],\"scopeDigest\":\"sha256:45ce2b60c6e6d7e87db491f7ee36526ccf65802369d6c0fa65e4c3fcd23ead9d\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
