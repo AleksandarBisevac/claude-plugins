@@ -22,38 +22,48 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P133-R1",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/run-test-gate.py:3036-3052",
         "issue": "_is_own_status receives the word shlex.split produced, which is the text BEFORE the shell expands it. os.path.expanduser handles only a leading ~, not $VAR or ${VAR}. A gate step that names the plugin's own script through its installed path (python3 ${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py plan.json --gate; the repo already writes ${CLAUDE_PLUGIN_ROOT}/scripts/... in plugin commands, e.g. audit-plan.json:4209) is joined to the project as a literal relative name. That file does not exist, so samefile raises OSError and the function returns False. The shell would have run exactly this runner's own script, yet the step is classed foreign: --task is withheld and the note wrongly says it is another copy. This fails in the direction the orchestrator asked about (withholding from the plugin's own script) and reopens the P131.12 red on the task gate. Nothing in the diff or tests covers an env-var spelling.",
-        "resolution": "Run os.path.expandvars(os.path.expanduser(script)) before the isabs test (CLAUDE_PLUGIN_ROOT is set in the runner's env when the plugin spawns it), or resolve the word through the shell the step will run in. If a word still contains an unexpanded $, say 'could not resolve' in the note instead of 'is another copy'. Add a gtf case with the step spelled ${CLAUDE_PLUGIN_ROOT}/... and the variable set to the plugin root, expecting --task."
+        "resolution": "fixed in P133.1 (eb25e9287a7c): Run os.path.expandvars(os.path.expanduser(script)) before the isabs test (CLAUDE_PLUGIN_ROOT is set in the runner's env when the plugin spawns it), or resolve the word through the shell the step will run in. If a word still contains an unexpanded $, say 'could not resolve' in the note instead of 'is another copy'. Add a gtf case with the step spelled ${CLAUDE_PLUGIN_ROOT}/... and the variable set to the plugin root, expecting --task.",
+        "fixTask": "P133.1",
+        "commit": "eb25e9287a7c",
+        "status": "fixed"
       },
       {
         "id": "P133-R2",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/run-test-gate.py:3036-3052",
         "issue": "Identity is judged against the runner's SCRIPTS_DIR only. When the runner is not the project's own checkout (the drive-from-HEAD driver worktree <outside-repo>, or an installed cache copy), a project whose gate names its own plugins/audit/scripts/status/audit-status.py (this repo's gate, audit-plan.json:22) names a different file from the runner's. It is classed foreign, so --task is never appended for the dogfood repo's task gates under the driver, and a task whose own bug is open and fixed would again be graded by the plain gate. The note makes it visible, so this is a loss of the P131.12 exemption rather than a silent one. It follows from the task text ('same file as this runner's own'), but the text and the executor's outcome leave this case unexamined.",
-        "resolution": "State the consequence in the outcome and in the note, or decide on capability instead of location: accept a named audit-status.py whose --help advertises --task, or whose content is byte-identical to the runner's copy. Pin whichever is chosen with a case where the project holds a byte-identical copy at a different path."
+        "resolution": "fixed in P133.1 (eb25e9287a7c): State the consequence in the outcome and in the note, or decide on capability instead of location: accept a named audit-status.py whose --help advertises --task, or whose content is byte-identical to the runner's copy. Pin whichever is chosen with a case where the project holds a byte-identical copy at a different path.",
+        "fixTask": "P133.1",
+        "commit": "eb25e9287a7c",
+        "status": "fixed"
       },
       {
         "id": "P133-R3",
         "severity": "low",
         "file": "tests/test_run_test_gate.py:10684-10748",
         "issue": "gtf4's allow case covers an absolute and a project-relative path to the real file only. The forms the orchestrator named (a symlink in the project pointing at the own script, a ../ path, ${VAR} expansion) are asserted nowhere. A samefile-to-realpath regression, or a mutant that compares spelled paths with abspath, would pass gtf2-gtf4. gtf1 proves the fixture exits 2 with --task, but gtf2/gtf3 do not pin that the withholding comes from identity rather than from the string 'tools/old'.",
-        "resolution": "Add a symlink case (project/link/audit-status.py -> own, expect --task, no note) and a spelled-differently case (./x/../ form, expect --task). Skip the symlink case where os.symlink is unavailable (Windows without privilege), saying so."
+        "resolution": "fixed in P133.1 (eb25e9287a7c): Add a symlink case (project/link/audit-status.py -> own, expect --task, no note) and a spelled-differently case (./x/../ form, expect --task). Skip the symlink case where os.symlink is unavailable (Windows without privilege), saying so.",
+        "fixTask": "P133.1",
+        "commit": "eb25e9287a7c",
+        "status": "fixed"
       }
     ],
-    "outcome": "[findings: 3 - 0 high, 2 med, 1 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 3 - 0 high, 2 med, 1 low; 3 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "P133 fixes F780 found by the stage 1 measurement: the task-gate --task flag is appended only to a gate step whose script declares the option (read from the file, after expansion), so a project or an old base with an older audit-status runs its gate as declared and is told why; the review's two mediums (file identity was the wrong question; unexpanded ${VAR} paths) were fixed before commit; all three findings resolved by P133.1.",
   "tasks": [
     {
       "id": "P133.1",
       "title": "run-test-gate appends --task only to a gate step that runs this plugin's own audit-status.py, and says so when it does not",
-      "status": "in_progress",
+      "status": "done",
       "description": "Register F780. run-test-gate.py with_gate_task (P131.12) appends `--task <id>` to any single `audit-status.py --gate` step. Stage 1 showed the project's gate naming an OLDER audit-status (this repo at base 48f2322d, plugin 3.3.0) that rejects the flag (`unrecognized arguments: --task`, exit 2), so the gate is red on every run. Resolve the step's script path (relative to the project, after the same word parsing with_gate_task already does) and append --task only when it is the same file as this runner's own status/audit-status.py (os.path.samefile, or realpath equality); otherwise run the step unchanged and print one line that the task-gate exemption was not applied because the step runs another copy of audit-status, naming it. Keep the existing refusals (compound commands etc.).",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -81,29 +91,43 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "eb25e9287a7c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "run-test-gate.py: new _is_own_status (os.path.samefile against SCRIPTS_DIR/status/audit-status.py, project-relative names resolved against the project, OSError -> not own) and gate_task_step(command, task, project) -> (command, note); with_gate_task now delegates to it ([0]) and takes an optional project. run_gate gained say=print and says the note once per step; the signal-retry path uses with_gate_task (no second note). main passes say=out, or a stderr writer under --json so stdout stays parseable. Tests: new _foreign_status_cases (gtf1 fixture = stand-in old audit-status that exits 2 on unknown args, proven 0 unchanged / 2 with --task; gtf2 foreign copy runs unchanged; gtf3 one line naming the script; gtf4 own script by absolute AND project-relative path still gets --task and prints nothing). The existing gte1/gte3/gte4 now spell the plugin's own script absolutely, since their old relative path named a file that is not this plugin's. Own suite 565/565. Verified on a throwaway local clone with my two files committed there (the shared tree got no commit; clone left at /tmp/p1331-vIyb because the removal was refused): whole-tree sweep 194/194 files ok exit 0, ruff clean, vermin ok, gate-parity ok. I did not run the other verify.sh slices (check-example-ledgers, measure-context etc.). Dependants: run-test-gate.py (docs/examples/azure-pipelines.yml, tools/check-example-ledgers.py, PLUGIN-BUILD-GUIDE.md, docs/handbook.html, hooks/_config.py, the two schemas, _config_rules.py) still correct - they reference the script by path/basename; the CLI, exit codes and recorded step command are unchanged, only a foreign-audit-status gate step now runs without --task and prints one line. Names used elsewhere (_declared_by, _extension, _git_text, _jest_failure_name, _step) untouched. tests/test_run_test_gate.py dependants (test_commit_task_work.py import _cli, sweep-costs.json, verify.sh, phase-signoff.md, test__locks/_proc_group/_runner_output basename, _excluded_cases, _full_repo) still correct: nothing they use was renamed; the suite gained one stage (gtf-block) so its recorded cost in .github/sweep-costs.json is marginally low, not edited (not my file). audit-status.py:1988 comment names with_gate_task; still accurate.",
+        "descriptive": "A gate step running an older/other audit-status.py is run as declared with one line saying the task exemption was not applied, instead of failing with unrecognized arguments --task; this plugin's own script still gets --task."
       },
       "startedAt": "2026-10-22T07:02:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-22T07:58:30Z",
+      "verifiedBy": [
+        "Foreign-audit-status case block: fixture old script refusing unknown args; foreign copy runs unchanged with one naming line; plugin's own script (absolute and relative path) still gets --task with no line"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-10-22T07:58:26Z.6e6572",
         "status": "passed",
         "at": "2026-10-22T07:58:26Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "eb25e9287a7c",
+        "at": "2026-10-22T07:58:30Z",
+        "return": "docs/audit/evidence/returns/P133.1/20261022T070258Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-10-22T07:20:57Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py` in a throwaway tree at HEAD exited 1 with failing cases gtf2 (house FAIL), gtf3 (house FAIL), tests/test_run_test_gate.py: exited 1 (house FAIL), but with the working tree's implementation the task's tests do not all pass (no tally or error reader matched its output, so no line of it is quoted as decisive), so the red is not one the fix turns green - SELFTEST FAILED: 563/565 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     }
   ],
   "request": "da, kreni tim redom (owner 2026-10-22: plugin fix first, then harness, then re-run stage 1)",
   "openChoices": [],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "bf837df2-37bc-4c94-9233-61f7d70c1d7f",
-    "branch": "audit/p133-the-task-gate-exemption-flag-i",
-    "at": "2026-10-22T07:02:58Z"
-  },
-  "startedAt": "2026-10-22T07:02:58Z"
+  "startedAt": "2026-10-22T07:02:58Z",
+  "testEvidence": {
+    "runId": "2026-10-22T08:12:31Z.9f52a0",
+    "status": "passed",
+    "at": "2026-10-22T08:12:31Z"
+  }
 }
