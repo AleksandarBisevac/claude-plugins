@@ -1,7 +1,7 @@
 {
   "id": "P132",
   "title": "Fix what the S1 phase code review found on the writer-session path",
-  "status": "in_progress",
+  "status": "done",
   "description": "Bugfix phase after P131 (S1). The tasks run in series because three of them edit drive-phase.py. Lows from the same review are carried with BUG-29-dau (register F778).",
   "desiredOutcome": "The four high and medium findings of the S1 phase code review (F774-F777) are fixed red-first, so the writer-session path that the stage 1 measurement exercises has no known defect and 3.6.0 is not held by them.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "85a9d38b364df0f04d72a6c51aaa3a43967126d7",
   "branch": "audit/p132-fix-what-the-s1-phase-code-rev",
-  "mergedAt": null,
+  "mergedAt": "2026-10-22T04:14:14Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -475,5 +475,6 @@
     "runId": "2026-10-22T04:14:01Z.8139dd",
     "status": "passed",
     "at": "2026-10-22T04:14:01Z"
-  }
+  },
+  "mergedHead": "9460421d39f0ab749337bd9bcf76c30b6554a9a2"
 }
